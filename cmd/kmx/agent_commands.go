@@ -32,6 +32,9 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation without applying")
+	cmd.Flags().StringVar(&opt.Image, "image", "", "run this image, serving A2A on :8080, instead of a declarative agent")
+	cmd.Flags().StringVar(&opt.Isolation, "isolation", "", "placement profile for a bring-your-own agent: virtual-node | none")
+	_ = cmd.RegisterFlagCompletionFunc("isolation", staticCompletion([]string{"virtual-node", "none"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		if len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)

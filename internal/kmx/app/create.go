@@ -30,6 +30,8 @@ type CreateOptions struct {
 	Out             string // empty: agents/<name>.yaml
 	NoApply         bool
 	DryRun          bool
+	Image           string // non-empty: a BYO agent serving A2A on :8080
+	Isolation       string // placement profile, or "none"
 }
 
 type serverCondition struct {
@@ -95,9 +97,21 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		if err != nil {
 			return err
 		}
+		placement, err := scaffold.ParsePlacement(opt.Isolation)
+		if err != nil {
+			return err
+		}
+		// A bring-your-own image has no modelConfig and no tools to point
+		// at, so the seams a declarative agent gets by reference are
+		// carried across as environment instead.
+		var governance []scaffold.EnvVar
+		if opt.Image != "" {
+			governance = scaffold.GovernanceEnv(governed)
+		}
 		document, err := scaffold.Generate(scaffold.Spec{
 			Name: opt.Name, Namespace: namespace, Description: opt.Description,
 			ModelConfig: modelConfig, Instructions: instructions, Tools: tools, Governed: governed,
+			Image: opt.Image, Placement: placement, Governance: governance,
 		})
 		if err != nil {
 			return err
@@ -109,6 +123,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 				return err
 			}
 			fmt.Fprintf(a.Out, "wrote %s\n", path)
+		}
+		if opt.Image != "" {
+			a.noteBYO(opt.Image, governance, placement)
 		}
 		if !governed {
 			a.notef("WARNING: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
@@ -337,4 +354,35 @@ func RefuseUnknownAgentVerb(verb, kubeContext string) error {
 		"  kubectl%s -n kagent delete agent <name>\n"+
 		"  kubectl%s apply -f agents/<name>.yaml",
 		verb, ctx, ctx, ctx)
+}
+
+// noteBYO says what a bring-your-own agent got and — the part that matters —
+// what kmx could not check.
+//
+// A declarative agent's governance is a reference the controller resolves and
+// the manifest shows; a BYO agent's is an environment variable that only the
+// image can honour, and kmx has no way to look inside and see whether it
+// does. So it is stated, not implied by silence.
+func (a *App) noteBYO(image string, governance []scaffold.EnvVar, placement *scaffold.Placement) {
+	a.notef("BYO agent: kagent will deploy %s and expect A2A on :8080.\n"+
+		"         It has no modelConfig and no tools field — those exist only on\n"+
+		"         declarative agents — so the governed seams travel as env instead.", image)
+	if len(governance) > 0 {
+		a.notef("Injected the governed seams into the pod's env:")
+		for _, e := range governance {
+			if e.SecretRef != "" {
+				a.notef("           %s <- secret %s/%s", e.Name, e.SecretRef, e.Value)
+				continue
+			}
+			a.notef("           %s = %s", e.Name, e.Value)
+		}
+		a.notef("CONFIGURED, NOT PROVEN: kmx cannot verify the image honours these.\n" +
+			"         `kmx ledger` is the evidence — a row there means it did.")
+	}
+	if placement != nil {
+		a.notef("%s", placement.Note)
+	} else {
+		a.notef("No placement profile: this pod schedules like any other. `--isolation\n" +
+			"         virtual-node` puts it on an ACI virtual node instead.")
+	}
 }
