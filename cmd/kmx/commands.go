@@ -126,6 +126,18 @@ func newGrantsCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
+// newFlowCommand merges the four audit trails into one chronological reading.
+//
+// It defaults to ALL credentials, like grants and unlike the ledger: the
+// question a flow answers is "what has been going on", and an operator who
+// does not yet know which credential misbehaved cannot be asked to name it
+// first. Every row is attributed, so a merged reading stays readable.
+func newFlowCommand(state *commandState) *cobra.Command {
+	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge the four audit trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
+	return cmd
+}
+
 func newAuditCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{Use: "audit <tool|approval> [credential]", Short: "Show enforcement audit trails", Args: usageArgs(1, 2, "kmx audit tool|approval [<credential>]")}
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
