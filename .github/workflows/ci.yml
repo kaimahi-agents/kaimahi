@@ -779,7 +779,7 @@ jobs:
   # undeterminable file set (missing/unfetchable base, empty diff), any
   # error — runs the full job. The hygiene job refuses an e2e step that
   # lacks the guard, and refuses a shard the aggregator does not name.
-  # SHARD 1 of 4 — the runtime a developer gets (cluster, model, agent,
+  # SHARD 1 of 6 — the runtime a developer gets (cluster, model, agent,
   # tools over MCP) and the hosted tool upstream, which needs the plane but
   # no agent.
   e2e-runtime:
@@ -1521,7 +1521,7 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 2 of 4 — spend: the metering proxy and its budgets, the budget
+  # SHARD 2 of 6 — spend: the metering proxy and its budgets, the budget
   # approval cycle, the network boundary and the inbound bridge, whose door
   # checks the same credential's budget.
   e2e-spend:
@@ -1929,7 +1929,7 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 3 of 4 — the tool gateway, tool approvals, the governed Slack
+  # SHARD 3 of 6 — the tool gateway, tool approvals, the governed Slack
   # path, approvals from Slack, and the exact races and metrics that read
   # what all of them wrote.
   e2e-tools:
@@ -2934,7 +2934,7 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 4 of 4 — run it for real: a replica killed mid-cycle, a
+  # SHARD 4 of 6 — run it for real: a replica killed mid-cycle, a
   # Postgres outage, both replicas restarted, backup and restore.
   e2e-resilience:
     runs-on: ubuntu-latest
@@ -3102,7 +3102,7 @@ jobs:
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
 
-  # SHARD 5 of 5 — the accounts-payable exception demo: the fixture
+  # SHARD 5 of 6 — the accounts-payable exception demo: the fixture
   # ERP behind the gateway, a standing constraint doing visible work, three
   # consequential calls each needing their own approval from a named human,
   # and a manipulated invoice that cannot spend an approval it did not earn.
@@ -3363,7 +3363,7 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # SHARD 5 of 5 — the front door: one command, on a runner stripped of
+  # SHARD 6 of 6 — the front door: one command, on a runner stripped of
   # the tools kmx shells out to, ending with an agent that answered.
   #
   # It is a shard rather than a tail on an existing one because it needs a

@@ -20,7 +20,7 @@ rulings and the review notes on that pull request.
 
 A net-new CLI was not to be built without a written survey against kagent's
 existing CLI first. This document is that survey plus a proposed surface.
-It ends in open decisions the user needs to rule on.
+It ends in the decisions that were open when it was written, since ruled.
 
 The ask, as given: `npx kaimahi create agent --options ...` plus CRUD, an
 install path "if we really need", and the background security aspects.
@@ -207,7 +207,11 @@ governance plane exists, the CLI should
 default to the keyless Ollama preset and print the ungoverned-spend warning
 whenever a hosted preset is selected.
 
-## Open decisions for ruling
+## The five decisions, as they stood
+
+These were open when this document was written; the status note at the top
+records how they were ruled. They are kept as posed, because the reasoning
+under each is the part worth reading.
 
 1. **Publish or not.** The `npx` case requires npm publication, which is an
    outward-facing name claim needing explicit approval, and the cultural

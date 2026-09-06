@@ -67,7 +67,10 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 	// Both governed presets are applied on every target — which one the
 	// agent is switched to depends on the environment. On kind that is
 	// governed-ollama, the keyless one, which is why governing on kind needs
-	// no captured secret anywhere. They are applied by the switch
+	// no MODEL-PROVIDER credential at all. A Secret is still required and
+	// created — the one `--secret` names — but kmx writes the plane's own
+	// kmh_ token into it rather than capturing a provider key.
+	// They are applied by the switch
 	// below, which has to watch the preset's generation across the apply.
 	presets := []string{"models/governed-ollama.yaml", "models/governed-copilot.yaml"}
 

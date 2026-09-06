@@ -86,7 +86,7 @@ deny()  { bash "$here/tool-denial-probe.sh" "$1" "$2"; }
 
 # request_id <tool> <summary substring> -> the pending request for THAT
 # call. Selected by its summary, never by position: several requests for
-# one tool can be pending at once, because a grant binds to one call's
+# the SAME tool can be pending at once, because a grant binds to one call's
 # arguments and not to its verb.
 #
 # The substring must name EVERY policy-relevant field of the call, not

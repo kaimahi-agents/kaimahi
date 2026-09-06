@@ -752,7 +752,9 @@ func validateExec(where string, e *Exec) error {
 // paid for.
 //
 // A `call`'s arguments are what the driver files a request for and what a
-// human is shown. They may reference PARAMETERS and literals only. A
+// human is shown. They may reference PARAMETERS and literals only — plus
+// `${item}` where the step has a `for_each`, which is parameter-derived
+// and so is still a value a human chose rather than one the model did. A
 // reference to a previous step's captured reply inside `call.args` would
 // let the model choose the value being approved — precisely the failure
 // that demo paid for, where the agent filed a payment for a different

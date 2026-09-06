@@ -60,16 +60,18 @@ metaphor was wrong.
 ## kaimahi — the current name
 
 **kaimahi** — te reo Māori for *worker*. Chosen as the replacement for
-*tomte*, and held provisional until two gates were cleared: a cultural read
-by a te reo Māori speaker, and trademark counsel.
+*tomte*, and held provisional behind two gates: a cultural read by a te reo
+Māori speaker, and trademark counsel. It was settled with the first cleared
+and the second never taken, which is recorded in full below.
 
 FYI, in plain terms:
 
 - **It is a real word in a living language**, not a coined token. That is
   the appeal and the risk: it reads naturally to New Zealand speakers and
   carries meaning that a made-up name would not.
-- **The name is settled, and here is exactly on what basis.** Of those
-  two gates:
+- **The name is settled — meaning chosen as the project's name, which is
+  not the same as cleared for use — and here is exactly on what basis.**
+  Of those two gates:
   1. **The cultural read CLEARED.** A te reo Māori speaker was
      comfortable with the use. Te reo Māori is a taonga protected under
      the Treaty of Waitangi and commercial use of Māori words by
