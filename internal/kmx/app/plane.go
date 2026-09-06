@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/planebuild"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // PlaneImage is the tag the plane's image is built and side-loaded under.
