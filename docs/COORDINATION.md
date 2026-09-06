@@ -127,7 +127,8 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | unassigned | SHAPED 2026-09-03 — prompt below; runs ALONE | the product-defining gap: nothing documents adding your own MCP server or governing an agent you already run |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W33: the lift — local agent to AKS in one path, with managed observability (D41) | unassigned | SHAPED 2026-09-03 — prompt below | mostly wiring, not building; must not put /metrics on a Service; teardown + spend mandatory |
-| W34: kmx tells the truth — the ungoverned count, and a version handshake | unassigned | **RE-SHAPED 2026-09-04** — prompt below, finding (b) TRIMMED because W35 (#107) solved it for one endpoint | two findings from the W28/P15/W30 verification pass; deliberately a lane, not a coordinator PR |
+| W34a: `kmx status` counts what is governed (absorbing the stale #37) | W34a worker | PR #110 MERGED — closed #37 honestly rather than rebasing a PR whose central file no longer existed | coordinator verification owed |
+| W34b: the version handshake, the silent context fallback, the credential lag | unassigned | **RE-CUT 2026-09-06** — prompt below; the ungoverned count shipped in #110, three findings take its place | the silent context fallback is the security-relevant one |
 | W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
 | W36: `kmx workflow run` has no first command (from the W35 verification) | W36 worker | PR #112 OPEN — show and run describe one run | coordinator verification owed |
 | W37: say the thing, not its planning number — 879 references cleaned out of code and docs | unassigned | SHAPED 2026-09-06 — prompt below | NOT a sed: about a fifth are load-bearing and need the reason written out; runs AFTER #112 merges |
@@ -460,6 +461,40 @@ before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
 
+- **D43 (RULED 2026-09-06 — option A): kmx captures the credential
+  itself, at a prompt.** The clone-free path ended at credential capture:
+  `curl | sh`, then quickstart, plane and workflow governance all work
+  with no checkout, and then the secret-capture steps are make targets,
+  so an adopter must `git clone` to hand the thing a token. Ruled: **kmx
+  prompts on the TTY and writes the Secret** — the token never appears in
+  argv, never in the environment, never in a file, and never in the
+  blueprint.
+
+  **Recorded because the ruling was made on an assumption that does not
+  hold, and the user asked to revisit if needed.** The ruling was "fine,
+  assuming that is how things work currently". It is not. kmx today
+  prompts interactively — the agent wizard does — and it screens input
+  AGAINST credential shapes: `internal/kmx/app/create.go` runs wizard
+  input through credential-shape checks, and the blueprint parser refuses
+  credential-shaped keys before the document is decoded. So this is the
+  FIRST path on which kmx deliberately accepts credential material, and
+  it is a deliberate exception to that posture rather than an extension
+  of it.
+
+  **What the exception must therefore carry**, and a lane building it is
+  bound by these: the prompt is the only accepting path, and it reads
+  from a terminal only — never a pipe, never a redirect, never a flag,
+  never an environment variable, so a token cannot arrive from a shell
+  history or a CI log. The value goes to the Secret and nowhere else: not
+  echoed, not logged, not written to a temporary file, not kept after the
+  write. Everything else in kmx keeps refusing credential-shaped input,
+  and the existing screens stay exactly as they are. What was rejected,
+  and why it is worth knowing: embedding the capture scripts so kmx execs
+  them was the alternative, and it only moves the question — "kmx ran the
+  thing that took your token" is a distinction unlikely to survive a
+  skeptical reader, so the honest choice was to accept it openly and
+  constrain it.
+
 "Not GO" is the DEFAULT for this section, not a property of every entry
 in it. An entry whose own heading records a ruling has been ruled, and
 that heading is authoritative over this one — D42 is the case today
@@ -645,6 +680,54 @@ Everything without a ruling in its own heading is not GO.
   one.
 
 ## Process rules (proven over ~60 PRs; keep)
+
+- **D44 (OPEN — needs a ruling): a green PR merged onto a green main can
+  produce a red main, and did.** Recorded 2026-09-06 from a real
+  incident, cause established rather than guessed.
+
+  The Go-proxy retry PR's own branch was correct: it carried the
+  `internal/kmx/run` import and used `run.` four times, and its checks
+  were honestly green. Main did not have that import and never had. The
+  merge took **main's import block** and **the branch's new function**,
+  with no conflict marker, and produced code that does not compile —
+  `undefined: run`. Main was red from that merge until a follow-up fixed
+  it, with three further merges landing on top in the meantime.
+
+  **Nobody's checks were wrong, and no reviewer could have seen it.** The
+  merge RESULT was never built by anything, because the ruleset does not
+  require a branch to be up to date before merging. That makes "green PR
+  + green main → red main" a legal outcome, not a fluke.
+
+  **The amplifier is worth naming**, because it will recur: the repo-wide
+  comment sweep touched nearly every file, including the import regions
+  of every open branch, and four PRs were merged immediately after it. A
+  sweep like that is safe in itself and makes every open branch's merge
+  more dangerous. The coordinator flagged the staleness of all three
+  teammate PRs and then recommended merging one first anyway — the
+  warning was right and was not pressed hard enough.
+
+  **Option A — require branches up to date before merging** (a ruleset
+  setting). The merge result is what gets tested. Cost: a rebase
+  round-trip per PR and merges effectively serialise, which is real
+  friction on a repository with several parallel lanes.
+  **Option B — accept it and rely on post-merge detection**, but make the
+  detection fast and loud, and require a rebase after any repo-wide sweep
+  specifically. Cost: main is occasionally red, and this time that window
+  swallowed three more merges.
+  **Option C — require up-to-date only for branches older than the last
+  sweep**, which is where the risk actually concentrates. Cost: a rule
+  people have to remember, which is the kind that decays.
+
+- **Do not push to a board PR after opening it.** Recorded 2026-09-06,
+  third occurrence, and it is the coordinator's own failure. Two board
+  commits — the ruling above's predecessor and a re-cut lane prompt —
+  were pushed to an already-open board PR and orphaned when it was
+  squash-merged from its earlier state. The consequence was silent: a
+  decision the user was later asked to rule on did not exist in the
+  document they would have read, and a stale prompt survived that asks a
+  worker to build something already shipped. **Later thinking goes in a
+  NEW pull request.** If something genuinely must join an open one, say
+  so in the conversation so the merge waits.
 
 - **Say the thing, not its planning number.** Recorded 2026-09-06, from
   the user, after W36: comments and documentation across this repository
@@ -3635,7 +3718,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W34 — kmx tells the truth about the system it is pointed at (UNASSIGNED — paste into a fresh CLI session)
+### W34b — kmx tells the truth about the system it is pointed at (UNASSIGNED — paste into a fresh CLI session; re-cut 2026-09-06)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3646,7 +3729,35 @@ coordinator's verification pass produced and could not close, which are
 the same finding wearing two hats: **kmx will tell you things about a
 system it has not actually checked.**
 
-Both were reproduced; do not spend the lane rediscovering them.
+All were reproduced; do not spend the lane rediscovering them.
+
+**FINDING (a) HAS SHIPPED — do not build it.** `kmx status` counts what
+is governed and distinguishes "there are none" from "kmx cannot tell".
+The original text is kept below the line for context only. Two findings
+from the workflow verification run take its place, and they are the same
+species: **kmx telling you something about a system it has not checked.**
+
+**(c) An unset current context makes kmx fall back SILENTLY, and this is
+the security-relevant one.** The context guard's entire value is that it
+names where it is about to act before acting — it is the mechanism
+between an operator and the wrong cluster. A silent fallback removes the
+naming and keeps the action. Not hypothetical: earlier in this project
+the coordinator ran `kmx govern` against the user's demo cluster with
+`KIND_CLUSTER` unset, and the guard DID print the banner naming the
+cluster — it was defeated by piping the output to `head`. A careful
+reader can survive a banner they did not read. Nobody survives a banner
+that was never printed. Decide what kmx does with no current context:
+refuse, or name the fallback loudly and require confirmation. Refusing
+is the conservative answer and the burden is on any other choice.
+
+**(d) A broken credential reads as Accepted for about five minutes.**
+The projected-Secret refresh lag means the plane reports a credential
+accepted while it is not usable. Five minutes of "it worked" is worse
+than an error, because the operator moves on. Say what status should
+report during the window; reuse the "none versus cannot tell"
+vocabulary rather than inventing a second one.
+
+--- the original finding (a), SHIPPED, kept for context ---
 
 **(a) `kmx status` cannot say what is governed.** W29 was told to make
 the ungoverned state COUNTABLE rather than merely warned about once —
@@ -3714,11 +3825,13 @@ counted correctly. If you can drive a genuinely old plane the way the
 skew case is testable per-PR rather than only by hand — that probe is
 the precedent and reusing it is worth more than a new mechanism.
 
-Verification is real: a transcript in the PR showing `kmx status` on a
-cluster with both governed and ungoverned tool servers, counting them
-correctly; the same command with no plane deployed, saying so rather
-than reporting zero; and a new kmx against a deliberately older plane
-producing a message that names the version problem and the fix. Branch
+Verification is real: a transcript of a new kmx against a deliberately
+older plane, producing a message that names the version problem and the
+fix; kmx with NO current context set, doing whatever you decided rather
+than acting silently on a fallback; and a credential inside the
+projection window, reported honestly rather than as Accepted. The
+`kmx status` transcripts the original text asked for belong to the lane
+that shipped finding (a) and are not yours to reproduce. Branch
 from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
