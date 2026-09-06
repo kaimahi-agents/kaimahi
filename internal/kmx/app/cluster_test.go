@@ -75,3 +75,78 @@ func TestClusterRefusesRatherThanReadingAFailedListingAsAbsence(t *testing.T) {
 		t.Errorf("kmx went on to create a cluster after it failed to look:\n%s", out.String())
 	}
 }
+
+// An already-existing cluster records the invented context too, and that is
+// the intended behaviour rather than an oversight.
+//
+// The invented default only survives the guard in two shapes: a machine with
+// no clusters, and one where the name is already the context the operator is
+// pointed at. In both, `kmx up` has just verified this cluster is serving and
+// the operator asked for it — so turning the invention into a recorded choice
+// is exactly the point. Gating this on "did THIS run create it" would leave
+// the second `kmx up` resolving through the fallback again, which is the
+// state the fallback exists to get out of.
+func TestAnExistingClusterAlsoRecordsTheInventedContext(t *testing.T) {
+	dir := t.TempDir()
+	// kind lists the cluster; kubectl answers the serving check.
+	if err := os.WriteFile(filepath.Join(dir, "kind"),
+		[]byte("#!/bin/sh\necho kaimahi-p1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"),
+		[]byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("KMX_HOME", t.TempDir())
+
+	var out bytes.Buffer
+	a := &App{
+		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1",
+			ContextSource: config.SourceDefault, ContainerEngine: "docker"},
+		Run: &run.Runner{Stdout: &out, Stderr: &out},
+		Out: &out, Err: &out,
+	}
+	if err := a.stepCluster(); err != nil {
+		t.Fatalf("stepCluster on an existing cluster: %v", err)
+	}
+	if a.Cfg.ContextSource != config.SourceSelected {
+		t.Errorf("the invented context was not turned into a choice: source is %q", a.Cfg.ContextSource)
+	}
+	selected, err := config.ReadSelectedContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != "kind-kaimahi-p1" {
+		t.Errorf("later commands will fall back again: recorded %q", selected)
+	}
+}
+
+// A cluster that never came up records nothing: pointing every later command
+// at something that is not there is worse than falling back.
+func TestAFailedClusterRecordsNothing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kind"),
+		[]byte("#!/bin/sh\ncase \"$1\" in get) exit 0;; *) echo 'create failed' >&2; exit 1;; esac\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("KMX_HOME", t.TempDir())
+
+	var out bytes.Buffer
+	a := &App{
+		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1",
+			ContextSource: config.SourceDefault, ContainerEngine: "docker"},
+		Run: &run.Runner{Stdout: &out, Stderr: &out},
+		Out: &out, Err: &out,
+	}
+	if err := a.stepCluster(); err == nil {
+		t.Fatal("a failed create was not an error")
+	}
+	if a.Cfg.ContextSource != config.SourceDefault {
+		t.Errorf("a cluster that never came up was recorded as the chosen context")
+	}
+	if selected, _ := config.ReadSelectedContext(); selected != "" {
+		t.Errorf("a cluster that never came up was recorded: %q", selected)
+	}
+}

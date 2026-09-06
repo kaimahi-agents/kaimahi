@@ -139,6 +139,33 @@ func TestANonNotFoundFailureIsNotMistakenForAnOldPlane(t *testing.T) {
 	}
 }
 
+// A plane that answers with half the answer is broken too. A blank version
+// would put an empty string where every skew message names the plane, so an
+// operator comparing two clusters would be shown nothing and told it was an
+// answer.
+func TestAPlaneThatReportsNoVersionIsAFaultNotAGap(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no shell to stand in for the port-forward")
+	}
+	_, port := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.WriteHeader(http.StatusOK)
+		case "/admin/version":
+			w.Write([]byte(`{"version": "  ", "admin_contract": 1}`))
+		default:
+			nothing(w, r)
+		}
+	})
+	_, err := OpenAs(&fakeKube{token: "s3cret-admin-token", forward: forwarding(port)}, port, io.Discard, "v2.0.0")
+	if err == nil || !strings.Contains(err.Error(), "plane bug") {
+		t.Fatalf("a blank version was accepted as an answer: %v", err)
+	}
+	if strings.Contains(err.Error(), "kmx plane") {
+		t.Errorf("a plane fault was diagnosed as a version gap:\n%v", err)
+	}
+}
+
 // A plane that serves the route and reports a contract no release ever
 // served is broken, not old, and gets told so — routing it to `kmx plane`
 // would send an operator to reinstall over a fault an upgrade cannot fix.

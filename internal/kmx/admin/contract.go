@@ -108,14 +108,22 @@ func (c *Client) handshake() error {
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return fmt.Errorf("the plane's version reply could not be read: %w", err)
 	}
+	// A plane that serves this route must give a usable answer to BOTH
+	// halves, and a half-answer is a fault rather than an old plane. Reading
+	// a 0 contract as "unreported" would let a broken plane look old and get
+	// advice that cannot fix it; accepting a blank version would put an empty
+	// string where every skew message names the plane, so an operator
+	// comparing two clusters would be shown nothing and told it was an
+	// answer. Reported stays false until both pass.
 	if doc.AdminContract < ContractTableDeclared {
-		// A plane that serves the route must report a usable contract.
-		// Reading a 0 here as "unreported" would let a broken plane look
-		// like an old one and get the wrong advice.
 		return fmt.Errorf("the plane reported admin contract %d, which no released plane serves — "+
 			"this is a plane bug, not a version gap", doc.AdminContract)
 	}
-	c.plane = PlaneVersion{Version: doc.Version, Contract: doc.AdminContract, Reported: true}
+	if strings.TrimSpace(doc.Version) == "" {
+		return fmt.Errorf("the plane reported admin contract %d but no version string — "+
+			"this is a plane bug, not a version gap", doc.AdminContract)
+	}
+	c.plane = PlaneVersion{Version: strings.TrimSpace(doc.Version), Contract: doc.AdminContract, Reported: true}
 	return nil
 }
 

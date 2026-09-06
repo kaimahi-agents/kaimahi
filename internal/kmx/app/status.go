@@ -552,8 +552,14 @@ func (a *App) statusTable() error {
 	// cluster and kmx picked the name, which is a different fact from an
 	// operator having typed it, and status is where a confused operator
 	// looks first.
+	//
+	// It states that fact and does not predict the guard's decision. Whether
+	// a mutation is refused depends on what else is in the kubeconfig, and
+	// restating that rule here would be a second copy of it in the one
+	// command that deliberately reads no kubeconfig — free to drift, and
+	// wrong the moment the rule moves, which it already has once.
 	if a.Cfg.ContextSource == config.SourceDefault {
-		fmt.Fprintf(a.Out, "  context: %s (nothing chose this — kmx will refuse to act on it; run `kmx ctx <name>`)\n",
+		fmt.Fprintf(a.Out, "  context: %s (nothing chose this — pick one with `kmx ctx <name>`)\n",
 			a.Cfg.KubeContext)
 	} else {
 		fmt.Fprintf(a.Out, "  context: %s (from %s)\n", a.Cfg.KubeContext, a.Cfg.ContextSource)

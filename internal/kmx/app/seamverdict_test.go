@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -234,5 +235,55 @@ func TestAgainstARealSeam(t *testing.T) {
 	if v.State == verdictAccepted {
 		t.Errorf("a verdict reached at %s was reported as an answer about a credential written at %s",
 			v.At.Format(time.RFC3339), writtenAt.Format(time.RFC3339))
+	}
+}
+
+// A read that fails mid-wait is not a reason to fail the command: the
+// credential and the allowlist are already written by the time the wait
+// starts, and a single API blip would throw that away. It keeps trying.
+func TestATransientReadFailureDoesNotEndTheWait(t *testing.T) {
+	since := written("2026-09-06T10:05:00Z")
+	clock := since
+	reads := 0
+
+	v, err := waitForVerdict(
+		func() (seamVerdict, error) {
+			reads++
+			if reads < 3 {
+				return seamVerdict{}, errors.New("the connection to the server was refused")
+			}
+			return classifySeamVerdict(&serverCondition{
+				Type: "Accepted", Status: "False", Message: "Unauthorized", LastTransitionTime: after,
+			}, 0, 0, since), nil
+		},
+		func() time.Time { return clock },
+		func() {},
+		func(d time.Duration) { clock = clock.Add(d) },
+	)
+	if err != nil {
+		t.Fatalf("a transient read failure ended the wait: %v", err)
+	}
+	if v.State != verdictRejected {
+		t.Fatalf("the verdict reached after the blip was lost: %+v", v)
+	}
+}
+
+// A fault that does not clear still surfaces. An RBAC denial or a seam that
+// is not there reads exactly like a healthy seam if the error is swallowed,
+// so the deadline returns it rather than a cheerful `unknown`.
+func TestAPersistentReadFailureStillSurfaces(t *testing.T) {
+	since := written("2026-09-06T10:05:00Z")
+	clock := since
+
+	_, err := waitForVerdict(
+		func() (seamVerdict, error) {
+			return seamVerdict{}, errors.New(`remotemcpservers.kagent.dev "warehouse" is forbidden`)
+		},
+		func() time.Time { return clock },
+		func() {},
+		func(d time.Duration) { clock = clock.Add(d) },
+	)
+	if err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("a persistent read failure was swallowed: %v", err)
 	}
 }

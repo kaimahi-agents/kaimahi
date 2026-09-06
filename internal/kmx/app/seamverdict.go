@@ -85,6 +85,27 @@ func age(now, then time.Time) string {
 // "what does kagent currently think", which is what `kmx status` asks: it
 // changed nothing, so it has no write to compare against and must not invent
 // one.
+//
+// **This comparison assumes kmx's clock and the API server's agree**, and the
+// assumption is worth stating because the two failure directions are not
+// symmetric. `since` is kmx's wall clock; the condition's time is the API
+// server's. If kmx's clock runs AHEAD, fresh verdicts look stale and are
+// reported `unknown` — safe. If it runs BEHIND by more than the gap between
+// writing the credential and reading the verdict, a stale verdict looks fresh
+// and is reported as an answer — which is the failure this whole file exists
+// to prevent.
+//
+// It is not defended against here, deliberately. Padding `since` by a skew
+// allowance would trade a narrow fail-open for a much broader loss: a verdict
+// arriving inside the allowance can never be newer than the padded `since`,
+// so a REJECTION — measured at 14 seconds on a live cluster, and the case
+// most worth catching — would be reported `unknown` instead. The fix that
+// costs nothing is a server-side causal marker: take the seam's current
+// lastTransitionTime BEFORE the write as the baseline and require the verdict
+// to have moved past it, comparing the API server's clock only with itself.
+// That is the change to make if this ever bites; on kind the API server
+// shares the host's clock, and on a managed cluster both ends are
+// NTP-synchronised, so it has not.
 func classifySeamVerdict(c *serverCondition, generation, observed int64, since time.Time) seamVerdict {
 	if generation != 0 && observed != generation {
 		return seamVerdict{State: verdictUnknown,
@@ -211,20 +232,32 @@ func waitForVerdict(read func() (seamVerdict, error), now func() time.Time,
 	deadline := now().Add(seamRecheckWait)
 	asked := false
 	var last seamVerdict
+	var lastErr error
 	for {
 		v, err := read()
 		if err != nil {
-			return seamVerdict{}, err
-		}
-		last = v
-		if v.State != verdictUnknown {
-			return v, nil
+			// A read that fails is not a reason to fail the whole command
+			// here: the credential and the allowlist are already written, and
+			// a single API blip during the wait would throw that away. Keep
+			// trying until the deadline. A persistent fault — RBAC, a seam
+			// that is not there — still surfaces, because it will still be
+			// failing when the deadline arrives.
+			lastErr = err
+		} else {
+			lastErr = nil
+			last = v
+			if v.State != verdictUnknown {
+				return v, nil
+			}
 		}
 		if !asked {
 			recheck()
 			asked = true
 		}
 		if !now().Before(deadline) {
+			if lastErr != nil {
+				return seamVerdict{}, lastErr
+			}
 			last.Reason = fmt.Sprintf("kagent did not change its verdict in %s. A condition records when a "+
 				"verdict CHANGED, not when it was last checked, so an unchanged pass cannot be told apart "+
 				"from a stale one — whether the credential that is there now works is not known. It is not "+
