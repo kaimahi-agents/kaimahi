@@ -212,7 +212,7 @@ kmx reads the names this repository already uses — the Makefile's, and
 | Variable | Default | Meaning |
 |---|---|---|
 | `KIND_CLUSTER` | `kaimahi-p1` | the cluster `up` creates and `down` deletes |
-| `KUBE_CTX` | `kind-$KIND_CLUSTER` | the context to act on |
+| `KUBE_CTX` | `kind-$KIND_CLUSTER` | the context to act on. With nothing set anywhere the name still falls back to `kind-kaimahi-p1`, but that is a name nobody chose and mutating commands refuse it — see [Where the command will land](#where-the-command-will-land) |
 | `CONTAINER_ENGINE` | `docker` | `docker` or `podman` (sets `KIND_EXPERIMENTAL_PROVIDER`) |
 | `KAGENT_VERSION` | `0.9.12` | pinned kagent chart **and** CLI |
 | `MODEL` | `qwen2.5:3b` | model pulled into Ollama |
@@ -236,11 +236,44 @@ context:
 ----------------------------------------------------------------
   about to: bring up the kmx runtime (kind, Ollama, kagent, agents)
   context:  kind-kaimahi-p1
+  chosen by: KIND_CLUSTER
   server:   127.0.0.1
   namespace(s): kagent, kaimahi, ollama
   posture:  local kind
 ----------------------------------------------------------------
 ```
+
+The banner goes to **stderr**, so redirecting or piping a command's output
+does not take it with them, and it is printed whether or not anything is
+asked.
+
+`chosen by` is the load-bearing line. Every source above is somebody's
+decision except one: with nothing set anywhere, the name falls back to
+`kind-kaimahi-p1`, which nobody picked. **kmx refuses to act on that** when
+your kubeconfig holds contexts it could have meant instead:
+
+```console
+$ kmx up
+kube-guard: nothing chose a cluster, so kmx will not act on one.
+  It would have used "kind-kaimahi-p1", which is a name kmx made up, and your kubeconfig
+  holds 3 context(s) it could have meant instead.
+  Your current context is "aks-prod"; kmx does not follow it, because a tool that
+  rewrites it (`az aks get-credentials` does) would silently re-aim kmx.
+  Nothing was applied. Choose one, and it is remembered:
+    kmx ctx <name>            # kubectl config get-contexts lists them
+    kmx --context <name> ...  # or just this once
+```
+
+On a machine with no clusters at all there is nothing to confuse it with, so
+the default stands and one-command bring-up works — and creating that cluster
+records it, so later bare commands resolve through a real choice rather than
+through the fallback again.
+
+**kmx does not follow your current context, deliberately.** A bare `kubectl`
+does, and `az aks get-credentials` rewrites it without asking, so a command
+meant for kind could quietly aim at a managed cluster. kmx pins an explicit
+context on every call instead. The refusal names your current context so the
+most likely intended answer is in front of you; choosing it is still yours.
 
 "Local kind" is two independent checks, because a context **name** is
 cosmetic — anyone can name a production context `kind-prod`. The substantive

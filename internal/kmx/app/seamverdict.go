@@ -153,14 +153,30 @@ func (a *App) readSeamVerdict(namespace, server string, since time.Time) (seamVe
 		doc.Metadata.Generation, doc.Status.ObservedGeneration, since), nil
 }
 
-// seamRecheckWait is how long kmx waits for kagent to look again after a
-// credential was written. A projected Secret is not refreshed the instant it
-// is written — the kubelet does it on its own sync period — and kagent does
-// not retry a cached verdict on its own, so waiting is the only way to get an
-// answer about the credential that is now there rather than the one before
-// it. Variables so a test can exercise the timeout without spending it.
+// How long kmx waits for kagent to look again after a credential was written,
+// and why the answer is asymmetric.
+//
+// A Kubernetes condition's lastTransitionTime records when the verdict
+// CHANGED, not when it was last checked. Measured against a live cluster, on
+// a governed tool seam whose credential was replaced with a well-formed but
+// wrong token: the pass stood for 49 seconds and then flipped to
+// Unauthorized on kagent's own resync, and flipped within 14 seconds when
+// kagent was asked to look. Leave a GOOD credential in place and the
+// condition never moves at all, because nothing about it changed.
+//
+// 90 seconds is chosen to sit above that measured window with room, so a
+// credential kagent will reject is caught by the wait rather than after it.
+//
+// So the wait can confirm a REJECTION and can never confirm a pass. That
+// asymmetry is the right way round for a fail-closed posture — the case worth
+// blocking on is the broken credential — and it is why the timeout is short
+// and reports `unknown` rather than long and reporting success. Waiting
+// longer would buy nothing: an unchanged pass is indistinguishable from a
+// stale one however long you stare at it.
+//
+// Variables so a test can exercise the timeout without spending it.
 var (
-	seamRecheckWait     = 5 * time.Minute
+	seamRecheckWait     = 90 * time.Second
 	seamRecheckInterval = 5 * time.Second
 )
 
@@ -209,9 +225,11 @@ func waitForVerdict(read func() (seamVerdict, error), now func() time.Time,
 			asked = true
 		}
 		if !now().Before(deadline) {
-			last.Reason = fmt.Sprintf("kagent has not re-checked this seam in %s, so whether the credential "+
-				"that is there now works is not known yet — it is not known to be broken either. "+
-				"Look again with: kmx status", seamRecheckWait)
+			last.Reason = fmt.Sprintf("kagent did not change its verdict in %s. A condition records when a "+
+				"verdict CHANGED, not when it was last checked, so an unchanged pass cannot be told apart "+
+				"from a stale one — whether the credential that is there now works is not known. It is not "+
+				"known to be broken either: a credential kagent rejects flips this within about half a "+
+				"minute. Look again with: kmx status", seamRecheckWait)
 			return last, nil
 		}
 		sleep(seamRecheckInterval)

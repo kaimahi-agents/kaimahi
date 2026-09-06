@@ -208,6 +208,46 @@ again (`make govern`), which mints a fresh token and pipes it straight
 into the agent-side Secret. Renewal is not a substitute for rotation;
 it buys time on the same token.
 
+### After you write a credential, "Accepted" is not yet an answer
+
+kagent's `Accepted` condition is a **cached reconcile result**. kagent records
+it when it last tried to reach an upstream and does not retry on its own, and a
+Secret mounted into a pod is not updated the moment it is written — the kubelet
+refreshes projected Secrets on its own sync period. So for some minutes after a
+credential is rotated, that condition still carries the verdict reached against
+the credential *before* it.
+
+Written wrongly, that reads as `Accepted: yes` for a credential that cannot be
+used at all, and several minutes of "it worked" is worse than an error, because
+you move on.
+
+kmx does not guess whether the new credential works. It declines to reuse an
+answer that was about something else:
+
+- **After kmx writes a credential**, it asks kagent to look again and waits for
+  a verdict reached *after* the write. If kagent rejects it, you get kagent's
+  own words. If kagent has not looked in time, you get `unknown` — not
+  `accepted`, which would be the lie, and not `rejected`, which would send you
+  to fix something that may be fine.
+- **`kmx status` changed nothing**, so it has no write to compare against and
+  must not invent one. It reports the verdict as it stands, and publishes *when*
+  it was reached:
+
+  ```
+  NAME         READY  ACCEPTED         MODEL CONFIG     TOOL SERVER
+  hello-world  yes    yes (12s ago)    governed-ollama  kaimahi-tools
+
+  Accepted is what kagent decided when it last looked, not a live check: a credential
+  written since then has not been tested, however old that answer is.
+  ```
+
+  A condition kagent has recorded nothing for reads `unknown` rather than `-`:
+  it has not said no, it has said nothing. That is the same distinction the
+  governance counts draw between `none` and `unknown`.
+
+A pod's `Ready` condition is genuinely live and is left alone; only the cached
+kagent verdicts carry an age.
+
 ## Verified how
 
 | Claim | How |

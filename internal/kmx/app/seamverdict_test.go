@@ -1,9 +1,12 @@
 package app
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 const (
@@ -148,8 +151,14 @@ func TestTheWaitIsNotSatisfiedByAVerdictFromBeforeTheWrite(t *testing.T) {
 	if v.State != verdictUnknown {
 		t.Fatalf("a stale pass satisfied the wait as %q", v.State)
 	}
-	if !strings.Contains(v.Reason, "not known yet") || !strings.Contains(v.Reason, "not known to be broken") {
+	if !strings.Contains(v.Reason, "is not known") || !strings.Contains(v.Reason, "not known to be broken") {
 		t.Errorf("the timeout does not report cannot-tell honestly:\n%s", v.Reason)
+	}
+	// The timeout must say WHY it cannot tell, or it reads as kmx giving up.
+	// A condition records a transition, not a check, so an unchanged pass is
+	// indistinguishable from a stale one however long anyone waits.
+	if !strings.Contains(v.Reason, "CHANGED") {
+		t.Errorf("the timeout does not say why waiting longer would not help:\n%s", v.Reason)
 	}
 	if reads < 2 {
 		t.Errorf("the wait did not actually poll (%d reads)", reads)
@@ -189,5 +198,41 @@ func TestTheWaitReturnsTheVerdictKagentReachesAfterTheWrite(t *testing.T) {
 	}
 	if v.State != verdictRejected || !strings.Contains(v.Message, "Unauthorized") {
 		t.Fatalf("the rejection kagent actually reached was not reported: %+v", v)
+	}
+}
+
+// The lag against a real cluster, rather than a fixture that returns what the
+// test expects.
+//
+// Skipped unless pointed at a live seam. The variables are the seam to read
+// and the moment its credential was written, so the classifier is asked the
+// same question `kmx tools govern` asks it: is this verdict about the
+// credential that is there now?
+func TestAgainstARealSeam(t *testing.T) {
+	server := os.Getenv("KAIMAHI_SEAM")
+	since := os.Getenv("KAIMAHI_SEAM_CREDENTIAL_WRITTEN_AT")
+	if server == "" || since == "" {
+		t.Skip("no live seam; set KAIMAHI_SEAM and KAIMAHI_SEAM_CREDENTIAL_WRITTEN_AT")
+	}
+	writtenAt, err := time.Parse(time.RFC3339, since)
+	if err != nil {
+		t.Fatalf("KAIMAHI_SEAM_CREDENTIAL_WRITTEN_AT: %v", err)
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(cfg)
+	a.Run.Echo = false
+
+	v, err := a.readSeamVerdict("kagent", server, writtenAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("credential written at %s", writtenAt.Format(time.RFC3339))
+	t.Logf("kmx reports: %s", v.Line(time.Now()))
+	if v.State == verdictAccepted {
+		t.Errorf("a verdict reached at %s was reported as an answer about a credential written at %s",
+			v.At.Format(time.RFC3339), writtenAt.Format(time.RFC3339))
 	}
 }

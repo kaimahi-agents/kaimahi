@@ -171,6 +171,71 @@ human approved and a priced ledger row, then starts the current plane on the
 same database and asserts every one of those survived and that the upgraded
 plane serves a fresh governed call.
 
+## When kmx and the plane are different versions
+
+They are different versions more often than not: `go install …@latest` upgrades
+kmx and touches nothing in your cluster, so anyone who upgrades one and not the
+other has skew. kmx asks the plane what it is before asking it for anything —
+`GET /admin/version`, once per command, on the admin port — and says so:
+
+```console
+$ kmx tools allowlist warehouse
+kubectl -n kaimahi port-forward deploy/kaimahi-proxy 19091:9091 # (the admin port is on no Service)
+plane v0.2.0 (admin contract 1)
+…
+```
+
+The version string is for you. The **admin contract** is the number kmx
+compares: a version string cannot be ordered across releases and development
+builds, and it does not tell a client which routes exist. The contract does,
+and it rises whenever the admin surface gains something a client can depend on.
+
+**Skew is decided per operation, not once for the whole session.** An older
+plane is not a broken one, so kmx keeps working against everything that plane
+can serve and refuses only what it cannot — before sending it:
+
+```console
+$ kmx workflow govern --file release.yaml
+this plane is too old to check a workflow's `requires` against its upstream table — nothing has been applied.
+  plane: a plane too old to report its version (v0.1.0 or earlier; admin contract 0)
+  kmx:   v0.2.0, and this needs admin contract 1
+  Upgrade the plane with the kmx you are already running:
+    kmx plane
+```
+
+A blanket refusal on any skew would strand a working cluster over one feature
+it does not have; a blanket warning would be the same bare `404 page not found`
+with more words in front of it.
+
+**A plane NEWER than kmx proceeds**, with one note saying so. The state lives in
+the plane — the ledger, the grants, the approvals — and stranding it because the
+CLI is behind would be the more expensive mistake. That is safe because of the
+promise below, not because it is usually fine.
+
+### The promise the contract rests on
+
+**Within a major version the plane's admin surface only ever grows.** A route
+that has been served is not removed, and its request and response shapes are
+not changed in place; new information arrives as new fields or new routes, and
+the contract number goes up. Break that and an older kmx talking to a newer
+plane breaks silently, which is the failure this whole mechanism exists to
+prevent.
+
+Two consequences worth stating:
+
+- A plane that answers `/admin/version` but reports a contract no release ever
+  served is a **fault in the plane**, not a version gap, and kmx says so rather
+  than sending you to reinstall over something an upgrade cannot fix.
+- A plane between `v0.1.0` and the release that added `/admin/version` is
+  treated as contract 0 even where it could in fact serve more. Those are
+  unreleased revisions, the misjudgement is conservative, and the fix is one
+  `kmx plane`.
+
+**Proven, not asserted.** The same `plane-upgrade` job drives the current kmx
+against the genuinely old plane it already has running, and asserts the version
+gap is named rather than reported as a 404 — and, at the other end, that a plane
+built from the checkout reports a usable contract.
+
 ### One behaviour change worth knowing: grants minted before argument binding
 
 Migration `00008` welded tool approvals to the exact call. Grants minted
