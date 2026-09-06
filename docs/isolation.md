@@ -1,6 +1,7 @@
 # Isolation options for agents and their tools
 
-*Status: option A is built (`--image`, `--isolation`); B–E are not. This note
+*Status: option A is built (`--image`, `--isolation`, `--run-as-user`);
+B–E are not. This note
 separates three questions that get asked as one, records why A was the only
 one shippable today, and states what the others would cost.*
 
@@ -105,7 +106,8 @@ the governance across the boundary, not drop it.
 ```
 kmx agent create <name>
   --image <ref>              make it a BYO agent (serves A2A on :8080)
-  --isolation kata | none    schedule onto a VM-isolated pool (default: none)
+  --isolation virtual-node | none    where it schedules (default: none)
+  --run-as-user <uid> | root the user the image runs as (default: unstated)
 ```
 
 Rules that keep it honest:
@@ -124,28 +126,54 @@ Rules that keep it honest:
    honours those variables. The command must say so rather than imply the
    agent is governed because the env is present. *"Configured, not proven"*
    is the honest status, and the ledger is where it becomes proven.
-5. **`--isolation kata` refuses on a cluster with no such nodes.** Fail
-   closed with the reason, like `agent create` already does when it cannot
-   read a `ModelConfig`. A toleration that matches nothing schedules onto an
-   ordinary node and looks like it worked.
+5. **A profile that cannot deliver what it names is refused.** `kata` is
+   refused outright, above. A `virtual-node` selector that matches no node
+   leaves the pod `Pending` with `FailedScheduling`, which is visible —
+   unlike a toleration that quietly lands the pod on an ordinary node and
+   looks like it worked.
+6. **The hardening splits on what kmx can know.** The declarative agent's
+   pod is pinned non-root at UID 1001 with a read-only root filesystem, and
+   that UID is a fact about ONE image — kagent's, which spells its user as
+   the name `python` that Kubernetes cannot prove is non-root. A
+   user-supplied image is a different image. So a BYO pod always gets the
+   half of the posture no image can invalidate — capabilities dropped,
+   privilege escalation off, the default seccomp profile — and the half that
+   depends on the image is carried by `--run-as-user` or written down as
+   missing. With a UID it gets the full posture. With `--run-as-user root`
+   it runs as root because somebody said so. With neither, the manifest
+   itself says which two settings were left off and how to find the number,
+   because the manifest is what gets committed and reviewed. Guessing 1001
+   would fail the pod at `CreateContainer` over a UID the operator never
+   chose, in a message that never names the image.
 
 ### What `Spec` gains
 
-`scaffold.Spec` grows `Image` and `Isolation`, both zero-valued to today's
-behaviour. `Generate` branches on `Image` for `type: Declarative` versus
-`type: BYO`; `Isolation` only adds `nodeSelector`/`tolerations`. The
-generator stays a pure function of the spec — testable with no cluster.
+`scaffold.Spec` grows `Image`, `Placement`, `Governance` and `Identity`, all
+zero-valued to today's behaviour. `Generate` branches on `Image` for
+`type: Declarative` versus `type: BYO`; `Placement` only adds
+`nodeSelector`/`tolerations`, and `Identity` only affects the BYO security
+context. The generator stays a pure function of the spec — testable with no
+cluster, which is how the three identity cases are covered.
+
+Every field this emits exists on `byo.deployment` in the pinned CRD:
+`podSecurityContext`, `securityContext`, `volumes` and `volumeMounts` are
+all there, and so are `nodeSelector` and `tolerations`. `runtimeClassName`
+is on neither `byo.deployment` nor `declarative.deployment`, which is the
+finding at the top of this note.
 
 ### Gates before it ships
 
-- a BYO image on a Kata pool answers `kmx agent chat`, and `kubectl` shows
-  it on an isolated node;
+- a BYO image on a virtual node answers `kmx agent chat`, and `kubectl`
+  shows it there;
 - **a ledger row appears for its model calls** — this is the one that
   matters, because it is the difference between governed and merely
   configured;
 - a tool call through the gateway lands in the audit trail;
-- `--isolation kata` on a cluster without those nodes refuses rather than
-  quietly scheduling normally.
+- a `virtual-node` selector matching nothing leaves the pod `Pending` with
+  `FailedScheduling` rather than quietly scheduling normally;
+- a BYO image with a stated `--run-as-user` starts and answers, and one with
+  the wrong UID fails visibly at `CreateContainer` rather than starting with
+  a weaker posture than it was asked for.
 
 ---
 

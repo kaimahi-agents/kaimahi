@@ -32,6 +32,10 @@ type CreateOptions struct {
 	DryRun          bool
 	Image           string // non-empty: a BYO agent serving A2A on :8080
 	Isolation       string // placement profile, or "none"
+	// RunAsUser is the numeric UID a bring-your-own image runs as, or the
+	// literal "root" to say so on purpose. It is asked for rather than
+	// guessed: see scaffold.ParseRunAsUser.
+	RunAsUser string
 }
 
 type serverCondition struct {
@@ -101,6 +105,10 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		if err != nil {
 			return err
 		}
+		identity, err := scaffold.ParseRunAsUser(opt.RunAsUser, opt.Image)
+		if err != nil {
+			return err
+		}
 		// A bring-your-own image has no modelConfig and no tools to point
 		// at, so the seams a declarative agent gets by reference are
 		// carried across as environment instead.
@@ -111,7 +119,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		document, err := scaffold.Generate(scaffold.Spec{
 			Name: opt.Name, Namespace: namespace, Description: opt.Description,
 			ModelConfig: modelConfig, Instructions: instructions, Tools: tools, Governed: governed,
-			Image: opt.Image, Placement: placement, Governance: governance,
+			Image: opt.Image, Placement: placement, Governance: governance, Identity: identity,
 		})
 		if err != nil {
 			return err
@@ -125,7 +133,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 			fmt.Fprintf(a.Out, "wrote %s\n", path)
 		}
 		if opt.Image != "" {
-			a.noteBYO(opt.Image, governance, placement)
+			a.noteBYO(opt.Image, governance, placement, identity)
 		}
 		if !governed {
 			a.notef("WARNING: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
@@ -359,11 +367,13 @@ func RefuseUnknownAgentVerb(verb, kubeContext string) error {
 // noteBYO says what a bring-your-own agent got and — the part that matters —
 // what kmx could not check.
 //
-// A declarative agent's governance is a reference the controller resolves and
-// the manifest shows; a BYO agent's is an environment variable that only the
-// image can honour, and kmx has no way to look inside and see whether it
-// does. So it is stated, not implied by silence.
-func (a *App) noteBYO(image string, governance []scaffold.EnvVar, placement *scaffold.Placement) {
+// Every line here exists because the image is opaque. A declarative agent's
+// governance is a reference the controller resolves and the manifest shows;
+// a BYO agent's is an environment variable that only the image can honour,
+// and kmx has no way to look inside and see whether it does. The same is
+// true of its user and its filesystem. So each of those is stated, not
+// implied by silence.
+func (a *App) noteBYO(image string, governance []scaffold.EnvVar, placement *scaffold.Placement, identity scaffold.Identity) {
 	a.notef("BYO agent: kagent will deploy %s and expect A2A on :8080.\n"+
 		"         It has no modelConfig and no tools field — those exist only on\n"+
 		"         declarative agents — so the governed seams travel as env instead.", image)
@@ -379,6 +389,7 @@ func (a *App) noteBYO(image string, governance []scaffold.EnvVar, placement *sca
 		a.notef("CONFIGURED, NOT PROVEN: kmx cannot verify the image honours these.\n" +
 			"         `kmx ledger` is the evidence — a row there means it did.")
 	}
+	a.notef("%s", identity.Note)
 	if placement != nil {
 		a.notef("%s", placement.Note)
 	} else {

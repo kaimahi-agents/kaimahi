@@ -66,6 +66,9 @@ type Spec struct {
 	// the proxy base URL, the gateway endpoint, and the credential Secret.
 	// Empty for a declarative agent, which needs none of it.
 	Governance []EnvVar
+	// Identity is the image-dependent half of a BYO agent's security
+	// context: the UID it runs as, when the operator stated one.
+	Identity Identity
 }
 
 // EnvVar is a container environment variable, either literal or from a
@@ -396,6 +399,7 @@ func renderBYO(spec Spec) (string, error) {
 	b.WriteString("  byo:\n")
 	b.WriteString("    deployment:\n")
 	b.WriteString("      image: " + image + "\n")
+	b.WriteString(renderBYOSecurity(spec.Identity))
 
 	if len(spec.Governance) > 0 {
 		// The seams a declarative agent gets by reference, carried across as
@@ -460,4 +464,66 @@ func renderBYO(spec Spec) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+// renderBYOSecurity writes the security context of a bring-your-own agent.
+//
+// It is split in two on one line: what holds whatever is inside the image,
+// and what does not. The first half is unconditional. Dropping every
+// capability, refusing privilege escalation and applying the default seccomp
+// profile cannot be made wrong by an image's contents — an agent that needs
+// any of them is running model output with more authority than the plane it
+// is governed by, and no --image should buy that.
+//
+// The second half — the user and a read-only root filesystem — is a claim
+// ABOUT the image, and kmx has none. It is written when the operator stated
+// one and replaced by a comment when they did not, so the gap is visible in
+// the artifact and not only in the terminal that scrolled past. The manifest
+// is the product here; a reviewer reading the committed file must be able to
+// see what was left off.
+func renderBYOSecurity(id Identity) string {
+	var b strings.Builder
+	b.WriteString("      # Holds whatever the image contains: no capabilities, no way to\n" +
+		"      # gain privileges, the default seccomp filter.\n" +
+		"      securityContext:\n" +
+		"        allowPrivilegeEscalation: false\n" +
+		"        capabilities:\n" +
+		"          drop: [ALL]\n")
+	switch {
+	case id.UID > 0:
+		b.WriteString("        readOnlyRootFilesystem: true\n")
+	case id.Root:
+		b.WriteString("        # Root, on purpose (--run-as-user root). The root filesystem stays\n" +
+			"        # writable because an image that needs root usually needs to write.\n")
+	default:
+		b.WriteString("        # readOnlyRootFilesystem is NOT set: kmx cannot tell whether this\n" +
+			"        # image writes outside /tmp. Add it once you know, together with a\n" +
+			"        # tmp emptyDir if it needs one.\n")
+	}
+	b.WriteString("      podSecurityContext:\n" +
+		"        seccompProfile:\n" +
+		"          type: RuntimeDefault\n")
+	switch {
+	case id.UID > 0:
+		// Both, not just runAsNonRoot: the kubelet cannot prove a named
+		// user is non-root, so runAsNonRoot alone fails at CreateContainer
+		// for every image that spells its USER as a name.
+		b.WriteString(fmt.Sprintf("        runAsNonRoot: true\n        runAsUser: %d\n", id.UID))
+	case id.Root:
+		b.WriteString("        # runAsNonRoot is deliberately NOT set: --run-as-user root.\n")
+	default:
+		b.WriteString("        # runAsNonRoot is NOT set, so this pod may run as root. kmx will not\n" +
+			"        # guess the image's UID: a wrong one fails the pod at CreateContainer\n" +
+			"        # with a message that never names the image. Pass --run-as-user <uid>\n" +
+			"        # (`docker image inspect --format '{{.Config.User}}' <image>`).\n")
+	}
+	if id.UID > 0 {
+		b.WriteString("      volumes:\n" +
+			"        - name: tmp\n" +
+			"          emptyDir: {}\n" +
+			"      volumeMounts:\n" +
+			"        - name: tmp\n" +
+			"          mountPath: /tmp\n")
+	}
+	return b.String()
 }

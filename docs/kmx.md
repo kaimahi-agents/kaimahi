@@ -285,6 +285,9 @@ the guard and waits for Ready.
 | `--out <path>` | where to write it (`-` for stdout) |
 | `--no-apply` | write the manifest and stop |
 | `--dry-run` | server-side dry run against the live CRDs |
+| `--image <ref>` | run **your own** image instead of a declarative agent. kagent deploys it and expects A2A on `:8080`. `spec.byo` has one property, `deployment` — no `modelConfig`, no `tools` — so the governed seams that a declarative agent gets by reference travel as environment instead, and kmx prints each one it injected ([isolation.md](isolation.md)) |
+| `--isolation virtual-node\|none` | where a BYO agent schedules. Needs `--image`. There is no `kata` profile: Kata is a RuntimeClass and kagent's Agent CRD exposes no `runtimeClassName`, so scheduling onto a Kata-capable node without it runs an ordinary container there — `--isolation kata` is refused with that reason rather than shipping the appearance of a VM boundary |
+| `--run-as-user <uid>\|root` | the user a `--image` runs as. kmx will not guess it: see the safety table below |
 
 ### Safety properties, and why each exists
 
@@ -298,6 +301,8 @@ the guard and waits for Ready.
 | **Blast radius is the guard** | Applying goes through the same context guard as every other mutation. |
 | **Preflight on the ModelConfig** | A missing ModelConfig is admitted by the API server and then fails to reconcile in silence — the Agent exists, never goes Ready, and nothing says why. kmx checks first and prints the fix. |
 | **Preflight on tools** | Before apply/dry-run, the referenced RemoteMCPServer must exist, be Accepted, and currently discover every allowlisted tool. A typo cannot become an Agent that silently never reaches Ready. |
+| **A BYO agent is CONFIGURED, NOT PROVEN** | Environment injection is an intention. kmx cannot see inside your image to check it reads `OPENAI_BASE_URL`, so it says so instead of implying the agent is governed because the variables are present. A row in `kmx ledger` is what makes it proven. |
+| **BYO hardening splits on what kmx can know** | The declarative pod is pinned `runAsNonRoot` at UID **1001** with a read-only root filesystem, because that is the user of *kagent's* image — which spells its user as the name `python`, and Kubernetes refuses to start a `runAsNonRoot` container whose user it cannot prove is non-root. Your image is a different image, so a BYO pod always gets the half of the posture no image can invalidate (`drop: [ALL]`, no privilege escalation, `RuntimeDefault` seccomp) and the half that depends on the image only when you state it. `--run-as-user <uid>` buys the full posture; `--run-as-user root` runs as root because you said so; **neither** leaves `runAsNonRoot` and `readOnlyRootFilesystem` unset, with a comment in the manifest saying which two were left off and how to find the number. Pinning 1001 by default would fail your pod at `CreateContainer` over a UID you never chose, in a message that never names your image. |
 | **Governed by default where a plane exists** | If the plane's governed preset is on the cluster, the new agent is metered, budgeted and ledgered from its first call. On a fresh `kmx up` cluster there is no plane, so the keyless preset is used and the ungoverned warning is printed. |
 
 The reserved names `hello-world` and `hello-tools` are refused: they are
