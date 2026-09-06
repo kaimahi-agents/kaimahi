@@ -26,6 +26,13 @@ type Options struct {
 	NodeSize      string
 	NodeCount     int
 	NetworkPolicy string
+	// NetworkPolicySet distinguishes an unset engine from one set to the
+	// empty string. The distinction is load-bearing: unset takes the default
+	// that enforces, while an explicit empty value is the AKS default that
+	// does not, and it must reach its own refusal rather than being quietly
+	// swapped for something that works. The shell script this path carries
+	// draws the same distinction, with `-` rather than `:-`.
+	NetworkPolicySet bool
 
 	// Observability wires Azure-managed monitoring. On by default: an agent
 	// that arrives on a managed cluster with nothing to look at is the gap
@@ -135,9 +142,9 @@ func (o Options) Validate() error {
 			add("--node-count cannot be negative")
 		}
 		// An explicitly empty value must reach this refusal with its message
-		// rather than being swapped for the default: "none" is the AKS
+		// rather than being swapped for the default: no engine is the AKS
 		// default and is exactly the case worth refusing.
-		if np := o.NetworkPolicy; np != "" && !enforcingEngines[np] {
+		if np := o.NetworkPolicy; (np != "" || o.NetworkPolicySet) && !enforcingEngines[np] {
 			add("--network-policy %q is not a policy engine. Accepted: cilium (default), azure, calico. Without an engine AKS ignores NetworkPolicy and the plane's boundary is present but inert", np)
 		}
 	}

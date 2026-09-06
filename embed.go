@@ -69,3 +69,31 @@ var Manifests embed.FS
 //go:embed blueprints
 //go:embed scripts/release-publish.sh
 var Blueprints embed.FS
+
+// Managed holds what the managed-cluster path needs and the local one does
+// not: the two manifests that wire Azure's metrics add-on to the plane, the
+// workbook an operator actually looks at, the egress allowance a hosted model
+// requires, and the shell scripts that already know how to do the Azure work.
+//
+// The scripts are embedded for the same reason `kmx plane` fetches the
+// plane's source rather than expecting it on disk. The front door is `curl |
+// sh` and then one command, with no Go and no checkout — so a path whose
+// first step is `bash scripts/aks-up.sh` would put `git clone` back in front
+// of the one journey this project most wants to be short. They are carried
+// rather than rewritten in Go on purpose: aks-up.sh and aks-down.sh hold
+// several fail-closed rules that were learned the expensive way (an errored
+// query must never read as "the resource group is not there"), and a second
+// implementation of those rules would be a second place for them to be got
+// wrong.
+//
+// They expect a checkout's shape — plane-deploy.sh resolves k8s/plane
+// relative to its own directory, and netpol-probe.sh execs kube-guard.sh out
+// of the directory beside it — so the caller writes them into a temporary
+// tree shaped like this repository rather than into a flat directory.
+//
+//go:embed k8s/observability/network-policy.yaml k8s/observability/scrape-config.yaml
+//go:embed k8s/observability/workbook.json
+//go:embed k8s/egress-copilot.yaml
+//go:embed scripts/aks-up.sh scripts/aks-down.sh scripts/plane-deploy.sh
+//go:embed scripts/netpol-probe.sh scripts/kube-guard.sh
+var Managed embed.FS

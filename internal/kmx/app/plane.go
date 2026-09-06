@@ -256,21 +256,41 @@ func (a *App) buildFromSource(root string) error {
 // kmx's own revision, then package the binary onto the same runtime base
 // plane/Dockerfile uses.
 func (a *App) buildFromModuleProxy() error {
-	rev, err := planebuild.Revision(debug.ReadBuildInfo())
+	context, cleanup, err := a.moduleProxyBuildContext()
 	if err != nil {
 		return err
+	}
+	defer cleanup()
+	return a.Run.Run(a.Cfg.ContainerEngine, "build", "-t", PlaneImage, context)
+}
+
+// moduleProxyBuildContext fetches the plane at kmx's own revision and lays
+// out a build context for it: the static binary and the Dockerfile that
+// copies it onto the runtime base.
+//
+// It is separate from the build itself because two builders consume it. The
+// local path hands it to docker or podman; the managed path hands it to `az
+// acr build`, which uploads the context and builds inside Azure — so a
+// managed cluster needs no container engine on the operator's machine at all.
+// The fetch, the staleness check and the packaging are identical either way,
+// and they stay in one place so they cannot drift apart.
+func (a *App) moduleProxyBuildContext() (string, func(), error) {
+	noop := func() {}
+	rev, err := planebuild.Revision(debug.ReadBuildInfo())
+	if err != nil {
+		return "", noop, err
 	}
 
 	cache, err := a.Cfg.PlaneCacheDir()
 	if err != nil {
-		return err
+		return "", noop, err
 	}
 	if err := os.MkdirAll(cache, 0o755); err != nil {
-		return err
+		return "", noop, err
 	}
 	gopath, err := a.Run.Capture("go", "env", "GOPATH")
 	if err != nil {
-		return fmt.Errorf("cannot read GOPATH: %w", err)
+		return "", noop, fmt.Errorf("cannot read GOPATH: %w", err)
 	}
 
 	targetOS, targetArch := planebuild.TargetPlatform()
@@ -287,41 +307,44 @@ func (a *App) buildFromModuleProxy() error {
 		// variable handles the first two; a GOBIN in Go's own environment
 		// file survives that, so check what the toolchain actually sees.
 		if gobin, err := installer.Capture("go", "env", "GOBIN"); err == nil && strings.TrimSpace(gobin) != "" {
-			return planebuild.GOBINStillSet(strings.TrimSpace(gobin))
+			return "", noop, planebuild.GOBINStillSet(strings.TrimSpace(gobin))
 		}
 	}
 	started := time.Now().Add(-time.Second)
 	if err := a.goInstallPlane(&installer, plan, rev); err != nil {
-		return err
+		return "", noop, err
 	}
 	// Where the binary landed is a decision, not a search: an older binary
 	// left in the same place by an earlier run must not be packaged as if
 	// this build had produced it.
 	info, err := os.Stat(plan.Output)
 	if err != nil {
-		return fmt.Errorf("go install reported success but %s is not there: %w", plan.Output, err)
+		return "", noop, fmt.Errorf("go install reported success but %s is not there: %w", plan.Output, err)
 	}
 	if info.ModTime().Before(started) {
-		return fmt.Errorf("%s was not written by this build (modified %s) — refusing to package a stale binary",
+		return "", noop, fmt.Errorf("%s was not written by this build (modified %s) — refusing to package a stale binary",
 			plan.Output, info.ModTime().Format(time.RFC3339))
 	}
 
 	context, err := os.MkdirTemp("", "kmx-plane-image-*")
 	if err != nil {
-		return err
+		return "", noop, err
 	}
-	defer os.RemoveAll(context)
+	cleanup := func() { _ = os.RemoveAll(context) }
 	binary, err := os.ReadFile(plan.Output)
 	if err != nil {
-		return err
+		cleanup()
+		return "", noop, err
 	}
 	if err := os.WriteFile(filepath.Join(context, planebuild.Binary), binary, 0o755); err != nil {
-		return err
+		cleanup()
+		return "", noop, err
 	}
 	if err := os.WriteFile(filepath.Join(context, "Dockerfile"), []byte(planebuild.Dockerfile()), 0o644); err != nil {
-		return err
+		cleanup()
+		return "", noop, err
 	}
-	return a.Run.Run(a.Cfg.ContainerEngine, "build", "-t", PlaneImage, context)
+	return context, cleanup, nil
 }
 
 // loadImage side-loads the built image into the kind cluster.

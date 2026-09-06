@@ -82,7 +82,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
-		newQuickstartCommand(state), newUpCommand(state),
+		newQuickstartCommand(state), newUpCommand(state), newLiftCommand(state),
 		newPlaneCommand(state), newGovernCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newGrantsCommand(state), newAuditCommand(state), newFlowCommand(state),
 		newUseCommand(state),

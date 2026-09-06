@@ -199,6 +199,24 @@ func ToolchainDir() (string, error) {
 	return filepath.Join(dir, "path"), nil
 }
 
+// LiftRecordDir is where a managed-cluster run records what it created in
+// somebody's subscription.
+//
+// It is deliberately kmx's own state directory rather than anywhere in a
+// checkout. The record carries resource ids, which carry a subscription id,
+// and this repository refuses to hold one; a file written into a working tree
+// is a file that eventually gets committed. It also has to outlive the run: a
+// lift that finishes on Monday is torn down on Tuesday by a different
+// process, and the only safe way to remove what it made is to read back the
+// ids it recorded when it made them.
+func LiftRecordDir() (string, error) {
+	dir, err := stateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "lift"), nil
+}
+
 // PlaneCacheDir is where the proxy binary built for the plane's image is put
 // on the clone-free path. It is kmx's own directory rather than the
 // operator's GOBIN, so building the plane never lands a binary on top of
