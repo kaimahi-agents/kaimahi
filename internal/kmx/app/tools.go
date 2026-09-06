@@ -135,6 +135,9 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		return err
 	}
 
+	// When the credential lands, so a verdict kagent reached before it is
+	// never read as an answer about it.
+	credentialWrittenAt := a.timeNow()
 	if err := a.session(func(c *admin.Client) error {
 		if err := a.issueCredential(c, opt.Credential, GovernOptions{
 			Agent:           opt.Agent,
@@ -170,10 +173,26 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 	// would point it at a server with no discovered tools, and kagent
 	// wires discovered ∩ toolNames — an empty intersection is an agent
 	// with no tools at all, which looks exactly like a policy denial.
-	if err := a.kubectlRun("-n", config_kagentNamespace, "wait",
-		`--for=jsonpath={.status.conditions[?(@.type=="Accepted")].status}=True`,
-		"remotemcpserver/"+opt.Server, "--timeout=300s"); err != nil {
+	//
+	// And it has to be a verdict reached AFTER the credential above was
+	// written. `kubectl wait --for=...Accepted=True` is satisfied by a
+	// cached True from before it and returns instantly, which is how a
+	// credential that cannot be used reported as working for minutes
+	// (seamverdict.go).
+	verdict, err := a.waitForSeamVerdict(config_kagentNamespace, opt.Server, credentialWrittenAt)
+	if err != nil {
 		return err
+	}
+	switch verdict.State {
+	case verdictRejected:
+		return fmt.Errorf("kagent checked the %s seam against the credential just written and was refused: %s\n"+
+			"  The credential and allowlist ARE written; the agent has not been repointed.",
+			opt.Server, verdict.Message)
+	case verdictUnknown:
+		a.notef("The %s seam's status is %s\n"+
+			"  Repointing the agent anyway: the credential and allowlist are written and correct, and\n"+
+			"  a seam kagent has not re-checked is not a seam known to be broken.",
+			opt.Server, verdict.Line(a.timeNow()))
 	}
 	if err := a.patchAgentTools(opt.Server, opt.Agent, tools); err != nil {
 		return err

@@ -967,9 +967,10 @@ func (r *workflowRun) refreshSeam(name string) error {
 	if err := r.app.Run.RunStdin([]byte(manifest), "kubectl", r.app.kubectl("apply", "-f", "-")...); err != nil {
 		return err
 	}
-	r.refreshed[name] = time.Now()
+	writtenAt := r.app.timeNow()
+	r.refreshed[name] = writtenAt
 	r.app.notef("Refreshed the %s credential in plane custody: %s", name, ref.Why)
-	return r.reconnectSeam(ref)
+	return r.reconnectSeam(ref, writtenAt)
 }
 
 // reconnectSeam makes kagent look again.
@@ -978,12 +979,16 @@ func (r *workflowRun) refreshSeam(name string) error {
 // tried and does not retry, so after a refresh it still reads Unauthorized
 // from minutes ago. The release workflow's first health check reported a
 // healthy credential as broken for exactly this reason.
-func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh) error {
+func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh, writtenAt time.Time) error {
 	if ref.Seam == "" {
 		return nil
 	}
-	status, err := r.app.kubectlCapture("-n", "kagent", "get", "remotemcpserver", ref.Seam,
-		"-o", `jsonpath={range .status.conditions[?(@.type=="Accepted")]}{.status}|{.message}{end}`)
+	// The verdict has to be about the credential just written. A cached
+	// `True` from before the refresh is not a pass — it is the answer to a
+	// question about a credential that no longer exists, and treating it as
+	// one is how a rotated seam reported healthy while it was not
+	// (seamverdict.go).
+	verdict, err := r.app.readSeamVerdict("kagent", ref.Seam, writtenAt)
 	if err != nil {
 		// Not fatal — but not silence either. An RBAC denial or a typo in
 		// `seam:` reads exactly like a healthy seam if the error is
@@ -992,11 +997,11 @@ func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh) error {
 		r.app.notef("could not read the %s seam's Accepted condition (%v); not reconnecting it", ref.Seam, err)
 		return nil
 	}
-	if strings.HasPrefix(status, "True") {
+	if verdict.State == verdictAccepted {
 		return nil
 	}
-	r.app.notef("The %s seam last failed to connect (%s); re-checking it against the credential that exists now.",
-		ref.Seam, status)
+	r.app.notef("The %s seam's status is %s; re-checking it against the credential that exists now.",
+		ref.Seam, verdict.Line(r.app.timeNow()))
 	// A mounted Secret is not updated the instant it is written, so the
 	// re-check waits for the projection before deciding.
 	time.Sleep(secretProjectionWait)

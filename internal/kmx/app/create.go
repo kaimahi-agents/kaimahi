@@ -39,9 +39,13 @@ type CreateOptions struct {
 }
 
 type serverCondition struct {
-	Type               string `json:"type"`
-	Status             string `json:"status"`
-	Message            string `json:"message"`
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	// LastTransitionTime is when kagent reached this verdict. It is what
+	// separates a live answer from a cached one about a credential that has
+	// since been replaced (seamverdict.go).
+	LastTransitionTime string `json:"lastTransitionTime"`
 	ObservedGeneration int64  `json:"observedGeneration"`
 }
 

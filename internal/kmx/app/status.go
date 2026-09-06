@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	yaml "go.yaml.in/yaml/v3"
 
@@ -34,6 +35,12 @@ type objectList[T any] struct {
 
 type statusCondition struct {
 	Type, Status string
+	// LastTransitionTime is when kagent reached this verdict. Printed
+	// because the column is a CACHED reconcile result and not a live check:
+	// a credential written since is one this answer says nothing about, and
+	// an operator reading a bare "yes" cannot tell the two apart
+	// (seamverdict.go).
+	LastTransitionTime string `json:"lastTransitionTime"`
 }
 
 type agentStatus struct {
@@ -103,6 +110,10 @@ type podStatus struct {
 	} `json:"status"`
 }
 
+// condition renders one condition as yes / no / unknown.
+//
+// `unknown` rather than `-`: a condition nothing has recorded is not a no,
+// it is nothing, which is the same distinction the governance counts draw.
 func condition(conditions []statusCondition, name string) string {
 	for _, value := range conditions {
 		if value.Type == name {
@@ -112,7 +123,31 @@ func condition(conditions []statusCondition, name string) string {
 			return "no"
 		}
 	}
-	return "-"
+	return "unknown"
+}
+
+// conditionAged is condition() plus when the verdict was reached, for the
+// kagent CRD conditions that are CACHED reconcile results rather than live
+// checks.
+//
+// The age is not decoration. kagent records these when it last tried and
+// does not retry on its own, so "yes" alone reads as a live check and is not
+// one — that is what let a credential written minutes ago show as working
+// when it could not be used at all. A pod's Ready condition is genuinely
+// live and gets plain condition(); these do not.
+func conditionAged(conditions []statusCondition, name string, now time.Time) string {
+	answer := condition(conditions, name)
+	for _, value := range conditions {
+		if value.Type != name {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(value.LastTransitionTime))
+		if err != nil {
+			return answer
+		}
+		return answer + " (" + age(now, at) + " ago)"
+	}
+	return answer
 }
 
 func table(out io.Writer, headers []string, rows [][]string) {
@@ -490,8 +525,9 @@ func (a *App) statusTable() error {
 				servers = append(servers, tool.MCPServer.Name)
 			}
 		}
-		ready, accepted := condition(agent.Status.Conditions, "Ready"), condition(agent.Status.Conditions, "Accepted")
-		allAgents = allAgents && ready == "yes" && accepted == "yes"
+		now := a.timeNow()
+		ready, accepted := condition(agent.Status.Conditions, "Ready"), conditionAged(agent.Status.Conditions, "Accepted", now)
+		allAgents = allAgents && ready == "yes" && strings.HasPrefix(accepted, "yes")
 		agentRows = append(agentRows, []string{agent.Metadata.Name, ready, accepted, agent.Spec.Declarative.ModelConfig, valueOr(strings.Join(servers, ","), "none")})
 	}
 	sort.Slice(agentRows, func(i, j int) bool { return agentRows[i][0] < agentRows[j][0] })
@@ -499,8 +535,8 @@ func (a *App) statusTable() error {
 	modelRows := make([][]string, 0, len(models.Items))
 	allModels := len(models.Items) > 0
 	for _, model := range models.Items {
-		accepted := condition(model.Status.Conditions, "Accepted")
-		allModels = allModels && accepted == "yes"
+		accepted := conditionAged(model.Status.Conditions, "Accepted", a.timeNow())
+		allModels = allModels && strings.HasPrefix(accepted, "yes")
 		modelRows = append(modelRows, []string{model.Metadata.Name, model.Spec.Provider, model.Spec.Model, accepted})
 	}
 	sort.Slice(modelRows, func(i, j int) bool { return modelRows[i][0] < modelRows[j][0] })
@@ -530,6 +566,8 @@ func (a *App) statusTable() error {
 	fmt.Fprintln(a.Out, "\nAgents")
 	table(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows)
 	fmt.Fprintln(a.Out, "  Ready = can serve requests; Accepted = kagent accepted the configuration.")
+	fmt.Fprintln(a.Out, "  Accepted is what kagent decided when it last looked, not a live check: a credential")
+	fmt.Fprintln(a.Out, "  written since then has not been tested, however old that answer is.")
 	fmt.Fprintln(a.Out, "\nModels")
 	table(a.Out, []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows)
 	fmt.Fprintln(a.Out, "\nRuntime")
