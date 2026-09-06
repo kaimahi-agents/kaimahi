@@ -3944,6 +3944,16 @@ step on.
   binds the same blueprint with the same `--set` and asserts the same
   step set, so this cannot drift apart again. That property, not the
   crash, is the deliverable.
+- **`RenderedStep.Blocked` is asserted by NOTHING today.** Checked
+  across the tree: no test references the field. `kmx workflow show`
+  exits zero while rendering blocked steps, so every current check on
+  that path is a string in the output rather than the state that
+  produced it — which is why #109's CI assertion had to pin a rendered
+  line instead. Assert the struct: a step excluded by `when:` and a step
+  with an unresolved reference are both Blocked, with the policy-bound
+  argument absent rather than empty. This is the render half of the
+  agreement property above, and it belongs here rather than in a shell
+  grep.
 - **The reason CI missed it, closed.** Eight green e2e assertions
   coexisted with a path that cannot start, because the fixture blueprint
   (`scripts/ci/workflow-fixture.yaml`) has NO `when:` guards and the
