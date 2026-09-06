@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Fail when a Makefile recipe re-implements what kmx owns.
 
-D27's first condition is that there is ONE implementation of the developer
-journey: kmx implements it, and the Makefile's `up`, `cluster`, `ollama`,
-`model`, `kagent`, `agent`, `tools-agent`, `chat`, `status` and `down` are
-thin aliases that call it. The failure this guards against is not a missing
-alias — that would be obvious — but the slow kind: someone fixes a wait or
-adds a flag in the Makefile because that is where they were looking, and the
-two implementations drift while both stay green.
+There is ONE implementation of the developer journey: kmx implements it, and
+the Makefile's `up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
+`tools-agent`, `chat`, `status` and `down` are thin aliases that call it. That
+is what lets CI prove the code a developer actually runs — a target that
+reimplements the journey instead of delegating breaks the proof. The failure
+this guards against is not a missing alias — that would be obvious — but the
+slow kind: someone fixes a wait or adds a flag in the Makefile because that is
+where they were looking, and the two implementations drift while both stay
+green.
 
 The check asks make itself rather than reading the file, so it sees the
 recipe after every conditional and variable expansion — the same lines a
@@ -18,8 +20,8 @@ may fetch the pinned kagent CLI, and must otherwise reach the cluster ONLY
 through kmx. A bare kubectl, helm or kind command in one of these recipes is
 a second implementation.
 
-The managed path (TARGET=aks) is deliberately NOT checked: milestone 1 does
-not cover AKS, so those recipes are still the Makefile's own.
+The managed path (TARGET=aks) is deliberately NOT checked: kmx does not own
+AKS, so those recipes are still the Makefile's own.
 
 Run:  python3 scripts/check-kmx-delegation.py [--selftest]
 """
@@ -42,9 +44,9 @@ OWNED = {
     "chat": "kmx agent chat",
     "status": "kmx status",
     "down": "kmx down",
-    # Milestone 2 (D28): the governance half. Same rule, same reason — a
-    # wait or a fail-closed check fixed in the recipe rather than in kmx is
-    # a fix the clone-free path never gets.
+    # The governance half. Same rule, same reason — a wait or a
+    # fail-closed check fixed in the recipe rather than in kmx is a fix the
+    # clone-free path never gets.
     "plane": "kmx plane --source .",
     "plane-image": "kmx plane --step image --source .",
     "plane-secrets": "kmx plane --step secrets",
@@ -53,8 +55,8 @@ OWNED = {
     "grants": "kmx grants",
     "tool-audit": "kmx audit tool",
     "approval-audit": "kmx audit approval",
-    # Milestone 3 (D33(5)): the verbs an operator reaches for once the plane
-    # is up. Same rule, same reason — and `use`, `govern-tools` and
+    # The verbs an operator reaches for once the plane is up. Same rule,
+    # same reason — and `use`, `govern-tools` and
     # `ungovern-tools` in particular, because all three ended in the
     # `wait_switched` macro and a fourth copy of that wait is exactly the
     # drift this check exists to catch.
@@ -74,7 +76,7 @@ OWNED = {
     "plane-metrics": "kmx metrics",
     # Credentials that expire: the view an operator watches, and the one
     # verb that moves a deadline. Renewal mints nothing, which is the only
-    # reason a CLI that accepts no credential material can own it (D27).
+    # reason a CLI that accepts no credential material can own it.
     "credentials": "kmx credentials",
     "credential-renew": "kmx credential renew",
 }
@@ -85,10 +87,10 @@ OWNED = {
 # being satisfied by "up --step cluster".
 CARRIES_ARGUMENTS = {
     "chat", "govern", "ledger", "tool-audit",
-    # Milestone 3: a preset, a credential, caps, a request id, a file, a
-    # tool list. Each is empty in this dry run and non-empty in real use, so
-    # the exact form is checked by the empty case and the prefix covers the
-    # rest.
+    # The operator verbs take a preset, a credential, caps, a request id, a
+    # file, a tool list. Each is empty in this dry run and non-empty in real
+    # use, so the exact form is checked by the empty case and the prefix
+    # covers the rest.
     "use", "budget", "approve", "deny", "request",
     "govern-tools", "tool-allow", "tool-allowlist", "backup", "restore",
     # POD= names one replica; without it the recipe expands to a bare
@@ -240,8 +242,8 @@ DELEGATION_SELFTEST = [
     ("chat carries the agent and the question", "chat", "kmx agent chat",
      'bin/kmx agent chat hello-world "Who are you?"', True),
     ("chat with no arguments is not the chat recipe", "chat", "kmx agent chat", "bin/kmx agent", False),
-    # Milestone 2: the plane's steps are exact, the credential-carrying
-    # reads are prefixes.
+    # The governance half: the plane's steps are exact, the
+    # credential-carrying reads are prefixes.
     ("the plane, built from the checkout", "plane", "kmx plane --source .",
      "KIND_CLUSTER='x' bin/kmx plane --source .", True),
     ("the plane without the checkout is not the recipe CI runs", "plane", "kmx plane --source .",
@@ -254,7 +256,8 @@ DELEGATION_SELFTEST = [
      "bin/kmx audit tool hello-tools", True),
     ("the approval trail is not the tool trail", "tool-audit", "kmx audit tool",
      "bin/kmx audit approval", False),
-    # Milestone 3: the noun-grouped tool verbs must not satisfy each other.
+    # The operator verbs: the noun-grouped tool verbs must not satisfy each
+    # other.
     ("the governed-tools switch", "govern-tools", "kmx tools govern",
      "bin/kmx tools govern --credential hello-tools --tools \"k8s_get_resources\"", True),
     ("ungovern is not govern", "govern-tools", "kmx tools govern", "bin/kmx tools ungovern", False),

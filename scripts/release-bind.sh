@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# W32: bind the release credential to ONE repository, at the plane.
+# Bind the release credential to ONE repository, at the plane.
 #
 # The release agent's read tools are on its allowlist, which says WHICH
 # TOOLS it may call and says nothing about which repository it may call
-# them on. This adds the missing half as a P12 standing constraint: the
+# them on. This adds the missing half as a standing constraint: the
 # read tools are callable only with owner=<owner> and repo=<name>, and a
 # call naming any other repository is denied and files a request, exactly
 # as an unlisted tool does.
@@ -17,7 +17,7 @@
 # NOT COMMITTED, because `Azure/aks-desktop` is somebody's project and a
 # public repo's committed table is the wrong place for it — same reason
 # no Azure identifier is committed. It's operator config, so it goes
-# where P15 put operator config: the overlay ConfigMap
+# where operator config goes: the overlay ConfigMap
 # (kaimahi-upstreams-extra), as one fragment.
 #
 # That's the point of using the overlay at all: `make plane` reapplies the

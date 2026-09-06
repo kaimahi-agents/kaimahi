@@ -25,7 +25,7 @@ EXPECT_BODY="${EXPECT_BODY:-}"
 
 body="${1:?usage: tool-raw-probe.sh '<json-rpc body>'}"
 
-# Context safety (P5b): run directly, so nothing has resolved a context
+# Context safety: run directly, so nothing has resolved a context
 # for this script — see the "run directly" note in scripts/kube-guard.sh.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')

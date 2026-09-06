@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply k8s/plane/ to the target cluster (P5b: kind or any registry-backed
+# Apply k8s/plane/ to the target cluster (kind or any registry-backed
 # cluster such as AKS).
 #
 # The only thing that differs between environments is how the proxy pod
@@ -7,11 +7,11 @@
 #
 #   kind — `make plane-image` side-loads the image with `kind load`, and
 #          k8s/plane/proxy.yaml pins `imagePullPolicy: Never`. That pin is
-#          deliberate (P4a deviation, P4b deviation 6): a side-loaded
+#          deliberate: a side-loaded
 #          LOCAL tag must never silently fall back to PULLING a squattable
 #          public name. It stays exactly as committed.
 #
-#   other — the image comes from a registry (P5b: a PRIVATE ACR), so both
+#   other — the image comes from a registry (a PRIVATE ACR), so both
 #          the image reference and the pull policy must change. `Never`
 #          there means ErrImageNeverPull, forever.
 #

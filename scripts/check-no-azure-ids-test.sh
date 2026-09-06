@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Prove scripts/check-no-azure-ids.sh still catches every identifier
 # class it claims to — and still lets the placeholder forms through. A
-# scanner is a gate that fails OPEN when a pattern quietly stops matching
-# (P5b's lesson about probes applies to gates), so CI runs this BEFORE
-# the tree scan and trusts the scanner's verdict only after it passes.
+# scanner is a gate that fails OPEN when a pattern quietly stops matching,
+# so CI runs this BEFORE the tree scan and trusts the scanner's verdict
+# only after it passes.
 #
 # Each case is one file under a temp dir, scanned by path (the scanner's
 # explicit-paths mode), so the repo's own contents never affect it.

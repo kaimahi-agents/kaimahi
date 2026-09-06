@@ -18,11 +18,12 @@
 #                                          store it as the agent-side
 #                                          Secret $GOVERNED_SECRET
 #                                          (default kaimahi-governed-token;
-#                                          the P4b tools credential uses
+#                                          the tools credential uses
 #                                          GOVERNED_SECRET=kaimahi-tools-token;
 #                                          GOVERNED_SECRET=- DISCARDS the
-#                                          token — P7b's signed hooks need
-#                                          the identity, never a bearer;
+#                                          token — signed inbound hooks
+#                                          need the identity, never a
+#                                          bearer;
 #                                          SECRET_NAMESPACE overrides the
 #                                          kagent default)
 #                                          (an optional third argument, or
@@ -55,7 +56,7 @@
 #                                          call, never "any call")
 #   plane-admin.sh grants [name]           list grants (with liveness)
 #   plane-admin.sh approval-audit [name]   show the approvals audit trail
-#   plane-admin.sh inbound-audit [hook]    show the inbound event trail (P7b)
+#   plane-admin.sh inbound-audit [hook]    show the inbound event trail
 set -euo pipefail
 umask 077
 
@@ -185,9 +186,9 @@ case "$cmd" in
     fi
     [ "$status" = 201 ] || { echo "issue failed (HTTP $status):" >&2; cat "$workdir/resp" >&2; exit 1; }
     if [ "$GOVERNED_SECRET" = - ]; then
-      # P7b signed hooks: the credential is an IDENTITY (grants, audit);
-      # the caller proves it with the hook's signing secret, so the
-      # bearer token is discarded here — it exists in $workdir only until
+      # For a signed inbound hook the credential is an IDENTITY (grants,
+      # audit); the caller proves it with the hook's signing secret, so
+      # the bearer token is discarded here — it exists in $workdir only until
       # the trap removes it, and nowhere else, ever.
       echo "Credential '$name' issued as an identity only; its bearer token was discarded, not stored." >&2
       exit 0
@@ -358,7 +359,7 @@ fmt = "%-36s %-19s %-12s %-8s %-18s %-34s %s"
 if rows:
     print(fmt % ("id", "created (UTC)", "credential", "kind", "subject", "detail", "call"))
 for r in rows:
-    # The call (P12) is what a human is actually approving: an approver
+    # The call is what a human is actually approving: an approver
     # who cannot see the transaction is the whole problem restated.
     print(fmt % (r["id"], r["created_at"][:19], r["credential"], r["kind"], r["subject"],
                  r["detail"], r.get("arg_summary") or "-"))
@@ -409,7 +410,7 @@ print(f'"'"'Granted: {g["credential"]} {g["kind"]}/{g["subject"]} — {", ".join
     case "$subject" in
       (*[!A-Za-z0-9._-]*|'') echo "invalid subject '$subject'" >&2; exit 2 ;;
     esac
-    # P12: a tool request names the CALL it is about. The arguments are
+    # A tool request names the CALL it is about. The arguments are
     # embedded as JSON (validated here so a typo fails before the admin
     # port sees it); the plane computes the digest with the gateway's own
     # code, so this request and the agent's retry are the same call.
@@ -452,7 +453,7 @@ if rows:
     print(fmt % ("id", "credential", "kind", "subject", "live", "expires (UTC)", "uses", "amount", "created (UTC)", "decided by", "binds", "cred expires (UTC)"))
 for g in rows:
     uses = str(g["uses"]) + ("/" + str(g["max_uses"]) if g.get("max_uses") is not None else "")
-    # A tool grant admits ONE call (P12): "binds" is that call's digest.
+    # A tool grant admits ONE call: "binds" is that call's digest.
     # "verb-level" marks the closed legacy class — a grant minted before
     # argument binding, which admits any arguments; none can be created.
     if g["kind"] != "tool":

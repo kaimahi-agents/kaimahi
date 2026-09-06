@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refuse to carry Azure identifiers in the tree (P5b guardrail).
+# Refuse to carry Azure identifiers in the tree.
 #
 # This repo is public. A committed subscription or tenant GUID
 # fingerprints the owner; a committed registry login server or cluster
@@ -19,10 +19,10 @@
 #   - *.azmk8s.io  (an AKS API-server FQDN is per-cluster and per-tenant)
 #   - a LITERAL <name>.azurecr.io — registry login servers must always be
 #     built from a variable or an obvious placeholder, never a real name
-#   - a LITERAL <label>.<region>.cloudapp.azure.com (P8: the public edge's
+#   - a LITERAL <label>.<region>.cloudapp.azure.com (the public edge's
 #     DNS label names a load balancer someone can later own — same rule,
 #     variable or placeholder only)
-#   - a public IPv4 address (P8: the edge's public IP). Private, loopback,
+#   - a public IPv4 address (the edge's public IP). Private, loopback,
 #     link-local, CGNAT, multicast/reserved, the unspecified/broadcast
 #     addresses and the RFC 5737 documentation ranges are not
 #     identifiers; a short allowlist of well-known public resolvers

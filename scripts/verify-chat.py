@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fail-closed check on `make chat` output: require an A2A task with
 status.state == "completed" and a non-empty reply. Reads the captured chat
-output from the file named in argv[1] (P1 shipped this inline in CI; P2
-factors it out so the keyless preset-switch e2e can reuse it).
+output from the file named in argv[1].
 
-P3 adds optional positional args for the tool path:
+Optional positional args cover the tool path:
   verify-chat.py FILE [TOOL [SUBSTRING]]
 With TOOL, the task history must additionally contain a function_call for
 that tool name AND a successful (isError == false) function_response for it

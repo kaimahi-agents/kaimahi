@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore a `make backup` file into the running plane's database (P9),
+# Restore a `make backup` file into the running plane's database,
 # REPLACING its contents: the dump drops and recreates every table.
 #
 # psql runs INSIDE the Postgres pod over its unix socket and reads the

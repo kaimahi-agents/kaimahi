@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision the Azure side of the P5b managed-cluster path: a resource
+# Provision the Azure side of the managed-cluster path: a resource
 # group, a PRIVATE Azure Container Registry, and an AKS cluster with pull
 # rights on that registry.
 #
@@ -20,7 +20,7 @@
 # `--network-policy` builds a cluster whose CNI ignores NetworkPolicy
 # objects entirely: the plane's policies (k8s/plane/network-policy.yaml)
 # would be present and inert, which reads as protection and is worse than
-# none (the P7a finding). So this script ALWAYS provisions a policy
+# none. So this script ALWAYS provisions a policy
 # engine, and refuses a value that would not enforce:
 #
 #   cilium  (default) Azure CNI Overlay powered by Cilium. Microsoft's
@@ -157,7 +157,7 @@ else
 fi
 
 # --- registry -------------------------------------------------------------
-# PRIVATE by design (D15): --admin-enabled is left off, so the only way in
+# PRIVATE by design: --admin-enabled is left off, so the only way in
 # is Entra auth. Publishing a public image would be an outward-facing
 # artifact and a soft claim on a provisional project name.
 if az acr show --name "$ACR" --resource-group "$RG" >/dev/null 2>&1; then
@@ -211,8 +211,9 @@ if [ "$cluster_state" = true ]; then
   # but reimages every node pool at once, and moving to cilium is a
   # dataplane upgrade with its own prerequisites. Neither belongs behind a
   # script whose contract is "create". Refuse, and say what the cluster
-  # actually has, so a pre-P7a cluster cannot be mistaken for an enforcing
-  # one just because this script now asks for an engine.
+  # actually has, so a cluster created before this script demanded an
+  # engine cannot be mistaken for an enforcing one just because this
+  # script now asks for one.
   if ! have=$(cluster_policy); then
     echo "aks-up: cannot read the existing cluster's network policy engine —" >&2
     echo "  refusing to assume it enforces. Check: az aks show ... --query networkProfile" >&2
@@ -250,7 +251,7 @@ else
     --output none
 fi
 
-# The claim this lane exists for, read back from the control plane rather
+# The claim this script exists for, read back from the control plane rather
 # than inferred from a create that returned 0. Enforcement itself is a
 # CNI property the API server cannot vouch for; that proof is
 # `TARGET=aks make netpol-verify`, which the next-steps text below insists

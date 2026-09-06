@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy the PLAIN, non-Kaimahi MCP server the generic onboarding path is
-# proven against (P15, docs/govern-your-agent.md).
+# proven against (docs/govern-your-agent.md).
 #
 # Nothing about this server is Kaimahi's: it lives in its own namespace,
 # speaks plain http, offers its own two tools, and has no NetworkPolicy,

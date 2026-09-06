@@ -2,7 +2,7 @@
 """A plain in-cluster MCP server that Kaimahi did not write.
 
 This exists for one reason: proving the GENERIC onboarding path
-(P15, docs/govern-your-agent.md). A proof driven against `kagent-tools`,
+(docs/govern-your-agent.md). A proof driven against `kagent-tools`,
 `slack`, `github` or the demo ERP proves nothing about onboarding an
 arbitrary server, because each of those four has a hand-written
 NetworkPolicy pair, a hand-written table entry and a hand-written

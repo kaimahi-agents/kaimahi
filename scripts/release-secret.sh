@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# W32: capture the RELEASE agent's GitHub token stdin-only and store it as
+# Capture the RELEASE agent's GitHub token stdin-only and store it as
 # the plane-side Secret the github-release upstream reads
 # (kaimahi-release-pat, key: token) — after PROVING, fail-closed, what can
 # be proven about it.
 #
 # scripts/github-secret.sh's sibling, and the difference is the point:
-# that token is read-only and feeds the P10 demo. This one can change a
-# real repository, so it gets its own Secret, upstream entry and
-# allowlist, and the P10 seam keeps the blast radius it was reviewed
+# that token is read-only and feeds the hosted-upstream demo. This one can
+# change a real repository, so it gets its own Secret, upstream entry and
+# allowlist, and the read-only seam keeps the blast radius it was reviewed
 # with.
 #
 # Which token: a FINE-GRAINED personal access token, scoped to ONE
@@ -112,8 +112,8 @@ EOF
 # binds owner and repo in its digest. That's a real control that doesn't
 # rest on this script guessing.
 
-# 3. Its deadline, said now rather than when it bites — P16's rule for
-# Kaimahi's own credentials, applied here.
+# 3. Its deadline, said now rather than when it bites — the rule Kaimahi's
+# own credentials follow, applied here.
 #
 # Reported, not enforced: an absent header means "this response didn't
 # carry one", not "this token never expires". The check above this one

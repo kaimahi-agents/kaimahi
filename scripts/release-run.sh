@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cut a release: the agent does the work, a human approves it
-# (docs/release-agent.md, D38).
+# (docs/release-agent.md).
 #
 # ONE COMMAND, AND THE MACHINE DOES THE WAITING. That came from the person
 # this was built for: "the entire point of this is for me to not run
@@ -9,7 +9,7 @@
 # approvals, polls the builds, and interrupts a person once per
 # consequential call — from Slack or the operator's chair.
 #
-# The agent is narrow (D38(1)): it reads what shipped last, reads what
+# The agent is narrow: it reads what shipped last, reads what
 # merged since, and drafts the notes. That's where judgement earns its
 # keep. It never decides to ship, and it never carries a byte — the
 # release artifacts are built and published by the pipelines it triggers.
@@ -17,10 +17,10 @@
 # WHAT THIS SCRIPT DOES THAT THE AGENT CAN'T BE TRUSTED WITH: it files the
 # approval request itself, for the exact call the operator asked for. A
 # model that proposed a different branch would file a request too, and it
-# would look identical in `make approvals`. P13 learned that the
-# expensive way — on its first live run the agent filed a payment for a
-# different invoice at the same amount, and the approval landed on the
-# wrong one.
+# would look identical in `make approvals`. The accounts-payable demo
+# learned that the expensive way — on its first live run the agent filed a
+# payment for a different invoice at the same amount, and the approval
+# landed on the wrong one.
 #
 # Usage:
 #   make release GITHUB_REPO=owner/name VERSION=v1.2.3 [options]
@@ -119,7 +119,7 @@ admin() { bash "$here/plane-admin.sh" "$@"; }
 # So the driver refreshes it. It runs on the operator's machine, az is
 # already there, and the gateway reads the credential per request so
 # nothing needs restarting. Capturing a credential is otherwise a human's
-# job (D27); this is that capture, done for them when it's needed, with
+# job; this is that capture, done for them when it's needed, with
 # the token never leaving a pipe.
 refresh_ado() {
   [ -n "$ado_org" ] || return 0
@@ -339,7 +339,7 @@ Do not create anything. Report only what the tools told you." \
 
 # --- 1b. compose the notes --------------------------------------------
 #
-# A separate turn, because of a bug this lane shipped: do_propose's whole
+# A separate turn, because of a bug this driver shipped: do_propose's whole
 # reply became the release body, so the first real release got 80 lines of
 # the agent's working notes — methodology, a 26-row PR inventory, a "needs
 # a human" section. The proposal is for a person to read before approving;
@@ -459,7 +459,7 @@ do_publish() {
 # Polling lives here, in shell, not inside an agent turn. A turn is
 # request/response and a build is minutes; a model re-deciding "done yet?"
 # every minute burns budget on a question the status tool answers exactly,
-# and puts an unbounded wait inside a bounded turn. The P7b inbound bridge
+# and puts an unbounded wait inside a bounded turn. The inbound bridge
 # could deliver a callback instead — rejected because it needs a public
 # HTTPS edge that only exists on AKS, and its generic hooks turn the
 # webhook body into the agent's prompt verbatim.

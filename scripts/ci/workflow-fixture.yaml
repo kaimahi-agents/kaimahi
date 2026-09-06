@@ -1,6 +1,6 @@
 # A blueprint for CI, aimed at the synthetic hosted upstream.
 #
-# Keyless (D14): mcp-echo is scripts/ci/mcp-echo-server.py behind the same
+# Keyless: mcp-echo is scripts/ci/mcp-echo-server.py behind the same
 # gateway as a real hosted seam, and its policy declarations are COPIED
 # from the committed table by scripts/ci/synthetic-upstream.sh, so this
 # fixture cannot drift away from what ships.
@@ -11,7 +11,7 @@
 # exact call named on the command line, and that it refuses to ride a
 # grant somebody gave earlier.
 #
-# TWO OF ITS THREE STEPS ARE CONDITIONAL, and that is the point of W36.
+# TWO OF ITS THREE STEPS ARE CONDITIONAL, and that is the point.
 # This fixture used to have no `when:` guard anywhere while the carried
 # release blueprint had four, so eight green assertions here coexisted
 # with a `kmx workflow run` that could not start ANY blueprint with a
@@ -54,7 +54,7 @@ parameters:
     help: >-
       ask the agent to survey the pull requests first. Omitted, the read step is
       not in the run at all — which is how CI drives this workflow end to end
-      with no agent turn and no model credential (D14).
+      with no agent turn and no model credential.
     pattern: '^[A-Za-z0-9._/-]{1,200}$'
   hotfix_branches:
     type: string_list
@@ -62,7 +62,8 @@ parameters:
     help: >-
       extra branches to cut, comma-separated. The step that needs them is guarded
       by `when: hotfix_branches`, so leaving them out must leave the step OUT of
-      the run rather than refuse to start it — the circular demand W35 shipped.
+      the run rather than refuse to start it — the circular demand the first
+      driver shipped with.
 
 seams:
   mcp-echo:
@@ -70,8 +71,9 @@ seams:
       list_pull_requests: [owner, repo, state, base]
       create_branch:      [owner, repo, branch, from_branch]
     # Nothing is allowlisted. The read is admitted by its BOUND and the
-    # write by a human, which is the posture P12 argues for: where a
-    # constraint exists it binds, so it is a bound and not another way in.
+    # write by a human, which is the posture argument-level policy takes:
+    # where a constraint exists it binds, so it is a bound and not another
+    # way in.
     allow: []
     bound:
       list_pull_requests:

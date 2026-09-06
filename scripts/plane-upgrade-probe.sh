@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# W28: prove that upgrading the governance plane across a real schema gap
+# Prove that upgrading the governance plane across a real schema gap
 # keeps the data, and that a half-applied migration cannot serve traffic.
 #
-# The plane has run goose migrations since P4a and had never once been
-# tested going from an older version to a newer one. Every e2e shard starts
+# The plane has run goose migrations from the beginning and had never once
+# been tested going from an older version to a newer one. Every e2e shard starts
 # from an empty database, so "the migrations apply" had only ever been
 # proven on an empty database — which is the case where they cannot lose
 # anything.
@@ -43,8 +43,8 @@
 set -euo pipefail
 umask 077
 
-# The version we upgrade FROM: P8b (#41), the last commit before P9 added
-# the spend-reservation table. Everything since is crossed in one go — at
+# The version we upgrade FROM: the last commit (#41) before the
+# spend-reservation table landed. Everything since is crossed in one go — at
 # the time of writing 00007 through 00010 — and those migrations alter
 # tables that already hold the seeded rows, which is the case worth
 # testing. The gap therefore WIDENS on its own as migrations land; the

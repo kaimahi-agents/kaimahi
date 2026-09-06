@@ -3,7 +3,7 @@
 # kmh_ token, doing the full MCP streamable-HTTP handshake (initialize →
 # notifications/initialized → tools/call, session header relayed) — and
 # require it to SUCCEED: a JSON-RPC result with no error and no
-# isError:true content. The P4c demo's positive half; the negative half
+# isError:true content. The approvals demo's positive half; the negative half
 # is tool-denial-probe.sh.
 #
 # Custody rules (docs/COORDINATION.md): the token travels only through
@@ -26,7 +26,7 @@ case "$tool" in
   (*[!A-Za-z0-9._-]*|'') echo "invalid tool name '$tool'" >&2; exit 2 ;;
 esac
 
-# Context safety (P5b): unlike a make target, this script is run directly,
+# Context safety: unlike a make target, this script is run directly,
 # so nothing has resolved a context for it — see the "run directly" note in
 # scripts/kube-guard.sh.
 #

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove budget enforcement is EXACT across replicas (P9, D24): fire N
+# Prove budget enforcement is EXACT across replicas: fire N
 # chat completions at the proxy AT ONCE, spread across every running
 # replica (a port-forward per pod, so both replicas are in the race by
 # construction), with the governed kmh_ token, and require that exactly
@@ -31,7 +31,7 @@ EXPECT_ADMITTED="${EXPECT_ADMITTED:-1}"
 BASE_PORT="${BASE_PORT:-18180}"
 n="${1:-8}"
 
-# Context safety (P5b): run directly, so guard the effective context of
+# Context safety: run directly, so guard the effective context of
 # $KUBECTL (see scripts/tool-call-probe.sh for why not an ambient KUBE_CTX).
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')

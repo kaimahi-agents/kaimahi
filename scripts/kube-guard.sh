@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Context safety for every MUTATING make target (P5b).
+# Context safety for every MUTATING make target.
 #
-# Before P5b the tooling could only ever reach a kind cluster:
+# The tooling could once only ever reach a kind cluster:
 # `KUBE_CTX := kind-$(KIND_CLUSTER)` prefixed every context with `kind-`,
 # so a typo produced "context not found", not a write to production. Once
 # KUBE_CTX is overridable that safety net is gone, and this repo's own
@@ -30,7 +30,7 @@
 # whatever `kubectl config current-context` happens to be — and
 # `az aks get-credentials` rewrites that silently, so after provisioning
 # an AKS cluster a probe meant for kind quietly aims at the managed one.
-# (Observed while verifying P5b.) They resolve the effective context with
+# They resolve the effective context with
 # `kubectl config view --minify`, which honours a --context carried inside
 # $KUBECTL; `config current-context` ignores that flag and would guard a
 # different cluster than the one acted on.

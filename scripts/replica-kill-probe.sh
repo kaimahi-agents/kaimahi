@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove the plane survives losing a replica mid-cycle (P9): with two
+# Prove the plane survives losing a replica mid-cycle: with two
 # replicas Running, start a governed chat on replica A, delete A while
 # that call is in flight, send the next call to the survivor B, and
 # require BOTH to be answered 200 — the in-flight one because the

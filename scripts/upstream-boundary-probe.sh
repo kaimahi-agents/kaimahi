@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prove that ONLY the plane's proxy can reach an onboarded MCP server
-# (P15, docs/govern-your-agent.md) — the half of the scaffolded
+# (docs/govern-your-agent.md) — the half of the scaffolded
 # NetworkPolicy pair that makes governance a boundary rather than a
 # convention. Without it any pod in the cluster could call the server
 # directly, around the allowlist, the constraints, the grants and the

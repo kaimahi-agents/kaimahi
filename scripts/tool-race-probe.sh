@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove grant consumption is EXACT across replicas (P9, D24): run M
+# Prove grant consumption is EXACT across replicas: run M
 # complete MCP sequences (initialize → notifications/initialized →
 # tools/call) AT ONCE against the gateway, spread across every running
 # replica (a port-forward per pod), with the governed kmh_ token, for a

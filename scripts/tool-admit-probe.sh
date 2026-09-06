@@ -40,7 +40,7 @@ case "$tool" in
   (*[!A-Za-z0-9._-]*|'') echo "invalid tool name '$tool'" >&2; exit 2 ;;
 esac
 
-# Context safety (P5b): unlike a make target, this script is run directly,
+# Context safety: unlike a make target, this script is run directly,
 # so nothing has resolved a context for it — see the "run directly" note in
 # scripts/kube-guard.sh.
 #

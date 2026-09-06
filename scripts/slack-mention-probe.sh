@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deliver ONE synthetic app_mention to the slack-events hook exactly as
-# Slack's Events API would (P8b): an event_callback envelope, signed v0
+# Slack's Events API would: an event_callback envelope, signed v0
 # with the hook's signing secret from the kaimahi-inbound-signing Secret,
 # in the channel the hook is bound to (read from the same Secret key the
 # plane reads), from the given user. CI's stand-in for a person typing
@@ -48,7 +48,7 @@ case "$EXPECT" in
 esac
 event_id="${SLACK_EVENT_ID:-Ev$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n' | tr 'a-f' 'A-F')}"
 
-# Context safety (P5b): see scripts/inbound-probe.sh — the context is
+# Context safety: see scripts/inbound-probe.sh — the context is
 # derived from $KUBECTL, never from an ambient KUBE_CTX.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')

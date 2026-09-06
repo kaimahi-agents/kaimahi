@@ -15,12 +15,12 @@
 # So on a cluster Slack can actually reach, the scenarios hand the
 # decision to this script instead. NOTHING HERE APPROVES ANYTHING. It
 # prints the line for a person to type, waits for the plane to record
-# THEIR decision — arriving the P8a way, over the internet through the
-# edge, and parsed the P8b way as an app-mention command — and fails
+# THEIR decision — arriving over the internet through the public edge,
+# and parsed as an app-mention command — and fails
 # closed if the decision never comes, comes from somebody else, or is a
 # denial.
 #
-# W32 generalised it from the accounts-payable scenario it was written for
+# It was generalised from the accounts-payable scenario it was written for
 # (it was scripts/ap-await-approval.sh) so the release driver can reuse
 # the checks rather than reimplement them: the credential is a parameter,
 # and a user id of "-" means "whoever is entitled to decide" — for a
@@ -156,8 +156,9 @@ fi
 # having left the pending list — a denial empties it too.
 #
 # The last of the three is the one that matters most here, because two
-# requests for the same tool can be pending at once (that is the P12
-# guarantee, and it is the normal case in these scenarios). Without it, a
+# requests for the same tool can be pending at once (a grant binds to one
+# call, not to its verb, and that is the normal case in these
+# scenarios). Without it, a
 # human who approved the OTHER request and denied this one would satisfy
 # every other check.
 admin approval-audit "$CRED_AP" > "$work/audit.out"

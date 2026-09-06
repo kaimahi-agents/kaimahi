@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deliver ONE event to a P7b inbound hook and assert exactly what the
+# Deliver ONE event to an inbound hook and assert exactly what the
 # plane did with it. The demo's `make inbound-fire` and CI's fail-closed
 # assertions both run through here.
 #
@@ -55,7 +55,7 @@ case "$delivery" in
   (*[!A-Za-z0-9._:-]*|'') echo "invalid DELIVERY '$delivery'" >&2; exit 2 ;;
 esac
 
-# Context safety (P5b): run directly, so resolve the effective context
+# Context safety: run directly, so resolve the effective context
 # from $KUBECTL and guard it — see scripts/tool-call-probe.sh for why an
 # ambient KUBE_CTX is deliberately NOT honoured here.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args

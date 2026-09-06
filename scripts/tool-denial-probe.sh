@@ -9,7 +9,7 @@
 # token travels only through pipes and 0600 files (curl reads the auth
 # header from a file) — never argv, env listings, or logs.
 #
-# Since P12 a denial is about a CALL, not a verb: the optional
+# A denial is about a CALL, not a verb: the optional
 # json-arguments name the call to attempt, and the approval request the
 # denial files is welded to it. Two attempts with different
 # policy-relevant arguments therefore file two requests, and the retry
@@ -36,7 +36,7 @@ d = json.loads(sys.argv[1])
 assert isinstance(d, dict), "arguments must be a JSON object"' "$args" \
   || { echo "invalid json-arguments '$args'" >&2; exit 2; }
 
-# Context safety (P5b): unlike a make target, this script is run directly,
+# Context safety: unlike a make target, this script is run directly,
 # so nothing has resolved a context for it — see the "run directly" note in
 # scripts/kube-guard.sh.
 #

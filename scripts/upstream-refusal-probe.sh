@@ -2,8 +2,8 @@
 # Prove the MCP gateway REFUSES a hosted upstream fail-closed: send a
 # tools/call for an ALLOWLISTED tool (TOOL, default `echo`) to the named
 # upstream with the governed kmh_ token and require exactly the expected
-# HTTP status and a body naming the reason (P10,
-# docs/hosted-upstreams.md). The call is admitted by the allowlist and
+# HTTP status and a body naming the reason
+# (docs/hosted-upstreams.md). The call is admitted by the allowlist and
 # then refused at the dial or by the upstream's answer, so the refusal
 # lands on an `allowed 502` audit row with the reason in its detail.
 # Exits nonzero on any other outcome — including the call succeeding.
@@ -38,7 +38,7 @@ case "$UPSTREAM" in
   (*[!A-Za-z0-9._-]*|'') echo "invalid upstream name '$UPSTREAM'" >&2; exit 2 ;;
 esac
 
-# Context safety (P5b): derived from $KUBECTL, never from an inherited
+# Context safety: derived from $KUBECTL, never from an inherited
 # KUBE_CTX — see scripts/tool-denial-probe.sh for why.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')

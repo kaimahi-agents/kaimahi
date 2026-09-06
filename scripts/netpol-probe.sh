@@ -48,7 +48,7 @@ INTERNET_TARGET="${INTERNET_TARGET:-1.1.1.1}"
 COPILOT_EGRESS="${COPILOT_EGRESS:-0}"
 SETTLE_SECONDS="${SETTLE_SECONDS:-5}"
 
-# Context safety (P5b): run directly, so nothing has resolved a context
+# Context safety: run directly, so nothing has resolved a context
 # for us — derive it from $KUBECTL, never from an inherited KUBE_CTX
 # (see scripts/tool-denial-probe.sh for why).
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
@@ -74,7 +74,7 @@ if ! pg_ip=$($KUBECTL -n "$NAMESPACE" get svc kaimahi-postgres -o jsonpath='{.sp
   exit 1
 fi
 # Only a genuine NotFound may drop the ollama column (a Copilot-only
-# managed cluster has no ollama, D15). Any other failure — RBAC, a
+# managed cluster has no ollama). Any other failure — RBAC, a
 # transient API error, a wrong context — must not quietly turn into
 # "nothing to check" and shrink every row's assertions.
 ollama_ip=""
@@ -115,7 +115,7 @@ r net80 nc -z -w 5 $INTERNET_TARGET 80
 # start_probe <ns> <name> <labels-json> — create a throwaway pod that runs
 # the checks and exits; its log is the result. Creating every probe pod at
 # once and collecting them afterwards is what keeps this step near the
-# duration of ONE probe rather than the sum of five (W25): each pod's ~25s of
+# duration of ONE probe rather than the sum of five: each pod's ~25s of
 # deliberate timeouts is wall-clock nobody has to spend twice. The pods are
 # independent — different pods, different labels, read-only checks against
 # unrelated targets — and the RESULTS are still evaluated in the order below,

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """A tiny MCP (streamable-HTTP) echo server over https — CI's SYNTHETIC
-hosted upstream (P10, docs/hosted-upstreams.md).
+hosted upstream (docs/hosted-upstreams.md).
 
 It stands in for a real internet MCP server so the hardened dialer, the
 opt-in egress allowance and the gateway's audit rows can be proven on a
-kind cluster with no GitHub token anywhere (D14). It is deliberately
+kind cluster with no GitHub token anywhere. It is deliberately
 minimal: no sessions, no SSE, no resources — just the four methods the
 gateway relays, answered as plain JSON.
 
@@ -15,17 +15,17 @@ gateway relays, answered as plain JSON.
                      echo_write      exists only so a NOT-allowlisted
                                      tool has a name
                      pay_invoice     declared policy fields and a
-                                     money-shaped argument, for the P12
+                                     money-shaped argument, for the
                                      standing-constraint checks
-                     list_pull_requests  (W32) a read bound to one
-                                     repository by a standing constraint
-                     create_branch   (W32) a consequential call whose
-                                     approval must bind the artifact
-                     actions_run_trigger (W32) a CONSOLIDATED DISPATCHER:
+                     list_pull_requests  a read bound to one repository
+                                     by a standing constraint
+                     create_branch   a consequential call whose approval
+                                     must bind the artifact
+                     actions_run_trigger a CONSOLIDATED DISPATCHER:
                                      one tool whose `method` argument
                                      selects what it really does, which is
-                                     how both real servers this lane talks
-                                     to are shaped
+                                     how both real servers the release
+                                     agent talks to are shaped
 
   It also honours X-MCP-Tools, the way GitHub's and Azure DevOps' hosted
   servers do: when the header is present, tools/list offers only the
@@ -62,7 +62,7 @@ TOOLS = [
      "inputSchema": _obj(text="string")},
     {"name": "pay_invoice", "description": "Echo the arguments back (a stand-in for a consequential tool).",
      "inputSchema": _obj(invoice_id="string", amount_cents="integer", payee_id="string")},
-    # W32, shaped exactly like the tools the release agent really calls.
+    # Shaped exactly like the tools the release agent really calls.
     {"name": "list_pull_requests", "description": "Echo the arguments back (a read bound to one repository).",
      "inputSchema": _obj(owner="string", repo="string", state="string", base="string")},
     {"name": "create_branch", "description": "Echo the arguments back (a consequential call).",

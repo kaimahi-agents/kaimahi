@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prove what the cluster exposes to the internet — and that it is exactly
-# the inbound edge on 443 and nothing else (P8).
+# the inbound edge on 443 and nothing else.
 #
 # Two views, both required:
 #   1. Cluster-side: the ONLY Service of type LoadBalancer in ANY namespace

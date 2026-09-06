@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P13: the manipulated invoice (docs/ap-demo.md, "When the invoice tries
+# The manipulated invoice (docs/ap-demo.md, "When the invoice tries
 # to give the orders").
 #
 # INV-88140 is INV-88134 resubmitted, and its vendor-supplied text tells
@@ -86,10 +86,11 @@ deny()  { bash "$here/tool-denial-probe.sh" "$1" "$2"; }
 
 # request_id <tool> <summary substring> -> the pending request for THAT
 # call. Selected by its summary, never by position: several requests for
-# one tool can be pending at once, which is exactly the P12 guarantee.
+# one tool can be pending at once, because a grant binds to one call's
+# arguments and not to its verb.
 #
 # The substring must name EVERY policy-relevant field of the call, not
-# just the memorable ones. A grant is welded to the exact call (P12), so
+# just the memorable ones. A grant is welded to the exact call, so
 # a selector that is less specific than the digest can pick a DIFFERENT
 # pending request that happens to share the fields it does name — and
 # then a human approves one call while the script makes another. That is

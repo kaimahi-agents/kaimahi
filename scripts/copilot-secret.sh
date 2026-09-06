@@ -24,9 +24,9 @@ umask 077
 CLIENT_ID="01ab8ac9400c4e429b23" # GitHub's VS Code OAuth app (Copilot-entitled)
 TOKEN_FILE="${KAIMAHI_COPILOT_TOKEN_FILE:-$HOME/.config/kaimahi/copilot-oauth-token}"
 KUBECTL="${KUBECTL:-kubectl}"
-# Defaults store the token for the ungoverned P2 preset; the P4a plane
-# overrides both (make plane-copilot-secret) so the REAL token lands only
-# where the proxy reads it.
+# Defaults store the token for the ungoverned direct-to-Copilot preset;
+# the plane overrides both (make plane-copilot-secret) so the REAL token
+# lands only where the proxy reads it.
 NAMESPACE="${COPILOT_SECRET_NAMESPACE:-kagent}"
 SECRET_NAME="${COPILOT_SECRET_NAME:-github-copilot-token}"
 
@@ -100,7 +100,7 @@ json_field "$workdir/exchange.json" token > "$workdir/copilot-token"
   echo "exchange response contained no token — refusing to store a Secret" >&2
   exit 1; }
 
-# P5b: allow this to run BEFORE the plane is deployed, so the proxy pod
+# Allow this to run BEFORE the plane is deployed, so the proxy pod
 # mounts the credential at start rather than waiting on kubelet to project
 # a Secret that appeared later (see docs/aks.md — that lag is a
 # real first-run failure on a fresh cluster). Same create-if-missing

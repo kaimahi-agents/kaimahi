@@ -32,19 +32,19 @@ ORDER = [
 ]
 # The runnable path: these commands must be lines of the FIRST fenced code
 # block in the Quickstart section, in this order, not prose that happens to
-# name them. Since P11 that path is `kmx` — install, up, talk to the agent —
-# because it is the one that works without a clone.
+# name them. That path is `kmx` — install, up, talk to the agent — because it
+# is the one that works without a clone.
 QUICKSTART_COMMANDS = [
-    # W31: the FIRST line a reader sees must be the one that works on a
-    # machine with a container engine and nothing else. A quickstart that
+    # The FIRST line a reader sees must be the one that works on a machine
+    # with a container engine and nothing else. A quickstart that
     # opens with `go install` opens with a prerequisite, and the prerequisite
     # count is the number this project is trying to move.
     ("the one-command install", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/[^|]*install\.sh \|"),
     ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@"),
     ("kmx up", r"^kmx up\b"),
     ("kmx agent chat", r"^kmx agent chat\b"),
-    # Since P11 milestone 2 the governed half is one command too, and it is
-    # the product's whole claim. A quickstart that stops at a conversation
+    # The governed half is one command too, and it is the product's whole
+    # claim. A quickstart that stops at a conversation
     # sells an agent runtime; kagent already ships one.
     ("kmx plane", r"^kmx plane\b"),
     ("kmx govern", r"^kmx govern\b"),

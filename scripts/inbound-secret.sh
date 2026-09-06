@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Store the signing secret for one HMAC-authenticated inbound hook (P7b)
+# Store the signing secret for one HMAC-authenticated inbound hook
 # as a key of the plane-side Secret kaimahi-inbound-signing, which the
 # proxy pod mounts at /etc/kaimahi/inbound/<hook> and reads per request.
 #
@@ -92,4 +92,4 @@ $KUBECTL -n "$NAMESPACE" create secret generic "$SECRET" "${args[@]}" \
   --dry-run=client -o yaml | $KUBECTL -n "$NAMESPACE" apply -f - >/dev/null
 echo "Secret $NAMESPACE/$SECRET: key '$hook' stored (${mode#--})." >&2
 echo "The proxy reads it per request from /etc/kaimahi/inbound/$hook; a Secret mounted" >&2
-echo "for the first time can take kubelet up to a minute to project (P5b delta)." >&2
+echo "for the first time can take kubelet up to a minute to project." >&2

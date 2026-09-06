@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prove a Postgres outage drops the proxies' READINESS and never their
-# LIVENESS (P9): scale Postgres to zero, require every replica's
+# LIVENESS: scale Postgres to zero, require every replica's
 # /readyz to answer 503 and its /livez 200 for longer than the liveness
 # probe's restart threshold (3 × 10 s), then scale Postgres back and
 # require /readyz 200 again — with every replica's restart count where

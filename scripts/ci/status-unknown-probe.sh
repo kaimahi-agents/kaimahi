@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# W34(a): prove the cannot-tell branch of `kmx status` on a real cluster.
+# Prove the cannot-tell branch of `kmx status` on a real cluster.
 #
 # A reader that cannot LIST the tool seams or the Secret names must produce
 # a stated `unknown` carrying kubectl's own reason, and must publish no
@@ -7,7 +7,8 @@
 # change exists to prevent. The half that CAN be read stays counted.
 #
 # The reader is a ServiceAccount minted on the cluster and a token that
-# lives for the run: no repo secret, so D14 holds.
+# lives for the run: no repo secret, because CI in this public,
+# fork-exposed repo holds no credential of any kind.
 set -euo pipefail
 
 ctx="${KUBE_CTX:-kind-${KIND_CLUSTER:-kaimahi-p1}}"

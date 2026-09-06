@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Store WHO may approve or deny an approval request from Slack (P8b):
+# Store WHO may approve or deny an approval request from Slack:
 # the Slack user ids the plane accepts `@kaimahi approve <id>` / `deny
 # <id>` from, as the `approvers` key of the plane-side Secret
 # kaimahi-slack-approvers, projected into the proxy pod next to the
 # channel file (/etc/kaimahi/slack/approvers) and read per command.
 #
-# Channel membership is NOT authority (D21): being in the room lets a
+# Channel membership is NOT authority: being in the room lets a
 # person ask the agent a question; only this list lets them decide. An
 # empty or missing list means nobody can — the plane fails a command
 # closed (503) rather than open.

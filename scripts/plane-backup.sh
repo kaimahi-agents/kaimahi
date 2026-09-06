@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Back up the plane's Postgres database to a local file (P9).
+# Back up the plane's Postgres database to a local file.
 #
 # pg_dump runs INSIDE the Postgres pod, over its unix socket, and streams
 # to stdout through kubectl exec into a local file: the database

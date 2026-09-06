@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Put the inbound bridge on the internet — P8's public edge
+# Put the inbound bridge on the internet — the public edge
 # (k8s/inbound-edge.yaml): a Caddy pod terminating TLS with a Let's
 # Encrypt certificate obtained by TLS-ALPN-01 on port 443, behind an
 # Azure load balancer whose public IP carries a DNS label.

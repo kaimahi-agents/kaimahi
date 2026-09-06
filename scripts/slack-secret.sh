@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Capture the Slack bot token stdin-only and store the plane-side Secrets
-# the P5a Slack MCP server needs — after PROVING, fail-closed, that the
+# the Slack MCP server needs — after PROVING, fail-closed, that the
 # named channel is one it is safe to post into.
 #
 # Two Secrets, deliberately split so no pod holds more than its job needs:
@@ -19,7 +19,7 @@
 #   - Every step checks a well-formed positive; a failed check stores
 #     nothing.
 #
-# OUTWARD-FACING GUARD (board rule): posting to Slack sends messages real
+# OUTWARD-FACING GUARD: posting to Slack sends messages real
 # people read, so this script REFUSES any channel it cannot prove is
 # private and that the bot has actually been invited to. `conversations.info`
 # must answer ok with is_private=true. That check needs the bot scope
@@ -61,7 +61,7 @@ tr -d '\r\n' < /dev/stdin > "$workdir/token"
 test -s "$workdir/token" || { echo 'no token read on stdin' >&2; exit 1; }
 grep -q '^xoxb-' "$workdir/token" || {
   echo 'that is not a bot token (expected an xoxb- prefix).' >&2
-  echo 'P5a uses a BOT token deliberately: a user token would act as a person.' >&2
+  echo 'A BOT token is deliberate: a user token would act as a person.' >&2
   exit 1
 }
 { printf 'Authorization: Bearer '; cat "$workdir/token"; printf '\n'; } > "$workdir/auth-header"
@@ -106,7 +106,7 @@ if not d.get("ok"):
 c = d.get("channel") or {}
 if not c.get("is_private"):
     sys.exit(f"REFUSING: {chan} (#{c.get('name')}) is not a private channel.\n"
-             "P5a posts only to a private test channel (board rule): a demo must not\n"
+             "This demo posts only to a private test channel: a demo must not\n"
              "put messages in front of people who did not agree to be an audience.")
 # A well-formed positive only (standing guidance): an ABSENT is_member
 # must not pass as membership. `is False` would let a response shape that

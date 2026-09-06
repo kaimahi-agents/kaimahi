@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermetic tests for scripts/kube-guard.sh — the P5b context-safety net.
+# Hermetic tests for scripts/kube-guard.sh — the context-safety net.
 #
 # No cluster and no network: the script builds its own throwaway
 # kubeconfig, so CI can assert the guard's decisions in seconds. That
@@ -77,8 +77,8 @@ run 0 "local kind proceeds" KUBE_CTX=kind-real
 # empty machine (and every CI run), which must not need a confirmation.
 run 0 "absent kind- context is 'about to be created'" KUBE_CTX=kind-not-created-yet
 
-# Refused: a typo'd non-kind context. Before P5b this was a harmless
-# "context not found"; the guard must keep it harmless.
+# Refused: a typo'd non-kind context. Before KUBE_CTX was overridable this
+# was a harmless "context not found"; the guard must keep it harmless.
 run 1 "absent non-kind context is a typo" KUBE_CTX=prod-oops
 
 # Refused: kind-NAMED but remotely addressed. The whole point of checking

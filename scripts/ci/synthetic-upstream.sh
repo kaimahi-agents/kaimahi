@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# CI's SYNTHETIC hosted upstream (P10, docs/hosted-upstreams.md): a tiny
+# CI's SYNTHETIC hosted upstream (docs/hosted-upstreams.md): a tiny
 # https MCP echo server, reachable from the kind cluster at a
 # PUBLIC-LOOKING address the hardened dialer accepts, so the hosted path
-# is proven end to end with no GitHub token anywhere (D14).
+# is proven end to end with no GitHub token anywhere.
 #
 # How the address works. 203.0.113.10 is a documentation-range address:
 # not private (the dialer's refusal list is NOT relaxed for it — a
@@ -117,9 +117,9 @@ case "${1:-}" in
     # Three entries on top of the committed table: the stand-in, the
     # same server under a name that will be rebound, and a path that
     # redirects. All three are `internet: true` and trust the throwaway
-    # CA only through ca_file. The stand-in also carries the P12
-    # declaration and a standing constraint, so CI can prove argument
-    # policy end to end keylessly: `pay_invoice` declares its
+    # CA only through ca_file. The stand-in also declares its
+    # policy-relevant fields and a standing constraint, so CI can prove
+    # argument policy end to end keylessly: `pay_invoice` declares its
     # policy-relevant fields, and hello-github may call it without asking
     # anyone while the amount is at or under $10,000 and the payee is the
     # one named. Anything else is denied and files an approval request
@@ -130,7 +130,7 @@ import json, sys
 c = json.load(open(sys.argv[1]))
 ca = "/etc/kaimahi/upstream-ca/mcp-echo.crt"
 
-# W32: the release tools are declared by COPYING the committed
+# The release tools are declared by COPYING the committed
 # declaration rather than restating it. A tool name means one thing
 # across the whole table (the plane refuses two upstreams that declare
 # one tool differently), so restating them here would either duplicate
@@ -150,7 +150,7 @@ c["tool_upstreams"]["mcp-echo"] = {
     "tools": dict(release_tools,
                   pay_invoice={"policy_fields": ["invoice_id", "amount_cents", "payee_id"]}),
 }
-# W32: the same stand-in, narrowed AT THE SERVER by a committed header -
+# The same stand-in, narrowed AT THE SERVER by a committed header -
 # the outer of the two rings. The gateway will admit an allowlisted call
 # here and the server will still refuse it, because the tool is not
 # enabled on it. That is a guarantee an allowlist cannot make, and it is
@@ -161,7 +161,7 @@ c["tool_upstreams"]["mcp-echo-narrowed"] = {
     "extra_headers": {"X-MCP-Tools": "echo"},
 }
 # ADD to whatever the committed table already carries, never replace it:
-# since P13 that block holds the AP agent's real constraint, and a patch
+# that block holds the accounts-payable agent's real constraint, and a patch
 # that dropped it would quietly test a different policy than the one that
 # ships.
 c.setdefault("standing_constraints", {})["hello-github"] = {
@@ -169,7 +169,7 @@ c.setdefault("standing_constraints", {})["hello-github"] = {
         {"field": "amount_cents", "op": "lte", "value": 1000000},
         {"field": "payee_id", "op": "in", "values": ["MER-4471"]},
     ],
-    # W32: what `make release-bind` applies against a real repository -
+    # What `make release-bind` applies against a real repository -
     # a READ tool bound to ONE of them. A read naming any other is
     # denied and files a request, which is the one-repository claim made
     # at the plane rather than only at the token.

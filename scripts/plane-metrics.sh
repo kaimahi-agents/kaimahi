@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print one proxy replica's Prometheus exposition (P9). The ops port is
+# Print one proxy replica's Prometheus exposition. The ops port is
 # on no Service, so this port-forwards to a POD (cluster credentials
 # gate it, like the admin port; the port itself has no auth — see
 # k8s/plane/network-policy.yaml for what may reach it in-cluster).

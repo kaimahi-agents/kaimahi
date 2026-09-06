@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# W32: capture an Azure DevOps access token stdin-only and store it as the
+# Capture an Azure DevOps access token stdin-only and store it as the
 # plane-side Secret the `ado` tool upstream reads (kaimahi-ado-token, key:
 # token) — after PROVING, fail-closed, that it is a token for the right
 # resource and that the hosted MCP server actually accepts it.
 #
-# NOT A PAT, which is what this lane expected. Microsoft's hosted Azure
+# NOT A PAT, which is what this script first expected. Microsoft's hosted Azure
 # DevOps MCP server answers an unauthenticated request with
 #     WWW-Authenticate: Bearer resource_metadata="https://mcp.dev.azure.com/.well-known/oauth-protected-resource/"
 # and that document declares
@@ -23,7 +23,7 @@
 # hand, and it tells you when it dies rather than letting you find out
 # mid-release.
 #
-# Getting one (credential capture is a human's job here — D27):
+# Getting one (credential capture is a human's job here):
 #
 #     az account get-access-token --scope https://mcp.dev.azure.com/.default \
 #        --query accessToken -o tsv

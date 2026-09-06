@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the demo's fixture ERP, get it onto the cluster, project the corpus
-# as a ConfigMap and roll the Deployment (P13, docs/ap-demo.md).
+# as a ConfigMap and roll the Deployment (docs/ap-demo.md).
 #
 # The only thing that differs between environments is how the ERP pod gets
 # its image — the same split scripts/plane-deploy.sh makes for the proxy,
@@ -18,8 +18,8 @@
 #          pull policy must change; `Never` there means ErrImageNeverPull,
 #          forever.
 #
-# Nothing is published either way. A private ACR is not publication (D15),
-# and the P13 guardrail against publishing the ERP stands: no public
+# Nothing is published either way. A private ACR is not publication,
+# and the guardrail against publishing the ERP stands: no public
 # registry, no `docker push`, no registry login on the operator's machine.
 #
 # Fail closed: the render must produce exactly the intended change, and
@@ -178,7 +178,7 @@ PY
 # Separate from do_apply so `erp-deploy.sh render` runs the identical
 # gauntlet with no cluster in sight — which is how CI proves this path
 # (the live one cannot be proven in CI: no Azure credential belongs in a
-# public, fork-exposed repo, D14).
+# public, fork-exposed repo).
 validate_registry() {
   # A registry target must be given a registry image. The default above is
   # the kind tag, so "not set" and "set to the local tag" are the same
@@ -199,9 +199,9 @@ validate_registry() {
       echo "  (an unset ACR_NAME produces exactly this shape)" >&2
       exit 1 ;;
   esac
-  # A SLASH IS NOT A REGISTRY. "team/erp:p13" has one and resolves through
-  # Docker Hub — a public registry this project deliberately never uses
-  # (D15). Docker's own rule is what distinguishes them: the first path
+  # A SLASH IS NOT A REGISTRY. "team/erp:v1" has one and resolves through
+  # Docker Hub — a public registry this project deliberately never uses.
+  # Docker's own rule is what distinguishes them: the first path
   # component is a registry host only if it contains a dot or a port
   # colon (or is localhost). Anything else is a Docker Hub namespace, so
   # accepting it would pull an image from a name a stranger can register.

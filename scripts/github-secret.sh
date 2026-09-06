@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Capture a GitHub token stdin-only and store it as the plane-side Secret
-# the P10 GitHub hosted MCP upstream reads (kaimahi-github-pat, key:
+# the GitHub hosted MCP upstream reads (kaimahi-github-pat, key:
 # token) — after PROVING, fail-closed, that it is the kind of token this
-# lane accepts and that it can read the one repository named.
+# path accepts and that it can read the one repository named.
 #
 # Which token: a FINE-GRAINED personal access token, scoped to ONE
 # repository, with read-only permissions (Issues: Read, Pull requests:

@@ -47,7 +47,7 @@ CASES = [
     ("install line missing",
      GOOD.replace("go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\n", ""),
      "go install .../cmd/kmx is missing"),
-    # W31: the one-command install is the front door. Leading with `go install`
+    # The one-command install is the front door. Leading with `go install`
     # leads with a prerequisite, which is the number the project is moving.
     ("the one-command install missing",
      GOOD.replace("curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart\n", ""),

@@ -2,7 +2,7 @@
 # Publish the release: create it on GitHub with the agent's notes, then
 # move the build artifacts out of Azure DevOps and onto it.
 #
-# WHY THE DRIVER MOVES THE BYTES. D38(b) says the agent never carries
+# WHY THE DRIVER MOVES THE BYTES. The rule is that the agent never carries
 # them, and it still doesn't — its part is a paragraph of notes and a
 # small JSON call. But that rule assumed some CI system could be told to
 # do the moving, and here none can: GitHub Actions can't reach this ADO
@@ -14,7 +14,7 @@
 # naming the release, a human approves it, and nothing moves without a
 # live grant welded to it. The TRANSFER isn't gateway-enforced — no
 # allowlist sits between this script and the bytes, because the gateway
-# isn't in the path. Weaker than the rest of the lane; written down, not
+# isn't in the path. Weaker than the rest of the release path; written down, not
 # glossed.
 #
 # Credentials are the operator's own: az for ADO, gh for GitHub, both
