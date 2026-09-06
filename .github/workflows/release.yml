@@ -3,7 +3,7 @@ name: release
 # The tag is the source of truth. Everything below is derived from it: the
 # version the binaries report, the notes, and whether this is a pre-release.
 #
-# Keyless, like the rest of this project's CI (D14). The only credential is
+# Keyless, like the rest of this project's CI. The only credential is
 # the GITHUB_TOKEN GitHub mints for the run, scoped to `contents: write`
 # because creating a release IS a write to this repository's contents. No
 # repository secret is added, and none is needed: nothing is pushed to a
@@ -209,8 +209,8 @@ jobs:
           done
           ls -l "$RUNNER_TEMP/dist"
 
-      # The binary must say what it is. This is the assertion the whole lane
-      # exists for, and it runs on the actual artifact — the runner is
+      # The binary must say what it is. That is what version stamping is
+      # for, and this runs on the actual artifact — the runner is
       # linux/amd64, so that is the one that can be executed here.
       - name: The released binary reports its own version
         env:

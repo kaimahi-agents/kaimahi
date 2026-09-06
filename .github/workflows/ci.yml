@@ -58,7 +58,7 @@ jobs:
           elif [ "$rc" -ne 1 ]; then
             echo "secret scan failed to run (grep exit $rc)"; exit 1
           fi
-      # P5b: this repo is public and now documents a managed-cluster path.
+      # This repo is public and documents a managed-cluster path.
       # A subscription/tenant GUID, an AKS FQDN, or a real ACR login server
       # must never land in the tree — every Azure identifier is supplied by
       # the operator at run time. The same script is what the operator runs
@@ -79,7 +79,7 @@ jobs:
         run: python3 scripts/check-readme-front-door.py
       - name: README front-door checker self-test
         run: python3 scripts/check-readme-front-door-test.py
-      # W28: the release job's notes come from CHANGELOG.md and it REFUSES
+      # The release job's notes come from CHANGELOG.md and it REFUSES
       # to publish a version with no section there. That refusal is the only
       # thing making "every release has notes" true, so the extractor is
       # tested here rather than discovered on a tag.
@@ -94,7 +94,7 @@ jobs:
               print("CHANGELOG.md needs an '## Unreleased' section to write the next release into")
               sys.exit(1)
           wf = yaml.safe_load(open(".github/workflows/release.yml"))
-          # D14: this repository is public and fork-exposed, and CI carries
+          # This repository is public and fork-exposed, and CI carries
           # no repository secret. A release does not change that — the only
           # credential it may use is the token GitHub mints for the run.
           # `github.token` and `secrets.GITHUB_TOKEN` are that same token;
@@ -115,7 +115,7 @@ jobs:
                   sys.exit(1)
           print("release workflow: no repository secrets, contents-only permissions, changelog ready")
           EOF
-      # P5b: the context guard is pure policy — every branch of it decides
+      # The context guard is pure policy — every branch of it decides
       # whether to touch somebody's cluster — but the e2e job below can only
       # ever exercise the one branch it runs on (local kind). These tests
       # build their own kubeconfig, so all of them are covered keyless in
@@ -125,7 +125,7 @@ jobs:
       # different context are all refused.
       - name: Context guard fails closed
         run: bash scripts/kube-guard-test.sh
-      # P5b: kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
+      # kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
       # local tag must never fall back to pulling a squattable public name),
       # so a registry-backed cluster needs both the image and the policy
       # rendered at deploy time. Assert the render without a cluster:
@@ -176,11 +176,11 @@ jobs:
           assert policies == ["Never"], f"committed proxy pull policy: {policies}"
           EOF
 
-      # The demo ERP (P13) travels the proxy's road since the AKS run:
+      # The demo ERP travels the proxy's road since the AKS run:
       # built BY a private registry and PULLED, instead of side-loaded.
       # The live path cannot be proven here — no Azure credential belongs
-      # in a public, fork-exposed repo (D14) — so it is proven the way P10
-      # proved its hosted upstream: synthetically, in full, with no
+      # in a public, fork-exposed repo — so it is proven the way the hosted
+      # GitHub upstream is proven: synthetically, in full, with no
       # cluster. `erp-deploy.sh render` runs the identical validation and
       # transform the deploy path runs and prints the result.
       #
@@ -234,7 +234,7 @@ jobs:
           refuse "malformed ERP_IMAGE" ERP_TARGET=registry ERP_IMAGE=.azurecr.io/kaimahi-erp:p13
           refuse "names no registry" ERP_TARGET=registry ERP_IMAGE=kaimahi-erp:p13
           # A SLASH IS NOT A REGISTRY. Both of these resolve through Docker
-          # Hub, a public registry this project never uses (D15), from a
+          # Hub, a public registry this project never uses, from a
           # name a stranger can register.
           refuse "names no registry" ERP_TARGET=registry ERP_IMAGE=team/erp:p13
           refuse "names no registry" ERP_TARGET=registry ERP_IMAGE=nginx:latest
@@ -257,7 +257,7 @@ jobs:
           assert policies == [("kaimahi-erp:dev", "Never")], f"committed erp image/policy: {policies}"
           EOF
 
-      # P7a: the boundary's shape, asserted without a cluster. Parsed,
+      # The boundary's shape, asserted without a cluster. Parsed,
       # not grepped (the file's comments name every rule). Three things
       # must stay true or the enforced-boundary step below would be
       # testing a different policy than the one that ships: the
@@ -285,13 +285,13 @@ jobs:
           private = {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
                      "169.254.0.0/16", "100.64.0.0/10", "127.0.0.0/8"}
           copilot = yaml.safe_load(pathlib.Path("k8s/egress-copilot.yaml").read_text())
-          # P10: the gateway's allowance for HOSTED tool upstreams — the
+          # The gateway's allowance for HOSTED tool upstreams — the
           # second (and last) 443-only internet allowance for the proxy
           # pod, the exact shape of the Copilot one, opt-in like it.
           hosted = yaml.safe_load(pathlib.Path("k8s/egress-hosted.yaml").read_text())
           assert hosted["metadata"]["name"] == "kaimahi-proxy-egress-hosted", hosted["metadata"]
           assert hosted["spec"] == copilot["spec"], "the hosted allowance must be the exact shape of the Copilot allowance"
-          # P8: the public edge's policies live outside k8s/plane/ (they are
+          # The public edge's policies live outside k8s/plane/ (they are
           # an opt-in exposure, never deployed on kind) but obey the same
           # egress rule, and their ingress is bounded here too.
           edge = [d for d in yaml.safe_load_all(pathlib.Path("k8s/inbound-edge.yaml").read_text())
@@ -342,7 +342,7 @@ jobs:
                             and p["spec"].get("podSelector", {}).get("matchLabels", {}).get("app") == "kaimahi-proxy"]
           assert not plane_internet, f"the proxy has a baked-in internet allowance: {plane_internet}"
           assert not ({p["metadata"]["name"] for p in edge} & {p["metadata"]["name"] for p in pols}), "edge policy leaked into k8s/plane/"
-          # P9: the ops port (metrics + probes, no auth) is on NO Service,
+          # The ops port (metrics + probes, no auth) is on NO Service,
           # and the only policy that opens it is the scraper allowance —
           # a namespace+pod selector, never an ipBlock, never the agent
           # namespace. The agents' rule still opens exactly 8080/8081.
@@ -366,14 +366,14 @@ jobs:
           assert len(pdb) == 1 and pdb[0]["spec"].get("minAvailable") == 1, "proxy PDB missing or not minAvailable: 1"
           print(f"{len(pols)} plane policies + {len(edge)} edge policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); internet allowances are 443-only with private ranges excluded; internet ingress is the edge's 8443 only; ops port 9092 on no Service, opened only to the monitoring scraper")
           EOF
-      # P10: the committed upstream table marks every hosted upstream —
+      # The committed upstream table marks every hosted upstream —
       # Copilot on the LLM seam, GitHub's MCP server on the tool seam —
       # `internet: true`, so nothing about their hardening is implicit
       # (the plane also refuses an unmarked public host at load; this is
       # the same fact asserted on the file, before a cluster exists).
       # The agent-side wiring is a Secret-resolved header only, and no
-      # GitHub token shape is anywhere in the tree (D14: none exists in
-      # CI, ever).
+      # GitHub token shape is anywhere in the tree — CI holds no hosted
+      # credential, ever.
       - name: Hosted upstreams are marked, keyed from plane custody, and no GitHub token is in the tree
         run: |
           python3 - <<'EOF'
@@ -399,7 +399,8 @@ jobs:
                   assert host.endswith((".kaimahi", ".kagent", ".svc.cluster.local")), (name, host)
           # The agent-side seam: one Secret-resolved header, no inline
           # value — asserted on EVERY Kaimahi seam manifest, so a new one
-          # cannot be added with a key pasted into it. (W32 added two.)
+          # cannot be added with a key pasted into it. (The release agent
+          # added two.)
           for seam in sorted(pathlib.Path("k8s").glob("kaimahi-*.yaml")):
               doc = yaml.safe_load(seam.read_text())
               if not isinstance(doc, dict) or doc.get("kind") != "RemoteMCPServer":
@@ -417,7 +418,7 @@ jobs:
           assert len(tools) == 1 and tools[0]["mcpServer"]["name"] == "kaimahi-github", tools
           assert agent["spec"]["declarative"]["modelConfig"] == "governed-copilot", "the demo agent is not on a governed model preset"
           print("hosted upstreams: copilot + github marked internet; every unmarked entry in-cluster; github wiring Secret-only")
-          # P13: the accounts-payable demo is CONFIGURATION, and this is
+          # The accounts-payable demo is CONFIGURATION, and this is
           # where that configuration is checked — the ERP holds no
           # credential of any kind, its consequential tools declare the
           # fields an approval binds and an audit summary reads, and the
@@ -463,11 +464,12 @@ jobs:
       # docs-only summary steps are exempt; every other step must skip when
       # docs_only is 'true'.
       #
-      # W25 added the second half: the required check is an aggregator over
-      # the shards, so a new shard that nothing needs would run, fail, and
-      # still leave `e2e-hello-world` green. The aggregator must name every
-      # shard, must run with always() (a skipped required check never reports
-      # and blocks every merge), and must own no cluster steps of its own.
+      # Sharding the proof added the second half: the required check is an
+      # aggregator over the shards, so a shard that nothing needs would run,
+      # fail, and still leave `e2e-hello-world` green. The aggregator must
+      # name every shard, must run with always() (a skipped required check
+      # never reports and blocks every merge), and must own no cluster steps
+      # of its own.
       - name: Every cluster step carries the docs-only guard, the required check covers every shard, and the clone-free job has no checkout
         run: |
           python3 - <<'EOF'
@@ -518,7 +520,7 @@ jobs:
           print(f"{total} cluster steps across {len(shards)} shards + kmx-clone-free: all guarded")
           print(f"{required} reports for: {', '.join(shards)}; kmx-clone-free has no checkout")
           EOF
-      # P11: kmx's own module. It lives in the REQUIRED hygiene job rather
+      # kmx's own module. It lives in the REQUIRED hygiene job rather
       # than a job of its own, because the guard port, the scaffolder's
       # refusals and the checksum verification are the parts of kmx that
       # decide whether someone's cluster gets written to or a credential
@@ -548,7 +550,7 @@ jobs:
           grep -q 'ok  .*internal/kmx/guard' kmx-test.out
           grep -q 'ok  .*internal/kmx/scaffold' kmx-test.out
           grep -q 'ok  .*internal/kmx/kagentcli' kmx-test.out
-          # W31: kmx now downloads kind, kubectl and Helm as well as the
+          # kmx now downloads kind, kubectl and Helm as well as the
           # kagent CLI, which is the difference between five prerequisites
           # and one. A binary it fetches runs with the operator's kubeconfig,
           # so the digest checks are not decoration either.
@@ -559,7 +561,7 @@ jobs:
           # shell could only approximate with a 0600 file.
           grep -q 'ok  .*internal/kmx/planebuild' kmx-test.out
           grep -q 'ok  .*internal/kmx/admin' kmx-test.out
-          # W36: `kmx workflow show` and `kmx workflow run` must describe
+          # `kmx workflow show` and `kmx workflow run` must describe
           # the SAME run for the same --set. That is a fact about the
           # blueprint package — it renders and binds the carried release
           # blueprint with four parameter sets and asserts one step list —
@@ -594,7 +596,7 @@ jobs:
           python3 scripts/check-kmx-delegation.py --selftest
           python3 scripts/check-kmx-delegation.py
 
-  # P4a: the governance plane's Go module — build, vet, gofmt, tests.
+  # The governance plane's Go module — build, vet, gofmt, tests.
   # A separate quick job so proxy logic failures surface in seconds, not
   # after a 6-minute cluster bring-up.
   go-plane:
@@ -605,9 +607,9 @@ jobs:
         # bash turns on pipefail: `go test | tee | grep` must fail on go
         # test's own exit code, not on whether grep matched an `ok` line.
         shell: bash
-    # P9: the store's concurrency tests race the real SQL against a real
+    # The store's concurrency tests race the real SQL against a real
     # Postgres (a throwaway service container with a throwaway password
-    # — not a secret, and no hosted key of any kind; D14 holds). Without
+    # — not a secret, and no hosted key of any kind). Without
     # KAIMAHI_TEST_PG_DSN those tests skip, so `go test ./...` still
     # passes on a laptop with no database.
     services:
@@ -652,8 +654,9 @@ jobs:
           grep -q -- '--- PASS: TestMigrateTwiceConcurrentlyIsSerialAndIdempotent' test.out
           grep -q -- '--- PASS: TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape' test.out
 
-  # W28: the upgrade nobody had tested. Eight migrations have shipped since
-  # P4a and every e2e shard applies them to an EMPTY database — the one case
+  # The upgrade nobody had tested. Eight migrations have shipped since the
+  # plane's first version and every e2e shard applies them to an EMPTY
+  # database — the one case
   # where a migration cannot lose anything. This job runs the plane's own
   # upgrade: an older released plane, fetched from the module proxy at a
   # revision several migrations behind, seeded through its own admin API with a
@@ -665,7 +668,7 @@ jobs:
   #
   # No cluster: the proxy is env-configured and file-fed, so both versions
   # are plain processes against the service Postgres. That is why this can
-  # run on every PR instead of being a release-day ritual. Keyless (D14) —
+  # run on every PR instead of being a release-day ritual. Keyless —
   # the only credentials are a throwaway database password and a throwaway
   # admin token the probe generates for itself.
   plane-upgrade:
@@ -702,16 +705,16 @@ jobs:
           PGPASSWORD: ci-throwaway
         run: bash scripts/plane-upgrade-probe.sh
 
-  # ---- the end-to-end proof, in five shards (W25, P13) ---------------------
+  # ---- the end-to-end proof, in five shards --------------------------------
   #
-  # Everything P1 through P12 proves about a running cluster lives below.
-  # It used to be ONE job of 68 serial steps on one cluster (P12 branch,
-  # run 33707312808): 934s, of which 186s was the bring-up and 748s was a
+  # Everything this project proves about a running cluster lives below.
+  # It used to be ONE job of 68 serial steps on one cluster (run
+  # 33707312808): 934s, of which 186s was the bring-up and 748s was a
   # serial tail of probes — hygiene and go-plane are ~40s each, so this job
   # WAS CI's wall-clock. It is now four jobs that each bring up their own
   # cluster and run one part of the tail, plus an aggregator (`e2e-hello-world`, the name the protect-main
-  # ruleset requires) that reports whether all of them passed. P13 added a
-  # FIFTH for the accounts-payable demo — new proof rather than moved
+  # ruleset requires) that reports whether all of them passed. The
+  # accounts-payable demo added a FIFTH — new proof rather than moved
   # proof; that job's own header says why it is a shard and not a tail.
   #
   # The arithmetic, from measured runs and not estimates (run 33707312808
@@ -742,7 +745,7 @@ jobs:
   #   `make plane`        60s, of which ~30s is a docker build that needs no
   #                       cluster. Building it in the background during the
   #                       bring-up measured 53s against 60s and is NOT done
-  #                       here: kmx owns that build now (P11 m2), and a
+  #                       here: kmx owns that build now, and a
   #                       second copy of its command in this file would go
   #                       stale silently — a changed build arg is a changed
   #                       cache key, and the pre-warm would just be a wasted
@@ -766,17 +769,19 @@ jobs:
   # wrote. A shard boundary in the middle of one of those would have needed
   # a replay that proves less than the original.
   #
-  # Docs-only short-circuit (D17 follow-up): board updates are PRs and the
-  # ruleset requires this check, so a doc-only PR used to wait ~11 min for
-  # a cluster it cannot affect. The step after checkout classifies the
-  # change with plain git; when EVERY changed file is documentation
+  # Docs-only short-circuit: every change reaches main through a pull
+  # request, documentation included, and the ruleset requires this check,
+  # so a doc-only PR used to wait ~11 min for a cluster it cannot affect.
+  # The step after checkout classifies the change with plain git; when
+  # EVERY changed file is documentation
   # (docs/**, *.md) the cluster steps are skipped via a per-step guard and
   # every shard still reports success. Anything else — code, an
   # undeterminable file set (missing/unfetchable base, empty diff), any
   # error — runs the full job. The hygiene job refuses an e2e step that
   # lacks the guard, and refuses a shard the aggregator does not name.
-  # SHARD 1 of 4 — the runtime a developer gets (P1/P2/P3) and the hosted
-  # tool upstream (P10), which needs the plane but no agent.
+  # SHARD 1 of 4 — the runtime a developer gets (cluster, model, agent,
+  # tools over MCP) and the hosted tool upstream, which needs the plane but
+  # no agent.
   e2e-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -804,7 +809,7 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # P11: `make up` and every other target below now runs THROUGH kmx, so
+      # `make up` and every other target below runs THROUGH kmx, so
       # this job is what proves the binary a developer installs. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
@@ -824,7 +829,7 @@ jobs:
           make chat | tee chat.out
           # Fail closed: require a completed A2A task with non-empty reply text.
           python3 scripts/verify-chat.py chat.out
-      # P2, keyless: the model presets must be schema-valid against the live
+      # Keyless: the model presets must be schema-valid against the live
       # CRDs, and the preset-switch mechanism must work end to end. No hosted
       # keys in CI (public repo, fork-exposed PR CI) — the switch is exercised
       # with the keyless in-cluster Ollama preset.
@@ -837,7 +842,7 @@ jobs:
           make use PRESET=ollama
           make chat | tee chat-preset.out
           python3 scripts/verify-chat.py chat-preset.out
-      # P3, keyless: prove a REAL MCP tool call, not a plausible answer. A
+      # Keyless: prove a REAL MCP tool call, not a plausible answer. A
       # ConfigMap with an unguessable random name is created, the tools
       # agent is asked to list configmaps, and the verifier requires a
       # function_call + successful function_response for k8s_get_resources
@@ -875,17 +880,17 @@ jobs:
           make chat AGENT=hello-tools \
             TASK='List the configmaps in the default namespace.' | tee tool-chat.out
           python3 scripts/verify-chat.py tool-chat.out k8s_get_resources "$probe"
-      # P4a, keyless: the governance plane in the SAME cluster/job — a
+      # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
-      # proxy 25m) to fit the 2-CPU runner's request ceiling (P3 delta).
+      # proxy 25m) to fit the 2-CPU runner's request ceiling.
       # Chat rides the governed ollama path via the proxy; the ledger row
       # and the budget denial are asserted fail-closed.
       # Preset switches roll the agent Deployment with maxSurge=1, so the
       # node must fit a SECOND agent pod's requests while the old one
       # drains. With the plane deployed the 2-CPU node cannot fit a
       # second 100m/384Mi hello-world, so shrink its runtime requests to
-      # hello-tools' proven values (P3 delta) via the Agent CRD — the P1
+      # hello-tools' measured values via the Agent CRD — the committed
       # artifact k8s/hello-world.yaml stays untouched; this is a CI
       # sizing patch, not a topology change.
       - name: Shrink hello-world requests so preset switches can surge
@@ -894,7 +899,7 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kagent patch agent hello-world \
             --type merge -p '{"spec":{"declarative":{"deployment":{"resources":{"requests":{"cpu":"50m","memory":"320Mi"},"limits":{"memory":"1Gi"}}}}}}'
           kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
-      # W34(a): the ungoverned state has to be COUNTABLE, and honest when
+      # The ungoverned state has to be COUNTABLE, and honest when
       # there is no plane at all. This is the one window CI has with kagent
       # up and the plane not yet deployed, so the no-plane branch is proven
       # here rather than only in a unit test. `0 governed` and `cannot tell`
@@ -925,9 +930,9 @@ jobs:
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
         run: make plane
-      # P10, keyless: a HOSTED tool upstream — the first the gateway reaches
+      # Keyless: a HOSTED tool upstream — the first the gateway reaches
       # over the internet — proven against a SYNTHETIC stand-in, since no
-      # GitHub token exists in CI (D14). scripts/ci/synthetic-upstream.sh
+      # GitHub token exists in CI, ever. scripts/ci/synthetic-upstream.sh
       # runs a tiny https MCP echo server in a sidecar on kind's docker
       # network at 203.0.113.10 (a documentation-range address: NOT
       # private, so the dialer's refusal list is not relaxed for it, and
@@ -998,7 +1003,7 @@ jobs:
           make approvals | tee github-approvals.out
           grep -E 'hello-github +tool +echo_write' github-approvals.out
           grep -E 'hello-github +mcp-echo-redirect +tools/call +echo +allowed +502 +tool upstream redirected' github-audit-2.out
-      # P12, keyless: argument-level policy end to end. The synthetic
+      # Keyless: argument-level policy end to end. The synthetic
       # upstream declares `pay_invoice`'s policy-relevant fields and
       # hello-github carries a standing constraint on them — "at or under
       # $10,000, and only to MER-4471". Nothing about this needs a token:
@@ -1080,11 +1085,11 @@ jobs:
           # The refusal happens BEFORE the method is known, so the row
           # carries no method or tool — only that the body was refused.
           grep -E 'hello-github +mcp-echo +denied +400 +request body carries a duplicate JSON key' dup-audit.out
-      # W32, keyless: the release agent's governance, proven against the
+      # Keyless: the release agent's governance, proven against the
       # same stand-in. Nothing here needs a GitHub or Azure DevOps token —
       # every decision happens in the gateway before the forward, which is
-      # exactly why the lane could be proven at all in a CI that holds no
-      # credential (D14). The real run is manual and its transcript is in
+      # exactly why it could be proven at all in a CI that holds no
+      # credential. The real run is manual and its transcript is in
       # the PR.
       #
       # The stand-in's tools are shaped like the real ones and DECLARED by
@@ -1140,9 +1145,9 @@ jobs:
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "branch": "release/v9.9.9", "from_branch": "main"}'
           make github-audit | tee branch-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +create_branch +allowed +200 +granted .*branch release/v9.9.9' branch-audit.out
-          # THE CLAIM D38(2) MAKES: approving "publish v9.9.9" must not
-          # authorize the next release. A different version is denied and
-          # files its own request.
+          # An approval is welded to the digest of the exact call, so
+          # approving "publish v9.9.9" cannot authorize the next release: a
+          # different version is denied and files its own request.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh create_branch \
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "branch": "release/v9.9.10", "from_branch": "main"}'
@@ -1159,7 +1164,9 @@ jobs:
           # Both real servers consolidate: one tool whose method/action
           # argument selects what it does. actions_run_trigger can run a
           # workflow, re-run one, CANCEL one, or delete its logs. Verb-level
-          # policy cannot tell those apart; this is what P12 buys.
+          # policy cannot tell those apart — a verb-only allowlist admits
+          # every argument, so the bound has to be on the arguments
+          # themselves.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh actions_run_trigger \
             '{"method": "run_workflow", "owner": "kaimahi-ci", "repo": "the-one-repo", "workflow_id": "release.yml", "ref": "release/v9.9.9"}'
@@ -1209,7 +1216,7 @@ jobs:
           make approval-audit | tee release-approval-audit.out
           grep -E 'hello-github +tool +create_branch +approved +admin .*branch release/v9.9.9' release-approval-audit.out
           grep -E 'hello-github +tool +actions_run_trigger +approved +admin .*method run_workflow' release-approval-audit.out
-      # ---- W35 / D42: a governed workflow, declared in one file --------
+      # ---- a governed workflow, declared in one file -------------------
       #
       # Keyless like everything above it: scripts/ci/workflow-fixture.yaml
       # points at the synthetic hosted upstream, whose policy declarations
@@ -1249,7 +1256,7 @@ jobs:
           assert {"field": "repo", "op": "eq", "value": "the-one-repo"} in c, c
           EOF
           # Nothing is allowlisted: where a constraint exists it BINDS, and
-          # an allowlist entry beside it would be another way in (P12).
+          # an allowlist entry beside it would be another way in.
           KIND_CLUSTER=kaimahi-p1 bin/kmx tools allowlist workflow-ci | tee wf-allowlist.out
           grep -qi 'create_branch' wf-allowlist.out && { echo "a consequential tool is allowlisted"; exit 1; } || true
       - name: "Workflow: the bound the blueprint DECLARED is the one the gateway ENFORCES"
@@ -1280,7 +1287,7 @@ jobs:
         run: |
           # No agent turn happens here and none can: a consequential step
           # files the request and waits for a human BEFORE the agent is
-          # asked anything. That ordering is the P13 property — what a
+          # asked anything. That ordering is the whole property — what a
           # person is shown is what the operator wrote down, never what a
           # model emitted.
           set +e
@@ -1301,7 +1308,7 @@ jobs:
       - name: "Workflow: a run STARTS with a partial parameter set, leaving its conditional steps out"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # W36. Every assertion above drives ONE step by name, and the
+          # Every assertion above drives ONE step by name, and the
           # fixture used to have no `when:` guard anywhere — which is how
           # eight green steps coexisted with a `kmx workflow run` that
           # could not start any blueprint with a conditional step. This
@@ -1419,7 +1426,7 @@ jobs:
       - name: "Workflow: a blueprint whose CREDENTIAL the plane does not have applies nothing at all"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # W36. `kmx workflow govern` used to write the standing-bounds
+          # `kmx workflow govern` used to write the standing-bounds
           # fragment and restart the proxy BEFORE discovering the
           # credential was missing, then exit 1 with a bare
           # `tool-allow failed (HTTP 404): no such credential` — leaving
@@ -1499,11 +1506,11 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # P11 milestone 2 (D28(2)): the ONLY proof that the path users actually
-  # take works. Every other job runs from a checkout, and the checkout is
-  # exactly what a `go install` user does not have — the plane's image is
-  # fetched from the public Go proxy there, the manifests come out of the
-  # binary, and neither is exercised by a job that has k8s/ on disk.
+  # The ONLY proof that the path users actually take works. Every other job
+  # runs from a checkout, and the checkout is exactly what a `go install`
+  # user does not have — the plane's image is fetched from the public Go
+  # proxy there, the manifests come out of the binary, and neither is
+  # exercised by a job that has k8s/ on disk.
   #
   # It runs on main AFTER merge, never on the pull request, because the Go
   # proxy only serves commits that have been pushed to the default branch's
@@ -1514,9 +1521,9 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 2 of 4 — spend: the metering proxy and its budgets (P4a), the
-  # budget approval cycle (P4c), the network boundary (P7a) and the inbound
-  # bridge (P7b), whose door checks the same credential's budget.
+  # SHARD 2 of 4 — spend: the metering proxy and its budgets, the budget
+  # approval cycle, the network boundary and the inbound bridge, whose door
+  # checks the same credential's budget.
   e2e-spend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1544,7 +1551,7 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # P11: `make up` and every other target below now runs THROUGH kmx, so
+      # `make up` and every other target below runs THROUGH kmx, so
       # this job is what proves the binary a developer installs. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
@@ -1558,17 +1565,17 @@ jobs:
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
         run: make up
-      # P4a, keyless: the governance plane in the SAME cluster/job — a
+      # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
-      # proxy 25m) to fit the 2-CPU runner's request ceiling (P3 delta).
+      # proxy 25m) to fit the 2-CPU runner's request ceiling.
       # Chat rides the governed ollama path via the proxy; the ledger row
       # and the budget denial are asserted fail-closed.
       # Preset switches roll the agent Deployment with maxSurge=1, so the
       # node must fit a SECOND agent pod's requests while the old one
       # drains. With the plane deployed the 2-CPU node cannot fit a
       # second 100m/384Mi hello-world, so shrink its runtime requests to
-      # hello-tools' proven values (P3 delta) via the Agent CRD — the P1
+      # hello-tools' measured values via the Agent CRD — the committed
       # artifact k8s/hello-world.yaml stays untouched; this is a CI
       # sizing patch, not a topology change.
       - name: Shrink hello-world requests so preset switches can surge
@@ -1580,10 +1587,10 @@ jobs:
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
         run: make plane
-      # P9: two replicas (10m each — the node is at its request ceiling,
-      # ci.yml's P4a comment; this is the whole added cost). Both must
-      # be Ready and each must answer its own probes, and the schema
-      # under them must carry one row per migration: the first
+      # Two replicas (10m each — the node is already at its request ceiling
+      # with the plane's trimmed requests above; this is the whole added
+      # cost). Both must be Ready and each must answer its own probes, and
+      # the schema under them must carry one row per migration: the first
       # `make plane` above booted both replicas together against an
       # EMPTY database, so the migration lock was exercised for real
       # there (its outcome is the consistent version table and two
@@ -1711,7 +1718,7 @@ jobs:
           fi
           make ledger | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
-      # P7a, keyless: the plane's NetworkPolicy boundary, proven ENFORCED
+      # Keyless: the plane's NetworkPolicy boundary, proven ENFORCED
       # rather than present. Every governed step above already ran with
       # the policies applied (they ship with `make plane`), which is the
       # positive: chat, tools, approvals and the Slack cycle all still
@@ -1727,7 +1734,7 @@ jobs:
       - name: Network boundary is enforced (policed pods cannot reach what they must not)
         if: steps.changes.outputs.docs_only != 'true'
         run: make netpol-verify
-      # P7b, keyless: the inbound bridge — the plane's one INGRESS — in
+      # Keyless: the inbound bridge — the plane's one INGRESS — in
       # the same cluster/job (a fourth listener in the existing proxy
       # pod: zero added CPU requests). The generic SIGNED webhook (the
       # committed "demo" hook, Kaimahi's v1 HMAC scheme) is driven end to
@@ -1763,11 +1770,11 @@ jobs:
               if h["auth"] != "bearer":
                   assert h["signing_secret_file"].startswith("/etc/kaimahi/inbound/"), (name, h)
               if h["auth"] == "slack":
-                  # P8: a Slack hook is bound to the channel(s) in a plane-side
+                  # A Slack hook is bound to the channel(s) in a plane-side
                   # FILE (the same Secret key that restricts posting); dropping
                   # the key would widen the ingress to the whole workspace.
                   assert h["slack_channels_file"].startswith("/etc/kaimahi/slack/"), (name, h)
-                  # P8b: who may approve from Slack is a plane-side FILE too —
+                  # Who may approve from Slack is a plane-side FILE too —
                   # the table names it and carries no user id.
                   assert h["slack_approvers_file"].startswith("/etc/kaimahi/slack/"), (name, h)
               # tool_credential, where a hook's agent calls tools, names
@@ -1778,7 +1785,7 @@ jobs:
                   assert h["tool_credential"] in ("hello-slack", "hello-tools"), (name, h)
               assert not any(k in h for k in ("secret", "signing_secret", "token", "api_key", "approvers", "users")), (name, h)
           print("inbound hooks:", {k: (v["auth"], v["agent"]) for k, v in hooks.items()})
-          # P8b: the notifier posts THROUGH the gateway's committed slack
+          # The notifier posts THROUGH the gateway's committed slack
           # upstream under a credential read from plane custody; the block
           # names files, never values.
           n = json.load(open("upstreams-inbound.json"))["approval_notifier"]
@@ -1807,8 +1814,8 @@ jobs:
             echo 'a bearer token was stored for the signed hook' >&2; exit 1
           fi
           make inbound-secret HOOK=demo GENERATE=1
-          # kubelet projects a first-time Secret mount with a lag (P5b
-          # delta), per pod — and with two replicas a probe through the
+          # kubelet projects a first-time Secret mount with a lag — it can
+          # take a minute — per pod, and with two replicas a probe through the
           # Service could land on the one still lagging. A rolling
           # restart starts both pods with the Secret already there (the
           # image is distroless, so there is no `cat` to wait on anyway).
@@ -1874,7 +1881,7 @@ jobs:
           bash scripts/inbound-probe.sh demo 'second use'
           EXPECT=403 bash scripts/inbound-probe.sh demo 'third: grant exhausted'
           make approval-audit | tee approval-audit-inbound.out
-          # P8b: the trail now names who decided between the action and the bounds.
+          # The trail names who decided, between the action and the bounds.
           grep -E 'inbound-demo +inbound +demo +approved +admin +expires=.* uses=2' approval-audit-inbound.out
       - name: "Inbound: bearer hook authenticates the same way and is gated the same way"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1907,11 +1914,11 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # P11 milestone 2 (D28(2)): the ONLY proof that the path users actually
-  # take works. Every other job runs from a checkout, and the checkout is
-  # exactly what a `go install` user does not have — the plane's image is
-  # fetched from the public Go proxy there, the manifests come out of the
-  # binary, and neither is exercised by a job that has k8s/ on disk.
+  # The ONLY proof that the path users actually take works. Every other job
+  # runs from a checkout, and the checkout is exactly what a `go install`
+  # user does not have — the plane's image is fetched from the public Go
+  # proxy there, the manifests come out of the binary, and neither is
+  # exercised by a job that has k8s/ on disk.
   #
   # It runs on main AFTER merge, never on the pull request, because the Go
   # proxy only serves commits that have been pushed to the default branch's
@@ -1922,9 +1929,9 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 3 of 4 — the tool gateway (P4b), tool approvals (P4c), the
-  # governed Slack path (P5a), approvals from Slack (P8b) and the exact
-  # races and metrics (P9) that read what all of them wrote.
+  # SHARD 3 of 4 — the tool gateway, tool approvals, the governed Slack
+  # path, approvals from Slack, and the exact races and metrics that read
+  # what all of them wrote.
   e2e-tools:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1952,7 +1959,7 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # P11: `make up` and every other target below now runs THROUGH kmx, so
+      # `make up` and every other target below runs THROUGH kmx, so
       # this job is what proves the binary a developer installs. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
@@ -1966,17 +1973,17 @@ jobs:
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
         run: make up
-      # P4a, keyless: the governance plane in the SAME cluster/job — a
+      # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
-      # proxy 25m) to fit the 2-CPU runner's request ceiling (P3 delta).
+      # proxy 25m) to fit the 2-CPU runner's request ceiling.
       # Chat rides the governed ollama path via the proxy; the ledger row
       # and the budget denial are asserted fail-closed.
       # Preset switches roll the agent Deployment with maxSurge=1, so the
       # node must fit a SECOND agent pod's requests while the old one
       # drains. With the plane deployed the 2-CPU node cannot fit a
       # second 100m/384Mi hello-world, so shrink its runtime requests to
-      # hello-tools' proven values (P3 delta) via the Agent CRD — the P1
+      # hello-tools' measured values via the Agent CRD — the committed
       # artifact k8s/hello-world.yaml stays untouched; this is a CI
       # sizing patch, not a topology change.
       - name: Shrink hello-world requests so preset switches can surge
@@ -1996,16 +2003,16 @@ jobs:
         run: |
           make chat | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
-      # P4b, keyless: the enforcing MCP gateway in the same cluster/job.
+      # Keyless: the enforcing MCP gateway in the same cluster/job.
       # No new pods (the gateway is a second listener in the existing
       # proxy pod — zero added CPU requests on the ~full node). The tools
       # agent is governed through the gateway, a REAL tool call is proven
-      # with the P3 probe-ConfigMap pattern, the audit row is asserted,
+      # with the probe-ConfigMap pattern, the audit row is asserted,
       # and a NOT-allowlisted call is denied fail-closed and audited.
       - name: Govern the tools agent through the MCP gateway
         if: steps.changes.outputs.docs_only != 'true'
         run: make govern-tools
-      # W34(a): this cluster now carries BOTH — kaimahi-tools through the
+      # This cluster carries BOTH — kaimahi-tools through the
       # gateway and the chart-managed kagent-tool-server direct — so it is
       # the one place the count can be proven to distinguish them rather
       # than just to add up.
@@ -2040,7 +2047,7 @@ jobs:
       - name: A reader that cannot look says unknown, and publishes no counts
         if: steps.changes.outputs.docs_only != 'true'
         run: bash scripts/ci/status-unknown-probe.sh
-      - name: Governed tool call rides the gateway (P3 probe proof)
+      - name: Governed tool call rides the gateway (real ConfigMap probe)
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           probe="probe-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
@@ -2077,7 +2084,7 @@ jobs:
           discovered=$(kubectl --context kind-kaimahi-p1 -n kagent get remotemcpserver kaimahi-tools \
             -o jsonpath='{.status.discoveredTools[*].name}')
           test "$discovered" = k8s_get_resources
-      # P4c, keyless: both approval cycles asserted fail-closed in the
+      # Keyless: both approval cycles asserted fail-closed in the
       # same cluster/job (zero CPU delta — approvals extend the existing
       # process). USES=1 bounds keep CI sleep-free: exhaustion, not
       # wall-clock expiry, proves grants end (TTL expiry is live-verified
@@ -2085,7 +2092,7 @@ jobs:
       - name: "Approvals tool cycle: denied files request, bounded approval admits THAT call, exhaustion re-denies"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # P12: a denial, an approval and a retry are all about one CALL.
+          # A denial, an approval and a retry are all about one CALL.
           # k8s_get_events declares `namespace` policy-relevant (the
           # committed table), so the request carries that call's digest
           # and a summary a human can read.
@@ -2120,7 +2127,7 @@ jobs:
           assert any('denied' in l for l in rows), rows
           print("one digest across the denial and the admitted call:", digests)
           EOF
-      # P5a, keyless: the governed Slack path. CI holds NO Slack token and
+      # Keyless: the governed Slack path. CI holds NO Slack token and
       # NO Copilot token (public, fork-exposed repo), so the Slack MCP
       # server is deliberately NOT deployed here. What that buys is an
       # honest boundary rather than a stand-in pretending to be Slack:
@@ -2204,7 +2211,7 @@ jobs:
           hosted = {"github", "github-release", "ado"}
           in_cluster = {"kagent-tools", "slack", "erp"}
           assert set(t) == hosted | in_cluster, t
-          # P10: an internet-facing entry is reached ONLY under the marker
+          # An internet-facing entry is reached ONLY under the marker
           # that routes it through the hardened dialer; every unmarked
           # entry is still in-cluster (the plane refuses the config
           # otherwise — this asserts the same on the deployed table).
@@ -2212,7 +2219,7 @@ jobs:
               host = urlparse(up["url"]).hostname
               if up.get("internet"):
                   assert name in hosted and urlparse(up["url"]).scheme == "https", (name, up)
-                  # W32: every hosted entry NAMES its credential from the
+                  # Every hosted entry NAMES its credential from the
                   # custody mount and never carries one. A hosted server
                   # reached with no credential at all would be a new
                   # unauthenticated egress, which is not a thing this
@@ -2222,7 +2229,7 @@ jobs:
                   continue
               assert name in in_cluster, (name, up)
               assert host.endswith((".kaimahi", ".kagent", ".svc.cluster.local")), (name, host)
-          # W32: committed headers are the OUTER ring on the two release
+          # Committed headers are the OUTER ring on the two release
           # seams — they narrow what the server offers before discovery.
           # Asserted on the deployed table so a seam that quietly lost its
           # narrowing fails here rather than at a tool nobody expected.
@@ -2234,7 +2241,7 @@ jobs:
           # MEASURED, not assumed: GitHub's server honours X-MCP-Tools only
           # when X-MCP-Toolsets is absent — combining them offered 26 tools
           # instead of the 10 named, and dropping the toolsets header
-          # brought it to exactly 10 (W32). Their docs do say the two
+          # brought it to exactly 10. Their docs do say the two
           # should not be combined. Asserted so nobody re-adds it and
           # silently widens the surface back to a whole toolset.
           assert "X-MCP-Toolsets" not in ghr, (
@@ -2250,7 +2257,7 @@ jobs:
           slack = t["slack"]
           assert slack["credential_file"].startswith("/etc/kaimahi/upstream-creds/"), slack
           assert not any(k for k in slack if k in ("credential", "token", "api_key")), slack
-          # P13: the demo's ERP is the one entry with NO credential at all
+          # The demo's ERP is the one entry with NO credential at all
           # — there is nothing to hold. Asserted here so a credential
           # quietly appearing on it would fail on the deployed table, not
           # only in the file.
@@ -2263,7 +2270,8 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           # No agent and no MCP server pod are created here: the node is
-          # at ~92% of its CPU requests (P4a delta) and neither is needed
+          # at ~92% of its CPU requests (measured on the 2-CPU runner with
+          # the plane deployed) and neither is needed
           # to exercise the gateway's decisions.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-slack-token \
             bash scripts/plane-admin.sh issue hello-slack
@@ -2317,14 +2325,14 @@ jobs:
             bash scripts/tool-denial-probe.sh conversations_add_message '{"channel_id": "C0CIONLY", "payload": "ci"}'
           make approval-audit | tee approval-audit-slack.out
           grep -E 'hello-slack +tool +conversations_add_message +approved' approval-audit-slack.out
-      # P8b, keyless: approvals FROM Slack, and the plane telling Slack a
+      # Keyless: approvals FROM Slack, and the plane telling Slack a
       # request is waiting. Slack cannot reach a kind cluster and CI holds
       # no Slack token, so the human is a synthetic, correctly SIGNED
       # app_mention fired at the bridge (scripts/slack-mention-probe.sh,
       # the way inbound-fire fires the generic hook) with synthetic user
       # ids (U0CIAPPROVER / U0NOBODY — never a real workspace's), and the
-      # plane's own posts ride the same absent slack upstream the P5a
-      # cycle uses: admitted by the gateway, dialed, 502 — the audit row
+      # plane's own posts ride the same absent slack upstream the governed
+      # Slack cycle uses: admitted by the gateway, dialed, 502 — the audit row
       # under the PLANE's credential is the proof the notification went
       # through the governed path. What only the live run proves: the
       # message landing in a channel, a person typing the command, the
@@ -2353,8 +2361,8 @@ jobs:
           if kubectl --context kind-kaimahi-p1 -n kagent get secret kaimahi-notifier-token >/dev/null 2>&1; then
             echo "the plane's own credential must not live in the agent namespace" >&2; exit 1
           fi
-          # kubelet projects first-time Secret mounts with a lag (P5b
-          # delta), per pod: restart so both replicas start with every
+          # kubelet projects first-time Secret mounts with a lag — it can
+          # take a minute — per pod: restart so both replicas start with every
           # file present, then confirm through the plane's own behaviour
           # — a signed mention from a NON-approver answers 503 while the
           # signing secret, the channel or the approver list is missing,
@@ -2374,8 +2382,8 @@ jobs:
           # fires: the denial files, the plane posts, the gateway admits
           # the plane's call by allowlist (no grant — the detail is the dial
           # failure, not a grant id), dials the absent upstream, 502 — same
-          # row shape as the P5a cycle, plane's name (P10: a 502 row now
-          # carries why: "upstream unreachable: …").
+          # row shape as the governed Slack cycle, under the plane's own
+          # name; a 502 row carries why: "upstream unreachable: …".
           bash scripts/tool-denial-probe.sh k8s_get_pods
           for _ in $(seq 1 30); do
             KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/plane-admin.sh tool-audit kaimahi-plane > plane-audit.out 2>/dev/null
@@ -2396,7 +2404,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           make approvals | tee approvals-p8b.out
-          # P12: several k8s_get_events requests can be pending at once —
+          # Several k8s_get_events requests can be pending at once —
           # one per distinct call — so the call is what selects the id.
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-p8b.out)
           test -n "$id"
@@ -2462,16 +2470,16 @@ jobs:
           # not the model.
           KIND_CLUSTER=kaimahi-p1 bin/kmx use governed-ollama --agent hello-tools
           # A new key in an already-mounted Secret takes kubelet up to a
-          # minute to project (P5b delta), and the plane fails a hook
+          # minute to project, and the plane fails a hook
           # CLOSED (503) while its signing secret is unreadable — which
           # is the right behaviour and the reason to wait for it here,
-          # exactly as the P8b setup above does.
+          # exactly as the Slack-approvals setup above does.
           for _ in $(seq 1 60); do
             EXPECT=403 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
               'List the configmaps in the default namespace.' >/dev/null 2>&1 && break
             sleep 3
           done
-          # Triggering an agent from outside is approvable (P7b): the
+          # Triggering an agent from outside is approvable: the
           # first mention is refused and files a request.
           EXPECT=403 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
             'List the configmaps in the default namespace.'
@@ -2490,8 +2498,8 @@ jobs:
             sleep 5
           done
           cat inbound-slack-tools.out
-          # The trail names the person the signature vouched for — P8b's
-          # vocabulary for an approver, reused for a requester.
+          # The trail names the person the signature vouched for — the
+          # approver vocabulary, reused for a requester.
           grep -E "slack-tools +inbound-slack +$ev +completed .*slack:U0CIPERSON *$" inbound-slack-tools.out
           # The SPEND names them, under the agent's budget credential...
           make ledger | tee ledger-slack-tools.out
@@ -2508,13 +2516,13 @@ jobs:
           make tool-audit CRED_TOOLS=hello-tools | tee tool-audit-after-run.out
           head -2 tool-audit-after-run.out
           test "$(sed -n '2p' tool-audit-after-run.out | grep -c 'none *$')" = 1
-      # P9, keyless: run it for real. Every step below drives the plane's
+      # Keyless: run it for real. Every step below drives the plane's
       # two replicas directly (a port-forward per POD, so both are in
       # every race by construction) rather than through kagent, whose
       # OpenAI client retries 429s on its own and would make the counts
       # a property of the client. No new pods: the node is at its CPU
       # request ceiling; the second proxy replica (10m) is the whole
-      # added cost of this phase.
+      # added cost of these steps.
       - name: "Exact budgets: 8 concurrent governed calls against a cap with room for one admit exactly one, across both replicas"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2616,7 +2624,7 @@ jobs:
           case "$ports" in
             *9091*|*9092*) echo 'admin or ops port exposed by a Service' >&2; exit 1 ;;
           esac
-      # P15, keyless: the GENERIC onboarding path, end to end, against a
+      # Keyless: the GENERIC onboarding path, end to end, against a
       # server that is NOT one of ours. scripts/ci/plain-mcp-server.py has
       # no NetworkPolicy, no upstream-table entry and no RemoteMCPServer
       # committed anywhere in this repo — it is what an adopter arrives
@@ -2911,11 +2919,11 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # P11 milestone 2 (D28(2)): the ONLY proof that the path users actually
-  # take works. Every other job runs from a checkout, and the checkout is
-  # exactly what a `go install` user does not have — the plane's image is
-  # fetched from the public Go proxy there, the manifests come out of the
-  # binary, and neither is exercised by a job that has k8s/ on disk.
+  # The ONLY proof that the path users actually take works. Every other job
+  # runs from a checkout, and the checkout is exactly what a `go install`
+  # user does not have — the plane's image is fetched from the public Go
+  # proxy there, the manifests come out of the binary, and neither is
+  # exercised by a job that has k8s/ on disk.
   #
   # It runs on main AFTER merge, never on the pull request, because the Go
   # proxy only serves commits that have been pushed to the default branch's
@@ -2926,7 +2934,7 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 4 of 4 — run it for real (P9): a replica killed mid-cycle, a
+  # SHARD 4 of 4 — run it for real: a replica killed mid-cycle, a
   # Postgres outage, both replicas restarted, backup and restore.
   e2e-resilience:
     runs-on: ubuntu-latest
@@ -2955,7 +2963,7 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # P11: `make up` and every other target below now runs THROUGH kmx, so
+      # `make up` and every other target below runs THROUGH kmx, so
       # this job is what proves the binary a developer installs. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
@@ -2969,17 +2977,17 @@ jobs:
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
         run: make up
-      # P4a, keyless: the governance plane in the SAME cluster/job — a
+      # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
-      # proxy 25m) to fit the 2-CPU runner's request ceiling (P3 delta).
+      # proxy 25m) to fit the 2-CPU runner's request ceiling.
       # Chat rides the governed ollama path via the proxy; the ledger row
       # and the budget denial are asserted fail-closed.
       # Preset switches roll the agent Deployment with maxSurge=1, so the
       # node must fit a SECOND agent pod's requests while the old one
       # drains. With the plane deployed the 2-CPU node cannot fit a
       # second 100m/384Mi hello-world, so shrink its runtime requests to
-      # hello-tools' proven values (P3 delta) via the Agent CRD — the P1
+      # hello-tools' measured values via the Agent CRD — the committed
       # artifact k8s/hello-world.yaml stays untouched; this is a CI
       # sizing patch, not a topology change.
       - name: Shrink hello-world requests so preset switches can surge
@@ -3078,11 +3086,11 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # P11 milestone 2 (D28(2)): the ONLY proof that the path users actually
-  # take works. Every other job runs from a checkout, and the checkout is
-  # exactly what a `go install` user does not have — the plane's image is
-  # fetched from the public Go proxy there, the manifests come out of the
-  # binary, and neither is exercised by a job that has k8s/ on disk.
+  # The ONLY proof that the path users actually take works. Every other job
+  # runs from a checkout, and the checkout is exactly what a `go install`
+  # user does not have — the plane's image is fetched from the public Go
+  # proxy there, the manifests come out of the binary, and neither is
+  # exercised by a job that has k8s/ on disk.
   #
   # It runs on main AFTER merge, never on the pull request, because the Go
   # proxy only serves commits that have been pushed to the default branch's
@@ -3094,12 +3102,12 @@ jobs:
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
 
-  # SHARD 5 of 5 — the accounts-payable exception demo (P13): the fixture
+  # SHARD 5 of 5 — the accounts-payable exception demo: the fixture
   # ERP behind the gateway, a standing constraint doing visible work, three
   # consequential calls each needing their own approval from a named human,
   # and a manipulated invoice that cannot spend an approval it did not earn.
   #
-  # WHY A FIFTH SHARD, given W25's arithmetic. That arithmetic was about
+  # WHY A FIFTH SHARD, given the arithmetic above. That arithmetic was about
   # SPLITTING an existing tail: a fifth shard would have bought a whole
   # bring-up to move ~50s of work. This is NEW proof, not moved proof.
   # Appended to a shard it would be serial tail on CI's longest job; as its
@@ -3118,7 +3126,7 @@ jobs:
   #
   # Approvals go through `make slack-mention`: the synthetic, correctly
   # signed app_mention that is already CI's stand-in for a person typing in
-  # the channel, so the AP scenario proves the P8b approver-identity path
+  # the channel, so the AP scenario proves the Slack approver-identity path
   # and not just the admin one. CI never reaches a real Slack workspace —
   # delivery, and how the approval renders to a human, are manual-run
   # coverage only (docs/ap-demo.md).
@@ -3174,7 +3182,7 @@ jobs:
       - name: Free the node — this shard's agent is ap-agent
         if: steps.changes.outputs.docs_only != 'true'
         run: kubectl --context kind-kaimahi-p1 -n kagent delete agent hello-tools --ignore-not-found
-      # P13, keyless: the fixture ERP. Built from source and side-loaded
+      # Keyless: the fixture ERP. Built from source and side-loaded
       # (its image is never published), its corpus a ConfigMap, and it
       # refuses to start on a corpus whose arithmetic does not add up — so
       # "corpus loaded" in its log is an assertion, not a log line.
@@ -3248,7 +3256,7 @@ jobs:
             grep -qE "ap-agent +erp +tools/call +$tool +allowed +200" ap-reads.out \
               || { echo "$tool did not audit as allowed" >&2; exit 1; }
           done
-      # P8b's approver path, so this scenario's approvals carry a person's
+      # The Slack approver path, so this scenario's approvals carry a person's
       # identity and not the admin bearer's. The same setup e2e-tools does:
       # this shard has its own cluster and none of that state. No Slack
       # workspace is reached and no bot token exists.
@@ -3300,7 +3308,7 @@ jobs:
           grep -E 'ap-agent +erp +tools/call +vendor_notify +denied +403' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +vendor_notify +allowed +200 +granted' ap-audit.out
           # Three grants, each welded to a call, each decided by the SLACK
-          # approver — the P8b identity path, not the admin bearer.
+          # approver — the Slack identity path, not the admin bearer.
           make grants | tee ap-grants.out
           for tool in payment_schedule dispute_open vendor_notify; do
             grep -qE "ap-agent +tool +$tool .*slack:U0CIAPPROVER +call [0-9a-f]{12}" ap-grants.out \
@@ -3311,8 +3319,8 @@ jobs:
           grep -E 'ap-agent +tool +dispute_open +approved +slack:U0CIAPPROVER .*dispute_open: invoice_id INV-88134, amount_cents 600000' ap-approval-audit.out
           grep -E 'ap-agent +tool +vendor_notify +approved +slack:U0CIAPPROVER .*vendor_notify: vendor_id MER-4471' ap-approval-audit.out
       # The manipulated invoice. The model is not in the loop here either:
-      # the injected call is driven directly, which is what the lane brief
-      # requires so the guarantee holds whether or not a model complies.
+      # the injected call is driven directly, deliberately, so the
+      # guarantee holds whether or not a model complies.
       - name: "AP: the injected call is denied, audited with its changed payee, and spends no approval"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3355,7 +3363,7 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
-  # SHARD 5 of 5 — the front door (W31): one command, on a runner stripped of
+  # SHARD 5 of 5 — the front door: one command, on a runner stripped of
   # the tools kmx shells out to, ending with an agent that answered.
   #
   # It is a shard rather than a tail on an existing one because it needs a
@@ -3364,9 +3372,10 @@ jobs:
   # with a job that has them would prove nothing — the whole claim is that
   # they are not needed.
   #
-  # THE TIME IS ASSERTED, and that is the point of the job. The number this
-  # lane exists to move is time-from-one-command-to-an-answer, and a number
-  # nothing watches goes back up. The ceiling is a doubling detector, not a
+  # THE TIME IS ASSERTED, and that is the point of the job. The number the
+  # front door exists to move is time-from-one-command-to-an-answer, and a
+  # number nothing watches goes back up. The ceiling is a doubling
+  # detector, not a
   # benchmark: it is set well above the observed run so that ordinary runner
   # variance is quiet and a regression that doubles the wait is loud.
   e2e-quickstart:
@@ -3439,7 +3448,7 @@ jobs:
           set -euo pipefail
           grep -q 'COMPLETE  An agent answered' quickstart.out
           # The ungoverned state must be stated, not left to be inferred
-          # from an empty ledger (D36).
+          # from an empty ledger.
           grep -q 'UNGOVERNED' quickstart.out
           # The three tools were fetched by kmx, not installed by the job.
           for t in kind kubectl helm; do
@@ -3502,8 +3511,9 @@ jobs:
           # the first time the job went green, of which the great majority is
           # image and model bytes coming down the wire.
           #
-          # The ceiling is that doubled. W31 exists to move this number, and a
-          # number nothing watches goes back up — so the check is deliberately
+          # The ceiling is that doubled. Time from one command to a working
+          # agent is the number the front door exists to move, and a number
+          # nothing watches goes back up — so the check is deliberately
           # a doubling detector rather than a generous "is it broken" bound.
           #
           # If this goes red: find what got slower FIRST. Raising the ceiling
@@ -3513,7 +3523,8 @@ jobs:
           echo "time to first answer: ${SECONDS_TAKEN}s (ceiling ${ceiling}s)"
           if [ "$SECONDS_TAKEN" -gt "$ceiling" ]; then
             echo "time from one command to an answer regressed past the ceiling."
-            echo "This number is the point of W31. Find what got slower before raising it."
+            echo "This is the time from one command to a working agent — the front door's whole promise."
+            echo "Find what got slower before raising the ceiling."
             exit 1
           fi
       - name: Tear down, and give the runner its tools back
@@ -3566,8 +3577,8 @@ jobs:
         shell: bash
     steps:
       # The same docs-only short-circuit the e2e job has, and for the same
-      # reason: every board update is a PR that merges to main, and a
-      # 40-minute cluster run per doc commit is a cost with no coverage.
+      # reason: every documentation update is a PR that merges to main, and
+      # a 40-minute cluster run per doc commit is a cost with no coverage.
       # Fail closed — any error, an undeterminable file set, or anything that
       # is not documentation runs the full job. There is no checkout here, so
       # the file list comes from the compare API rather than from git.
@@ -3845,7 +3856,7 @@ jobs:
         env:
           KIND_CLUSTER: kmx-clone-free
         run: |
-          # P12: the request is about one CALL, and `kmx approvals` must
+          # The request is about one CALL, and `kmx approvals` must
           # show it — an approver who can see only the verb is the whole
           # problem restated.
           kmx request tool k8s_get_events --args '{"namespace": "default"}'
@@ -3908,7 +3919,7 @@ jobs:
             -o jsonpath='{.spec.declarative.modelConfig}')" = ollama
           # Exactly one pod, on the template the current revision names —
           # `rollout status` returns while the old one is still draining,
-          # and an invoke landing there answers from the OLD preset (W16).
+          # and an invoke landing there answers from the OLD preset.
           hashes=$(kubectl --context kind-kmx-clone-free -n kagent get pods -l kagent=hello-world \
             -o jsonpath='{range .items[*]}{.metadata.labels.pod-template-hash}{"\n"}{end}')
           test "$(printf '%s' "$hashes" | grep -c .)" = 1
@@ -3964,10 +3975,11 @@ jobs:
         env:
           KIND_CLUSTER: kmx-clone-free
         run: |
-          # W35 made "a blueprint works from a released binary with no
-          # checkout" a REQUIREMENT, and then proved it only inside one: all
-          # eight Workflow: assertions live in e2e-runtime, which checks the
-          # repository out and passes `--file scripts/ci/workflow-fixture.yaml`.
+          # "A blueprint works from a released binary with no checkout" is
+          # a REQUIREMENT that was, until this step, only ever proved from
+          # inside a checkout: all eight Workflow: assertions live in
+          # e2e-runtime, which checks the repository out and passes
+          # `--file scripts/ci/workflow-fixture.yaml`.
           # This job is the one whose premise is no checkout, and it walked
           # past the feature that needed it most. Nothing below names a file:
           # the blueprint has to come out of the binary or these fail.
@@ -3997,8 +4009,10 @@ jobs:
 
           # 3. A step whose parameters are missing does NOT render as if it
           #    were fine. Empty-substituting into a policy-bound argument
-          #    would produce an approval that names nothing, which is the
-          #    P13 failure with better manners.
+          #    would produce an approval that names nothing — a person
+          #    approving a call they were never shown, which is the failure
+          #    the accounts-payable demo exists to rule out, with better
+          #    manners.
           # Two assertions, because the message alone is weaker than it
           # looks: `kmx workflow show` EXITS ZERO while rendering blocked
           # steps, so a reason printed somewhere in the output does not by

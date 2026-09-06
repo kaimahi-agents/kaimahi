@@ -1,16 +1,17 @@
 # Thin glue over kind/AKS + helm + kubectl + the kagent CLI. No Kaimahi CLI
 # here — kagent already ships one (see docs/getting-started.md for the full story).
 #
-# TARGET selects the environment (P5b). kind is the default and its
+# TARGET selects the environment. kind is the default and its
 # behaviour is unchanged: every kind command, context, and manifest is
 # exactly what it was before this file learned about anything else.
 #
 #   make up                      # kind, as always
 #   TARGET=aks make ...          # a managed cluster (docs/aks.md)
 #
-# KUBE_CTX is now overridable, which is the whole point of the lane — and
-# also its one new hazard, since `make down` can suddenly name a cluster
-# somebody cares about. Every MUTATING target below therefore depends on
+# KUBE_CTX is now overridable, which is the whole point of the managed
+# path — and also its one new hazard, since `make down` can suddenly name
+# a cluster somebody cares about. Every MUTATING target below therefore
+# depends on
 # `guard` (scripts/kube-guard.sh): it prints where the action is going,
 # and demands explicit confirmation for anything that is not a local kind
 # cluster. Fail closed — no confirmation, no action.
@@ -71,7 +72,7 @@ KMX_CHAT_ARGS = $(strip $(if $(filter 1,$(INTERACTIVE)),--interactive) \
 	$(if $(SESSION),--session "$$KMX_CHAT_SESSION") "$$KMX_CHAT_AGENT" \
 	$(if $(filter 1,$(INTERACTIVE)),$(if $(filter command line,$(origin TASK)),"$$KMX_CHAT_TASK"),"$$KMX_CHAT_TASK"))
 
-# ---- kmx (P11, D27) -------------------------------------------------------
+# ---- kmx: one implementation, and the targets below call it --------------
 # The developer journey — cluster, model, kagent, the agents, a conversation,
 # teardown — is implemented ONCE, in Go, in cmd/kmx. The targets below that
 # used to spell it out in shell are now one-line recipes that call this
@@ -105,14 +106,14 @@ OS   := $(shell uname -s | tr A-Z a-z)
 ARCH := $(shell uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64/)
 
 # The plane image. The tag moves with the phase so a stale side-loaded
-# image can never satisfy a newer manifest silently (P4b deviation 6).
+# image can never satisfy a newer manifest silently.
 PLANE_IMAGE_REPO ?= kaimahi-proxy
 PLANE_IMAGE_TAG  ?= p10
-# The revision stamped into the binary for kaimahi_build_info (P9); the
+# The revision stamped into the binary for kaimahi_build_info; the
 # image build context carries no .git. "unknown" outside a checkout.
 PLANE_VERSION    ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 
-# The demo ERP's image (P13, k8s/erp-mcp.yaml). Same rules as the plane's:
+# The demo ERP's image (k8s/erp-mcp.yaml). Same rules as the plane's:
 # the tag moves with the phase that owns the image, so a stale one can
 # never satisfy a newer manifest silently. On kind this is not used at all
 # — that path side-loads the committed `kaimahi-erp:dev` tag and applies
@@ -131,26 +132,26 @@ PLANE_TARGET     := kind
 # The keyless in-cluster model is the default everywhere on kind.
 AGENT_MODELCONFIG ?= hello-world-model
 GOVERNED_PRESET  ?= governed-ollama
-# P7a: the proxy leaves the cluster only when Copilot is enabled
+# The proxy leaves the cluster only when Copilot is enabled
 # (k8s/egress-copilot.yaml). Not on kind by default — the probe asserts
 # the proxy is internet-free. Set to 1 after `make plane-copilot-secret`.
 COPILOT_EGRESS   ?= 0
 else ifeq ($(TARGET),aks)
 KUBE_CTX         ?= $(AKS_CLUSTER)
-# Built in Azure by `az acr build` and PULLED — a private ACR (D15), never
+# Built in Azure by `az acr build` and PULLED — a private ACR, never
 # a public image.
 PLANE_IMAGE      ?= $(ACR_NAME).azurecr.io/$(PLANE_IMAGE_REPO):$(PLANE_IMAGE_TAG)
 PLANE_TARGET     := registry
 # The demo ERP travels the same road as the proxy: built by the registry,
 # pulled by the kubelet identity, never published. A private ACR is not
-# publication (D15) and the P13 guardrail against publishing the ERP holds.
+# publication, and the guardrail against publishing the demo ERP holds.
 ERP_IMAGE        ?= $(ACR_NAME).azurecr.io/$(ERP_IMAGE_REPO):$(ERP_IMAGE_TAG)
 ERP_TARGET       := registry
-# D15: Copilot-only on AKS. No Ollama is deployed there, so the agent goes
+# Copilot-only on AKS. No Ollama is deployed there, so the agent goes
 # straight onto the governed Copilot preset rather than the ollama one.
 AGENT_MODELCONFIG ?= governed-copilot
 GOVERNED_PRESET  ?= governed-copilot
-# Copilot-only (D15): the proxy's 443 allowance is always applied here.
+# Copilot-only: the proxy's 443 allowance is always applied here.
 COPILOT_EGRESS   ?= 1
 else
 $(error unknown TARGET '$(TARGET)' — expected 'kind' or 'aks')
@@ -168,7 +169,7 @@ export KMX_OPS_PORT := $(OPS_PORT)
 export KMX_CRED := $(CRED)
 export KMX_CRED_TOOLS := $(CRED_TOOLS)
 TOOLS          ?= k8s_get_resources
-# P5a: the Slack seam has its own credential, agent and allowlist. The
+# The Slack seam has its own credential, agent and allowlist. The
 # read-only tool is allowlisted from the start; POSTING is not — it is
 # the action a human approves (make approvals / make approve).
 CRED_SLACK     ?= hello-slack
@@ -186,7 +187,7 @@ SLACK_AGENT_TOOLS ?= $(SLACK_TOOLS),$(SLACK_POST_TOOL)
 comma          := ,
 TOOLNAMES_JSON  = $(if $(filter -,$(TOOLS)),,"$(subst $(comma),"$(comma)",$(TOOLS))")
 SLACK_TOOLNAMES_JSON = $(if $(filter -,$(SLACK_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(SLACK_AGENT_TOOLS))")
-# P10: the GitHub seam (GitHub's HOSTED MCP server behind the gateway)
+# The GitHub seam (GitHub's HOSTED MCP server behind the gateway)
 # has its own credential, agent and allowlist. Two READ tools are
 # allowlisted from the start; the write tool is not — it is the action
 # a human approves (make approvals / make approve), and the token in
@@ -196,22 +197,22 @@ GITHUB_TOOLS   ?= list_issues,list_pull_requests
 GITHUB_WRITE_TOOL := issue_write
 GITHUB_AGENT_TOOLS ?= $(GITHUB_TOOLS),$(GITHUB_WRITE_TOOL)
 GITHUB_TOOLNAMES_JSON = $(if $(filter -,$(GITHUB_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(GITHUB_AGENT_TOOLS))")
-# W32: the RELEASE seam (docs/release-agent.md) — the first thing Kaimahi
+# The RELEASE seam (docs/release-agent.md) — the first thing Kaimahi
 # is used FOR rather than demonstrated with. Its own credential, agent and
-# allowlist, separate from P10's read-only GitHub demo above, because this
+# allowlist, separate from the read-only GitHub demo above, because this
 # credential's token can change a real repository.
 #
 # The READ tools are allowlisted from the start, and `make release-bind`
 # additionally constrains them to one repository. The two consequential
 # ones are not allowlisted and must never be: creating the release branch
 # and dispatching a build are the actions a human approves, one call at a
-# time (P12). There is no destructive tool in either list, and none is
+# time. There is no destructive tool in either list, and none is
 # offered by the servers either — the upstream table excludes them at the
 # server with X-MCP-Exclude-Tools / X-MCP-Toolsets.
 CRED_RELEASE   ?= release-agent
 RELEASE_TOOLS  ?= get_latest_release,list_tags,list_releases,get_release_by_tag,list_pull_requests,list_commits,actions_list,actions_get,core_list_projects,pipelines_definition,pipelines_build,pipelines_build_log
 RELEASE_ACT_TOOLS := create_branch,actions_run_trigger,pipelines_write
-# P13: the accounts-payable seam (the demo's fixture ERP behind the
+# The accounts-payable seam (the demo's fixture ERP behind the
 # gateway) has its own credential, agent and allowlist. The SIX READ
 # tools are allowlisted from the start. The three with consequences are
 # not — and payment_schedule must NOT be added to this list even to
@@ -229,7 +230,7 @@ AP_AGENT_TOOLS ?= $(AP_TOOLS),$(AP_ACT_TOOLS)
 AP_TOOLNAMES_JSON = $(if $(filter -,$(AP_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(AP_AGENT_TOOLS))")
 AP_INVOICE     ?= INV-88134
 # 1 = the approvals in `make ap-demo` / `make ap-injection` wait for a real
-# person in a real Slack rather than a synthesised app_mention (P8b). The
+# person in a real Slack rather than a synthesised app_mention. The
 # default keeps kind and CI exactly as they were.
 AP_HUMAN       ?= 0
 
@@ -286,14 +287,14 @@ GUARD_NS ?= kagent, kaimahi, ollama
 #
 # The old form was `port-forward ... >/dev/null 2>&1 & sleep 3` and then
 # an invoke that trusted the CLI's default localhost:8083. Three problems,
-# and P5b makes them reachable: running a kind and a managed verification
-# at once is now a first-class workflow (docs/aks.md), and the
-# ports collide.
+# and the portable manifests make them reachable: running a kind and a
+# managed verification at once is now a first-class workflow
+# (docs/aks.md), and the ports collide.
 #   1. If the bind failed because ANOTHER cluster's forward already held
 #      8083, the error went to /dev/null and `kagent invoke` connected to
 #      that forward instead — returning a real, plausible reply from the
 #      wrong cluster. It does NOT fail closed: the controller on that
-#      forward answers happily. (Demonstrated while reviewing this lane.)
+#      forward answers happily. (Demonstrated while reviewing this code.)
 #      --context cannot protect this path, because the aiming happens at
 #      the socket, not at kubectl.
 #   2. `sleep 3` is a guess, not a readiness check.
@@ -349,8 +350,8 @@ KAGENT_INVOKE = $(KAGENT) --kagent-url http://127.0.0.1:$(CHAT_PORT) invoke
 # no ready backend; but once a backend IS programmed and the pod tears the
 # connection down before answering, the controller reports instead:
 #   failed to send HTTP request: Post "http://<agent>.kagent:8080": EOF
-# That is the same race one moment later, and it reddened main after P5b
-# merged. Retry both.
+# That is the same race one moment later, and it reddened main once the
+# managed-cluster path landed. Retry both.
 #
 # The predicate is anchored to the controller's WHOLE error line, not to
 # transport text anywhere in the output. The output being matched is the
@@ -420,11 +421,11 @@ exit $$rc
 endef
 
 # The `up` journey differs by environment. On kind it is unchanged. On AKS
-# there is no Ollama (D15: Copilot-only), and governance has to exist
+# there is no Ollama (that path is Copilot-only), and governance has to exist
 # BEFORE the agents do, because the agents go straight onto the governed
 # Copilot preset — there is no keyless model for them to start on.
 ifeq ($(TARGET),kind)
-# P11: the kind journey is kmx's, in one process — so it guards once, and so
+# The kind journey is kmx's, in one process — so it guards once, and so
 # the sequence CI runs is the sequence the binary implements, not a list of
 # targets that could drift from it. The individual steps below are still
 # addressable (`make cluster`, `make agent`, ...) and delegate one step each.
@@ -474,7 +475,7 @@ cluster: aks-cluster
 endif
 
 # Ollama is the kind path's keyless model server. On AKS it is deliberately
-# not deployed (D15): the keyless path is already proven on kind by CI on
+# not deployed there: the keyless path is already proven on kind by CI on
 # every PR, and AKS's job is proving the plane runs on a managed cluster
 # with a real model. Refuse loudly rather than half-deploying it.
 #
@@ -491,11 +492,11 @@ model: $(KMX)
 else
 ollama:
 	@echo 'ollama is not deployed on TARGET=$(TARGET) — the managed path is' >&2
-	@echo 'Copilot-only (D15). See docs/aks.md.' >&2
+	@echo 'Copilot-only. See docs/aks.md.' >&2
 	@exit 1
 
 model:
-	@echo 'no Ollama on TARGET=$(TARGET) — nothing to pull (D15).' >&2
+	@echo 'no Ollama on TARGET=$(TARGET) — nothing to pull.' >&2
 	@exit 1
 endif
 
@@ -521,8 +522,8 @@ endif
 # Only a NotFound (fresh cluster) may skip the capture — any other read
 # failure aborts rather than risk silently un-governing.
 #
-# P5b generalises the same mechanism one step. The committed artifact
-# names the keyless ollama ModelConfig, which does not exist on a
+# The managed path generalises the same mechanism one step. The committed
+# artifact names the keyless ollama ModelConfig, which does not exist on a
 # Copilot-only managed cluster, so the desired config is:
 #   a live non-default one (preserve it, as before)  else
 #   $(AGENT_MODELCONFIG)  — hello-world-model on kind (identical to the
@@ -534,7 +535,7 @@ ifeq ($(TARGET),kind)
 agent: $(KMX)
 	@$(KMX_ENV) $(KMX) up --step agent
 
-## tools-agent: the P3 tools-enabled agent
+## tools-agent: the tools-enabled agent
 tools-agent: $(KMX)
 	@$(KMX_ENV) $(KMX) up --step tools-agent
 else
@@ -560,14 +561,14 @@ agent: guard
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
 		agent/hello-world --timeout=300s
 
-## tools-agent: the P3 tools-enabled agent (kagent-tools MCP server comes
+## tools-agent: the tools-enabled agent (kagent-tools MCP server comes
 ## from the kagent helm install; this applies the Agent wired to it)
 # Same desired-modelConfig treatment as `agent` above — but note this one
 # IS a behavioural delta on kind, not just a generalisation: previously
 # `tools-agent` never read modelConfig, so re-applying always reset
 # hello-tools to the committed value. It now preserves a live non-default
-# one. That is deliberate and matches P4c's governance-preservation guard
-# (which already covers hello-tools' gateway wiring, just below); it is
+# one. That is deliberate and matches the governance-preservation guard
+# just below (which already covers hello-tools' gateway wiring); it is
 # unreachable in every documented kind workflow, because nothing switches
 # hello-tools' model — `make use` and `make govern` only touch
 # hello-world. It matters on AKS, where hello-tools must come up on the
@@ -602,7 +603,7 @@ tools-agent: guard
 endif
 
 ## chat: one question by default; INTERACTIVE=1 keeps a session open.
-## Override AGENT=hello-tools for the P3 tools agent; SESSION=<id> resumes.
+## Override AGENT=hello-tools for the tools-enabled agent; SESSION=<id> resumes.
 #
 # Delegated on every TARGET: kmx's `agent chat` is this recipe's
 # `kagent_forward` — the servable-through-the-Service check, the waited-for
@@ -693,7 +694,8 @@ endef
 
 ## use: switch the hello-world agent to a model preset from k8s/models/
 # (e.g. make use PRESET=anthropic). Hosted presets need their Secret first
-# (make model-secret) — and remember: P2 spend is ungoverned until P4.
+# (make model-secret) — and remember: spend through a preset is ungoverned
+# until the governance plane is in front of it (make plane).
 #
 # One shell for apply + patch, because the wait that follows needs three
 # values from BEFORE them. `wait_switched` keys its reconcile wait on the
@@ -712,7 +714,7 @@ endef
 # takes the fast path. Only a genuine NotFound may leave the "before"
 # generation empty; any other read failure aborts.
 ifeq ($(TARGET),kind)
-# kmx owns the kind path (D33). `wait_switched` — the three-deep wait this
+# kmx owns the kind path. `wait_switched` — the three-deep wait this
 # recipe used to spell out, every layer of it paid for by a flake — lives in
 # internal/kmx/app/use.go with its reasons attached, and is now the ONE
 # implementation the governed-tools switch shares.
@@ -768,11 +770,11 @@ use-ollama: guard
 	$(MAKE) use PRESET=ollama KAIMAHI_CONFIRM='$(KUBE_CTX)'
 endif
 
-## ---- P4a: the governance plane (docs/spend.md) ----
+## ---- the governance plane (docs/spend.md) ----
 
 ifeq ($(TARGET),kind)
 ## plane: build + deploy the Kaimahi proxy and its Postgres ledger
-# kmx owns the kind path (D28): it builds the proxy image, bootstraps the
+# kmx owns the kind path: it builds the proxy image, bootstraps the
 # plane's secrets, applies k8s/plane/ UNRENDERED, and always restarts the
 # proxy, since a rebuilt image under the same tag leaves the spec unchanged.
 #
@@ -830,7 +832,7 @@ endif
 ## Secret), apply the governed presets, switch hello-world through the
 ## proxy. The agent never sees a real upstream key.
 #
-# P5b: both governed presets are applied on every target, but which one
+# Both governed presets are applied on every target, but which one
 # the agent is switched to depends on the environment ($(GOVERNED_PRESET):
 # governed-ollama on kind, governed-copilot on AKS where no Ollama exists).
 # The switch is also skipped when the agent is not there yet — on a
@@ -838,7 +840,7 @@ endif
 # agents have no keyless model to start on. On kind the agent always
 # exists by this point, so the path taken is the one it always was.
 # On kind this is kmx's, waits and NotFound discrimination included; the
-# managed path below is unchanged (D28(4): kmx is kind only).
+# managed path below is unchanged — kmx drives the kind path only.
 ifeq ($(TARGET),kind)
 govern: $(KMX)
 	@$(KMX_ENV) $(KMX) govern $(CRED) --agent hello-world --preset $(GOVERNED_PRESET)
@@ -910,7 +912,7 @@ ledger:
 	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh ledger $(CRED)
 endif
 
-## ---- P9: running it for real (docs/operations.md) ----
+## ---- running it for real (docs/operations.md) ----
 
 ## backup: pg_dump the plane's database to a local file (default
 ## backups/kaimahi-<UTC timestamp>.sql). Streams through kubectl exec
@@ -951,7 +953,7 @@ plane-metrics:
 	@KUBECTL="$(KUBECTL)" POD='$(POD)' bash scripts/plane-metrics.sh
 endif
 
-## ---- P4b: the enforcing MCP gateway (docs/tool-governance.md) ----
+## ---- the enforcing MCP gateway (docs/tool-governance.md) ----
 
 ## govern-tools: put the tools agent behind the MCP gateway — issue its
 ## kmh_ credential (agent-side Secret kaimahi-tools-token), set the
@@ -978,8 +980,8 @@ govern-tools: guard
 		agent/hello-tools --timeout=300s
 endif
 
-## ungovern-tools: restore the P3 wiring (direct to the chart-managed
-## tool server, ungoverned) by re-applying the committed Agent YAML
+## ungovern-tools: restore the ungoverned wiring (direct to the chart-managed
+## tool server) by re-applying the committed Agent YAML
 ifeq ($(TARGET),kind)
 ungovern-tools: $(KMX)
 	@$(KMX_ENV) $(KMX) tools ungovern
@@ -1018,7 +1020,7 @@ tool-audit:
 	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_TOOLS)
 endif
 
-## ---- P4c: approvals and time-boxed permits (docs/approvals.md) ----
+## ---- approvals and time-boxed permits (docs/approvals.md) ----
 
 ## approvals: list pending approval requests (denied actions file them
 ## automatically; `make request` files one explicitly)
@@ -1058,7 +1060,7 @@ endif
 ##   make request KIND=tool SUBJECT=k8s_get_events
 ##   make request KIND=tool SUBJECT=k8s_get_events ARGS='{"namespace": "default"}'
 ##   make request KIND=budget SUBJECT=tokens CRED=hello-world
-## ARGS (tool requests only, P12) names the CALL to pre-approve; omitted
+## ARGS (tool requests only) names the CALL to pre-approve; omitted
 ## means the argument-less call, never "any call".
 ifeq ($(TARGET),kind)
 request: $(KMX)
@@ -1099,7 +1101,7 @@ plane-copilot-secret: guard
 	@KUBECTL="$(KUBECTL)" COPILOT_SECRET_NAMESPACE=kaimahi \
 		COPILOT_SECRET_NAME=kaimahi-copilot-token \
 		bash scripts/copilot-secret.sh
-	@# P7a: enabling Copilot is the moment the proxy needs the internet.
+	@# Enabling Copilot is the moment the proxy needs the internet.
 	@# The plane's own boundary (k8s/plane/network-policy.yaml) lets it
 	@# reach nothing outside the cluster; this opens TCP 443 out, and
 	@# only for the proxy. `make egress-copilot-off` closes it again.
@@ -1124,7 +1126,7 @@ else
 down: aks-down
 endif
 
-## ---- P5b: the managed-cluster path (docs/aks.md) ----
+## ---- the managed-cluster path (docs/aks.md) ----
 #
 # Azure identifiers are supplied by the operator and never committed:
 #   AKS_RESOURCE_GROUP  required   the group these scripts create/delete
@@ -1135,9 +1137,10 @@ endif
 #   AKS_NODE_COUNT      optional   default 1
 #   AKS_NETWORK_POLICY  optional   cilium (default) | azure | calico — the
 #                                  policy engine; scripts/aks-up.sh refuses
-#                                  a cluster without one (P7a's policies
-#                                  would be inert). Set it on the make
-#                                  command line or export it in the shell;
+#                                  a cluster without one (the plane's
+#                                  egress policies would be inert). Set it
+#                                  on the make command line or export it
+#                                  in the shell;
 #                                  it is deliberately NOT in the recipe's
 #                                  explicit list below, because that would
 #                                  turn "unset" into an explicit empty
@@ -1161,8 +1164,8 @@ aks-creds:
 
 ## aks-down: DELETE the ephemeral resource group (cluster + registry + all).
 ## Refuses any group not tagged by scripts/aks-up.sh, and requires an
-## explicit confirmation naming the group. This is not best-effort: the
-## P5b cluster is meant to be gone when the lane ends.
+## explicit confirmation naming the group. This is not best-effort: a
+## managed verification cluster is meant to be gone when the work ends.
 aks-down:
 	@AKS_RESOURCE_GROUP='$(AKS_RESOURCE_GROUP)' AKS_CLUSTER='$(AKS_CLUSTER)' \
 		bash scripts/aks-down.sh
@@ -1194,11 +1197,11 @@ $(KAGENT):
 		{ echo 'kagent CLI checksum mismatch' >&2; rm -f $(KAGENT); exit 1; }
 	chmod +x $(KAGENT)
 
-## ---- P5a: the governed Slack path (docs/slack.md) ----
+## ---- the governed Slack path (docs/slack.md) ----
 
 ## slack-secret: capture the Slack BOT token stdin-only and store the
 ## plane-side Secrets. REFUSES unless Slack confirms the channel is
-## private and the bot is a member (board rule: never a shared channel).
+## private and the bot is a member — never a shared channel.
 ##   make slack-secret SLACK_CHANNEL=C0XXXXXXXXX
 slack-secret: guard
 	@test -n "$(SLACK_CHANNEL)" || \
@@ -1274,14 +1277,14 @@ slack-post: $(KAGENT)
 	esac
 	@$(call kagent_forward,hello-slack,$(KAGENT_INVOKE) --agent hello-slack --task "$$KAIMAHI_SLACK_TASK",$(CHAT_RETRYABLE_SAFE))
 
-## slack-down: remove the P5a demo (agent, gateway seam, MCP server).
+## slack-down: remove the Slack demo (agent, gateway seam, MCP server).
 ## The Secrets are left alone — delete them explicitly to revoke.
 slack-down: guard
 	-$(KUBECTL) -n kagent delete agent hello-slack
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-slack
 	-$(KUBECTL) -n kaimahi delete mcpserver kaimahi-slack-mcp
 
-## ---- P7a: the network boundary (docs/egress.md) ----
+## ---- the network boundary (docs/egress.md) ----
 #
 # The policies themselves need no target: k8s/plane/network-policy.yaml
 # ships with `make plane` on every environment. What needs a target is
@@ -1312,7 +1315,7 @@ egress-copilot-off: guard
 	@# would otherwise delete nothing, exit 0, and leave the hole open.
 	$(KUBECTL) delete -f k8s/egress-copilot.yaml --ignore-not-found
 
-## ---- P10: hosted upstreams (docs/hosted-upstreams.md) ----
+## ---- hosted upstreams (docs/hosted-upstreams.md) ----
 #
 # The gateway's first upstream OUTSIDE the cluster: GitHub's hosted MCP
 # server, reached through the plane's one hardened dialer. The table
@@ -1399,13 +1402,13 @@ github-ask: $(KAGENT)
 		{ echo 'invalid GITHUB_REPO (want owner/name)' >&2; exit 1; }
 	@$(call kagent_forward,hello-github,$(KAGENT_INVOKE) --agent hello-github --task "$$KAIMAHI_GITHUB_TASK",$(CHAT_RETRYABLE_SAFE))
 
-## github-down: remove the P10 demo (agent, gateway seam). The token is
+## github-down: remove the GitHub demo (agent, gateway seam). The token is
 ## a separate decision: make github-revoke.
 github-down: guard
 	-$(KUBECTL) -n kagent delete agent hello-github
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-github
 
-## ---- W32: the release agent (docs/release-agent.md) ----
+## ---- the release agent (docs/release-agent.md) ----
 #
 # Kaimahi's first real user. An agent reads what merged since the last
 # release, DRAFTS the notes, and proposes each consequential call; a human
@@ -1475,7 +1478,7 @@ release-allow: guard
 	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_RELEASE) "$(RELEASE_TOOLS)"
 
 ## release-bind: constrain the release credential's READ tools to ONE
-## repository, at the plane. Written as a P15 overlay fragment, so
+## repository, at the plane. Written as an overlay fragment, so
 ## `make plane` keeps it.
 ##   make release-bind GITHUB_REPO=owner/name
 ##   make release-bind GITHUB_REPO=-          (remove the binding)
@@ -1530,7 +1533,7 @@ release-down: guard
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-release-github
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-release-ado
 
-## ---- P13: the accounts-payable exception demo (docs/ap-demo.md) ----
+## ---- the accounts-payable exception demo (docs/ap-demo.md) ----
 #
 # The demo Kaimahi exists to make: an agent investigates an invoice that
 # ordinary three-way matching cannot resolve, reaches a defensible answer,
@@ -1546,7 +1549,7 @@ erp: guard
 		KIND_CLUSTER='$(KIND_CLUSTER)' bash scripts/erp-deploy.sh all
 
 ## erp-fixtures: re-project k8s/erp-fixtures.json and restart the ERP.
-## Editing the story needs no rebuild (D30) — this is that path.
+## Editing the story needs no rebuild — this is that path.
 erp-fixtures: guard
 	@KUBECTL="$(KUBECTL)" bash scripts/erp-deploy.sh fixtures
 else
@@ -1554,7 +1557,7 @@ else
 ## No local docker build, no `docker push`, no registry login on this
 ## machine — the source is uploaded and built BY the private registry,
 ## exactly as `make plane-image` does for the proxy. Nothing is published:
-## the image never leaves that private ACR (D15).
+## the image never leaves that private ACR.
 erp-image:
 	@test -n "$(ACR_NAME)" || \
 		{ echo 'ACR_NAME is required for TARGET=aks (see docs/aks.md)' >&2; exit 1; }
@@ -1573,7 +1576,7 @@ erp: guard erp-image
 		bash scripts/erp-deploy.sh fixtures
 
 ## erp-fixtures (TARGET=aks): re-project k8s/erp-fixtures.json and restart
-## the ERP. Editing the story needs no rebuild (D30) — this is that path.
+## the ERP. Editing the story needs no rebuild — this is that path.
 erp-fixtures: guard
 	@KUBECTL="$(KUBECTL)" ERP_TARGET=$(ERP_TARGET) \
 		ERP_IMAGE='$(ERP_IMAGE)' ERP_PULL_POLICY=$(ERP_PULL_POLICY) \
@@ -1595,10 +1598,10 @@ govern-ap: guard
 		remotemcpserver/kaimahi-erp --timeout=300s
 	$(KUBECTL) apply -f k8s/ap-agent.yaml
 	@# The modelConfig rides the SAME merge patch as the tool selection.
-	@# k8s/ap-agent.yaml commits `governed-ollama` (D14: the kind demo and
-	@# CI stay keyless), and that ModelConfig does not exist on a
-	@# Copilot-only managed cluster (D15) — the agent would never reach
-	@# Ready and the wait below would time out. GOVERNED_PRESET is
+	@# k8s/ap-agent.yaml commits `governed-ollama` (the kind demo and CI
+	@# hold no hosted credential and stay keyless), and that ModelConfig
+	@# does not exist on a Copilot-only managed cluster — the agent would
+	@# never reach Ready and the wait below would time out. GOVERNED_PRESET is
 	@# `governed-ollama` on kind, so this patch is a no-op there and the
 	@# committed file still names the preset kind uses.
 	$(KUBECTL) -n kagent patch agent ap-agent --type merge \
@@ -1649,20 +1652,20 @@ ap-injection: guard
 		AP_CHAT='make chat AGENT=ap-agent TARGET=$(TARGET) KIND_CLUSTER=$(KIND_CLUSTER)' \
 		bash scripts/ap-injection.sh
 
-## ap-down: remove the P13 demo (agent, gateway seam, ERP)
+## ap-down: remove the accounts-payable demo (agent, gateway seam, ERP)
 ap-down: guard
 	-$(KUBECTL) -n kagent delete agent ap-agent
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-erp
 	-$(KUBECTL) delete -f k8s/erp-mcp.yaml
 	-$(KUBECTL) -n kaimahi delete configmap kaimahi-erp-fixtures
 
-## ---- P7b: inbound connectors (docs/inbound.md) ----
+## ---- inbound connectors (docs/inbound.md) ----
 #
 # The plane's one ingress: an external event (a webhook) may trigger a
 # kagent agent, on the plane's terms. The hooks live in the committed
 # upstreams table (k8s/plane/upstreams.yaml); these targets issue the
 # hook's identity, store its signing secret, deliver an event, and read
-# the trail. Approving a hook rides the P4c targets unchanged:
+# the trail. Approving a hook rides the approval targets unchanged:
 # `make approvals` / `make approve ID=... USES=... TTL=...`.
 HOOK          ?= demo
 CRED_INBOUND  ?= inbound-demo
@@ -1701,7 +1704,7 @@ inbound-audit:
 	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh inbound-audit \
 		$(if $(filter command line,$(origin HOOK)),$(HOOK),)
 
-## ---- P8b: approvals from Slack (docs/approvals.md, "Deciding from Slack") ----
+## ---- approvals from Slack (docs/approvals.md, "Deciding from Slack") ----
 #
 # A filed request is announced in the pinned channel by the plane, under
 # the plane's OWN gateway credential; an approver decides it by
@@ -1735,7 +1738,7 @@ slack-mention:
 		{ echo "usage: make slack-mention SLACK_USER=U… COMMAND='approve <id> [uses=N] [ttl=D]' [EXPECT=200] [WANT=...]" >&2; exit 1; }
 	@KUBECTL="$(KUBECTL)" EXPECT="$(EXPECT)" WANT="$(WANT)" bash scripts/slack-mention-probe.sh "$(SLACK_USER)" "$(COMMAND)"
 
-## ---- P8: the public edge (docs/inbound.md, "Putting it on the internet") ----
+## ---- the public edge (docs/inbound.md, "Putting it on the internet") ----
 #
 # The ONLY internet-reachable thing in this repo: a TLS edge in front of
 # the inbound bridge, on TARGET=aks only. kind has no public path and
