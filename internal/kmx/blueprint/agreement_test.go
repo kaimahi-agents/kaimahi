@@ -7,9 +7,10 @@ package blueprint_test
 // `when:` guard; `run` bound EVERY step regardless, so a parameter that
 // only a conditional step needs was demanded in order to leave that step
 // out — `publish` is guarded by `when: ado_builds` and `ado_builds` is
-// `required_for: [publish]`, and no parameter set could satisfy both.
-// The two commands described different workflows, and the one that
-// described it correctly was the one that does nothing.
+// `required_for: [publish]`. A run supplying every guarded parameter
+// still started; every run that left one out did not — which is every run
+// `when:` exists for. The two commands described different workflows, and
+// the one that described it correctly was the one that does nothing.
 //
 // So the assertion here is not "a run starts". It is that the two
 // commands agree, on the CARRIED release blueprint, for every parameter
@@ -23,8 +24,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/blueprint"
 )
 
-// runCases are parameter sets in the order an operator reaches them: the
-// first is the partial one W35's driver could not start at all.
+// runCases are parameter sets in the order an operator reaches them. Only
+// the last supplies every guarded parameter, and it is the only one W35's
+// driver could start.
 var runCases = []struct {
 	name string
 	set  map[string]string

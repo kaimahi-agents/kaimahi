@@ -159,8 +159,12 @@ Two consequences worth knowing before you write one:
   default can be the switch.
 - **`show` and `run` answer this the same way.** They did not always:
   until W36, `kmx workflow run` bound *every* step regardless of its
-  guard, so it demanded the build ids that `when: ado_builds` exists to
-  make optional — and no parameter set could start a run. The two
+  guard, so it demanded the parameters of steps you had not enabled. A run
+  that supplied every guarded parameter still started; what could not start
+  was any run that left one out — and that is the case `when:` exists for.
+  The release workflow made it circular: `publish` is guarded by
+  `when: ado_builds`, so the only runs that began were the ones passing
+  build ids that do not exist until the build step has run. The two
   commands now share one predicate, and a test renders and binds the
   carried blueprint with the same `--set` and asserts the same step list.
 

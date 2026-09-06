@@ -280,9 +280,10 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 // answered from the steps `when:` left in. W35's driver bound every step
 // unconditionally, so a parameter that only a conditional step needs was
 // demanded in order to leave that step out — `publish` is guarded by
-// `when: ado_builds` and `ado_builds` is `required_for: [publish]`, and
-// no parameter set could satisfy both at once. Every run failed at
-// binding.
+// `when: ado_builds` and `ado_builds` is `required_for: [publish]`, so
+// the only runs that could start were the ones supplying every guarded
+// parameter, build ids included. Which is to say: every run that used
+// `when:` for what it is for failed at binding.
 //
 // Two passes settle it. The first demands nothing a step needs — exactly
 // the call `kmx workflow show` makes — which is enough to know what was
