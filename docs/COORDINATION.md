@@ -3724,7 +3724,7 @@ PR-open-with-checks-green — do not merge. Report deviations in the PR.
 You are a worker session for the Kaimahi project (repo root: this
 checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
 first — D27, D28, D29, D36, the W28/P15/W30 delta sheets and the
-security standing guidance bind you. Your lane is two findings the
+security standing guidance bind you. Your lane is three findings the
 coordinator's verification pass produced and could not close, which are
 the same finding wearing two hats: **kmx will tell you things about a
 system it has not actually checked.**
@@ -3734,7 +3734,8 @@ All were reproduced; do not spend the lane rediscovering them.
 **FINDING (a) HAS SHIPPED — do not build it.** `kmx status` counts what
 is governed and distinguishes "there are none" from "kmx cannot tell".
 The original text is kept below the line for context only. Two findings
-from the workflow verification run take its place, and they are the same
+from the workflow verification run take its place, so the lane carries
+THREE: the version skew below, plus (c) and (d). All three are the same
 species: **kmx telling you something about a system it has not checked.**
 
 **(c) An unset current context makes kmx fall back SILENTLY, and this is
@@ -3808,10 +3809,15 @@ expect them to outlive the fix:
   words. There is no obviously right answer, which is why it is a
   decision and not a detail.
 
-Guardrails: kmx accepts no credential material (D27); every mutation
-through the context guard; no client-go; the plane's admin port is on no
-Service and stays that way; no Azure or Slack identifiers; no repo
-secrets in CI. **`kmx status` must stay useful with no plane, no
+Guardrails: kmx accepts no credential material, with exactly ONE
+exception, ruled above — the terminal-only prompt that writes a Secret.
+Nothing in this lane may widen it: no flag, no environment variable, no
+file, no pipe, and every other path in kmx keeps refusing
+credential-shaped input with the screens it already has. If your work
+touches credential handling at all, say in the PR which path you touched
+and why it is still the only one. Every mutation through the context
+guard; no client-go; the plane's admin port is on no Service and stays
+that way; no Azure or Slack identifiers; no repo secrets in CI. **`kmx status` must stay useful with no plane, no
 credential and no network** — it is the command people run when
 something is wrong, and a status command that needs the thing being
 diagnosed is worthless.
@@ -3828,8 +3834,13 @@ the precedent and reusing it is worth more than a new mechanism.
 Verification is real: a transcript of a new kmx against a deliberately
 older plane, producing a message that names the version problem and the
 fix; kmx with NO current context set, doing whatever you decided rather
-than acting silently on a fallback; and a credential inside the
-projection window, reported honestly rather than as Accepted. The
+than acting silently on a fallback; and, for the lag, a credential that
+is KNOWN BAD — rotated at the plane, or written wrong on purpose —
+queried inside the projection window and showing the exact status you
+chose for "cannot tell yet", then queried again after the projection
+refreshes and showing the rejection. Both readings in the transcript
+with the elapsed time between them: "reported honestly" is a claim, and
+those two lines are the evidence. The
 `kmx status` transcripts the original text asked for belong to the lane
 that shipped finding (a) and are not yours to reproduce. Branch
 from current main; PR targets main; no stacked bases; lane ends at
