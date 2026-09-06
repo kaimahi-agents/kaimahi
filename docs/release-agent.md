@@ -1,6 +1,6 @@
 # The release agent
 
-Kaimahi's first real user (D38). Everything else in this repository is a
+Kaimahi's first real user. Everything else in this repository is a
 demonstration — a fixture ERP, a hello-world agent, a Slack channel made
 for the purpose. This one helps cut releases of a real project, on a real
 repository, on the schedule that project actually releases on.
@@ -53,16 +53,16 @@ This turned out to be forced rather than chosen — see
 
 **It never decides to ship.** Every consequential call is denied by
 default, files an approval request carrying the exact call, and proceeds
-only under a grant welded to that call (P12,
-[approvals.md](approvals.md)).
+only under a grant welded to that call ([approvals.md](approvals.md)).
 
 **It reaches one repository.** Three independent reasons, below.
 
 ## The approval names the release, not the verb
 
-D38(2) asks for one property: approving "publish v1.2.3" must not
-authorize the next release. That is P12's argument binding, and what it
-binds is the `policy_fields` the committed table declares
+One property matters more than any other here: approving "publish v1.2.3"
+must not authorize the next release. An approval is welded to the digest of
+the exact call, not to the verb, and what it binds is the `policy_fields`
+the committed table declares
 ([`k8s/plane/upstreams.yaml`](../k8s/plane/upstreams.yaml)).
 
 | Call | Bound |
@@ -84,8 +84,8 @@ really is.
 **Why the release notes are not bound.** `name` and `body` are prose the
 model regenerates, and an LLM re-emitting semantically identical prose is
 not byte-stable; binding them would make "approve, then it proceeds" fail
-at random — exactly the failure D29 anticipated when it ruled that the
-digest binds *declared* fields rather than the whole argument object. So
+at random — which is exactly why the digest binds the *declared* fields
+rather than the whole argument object. So
 the honest statement of what a human approves is: **this version, on this
 repository, from this commit** — and they read the drafted notes in the
 proposal step. An agent that got approval on v1.2.3 could publish
@@ -98,10 +98,10 @@ a *different* branch files a request too, and it would look identical in
 shown anything, `scripts/release-run.sh` requires a pending request whose
 summary names every policy-relevant field of the call that was asked for
 on the command line. If the agent proposed something else, the run stops
-and says so, and nothing is approved. P13 learned this the expensive way:
-on its first live run the agent's own turn filed a payment for a
-different invoice at the same amount, and the approval landed on the
-wrong one.
+and says so, and nothing is approved. The accounts-payable demo learned
+this the expensive way: on its first live run the agent's own turn filed a
+payment for a different invoice at the same amount, and the approval landed
+on the wrong one.
 
 ## What makes a destructive operation impossible
 
@@ -154,8 +154,8 @@ make release-secret GITHUB_REPO=owner/name   # paste the fine-grained token
 make ado-secret ADO_ORG=<organization>       # paste the Entra access token
 ```
 
-Capturing a credential is a human's job here and stays one (D27 — `kmx`
-accepts no credential material). Everything after it is the agent's.
+Capturing a credential is a human's job here and stays one: `kmx` accepts
+no credential material in any form. Everything after it is the agent's.
 
 **GitHub** ([`scripts/release-secret.sh`](../scripts/release-secret.sh)):
 a fine-grained personal access token on ONE repository, with Contents
@@ -189,14 +189,15 @@ the command says so.
 
 1. The GitHub token is fine-grained and scoped to one repository, and
    `release-secret.sh` refuses a token that lists more than one.
-2. `make release-bind GITHUB_REPO=owner/name` adds a P12 **standing
-   constraint** so the read tools are callable only with that `owner` and
+2. `make release-bind GITHUB_REPO=owner/name` adds a **standing
+   constraint** — a declarative bound the credential carries, checked
+   before the allowlist — so the read tools are callable only with that `owner` and
    `repo`. A read naming another repository is denied at the plane and
    files a request. Only the reads: a standing constraint *admits*, and
    admitting a branch creation without a human would be the opposite of
    the design.
 
-   It is written as a P15 **overlay fragment**
+   It is written as an **overlay fragment**
    (`kaimahi-upstreams-extra/release-bind.json`), not as a patch to the
    committed table, so `make plane` keeps it — a repository binding that
    silently disappeared on the next deploy would be worse than none. The
@@ -215,8 +216,8 @@ agent turn is one short step.
 
 Rejected, and why:
 
-- **The P7b inbound bridge**, delivering a build-completion callback.
-  It needs a public HTTPS edge — a `LoadBalancer` Service, an Azure DNS
+- **The inbound bridge** (webhook → A2A), delivering a build-completion
+  callback. It needs a public HTTPS edge — a `LoadBalancer` Service, an Azure DNS
   label and ACME ([`k8s/inbound-edge.yaml`](../k8s/inbound-edge.yaml)) —
   which exists on AKS only, and a weekly release process run from a
   laptop will not stand that up. It also buys latency, not capability.
@@ -236,9 +237,9 @@ creates a tag**. `list_releases`, `get_latest_release`,
 
 So the agent cannot publish a release even if a human approved it. The
 path is `actions_run_trigger` with `method: run_workflow` — the agent
-dispatches the workflow, and the workflow publishes. Which is what D38(b)
-asked for anyway: the agent tells systems to move bytes and never carries
-them. Here the tool surface enforces it rather than the design merely
+dispatches the workflow, and the workflow publishes. Which is the shape
+this design wanted anyway: the agent tells systems to move bytes and never
+carries them. Here the tool surface enforces it rather than the design merely
 intending it.
 
 There is also **no compare tool**, so "what changed since the last
@@ -311,10 +312,10 @@ a missing tool.
 
 The deeper fix is not here: the plane holds a captured bearer and has no
 way to renew one. A credential that outlives a human approval cycle needs
-the plane to refresh it, which is a capability this lane did not build. The seam does not break
-when it dies — the server answers 401, the gateway audits it, nothing is
-half-done — but it is real friction, and P16's credential deadlines exist
-for the same reason.
+the plane to refresh it, and that capability is not built. The seam does
+not break when it dies — the server answers 401, the gateway audits it, nothing is
+half-done — but it is real friction, and the plane's own expiring
+credentials exist for the same reason.
 
 ## Builds are bounded, not approved
 
@@ -388,9 +389,9 @@ rollout; the dispatcher tools are asserted to bind their selector first.
 
 ## The same workflow, as a blueprint
 
-Everything above is the release agent as W32 built it: four layers, and
-one 556-line driver. [D42](COORDINATION.md) asked what a user does who
-wants this workflow, or a slightly different one, and the answer is
+Everything above is the release agent as first built: four layers, and
+one 556-line driver. A user who wants this workflow, or a slightly
+different one, should not have to reproduce that by hand — so the answer is
 [a blueprint](workflows.md) — one file, applied and run by `kmx
 workflow`, with `blueprints/release.yaml` reproducing exactly the
 governance the make targets below produce.

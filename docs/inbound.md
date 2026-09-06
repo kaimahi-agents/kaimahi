@@ -307,13 +307,14 @@ audit index; a late retry is a 409 and burns nothing.
 **Two approvals, both bounded.** The hook needs a live `inbound` grant
 (`make approvals` shows the request the first mention files; `make
 approve ID=… USES=… TTL=…`). The reply needs a live *tool* grant for
-`conversations_add_message` on the `hello-slack` credential — the P5a
-approval, exactly as [slack.md](slack.md#the-demo) walks through it,
+`conversations_add_message` on the `hello-slack` credential — the same
+approval the governed Slack path uses, exactly as
+[slack.md](slack.md#the-demo) walks through it,
 including the rediscover-and-restart so the agent can see the tool. A
 mention with the first grant and not the second runs the agent, which
 has **no posting tool in its hands** (the gateway projects only the
-allowlist onto `tools/list`, so kagent never discovered it — the P5a
-rule), says it cannot post, and stops: the inbound audit shows
+allowlist onto `tools/list`, so kagent never discovered it), says it
+cannot post, and stops: the inbound audit shows
 `completed`, nothing lands in the channel, and the Slack audit shows no
 call at all. A `denied 403` row appears there only when discovery is
 stale (a grant that just expired, before kagent's next reconcile) or a

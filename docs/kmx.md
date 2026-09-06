@@ -18,8 +18,8 @@ left in the Makefile is the Slack, GitHub and inbound connector families,
 secret capture, AKS and the probes.
 
 **Status: milestone 3.** Nothing is published. `kmx` is a provisional name,
-like `kaimahi` itself, and is not claimed anywhere (D26/D27/D28 on the
-[board](COORDINATION.md)).
+like `kaimahi` itself, and is not claimed anywhere
+([NAMING.md](NAMING.md)).
 
 **kind only.** Everything below assumes a local kind cluster. A managed
 cluster is the Makefile's path — `TARGET=aks make plane`, `TARGET=aks make
@@ -76,7 +76,7 @@ make up    # build if stale, then create/update the local runtime
 | Go 1.26+ | only for `kmx plane` (it builds the plane's image locally) and for `go install` |
 
 kmx has always fetched the pinned kagent CLI itself, checksum-verified, the
-first time you chat. Since W31 the cluster tools work the same way: pinned
+first time you chat. The cluster tools now work the same way: pinned
 versions, the publisher's own sha256 file, the digest re-checked on every
 later use rather than only at download — because "checksum-verified" has to
 mean the bytes about to run with your kubeconfig, not the bytes that arrived
@@ -139,7 +139,7 @@ swap plus a credential the agent cannot read past.
 | `kmx plane --source <path>` | build the plane from a checkout instead of fetching it (`-` forces the fetch) |
 | `kmx govern [<credential>]` | issue the governed credential (default `$CRED`), apply the governed presets, switch the agent onto one. `--ttl` sets the credential's lifetime; the plane defaults one, and there is no way to ask for "never" |
 | `kmx credentials` | the governed credentials and when each one expires, soonest first, with the state an operator scans: `EXPIRED`, `EXPIRING`, `ok`, or `no expiry` (the legacy class) ([identity.md](identity.md)) |
-| `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel — which is the only reason a CLI that accepts no credential material (D27) can own this verb. Rotating the token is still `kmx govern` |
+| `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel — which is the only reason a CLI that accepts no credential material can own this verb. Rotating the token is still `kmx govern` |
 | `kmx ledger [<credential>]` | the spend ledger, newest first, plus month-to-date totals. The last column is `acted for`: who the call was made for |
 | `kmx grants [<credential>]` | grants, with liveness — an expired grant is not a grant |
 | `kmx audit tool\|approval [<cred>]` | the enforcement points' audit trails |
@@ -508,7 +508,7 @@ and why, is [govern-your-agent.md](govern-your-agent.md).
 
 | Property | Why |
 |---|---|
-| **Never accepts a credential** — no flag, no environment variable, no file | The same rule as `agent create` (D27). `--secret` names a Secret RESOURCE; `kmx tools govern` is what mints a token into it. The generated document is scanned for key shapes before it is written. |
+| **Never accepts a credential** — no flag, no environment variable, no file | The same rule as `agent create`. `--secret` names a Secret RESOURCE; `kmx tools govern` is what mints a token into it. The generated document is scanned for key shapes before it is written. |
 | **A tool named without a declaration is REFUSED** | `policy_fields` decides what an approval binds to and what the audit says. kmx will not choose it, and prints what each of the three answers costs at the point of choosing. |
 | **The weakest setting announces itself in the file** | `policy_fields: []` is a verb-level binding and the shortest thing to type. The manifest carries a `WEAKEST SETTING IN USE` banner naming the tools, so a reviewer sees it too. |
 | **The policy pair is read from the live Service** | Its selector is the labels that actually route to those pods, and its resolved `targetPort` is the port they listen on. A policy written against a Service's PUBLISHED port blocks every call while reading as correct — policy is evaluated on the post-NAT pod address. A selector-less Service is refused: a policy pinned to no labels selects the whole namespace. |
@@ -581,7 +581,7 @@ entangled with capturing a credential, which kmx accepts in no form at all:
 | Capturing a secret of any kind | `make model-secret`, `make copilot-secret`, `make slack-secret` — key-bearing steps stay in standalone scripts |
 | A managed cluster (AKS) | `TARGET=aks make …` ([aks.md](aks.md)) |
 | The network and tool probes | `scripts/*-probe.sh` |
-| Publishing — a tap, a package manager namespace | nowhere. D34 lifted the freeze on publishing, and W28 shipped tagged releases with checksummed binaries; `install.sh` and `go install` are the two install paths, and no npm/crates/PyPI/Homebrew namespace is claimed ([NAMING.md](NAMING.md)) |
+| Publishing — a tap, a package manager namespace | nowhere. Settling the name lifted the freeze on publishing, and the first tagged release shipped checksummed binaries; `install.sh` and `go install` are the two install paths, and no npm/crates/PyPI/Homebrew namespace is claimed ([NAMING.md](NAMING.md)) |
 
 `kmx up` says the plane is not deployed, in one line, at the end of a run,
 and names the two commands that change that.

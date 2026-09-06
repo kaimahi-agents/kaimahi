@@ -42,8 +42,8 @@ Everything not in the table is denied. In particular:
   pod traffic. Measured on kind: port-forward into a deny-all pod still
   works. The admin plane keeps its existing gate of cluster credentials
   and then the bearer token.
-- The Slack MCP server accepts connections from the proxy only. P5a
-  measured that slack-mcp-server v1.3.0 ignores its API key on the http
+- The Slack MCP server accepts connections from the proxy only.
+  slack-mcp-server v1.3.0 was measured to ignore its API key on the http
   transport, so until now any pod in the cluster could call it directly
   and post as the bot, around the gateway's allowlist and audit. That
   bypass is closed. The only route to Slack is through the gateway.
@@ -172,8 +172,8 @@ It does not guarantee the destination. A compromised server image, a
 poisoned dependency, or a tool argument the server passes through
 unchecked could open a TLS connection to any public host on 443 and
 send the workspace token there. What bounds the destination today is
-the server's own code plus the three non-network layers P5a named: the
-gateway allowlist (which tools may be called at all), the server's
+the server's own code plus three non-network layers: the gateway
+allowlist (which tools may be called at all), the server's
 channel-ID restriction on posting, and the bot's Slack scopes. The same
 holds for the proxy under the Copilot allowance, except that the proxy
 is this repo's code, forwards to exactly one base URL per upstream, and

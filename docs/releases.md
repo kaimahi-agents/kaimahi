@@ -157,7 +157,8 @@ What happens under that:
 - The new proxy runs the migrations at startup, under a Postgres advisory
   lock, so a rollout of N replicas is its own migration step and the replicas
   do not race each other.
-- Migrations are additive. Every column added since P4a has a default, which
+- Migrations are additive. Every column added since the first schema has a
+  default, which
   is what lets a backup taken before an upgrade restore after one.
 - A rollout is a Kubernetes rolling update: a new pod does not take traffic
   until it is ready, and it is not ready until its migrations have applied.
@@ -172,7 +173,7 @@ plane serves a fresh governed call.
 
 ### One behaviour change worth knowing: grants minted before argument binding
 
-Migration `00008` welded tool approvals to the exact call (P12). Grants minted
+Migration `00008` welded tool approvals to the exact call. Grants minted
 before it carry no argument digest, and that class is **closed**: those grants
 keep their old verb-level meaning — still bounded by the expiry and use count
 their approver set — and the store will not mint another one. So an upgrade

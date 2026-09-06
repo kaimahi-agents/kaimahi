@@ -217,15 +217,15 @@ done: `make github-down` removes the agent and the seam;
    and the boot log will say `hosted upstream vetted` with the addresses
    and the trust anchor, or refuse the entry and say why.
 
-W32 removed two of the three things this section used to say were out
-of scope. There are now three hosted seams, all on the same dialer and
-the same opt-in allowance:
+The release agent removed two of the three things this section used to say
+were out of scope. There are now three hosted seams, all on the same dialer
+and the same opt-in allowance:
 
 | Entry | Server | Credential |
 |---|---|---|
-| `github` | GitHub's hosted MCP server | a fine-grained, **read-only**, one-repository token (P10) |
-| `github-release` | the same server, narrowed by header | a fine-grained, one-repository token that can **write** (W32) |
-| `ado` | Microsoft's hosted Azure DevOps MCP server | a Microsoft **Entra access token** — that server accepts nothing else (W32) |
+| `github` | GitHub's hosted MCP server | a fine-grained, **read-only**, one-repository token |
+| `github-release` | the same server, narrowed by header | a fine-grained, one-repository token that can **write** |
+| `ado` | Microsoft's hosted Azure DevOps MCP server | a Microsoft **Entra access token** — that server accepts nothing else |
 
 So an OAuth-authenticated hosted server exists (`ado`, and its token lives
 about an hour), and write tools on GitHub exist — each write denied by

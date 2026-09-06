@@ -76,7 +76,7 @@ the plane covers, kept in one place so it cannot drift between docs.
 | Inbound events (webhooks → agent) | **Governed**: signature or bearer auth before any work, replay window, per-hook rate limit and bounded queue, the target's budget checked at the door, and a bounded grant consumed per event ([inbound.md](inbound.md)). The pre-auth rate limiter and the queue are per replica by design (ceiling = replicas × rate); the budget, the grant use and the replay guard are exact in Postgres |
 | The plane itself: replicas and concurrency | **Two stateless replicas** that agree on every decision: budgets, grant uses, replay dedupe, request dedupe and approval immutability are each decided in one Postgres transaction under the credential's row lock, proven by concurrent tests in CI (N calls against a cap with room for one admit exactly one, across both replicas). Migrations run under a lock; a replica can be killed mid-cycle; a Postgres restart drops readiness, never restarts a proxy. **Postgres is one replica**, with `make backup` / `make restore` — durable, not highly available ([operations.md](operations.md)) |
 | Metrics | **Prometheus on its own cluster-internal port** (9092), on no Service, opened only to a scraper by an explicit NetworkPolicy allowance. Decisions by seam and reason, ledger totals by credential *name*, live grants, queue depths, upstream latency, build info. No identifier is ever a label value — a test asserts the label set ([operations.md](operations.md#metrics)) |
-| Internet-facing *gateway* upstreams (GitHub's hosted MCP server) | **Governed**: an upstream marked `internet: true` is reached only through the plane's one hardened dialer (https, 443, the host the table names, every resolved address checked and the checked address dialed, no redirects, bounded and capped), shared with the Copilot path; the GitHub token is plane custody, read-only, and the allowlist names read tools only; the network allowance is opt-in, 443 to public addresses, the same shape as Copilot's ([hosted-upstreams.md](hosted-upstreams.md)). W32 added two more hosted seams on the same dialer: a write-scoped GitHub credential and Microsoft's hosted Azure DevOps server, which is authenticated by **Microsoft Entra** rather than a key — so an OAuth-authenticated hosted server and write tools both exist now, the release writes denied and approved call by call, with build dispatch bounded by a standing constraint instead ([release-agent.md](release-agent.md)). Residuals: an IP/port rule is still not a hostname rule; an Entra access token lives about an hour and is re-captured per session; and the ref an Azure DevOps build runs on is a nested argument the policy vocabulary cannot bind |
+| Internet-facing *gateway* upstreams (GitHub's hosted MCP server) | **Governed**: an upstream marked `internet: true` is reached only through the plane's one hardened dialer (https, 443, the host the table names, every resolved address checked and the checked address dialed, no redirects, bounded and capped), shared with the Copilot path; the GitHub token is plane custody, read-only, and the allowlist names read tools only; the network allowance is opt-in, 443 to public addresses, the same shape as Copilot's ([hosted-upstreams.md](hosted-upstreams.md)). The release agent added two more hosted seams on the same dialer: a write-scoped GitHub credential and Microsoft's hosted Azure DevOps server, which is authenticated by **Microsoft Entra** rather than a key — so an OAuth-authenticated hosted server and write tools both exist now, the release writes denied and approved call by call, with build dispatch bounded by a standing constraint instead ([release-agent.md](release-agent.md)). Residuals: an IP/port rule is still not a hostname rule; an Entra access token lives about an hour and is re-captured per session; and the ref an Azure DevOps build runs on is a nested argument the policy vocabulary cannot bind |
 | Approval routing to Slack, per-approver identity | **Governed**: a filed request is announced in the pinned channel by the plane's own post, which rides the gateway under the plane's credential (allowlisted to the posting tool, channel-pinned, audited); `@kaimahi approve <id>` / `deny <id>` from a Slack user in the Secret-mounted approver list decides it, and the grant and audit rows carry `slack:<user id>`; the admin path records `admin`. Channel membership alone decides nothing; a non-approver is refused and audited ([approvals.md](approvals.md#deciding-from-slack)). Email and ticket routing are not built; a notification the plane cannot get out is logged (a known refusal is retried, three attempts in all; an ambiguous failure never), and `make approvals` remains the queue |
 | Who an agent acted for | **Recorded, where the plane can substantiate it.** Every ledger, tool-audit and inbound row carries `acted_for`: `slack:<user id>` for a person the inbound signature vouched for, `none` where there is no person, `unknown` where the attribution was lost, and never an empty value that could mean either ([identity.md](identity.md)). The correlation is a run the plane opens and closes around an agent turn — one per credential the agent authenticates with — so the agent is never asked to name itself. Per-person *budgets* are not built |
 | Credential lifetime | **Bounded.** Every credential issued now carries an expiry (30 days by default; no way to ask for "never"), refused at the proxy, the gateway and the inbound door with a message naming the fault, the time and the fix, and audited like every other refusal. A credential with no expiry is the legacy class — still valid, and only ever shrinking ([identity.md](identity.md)). Renewal moves a date, not material; rotating the token is still re-issuing it |
@@ -86,12 +86,11 @@ the plane covers, kept in one place so it cannot drift between docs.
 
 ## How these docs are organised
 
-They used to be eight runbooks named for the phase that built them (P1,
-P2, P3, P4a, P4b, P4c, P5a, P5b). That order was how the repo was
-built, not how anyone reads it: to find "how do I govern tool calls" you
-had to know it was P4b. The files are now named for the capability, and
-the old phase-named files are gone (their history is in git and on the
-board).
+They used to be eight runbooks named for the phase that built them. That
+order was how the repo was built, not how anyone reads it: to find "how do
+I govern tool calls" you had to know which phase had built the MCP
+gateway. The files are now named for the capability, and the old
+phase-named files are gone (their history is in git and on the board).
 
 Each runbook mixed three things: how to use a capability, why it is
 built the way it is, and what was verified when it shipped. The rule
@@ -119,8 +118,8 @@ runbook, that is a bug in the restructure, not a decision. File it.
   and the traps.
 - [entry-point-principles.md](entry-point-principles.md): why the
   developer entry point exists, what it must never become, and what is
-  deliberately not built yet. The reasoning behind D27/D28, as distinct
-  from the decisions themselves.
+  deliberately not built yet — the reasoning behind the entry point, as
+  distinct from the decisions themselves.
 - [COORDINATION.md](COORDINATION.md): the coordination board, decisions,
   and delta sheets. Owned by the coordinator session.
 - [CLI-PROPOSAL.md](CLI-PROPOSAL.md): the `kaimahi agent create`

@@ -13,7 +13,7 @@ The model is **deny-and-retry**: no held-open calls, no approval flow
 inside MCP itself. The agent's denial says a request was filed; the
 operator decides; the agent (or the operator) tries again.
 
-Since P12 an approval is about a **call**, not a verb: "may pay invoice
+An approval is about a **call**, not a verb: "may pay invoice
 INV-88134, 32,550 cents, to MER-4471" rather than "may call
 pay_invoice for the next ten minutes". And a credential can carry
 **standing constraints** so routine calls need no approval at all. Both
@@ -68,9 +68,9 @@ grant, and the earlier grant's uses are untouched.
 Consequences worth stating plainly:
 
 - **Two attempts with different policy-relevant arguments file two
-  requests.** Before P12 they deduped into one, and one approval covered
-  both. Genuine repeats of the *same* call still collapse into a single
-  pending request.
+  requests.** They once deduped into one, and one approval covered both.
+  Genuine repeats of the *same* call still collapse into a single pending
+  request.
 - **`make approvals`, `make grants`, `make tool-audit` and `make
   approval-audit` all show the call**, and the audit records the digest
   and summary on the denial *and* on the admitted call — so the call a
@@ -86,9 +86,9 @@ Consequences worth stating plainly:
   and it comes from the declaration rather than the request: a tool that
   declares `policy_fields: []` has said no argument is policy-relevant,
   so every call to it has the same digest and a grant for one admits any
-  arguments. Grants minted before
-  P12 (the migration's closed legacy class) stay verb-level and keep
-  working; nothing can create another, and `make grants` labels them
+  arguments. Grants minted before approvals bound arguments (the
+  migration's closed legacy class) stay verb-level and keep working;
+  nothing can create another, and `make grants` labels them
   `verb-level (legacy)`.
 
 ## Standing constraints: the calls that need no approval

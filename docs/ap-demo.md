@@ -105,10 +105,10 @@ changes with the target:
 | delivered | `kind load` side-loads a local tag | pulled by the cluster's kubelet identity from that private ACR |
 | manifest | `k8s/erp-mcp.yaml` applied exactly as committed, `imagePullPolicy: Never` | image reference and pull policy rendered at deploy time by `scripts/erp-deploy.sh` |
 
-This is the road the governance plane's own image has taken since P5b, and
-the ERP simply travels it too. A private ACR is **not** publication
-([D15](COORDINATION.md)): nothing leaves it, and the guardrail against
-publishing the demo ERP is untouched. See
+This is the road the governance plane's own image has taken ever since the
+same manifests had to run on both kind and AKS, and the ERP simply travels
+it too. A private ACR is **not** publication: nothing leaves it, and the
+guardrail against publishing the demo ERP is untouched. See
 [aks.md](aks.md#6c-optional-the-accounts-payable-demo) for the managed-cluster run.
 
 To see exactly what a registry target would apply, without a cluster:

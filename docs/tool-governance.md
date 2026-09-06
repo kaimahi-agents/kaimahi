@@ -11,7 +11,7 @@ reaches a tool server. kagent still runs the tools. Kaimahi ships no MCP
 runtime; the gateway relays the protocol and enforces.
 
 > **What this is, and is not.** The allowlist here is static policy, and
-> since P12 it is joined by ARGUMENT policy: which argument fields a tool
+> it is joined by ARGUMENT policy: which argument fields a tool
 > declares policy-relevant, and the standing constraints a credential
 > carries on them. The consent flow on top of both, where a denial files
 > an approval request welded to the exact call and a human mints a
@@ -75,8 +75,8 @@ IS the allowlist projection                │ tool_allowlist,    │
 
 A tool server knows what its arguments do; the plane has to be told. A
 `tool_upstreams` entry may therefore declare, per tool, which argument
-fields are **policy-relevant** — and that one declaration does two jobs
-(D29): the digest an approval is welded to binds exactly those fields,
+fields are **policy-relevant** — and that one declaration does two jobs:
+the digest an approval is welded to binds exactly those fields,
 and the audit's human-readable summary is built from exactly those
 fields.
 
@@ -313,7 +313,7 @@ one `pipelines_write`.
 A `tool_upstreams` entry may therefore carry `extra_headers`: committed,
 non-secret headers set on every forwarded call. Both of those servers
 read them (`X-MCP-Toolsets`, `X-MCP-Tools`, `X-MCP-Exclude-Tools`;
-Azure DevOps also `X-MCP-Readonly`), and the W32 release seams use them
+Azure DevOps also `X-MCP-Readonly`), and the release agent's seams use them
 to exclude every destructive tool at the source.
 
 This is the outer of two rings, and it is the stronger one: a tool the

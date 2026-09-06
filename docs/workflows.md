@@ -47,7 +47,7 @@ seams:
       list_tags:     [owner, repo]
       create_branch: [owner, repo, branch, from_branch]
     allow: [list_tags]               # → the credential's tool allowlist
-    bound:                           # → standing constraints (P12/D31)
+    bound:                           # → standing constraints
       list_tags:
         - {field: owner, op: eq, value: "${repo.owner}"}
         - {field: repo,  op: eq, value: "${repo.name}"}
@@ -67,7 +67,7 @@ Three things are missing from that list on purpose.
 
 **It carries no credential.** A blueprint names Secrets; it never holds a
 value, and the parser refuses a document that looks like it is carrying
-one (D27). Capturing a token stays a human's job.
+one. Capturing a token stays a human's job.
 
 **It cannot create a seam.** `requires` states the `policy_fields` this
 workflow depends on and kmx checks them against the running table — it
@@ -83,8 +83,10 @@ command refuses and says which side to fix — nothing is applied.
 a `call`'s arguments may reference parameters and literals only. A
 reference to something an agent turn produced is a parse error. That is
 not fastidiousness: a model that proposed a different call would file an
-approval request too, and it would look identical in `kmx approvals`.
-P13 learned it the expensive way.
+approval request too, and it would look identical in `kmx approvals`. The
+accounts-payable demo learned it the expensive way, on a live run: the
+agent's own turn filed a payment for a different invoice at the same
+amount, and the approval landed on the wrong one.
 
 ## The four kinds of step, which are four answers to "who is interrupted"
 
@@ -158,7 +160,7 @@ Two consequences worth knowing before you write one:
   `--set` is the thing that turns a step on, and only a parameter with no
   default can be the switch.
 - **`show` and `run` answer this the same way.** They did not always:
-  until W36, `kmx workflow run` bound *every* step regardless of its
+  `kmx workflow run` once bound *every* step regardless of its
   guard, so it demanded the parameters of steps you had not enabled. A run
   that supplied every guarded parameter still started; what could not start
   was any run that left one out — and that is the case `when:` exists for.
@@ -204,7 +206,7 @@ something a public repository commits.
 
 `kmx workflow govern` writes two things and nothing else: the
 credential's tool allowlist, and its standing constraints as a
-[P15 overlay fragment](govern-your-agent.md), so `kmx plane` — which
+[overlay fragment](govern-your-agent.md), so `kmx plane` — which
 reapplies the base table — keeps them.
 
 It does not reconcile. If the cluster's bounds differ from what this

@@ -21,7 +21,7 @@ chats. "It's a known model" is not a test.
 
 The second small-model failure mode, and the sneakier one: `hello-tools`
 calls the tool correctly, gets correct data back, and then garbles or
-contradicts it in the summary. During P3 verification the model
+contradicts it in the summary. While verifying the MCP tool path the model
 occasionally received a ConfigMap list and still answered "there are no
 configmaps". While writing this FAQ it read the ollama pod list correctly
 and replied `olla-854b55bc55-9vk6d` — the real pod is
@@ -48,8 +48,8 @@ make use PRESET=github-copilot      # restart the pod so it picks up the new Sec
 
 On the governed path it's `make plane-copilot-secret` instead, and no
 restart — the proxy reads the Secret-mounted file per request. An
-in-cluster auto-refresher was deliberately not built in P2; token lifecycle
-is governance-plane territory.
+in-cluster auto-refresher was deliberately not built with the model path;
+token lifecycle is governance-plane territory.
 
 ## Why the browser login? I'm already logged into `gh`
 

@@ -3,24 +3,24 @@
 **Superseded by [`kmx`](kmx.md).** A command-line entry point was built after
 all, in Go rather than Node, and it does more than scaffold: `kmx` owns the
 whole developer journey (`up`, `agent create`, `agent chat`, `status`,
-`down`) and the Makefile delegates to it (D27). D19's rulings (2) and (3) —
-scaffold-only, and the Makefile owns bring-up — are superseded; the survey
-below still stands and still binds, which is why `kmx agent chat` is a
+`down`), and the Makefile targets are thin aliases that call it, so CI
+proves the code a developer runs. Two of the rulings recorded below —
+scaffold-only, and the Makefile owns bring-up — are therefore superseded;
+the survey still stands and still binds, which is why `kmx agent chat` is a
 passthrough to `kagent invoke` and there is no `kmx install`. The safety
 table this document's prototype established is carried across in full.
 
-**Status of this document: considered, prototyped, not built.** The five open decisions at
-the end were ruled (D19 on the board: no npm publish yet, scaffold-only,
-the Makefile owns bring-up, a zero-dependency Node toolchain accepted).
+**Status of this document: considered, prototyped, not built.** The five
+open decisions at the end were ruled: no npm publish yet, scaffold-only,
+the Makefile owns bring-up, a zero-dependency Node toolchain accepted.
 A working prototype was reviewed in pull request #16 and closed by its
 author unmerged; nothing from it is on main. This document stays as the
-survey and the design record. Anyone reopening the idea starts from D19
-and the review notes on that pull request.
+survey and the design record. Anyone reopening the idea starts from those
+rulings and the review notes on that pull request.
 
-The board files `npx kaimahi create agent` under *Under consideration — do
-not build yet*, and requires a written survey against kagent's existing CLI
-before any net-new CLI code lands. This document is that survey plus a
-proposed surface. It ends in open decisions the user needs to rule on.
+A net-new CLI was not to be built without a written survey against kagent's
+existing CLI first. This document is that survey plus a proposed surface.
+It ends in open decisions the user needs to rule on.
 
 The ask, as given: `npx kaimahi create agent --options ...` plus CRUD, an
 install path "if we really need", and the background security aspects.
@@ -41,7 +41,7 @@ kagent --help
 | `deploy <dir> --env-file .env` | reads `kagent.yaml`, creates Secrets from the `.env`, creates the Agent CRD; `--dry-run` emits YAML | create/update |
 | `get agent\|session\|tool` | read/list | the **R** in CRUD |
 | `invoke --agent --task` | converse (streaming, sessions) | — |
-| `add-mcp` | add an MCP server to `kagent.yaml`, wizard or flags | P3 connectors |
+| `add-mcp` | add an MCP server to `kagent.yaml`, wizard or flags | MCP tool connectors |
 | `run <dir>` | run the project locally via docker-compose + chat | — |
 | `build <dir> --image --push` | build/push the agent image | — |
 | `uninstall`, `dashboard`, `bug-report`, `version`, `completion` | — | `install`'s inverse; UI |
@@ -85,8 +85,9 @@ and the one worth leading with.
 **A fourth, same shape as the first.** `kagent add-mcp` writes MCP server
 entries into a project's `kagent.yaml` — again the code-project path. The
 declarative equivalent is `spec.declarative.tools[]` with a `toolNames`
-allowlist, now shipped in [`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml)
-(P3). Nothing upstream scaffolds that either, so a `--tools` flag falls out
+allowlist, now shipped in
+[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Nothing upstream
+scaffolds that either, so a `--tools` flag falls out
 of gap 1 rather than being a separate ask.
 
 ## Uncomfortable question the survey raises
@@ -101,7 +102,9 @@ One answer holds up: **you have to clone the repo to use a Makefile.**
 else's project. That is the "consume anywhere" property, and it is the
 whole case. If we are not willing to publish to npm, the case collapses and
 the Makefile is sufficient — and publishing means claiming the name, which
-D9 says needs explicit approval and two ungated reviews first.
+needs explicit approval and, at the time this was written, two gates that
+were still open: a cultural read and trademark counsel
+([NAMING.md](NAMING.md)).
 
 ## Proposed surface
 
@@ -197,26 +200,29 @@ credential-adjacent tool. Both need answering before code, not after.
 - No telemetry. If that ever changes it is opt-in and ruled on the board.
 
 **Note the ordering problem.** A scaffolder is the natural place to *ask*
-for a key, and today there is no budget, metering, or ledger behind it (P4).
-Making it easy to point a fresh agent at a billed endpoint, with no
-governance, is a real risk the CLI introduces. Until P4, the CLI should
+for a key, and at the time this was written there was no budget, metering,
+or ledger behind it. Making it easy to point a fresh agent at a billed
+endpoint, with no governance, is a real risk the CLI introduces. Until a
+governance plane exists, the CLI should
 default to the keyless Ollama preset and print the ungoverned-spend warning
 whenever a hosted preset is selected.
 
 ## Open decisions for ruling
 
 1. **Publish or not.** The `npx` case requires npm publication, which is an
-   outward-facing name claim needing explicit approval, and D9's cultural
-   read and trademark counsel are still open. Without publication, use
+   outward-facing name claim needing explicit approval, and the cultural
+   read and trademark counsel on the name were still open. Without
+   publication, use
    `npx github:kaimahi-agents/kaimahi` for dev and treat the CLI as internal.
 2. **The CRUD line** (deferred above).
 3. **`up` vs. `install`** — build the cluster-zero command, or leave that to
    the Makefile and ship only `create agent`?
-4. **Sequencing.** P3 has merged, so the contention for `k8s/` and the
-   Makefile is gone — but P4 (governance) is now the next lane, and it
-   mounts at the same seams a CLI would scaffold. Building the CLI first
-   risks scaffolding a shape P4 then has to change; building it after means
-   it can generate governed agents from day one.
+4. **Sequencing.** The MCP tools work has merged, so the contention for
+   `k8s/` and the Makefile is gone — but the governance plane is the next
+   piece of work, and it mounts at the same seams a CLI would scaffold.
+   Building the CLI first risks scaffolding a shape the plane then has to
+   change; building it after means it can generate governed agents from day
+   one.
 5. **Language/runtime.** `npx` implies Node; the rest of the repo is YAML +
    shell + a little Python. A Node dependency is net-new surface.
 

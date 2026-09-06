@@ -28,8 +28,8 @@ The one door where a person is visible is inbound. A Slack
 `app_mention` names the user who typed it, and Slack's request
 signature — which the bridge verifies before it does any work — is what
 makes that name a claim worth recording. That is the same evidence the
-approver list is checked against, so this reuses P8b's vocabulary rather
-than inventing a second one:
+approver list is checked against, so this reuses the vocabulary approvals
+from Slack already established rather than inventing a second one:
 
 | Value | Means |
 |---|---|
@@ -200,8 +200,8 @@ make credential-renew NAME=hello-world TTL=720h     # or kmx credential renew
 
 Renewal moves a **date**, not material. The token does not change, so no
 Secret has to be rewritten and no credential bytes travel — which is the
-only reason a CLI that accepts no credential material in any form (D27)
-can own the verb at all.
+only reason a CLI that accepts no credential material in any form can own
+the verb at all.
 
 **Rotating the material** is what it always was: issue the credential
 again (`make govern`), which mints a fresh token and pipes it straight

@@ -321,9 +321,9 @@ spec:
 
 `kubectl apply -f` it and the controller provisions the agent. The topology
 grows the same way it started — as YAML you can diff:
-[`k8s/tools-agent.yaml`](k8s/tools-agent.yaml) is the P1 agent plus a
-`tools:` block wiring it to an MCP server, and the P1 artifact itself is
-never mutated. Agents run on kagent — declarative Kubernetes agents whose
+[`k8s/tools-agent.yaml`](k8s/tools-agent.yaml) is the hello-world agent
+plus a `tools:` block wiring it to an MCP server, and the hello-world
+artifact itself is never mutated. Agents run on kagent — declarative Kubernetes agents whose
 Agent CRD YAML *is* the topology artifact.
 
 **The north star: Kaimahi is thin glue over `kind`, `helm`, `kubectl`, and

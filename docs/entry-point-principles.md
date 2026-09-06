@@ -1,7 +1,7 @@
 # Principles for the developer entry point
 
 *Origin: [Sajay Antony's `kmx` proposal](https://gist.github.com/sajayantony/9c294f2f2f650fecd49dae1c2348d1c2),
-relayed from leadership, accepted as P11 by D27 and shaped further by D28.
+relayed from leadership, accepted and then shaped further.
 This document is not the proposal — the command set is settled and being
 built. It is the reasoning underneath it: why an entry point exists at all,
 what it must never become, and how we will know it is working.*
@@ -110,7 +110,7 @@ does not. Neither audience is the "real" one.
 ### 6. One implementation, not two that drift
 
 `kmx` implements the journey; the Makefile's `up`, `cluster`, `agent`,
-`chat`, `status` and `down` become thin aliases that call it (D27).
+`chat`, `status` and `down` become thin aliases that call it.
 
 Two implementations of the same journey diverge — quietly, and usually in
 the direction of the one CI does not exercise. Delegation means CI keeps
@@ -136,11 +136,11 @@ The original proposal opens with `brew install kaimahi-agents/tap/kmx`.
 That line cannot ship, and the reason is worth stating plainly rather than
 quietly dropping.
 
-Publishing a package or a tap is an outward-facing claim on a name. As of
-D27: PyPI `kmx` and the GitHub user `kmx` are already taken; npm, crates
-and the Homebrew formula are free; and **KMX is CarMax's ticker symbol**,
-which is now in the trademark counsel brief alongside the open questions
-about *kaimahi* itself — a te reo Māori word still awaiting a cultural
+Publishing a package or a tap is an outward-facing claim on a name. When
+this was written, PyPI `kmx` and the GitHub user `kmx` were already taken;
+npm, crates and the Homebrew formula were free; and **KMX is CarMax's
+ticker symbol**, which is now in the trademark counsel brief alongside the
+open questions about *kaimahi* itself — a te reo Māori word still awaiting a cultural
 appropriateness read.
 
 So installation is `go install …/cmd/kmx@<sha>` until those gates clear.
@@ -175,7 +175,7 @@ than discovered: on a fresh cluster `agent create` scaffolds the keyless
 preset and prints the ungoverned warning, because governed presets only
 exist once the plane does.
 
-**Milestone 2 (shaped, D28).** `plane`, `govern <name>`, and the read-only
+**Milestone 2 (shaped).** `plane`, `govern <name>`, and the read-only
 views — `ledger`, `grants`, audit reads. Clone-free: the binary carries
 the manifests and fetches the plane at its own revision. kind only, which
 keeps it entirely keyless.
@@ -302,18 +302,17 @@ becomes reviewable rather than merely recorded.
 Raised, and worth stating precisely so it is not lost: splitting the CLI
 from the implementation.
 
-The objection is D27(1), and it is a strong one: **one implementation, not
-two that drift.** If a split ever happens it must not recreate the parallel
-path the alias condition exists to prevent — a library plus a thin
-front-end is defensible; two front-ends that both implement the journey is
+The objection is the alias condition above, and it is a strong one: **one
+implementation, not two that drift.** If a split ever happens it must not
+recreate the parallel path the alias condition exists to prevent — a
+library plus a thin front-end is defensible; two front-ends that both implement the journey is
 the failure mode already ruled against.
 
 ---
 
 ## Status
 
-`kmx` is accepted (D27) and milestone 1 is in flight. Milestone 2 —
-`govern` and the plane, clone-free — is shaped (D28). This document
-describes the reasoning those decisions encode; the decisions themselves,
-with their conditions and dissents, are in
-[COORDINATION.md](COORDINATION.md).
+`kmx` is accepted and milestone 1 is in flight. Milestone 2 — `govern` and
+the plane, clone-free — is shaped. This document describes the reasoning
+those decisions encode; the decisions themselves, with their conditions and
+dissents, are in [COORDINATION.md](COORDINATION.md).

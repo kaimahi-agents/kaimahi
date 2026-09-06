@@ -24,15 +24,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- **`kmx workflow` and blueprints (D42)** — one declarative file says what a
+- **`kmx workflow` and blueprints** — one declarative file says what a
   governed workflow reaches, which of its calls need no human, which need one,
   and in what order; `kmx workflow govern` applies the governance and
   `kmx workflow run` executes the steps. A blueprint NAMES seams that already
   exist in the plane's table and asserts the `policy_fields` it depends on —
   it cannot create a hosted or keyed upstream, because the overlay refuses
   the custody fields that would make one — and it carries no credential in
-  any form (D27). kmx carries `blueprints/release.yaml`, which reproduces
-  W32's release governance exactly: the same tool allowlist `make
+  any form. kmx carries `blueprints/release.yaml`, which reproduces the
+  release agent's governance exactly: the same tool allowlist `make
   release-allow` sets and the same standing constraints
   `scripts/release-bind.sh` writes, proven by a test that runs those and
   diffs the result. Steps can be conditional (`when: <parameter>`), so one
@@ -73,6 +73,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   command-specific help, validation, and Bash/Zsh/Fish completion. Operational
   behavior, context guards, Make delegation, and machine-readable stdout remain
   in the existing application layer.
+- Documentation and code comments now say what a thing does rather than
+  citing the planning identifier that tracked it. A lane or decision number
+  is a coordination artifact nobody reading the code can resolve, so each
+  one is replaced by the mechanism or the rule it stood for — and where the
+  reference was carrying the argument, the reason is written out instead of
+  cited. Trailing pointers to a capability document are unchanged; the
+  planning board keeps its own identifiers.
 
 ### Fixed
 
@@ -98,10 +105,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## v0.1.0 — 2026-09-03
 
-The first tagged release: everything the project has built since P1, at a
-version you can name. Most of what is below is release plumbing — the product
-can now be installed and upgraded without a commit hash — plus the last
-capability to land before the tag was cut.
+The first tagged release: everything the project has built since the first
+hello-world agent, at a version you can name. Most of what is below is
+release plumbing — the product can now be installed and upgraded without a
+commit hash — plus the last capability to land before the tag was cut.
 
 ### Added
 

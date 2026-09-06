@@ -114,7 +114,7 @@ one part of the end-to-end proof:
 
 | shard | what it proves |
 |---|---|
-| `e2e-runtime` | the runtime a developer gets (P1/P2/P3) and hosted tool upstreams (P10) |
+| `e2e-runtime` | the runtime a developer gets — cluster, agent, model path, MCP tools — and hosted tool upstreams |
 | `e2e-spend` | metering, budgets, the budget approval cycle, the network boundary, the inbound bridge |
 | `e2e-tools` | the tool gateway, tool approvals, the governed Slack path, approvals from Slack, the exact races and metrics |
 | `e2e-resilience` | a replica killed mid-cycle, a Postgres outage, both replicas restarted, backup and restore |

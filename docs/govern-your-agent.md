@@ -77,7 +77,7 @@ pass `--pod-port <n>`.
 This is the governance-critical moment of onboarding, and it is worth
 more than the rest of this page put together. For every tool you name,
 you declare which of its arguments are **policy-relevant**. That one
-declaration does two jobs (D29): the digest an approval is welded to
+declaration does two jobs: the digest an approval is welded to
 binds exactly those fields, and the audit's human-readable summary is
 built from exactly those fields.
 
@@ -351,7 +351,8 @@ than our own demos would be worse than none:
   plane's own admin token. Add the `volumeMounts`/`volumes` pair to
   [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) and the entry to the
   committed table, where both are reviewed as part of this repository.
-  kmx will still never carry the value (D27).
+  kmx will still never carry the value — it accepts no credential
+  material in any form.
 - **A server outside the cluster.** `internet: true` and `ca_file` are
   refused in an overlay for the same reason, and hosted upstreams are
   reached only through the plane's hardened dialer with an opt-in 443
