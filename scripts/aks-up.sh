@@ -14,6 +14,7 @@
 #   AKS_LOCATION         optional   default westus3
 #   AKS_NODE_SIZE        optional   default Standard_B4ms
 #   AKS_NODE_COUNT       optional   default 1
+#   AKS_NODE_OSDISK_SIZE optional   default 32 (GiB)
 #   AKS_NETWORK_POLICY   optional   cilium (default) | azure | calico — see below
 #
 # NetworkPolicy enforcement is NOT a given on AKS. `az aks create` with no
@@ -57,6 +58,13 @@ CLUSTER="${AKS_CLUSTER:-kaimahi}"
 LOCATION="${AKS_LOCATION:-westus3}"
 NODE_SIZE="${AKS_NODE_SIZE:-Standard_B4ms}"
 NODE_COUNT="${AKS_NODE_COUNT:-1}"
+# The smallest managed OS disk that fits a cluster running only the plane and
+# its agents. It is a PARAMETER because that is no longer the only thing that
+# runs here: a cluster with Azure's monitoring add-ons on it also carries their
+# images and their buffers, and 32 GiB was measured evicting pods under
+# DiskPressure once both were present (2026-09-06). Anything that enables the
+# add-ons should ask for more.
+NODE_OSDISK_SIZE="${AKS_NODE_OSDISK_SIZE:-32}"
 # `-` not `:-`: an EXPLICITLY empty AKS_NETWORK_POLICY must reach the
 # refusal below with its message, not be silently swapped for the default.
 NETWORK_POLICY="${AKS_NETWORK_POLICY-cilium}"
@@ -238,12 +246,13 @@ else
   #   ephemeral demo cluster.
   # --attach-acr: grants the kubelet identity AcrPull on the registry, so
   #   the proxy image is pulled with no imagePullSecret anywhere.
-  # --node-osdisk-size 32: the smallest managed OS disk that fits; nothing
-  #   here is stored on the node.
+  # --node-osdisk-size: nothing here is stored on the node, so this only has
+  #   to hold images and kubelet's own working space — see the variable above
+  #   for why it is no longer fixed at the smallest size that fits.
   az aks create \
     --name "$CLUSTER" --resource-group "$RG" --location "$LOCATION" \
     --node-count "$NODE_COUNT" --node-vm-size "$NODE_SIZE" \
-    --node-osdisk-size 32 \
+    --node-osdisk-size "$NODE_OSDISK_SIZE" \
     --tier free \
     --generate-ssh-keys \
     --attach-acr "$ACR" \

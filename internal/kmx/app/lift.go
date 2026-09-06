@@ -33,6 +33,16 @@ const (
 	DefaultNetworkPolicy = "cilium"
 	// westus3 has the capacity and the price this path was measured at.
 	DefaultLocation = "westus3"
+	// 64 GiB of OS disk, which is twice what a cluster running only the plane
+	// and its agents needs.
+	//
+	// The extra is for the monitoring add-ons, and the number is measured
+	// rather than chosen: on 32 GiB — the size the plain provisioning script
+	// still defaults to — a cluster carrying the plane, two agents AND the two
+	// Azure monitoring add-ons went into DiskPressure and evicted the tools
+	// agent repeatedly. The add-ons are on by default here and are not on that
+	// other path, so this path asks for more disk.
+	DefaultNodeDiskGiB = 64
 )
 
 // Lift takes an agent that works locally and puts the same agent on AKS.
@@ -312,13 +322,14 @@ func mergeEnv(base []string, extra map[string]string) []string {
 
 func (a *App) liftCluster(opt lift.Options, work string) error {
 	return a.runScript(work, "scripts/aks-up.sh", map[string]string{
-		"AKS_RESOURCE_GROUP": opt.ResourceGroup,
-		"ACR_NAME":           opt.Registry,
-		"AKS_CLUSTER":        opt.Cluster,
-		"AKS_LOCATION":       opt.Location,
-		"AKS_NODE_SIZE":      opt.NodeSize,
-		"AKS_NODE_COUNT":     fmt.Sprint(opt.NodeCount),
-		"AKS_NETWORK_POLICY": opt.NetworkPolicy,
+		"AKS_RESOURCE_GROUP":   opt.ResourceGroup,
+		"ACR_NAME":             opt.Registry,
+		"AKS_CLUSTER":          opt.Cluster,
+		"AKS_LOCATION":         opt.Location,
+		"AKS_NODE_SIZE":        opt.NodeSize,
+		"AKS_NODE_COUNT":       fmt.Sprint(opt.NodeCount),
+		"AKS_NODE_OSDISK_SIZE": fmt.Sprint(DefaultNodeDiskGiB),
+		"AKS_NETWORK_POLICY":   opt.NetworkPolicy,
 	})
 }
 

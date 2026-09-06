@@ -231,6 +231,7 @@ cage.
 | Node size | `Standard_B4ms` | 4 vCPU / 16 GiB, burstable. The plane, its ledger and two agents fit with room; the cheapest size that does not make the first chat feel broken. | `--node-size` |
 | Node count | 1 | An ephemeral demonstration cluster. The plane is stateless and runs its two replicas on one node happily. | `--node-count` |
 | Region | `westus3` | Has the capacity and the price this path was measured at. | `--location` |
+| Node OS disk | 64 GiB | Twice what the plane and its agents need, because the monitoring add-ons carry their own images and buffers on the same disk. **Measured, not chosen**: at 32 GiB — which `make aks-cluster` still defaults to, since it enables no add-ons — a cluster with the plane, two agents and both add-ons went into `DiskPressure` and evicted the tools agent repeatedly. | `AKS_NODE_OSDISK_SIZE` on `scripts/aks-up.sh` |
 | Policy engine | `cilium` | Azure CNI Overlay powered by Cilium: Microsoft's recommendation for new clusters, and the only engine this repository has watched enforce the plane's whole boundary matrix. | `--network-policy azure\|calico` |
 | Control-plane tier | Free | No control-plane charge and no SLA, which is right for a cluster that exists for an afternoon. | not exposed; edit `scripts/aks-up.sh` |
 | Where the image lives | a **private** ACR, built by `az acr build` | Built in Azure, so no local Docker and no `docker push`; private, so nothing is published and no public name is claimed. | `--registry` names it; the privacy is not optional |
