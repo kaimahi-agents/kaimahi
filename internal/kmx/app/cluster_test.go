@@ -57,7 +57,7 @@ func TestClusterRefusesRatherThanReadingAFailedListingAsAbsence(t *testing.T) {
 
 	var out bytes.Buffer
 	a := &App{
-		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1", ContainerEngine: "docker"},
+		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx, ContainerEngine: "docker"},
 		Run: &run.Runner{Stdout: &out, Stderr: &out},
 		Out: &out, Err: &out,
 	}

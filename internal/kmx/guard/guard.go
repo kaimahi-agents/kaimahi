@@ -36,6 +36,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 // Kubeconfig is the sliver of `kubectl config view -o json` this package
@@ -43,7 +45,12 @@ import (
 // is deliberately not modelled: the guard decides on names and addresses,
 // and reading no further means it can never print or log a credential.
 type Kubeconfig struct {
-	Clusters []struct {
+	// CurrentContext is read but never acted on. The guard NAMES it when it
+	// refuses, because an operator who set it is entitled to know kmx did
+	// not follow it — and kmx does not follow it on purpose: a bare kubectl
+	// does, and `az aks get-credentials` rewrites it silently.
+	CurrentContext string `json:"current-context"`
+	Clusters       []struct {
 		Name    string `json:"name"`
 		Cluster struct {
 			Server string `json:"server"`
@@ -164,6 +171,10 @@ type Request struct {
 	Action string
 	// Context is the kube context the action would land on.
 	Context string
+	// Source says who chose Context — a flag, a variable, `kmx ctx`, or
+	// nobody. It is printed on every run and it decides one thing: a
+	// context nobody chose is refused rather than acted on.
+	Source string
 	// Namespaces is the banner's namespace list.
 	Namespaces string
 	// Confirm is KAIMAHI_CONFIRM's value.
@@ -194,14 +205,41 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	if hostShown == "" {
 		hostShown = "<none yet>"
 	}
+	// A caller that does not say who chose the context is a caller whose
+	// banner cannot distinguish a target an operator typed from one kmx
+	// invented — which is the whole distinction this guard now turns on. Fail
+	// closed rather than print "unrecorded" and carry on.
+	if strings.TrimSpace(req.Source) == "" {
+		return fmt.Errorf("kube-guard: this command did not record who chose context %q — refusing.\n"+
+			"  Nothing was applied. This is a bug in kmx, not something you can set.", req.Context)
+	}
+	source := req.Source
 	fmt.Fprintf(out, "----------------------------------------------------------------\n"+
 		"  about to: %s\n"+
 		"  context:  %s\n"+
+		"  chosen by: %s\n"+
 		"  server:   %s\n"+
 		"  namespace(s): %s\n"+
 		"  posture:  %s\n"+
 		"----------------------------------------------------------------\n",
-		req.Action, posture.Context, hostShown, namespaces, posture.Label)
+		req.Action, posture.Context, source, hostShown, namespaces, posture.Label)
+
+	// Nobody chose this cluster. On a machine with no clusters at all there
+	// is nothing to confuse it with and the made-up kind name is the only
+	// sensible target, which is what keeps one-command bring-up working on an
+	// empty machine. On a machine that HAS clusters, acting on an invented
+	// name beside them is the failure this refuses: the banner is the only
+	// thing standing between an operator and the wrong cluster, and a banner
+	// naming a cluster nobody picked is not a safety net.
+	if req.Source == config.SourceDefault && len(cfg.Contexts) > 0 {
+		return fmt.Errorf("kube-guard: nothing chose a cluster, so kmx will not act on one.\n"+
+			"  It would have used %q, which is a name kmx made up, and your kubeconfig\n"+
+			"  holds %d context(s) it could have meant instead.%s\n"+
+			"  Nothing was applied. Choose one, and it is remembered:\n"+
+			"    kmx ctx <name>            # kubectl config get-contexts lists them\n"+
+			"    kmx --context <name> ...  # or just this once",
+			req.Context, len(cfg.Contexts), currentContextNote(cfg.CurrentContext))
+	}
 
 	if posture.Local {
 		return nil
@@ -232,6 +270,17 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	}
 	fmt.Fprintln(out, "kube-guard: confirmed.")
 	return nil
+}
+
+// currentContextNote names the operator's current context without following
+// it. Saying nothing here would leave the most likely intended answer off a
+// screen that exists to name the target.
+func currentContextNote(current string) string {
+	if strings.TrimSpace(current) == "" {
+		return "\n  Your kubeconfig has no current context set either."
+	}
+	return fmt.Sprintf("\n  Your current context is %q; kmx does not follow it, because a tool that\n"+
+		"  rewrites it (`az aks get-credentials` does) would silently re-aim kmx.", current)
 }
 
 func isTerminal(f *os.File) bool {

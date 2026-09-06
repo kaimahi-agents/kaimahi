@@ -52,13 +52,14 @@ func TestContextResolutionOrder(t *testing.T) {
 	t.Setenv("KUBE_CTX", "")
 	t.Setenv("CONTAINER_ENGINE", "")
 
-	// 4. nothing set anywhere: kind-<KIND_CLUSTER>.
+	// 4. KIND_CLUSTER names the cluster: kind-<KIND_CLUSTER>, and the source
+	// says a variable chose it.
 	c, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.KubeContext != "kind-mine" || c.ContextSource != "KIND_CLUSTER" {
-		t.Errorf("bare default: got %q from %q, want kind-mine from KIND_CLUSTER", c.KubeContext, c.ContextSource)
+	if c.KubeContext != "kind-mine" || c.ContextSource != SourceKindCluster {
+		t.Errorf("KIND_CLUSTER: got %q from %q, want kind-mine from KIND_CLUSTER", c.KubeContext, c.ContextSource)
 	}
 
 	// 3. a context selected by `kmx ctx` beats the default.
@@ -85,8 +86,31 @@ func TestContextResolutionOrder(t *testing.T) {
 	if c, err = Load("kind-flag"); err != nil {
 		t.Fatal(err)
 	}
-	if c.KubeContext != "kind-flag" || c.ContextSource != "--context" {
+	if c.KubeContext != "kind-flag" || c.ContextSource != SourceFlag {
 		t.Errorf("flag: got %q from %q", c.KubeContext, c.ContextSource)
+	}
+}
+
+// The case that let kmx act on a cluster nobody picked: with nothing set at
+// all the name is still kind-kaimahi-p1, but it is an invention, and the
+// source has to say so. Labelling it KIND_CLUSTER made a made-up target
+// indistinguishable from one an operator typed.
+func TestAnUnchosenContextSaysItWasNotChosen(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KIND_CLUSTER", "")
+	t.Setenv("KUBE_CTX", "")
+	t.Setenv("CONTAINER_ENGINE", "")
+
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.KubeContext != "kind-"+DefaultKindCluster {
+		t.Errorf("default context: got %q, want kind-%s", c.KubeContext, DefaultKindCluster)
+	}
+	if c.ContextSource != SourceDefault {
+		t.Errorf("default source: got %q, want %q — an invented target must not read as a choice",
+			c.ContextSource, SourceDefault)
 	}
 }
 

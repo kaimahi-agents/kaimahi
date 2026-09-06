@@ -94,9 +94,9 @@ func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *go
 
 	cfg := &config.Config{
 		KindCluster: "kaimahi-p1",
-		KubeContext: "kind-kaimahi-p1",
-		AdminPort:   u.Port(),
-		Credential:  "hello-world",
+		KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx,
+		AdminPort:  u.Port(),
+		Credential: "hello-world",
 	}
 	r := run.Default()
 	r.Stdout, r.Stderr = f.out, f.errOut

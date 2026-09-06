@@ -61,7 +61,8 @@ func newPgFixture(t *testing.T) *pgFixture {
 	r := run.Default()
 	r.Stdout, r.Stderr = f.out, f.errOut
 	f.app = &App{
-		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1"},
+		Cfg: &config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1",
+			ContextSource: config.SourceKubeCtx},
 		Run: r, Out: f.out, Err: f.errOut,
 	}
 	return f

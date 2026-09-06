@@ -9,8 +9,8 @@ import (
 
 func cfgForToolsTest() *config.Config {
 	return &config.Config{
-		KindCluster:     "kaimahi-p1",
-		KubeContext:     "kind-kaimahi-p1",
+		KindCluster: "kaimahi-p1",
+		KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx,
 		ToolsCredential: config.DefaultToolsCredential,
 	}
 }

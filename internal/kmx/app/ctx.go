@@ -28,6 +28,7 @@ func (a *App) Ctx(context string) error {
 	if err := guard.Check(kubeconfig, guard.Request{
 		Action:     "select " + context + " as the context kmx acts on",
 		Context:    context,
+		Source:     config.SourceSelected,
 		Namespaces: config.GuardNamespaces,
 		Confirm:    a.Cfg.Confirm,
 		Command:    "kmx ctx " + context,

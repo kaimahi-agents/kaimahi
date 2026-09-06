@@ -190,7 +190,41 @@ func (a *App) preflightUp(steps []string) error {
 // delegation so the fix is not lost: on that engine "listed" does not mean
 // "running", and a cluster whose nodes were stopped has to be started rather
 // than re-created.
-func (a *App) stepCluster() error {
+// rememberInventedContext turns the one context nobody chose into a choice,
+// at the moment kmx creates the cluster it names.
+//
+// It fires only for the invented default. A machine with no clusters is the
+// only place that default survives the guard, and creating the cluster is
+// what puts a context in the kubeconfig — so without this, the NEXT bare
+// command would be refused for pointing at a name nobody picked, on a
+// machine where kmx had just picked it. An explicit `kmx ctx` choice is
+// never overwritten, and a per-invocation KIND_CLUSTER or --context never
+// becomes sticky.
+func (a *App) rememberInventedContext() {
+	if a.Cfg.ContextSource != config.SourceDefault {
+		return
+	}
+	path, err := config.WriteSelectedContext(a.Cfg.KubeContext)
+	if err != nil {
+		// Not fatal: the cluster is up, and the cost of failing here is one
+		// `kmx ctx` the operator types themselves.
+		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx ctx %s",
+			a.Cfg.KubeContext, err, a.Cfg.KubeContext)
+		return
+	}
+	a.Cfg.ContextSource = config.SourceSelected
+	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx ctx <name>",
+		a.Cfg.KubeContext, path)
+}
+
+func (a *App) stepCluster() (err error) {
+	// Only on success: recording a context for a cluster that failed to come
+	// up would point every later command at something that is not there.
+	defer func() {
+		if err == nil {
+			a.rememberInventedContext()
+		}
+	}()
 	existing, err := a.Run.Capture("kind", "get", "clusters")
 	if err != nil {
 		return fmt.Errorf("`kind get clusters` failed — refusing to guess whether %q exists (is the %s daemon running?): %w",

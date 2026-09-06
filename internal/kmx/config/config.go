@@ -63,6 +63,21 @@ const (
 	DefaultContainerEngine = "docker"
 )
 
+// Where a kube context came from. These are printed, so they read as
+// answers to "who chose this cluster?" rather than as identifiers.
+//
+// SourceDefault is the one that is not an answer. It means nothing named a
+// cluster and kmx fell back to a name it made up, and the guard treats it
+// differently for exactly that reason: every other source is somebody's
+// decision, and this one is nobody's.
+const (
+	SourceFlag        = "--context"
+	SourceKubeCtx     = "KUBE_CTX"
+	SourceSelected    = "kmx ctx"
+	SourceKindCluster = "KIND_CLUSTER"
+	SourceDefault     = "default"
+)
+
 // Config is the resolved run configuration.
 type Config struct {
 	KindCluster     string
@@ -99,11 +114,25 @@ func env(name, fallback string) string {
 //  1. --context on the command line
 //  2. KUBE_CTX in the environment (what the Makefile exports)
 //  3. the context selected by `kmx ctx <name>`
-//  4. kind-<KIND_CLUSTER>, the Makefile's own default
+//  4. kind-<KIND_CLUSTER>, when KIND_CLUSTER is in the environment
+//  5. kind-kaimahi-p1, the bare default — which nobody chose
 //
 // The fallback is deliberately a kind-* name: the guard admits an absent
 // kind-* context as "about to be created", so a fresh machine works with no
 // setup, and any other unset-and-wrong case is refused as a typo.
+//
+// 4 and 5 produce the same name on a machine with no KIND_CLUSTER, and they
+// are still different facts. 4 is a cluster the operator named; 5 is one kmx
+// invented because nothing else was available. Labelling both `KIND_CLUSTER`
+// made the invention indistinguishable from a choice, which is what let a
+// command land on a cluster nobody had picked without saying so.
+//
+// Note what is NOT consulted: the kubeconfig's `current-context`. kmx pins an
+// explicit context on every call for the reason kubectl() states — a bare
+// kubectl follows current-context, and `az aks get-credentials` rewrites that
+// silently, so a command meant for kind can quietly aim at a managed cluster.
+// Following it here would swap an invented target for one another tool
+// picked. The guard names it instead, and refuses.
 func Load(contextFlag string) (*Config, error) {
 	c := &Config{
 		KindCluster:     env("KIND_CLUSTER", DefaultKindCluster),
@@ -126,16 +155,18 @@ func Load(contextFlag string) (*Config, error) {
 
 	switch {
 	case strings.TrimSpace(contextFlag) != "":
-		c.KubeContext, c.ContextSource = strings.TrimSpace(contextFlag), "--context"
+		c.KubeContext, c.ContextSource = strings.TrimSpace(contextFlag), SourceFlag
 	case strings.TrimSpace(os.Getenv("KUBE_CTX")) != "":
-		c.KubeContext, c.ContextSource = strings.TrimSpace(os.Getenv("KUBE_CTX")), "KUBE_CTX"
+		c.KubeContext, c.ContextSource = strings.TrimSpace(os.Getenv("KUBE_CTX")), SourceKubeCtx
 	default:
 		if selected, err := ReadSelectedContext(); err != nil {
 			return nil, err
 		} else if selected != "" {
-			c.KubeContext, c.ContextSource = selected, "kmx ctx"
+			c.KubeContext, c.ContextSource = selected, SourceSelected
+		} else if strings.TrimSpace(os.Getenv("KIND_CLUSTER")) != "" {
+			c.KubeContext, c.ContextSource = "kind-"+c.KindCluster, SourceKindCluster
 		} else {
-			c.KubeContext, c.ContextSource = "kind-"+c.KindCluster, "KIND_CLUSTER"
+			c.KubeContext, c.ContextSource = "kind-"+c.KindCluster, SourceDefault
 		}
 	}
 	return c, nil

@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 // statusRequestTimeout bounds every read status makes.
@@ -510,7 +512,16 @@ func (a *App) statusTable() error {
 		kReady, len(kagentPods.Items), oReady, len(ollamaPods.Items), pReady, len(planePods.Items))
 
 	fmt.Fprintln(a.Out, "Kaimahi status")
-	fmt.Fprintf(a.Out, "  context: %s (from %s)\n", a.Cfg.KubeContext, a.Cfg.ContextSource)
+	// The source is not decoration. `default` means nothing named this
+	// cluster and kmx picked the name, which is a different fact from an
+	// operator having typed it, and status is where a confused operator
+	// looks first.
+	if a.Cfg.ContextSource == config.SourceDefault {
+		fmt.Fprintf(a.Out, "  context: %s (nothing chose this — kmx will refuse to act on it; run `kmx ctx <name>`)\n",
+			a.Cfg.KubeContext)
+	} else {
+		fmt.Fprintf(a.Out, "  context: %s (from %s)\n", a.Cfg.KubeContext, a.Cfg.ContextSource)
+	}
 	if overall {
 		fmt.Fprintf(a.Out, "  result:  ready (%d agents available)\n", len(agents.Items))
 	} else {

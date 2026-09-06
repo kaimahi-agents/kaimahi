@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 // The same three contexts scripts/kube-guard-test.sh builds, chosen to
@@ -67,6 +69,7 @@ func TestGuardDecisions(t *testing.T) {
 			err := Check(cfg, Request{
 				Action:  tc.name,
 				Context: tc.context,
+				Source:  config.SourceKubeCtx,
 				Confirm: tc.confirm,
 				Command: "kmx up",
 			}, &out, nil)
@@ -88,6 +91,7 @@ func TestGuardDecisions(t *testing.T) {
 func TestBannerNamesWhereTheActionLands(t *testing.T) {
 	var out bytes.Buffer
 	if err := Check(load(t), Request{
+		Source:  config.SourceKubeCtx,
 		Action:  "banner check",
 		Context: "kind-real",
 		Command: "kmx up",
@@ -106,6 +110,7 @@ func TestBannerNamesWhereTheActionLands(t *testing.T) {
 func TestRefusalStillPrintsTheBanner(t *testing.T) {
 	var out bytes.Buffer
 	if err := Check(load(t), Request{
+		Source:  config.SourceKubeCtx,
 		Action:  "delete the cluster",
 		Context: "aks-remote",
 		Command: "kmx down",
@@ -123,6 +128,7 @@ func TestRefusalStillPrintsTheBanner(t *testing.T) {
 func TestRefusalHintNamesTheCommand(t *testing.T) {
 	var out bytes.Buffer
 	err := Check(load(t), Request{
+		Source:  config.SourceKubeCtx,
 		Action:  "create an agent",
 		Context: "aks-remote",
 		Command: "kmx agent create billing",
@@ -164,5 +170,73 @@ func TestClassifyChecksNameAndAddress(t *testing.T) {
 func TestUnreadableKubeconfigRefuses(t *testing.T) {
 	if _, err := ParseKubeconfig([]byte("not json")); err == nil {
 		t.Fatal("an unparseable kubeconfig must refuse, not default to something")
+	}
+}
+
+// The finding this closes: with nothing set anywhere, kmx acted on a name it
+// made up and said nothing about having made it up. A banner that names a
+// cluster nobody picked is not a safety net — it is the wrong answer,
+// printed confidently.
+func TestAContextNobodyChoseIsRefusedWhenThereAreClustersToConfuseItWith(t *testing.T) {
+	var out bytes.Buffer
+	err := Check(load(t), Request{
+		Action:  "install kagent",
+		Context: "kind-kaimahi-p1",
+		Source:  config.SourceDefault,
+		Command: "kmx up",
+	}, &out, nil)
+	if err == nil {
+		t.Fatal("acted on a cluster nobody chose")
+	}
+	for _, want := range []string{"nothing chose a cluster", "kmx ctx <name>", "kind-kaimahi-p1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not say %q:\n%s", want, err)
+		}
+	}
+	// The most likely intended target is named, and named as something kmx
+	// did NOT follow — leaving it off a screen whose job is naming the
+	// target would be the same omission in a different place.
+	if !strings.Contains(err.Error(), "kind-real") || !strings.Contains(err.Error(), "does not follow it") {
+		t.Errorf("refusal does not name the current context it declined to follow:\n%s", err)
+	}
+}
+
+// The other half of the rule, and the one that keeps one-command bring-up
+// working: on a machine with no clusters at all the made-up kind name is the
+// only thing it could mean, so it stands.
+func TestTheDefaultStandsOnAMachineWithNoClusters(t *testing.T) {
+	empty, err := ParseKubeconfig([]byte(`{"clusters":[],"contexts":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Check(empty, Request{
+		Action:  "create the cluster",
+		Context: "kind-kaimahi-p1",
+		Source:  config.SourceDefault,
+		Command: "kmx up",
+	}, &out, nil); err != nil {
+		t.Fatalf("refused on an empty machine, which breaks bring-up: %v", err)
+	}
+}
+
+// A context somebody actually named is not affected, whichever way they
+// named it. This is what keeps CI and `KIND_CLUSTER=mine kmx up` unchanged.
+func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
+	for _, source := range []string{
+		config.SourceFlag, config.SourceKubeCtx, config.SourceSelected, config.SourceKindCluster,
+	} {
+		var out bytes.Buffer
+		if err := Check(load(t), Request{
+			Action:  "install kagent",
+			Context: "kind-real",
+			Source:  source,
+			Command: "kmx up",
+		}, &out, nil); err != nil {
+			t.Errorf("source %q was refused: %v", source, err)
+		}
+		if !strings.Contains(out.String(), "chosen by: "+source) {
+			t.Errorf("banner does not say who chose the cluster for source %q:\n%s", source, out.String())
+		}
 	}
 }

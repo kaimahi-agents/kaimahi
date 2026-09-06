@@ -115,6 +115,7 @@ func (a *App) Guard(action, command string) error {
 	if err := guard.Check(cfg, guard.Request{
 		Action:     action,
 		Context:    a.Cfg.KubeContext,
+		Source:     a.Cfg.ContextSource,
 		Namespaces: config.GuardNamespaces,
 		Confirm:    a.Cfg.Confirm,
 		Command:    command,
