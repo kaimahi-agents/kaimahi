@@ -269,6 +269,36 @@ func TestTheCarriedScriptsGetTheLayoutTheyExpect(t *testing.T) {
 	}
 }
 
+// One phase is not the journey. A `--step cluster` run that announced "the
+// agent is running on a managed cluster" would be claiming six phases that
+// have not happened — and the resumable shape exists precisely so that a
+// half-finished lift is a normal state rather than one to paper over.
+func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
+	opt := lift.Options{ResourceGroup: "rg", Cluster: "c", Registry: "reg12345", Observability: true, Step: "cluster"}
+	rest := remainingSteps(opt)
+	if len(rest) == 0 || rest[0] != "boundary" {
+		t.Fatalf("after the cluster phase the next is boundary, got %v", rest)
+	}
+	for _, s := range rest {
+		if s == "cluster" {
+			t.Fatal("a finished phase is listed as still to do")
+		}
+	}
+	last := opt
+	last.Step = "verify"
+	if got := remainingSteps(last); len(got) != 1 || !strings.Contains(got[0], "last phase") {
+		t.Fatalf("the final phase should say so, got %v", got)
+	}
+	// With observability off, it must not be listed as remaining work.
+	off := opt
+	off.Observability = false
+	for _, s := range remainingSteps(off) {
+		if s == "observability" {
+			t.Fatal("a phase that was switched off is listed as still to do")
+		}
+	}
+}
+
 // The phases must stay re-runnable and in an order where nothing is put
 // behind a boundary before the boundary is proven.
 func TestTheBoundaryIsProvenBeforeAnythingIsPutBehindIt(t *testing.T) {

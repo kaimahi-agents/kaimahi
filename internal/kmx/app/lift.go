@@ -91,9 +91,37 @@ func (a *App) Lift(opt lift.Options) error {
 			return err
 		}
 	}
+	// One phase is not the journey. Saying "the agent is running on a managed
+	// cluster" after `--step cluster` would be a claim about six phases that
+	// have not run, and the whole point of the resumable shape is that a
+	// half-finished lift is a normal state to be in rather than a failure to
+	// paper over.
+	if opt.Step != "" {
+		a.complete("Phase "+opt.Step+" finished", started)
+		fmt.Fprintf(a.Err, "\n  That was one phase. The rest, in order: %s\n\n    kmx lift %s\n\n",
+			strings.Join(remainingSteps(opt), ", "), liftIdentityFlags(opt))
+		return nil
+	}
 	a.complete("The agent is running on a managed cluster", started)
 	a.liftNextSteps(opt, record)
 	return nil
+}
+
+// remainingSteps is the phases a full run would still have to do after the
+// one that was just asked for.
+func remainingSteps(opt lift.Options) []string {
+	full := opt
+	full.Step = ""
+	all := full.StepsToRun()
+	for i, s := range all {
+		if s == opt.Step {
+			if rest := all[i+1:]; len(rest) > 0 {
+				return rest
+			}
+			return []string{"nothing — that was the last phase"}
+		}
+	}
+	return all
 }
 
 func withLiftDefaults(opt lift.Options) lift.Options {
