@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -357,5 +358,36 @@ func TestFlowDoesNotReportATrimmedWindowAsSilence(t *testing.T) {
 	renderFlow(&quiet, nil, nil)
 	if !strings.Contains(quiet.String(), "never went through the plane") {
 		t.Errorf("an actually-empty trail should still name both causes:\n%s", quiet.String())
+	}
+}
+
+// A plane that cannot be read is not a plane with nothing to say. `kmx status`
+// draws exactly this line — it prints `unknown` with the reason where it could
+// not look, and a real count only where it could — and a timeline that answered
+// a failed read with "no recorded activity" would be the second vocabulary for
+// the same question: silence and blindness rendered identically, with the
+// reassuring one winning.
+func TestFlowRefusesToRenderAnUnreadableTrailAsSilence(t *testing.T) {
+	for _, trail := range []string{"ledger", "tool-audit", "approval-audit", "inbound-audit"} {
+		t.Run(trail, func(t *testing.T) {
+			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.URL.Path, "/admin/"+trail) {
+					http.Error(w, "the store is unreachable", http.StatusBadGateway)
+					return
+				}
+				w.Write([]byte(`{"entries": []}`))
+			}))
+			var out bytes.Buffer
+			err := c.Flow(&out, "agent-1")
+			if err == nil {
+				t.Fatalf("a %s that could not be read passed for an empty one:\n%s", trail, out.String())
+			}
+			if !strings.Contains(err.Error(), trail) {
+				t.Errorf("the failure does not name the trail that failed: %v", err)
+			}
+			if strings.Contains(out.String(), "no recorded activity") {
+				t.Errorf("blindness was rendered as silence:\n%s", out.String())
+			}
+		})
 	}
 }
