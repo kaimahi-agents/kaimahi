@@ -95,11 +95,20 @@ resource id or a hostname. Written on its own, in a log line or a pasted
 
 That applies to **anything you attach to a pull request**, not only to
 files in the tree: a terminal transcript is exactly where these leak.
-`kmx lift` helps a little by never printing your subscription id — the
-banner names the subscription and the signed-in account instead, which
-is what a human actually checks against — but it prints resource group,
-cluster, registry and workspace names, because an operator has to see
-where the thing is about to land.
+`kmx lift`'s **banner** helps a little by never printing your
+subscription id — it names the subscription and the signed-in account
+instead, which is what a human actually checks against — but it prints
+resource group, cluster, registry and workspace names, because an
+operator has to see where the thing is about to land.
+
+**The command echo is a different matter, and it is the bigger risk.**
+Every `az` and `kubectl` command is echoed as it runs, the way `make`
+echoes a recipe line, so that what happened is copy-pasteable and
+checkable. Some of those commands carry a full ARM resource id — which
+begins with your subscription id. That is right for a terminal and wrong
+for a pull request. **Scan and redact before pasting a lift transcript
+anywhere**; the scanner will catch the GUID and the workspace resource
+id, and you have to catch the names yourself.
 
 ### 2. Context safety, the net that replaced the hardcoding
 
