@@ -194,3 +194,17 @@ func TestCreateRefusesFlagsABYOManifestWouldDrop(t *testing.T) {
 		t.Errorf("--model was refused, but it decides whether governance is injected: %v", err)
 	}
 }
+
+// `--isolation` is refused without `--image` for every spelling, including the
+// one that resolves to no placement. Accepting `none` there was the flag doing
+// nothing quietly, which is the thing the refusal exists to prevent.
+func TestCreateRefusesIsolationWithoutAnImage(t *testing.T) {
+	for _, profile := range []string{"none", "virtual-node", "kata"} {
+		t.Run(profile, func(t *testing.T) {
+			if err := (&App{}).CreateAgent(CreateOptions{Name: "demo", Isolation: profile, NoApply: true}); err == nil ||
+				!strings.Contains(err.Error(), "needs --image") {
+				t.Fatalf("--isolation %s was accepted without --image: %v", profile, err)
+			}
+		})
+	}
+}

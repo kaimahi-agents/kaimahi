@@ -61,6 +61,15 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := refuseFlagsBYODrops(opt); err != nil {
 		return err
 	}
+	if opt.Isolation != "" && opt.Image == "" {
+		// The generator makes this check too, but it can only see the
+		// RESOLVED placement — and "none" resolves to no placement at all,
+		// so it arrived there indistinguishable from a flag nobody passed.
+		// `--isolation none` was therefore the one spelling that slipped
+		// through the rule the other spellings are refused by. Checked here,
+		// where the flag as typed is still visible.
+		return fmt.Errorf("--isolation needs --image: placement applies to a BYO agent's pod")
+	}
 	namespace := opt.Namespace
 	if namespace == "" {
 		namespace = config.DefaultNamespace
