@@ -385,10 +385,20 @@ func (a *App) installKagent(extra ...string) error {
 	// to EXIST, then wait for all of them to be Ready. The second wait is
 	// unchanged, and on a cluster that was already fast the first one returns
 	// immediately.
+	// The last kubectl error is kept rather than collapsed into "no pods".
+	// If the API server is unreachable or the credential has expired, every
+	// attempt fails for that reason, and reporting "the chart produced no
+	// pods" would send someone to look at kagent instead of at the thing
+	// that is actually broken.
+	var lastErr error
 	if !run.Poll(60, 2*time.Second, func() bool {
 		out, err := a.kubectlCapture("-n", "kagent", "get", "pods", "-o", "name")
+		lastErr = err
 		return err == nil && strings.TrimSpace(out) != ""
 	}) {
+		if lastErr != nil {
+			return fmt.Errorf("kagent's chart installed, but its pods could not be read: %w", lastErr)
+		}
 		return fmt.Errorf("kagent's chart installed but produced no pods within two minutes")
 	}
 	return a.kubectlRun("-n", "kagent", "wait", "--for=condition=Ready", "pods", "--all", "--timeout=420s")

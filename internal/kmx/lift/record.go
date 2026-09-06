@@ -73,7 +73,53 @@ type Record struct {
 	ResourceGroup string     `json:"resource_group"`
 	Cluster       string     `json:"cluster"`
 	Created       []Resource `json:"created"`
+	// Before is what the cluster looked like when this run arrived. Teardown
+	// consults it so it undoes only what this run did.
+	Before Pre `json:"before"`
 }
+
+// Pre is the state a run found and must not mistake for its own work.
+//
+// Without it, teardown on a cluster we do not own is destructive in a way that
+// is easy to miss: an operator who already had Container Insights running gets
+// it switched off by a `kmx lift down` that was only ever meant to remove what
+// the lift added. Turning somebody's monitoring off is not as bad as deleting
+// their workspace, but it is the same mistake — acting on a resource because
+// we touched it rather than because we made it.
+//
+// The two cluster-side objects are here for the same reason, and specifically
+// so that ownership is never inferred from CONTENT: a ConfigMap that happens
+// to hold only our scrape job today might have been created by the operator
+// yesterday, and "it looks like ours" is not "we made it".
+type Pre struct {
+	// Recorded reports whether this struct was filled in at all. A record
+	// written before this existed has every field false, which is
+	// indistinguishable from "nothing was there" — and that reading would
+	// have teardown disable an add-on it did not enable. False means "not
+	// established", and teardown then leaves things alone.
+	Recorded bool `json:"recorded"`
+
+	MetricsAddonEnabled bool `json:"metrics_addon_enabled"`
+	LogsAddonEnabled    bool `json:"logs_addon_enabled"`
+
+	ScraperPolicyExisted bool `json:"scraper_policy_existed"`
+	ScrapeConfigExisted  bool `json:"scrape_config_existed"`
+}
+
+// WeEnabledMetrics reports whether THIS run turned the metrics add-on on, so
+// teardown knows whether turning it off is undoing its own change.
+//
+// Unestablished state answers "no" on purpose: leaving an add-on enabled costs
+// the owner ingestion charges they can see and stop, while disabling one they
+// were relying on breaks monitoring they may not notice is gone.
+func (p Pre) WeEnabledMetrics() bool { return p.Recorded && !p.MetricsAddonEnabled }
+func (p Pre) WeEnabledLogs() bool    { return p.Recorded && !p.LogsAddonEnabled }
+
+// WeCreatedScraperPolicy and WeCreatedScrapeConfig answer the same question
+// for the two cluster-side objects, and are the ONLY thing that authorises
+// deleting them. Their contents are not evidence of who made them.
+func (p Pre) WeCreatedScraperPolicy() bool { return p.Recorded && !p.ScraperPolicyExisted }
+func (p Pre) WeCreatedScrapeConfig() bool  { return p.Recorded && !p.ScrapeConfigExisted }
 
 var runIDShape = regexp.MustCompile(`^[a-z0-9]{8}$`)
 
@@ -132,6 +178,19 @@ func (r *Record) Add(res Resource) error {
 
 // Outside returns the resources a resource-group check cannot vouch for,
 // which are exactly the ones the write-up has to name individually.
+// InGroup reports whether an ARM resource id names something inside the given
+// resource group, compared the way ARM compares: case-insensitively.
+//
+// Teardown on the created branch leans on this. A resource-group deletion
+// accounts for what was INSIDE it and nothing else, so a resource assumed to
+// be in the group but actually somewhere else — the monitoring add-ons put
+// some of theirs in the cluster's managed node group — would be reported as
+// covered by a check that never looked at it.
+func InGroup(resourceID, group string) bool {
+	needle := "/resourcegroups/" + strings.ToLower(strings.TrimSpace(group)) + "/"
+	return strings.Contains(strings.ToLower(resourceID)+"/", needle)
+}
+
 func (r *Record) Outside() []Resource {
 	var out []Resource
 	for _, res := range r.Created {
@@ -220,6 +279,11 @@ func PlanRemoval(res Resource, state Existence, resolvedID string) Removal {
 			"could not re-resolve the recorded id — NOT deleting on a guess, and NOT claiming it is gone. It may still be billing. Check by hand: az resource show --ids %s", res.ID)}
 	}
 }
+
+// SameResourceID is sameResourceID for callers outside this package, which
+// need the same comparison when they ask "is the workspace this cluster
+// already sends to the one we just made?".
+func SameResourceID(a, b string) bool { return sameResourceID(a, b) }
 
 // sameResourceID compares two ARM resource ids the way ARM treats them:
 // case-insensitively, ignoring a trailing slash. Anything else — a differing

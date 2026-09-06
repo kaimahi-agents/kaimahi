@@ -21,10 +21,17 @@ secret capture, AKS and the probes.
 like `kaimahi` itself, and is not claimed anywhere
 ([NAMING.md](NAMING.md)).
 
-**kind only.** Everything below assumes a local kind cluster. A managed
-cluster is the Makefile's path — `TARGET=aks make plane`, `TARGET=aks make
-govern` — because it needs a registry, a rendered manifest and a captured
-key, none of which kmx does (see [aks.md](aks.md)).
+**Local unless you say otherwise.** Everything below assumes a local kind
+cluster, except `kmx lift`, which puts the same agent on AKS: it builds the
+image in a private registry, renders the manifest for it, and wires
+Azure-managed monitoring ([aks.md](aks.md)). The Makefile's `TARGET=aks`
+path still exists and does the same work step by step.
+
+The one thing on that path kmx does **not** do is capture the model
+credential — a managed cluster runs a hosted model, and kmx accepts
+credential material on no path. `kmx lift` checks for the Secret, stops if it
+is missing, and names `make plane-copilot-secret`, which needs a checkout.
+That is the only step that still does.
 
 ## Install
 

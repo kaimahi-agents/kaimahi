@@ -135,20 +135,34 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	// workspaces, and a workspace deleted while something still routes to it
 	// leaves the cluster reporting an error nobody asked for.
 	a.aimAtTheCluster(opt)
-	a.notef("turning the monitoring add-ons off on your cluster (this changes nothing else about it)")
-	if err := a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
-		"--disable-azure-monitor-metrics", "--output", "none"); err != nil {
-		return fmt.Errorf("could not disable Managed Prometheus on your cluster — stopping before deleting anything it still points at: %w", err)
+
+	// Only add-ons THIS RUN enabled are turned off. An operator who already
+	// had Container Insights running would otherwise have it switched off by a
+	// teardown that was only ever meant to remove what the lift added — the
+	// same mistake as deleting their workspace, made quieter by the fact that
+	// nothing disappears, it just stops collecting.
+	if record.Before.WeEnabledMetrics() {
+		a.notef("turning off the Managed Prometheus this run enabled")
+		if err := a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+			"--disable-azure-monitor-metrics", "--output", "none"); err != nil {
+			return fmt.Errorf("could not disable Managed Prometheus on your cluster — stopping before deleting anything it still points at: %w", err)
+		}
+	} else {
+		a.notef("Managed Prometheus was already on before this run; leaving it on.")
 	}
-	if err := a.Run.Run("az", "aks", "disable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
-		"--addons", "monitoring", "--output", "none"); err != nil {
-		return fmt.Errorf("could not disable Container Insights on your cluster — stopping before deleting anything it still points at: %w", err)
+	if record.Before.WeEnabledLogs() {
+		a.notef("turning off the Container Insights this run enabled")
+		if err := a.Run.Run("az", "aks", "disable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+			"--addons", "monitoring", "--output", "none"); err != nil {
+			return fmt.Errorf("could not disable Container Insights on your cluster — stopping before deleting anything it still points at: %w", err)
+		}
+	} else {
+		a.notef("Container Insights was already on before this run; leaving it on.")
 	}
 
-	// The in-cluster things this run applied. The scrape ConfigMap is deleted
-	// only when it is the one this run created: on this branch the lift
-	// refuses to overwrite an existing one, so if the operator merged the job
-	// into their own ConfigMap, that ConfigMap is theirs and stays.
+	// The in-cluster objects, removed on the same rule: only what this run
+	// created, decided by what it recorded at the time and never by what the
+	// object contains now.
 	a.removeInClusterObservability(record)
 
 	if err := a.removeRecorded(record.Created); err != nil {
@@ -158,19 +172,48 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	return nil
 }
 
-// removeInClusterObservability takes back the two cluster-side objects, and
-// is deliberately quiet about failures: the cluster may already be gone, and
-// the resources that COST money are the Azure-side ones handled separately.
+// removeInClusterObservability takes back the two cluster-side objects — and
+// only the ones this run created.
+//
+// Ownership comes from what the run RECORDED before it applied anything, never
+// from what the object looks like now. A ConfigMap holding only our scrape job
+// may still have been created by the operator, and "it looks like ours" is not
+// "we made it"; the same goes for a NetworkPolicy of that name they had
+// already written themselves.
 func (a *App) removeInClusterObservability(record *lift.Record) {
-	if !a.kubectlQuiet("-n", "kaimahi", "delete", "networkpolicy", "kaimahi-proxy-metrics-azure", "--ignore-not-found") {
-		a.notef("could not remove the scraper's NetworkPolicy allowance — remove it by hand:\n"+
-			"    kubectl --context %s -n kaimahi delete networkpolicy kaimahi-proxy-metrics-azure", a.Cfg.KubeContext)
+	if record.Before.WeCreatedScraperPolicy() {
+		if !a.kubectlQuiet("-n", "kaimahi", "delete", "networkpolicy", scraperPolicy, "--ignore-not-found") {
+			a.notef("could not remove the scraper's NetworkPolicy allowance — remove it by hand:\n"+
+				"    kubectl --context %s -n kaimahi delete networkpolicy %s", a.Cfg.KubeContext, scraperPolicy)
+		}
+	} else {
+		a.notef("the NetworkPolicy %s was there before this run, or its origin was never established; leaving it.", scraperPolicy)
 	}
-	// Only if it carries this run's job and nothing else. An operator who
-	// merged the job into their own ConfigMap owns that ConfigMap.
+
+	if !record.Before.WeCreatedScrapeConfig() {
+		a.notef("%s in %s was there before this run, or its origin was never established; leaving it.\n"+
+			"  If you merged this run's job into it, remove the kaimahi-plane job by hand.",
+			scrapeConfigMap, scrapeConfigNamespace)
+		return
+	}
+	// Created by this run, so ours to remove. The contents are still read —
+	// not to establish ownership, but because an operator may have added
+	// their own jobs to it since, and taking those with it would be the same
+	// destruction by a slower route.
 	body, err := a.kubectlCapture("-n", scrapeConfigNamespace, "get", "configmap", scrapeConfigMap,
 		"-o", "jsonpath={.data.prometheus-config}")
-	if err != nil {
+	switch {
+	case err == nil:
+	case isNotFound(err):
+		return // genuinely not there; nothing to take back
+	default:
+		// An unreachable API server, a missing context or an RBAC denial is
+		// not "the ConfigMap is absent". Returning silently on those left the
+		// scrape job in place with nobody told, which on a cluster we do not
+		// own is a leftover the operator never hears about.
+		a.notef("could not read %s in %s (%v) — it may still carry this run's scrape job.\n"+
+			"  Check by hand: kubectl --context %s -n %s get configmap %s",
+			scrapeConfigMap, scrapeConfigNamespace, err, a.Cfg.KubeContext, scrapeConfigNamespace, scrapeConfigMap)
 		return
 	}
 	if strings.Contains(body, "job_name: kaimahi-plane") && strings.Count(body, "job_name:") == 1 {

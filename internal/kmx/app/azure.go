@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
@@ -187,7 +188,16 @@ func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity) error {
 
   underlying failure: %w`, opt.RegistryName(), err)
 	}
-	if strings.TrimSpace(count) == "0" {
+	// Only a well-formed POSITIVE count is a "yes". Comparing against "0"
+	// alone let an empty or non-numeric answer — which is what a changed
+	// query, a truncated response or an unexpected output format produces —
+	// fall through to "holds AcrPull", which is the fail-OPEN this function's
+	// own contract says it does not do.
+	held, convErr := strconv.Atoi(strings.TrimSpace(count))
+	if convErr != nil || held < 0 {
+		return fmt.Errorf("the role-assignment count for %s came back as %q, which is not a number — refusing to decide whether your cluster can pull from it on an answer that cannot be read", opt.RegistryName(), strings.TrimSpace(count))
+	}
+	if held == 0 {
 		return fmt.Errorf(`your cluster cannot pull from %s, and this will not grant it.
 
   Granting AcrPull creates a role assignment on YOUR subscription against

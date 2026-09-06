@@ -87,7 +87,12 @@ expect clean "placeholder monitor endpoint"   "https://<workspace>.<region>.prom
 # The workbook template names ARM TYPES, which look like provider paths but
 # carry no name segment and identify nothing.
 expect clean "ARM resource type, not an id"   'resourceId("microsoft.insights/workbooks", x) type: microsoft.monitor/accounts'
-expect clean "ARM template contentVersion"    '"contentVersion": "1.0.0.0",'
+cv=$(printf '"contentVersion": "%s.%s"' 1.0 0.0)
+expect clean "ARM template contentVersion"    "$cv,"
+# The exemption must cover the contentVersion VALUE and nothing else. A real
+# address written on the same line is still an address, or the gate could be
+# walked around by putting two things on one line.
+expect refused "address beside a contentVersion" "$cv, \"host\": \"$ip1\"" "public IPv4 address"
 
 if [ "$fail" -ne 0 ]; then
   echo "check-no-azure-ids-test: the scanner no longer behaves as documented" >&2

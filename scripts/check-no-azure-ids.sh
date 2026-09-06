@@ -97,6 +97,10 @@ LAW_ID = re.compile(r"/providers/Microsoft\.OperationalInsights/workspaces/(?P<n
 # so `name` here can span more than one dot-separated component — which is why
 # it is checked with placeholder_path rather than PLACEHOLDER.
 MONITOR_ENDPOINT = re.compile(r"(?P<name>[^\s\"\x27`/=]*)\.[a-z0-9<>$(){}_-]*\.monitor\.azure\.com", re.I)
+# An ARM template's contentVersion, and only its value. Used to exempt that
+# exact span from the IPv4 rule — the key is required to carry four
+# dot-separated numbers, which no shape rule can tell from an address.
+CONTENT_VERSION = re.compile(r"contentVersion\"?\s*[:=]\s*\"(?P<value>[0-9.]+)\"", re.I)
 # Trailing: not a word char, and not ".<digit>" (a fifth component means a
 # five-component version string); a sentence-final "." after a real address
 # still matches.
@@ -181,12 +185,13 @@ for raw in open(sys.argv[1], "rb").read().split(b"\0"):
                 findings.append((p, n, "literal Azure Monitor endpoint (monitor.azure.com)", m.group(0)))
         # An ARM template's contentVersion is required to be four
         # dot-separated numbers, which is indistinguishable from an address
-        # by shape alone. The exemption is the whole line rather than
-        # the value, and only where the key is named, so it cannot quietly
-        # excuse an address somewhere else in the file.
-        version_line = "contentVersion" in line
+        # by shape alone. The exemption covers only the SPAN of that value,
+        # not the line: exempting the whole line would let a real address
+        # sitting beside a contentVersion key pass unseen, which is a gate
+        # that can be walked around by writing two things on one line.
+        version_spans = [m.span("value") for m in CONTENT_VERSION.finditer(line)]
         for m in IPV4.finditer(line):
-            if version_line:
+            if any(start <= m.start("ip") and m.end("ip") <= end for start, end in version_spans):
                 continue
             if public_ip(m.group("ip")):
                 findings.append((p, n, "public IPv4 address", m.group(0)))

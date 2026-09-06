@@ -121,6 +121,15 @@ func (o Options) Validate() error {
 	}
 
 	if o.BringYourOwn {
+		// `--step cluster` names the one phase this branch does not have.
+		// steps() drops it from a full run, but an explicit --step bypasses
+		// that and would run the provisioning script — creating a cluster on
+		// the branch whose entire contract is that it creates none, and whose
+		// teardown would then refuse to remove it.
+		if o.Step == "cluster" {
+			add("--step cluster cannot be used with --byo: that phase CREATES a cluster, and this branch never creates one. The phases here are: %s",
+				strings.Join(Steps[1:], ", "))
+		}
 		// Nothing about the cluster's shape is ours to choose on someone
 		// else's cluster, so accepting these would be accepting parameters
 		// that cannot be honoured.

@@ -104,6 +104,30 @@ func TestBringYourOwnRefusesFlagsItCannotHonour(t *testing.T) {
 	}
 }
 
+// The one phase the bring-your-own branch does not have. A full run drops it,
+// but an explicit --step went straight past that and would have run the
+// provisioning script — creating a cluster on the branch whose whole contract
+// is that it creates none, and which teardown would then refuse to remove.
+func TestBringYourOwnRefusesTheOnePhaseThatCreatesACluster(t *testing.T) {
+	o := byo()
+	o.Step = "cluster"
+	err := o.Validate()
+	if err == nil {
+		t.Fatal("--byo --step cluster was accepted; that phase creates a cluster")
+	}
+	if !strings.Contains(err.Error(), "never creates one") {
+		t.Fatalf("the refusal does not explain itself: %v", err)
+	}
+	// Every other phase stays available on this branch.
+	for _, step := range Steps[1:] {
+		ok := byo()
+		ok.Step = step
+		if err := ok.Validate(); err != nil {
+			t.Errorf("--byo --step %s was refused: %v", step, err)
+		}
+	}
+}
+
 func TestBringYourOwnStillNeedsARegistryAndSaysWhy(t *testing.T) {
 	o := byo()
 	o.Registry = ""

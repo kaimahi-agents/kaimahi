@@ -94,6 +94,65 @@ func TestRecordRoundTrips(t *testing.T) {
 	}
 }
 
+// Teardown may undo only what the run did. An operator who already had
+// Container Insights running must not have it switched off by a teardown that
+// was meant to remove what the lift added — and an object that merely LOOKS
+// like ours is not ours.
+func TestOnlyWhatThisRunTurnedOnOrCreatedMayBeUndone(t *testing.T) {
+	t.Run("we enabled it, so we may disable it", func(t *testing.T) {
+		p := Pre{Recorded: true}
+		if !p.WeEnabledMetrics() || !p.WeEnabledLogs() {
+			t.Fatal("a run that found both add-ons off should be allowed to turn them off again")
+		}
+		if !p.WeCreatedScraperPolicy() || !p.WeCreatedScrapeConfig() {
+			t.Fatal("a run that found neither object should be allowed to remove the ones it made")
+		}
+	})
+
+	t.Run("it was already on, so it is not ours to turn off", func(t *testing.T) {
+		p := Pre{Recorded: true, MetricsAddonEnabled: true, LogsAddonEnabled: true,
+			ScraperPolicyExisted: true, ScrapeConfigExisted: true}
+		if p.WeEnabledMetrics() || p.WeEnabledLogs() {
+			t.Fatal("teardown would disable monitoring the operator already had")
+		}
+		if p.WeCreatedScraperPolicy() || p.WeCreatedScrapeConfig() {
+			t.Fatal("teardown would delete a cluster object the operator already had")
+		}
+	})
+
+	t.Run("nothing was established: touch nothing", func(t *testing.T) {
+		// An older record, or a run whose reads failed. Every field is false,
+		// which is indistinguishable from "nothing was there" — and reading it
+		// that way is what would authorise disabling somebody's add-on.
+		var p Pre
+		if p.WeEnabledMetrics() || p.WeEnabledLogs() ||
+			p.WeCreatedScraperPolicy() || p.WeCreatedScrapeConfig() {
+			t.Fatal("unestablished prior state was read as 'we made it'")
+		}
+	})
+}
+
+// A resource-group deletion accounts for what was INSIDE it. The monitoring
+// add-ons put some of what they create in the cluster's managed node group, so
+// assuming otherwise would report a resource as covered by a check that never
+// looked at it.
+func TestInGroupIsDecidedByTheIDNotAssumed(t *testing.T) {
+	inside := armID("demo-rg", "Insights", "dataCollectionRules", "msprom")
+	elsewhere := armID("MC_demo-rg_demo_westus3", "Insights", "dataCollectionRules", "msprom")
+	if !InGroup(inside, "demo-rg") {
+		t.Error("a resource in the group was not recognised as being in it")
+	}
+	if !InGroup(inside, "DEMO-RG") {
+		t.Error("resource groups compare case-insensitively in ARM; this did not")
+	}
+	if InGroup(elsewhere, "demo-rg") {
+		t.Error("a resource in the managed NODE group was claimed to be in the cluster's group — a group deletion would not remove it")
+	}
+	if InGroup("", "demo-rg") {
+		t.Error("an empty id was claimed to be inside a group")
+	}
+}
+
 func TestReadRecordRefusesAnUnusableOne(t *testing.T) {
 	for _, body := range []string{
 		`{"run_id":"","branch":"created"}`,

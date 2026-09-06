@@ -17,6 +17,19 @@ import (
 const (
 	scrapeConfigMap       = "ama-metrics-prometheus-config"
 	scrapeConfigNamespace = "kube-system"
+	// The allowance that lets the add-on's scraper reach the plane's ops
+	// port. Named once: teardown decides whether it may delete this object by
+	// whether the run recorded creating it, and the two must agree.
+	scraperPolicy = "kaimahi-proxy-metrics-azure"
+
+	// The Kind strings a resource is recorded under. They are constants
+	// because verification looks a workspace up in the run record by exact
+	// string match, in a different file: two copies of a sentence are two
+	// chances for one of them to be edited alone, and the failure would be a
+	// verify step that cannot find a workspace the lift definitely created.
+	kindMetricsWorkspace = "Azure Monitor workspace (Managed Prometheus)"
+	kindLogsWorkspace    = "Log Analytics workspace (Container Insights)"
+	kindWorkbook         = "Azure Monitor workbook (the dashboard)"
 )
 
 // liftObservability wires Azure-managed monitoring to a plane that is already
@@ -47,11 +60,18 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 	if err != nil {
 		return err
 	}
-	inGroup := true
+
+	// What was here before we arrived, read BEFORE anything is changed.
+	// Teardown consults it so that it undoes this run's work and not the
+	// operator's: switching off monitoring somebody was already relying on is
+	// the same class of mistake as deleting their workspace.
+	if err := a.recordPreExistingState(opt, record, save); err != nil {
+		return err
+	}
 
 	metricsName := lift.MetricsWorkspaceName(record.RunID)
 	metricsID, err := a.ensureRecorded(record, save, lift.Resource{
-		Kind: "Azure Monitor workspace (Managed Prometheus)", Name: metricsName, InResourceGroup: inGroup,
+		Kind: kindMetricsWorkspace, Name: metricsName, InResourceGroup: true,
 		Billing: "retains ingested samples for 18 months; charges per sample ingested and per query",
 	}, func() (string, error) {
 		if err := a.Run.Run("az", "monitor", "account", "create", "--name", metricsName,
@@ -70,7 +90,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 
 	logsName := lift.LogsWorkspaceName(record.RunID)
 	logsID, err := a.ensureRecorded(record, save, lift.Resource{
-		Kind: "Log Analytics workspace (Container Insights)", Name: logsName, InResourceGroup: inGroup,
+		Kind: kindLogsWorkspace, Name: logsName, InResourceGroup: true,
 		Billing: "charges per GB ingested and for retention beyond the included period; keeps costing while anything still sends to it",
 	}, func() (string, error) {
 		if err := a.Run.Run("az", "monitor", "log-analytics", "workspace", "create", "--name", logsName,
@@ -94,29 +114,34 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 	// record what is new. Recording the difference rather than everything
 	// matching a name is the point — on a subscription we do not own, a
 	// data-collection rule that was already there belongs to somebody else.
-	before, err := a.dataCollectionResources(opt.ResourceGroup)
+	//
+	// The cluster's MANAGED node group is watched too. Azure puts some of what
+	// the add-ons create there rather than beside the cluster, and a resource
+	// the snapshot never looks at is one that is never recorded — which on a
+	// cluster we do not own is a resource left behind with nothing to say it
+	// exists. That is the same failure the Prometheus rule groups already
+	// caused once.
+	groups := a.monitoringGroups(opt)
+	before, err := a.dataCollectionResourcesIn(groups)
 	if err != nil {
 		return err
 	}
 
-	a.notef("enabling Managed Prometheus and Container Insights on the cluster (a few minutes)")
-	if err := a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
-		"--enable-azure-monitor-metrics", "--azure-monitor-workspace-resource-id", metricsID, "--output", "none"); err != nil {
+	if err := a.enableMetricsAddon(opt, metricsID); err != nil {
 		return err
 	}
-	if err := a.Run.Run("az", "aks", "enable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
-		"--addons", "monitoring", "--workspace-resource-id", logsID, "--output", "none"); err != nil {
+	if err := a.enableLogsAddon(opt, logsID); err != nil {
 		return err
 	}
 
-	after, err := a.dataCollectionResources(opt.ResourceGroup)
+	after, err := a.dataCollectionResourcesIn(groups)
 	if err != nil {
 		return err
 	}
 	for _, id := range newResources(before, after) {
 		if err := record.Add(lift.Resource{
 			Kind: "created by the monitoring add-on (" + resourceTypeFromID(id) + ")",
-			Name: resourceNameFromID(id), ID: id, InResourceGroup: inGroup,
+			Name: resourceNameFromID(id), ID: id, InResourceGroup: lift.InGroup(id, opt.ResourceGroup),
 			Billing: "no standing charge of its own; it routes or records data into the workspaces, which do charge",
 		}); err != nil {
 			return err
@@ -130,6 +155,153 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		return err
 	}
 	return a.deployWorkbook(opt, record, save, work, clusterID, logsID, metricsID)
+}
+
+// monitorState is what the cluster already has, read before we change it.
+type monitorState struct {
+	metricsEnabled bool
+	// The metrics profile does not report which Azure Monitor workspace it
+	// sends to, so there is deliberately no field for it: an already-enabled
+	// metrics add-on is left alone rather than compared, because a comparison
+	// this cannot make must not be implied by a field that is always empty.
+	logsEnabled   bool
+	logsWorkspace string
+}
+
+// readMonitorState asks the control plane what monitoring the cluster already
+// has. It fails rather than guessing: every decision below — whether to
+// enable, whether to refuse, and later whether teardown may disable — rests on
+// this answer, and a wrong default is either a refusal that should not happen
+// or a cluster whose monitoring we quietly take over.
+func (a *App) readMonitorState(opt lift.Options) (monitorState, error) {
+	var st monitorState
+	out, err := a.Run.Capture("az", "aks", "show", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup, "-o", "json")
+	if err != nil {
+		return st, fmt.Errorf("cannot read the cluster's current monitoring configuration, so whether this would be enabling it or taking it over is unknown — refusing: %w", err)
+	}
+	var cluster struct {
+		AzureMonitorProfile *struct {
+			Metrics *struct {
+				Enabled bool `json:"enabled"`
+			} `json:"metrics"`
+		} `json:"azureMonitorProfile"`
+		AddonProfiles map[string]struct {
+			Enabled bool              `json:"enabled"`
+			Config  map[string]string `json:"config"`
+		} `json:"addonProfiles"`
+	}
+	if err := json.Unmarshal([]byte(out), &cluster); err != nil {
+		return st, fmt.Errorf("cannot read the cluster's monitoring configuration: %w", err)
+	}
+	if p := cluster.AzureMonitorProfile; p != nil && p.Metrics != nil {
+		st.metricsEnabled = p.Metrics.Enabled
+	}
+	// The add-on profile key is case-inconsistent across API versions, so it
+	// is matched case-insensitively rather than assumed.
+	for name, profile := range cluster.AddonProfiles {
+		if !strings.EqualFold(name, "omsagent") {
+			continue
+		}
+		st.logsEnabled = profile.Enabled
+		for k, v := range profile.Config {
+			if strings.EqualFold(k, "logAnalyticsWorkspaceResourceID") {
+				st.logsWorkspace = v
+			}
+		}
+	}
+	return st, nil
+}
+
+// enableMetricsAddon turns Managed Prometheus on, unless it is already on.
+//
+// Already on and pointing at OUR workspace means a resumed run: nothing to do.
+// Already on and pointing at somebody ELSE'S workspace is a refusal, not a
+// silent repoint — an `az aks update` there would move their metrics stream to
+// a workspace this run owns and will later delete, which breaks monitoring
+// they were relying on and does it invisibly.
+func (a *App) enableMetricsAddon(opt lift.Options, metricsID string) error {
+	st, err := a.readMonitorState(opt)
+	if err != nil {
+		return err
+	}
+	if st.metricsEnabled {
+		a.notef("Managed Prometheus is already enabled on this cluster; leaving it as it is.")
+		return nil
+	}
+	a.notef("enabling Managed Prometheus on the cluster (a few minutes)")
+	return a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+		"--enable-azure-monitor-metrics", "--azure-monitor-workspace-resource-id", metricsID, "--output", "none")
+}
+
+func (a *App) enableLogsAddon(opt lift.Options, logsID string) error {
+	st, err := a.readMonitorState(opt)
+	if err != nil {
+		return err
+	}
+	switch {
+	case st.logsEnabled && lift.SameResourceID(st.logsWorkspace, logsID):
+		a.notef("Container Insights is already sending to this run's workspace; nothing to do.")
+		return nil
+	case st.logsEnabled:
+		return fmt.Errorf(`Container Insights is already enabled on this cluster and sends to a DIFFERENT workspace.
+
+  Enabling it again would repoint your cluster's logs at a workspace this run
+  created and will later delete — so your collection would silently stop when
+  this is torn down. Refusing.
+
+  Use the workspace you already have, or turn the add-on off first if you
+  meant to replace it:
+    az aks disable-addons --name %s --resource-group %s --addons monitoring`,
+			opt.Cluster, opt.ResourceGroup)
+	}
+	a.notef("enabling Container Insights on the cluster (a few minutes)")
+	return a.Run.Run("az", "aks", "enable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+		"--addons", "monitoring", "--workspace-resource-id", logsID, "--output", "none")
+}
+
+// recordPreExistingState writes down what the cluster had before this run
+// touched it, so teardown can undo this run's changes and nothing else.
+func (a *App) recordPreExistingState(opt lift.Options, record *lift.Record, save func() error) error {
+	if record.Before.Recorded {
+		return nil // a resumed run: the first pass established this
+	}
+	st, err := a.readMonitorState(opt)
+	if err != nil {
+		return err
+	}
+	policyExisted, err := a.objectExists("-n", "kaimahi", "networkpolicy", scraperPolicy)
+	if err != nil {
+		return err
+	}
+	configExisted, err := a.objectExists("-n", scrapeConfigNamespace, "configmap", scrapeConfigMap)
+	if err != nil {
+		return err
+	}
+	record.Before = lift.Pre{
+		Recorded:             true,
+		MetricsAddonEnabled:  st.metricsEnabled,
+		LogsAddonEnabled:     st.logsEnabled,
+		ScraperPolicyExisted: policyExisted,
+		ScrapeConfigExisted:  configExisted,
+	}
+	return save()
+}
+
+// objectExists answers for one cluster object, and refuses to guess. Only a
+// genuine NotFound is absence; an unreachable API server or an RBAC denial
+// must not be recorded as "it was not there", because that is what would later
+// authorise deleting it.
+func (a *App) objectExists(args ...string) (bool, error) {
+	_, err := a.kubectlCapture(append(args, "-o", "name")...)
+	switch {
+	case err == nil:
+		return true, nil
+	case isNotFound(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("cannot tell whether %s already exists, so whether this run would be creating it is unknown — refusing rather than recording a guess: %w",
+			strings.Join(args, " "), err)
+	}
 }
 
 // wireScrape opens the one hole the scraper needs and tells the add-on what
@@ -178,7 +350,7 @@ func (a *App) wireScrape(opt lift.Options, work string) error {
 func (a *App) deployWorkbook(opt lift.Options, record *lift.Record, save func() error, work, clusterID, logsID, metricsID string) error {
 	name := lift.WorkbookName(record.RunID)
 	_, err := a.ensureRecorded(record, save, lift.Resource{
-		Kind: "Azure Monitor workbook (the dashboard)", Name: name, InResourceGroup: true,
+		Kind: kindWorkbook, Name: name, InResourceGroup: true,
 		Billing: "none — a workbook is a saved query set and is not charged for",
 	}, func() (string, error) {
 		out, err := a.Run.Capture("az", "deployment", "group", "create",
@@ -257,6 +429,41 @@ var addOnCreatedTypes = []string{
 	"Microsoft.Insights/dataCollectionRules",
 	"Microsoft.Insights/dataCollectionEndpoints",
 	"Microsoft.AlertsManagement/prometheusRuleGroups",
+}
+
+// monitoringGroups is where the add-ons put things: beside the cluster, and
+// in the cluster's managed node resource group.
+//
+// The node group is read from the cluster rather than derived from the
+// documented `MC_<group>_<cluster>_<region>` shape, because that shape is a
+// default an operator can override at create time — and a snapshot pointed at
+// a group that does not exist would silently watch nothing.
+func (a *App) monitoringGroups(opt lift.Options) []string {
+	groups := []string{opt.ResourceGroup}
+	node, err := a.Run.Capture("az", "aks", "show", "--name", opt.Cluster,
+		"--resource-group", opt.ResourceGroup, "--query", "nodeResourceGroup", "-o", "tsv")
+	if err == nil {
+		if n := strings.TrimSpace(node); n != "" && !strings.EqualFold(n, opt.ResourceGroup) {
+			groups = append(groups, n)
+		}
+	}
+	return groups
+}
+
+// dataCollectionResourcesIn lists everything the add-ons create across the
+// given resource groups, as a set of ids.
+func (a *App) dataCollectionResourcesIn(groups []string) (map[string]bool, error) {
+	all := map[string]bool{}
+	for _, g := range groups {
+		found, err := a.dataCollectionResources(g)
+		if err != nil {
+			return nil, err
+		}
+		for id := range found {
+			all[id] = true
+		}
+	}
+	return all, nil
 }
 
 // dataCollectionResources lists everything the add-ons create in a resource

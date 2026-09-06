@@ -127,7 +127,7 @@ func (a *App) verifyLogsArrived(opt lift.Options) error {
 }
 
 func (a *App) prometheusQueryEndpoint(opt lift.Options) (string, error) {
-	name, err := a.recordedWorkspaceName(opt, "Azure Monitor workspace (Managed Prometheus)")
+	name, err := a.recordedWorkspaceName(opt, kindMetricsWorkspace)
 	if err != nil {
 		return "", err
 	}
@@ -143,7 +143,7 @@ func (a *App) prometheusQueryEndpoint(opt lift.Options) (string, error) {
 }
 
 func (a *App) logAnalyticsCustomerID(opt lift.Options) (string, error) {
-	name, err := a.recordedWorkspaceName(opt, "Log Analytics workspace (Container Insights)")
+	name, err := a.recordedWorkspaceName(opt, kindLogsWorkspace)
 	if err != nil {
 		return "", err
 	}
@@ -207,7 +207,13 @@ func (a *App) azToken(audience string) (string, error) {
 func (a *App) promQuery(endpoint, token, query string) (int, error) {
 	quiet := *a.Run
 	quiet.Echo = false
+	// Bounded, and deliberately shorter than the poll interval: a stalled
+	// request must return so the arrival deadline gets evaluated. Without a
+	// timeout a hung connection waits forever, and the "no sample arrived
+	// within five minutes" message — the whole point of the check — never
+	// prints.
 	out, err := quiet.Capture("curl", "-sS", "--fail-with-body",
+		"--connect-timeout", "5", "--max-time", "15",
 		"-H", "Authorization: Bearer "+token,
 		"--get", "--data-urlencode", "query="+query,
 		endpoint+"/api/v1/query")
@@ -262,12 +268,12 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
   are not ours to delete and never will be, so what bills on is what this
   run added: the two monitoring workspaces. Remove exactly those with
 
-    kmx lift down --byo %s
+    KAIMAHI_CONFIRM=%s kmx lift down --byo %s
 
   It deletes only resources whose recorded id still names them, and leaves
   anything it cannot prove is its own, saying which.
 
-`, liftIdentityFlags(opt))
+`, opt.Cluster, liftIdentityFlags(opt))
 		return
 	}
 	fmt.Fprintf(a.Err, `  THIS COSTS MONEY UNTIL YOU REMOVE IT — the node, the load balancer, the
