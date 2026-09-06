@@ -373,6 +373,24 @@ func (a *App) installKagent(extra ...string) error {
 	if err := a.Run.Run("helm", args...); err != nil {
 		return err
 	}
+	// `kubectl wait --all` fails outright with "no matching resources found"
+	// when the selector matches NOTHING, rather than waiting for something to
+	// appear. Helm returning means the objects are created, not that the
+	// controller has produced a pod for them yet — so on a cluster where
+	// scheduling takes a moment longer than a local one, the wait can lose
+	// that race and report a failure that says nothing about kagent.
+	//
+	// Observed on a managed cluster, where it happened every time; a local
+	// cluster wins the race and never showed it. So: wait for the first pod
+	// to EXIST, then wait for all of them to be Ready. The second wait is
+	// unchanged, and on a cluster that was already fast the first one returns
+	// immediately.
+	if !run.Poll(60, 2*time.Second, func() bool {
+		out, err := a.kubectlCapture("-n", "kagent", "get", "pods", "-o", "name")
+		return err == nil && strings.TrimSpace(out) != ""
+	}) {
+		return fmt.Errorf("kagent's chart installed but produced no pods within two minutes")
+	}
 	return a.kubectlRun("-n", "kagent", "wait", "--for=condition=Ready", "pods", "--all", "--timeout=420s")
 }
 
