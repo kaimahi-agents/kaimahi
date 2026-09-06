@@ -59,7 +59,7 @@ func TestThePlanesManifestsTravelInTheBinary(t *testing.T) {
 // puts the tools agent behind, and EVERY model preset, because `kmx use` is
 // `make use` and `make use PRESET=anthropic` has always been a documented
 // flow. A preset NAMES a Secret; it never carries a key, so this puts no
-// credential anywhere near kmx (D27) — minting that Secret is still
+// credential anywhere near kmx — minting that Secret is still
 // `make model-secret` and the scripts.
 func TestMilestoneThreesManifestsTravelInTheBinary(t *testing.T) {
 	names := []string{"kaimahi-tools.yaml"}
@@ -129,7 +129,7 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 
 // What kmx carries is still a decision, not a directory listing. The Slack,
 // GitHub, inbound and AP families must NOT ride along: their targets are
-// the Makefile's, each is entangled with capturing a credential (D27), and a
+// the Makefile's, each is entangled with capturing a credential, and a
 // manifest in the binary that no kmx command applies is a claim kmx cannot
 // honour.
 func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {

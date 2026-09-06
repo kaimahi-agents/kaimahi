@@ -33,7 +33,7 @@ type Server struct {
 }
 
 // Action is one consequential call the ERP accepted. Kept in memory: the
-// demo is deterministic and has no database (D30).
+// demo is deterministic and has no database.
 type Action struct {
 	Tool      string         `json:"tool"`
 	Arguments map[string]any `json:"arguments"`

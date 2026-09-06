@@ -21,7 +21,7 @@ type Rendered struct {
 
 	// Allowlist is the credential's tool allowlist: the union of every
 	// seam's `allow`, sorted. Sorted because the plane reads it back
-	// sorted (P12), and an operator diffing two runs should not have to
+	// sorted, and an operator diffing two runs should not have to
 	// wonder whether the list changed or only its order.
 	Allowlist []string
 	// Constraints is credential -> tool -> constraints: exactly the
@@ -399,7 +399,7 @@ func (s RenderedStep) Summary() string {
 
 // Fragment is the overlay ConfigMap fragment this blueprint's constraints
 // become: the same `{"standing_constraints": {...}}` shape
-// scripts/release-bind.sh writes, because it goes through the same P15
+// scripts/release-bind.sh writes, because it goes through the same
 // overlay and the plane parses it with the same parser.
 //
 // An overlay may carry `tool_upstreams` too, and this deliberately does

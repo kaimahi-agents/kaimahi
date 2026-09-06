@@ -1,9 +1,9 @@
 // Package scaffold generates the reviewable YAML that IS the agent.
 //
 // The artifact is the point: kagent's Agent CRD is the agent-as-code
-// topology document this project has shipped since P1, so `kmx agent create`
-// writes a file you own and could have written by hand, and only then
-// applies it. Nothing here is a runtime.
+// topology document this project has shipped from its first agent onward,
+// so `kmx agent create` writes a file you own and could have written by
+// hand, and only then applies it. Nothing here is a runtime.
 //
 // The safety properties are #16's, carried over in full:
 //
@@ -64,7 +64,7 @@ var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 var identifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // reserved names: the two agents `kmx up` owns. Scaffolding over one of them
-// would silently replace the committed P1/P3 artifacts with a generated file
+// would silently replace their committed manifests with a generated file
 // — and then `kmx up` would apply the committed version back over it.
 var reserved = map[string]string{
 	"hello-world": "the agent `kmx up` creates from k8s/hello-world.yaml",

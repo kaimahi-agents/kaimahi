@@ -1,8 +1,8 @@
 package scaffold
 
-// P15: scaffolding the TOOL seam for an MCP server this repo did not
-// write. `kmx agent create` already treats reviewable YAML as the
-// artifact (D19); this does the same for an upstream, and for the same
+// Scaffolding the TOOL seam for an MCP server this repo did not write.
+// `kmx agent create` already treats reviewable YAML as the artifact; this
+// does the same for an upstream, and for the same
 // reason — the operator has to be able to read what they are about to
 // obey.
 //
@@ -86,7 +86,7 @@ type ToolDecl struct {
 func (t ToolDecl) VerbLevel() bool { return t.Declared && len(t.Fields) == 0 }
 
 // policyFieldsHelp is printed wherever a tool is named without a
-// declaration. D35(4): the choice is the governance-critical moment of
+// declaration. The choice is the governance-critical moment of
 // onboarding, so the consequence of each option is stated at the point
 // of choosing rather than left in a document.
 const policyFieldsHelp = `every tool needs a policy_fields declaration — say which of its arguments
@@ -190,7 +190,7 @@ type UpstreamSpec struct {
 	Tools            []ToolDecl
 	// Secret is the agent-side Secret the RemoteMCPServer resolves the
 	// governed credential from. kmx NEVER writes its value — only its
-	// name (D27); `kmx tools govern` mints the token into it.
+	// name; `kmx tools govern` mints the token into it.
 	Secret string
 	// OverlayVersion is the resourceVersion the overlay ConfigMap was
 	// read at, empty when it did not exist. It is emitted into the

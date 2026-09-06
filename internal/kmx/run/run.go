@@ -1,7 +1,7 @@
 // Package run is kmx's shell-out layer: kind, kubectl, helm and the kagent
 // CLI, exactly as the Makefile drives them.
 //
-// D27 is explicit that kmx shells out rather than linking client-go. That is
+// kmx shells out rather than linking client-go. That is
 // not a shortcut — it is what keeps the Makefile and kmx the same
 // implementation of the same journey. Every command kmx runs is a command an
 // operator can copy off the screen and run themselves, which is why the

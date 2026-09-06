@@ -255,8 +255,8 @@ func sortedBoolKeys(values map[string]bool) []string {
 //
 // Governed by default WHERE A PLANE EXISTS: if the plane's governed preset is
 // on the cluster, the scaffolded agent is metered, budgeted and ledgered from
-// its first call. On a fresh `kmx up` cluster there is no plane (milestone 1
-// does not deploy one, D27), so the keyless in-cluster preset is used and the
+// its first call. On a fresh `kmx up` cluster there is no plane (`kmx up`
+// does not deploy one), so the keyless in-cluster preset is used and the
 // ungoverned warning is printed. An explicit --model always wins.
 // An unreachable cluster is NOT "no plane". Getting that wrong is the whole
 // failure mode this project exists to prevent: a governed agent silently

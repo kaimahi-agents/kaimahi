@@ -34,9 +34,9 @@ const (
 var ParameterTypes = []string{TypeString, TypeStringList, TypeIntList, TypeGitHubRepo}
 
 // Constraint operators, mirrored from plane/internal/config/policy.go.
-// Mirrored rather than imported: the plane is a separate Go module
-// (D27(2)) and kmx cannot import it. The mirror is asserted against the
-// plane's own source by TestTheConstraintVocabularyMatchesThePlanes.
+// Mirrored rather than imported: the plane is a separate Go module and
+// kmx cannot import it. The mirror is asserted against the plane's own
+// source by TestTheConstraintVocabularyMatchesThePlanes.
 const (
 	OpEq    = "eq"
 	OpNe    = "ne"
@@ -92,7 +92,7 @@ var (
 	envNameRE    = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	// referenceRE finds ${…} references. Deliberately not a template
 	// engine: no functions, no conditionals, no arithmetic — the same
-	// restraint D31 applied to standing constraints, for the same
+	// restraint the standing constraints take, for the same
 	// reason. A policy you need an interpreter to predict is a policy
 	// nobody reviewed.
 	referenceRE = regexp.MustCompile(`\$\{((?:capture\.)?[a-z][a-z0-9_]*(?:\.[a-z]+)?)\}`)
@@ -275,12 +275,13 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 
 // BindRun binds for a RUN and returns the steps that will actually run.
 //
-// The question is circular, which is what W35 got wrong: `when:` is
-// answered from the parameters, and which parameters are DEMANDED is
-// answered from the steps `when:` left in. W35's driver bound every step
-// unconditionally, so a parameter that only a conditional step needs was
-// demanded in order to leave that step out — `publish` is guarded by
-// `when: ado_builds` and `ado_builds` is `required_for: [publish]`, so
+// The question is circular, which is what an earlier driver got wrong:
+// `when:` is answered from the parameters, and which parameters are
+// DEMANDED is answered from the steps `when:` left in. That driver bound
+// every step unconditionally, so a parameter that only a conditional step
+// needs was demanded in order to leave that step out — `publish` is
+// guarded by `when: ado_builds` and `ado_builds` is
+// `required_for: [publish]`, so
 // the only runs that could start were the ones supplying every guarded
 // parameter, build ids included. Which is to say: every run that used
 // `when:` for what it is for failed at binding.
@@ -392,8 +393,8 @@ func (v Values) substitute(s string, item string) (string, error) {
 
 // substituteEnv is substitute for an exec ENVIRONMENT, where a parameter
 // nobody supplied means "unset" rather than "hole in a policy field".
-// W32's driver passes ADO_ARTIFACTS and ASSET_GLOBS as empty strings for
-// exactly this reason. Never used for a call argument or a constraint.
+// The release driver passes ADO_ARTIFACTS and ASSET_GLOBS as empty strings
+// for exactly this reason. Never used for a call argument or a constraint.
 func (v Values) substituteEnv(s string, item string) (string, error) {
 	return v.expand(s, item, true)
 }

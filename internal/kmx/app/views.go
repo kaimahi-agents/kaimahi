@@ -63,7 +63,7 @@ func (a *App) Credentials() error {
 // RenewCredential extends a credential's deadline. It is not a mutation
 // the guard covers for the same reason the views are not: it lands
 // wherever the invocation was already going to land, and it moves no
-// credential material — kmx accepts none in any form (D27), and renewal
+// credential material — kmx accepts none in any form, and renewal
 // mints none either, so no Secret has to be rewritten.
 func (a *App) RenewCredential(name string, ttl *int64) error {
 	return a.session(func(c *admin.Client) error {

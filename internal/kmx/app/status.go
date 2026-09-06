@@ -144,7 +144,7 @@ func table(out io.Writer, headers []string, rows [][]string) {
 // all: a CRD kagent has not installed, a namespace that was never created,
 // an RBAC denial. It returns a REASON rather than an error, and never turns
 // a failure into an empty list — the caller reports `unknown`, which is a
-// different answer from "0" and the one W30 fixed the word for.
+// different answer from "0" and the word the audit trail already uses for it.
 //
 // The reason is the first line of kubectl's own complaint, so an operator
 // reads what kubectl said rather than a paraphrase of it.
@@ -421,8 +421,8 @@ func (a *App) collectStatus() (*statusData, error) {
 		}
 	}
 	// The plane, the tool servers and the Secret names are read
-	// TOLERANTLY: none of them exists on the fast path D36 made the
-	// default, and a status command that fails because the thing it is
+	// TOLERANTLY: none of them exists on the ungoverned fast path, which is
+	// the default, and a status command that fails because the thing it is
 	// diagnosing is absent is worthless. Each failure becomes a stated
 	// `unknown`, never a silent zero — with one deliberate exception, noted
 	// on statusTolerant: a NotFound namespace or resource is a genuine

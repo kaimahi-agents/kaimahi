@@ -67,7 +67,7 @@ var quickstartValues = []string{
 // on the path to a first answer, so they are not on this path either. What
 // is left is the shortest thing that can honestly be called a working agent,
 // and the honest thing to say afterwards is that nothing about it is
-// governed yet (D36: governance is what you turn on next, not a gate you
+// governed yet (governance is what you turn on next, not a gate you
 // pass through first).
 func (a *App) Quickstart(opt QuickstartOptions) error {
 	started := a.timeNow()

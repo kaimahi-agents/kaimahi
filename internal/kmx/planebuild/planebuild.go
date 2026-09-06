@@ -8,8 +8,7 @@
 // answer possible: `go install
 // github.com/kaimahi-agents/kaimahi/plane/cmd/kaimahi-proxy@<revision>`
 // resolves through the public Go proxy at any revision on main, checksummed
-// by the sum database, with no clone and nothing published by this project
-// (D26, D27(3), D28(1)).
+// by the sum database, with no clone and nothing published by this project.
 //
 // Two sources, and a checkout always wins:
 //
@@ -21,7 +20,7 @@
 //     picks up a checkout kmx is being run from, build the working tree
 //     instead. This is what the Makefile passes, and it is why CI still
 //     proves the code a PR changes: a PR touching plane/ would otherwise be
-//     tested against whatever the proxy last published (D28(2)).
+//     tested against whatever the proxy last published.
 package planebuild
 
 import (
@@ -66,7 +65,7 @@ func Dockerfile() string {
 
 // Revision returns the module version to fetch the plane at: kmx's own.
 //
-// A RELEASE binary carries its tag (W28); a binary installed from the proxy
+// A RELEASE binary carries its tag; a binary installed from the proxy
 // carries a pseudo-version in Main.Version; one built from a checkout carries
 // vcs.revision instead. All three are accepted by `go install …@<version>` —
 // the tag because the release pushes plane/vX.Y.Z alongside it.
@@ -84,7 +83,7 @@ func Revision(info *debug.BuildInfo, ok bool) (string, error) {
 	// build info: the tag is the source of truth, it is what a `go install
 	// …/cmd/kmx@vX.Y.Z` binary resolves to anyway (Main.Version IS the
 	// tag), and it does not depend on VCS stamping surviving the build.
-	// W28 found out why that last clause matters: the release job wrote one
+	// The release job found out why that last clause matters: it wrote one
 	// file into its own checkout before building, the toolchain recorded
 	// vcs.modified=true, and every released binary refused to name a
 	// revision at all.

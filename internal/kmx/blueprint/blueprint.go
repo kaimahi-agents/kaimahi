@@ -1,12 +1,12 @@
-// Package blueprint is D42 option A: one declarative file that says what
-// a governed workflow REACHES, what its policy is, and what its steps
-// are — so that the intent W32 spread over four layers has one place to
-// live and one command to apply.
+// Package blueprint is one declarative file that says what a governed
+// workflow REACHES, what its policy is, and what its steps are — so that
+// intent the release workflow spread over four layers (docs/release-agent.md)
+// has one place to live and one command to apply.
 //
 // What a blueprint is NOT, and the boundaries are the design:
 //
 //   - It is not a credential store. A blueprint NAMES Kubernetes Secrets
-//     and never carries token material (D27). The parser refuses a
+//     and never carries token material. The parser refuses a
 //     document that looks like it is carrying one, because a declarative
 //     format that wants to be self-contained is exactly where that rule
 //     gets bent.
@@ -19,14 +19,14 @@
 //     seam, and must not gain the ability to.
 //   - It is not a program. Steps are a fixed vocabulary, commands are
 //     argv arrays (never a shell string), and there is no expression
-//     language — the same restraint D31 applied to standing constraints.
+//     language — the same restraint the standing constraints take.
 //
 // The one property everything else is arranged around: THE DRIVER FILES
 // THE APPROVAL REQUEST, for the call the blueprint and the operator's
 // parameters name, and a model cannot influence what a human is shown.
-// P13 paid for that lesson. So `call.args` may reference PARAMETERS and
-// literals only — never a value an agent turn produced — and the parser
-// enforces it rather than documenting it.
+// The accounts-payable demo paid for that lesson. So `call.args` may
+// reference PARAMETERS and literals only — never a value an agent turn
+// produced — and the parser enforces it rather than documenting it.
 package blueprint
 
 import (
@@ -111,7 +111,7 @@ type Seam struct {
 	// allowlist is per-credential and not per-upstream, so the seams'
 	// lists union — and two seams naming one tool is refused.
 	Allow []string `yaml:"allow"`
-	// Bound is the standing constraints (D31): declarative bounds under
+	// Bound is the standing constraints: declarative bounds under
 	// which a call proceeds with no approval.
 	Bound map[string][]Constraint `yaml:"bound"`
 	// Refresh is how a credential that expires mid-run is re-minted.
@@ -147,13 +147,13 @@ type Constraint struct {
 // `az` is a binary with nobody logged into it. It buys nothing and adds a
 // supply chain. So a refresh command is REQUIRED on PATH, named when it
 // is missing, and the run continues with the credential already in
-// custody rather than failing — which is what W32's driver does.
+// custody rather than failing — which is what the shell release driver does.
 type Refresh struct {
 	// Command is argv. Never a shell string: no word splitting, no
 	// globbing, no interpolation the operator did not write.
 	Command []string `yaml:"command"`
 	// Secret and Key are where the minted value is stored — a NAME and a
-	// key, never a value (D27).
+	// key, never a value.
 	Secret string `yaml:"secret"`
 	Key    string `yaml:"key"`
 	// Requires is the binary the command needs on PATH.
@@ -163,8 +163,8 @@ type Refresh struct {
 	// Seam names the kagent RemoteMCPServer whose Accepted condition is
 	// re-checked after a refresh. kagent caches a reconcile result, so a
 	// seam that failed on the OLD credential still reads Unauthorized
-	// minutes later — which is how W32's first health check reported a
-	// healthy credential as broken.
+	// minutes later — which is how the release workflow's first health
+	// check reported a healthy credential as broken.
 	Seam string `yaml:"seam"`
 }
 
@@ -186,7 +186,8 @@ const (
 	// admits: it proceeds with no human, inside declared bounds, and is
 	// audited. It exists as its own kind because "bounded" and
 	// "consequential" are two different answers to the same question and
-	// W32 gives BOTH for one tool — `scripts/release-bind.sh` bounds
+	// the release workflow gives BOTH for one tool — `scripts/release-bind.sh`
+	// bounds
 	// `pipelines_write` ("builds are bounded, not approved",
 	// docs/release-agent.md) while `scripts/release-run.sh` files an
 	// approval request for it. Naming the posture turns that into a
@@ -247,8 +248,8 @@ type Call struct {
 	// operator's own tools, outside the gateway. It is REQUIRED on any
 	// step with `exec`, and it must carry a reason, because a format that
 	// rendered every step in one vocabulary would launder the distinction
-	// W32 wrote down rather than glossed (docs/release-agent.md: 1.28 GB
-	// across five assets, moved by `az` and `gh`).
+	// docs/release-agent.md draws rather than glosses (1.28 GB across five
+	// assets, moved by `az` and `gh`).
 	Ungoverned string `yaml:"ungoverned"`
 }
 
@@ -565,7 +566,7 @@ func (b *Blueprint) validateRefresh(seam string, r *Refresh) error {
 	if r.Secret == "" || r.Key == "" {
 		return fmt.Errorf("%s: `secret` and `key` name where the minted value is stored; both are required. "+
 			"kmx never writes a credential it was GIVEN — only one a command it was told to run minted, into "+
-			"a Secret this file names (D27)", where)
+			"a Secret this file names", where)
 	}
 	if strings.TrimSpace(r.Why) == "" {
 		return fmt.Errorf("%s: `why` is required. An operator watching a release is told when a credential is "+
@@ -700,9 +701,9 @@ func (b *Blueprint) validateStepShape(where string, s *Step) error {
 	// digest is over the declared fields as they appear, so a field
 	// absent from the request is absent from the admitted call too, and
 	// an agent that added it would produce a different digest and be
-	// denied. W32 relies on that — its `pipelines_write` request names
-	// no `previewRun`. What IS refused is an argument that is not a
-	// field name at all.
+	// denied. The release workflow relies on that — its `pipelines_write`
+	// request names no `previewRun`. What IS refused is an argument that is
+	// not a field name at all.
 	_ = fields
 	for arg := range s.Call.Args {
 		if !policyFieldRE.MatchString(arg) {
@@ -747,14 +748,15 @@ func validateExec(where string, e *Exec) error {
 	return nil
 }
 
-// validateStepReferences is the P13 property, enforced.
+// validateStepReferences enforces the property the accounts-payable demo
+// paid for.
 //
 // A `call`'s arguments are what the driver files a request for and what a
 // human is shown. They may reference PARAMETERS and literals only. A
 // reference to a previous step's captured reply inside `call.args` would
 // let the model choose the value being approved — precisely the failure
-// P13 paid for, where the agent filed a payment for a different invoice
-// at the same amount and the approval landed on the wrong one.
+// that demo paid for, where the agent filed a payment for a different
+// invoice at the same amount and the approval landed on the wrong one.
 //
 // Prompts and exec environments are different: prose is not what an
 // approval binds, and docs/release-agent.md states plainly that the
@@ -773,7 +775,7 @@ func (b *Blueprint) validateStepReferences(where string, s *Step, captured map[s
 				if strings.HasPrefix(ref, capturePrefix) {
 					return fmt.Errorf("%s: argument %q reads ${%s}. A policy-bound argument may reference "+
 						"parameters and literals only — never something an agent turn produced. Otherwise the "+
-						"model chooses the value a human is asked to approve, which is the failure P13 paid for. "+
+						"model chooses the value a human is asked to approve, which is the failure this rule exists to prevent. "+
 						"Supply it as a parameter instead (`required_for: [%s]`)", where, arg, ref, s.Name)
 				}
 				if err := b.knownReferenceWithItem(ref, where, hasItem); err != nil {
@@ -823,10 +825,11 @@ func (b *Blueprint) validateStepReferences(where string, s *Step, captured map[s
 //   - a BOUNDED step's tool must be bounded and not allowlisted, or the
 //     constraint is not the thing deciding.
 //
-// W32 gets the first right by hand and says why (`release-bind.sh` binds
-// the read tools only). It gets the second WRONG, and this is what found
-// it: `release-run.sh`'s `do_build` files an approval request for
-// `pipelines_write`, which `release-bind.sh` optionally gives a standing
+// The release workflow gets the first right by hand and says why
+// (`release-bind.sh` binds the read tools only). It gets the second
+// WRONG, and this is what found it: `release-run.sh`'s `do_build` files
+// an approval request for `pipelines_write`, which `release-bind.sh`
+// optionally gives a standing
 // bound — and docs/release-agent.md says those builds "run with no human
 // at all". Both cannot be true.
 func (b *Blueprint) validatePostures() error {
@@ -899,7 +902,8 @@ func (b *Blueprint) hasStep(name string) bool {
 
 // StepNames is the ordered step list, for --step and messages. It is
 // EVERY step, conditional ones included — what a particular run contains
-// is ActiveSteps, and the difference is what W35 shipped wrong.
+// is ActiveSteps, and conflating the two is what `kmx workflow run` once
+// got wrong.
 func (b *Blueprint) StepNames() []string {
 	out := make([]string, 0, len(b.Steps))
 	for _, s := range b.Steps {
@@ -985,7 +989,7 @@ func (b *Blueprint) knownReferenceWithItem(ref, where string, hasItem bool) erro
 				"${%s.name}, because owner and repo are separate policy fields", where, ref, name, name)
 		}
 		// A list read in prose or in an environment variable renders
-		// comma-joined, which is what W32's driver passes ADO_BUILDS and
+		// comma-joined, which is how the release driver passes ADO_BUILDS and
 		// ADO_ARTIFACTS as. A list read in a CALL ARGUMENT is refused
 		// where that check belongs — one call takes one value.
 		return nil

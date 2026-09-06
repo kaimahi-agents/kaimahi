@@ -1,6 +1,6 @@
 package app
 
-// D42, milestone 2: ONE driver, for every blueprint.
+// ONE driver, for every blueprint.
 //
 // scripts/release-run.sh is 556 lines, and almost none of it is about
 // releases. What it actually encodes is a set of properties that any
@@ -10,9 +10,9 @@ package app
 //     parameters name, and refuses to go on if the plane did not file
 //     exactly that call. A model that proposed a different branch would
 //     file a request too, and it would look identical in `kmx approvals`.
-//     P13 paid for that lesson: on its first live run the agent filed a
-//     payment for a different invoice at the same amount, and the
-//     approval landed on the wrong one.
+//     The accounts-payable demo paid for that lesson: on its first live
+//     run the agent filed a payment for a different invoice at the same
+//     amount, and the approval landed on the wrong one.
 //   - A LIVE GRANT IS NOT RIDDEN. If the tool already carries a grant
 //     somebody gave earlier, this run would spend an approval for a call
 //     it never described. Refused.
@@ -23,8 +23,8 @@ package app
 //   - ITS OWN ADMIN PORT. The driver polls the admin API while it waits
 //     for a human, and the human's own `kmx approve` needs the same port.
 //     On the default the two collide and the operator meets "address
-//     already in use" on the one command they were just told to run. W32
-//     found that the hard way, on its first real approval.
+//     already in use" on the one command they were just told to run. The
+//     release workflow found that the hard way, on its first real approval.
 //   - BOUNDED WAITS, RESUMPTION AND CREDENTIAL REFRESH. A build is
 //     minutes and a turn is request/response; an access token can be
 //     shorter than the process it authorises.
@@ -64,8 +64,8 @@ type RunOptions struct {
 	// DryRun reads and drafts and stops before the first consequential
 	// or bounded call. Nothing is created.
 	DryRun bool
-	// Approver requires this person's approval (a Slack user id, as P8b
-	// records it). Empty means anyone the plane admits.
+	// Approver requires this person's approval (a Slack user id, as the
+	// approval trail records it). Empty means anyone the plane admits.
 	Approver string
 	// AdminPort is the driver's own port-forward.
 	AdminPort string
@@ -251,8 +251,9 @@ func (r *workflowRun) preflightRequirements() error {
 	if len(missing) == 0 {
 		return nil
 	}
-	// A missing refresh binary is a warning, not a failure: W32's driver
-	// leaves the stored credential in place and carries on, and a run
+	// A missing refresh binary is a warning, not a failure: the shell
+	// driver this replaces leaves the stored credential in place and
+	// carries on, and a run
 	// that started five minutes ago should not die because `az` is
 	// absent when the token in custody is still good.
 	r.app.notef("NOTE: not on PATH:")
@@ -308,10 +309,10 @@ func (r *workflowRun) turnStep(s blueprint.RenderedStep) error {
 }
 
 // turn runs one agent turn and returns its reply. A turn only counts if
-// the task completed WITH a reply: an earlier version of W32's driver
-// printed a note and returned success on a failed turn, which is the
-// exact thing this repository's agent brief forbids, in the code that
-// enforces it.
+// the task completed WITH a reply: an earlier version of
+// scripts/release-run.sh printed a note and returned success on a failed
+// turn, which is the exact thing this repository's agent brief forbids,
+// in the code that enforces it.
 func (r *workflowRun) turn(s blueprint.RenderedStep) (string, error) {
 	prompt, err := r.resolveCaptures(s.Prompt)
 	if err != nil {
@@ -659,9 +660,9 @@ func (r *workflowRun) pendingRequest(s blueprint.RenderedStep) (string, error) {
 // `pipelineId 4` is a substring of a pending `pipelineId 41`, and a
 // branch `release/v1` of `release/v10`, so an unanchored match could
 // select somebody else's request and hand a human a call this run never
-// described. That is the shape of P13's failure: on its first live run
-// the agent filed a payment for a different invoice at the same amount,
-// and the approval landed on the wrong one.
+// described. That is the shape of the accounts-payable demo's failure: on
+// its first live run the agent filed a payment for a different invoice at
+// the same amount, and the approval landed on the wrong one.
 //
 // The plane builds the same string from the same declared fields
 // (plane/internal/gateway/digest.go, summarize), so equality is what
@@ -736,8 +737,8 @@ func (r *workflowRun) stillPending(id string) (bool, error) {
 }
 
 // confirmDecision distinguishes an approval from a denial by the grant
-// THIS REQUEST created, and honours --approver: P8b records who decided,
-// and a workflow that wanted one person's approval must not accept
+// THIS REQUEST created, and honours --approver: the trail records who
+// decided, and a workflow that wanted one person's approval must not accept
 // somebody else's.
 //
 // Matched on `request_id`, never on the tool. A grant row carries the id
@@ -899,10 +900,11 @@ func (r *workflowRun) resolveCaptures(s string) (string, error) {
 // refreshFor re-mints an expiring upstream credential before a step that
 // touches its seam.
 //
-// The Entra token W32 rides lives about an hour and a release session is
-// longer; it expired twice on the first real run, and both times the
-// visible symptom was the agent saying "there is no pipelines_build tool
-// in my toolset" — the seam had gone Accepted=False and kagent had
+// The Entra token the release workflow rides lives about an hour and a
+// release session is longer; it expired twice on the first real run, and
+// both times the visible symptom was the agent saying "there is no
+// pipelines_build tool in my toolset" — the seam had gone Accepted=False
+// and kagent had
 // dropped its tools. Cause and symptom nowhere near each other, and
 // nothing in the message pointing at a credential.
 func (r *workflowRun) refreshFor(s blueprint.RenderedStep) error {
@@ -950,8 +952,8 @@ func (r *workflowRun) refreshSeam(name string) error {
 		return nil
 	}
 	// Through a 0600 file and `--from-file`, never argv: a token in a
-	// command line is a token in the process table (D27's custody rule,
-	// which is why every secret-capture script in this repo does this).
+	// command line is a token in the process table, which is why every
+	// secret-capture script in this repo does the same.
 	path := filepath.Join(r.dir, name+".cred")
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(out)), 0o600); err != nil {
 		return err
@@ -974,8 +976,8 @@ func (r *workflowRun) refreshSeam(name string) error {
 //
 // `Accepted` is a CACHED reconcile result: kagent records it when it last
 // tried and does not retry, so after a refresh it still reads Unauthorized
-// from minutes ago. W32's first health check reported a healthy credential
-// as broken for exactly this reason.
+// from minutes ago. The release workflow's first health check reported a
+// healthy credential as broken for exactly this reason.
 func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh) error {
 	if ref.Seam == "" {
 		return nil

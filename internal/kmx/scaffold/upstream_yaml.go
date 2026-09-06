@@ -36,7 +36,7 @@ var ServerEgressModes = []string{EgressNone, EgressDNS, EgressKeep}
 //  4. the RemoteMCPServer whose URL is the gateway.
 //
 // Nothing here carries a credential; document 4 names a Secret and the
-// generator refuses any key-shaped byte in its own output (D27).
+// generator refuses any key-shaped byte in its own output.
 func GenerateUpstream(spec UpstreamSpec) (string, error) {
 	if err := ValidateUpstreamName(spec.Name); err != nil {
 		return "", err

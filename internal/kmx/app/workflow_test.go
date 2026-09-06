@@ -3,8 +3,9 @@ package app
 // The driver's safety properties, tested where they can be tested
 // without a cluster. The rest — that a denial is really a denial, that a
 // grant is really welded to a digest — is the plane's, and CI exercises
-// it against the synthetic hosted upstream with no credential anywhere
-// (D14).
+// it against the synthetic hosted upstream with no credential anywhere:
+// this repository is public and fork-exposed, so CI holds no hosted
+// credential of any kind.
 
 import (
 	"strings"
@@ -14,8 +15,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/blueprint"
 )
 
-// TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne is the P13
-// property at the selector.
+// TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne pins, at the
+// selector, the property the accounts-payable demo paid for.
 //
 // The driver files a request for the call the operator's parameters
 // name. If the agent's own turn had filed a request too — for a
@@ -53,7 +54,7 @@ func TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne(t *testing.T) {
 // `--step publish` with no --set ado_builds asks for a step whose `when:`
 // guard nobody met, and the honest answer is that nothing ran. "Nothing
 // ran" is only usable if it says what would have made something run —
-// W36's fix turns a refusal-to-start into an empty run, and an empty run
+// the fix turns a refusal-to-start into an empty run, and an empty run
 // that did not name the flag would be the same dead end wearing a
 // different message.
 func TestARunThatDidNothingNamesTheFlagThatWouldHaveRunSomething(t *testing.T) {

@@ -11,12 +11,12 @@ import (
 
 // What `kmx status` can say about governance, and how it refuses to guess.
 //
-// W29 asked for the ungoverned state to be COUNTABLE rather than warned
-// about once: "3 tool servers, 0 governed" is harder to ignore than a
-// message that scrolls past. D36 makes it matter more, not less — the fast
-// path is ungoverned by design, so the ungoverned path is the DEFAULT one
-// and nothing else in the tree tells an operator how much of their system
-// is on it.
+// The ungoverned state is COUNTABLE rather than warned about once: "3 tool
+// servers, 0 governed" is harder to ignore than a message that scrolls past.
+// The fast path — one command to a working agent — is ungoverned by design,
+// which makes the count matter more, not less: the ungoverned path is the
+// DEFAULT one and nothing else in the tree tells an operator how much of
+// their system is on it.
 //
 // Two rules hold this together:
 //
@@ -28,9 +28,9 @@ import (
 //     beside the counts is what says whether anything is actually in front
 //     of them.
 //
-//  2. **A zero is never invented.** W30 fixed the vocabulary for exactly
-//     this on `acted_for`: `none` is a known nothing, `unknown` is "we
-//     cannot say". A population that could not be listed, a URL that could
+//  2. **A zero is never invented.** The audit trail already draws this
+//     distinction on `acted_for`: `none` is a known nothing, `unknown` is
+//     "we cannot say". A population that could not be listed, a URL that could
 //     not be read and a dangling ModelConfig reference each get counted as
 //     what they are — never folded into "0 governed" or into "direct".
 
@@ -50,8 +50,8 @@ const (
 	planeWorkload = "kaimahi-proxy"
 )
 
-// The answers a population can carry. `none` and `unknown` are W30's words,
-// kept rather than reinvented.
+// The answers a population can carry. `none` and `unknown` are the audit
+// trail's words for `acted_for`, kept rather than reinvented.
 const (
 	stateCounted   = "counted"
 	stateNone      = "none"
@@ -384,7 +384,7 @@ func credentialSeams(models []modelStatus, servers []toolServerStatus, present [
 
 // writeGovernance prints the section. Every line is a count or a stated
 // "cannot say"; none of it changes the readiness verdict above it, because
-// D36 made the ungoverned fast path the supported one — an ungoverned
+// the ungoverned fast path is a supported one — an ungoverned
 // cluster is not a broken cluster, it is an ungoverned one, and status says
 // which without calling it a fault.
 func writeGovernance(out io.Writer, g governance) {

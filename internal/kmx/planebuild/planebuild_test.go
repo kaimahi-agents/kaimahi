@@ -144,8 +144,8 @@ func TestRevisionIsKmxsOwn(t *testing.T) {
 }
 
 // A checkout wins over the proxy, and only a real one counts. Getting this
-// wrong is what D28(2) guards against: a PR that changes plane/ would be
-// "proved" against whatever the proxy last published.
+// wrong would mean a PR that changes plane/ was "proved" against whatever
+// the proxy last published, rather than against the code it changed.
 func TestDetectSourceFindsThisRepositoryAndNothingElse(t *testing.T) {
 	root := t.TempDir()
 	repo := filepath.Join(root, "work", "kaimahi")

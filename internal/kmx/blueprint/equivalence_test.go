@@ -2,11 +2,12 @@ package blueprint_test
 
 // MILESTONE 1's acceptance test, and it is not "it works".
 //
-// The claim is EQUIVALENCE: W32's governance, expressed as a blueprint,
-// produces the same three artifacts as the make targets it replaces —
+// The claim is EQUIVALENCE: the release workflow's governance, expressed
+// as a blueprint, produces the same three artifacts as the make targets it
+// replaces —
 //
 //	make release-allow   the credential's tool allowlist
-//	make release-bind    the standing constraints, as a P15 overlay fragment
+//	make release-bind    the standing constraints, as an overlay fragment
 //
 // and it proves that by RUNNING THOSE TARGETS, not by restating what they
 // were believed to do. `scripts/release-bind.sh` is executed unmodified
@@ -151,7 +152,7 @@ func TestTheBlueprintDeclaresThePolicyFieldsTheCommittedTableDeclares(t *testing
 }
 
 // TestTheConstraintVocabularyMatchesThePlanes keeps the mirrored operator
-// list honest. kmx cannot import the plane (separate Go module, D27(2)),
+// list honest. kmx cannot import the plane (a separate Go module),
 // so the list is copied — and a copy that drifts would let a blueprint
 // emit a constraint the plane refuses at boot, taking a rollout down.
 func TestTheConstraintVocabularyMatchesThePlanes(t *testing.T) {

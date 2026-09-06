@@ -29,11 +29,11 @@ const config_kagentNamespace = "kagent"
 //     to advance, bounded and loud, before believing the rollout wait.
 //   - Exactly ONE pod must be on the new template. `rollout status` returns
 //     while the old pod is still draining, and a chat that lands on it gets
-//     a perfectly plausible answer from the OLD preset (W16).
+//     a perfectly plausible answer from the OLD preset.
 //   - Only then is the Agent's Ready condition meaningful.
 //
 // The Makefile keeps its own copy for `use`, `govern-tools` and
-// `ungovern-tools` — targets milestone 2 was scoped not to touch (D28(3)).
+// `ungovern-tools` — targets `kmx govern` was scoped not to touch.
 // Both are exercised by the same end-to-end job; the duplication ends when
 // milestone 3 moves those targets.
 //

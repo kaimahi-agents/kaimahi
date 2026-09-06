@@ -31,7 +31,7 @@ type UseOptions struct {
 // Use switches an agent onto a model preset from k8s/models/.
 //
 // Hosted presets need their key Secret first (`make model-secret`,
-// `make copilot-secret`) — kmx accepts no credential in any form (D27), so
+// `make copilot-secret`) — kmx accepts no credential in any form, so
 // it applies the preset and switches the agent, and the Secret the preset
 // NAMES is somebody else's job. A preset whose Secret is missing produces an
 // agent that starts and then fails its calls; that is the behaviour
@@ -104,7 +104,7 @@ type ToolsOptions struct {
 	// Tools is the comma-separated allowlist, and the agent's selection.
 	// "-" is the empty allowlist: nothing callable without a live grant.
 	Tools string
-	// Server is the RemoteMCPServer to govern against (P15). Empty means
+	// Server is the RemoteMCPServer to govern against. Empty means
 	// this repo's committed `kaimahi-tools`, which kmx carries and
 	// applies. Any other name is one an operator scaffolded with
 	// `kmx tools add`, which already applied it — kmx has no committed
@@ -205,8 +205,8 @@ func (a *App) preflightToolServer(server string) error {
 		server, config_kagentNamespace, a.Cfg.KubeContext)
 }
 
-// UngovernTools restores the P3 wiring — direct to the chart-managed tool
-// server, ungoverned — by re-applying the committed Agent YAML.
+// UngovernTools restores the original wiring — direct to the chart-managed
+// tool server, ungoverned — by re-applying the committed Agent YAML.
 //
 // It ends at `wait_switched`, with no Ready wait, exactly as
 // `make ungovern-tools` does: the committed agent is the one `kmx up`

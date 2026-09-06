@@ -86,7 +86,7 @@ func (c *Client) Grants(out io.Writer, credential string) error {
 
 // Approvals lists the requests waiting for a human decision.
 //
-// The CALL column is not decoration (P12): a tool grant is welded to one
+// The CALL column is not decoration: a tool grant is welded to one
 // call, so an approver who can see only the verb is being asked to approve
 // something they cannot see. That is the whole problem restated.
 //
@@ -245,7 +245,7 @@ func actedFor(e map[string]any) string {
 	return "unknown"
 }
 
-// binds says what a tool grant admits (P12): one CALL, named by the
+// binds says what a tool grant admits: one CALL, named by the
 // digest of its policy-relevant arguments. A tool grant with no digest is
 // the closed legacy class — minted before argument binding, so it admits
 // any arguments and says so; other kinds have no arguments at all.

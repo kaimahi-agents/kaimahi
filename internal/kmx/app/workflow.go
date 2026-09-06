@@ -1,17 +1,17 @@
 package app
 
-// D42, milestone 1: the governance of a workflow, declared once and
-// applied by one command.
+// The governance of a workflow, declared once and applied by one command.
 //
 // What this replaces is not a missing feature — it is an intent that had
-// no single place to live. W32's release workflow works, and it is
+// no single place to live. The release workflow (docs/release-agent.md)
+// works, and it is
 // unrepeatable: which tools its credential may call is a Make variable,
 // which repository it may call them on is a 191-line shell script, and
 // what its arguments MEAN is a committed JSON table. `kmx agent create`
 // reaches none of it.
 //
-// The division of labour is the same one P15 drew for `kmx tools add`,
-// one level up: kmx owns what is MECHANICAL — reading the overlay whole
+// The division of labour is the same one `kmx tools add` drew, one level
+// up: kmx owns what is MECHANICAL — reading the overlay whole
 // so another operator's fragment is not pruned, carrying the
 // resourceVersion so a stale apply is refused, asking the RUNNING plane
 // whether the result would load — and the operator owns POLICY, which is
@@ -45,7 +45,7 @@ type WorkflowOptions struct {
 	// carries, named by the positional argument — which is what keeps a
 	// blueprint usable from a released binary with no checkout.
 	File string
-	// Set is the operator's parameters. Never a credential (D27): the
+	// Set is the operator's parameters. Never a credential: the
 	// blueprint's parser refuses a document that carries one, and there
 	// is no flag here that could.
 	Set map[string]string
@@ -151,7 +151,7 @@ func (a *App) ShowWorkflow(name string, opt WorkflowOptions) error {
 
 	// The ungoverned steps get their own section rather than a line in
 	// the table above. A blueprint that rendered every step in one
-	// vocabulary would launder the distinction W32 wrote down: the
+	// vocabulary would launder the distinction that matters: the
 	// DECISION is governed, the TRANSFER is not.
 	var ungoverned []blueprint.RenderedStep
 	for _, s := range r.Steps {
@@ -196,10 +196,10 @@ func (a *App) describeParameters(b *blueprint.Bundle) error {
 	return nil
 }
 
-// GovernWorkflow is milestone 1: apply a blueprint's governance.
+// GovernWorkflow applies a blueprint's governance.
 //
 // Two artifacts, and nothing else: the credential's tool allowlist, and
-// its standing constraints as a P15 overlay fragment. It writes no
+// its standing constraints as an overlay fragment. It writes no
 // upstream, no Secret, no credential and no agent — a workflow is
 // governance over things that already exist, and the commands that create
 // those (`kmx tools add`, `kmx tools govern`, the secret-capture scripts)
@@ -241,7 +241,7 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 			return fmt.Errorf("the overlay already carries standing constraints for credential %q, in %q.\n"+
 				"  The plane refuses two fragments defining one credential's constraints — the merge is per name "+
 				"and refuses collisions rather than resolving by precedence, so applying this would take the next\n"+
-				"  proxy rollout down. Remove the other one first. If it is W32's, that is:\n"+
+				"  proxy rollout down. Remove the other one first. If it is the release workflow's, that is:\n"+
 				"    make release-bind GITHUB_REPO=-",
 				b.Credential, other)
 		}
@@ -281,10 +281,10 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 		// PRECHECKED, not discovered. This command writes the overlay
 		// fragment and rolls the proxy, and only then sets the
 		// allowlist — which is the one of the two the plane refuses for
-		// a credential it does not have. Before W36 that arrived as
+		// a credential it does not have. Unchecked, that arrives as
 		// `tool-allow failed (HTTP 404): no such credential` AFTER the
-		// bounds were on the cluster and the proxy had restarted, and a
-		// re-run repeated the mutation. It also left constraints that
+		// bounds are on the cluster and the proxy has restarted, and a
+		// re-run repeats the mutation. It also left constraints that
 		// would silently attach to a credential of that name created
 		// later. Asked here, where "nothing has been applied" is still
 		// true.
@@ -403,7 +403,7 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 	a.notef("  - the seams themselves. %s %s already in the plane's table; a blueprint names %s.",
 		strings.Join(seams, " and "), verb, pronoun)
 	a.notef("  - the credential %q and its Secret. That is `kmx tools govern`.", b.Credential)
-	a.notef("  - any credential material at all (D27).")
+	a.notef("  - any credential material at all.")
 	// Named the way the operator named it: a `--file` blueprint has no
 	// name kmx can resolve, and telling them to type one that will not
 	// work is worse than saying nothing.
@@ -418,8 +418,8 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 // checkCredential is the assertion a blueprint makes about the plane's
 // custody: the credential its governance is written FOR has to exist
 // before anything is written. It names how to create one rather than
-// returning an HTTP status, which is the class of message W34 exists to
-// remove.
+// returning an HTTP status, which would tell an operator nothing they can
+// act on.
 func checkCredential(c *admin.Client, credential, agent string) error {
 	names, err := c.CredentialNames()
 	if err != nil {
@@ -440,7 +440,7 @@ func checkCredential(c *admin.Client, credential, agent string) error {
 		"  Issue it, and bind it to the agent's Secret, with:\n"+
 		"    kmx tools govern --credential %s --agent %s --secret <secret-name>\n"+
 		"  A blueprint governs a credential that already exists; it never creates one, and kmx never handles "+
-		"the token (D27)", credential, have, credential, agent)
+		"the token", credential, have, credential, agent)
 }
 
 // checkSeams is the assertion a blueprint makes about the world.

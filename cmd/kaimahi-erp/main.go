@@ -1,5 +1,5 @@
 // kaimahi-erp is the fixture-backed ERP the accounts-payable demo
-// investigates (P13, docs/ap-demo.md). It is an MCP tool server over an
+// investigates (docs/ap-demo.md). It is an MCP tool server over an
 // in-memory corpus: no database, no credential, no outbound call.
 //
 // The corpus is NOT in this binary. It is read from the file named by

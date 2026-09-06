@@ -14,7 +14,7 @@ import (
 // pulling a 1.9GB model and kagent's five pods pulling their images are
 // independent from the moment the API server answers, and so are the two
 // agents once the controller is up. Running them one after another cost CI a
-// measured minute per run (W25) for no added proof — the same commands run,
+// measured minute per run for no added proof — the same commands run,
 // the same waits are satisfied, in the same cluster.
 //
 // What a lane must NOT do is make the output unreadable. Each lane writes

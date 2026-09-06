@@ -149,7 +149,7 @@ func (c *Client) SetToolAllowlist(credential string, tools []string) error {
 // RenewCredential extends a credential's deadline and returns the new
 // one. No token is minted, sent or read: renewal moves a date, which is
 // the only reason a CLI that accepts no credential material can offer it
-// at all (D27).
+// at all.
 func (c *Client) RenewCredential(credential string, ttlSeconds *int64) (string, error) {
 	if err := ValidCredentialName(credential); err != nil {
 		return "", err
@@ -225,7 +225,7 @@ func (c *Client) Deny(id string) error {
 
 // Request files an approval request explicitly.
 //
-// args names the CALL a tool request is about (P12). It is meaningful only
+// args names the CALL a tool request is about. It is meaningful only
 // on a tool request, and omitting it means the ARGUMENT-LESS call — never
 // "any call". The plane computes the digest with the gateway's own code, so
 // the request and the agent's retry are provably the same call.

@@ -25,10 +25,10 @@ import (
 // render, no transform — which is what makes "kind is unchanged" a fact
 // rather than a claim (scripts/plane-deploy.sh's opening comment). Only a
 // REGISTRY target renders, and that is still the script's job: kmx is kind
-// only (D28(4)).
+// only.
 //
 // The alternative — tagging by kmx's own revision — is better staleness
-// protection in general (P4b deviation 6), and it is deliberately not taken
+// protection in general, and it is deliberately not taken
 // here. `kmx plane` REBUILDS the image and side-loads it on every run, then
 // restarts the deployment unconditionally, so the "same tag, older bytes"
 // failure the moving tag exists to prevent cannot occur on this path; and
@@ -41,7 +41,7 @@ import (
 // TestPlaneImageMatchesTheCommittedManifest pins this to the manifest, and
 // asserts the manifest still pins `imagePullPolicy: Never` — a side-loaded
 // LOCAL tag must never quietly fall back to PULLING a squattable public
-// name (P4a/P4b rulings).
+// name.
 const PlaneImage = "kaimahi-proxy:p15"
 
 // PlaneSteps are the stages of `kmx plane`, addressable individually so the
@@ -185,7 +185,7 @@ func (a *App) refuseForeignImageTag() error {
 		return nil
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
-		"  kmx is the kind path (D28): a side-loaded local tag, imagePullPolicy Never.\n"+
+		"  kmx is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
 		"  A registry-backed cluster renders the manifest instead — that is `TARGET=aks make plane` (docs/aks.md).",
 		set, PlaneImage)
 }
@@ -196,7 +196,7 @@ func (a *App) refuseForeignImageTag() error {
 // A checkout WINS, and that is not a convenience. CI runs the Makefile, the
 // Makefile passes `--source .`, and so a pull request that changes plane/ is
 // tested against the code it changed rather than against whatever the public
-// proxy last published (D28(2)).
+// proxy last published.
 func (a *App) planeSource(flag string) (string, error) {
 	switch strings.TrimSpace(flag) {
 	case "-":

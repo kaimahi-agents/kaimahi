@@ -276,7 +276,7 @@ func TestToolAllowlistView(t *testing.T) {
 
 // The pending table is AWK'd by CI — `$1` is the id an approval is issued
 // against — so its columns are a contract, and the CALL column is what a
-// human is actually approving (P12).
+// human is actually approving.
 func TestApprovalsTable(t *testing.T) {
 	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"pending": [{"id": "00000000-0000-4000-8000-000000000001",

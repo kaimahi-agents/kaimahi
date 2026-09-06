@@ -96,9 +96,9 @@ func (a *App) Deny(id string) error {
 
 // Request files an approval request explicitly.
 //
-// args (tool requests only, P12) names the CALL to pre-approve. Omitting it
-// means the ARGUMENT-LESS call, never "any call" — the distinction the whole
-// of P12 exists to make.
+// args (tool requests only) names the CALL to pre-approve. Omitting it
+// means the ARGUMENT-LESS call, never "any call" — the distinction that
+// welding a grant to its arguments, and not just to the verb, exists to make.
 func (a *App) Request(credential, kind, subject string, args map[string]any) error {
 	if err := admin.ValidRequest(credential, kind, subject, args); err != nil {
 		return err

@@ -182,7 +182,7 @@ func TestTheFragmentCarriesTheDeclarationsAndNothingElse(t *testing.T) {
 	if entry["url"] != "http://acme-warehouse.acme:8090/mcp" {
 		t.Fatalf("fragment url = %v", entry["url"])
 	}
-	// No credential, in any form, ever (D27).
+	// No credential, in any form, ever.
 	for _, forbidden := range []string{"credential_file", "credential_header", "internet", "ca_file"} {
 		if _, ok := entry[forbidden]; ok {
 			t.Fatalf("the scaffold emitted %q", forbidden)
@@ -266,7 +266,7 @@ func TestNamingAToolWithoutDeclaringAnythingIsRefusedWithTheConsequences(t *test
 	if err == nil {
 		t.Fatal("a bare tool name was accepted — kmx must not choose policy_fields")
 	}
-	// D35(4): the consequence of each option is stated at the point of
+	// The consequence of each option is stated at the point of
 	// choosing, not left in a document nobody opens.
 	for _, want := range []string{
 		"stock_adjust:amount_cents", "stock_adjust:", "stock_adjust:*",

@@ -2,10 +2,11 @@ package blueprint_test
 
 // THE PROPERTY, not the crash.
 //
-// W35 shipped `kmx workflow show` and `kmx workflow run` answering "what
-// is in this run?" in two places. `show` filtered the steps on their
-// `when:` guard; `run` bound EVERY step regardless, so a parameter that
-// only a conditional step needs was demanded in order to leave that step
+// `kmx workflow show` and `kmx workflow run` answer "what is in this
+// run?" in two places, and they once disagreed. `show` filtered the steps
+// on their `when:` guard; `run` bound EVERY step regardless, so a
+// parameter that only a conditional step needs was demanded in order to
+// leave that step
 // out — `publish` is guarded by `when: ado_builds` and `ado_builds` is
 // `required_for: [publish]`. A run supplying every guarded parameter
 // still started; every run that left one out did not — which is every run
@@ -15,7 +16,7 @@ package blueprint_test
 // So the assertion here is not "a run starts". It is that the two
 // commands agree, on the CARRIED release blueprint, for every parameter
 // set an operator would plausibly type — which is the thing that has to
-// stay true after this lane.
+// stay true.
 
 import (
 	"strings"
@@ -25,8 +26,8 @@ import (
 )
 
 // runCases are parameter sets in the order an operator reaches them. Only
-// the last supplies every guarded parameter, and it is the only one W35's
-// driver could start.
+// the last supplies every guarded parameter, and it is the only one the
+// earlier bind-every-step driver could start.
 var runCases = []struct {
 	name string
 	set  map[string]string
@@ -109,9 +110,10 @@ func TestShowAndRunAgreeOnWhatARunContains(t *testing.T) {
 }
 
 // TestEveryStepIsReachableFromSomeParameterSet is the check that would
-// have failed on W35's driver for every case above: the cases only prove
-// agreement if between them they turn every conditional step ON. A test
-// whose parameter sets all left `publish` out would have agreed happily
+// have failed on that bind-every-step driver for every case above: the
+// cases only prove agreement if between them they turn every conditional
+// step ON. A test whose parameter sets all left `publish` out would have
+// agreed happily
 // with a command that could never run it.
 func TestEveryStepIsReachableFromSomeParameterSet(t *testing.T) {
 	b := loadRelease(t)

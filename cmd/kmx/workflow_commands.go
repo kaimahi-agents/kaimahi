@@ -1,6 +1,6 @@
 package main
 
-// `kmx workflow` — D42's answer to "how does a user express a governed
+// `kmx workflow` — the answer to "how does a user express a governed
 // workflow, or a slightly different one".
 //
 // A group rather than a flag on `kmx agent create`, because the two make

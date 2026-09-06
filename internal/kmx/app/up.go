@@ -20,8 +20,8 @@ var UpSteps = []string{"cluster", "ollama", "model", "kagent", "agent", "tools-a
 // Up runs the whole journey, or the single named step.
 //
 // This is the Makefile's kind `UP_STEPS` — cluster, ollama, model, kagent,
-// agent, tools-agent, status. RUNTIME ONLY: milestone 1 does not deploy the
-// governance plane (D27), and says so at the end rather than leaving anyone
+// agent, tools-agent, status. RUNTIME ONLY: `kmx up` does not deploy the
+// governance plane, and says so at the end rather than leaving anyone
 // to discover it from an empty ledger.
 func (a *App) Up(step string) error {
 	started := a.timeNow()
@@ -119,8 +119,8 @@ func (a *App) runUpStep(step string) error {
 // Ollama is deployed and its model pulled before kagent is installed, so a
 // cluster that cannot pull at all still fails on the smaller download first.
 //
-// Only the two agents overlap, and the measurements say why (W25, on a
-// 2-CPU GitHub runner):
+// Only the two agents overlap, and the measurements say why (on a 2-CPU
+// GitHub runner):
 //
 //	hello-world Ready 29s + hello-tools Ready 16s, serially → 33s together
 //	ollama's rollout (41s) overlapped with kagent's five pods (61s) → 116s,
@@ -245,7 +245,7 @@ func (a *App) stepCluster() error {
 // answers and CoreDNS is actually serving.
 //
 // This used to run on the Podman path only, where a restarted machine made
-// the need obvious. W31 found it is not engine-specific: on a nested-runtime
+// the need obvious. It is not engine-specific: on a nested-runtime
 // machine where kube-proxy crash-looped, the cluster came up "successfully"
 // and the run died two minutes later on
 //
@@ -299,7 +299,7 @@ func (a *App) stepOllama() error {
 // transient failure.
 //
 // The retry is not defensive padding — it was measured. Two of five clean-machine
-// first runs during W31 died here with
+// first runs died here with
 //
 //	Error: pull model manifest: Get "https://registry.ollama.ai/...": dial tcp: lookup registry.ollama.ai: i/o timeout
 //
@@ -472,7 +472,7 @@ type agentJSON struct {
 // stepToolsAgent applies the tools agent, preserving both a non-default
 // modelConfig and a live gateway wiring.
 //
-// The gateway restore is P4c's governance-preservation guard: once
+// The gateway restore preserves governance: once
 // `make govern-tools` has pointed hello-tools at the kaimahi-tools seam,
 // re-applying the committed YAML would point it back at the ungoverned
 // server. Re-applying a manifest must never be the thing that un-governs an

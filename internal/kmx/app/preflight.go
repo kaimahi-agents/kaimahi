@@ -24,7 +24,7 @@ var (
 	depHelm    = dependency{"helm", "to install kagent", "https://helm.sh/docs/intro/install/", []string{"version"}, true}
 	// Go is deliberately NOT fetchable. It is a toolchain and a directory
 	// tree rather than one binary, and only `kmx plane` needs it — the first
-	// answer does not (D36: the fast path is ungoverned by design). Fetching
+	// answer does not (the fast path is ungoverned by design). Fetching
 	// it is the obvious next prerequisite to kill, and it is not this lane's.
 	depGo = dependency{"go", "to fetch and build the governance plane", "https://go.dev/dl/", []string{"version"}, false}
 )
@@ -41,7 +41,8 @@ func (a *App) engineDependency() dependency {
 // remaining problem in one response. No command should use a dependency
 // before this returns nil.
 //
-// "Makes usable" is the part that changed with W31. A missing kind, kubectl
+// "Makes usable" is the part that matters once the front door is `curl |
+// sh` and one command. A missing kind, kubectl
 // or Helm used to be the end of the run: four install pages, and a first
 // agent that was four downloads away from someone who just wanted to see one
 // answer. kmx already knew how to fetch ONE of the tools it shells out to —

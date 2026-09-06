@@ -66,8 +66,8 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 
 	// Both governed presets are applied on every target — which one the
 	// agent is switched to depends on the environment. On kind that is
-	// governed-ollama, the keyless one, which is why milestone 2 needs no
-	// captured secret anywhere (D28(4)). They are applied by the switch
+	// governed-ollama, the keyless one, which is why governing on kind needs
+	// no captured secret anywhere. They are applied by the switch
 	// below, which has to watch the preset's generation across the apply.
 	presets := []string{"models/governed-ollama.yaml", "models/governed-copilot.yaml"}
 
@@ -171,7 +171,8 @@ func interactiveModelManifest(preset, secret, model string, governed bool, agent
 // issueCredential mints the credential and stores its token as the
 // agent-side Secret, reconciling the already-issued case as
 // scripts/plane-admin.sh does (minus its `GOVERNED_SECRET=-` form, which
-// discards the token for P7b's signed hooks — an inbound feature kmx does
+// discards the token for the inbound bridge's signed hooks — an inbound
+// feature kmx does
 // not have).
 //
 // The token is shown EXACTLY ONCE, at issue time, and cannot be recovered.

@@ -106,7 +106,7 @@ func TestModelSeamsRefuseToCallADanglingReferenceDirect(t *testing.T) {
 	}
 }
 
-// No agents at all is a known nothing — W30's `none` — and not a zero
+// No agents at all is a known nothing — `none` — and not a zero
 // pretending to be a count.
 func TestEmptyPopulationsAreNoneNotZeroGoverned(t *testing.T) {
 	if got := modelSeams(nil, nil); got.State != stateNone {

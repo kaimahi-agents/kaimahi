@@ -1,7 +1,6 @@
 package app
 
-// P15: `kmx tools add` — onboarding an MCP server this repo did not
-// write.
+// `kmx tools add` — onboarding an MCP server this repo did not write.
 //
 // Before this, every governed agent in the repo was one we shipped, and
 // pointing Kaimahi at somebody else's tool server meant hand-writing
@@ -16,7 +15,7 @@ package app
 //
 // So kmx owns those, and the operator owns policy: which tools exist,
 // and what their arguments MEAN. The artifact is reviewable YAML, as
-// `kmx agent create` already established (D19) — kmx scaffolds it, the
+// `kmx agent create` already established — kmx scaffolds it, the
 // operator reads it, kmx applies it behind the guard.
 
 import (
@@ -33,9 +32,9 @@ import (
 )
 
 // AddUpstreamOptions is `kmx tools add`'s surface. There is deliberately
-// no flag, environment variable or file here that can carry a credential
-// (D27): the generator emits Secret REFERENCES, and `kmx tools govern`
-// is what mints a token into one.
+// no flag, environment variable or file here that can carry a credential:
+// the generator emits Secret REFERENCES, and `kmx tools govern` is what
+// mints a token into one.
 type AddUpstreamOptions struct {
 	Name string
 	// URL is the server's own in-cluster MCP endpoint.

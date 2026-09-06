@@ -1,5 +1,5 @@
 // Package erp is the fixture-backed ERP the accounts-payable demo
-// investigates (P13, D30). It is a SYSTEM OF RECORD, not a control: it
+// investigates. It is a SYSTEM OF RECORD, not a control: it
 // answers what it is asked, holds no credential, reaches nothing, and
 // refuses nothing an ordinary ERP would accept. Every guarantee the demo
 // makes is made by the governance plane in front of it.

@@ -20,7 +20,8 @@ import "embed"
 // that what kmx carries is a decision rather than a side effect of a
 // directory listing: the Slack, GitHub, inbound and egress manifests belong
 // to families kmx does not own (they are entangled with secret capture,
-// which D27 keeps in scripts) and must not ride along.
+// which stays in the scripts because kmx accepts a credential in no form)
+// and must not ride along.
 //
 // `k8s/models/` IS embedded whole as of milestone 3, because `kmx use` is
 // `make use` and `make use PRESET=anthropic` has always been a documented
@@ -28,7 +29,7 @@ import "embed"
 // regression the delegating recipe would inherit. This does not put a
 // credential anywhere near kmx: a preset is a ModelConfig that NAMES a
 // Secret (`apiKeySecret`), it never carries a key, and minting that Secret
-// stays where D27 put it — `make model-secret`, `make copilot-secret`, the
+// stays outside kmx — `make model-secret`, `make copilot-secret`, the
 // scripts. kmx still accepts a credential in no form at all.
 //
 // k8s/wasm/runtime.yaml is the tool sandbox's runtime: a node installer and
@@ -49,11 +50,11 @@ import "embed"
 //go:embed k8s/wasm/runtime.yaml
 var Manifests embed.FS
 
-// Blueprints holds the governed-workflow blueprints kmx carries (D42),
+// Blueprints holds the governed-workflow blueprints kmx carries,
 // and the scripts their ungoverned steps run.
 //
 // Embedded for the same reason the manifests are, and it is the whole
-// reason a blueprint is usable at all after W31: the front door is `curl
+// reason a blueprint is usable at all: the front door is `curl
 // | sh` then `kmx quickstart`, with no Go and no checkout, so a blueprint
 // that lived only in this repository's tree would make `git clone` a
 // prerequisite again — for the one feature whose point is that a

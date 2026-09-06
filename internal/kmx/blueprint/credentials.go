@@ -1,6 +1,6 @@
 package blueprint
 
-// D27, applied to a file format.
+// kmx's no-credential rule, applied to a file format.
 //
 // kmx accepts no credential material in any form. That rule has held
 // because kmx's surface is flags, and a flag that took a token would be
@@ -54,7 +54,7 @@ func refuseCredentialMaterial(raw []byte) error {
 		for _, banned := range credentialKeys {
 			if key == banned {
 				return fmt.Errorf("blueprint: the key %q is refused. kmx accepts no credential material in any "+
-					"form (D27): a blueprint NAMES a Kubernetes Secret and its key (`refresh: {secret: …, key: …}`) "+
+					"form: a blueprint NAMES a Kubernetes Secret and its key (`refresh: {secret: …, key: …}`) "+
 					"and the value is captured by a human, or minted by the refresh command, and never written here", m[1])
 			}
 		}
@@ -63,7 +63,7 @@ func refuseCredentialMaterial(raw []byte) error {
 		if loc := re.FindStringIndex(text); loc != nil {
 			return fmt.Errorf("blueprint: this document contains something shaped like a credential "+
 				"(at byte %d). kmx will not read it. Revoke that value if it is real, then name a Secret "+
-				"instead of carrying one (D27)", loc[0])
+				"instead of carrying one", loc[0])
 		}
 	}
 	return nil

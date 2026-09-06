@@ -13,7 +13,7 @@
 # installs into your home directory and never uses sudo.
 #
 # What it does NOT do, deliberately: accept, read or write any credential.
-# kmx holds none (D27), and an install script piped into a shell is the last
+# kmx holds none, and an install script piped into a shell is the last
 # place a key should be typed.
 #
 # On trust, stated plainly rather than implied: the binary and its checksum

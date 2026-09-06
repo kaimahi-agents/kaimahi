@@ -3,9 +3,9 @@ package blueprint_test
 // The refusals. Each one is a way the four hand-written layers could
 // disagree with each other, made into a parse error.
 //
-// These are the reason a blueprint is worth having at all: the layers
-// W32 spread its intent over cannot check each other, and every case
-// below is one that a human got right by remembering to.
+// These are the reason a blueprint is worth having at all: the layers the
+// release workflow spread its intent over cannot check each other, and
+// every case below is one that a human got right by remembering to.
 
 import (
 	"strings"
@@ -54,8 +54,9 @@ func TestRefusals(t *testing.T) {
 		edit   func(string) string
 		expect string
 	}{{
-		// THE P13 PROPERTY. A model that proposed a different call files
-		// a request too, and it looks identical in `make approvals`.
+		// THE PROPERTY THE ACCOUNTS-PAYABLE DEMO PAID FOR. A model that
+		// proposed a different call files a request too, and it looks
+		// identical in `make approvals`.
 		name: "a policy-bound argument may not come from an agent turn",
 		edit: func(s string) string {
 			s = strings.Replace(s, `  - name: look
@@ -68,8 +69,8 @@ func TestRefusals(t *testing.T) {
 	}, {
 		// `when:` asks whether a value was SUPPLIED, and Bind treats a
 		// default as supplying one. So a guard on a defaulted parameter
-		// is never false: the step LOOKS conditional and is not. W36
-		// found this while fixing the run path, where the difference
+		// is never false: the step LOOKS conditional and is not. This
+		// surfaced while fixing the run path, where the difference
 		// decides whether --set is the thing that turns a step on.
 		name: "a step guarded on a defaulted parameter is not conditional at all",
 		edit: func(s string) string {
@@ -141,7 +142,7 @@ steps:`, 1)
 		},
 		expect: "per-credential, not per-upstream",
 	}, {
-		// D27, applied to a file format.
+		// kmx's no-credential rule, applied to a file format.
 		name: "a blueprint may not carry a credential-shaped key",
 		edit: func(s string) string {
 			return strings.Replace(s, "credential: demo-agent", "credential: demo-agent\ntoken: abc", 1)

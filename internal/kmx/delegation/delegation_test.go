@@ -1,5 +1,7 @@
 // Package delegation holds the test that make and kmx are ONE
-// implementation of the journey (D27, condition 1).
+// implementation of the journey: every delegating Makefile target is a thin
+// alias that calls `kmx`, so the CI job that runs `make` is exercising the
+// same code a developer runs, and neither can drift into being the real one.
 //
 // The claim is not "the Makefile mentions kmx somewhere". It is that each
 // delegating target hands kmx the right work with the right arguments — and
@@ -54,7 +56,7 @@ func TestMakeTargetsDelegateToKmx(t *testing.T) {
 		{target: "status", want: "bin/kmx status"},
 		{target: "down", want: "bin/kmx down"},
 		{target: "chat", want: `bin/kmx agent chat "$KMX_CHAT_AGENT" "$KMX_CHAT_TASK"`},
-		// Milestone 2 (D28): the governance half.
+		// The governance half: the plane, and an agent governed onto it.
 		{target: "plane", want: "bin/kmx plane --source ."},
 		{target: "plane-image", want: "bin/kmx plane --step image --source ."},
 		{target: "plane-secrets", want: "bin/kmx plane --step secrets"},
@@ -63,7 +65,7 @@ func TestMakeTargetsDelegateToKmx(t *testing.T) {
 		{target: "grants", want: "bin/kmx grants"},
 		{target: "tool-audit", want: "bin/kmx audit tool hello-tools"},
 		{target: "approval-audit", want: "bin/kmx audit approval"},
-		// Milestone 3 (D33(5)): the operator verbs. The exact argument
+		// The operator verbs. The exact argument
 		// STRING is the contract, because these are what the delegating
 		// recipe hands kmx after make's own expansion — an `$(if ...)`
 		// that collapses the wrong way is a flag with no value, and the
@@ -80,7 +82,7 @@ func TestMakeTargetsDelegateToKmx(t *testing.T) {
 		{target: "deny", vars: []string{"ID=abc"}, want: `bin/kmx deny "abc"`},
 		{target: "request", vars: []string{"KIND=tool", "SUBJECT=k8s_get_events"},
 			want: `bin/kmx request tool k8s_get_events --credential "hello-tools"`},
-		// A tool request names the CALL it is about (P12), and the quoting
+		// A tool request names the CALL it is about, and the quoting
 		// has to survive make, the shell and kmx's flag parsing intact.
 		{target: "request", vars: []string{"KIND=tool", "SUBJECT=k8s_get_events", `ARGS={"namespace": "default"}`},
 			want: `--args '{"namespace": "default"}'`},
@@ -256,8 +258,8 @@ func TestInteractiveChatDoesNotSendTheDefaultTask(t *testing.T) {
 	}
 }
 
-// The managed path is NOT kmx's (D27: no AKS in milestone 1; D28(4): kind
-// only in milestone 2). Its bring-up must still be the Makefile's own
+// The managed path is NOT kmx's: kmx covers the kind path only. Its
+// bring-up must still be the Makefile's own
 // recipes, and so must its plane and its governance: kmx side-loads a local
 // image and applies the manifest unrendered, which on a registry-backed
 // cluster would mean ErrImageNeverPull, forever.

@@ -313,7 +313,7 @@ func TestGrantsAndAuditsRenderLikeTheScript(t *testing.T) {
 	for _, want := range []string{
 		"live", "expires (UTC)", "decided by", "binds",
 		"hello-tools", "k8s_get_events",
-		// P12: a tool grant admits ONE call, and the table says which.
+		// A tool grant admits ONE call, and the table says which.
 		"call 8f84e4e9f653",
 		" yes   ",              // liveness is a word, not a JSON bool
 		"0/1",                  // uses/max_uses
