@@ -16,7 +16,7 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Migrate applies all embedded migrations. Idempotent, and (P9)
+// Migrate applies all embedded migrations. Idempotent, and
 // replica-safe: the run holds a Postgres session-level advisory lock
 // (goose's session locker) for its duration, so two replicas booting
 // together do not race each other's DDL — the second waits for the

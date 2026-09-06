@@ -31,8 +31,8 @@ func TestASlackMentionNamesThePersonOnTheRunAndTheTrail(t *testing.T) {
 	defer fs.mu.Unlock()
 	require.Len(t, fs.runs, 1, "an admitted mention opens exactly one run")
 	run := fs.runs[0]
-	// P8b's vocabulary, reused rather than reinvented: the same shape
-	// `decided_by` uses for an approver.
+	// Reused rather than reinvented: the same shape `decided_by` uses
+	// for an approver.
 	require.Equal(t, "slack:U2", run.ActedFor)
 	require.Equal(t, "inbound:slack-chan", run.Source)
 	require.Equal(t, "Ev0000000001", run.DeliveryID)

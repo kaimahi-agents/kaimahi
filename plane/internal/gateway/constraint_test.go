@@ -58,9 +58,9 @@ func call(t *testing.T, h http.Handler, args string) *httptest.ResponseRecorder 
 
 const under10k = `{"ap-agent": {"payment_schedule": [{"field": "amount_cents", "op": "lte", "value": 1000000}]}}`
 
-// The AP case (D31): routine calls proceed with no human at all, and the
-// audit still records exactly what ran. The boundary is the test — at,
-// just under, and just over.
+// The accounts-payable case: routine calls proceed with no human at
+// all, and the audit still records exactly what ran. The boundary is
+// the test — at, just under, and just over.
 func TestStandingConstraintAdmitsWithoutAnApproval(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -135,7 +135,7 @@ func TestConstrainedToolsJoinTheProjection(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "dispute_open")
 }
 
-// The defect this lane exists to fix: two attempts to pay DIFFERENT
+// The defect argument binding fixes: two attempts to pay DIFFERENT
 // amounts must file TWO requests. Genuine repeats still dedupe (in the
 // store's index, proven against Postgres in store_pg_test.go).
 func TestTwoDifferentCallsFileTwoRequests(t *testing.T) {

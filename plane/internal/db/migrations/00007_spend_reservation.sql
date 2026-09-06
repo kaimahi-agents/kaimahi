@@ -1,6 +1,7 @@
 -- +goose Up
--- P9 exact budgets (D24). Until now the meter READ month-to-date spend
--- from the ledger, decided, forwarded, and only then wrote the row —
+-- Exact budgets under concurrency. Until now the meter READ
+-- month-to-date spend from the ledger, decided, forwarded, and only then
+-- wrote the row —
 -- so N concurrent calls (across N replicas, or one) could each see
 -- headroom for one call and all be admitted. This table closes the gap:
 -- an admitted call leaves a reservation BEFORE it is forwarded, written
@@ -14,7 +15,7 @@
 -- when the model is priced), never an estimate: it bounds ADMISSIONS
 -- (no more calls are admitted concurrently than the cap has room for),
 -- not overshoot — every call admitted with headroom for its hold may
--- still finish above the cap by its own usage (the P4a soft-stop).
+-- still finish above the cap by its own usage (the LLM proxy's soft-stop).
 -- expires_at bounds a reservation a crashed replica never
 -- consumed: it stops counting when it expires (longer than any call the
 -- proxy allows), and the next admission for that credential sweeps it.

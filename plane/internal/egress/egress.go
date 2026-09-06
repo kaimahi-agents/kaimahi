@@ -1,5 +1,5 @@
 // Package egress is the ONE hardened dialer for everything the plane
-// reaches on the internet (P10, D25): the LLM proxy's hosted upstreams
+// reaches on the internet: the LLM proxy's hosted upstreams
 // (Copilot) and the MCP gateway's hosted tool servers (GitHub) share the
 // client built here, so neither seam's hardening is implicit.
 //

@@ -333,8 +333,8 @@ func mustMarshal(t *testing.T, v any) string {
 
 // custodyFields is a DENIAL, and a denial that drifts open is worse than
 // none. `ToolUpstream` is a struct in another package's blast radius —
-// the plane gained identity and credential expiry between this lane
-// branching and merging — so a field added to it must be classified
+// it gained identity and credential-expiry fields while this denial
+// stood still — so a field added to it must be classified
 // deliberately, here, rather than admitted into the overlay by silence.
 func TestEveryToolUpstreamFieldIsClassifiedAsSafeOrDenied(t *testing.T) {
 	// Fields an overlay MAY set: they describe an in-cluster, keyless

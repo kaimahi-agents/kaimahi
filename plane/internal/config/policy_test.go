@@ -69,9 +69,9 @@ func TestPolicyMalformedDeclarationsAreRefusedAtLoad(t *testing.T) {
 
 func TestPolicyMalformedConstraintsAreRefusedAtLoad(t *testing.T) {
 	cases := map[string]string{
-		// The load-time error D31 asks for by name: a constraint on a
-		// field the tool does not declare, which must never be a
-		// silently-ignored rule.
+		// The load-time error a standing constraint must produce: a
+		// constraint on a field the tool does not declare, which must never
+		// be a silently-ignored rule.
 		"undeclared field":  `{"ap-agent": {"payment_schedule": [{"field": "memo", "op": "eq", "value": "x"}]}}`,
 		"undeclared tool":   `{"ap-agent": {"dispute_open": [{"field": "amount_cents", "op": "lte", "value": 1}]}}`,
 		"empty rule list":   `{"ap-agent": {"payment_schedule": []}}`,

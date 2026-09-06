@@ -11,7 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 )
 
-// W32: a tool upstream may carry committed, non-secret headers — the
+// A tool upstream may carry committed, non-secret headers — the
 // lever that narrows what a hosted server we did not write is willing to
 // offer (X-MCP-Toolsets and friends). The rules are load-time, because a
 // header that fails open at the first call is a header nobody notices.
@@ -79,7 +79,7 @@ func TestCommittedUpstreamTableLoads(t *testing.T) {
 			"%q credential must come from the custody mount", name)
 	}
 
-	// W32 F4: both release seams reach servers whose consequential tools
+	// Both release seams reach servers whose consequential tools
 	// are CONSOLIDATED DISPATCHERS — one tool name, an `action`/`method`
 	// argument selecting what it does. Binding the dispatcher argument is
 	// not optional there: without it, approving "run a pipeline" also

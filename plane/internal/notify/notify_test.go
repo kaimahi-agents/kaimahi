@@ -317,7 +317,7 @@ func TestMessageNamesTheRequestAndTheCommand(t *testing.T) {
 	require.Contains(t, m, "amount=<tokens>")
 	require.False(t, strings.Contains(m, "<@"), "the bot is named in plain text, never as a mention token")
 
-	// P12: an approver who cannot see the transaction is the whole
+	// An approver who cannot see the transaction is the whole
 	// problem restated — where a filing carries a call summary, that is
 	// what the notification names.
 	m = Message(Filing{ID: "00000000-0000-0000-0000-000000000009", Credential: "ap-agent",

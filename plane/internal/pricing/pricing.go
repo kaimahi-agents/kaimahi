@@ -1,6 +1,6 @@
 // Package pricing turns token usage into ledger cents. Ported from
 // tomte-old's llm/pricing.go cost math; the bundled price table was NOT
-// ported — the board forbids invented prices, so every price row is
+// ported — an invented price is never acceptable, so every price row is
 // operator-configured (see internal/config), and a model without a row is
 // "unpriced", which the proxy's priced-pair gate fails closed on when a
 // cents budget is in force.

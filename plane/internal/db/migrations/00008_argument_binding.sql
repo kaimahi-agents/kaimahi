@@ -1,5 +1,5 @@
 -- +goose Up
--- P12 argument binding (D29/D31): an approval binds to the exact CALL,
+-- Argument binding: an approval binds to the exact CALL,
 -- not to the verb. Additive throughout — every column defaults, so no
 -- writer has to change and `make backup` / `make restore` round-trip
 -- across the boundary.
@@ -15,7 +15,7 @@ ALTER TABLE approval_request ADD COLUMN arg_digest text NOT NULL DEFAULT '';
 ALTER TABLE approval_request ADD COLUMN arg_summary text NOT NULL DEFAULT '';
 
 -- The dedup key gains the digest: two attempts to pay DIFFERENT amounts
--- are two requests, which is the defect this lane exists to fix. Genuine
+-- are two requests, which is the defect argument binding fixes. Genuine
 -- repeats of the same call still collapse into one. arg_digest is NOT
 -- NULL, so (unlike a nullable column) every row participates in the
 -- uniqueness rather than silently escaping it.

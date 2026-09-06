@@ -8,7 +8,7 @@
 -- string that could mean "nobody" or "we lost it" would be worse than
 -- no column at all.
 --
--- The vocabulary reuses P8b's `decided_by` shape (migration 00006) —
+-- The vocabulary reuses the `decided_by` shape (migration 00006) —
 -- free text prefixed by the path that vouched for it — rather than
 -- inventing a second one:
 --
@@ -39,9 +39,9 @@
 -- forge. What the plane vouches for is therefore what the plane itself
 -- observed at the door.
 --
--- expires_at bounds a run a crashed replica never closed (P9's
--- reservation discipline): past it the run stops counting, so one lost
--- close cannot poison every later call for that credential.
+-- expires_at bounds a run a crashed replica never closed, the same
+-- discipline a spend reservation has: past it the run stops counting,
+-- so one lost close cannot poison every later call for that credential.
 CREATE TABLE agent_run (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     -- The GOVERNED credential the run spends under — the agent's, not

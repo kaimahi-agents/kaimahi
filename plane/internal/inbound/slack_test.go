@@ -12,7 +12,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 )
 
-// The Slack Events API loop (P8): what an app_mention becomes, what is
+// The Slack Events API loop: what an app_mention becomes, what is
 // deliberately NOT a trigger, and how the bridge answers Slack so its
 // retry policy neither re-fires an event nor disables the subscription.
 

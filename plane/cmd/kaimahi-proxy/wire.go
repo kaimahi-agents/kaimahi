@@ -17,7 +17,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/proxy"
 )
 
-// hardenedClient builds the ONE hardened client (P10, D25) over every
+// hardenedClient builds the ONE hardened client over every
 // upstream marked `internet: true` in both tables, and vets each host at
 // boot: a host that resolves to a private, link-local, loopback,
 // carrier-NAT, multicast or metadata address refuses the config LOUDLY
@@ -31,9 +31,9 @@ import (
 //
 // One bound is operator-adjustable: how long an upstream may take to
 // START answering (EGRESS_HEADER_TIMEOUT). The default stays 60 s, which
-// is generous for a tool call and for a short completion — but W32 found
-// a real workload that exceeds it, and found it as a 502 with a stack
-// trace pointing at http2 rather than at the cause: asking a reasoning
+// is generous for a tool call and for a short completion — but a real
+// workload exceeds it, and surfaces as a 502 with a stack trace
+// pointing at http2 rather than at the cause: asking a reasoning
 // model to draft release notes over ~9k tokens of pull-request listing
 // can take longer than a minute to first token. That is a legitimate
 // call, not a hung one, and a plane that cannot be told so would make
@@ -111,7 +111,7 @@ func trustOf(h egress.Host) string {
 
 // wireInternet injects the one hardened client into BOTH seams. Kept as
 // a function so a test can assert the two handlers share the very same
-// client — the property D25 asks for.
+// client: one hardening decision for both seams, not two that can drift.
 func wireInternet(pd proxy.Deps, gd gateway.Deps, client *http.Client) (proxy.Deps, gateway.Deps) {
 	pd.InternetClient = client
 	gd.InternetClient = client

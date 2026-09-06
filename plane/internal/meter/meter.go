@@ -5,7 +5,7 @@
 // credential, and token caps joined cents caps (the free ollama tier costs
 // $0 by classification, so only a token cap can ever exhaust there).
 //
-// P9 (D24): the decision itself moved into the store. Reserve is one
+// The decision itself lives in the store. Reserve is one
 // transaction under the credential's row lock that counts the ledger
 // plus the calls already in flight, consumes grant uses, and leaves a
 // reservation the ledger write consumes — exact across replicas. This
@@ -26,7 +26,7 @@ import (
 // Denial is a typed refusal the proxy maps onto the HTTP response.
 // 429 = budget reached; 403 = metering unavailable (fail closed).
 // BudgetSubject names the exceeded cap ('cents' or 'tokens') on a
-// budget denial so the caller can file the approval request (P4c);
+// budget denial so the caller can file the approval request;
 // empty on other denials.
 type Denial struct {
 	Status        int
@@ -121,7 +121,7 @@ func (m *Meter) Reserve(ctx context.Context, cred store.Credential, priced bool)
 }
 
 // Preview answers "would Reserve admit a call right now?" WITHOUT
-// consuming a grant use or holding anything (P7b: the inbound door
+// consuming a grant use or holding anything (the inbound door
 // refuses an event whose spend the proxy could not admit, and leaves
 // the actual admission to the proxy — one use per admitted call, never
 // two per event). Same fail-closed contract as Reserve. Unlocked and

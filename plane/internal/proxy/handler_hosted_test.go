@@ -12,7 +12,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-// P10: an LLM upstream marked internet (Copilot) is reached ONLY through
+// An LLM upstream marked internet (Copilot) is reached ONLY through
 // the injected hardened client. With none injected the call fails closed
 // — and is still ledgered (spend is recorded before failures are
 // honored). The in-cluster upstream on the same proxy is untouched.

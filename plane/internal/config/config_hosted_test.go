@@ -8,7 +8,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 )
 
-// P10: the load-time half of the egress rule. A hosted upstream is
+// The load-time half of the egress rule. A hosted upstream is
 // https/443, no userinfo, and marked; an unmarked upstream must look
 // in-cluster, so a public hostname can never take the plain dial.
 func TestParseHostedUpstreamShape(t *testing.T) {

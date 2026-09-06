@@ -1,6 +1,6 @@
 package store
 
-// P7b inbound: the inbound audit trail and the one transaction that
+// Inbound: the inbound audit trail and the one transaction that
 // admits an event. Admission is where the ingress guarantees meet the
 // approvals machinery: the admitted row (which IS the replay guard, via
 // its partial unique index) and the grant use are committed together or
@@ -94,7 +94,7 @@ func (s *Store) AdmitInboundEvent(ctx context.Context, hook, credential, deliver
 	if err != nil {
 		return "", "", err
 	}
-	// P9: the use is consumed under the credential lock like every other
+	// The use is consumed under the credential lock like every other
 	// grant consume, so concurrent events on one hook take turns.
 	if _, err := lockCredential(ctx, tx, credential); err != nil {
 		return "", "", err

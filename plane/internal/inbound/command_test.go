@@ -17,7 +17,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-// P8b: approval commands typed in Slack. What is a command, who may
+// Approval commands typed in Slack. What is a command, who may
 // give one, what it does to the request, what it records, and what it
 // never does (run the agent, spend, burn a grant, re-decide).
 
@@ -216,7 +216,7 @@ func TestNonApproverIsRefusedAndAudited(t *testing.T) {
 	fs := newFakeStore()
 	f, rep := newCommandFixture(t, fs)
 	// Same channel, a real human, not on the list: channel membership is
-	// not authority (D21).
+	// not authority.
 	code, body := f.mention("slack-chan", "Ev0000000105", "U7", "approve "+reqA)
 	require.Equal(t, http.StatusForbidden, code, body)
 	require.Empty(t, fs.grantsMade)

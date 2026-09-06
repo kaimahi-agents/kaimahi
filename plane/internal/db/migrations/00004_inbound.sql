@@ -1,11 +1,11 @@
 -- +goose Up
--- P7b inbound connectors: the first INGRESS surface in the plane. An
+-- Inbound connectors: the first INGRESS surface in the plane. An
 -- external event (a webhook) may trigger a kagent agent through the
 -- plane — authenticated, replay-protected, rate-limited, approved,
 -- budget-gated, and audited. Two changes:
 --
 -- 1. A third grant kind, 'inbound'. Triggering an agent from outside is
---    consequential, so it is an APPROVABLE action in the P4c sense: an
+--    consequential, so it is an APPROVABLE action like any other: an
 --    event on a hook with no live grant is denied and files a pending
 --    request (subject = hook name); a human approves it BOUNDED (uses
 --    and/or TTL), and each admitted event consumes one use. That reuses

@@ -1,5 +1,5 @@
 -- +goose Up
--- P8b: approval routing via Slack, and WHO decided. Until now "who
+-- Approval routing via Slack, and WHO decided. Until now "who
 -- approved" was implied — the admin bearer was the only writer the admin
 -- port admits — and recorded nowhere. A decision typed in Slack is made
 -- by a person the plane can name (the mentioning user's id, verified by

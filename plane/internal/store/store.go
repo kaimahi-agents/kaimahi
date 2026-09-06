@@ -141,7 +141,7 @@ func (s *Store) SetBudget(ctx context.Context, name string, capCents, capTokens 
 }
 
 // RecordLedger appends one spend row and, in the same transaction,
-// consumes the reservation the call was admitted under (P9: the row
+// consumes the reservation the call was admitted under (the row
 // replaces the hold; empty when the call held nothing — a denial, or a
 // credential with no caps). The ledger stays append-only: the one
 // delete here is of a reservation, never of a row. A reservation that
@@ -171,7 +171,7 @@ func (s *Store) RecordLedger(ctx context.Context, e LedgerEntry, reservationID s
 // ToolAuditEntry is one append-only tool-governance row: what the MCP
 // gateway decided about one inbound method. Decision says whose status
 // the row carries: 'allowed' rows record the upstream's HTTP status,
-// 'denied' rows the gateway's own (like P4a's denied ledger rows).
+// 'denied' rows the gateway's own (like the spend ledger's denied rows).
 type ToolAuditEntry struct {
 	CredentialName string `json:"credential"`
 	Upstream       string `json:"upstream"`
@@ -180,7 +180,7 @@ type ToolAuditEntry struct {
 	Decision       string `json:"decision"`
 	Status         int    `json:"status"`
 	Detail         string `json:"detail"`
-	// ArgDigest/ArgSummary (P12) identify the CALL: the digest an
+	// ArgDigest/ArgSummary identify the CALL: the digest an
 	// approval is welded to, and the transaction line built from the
 	// tool's declared policy fields. Present on tools/call rows —
 	// denied and allowed alike, so the approved call and the call that
@@ -251,12 +251,13 @@ func (s *Store) ToolAllowlist(ctx context.Context, credentialName string) ([]str
 // credentials that already allowlist it — ordered, so a message built
 // from it is stable.
 //
-// P15: the allowlist is per-CREDENTIAL, not per-(credential, upstream)
+// The allowlist is per-CREDENTIAL, not per-(credential, upstream)
 // — a documented property of the gateway, and the reason onboarding a
 // new upstream that offers an already-allowlisted tool NAME makes that
 // tool callable on the new server by every credential that already had
 // it. That is not a bug to fix here (scoping the allowlist by upstream
-// is a decision, not a lane's choice), but it is a fact an operator must
+// is a design decision, not a change to make in passing), but it is a
+// fact an operator must
 // be told at the moment they onboard, because otherwise nothing says it.
 func (s *Store) CredentialsAllowlisting(ctx context.Context, tools []string) (map[string][]string, error) {
 	out := map[string][]string{}
@@ -365,8 +366,8 @@ func (s *Store) Ledger(ctx context.Context, credentialName string, limit int) ([
 
 // RenewCredential extends (or shortens) the deadline on an existing
 // credential WITHOUT touching its token: the material never moves, so
-// no Secret has to be rewritten and nothing has to travel (D27
-// custody). Rotating the material is still what it always was — issue a
+// no Secret has to be rewritten and nothing has to travel. Rotating
+// the material is still what it always was — issue a
 // fresh credential and re-point the Secret at it.
 func (s *Store) RenewCredential(ctx context.Context, name string, expiresAt time.Time) error {
 	tag, err := s.pool.Exec(ctx,

@@ -6,14 +6,14 @@ package gateway
 // and the bytes forwarded upstream. They are all derived from the same
 // tree, so no parser difference can put them out of step.
 //
-// P4b canonicalized the top level and one level of `params` only: enough
-// while `arguments` was opaque bytes nothing inspected. P12 makes
-// arguments policy inputs, so the whole message is normalized, to any
-// depth, and a DUPLICATED KEY is refused rather than collapsed:
-// Go reads last-wins and an upstream may read first-wins, so
+// While `arguments` was opaque bytes nothing inspected, canonicalizing
+// the top level and one level of `params` was enough. Arguments are
+// policy inputs now, so the whole message is normalized, to any depth,
+// and a DUPLICATED KEY is refused rather than collapsed: Go reads
+// last-wins and an upstream may read first-wins, so
 // `{"amount": 42000, "amount": 48000}` is a smuggling vector, not a
 // typo. No legitimate MCP client emits one; the standing guidance is to
-// fail closed (docs/COORDINATION.md, "P12/P13 findings").
+// fail closed.
 
 import (
 	"bytes"

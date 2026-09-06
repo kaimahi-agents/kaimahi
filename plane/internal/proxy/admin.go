@@ -65,7 +65,7 @@ func NewAdminMux(d Deps, adminTokenFile string) *http.ServeMux {
 	mux.HandleFunc("GET /admin/grants", auth(h.listGrants))
 	mux.HandleFunc("GET /admin/approval-audit", auth(h.approvalAudit))
 	mux.HandleFunc("GET /admin/inbound-audit", auth(h.inboundAudit))
-	// P15: a read that decides whether an overlay would load, using
+	// A read that decides whether an overlay would load, using
 	// the same config.Parse this binary boots with (validate.go).
 	mux.HandleFunc("POST /admin/config/validate", auth(h.validateConfig))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -148,7 +148,7 @@ func (h *handler) listCredentials(w http.ResponseWriter, r *http.Request) {
 
 // renewCredential extends the deadline on an existing credential
 // WITHOUT touching its token: no material is minted, nothing has to
-// travel, and no Secret has to be rewritten (D27 custody). Rotating the
+// travel, and no Secret has to be rewritten. Rotating the
 // material is still issuing a fresh credential and re-pointing the
 // Secret at it.
 func (h *handler) renewCredential(w http.ResponseWriter, r *http.Request) {
@@ -256,7 +256,7 @@ func (h *handler) setBudget(w http.ResponseWriter, r *http.Request) {
 // bounded so an allowlist entry is always a plain identifier.
 var toolName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
-// setToolAllowlist replaces a credential's whole tool allowlist (P4b).
+// setToolAllowlist replaces a credential's whole tool allowlist.
 // An empty list is valid and means nothing callable — fail closed is the
 // default state, not an error.
 func (h *handler) setToolAllowlist(w http.ResponseWriter, r *http.Request) {
@@ -321,7 +321,7 @@ func (h *handler) toolAudit(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"entries": entries})
 }
 
-// inboundAudit reads the P7b inbound trail: every decision about an
+// inboundAudit reads the inbound trail: every decision about an
 // attributable event, and each admitted event's outcome.
 func (h *handler) inboundAudit(w http.ResponseWriter, r *http.Request) {
 	hook := r.URL.Query().Get("hook")

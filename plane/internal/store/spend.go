@@ -1,6 +1,6 @@
 package store
 
-// P9 exact budgets (D24): the one transaction that admits spend. Every
+// Exact budgets: the one transaction that admits spend. Every
 // budget decision for a credential runs under a lock on that
 // credential's row, reads the caps from the locked row, counts the
 // ledger PLUS the open reservations, consumes grant uses if a cap is
@@ -129,7 +129,7 @@ func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHol
 
 // MonthCommitted is the unlocked read of committed spend: the ledger
 // since monthStart plus the holds of every open reservation. What the
-// inbound door previews against (P7b), consuming nothing; the admin
+// inbound door previews against, consuming nothing; the admin
 // ledger's month-to-date shows MonthUsage (rows only) so an in-flight
 // call is never displayed as spend.
 func (s *Store) MonthCommitted(ctx context.Context, credential string, monthStart time.Time) (cents, tokens int64, err error) {

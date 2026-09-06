@@ -1,5 +1,5 @@
 -- +goose Up
--- P4b tool governance: the per-credential tool allowlist the MCP gateway
+-- Tool governance: the per-credential tool allowlist the MCP gateway
 -- enforces (and projects into tools/list), and the append-only tool-call
 -- audit trail. A separate table from ledger_entry on purpose: spend rows
 -- carry cost semantics (cost_source, token CHECKs) that tool actions do

@@ -1,6 +1,6 @@
 package proxy
 
-// P15: validating an overlay BEFORE it is applied.
+// Validating an overlay BEFORE it is applied.
 //
 // Until now a malformed upstream entry was discovered by applying it,
 // rolling the proxy, and watching the new pod refuse to boot — a real
@@ -51,7 +51,7 @@ type validateResponse struct {
 	Declared map[string][]string `json:"declared,omitempty"`
 	// TableDeclared is every tool's policy fields in the MERGED table,
 	// not only the submitted overlay's. A caller declaring a workflow
-	// against this plane (D42) states the declarations it depends on and
+	// against this plane states the declarations it depends on and
 	// has to be able to check them; without this it would either bind
 	// whatever happened to be configured, or have to merge the table a
 	// second time somewhere else — and there is exactly one merge.

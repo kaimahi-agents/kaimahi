@@ -27,7 +27,7 @@ import (
 type Store interface {
 	CredentialByTokenHash(ctx context.Context, tokenHash []byte) (store.Credential, error)
 	// RecordLedger appends the row and consumes the call's reservation
-	// (P9; empty when the call held nothing).
+	// (empty when the call held nothing).
 	RecordLedger(ctx context.Context, e store.LedgerEntry, reservationID string) error
 	CreateCredential(ctx context.Context, name string, tokenHash []byte, expiresAt time.Time) error
 	// Credential expiry (admin surface): renew extends the deadline on
@@ -38,16 +38,16 @@ type Store interface {
 	SetBudget(ctx context.Context, name string, capCents, capTokens *int64) error
 	Ledger(ctx context.Context, credentialName string, limit int) ([]store.LedgerEntry, error)
 	MonthUsage(ctx context.Context, credentialName string, monthStart time.Time) (cents, tokens int64, err error)
-	// P4b tool governance (admin surface; the gateway's own data path
+	// Tool governance (admin surface; the gateway's own data path
 	// uses the narrower gateway.Store).
 	SetToolAllowlist(ctx context.Context, credentialName string, tools []string) error
 	ToolAllowlist(ctx context.Context, credentialName string) ([]string, error)
 	ToolAudit(ctx context.Context, credentialName string, limit int) ([]store.ToolAuditEntry, error)
-	// P15: which credentials already allowlist a tool NAME, so onboarding
+	// Which credentials already allowlist a tool NAME, so onboarding
 	// an upstream that offers one can say so instead of claiming nothing
 	// can call it yet.
 	CredentialsAllowlisting(ctx context.Context, tools []string) (map[string][]string, error)
-	// P4c approvals: deny-and-pend filing (data path) and the decision
+	// Approvals: deny-and-pend filing (data path) and the decision
 	// surface (admin).
 	FileApprovalRequest(ctx context.Context, f store.Filing) (filed bool, err error)
 	PendingApprovals(ctx context.Context) ([]store.ApprovalRequest, error)
@@ -55,7 +55,7 @@ type Store interface {
 	DenyApprovalRequest(ctx context.Context, id string, decidedBy string) error
 	Grants(ctx context.Context, credential string, limit int) ([]store.Grant, []bool, error)
 	ApprovalAudit(ctx context.Context, credential string, limit int) ([]store.ApprovalAuditEntry, error)
-	// P7b inbound: the audit trail read (admin); the bridge's own data
+	// Inbound: the audit trail read (admin); the bridge's own data
 	// path uses the narrower inbound.Store.
 	InboundAudit(ctx context.Context, hook string, limit int) ([]store.InboundAuditEntry, error)
 	// Identity on the call: who the run this call falls inside is being
@@ -64,7 +64,7 @@ type Store interface {
 }
 
 // Meter admits or denies a request under the credential's budget caps,
-// exactly (P9): an admitted call under a cap holds a reservation until
+// exactly: an admitted call under a cap holds a reservation until
 // its ledger write. *meter.Meter satisfies it.
 type Meter interface {
 	Reserve(ctx context.Context, cred store.Credential, priced bool) (meter.Reservation, error)
@@ -75,7 +75,7 @@ type Deps struct {
 	Meter  Meter
 	Config config.Config
 	// ConfigBase is the COMMITTED table this replica booted from,
-	// before any overlay was merged in (P15). The admin surface
+	// before any overlay was merged in. The admin surface
 	// validates a candidate overlay against it, so a validation is
 	// always "would this overlay load over the committed table"
 	// and never "would it load over whatever is already overlaid",
@@ -85,7 +85,7 @@ type Deps struct {
 	// REFUSES redirects (a keyed call must never follow one — standing
 	// guidance) and bounds a call at 5 minutes.
 	Client *http.Client
-	// InternetClient (P10) makes every call to an upstream marked
+	// InternetClient makes every call to an upstream marked
 	// `internet: true` — Copilot: the ONE hardened client main builds
 	// (internal/egress) and shares with the MCP gateway. Nil means no
 	// hosted upstream can be reached — such a call fails closed (502,

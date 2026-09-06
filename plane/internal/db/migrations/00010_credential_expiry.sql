@@ -21,9 +21,9 @@
 ALTER TABLE credential ADD COLUMN expires_at timestamptz;
 
 -- Renewal extends the deadline on the SAME token: the material never
--- moves, so nothing has to travel and no Secret has to be rewritten
--- (D27 custody). Rotating the material is still what it always was —
--- issue a fresh credential and re-point the Secret.
+-- moves, so nothing has to travel and no Secret has to be rewritten.
+-- Rotating the material is still what it always was — issue a fresh
+-- credential and re-point the Secret.
 CREATE INDEX credential_expires ON credential (expires_at) WHERE expires_at IS NOT NULL;
 
 -- +goose Down

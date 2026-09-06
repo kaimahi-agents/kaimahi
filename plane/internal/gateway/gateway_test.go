@@ -28,7 +28,7 @@ type fakeStore struct {
 	credErr    error
 	audits     []store.ToolAuditEntry
 	credential store.Credential
-	// P4c: tool -> remaining grant uses (0 = exhausted/absent).
+	// Approval grants: tool -> remaining grant uses (0 = exhausted/absent).
 	toolGrants map[string]int
 	grantErr   error
 	filed      []string // "kind/subject" of filed requests
@@ -76,7 +76,7 @@ func (f *fakeStore) RecordToolAudit(_ context.Context, e store.ToolAuditEntry) e
 }
 
 // ConsumeToolGrant mirrors the store: a tool grant admits one CALL, so
-// the digest must match the one the grant was minted for (P12). A grant
+// the digest must match the one the grant was minted for. A grant
 // registered with an empty digest is the closed legacy class — a
 // verb-level grant that predates argument binding.
 func (f *fakeStore) ConsumeToolGrant(_ context.Context, _, tool, argDigest string) (string, bool, error) {
@@ -406,7 +406,7 @@ func TestDuplicateKeysAreRefusedNotCollapsed(t *testing.T) {
 		allow: []string{"k8s_get_resources"}}
 	h := newGateway(t, fs, up)
 
-	// P12: a duplicated key is a tampering signal, not a typo — Go reads
+	// A duplicated key is a tampering signal, not a typo — Go reads
 	// last-wins and an upstream may read first-wins, so the message is
 	// refused outright at every depth rather than silently collapsed.
 	// Nothing is forwarded, so enforcement and the forwarded bytes cannot
@@ -567,7 +567,7 @@ func TestDeleteRelaysSessionTermination(t *testing.T) {
 	assert.True(t, sawDelete)
 }
 
-// ---- P5a: keyed tool upstreams (credential injection from proxy-side custody) ----
+// ---- keyed tool upstreams (credential injection from proxy-side custody) ----
 
 // newKeyedGateway wires one upstream that carries its own credential,
 // mirroring the Slack MCP server's SLACK_MCP_API_KEY: the gateway holds

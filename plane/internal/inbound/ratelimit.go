@@ -6,7 +6,7 @@ import (
 )
 
 // limiter is a per-hook token bucket. In-memory and PER REPLICA on
-// purpose (P9): it is a flood guard, not a governance decision, and it
+// purpose: it is a flood guard, not a governance decision, and it
 // runs before authentication — a bucket shared through the store would
 // be a store write per event, which is exactly the amplification the
 // limiter exists to bound. The effective ceiling is therefore replicas ×

@@ -1,6 +1,6 @@
 package store
 
-// P4c approvals: pending requests, bounded grants, and the approvals'
+// Approvals: pending requests, bounded grants, and the approvals'
 // own audit trail. Everything decision-relevant is evaluated in SQL at
 // call time — liveness (expiry, use count) is part of every consuming
 // or listing query, so an expired grant is simply not a grant and no
@@ -33,7 +33,7 @@ type ApprovalRequest struct {
 	Subject        string `json:"subject"`
 	Status         string `json:"status"`
 	Detail         string `json:"detail"`
-	// ArgDigest/ArgSummary (P12) carry the exact CALL a tool request is
+	// ArgDigest/ArgSummary carry the exact CALL a tool request is
 	// about: the digest a grant is welded to, and the transaction line an
 	// approver reads. Empty on budget and inbound requests, which have no
 	// arguments, and on tool requests filed before argument binding.
@@ -41,7 +41,7 @@ type ApprovalRequest struct {
 	ArgSummary string     `json:"arg_summary,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	DecidedAt  *time.Time `json:"decided_at,omitempty"`
-	// DecidedBy names who decided (P8b): DecidedByAdmin for the admin
+	// DecidedBy names who decided: DecidedByAdmin for the admin
 	// bearer, "slack:<user id>" for a Slack command; empty while pending.
 	DecidedBy string `json:"decided_by"`
 }
@@ -60,7 +60,7 @@ type Grant struct {
 	Amount         *int64     `json:"amount,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	DecidedBy      string     `json:"decided_by"`
-	// ArgDigest (P12) is the call this tool grant admits — and only that
+	// ArgDigest is the call this tool grant admits — and only that
 	// call. NULL means a verb-level grant, a closed class: only grants
 	// that predate migration 00008 carry it (ApproveRequest refuses to
 	// mint another), and the gateway honours those unchanged.
@@ -95,7 +95,7 @@ const grantLive = `(expires_at IS NULL OR expires_at > now())
 	AND (max_uses IS NULL OR uses < max_uses)`
 
 // Filing is one approval request to file. ArgDigest/ArgSummary are set
-// on tool requests (P12) and empty everywhere else.
+// on tool requests and empty everywhere else.
 type Filing struct {
 	Credential string
 	Kind       string
@@ -109,8 +109,8 @@ type Filing struct {
 // (credential, kind, subject, arg_digest) among pending rows: refiling
 // while an identical one is pending is a no-op (filed=false), but two
 // attempts at the SAME tool with DIFFERENT policy-relevant arguments are
-// two different requests (P12 — before argument binding they collapsed
-// into one, and one approval covered both). A fresh filing also writes
+// two different requests (before argument binding they collapsed into
+// one, and one approval covered both). A fresh filing also writes
 // the 'requested' audit row in the same transaction.
 func (s *Store) FileApprovalRequest(ctx context.Context, f Filing) (filed bool, err error) {
 	_, filed, err = s.FileRequest(ctx, f)
@@ -118,7 +118,7 @@ func (s *Store) FileApprovalRequest(ctx context.Context, f Filing) (filed bool, 
 }
 
 // FileRequest is FileApprovalRequest returning the fresh request's id as
-// well (P8b: the notifier names it). id is empty when deduped.
+// well (the notifier names it). id is empty when deduped.
 func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -153,7 +153,7 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 	return id, true, nil
 }
 
-// RequestByPrefix resolves a request by a prefix of its id (P8b: what a
+// RequestByPrefix resolves a request by a prefix of its id (what a
 // human types in Slack). Among ALL requests, not only pending ones, so a
 // decided request resolves and is reported as decided rather than as
 // unknown. prefix must be hex and dashes only (the caller's parser
@@ -245,10 +245,10 @@ func (s *Store) ApproveRequest(ctx context.Context, id string,
 	if (r.Kind == "budget") != (amount != nil) {
 		return Grant{}, fmt.Errorf("%w: AMOUNT is required for budget grants and forbidden otherwise", ErrBounds)
 	}
-	// P12: a tool grant is welded to the CALL its request carries. A tool
+	// A tool grant is welded to the CALL its request carries. A tool
 	// request with no digest predates argument binding (or was filed by a
 	// path that named no call), and minting a verb-level grant from it
-	// would re-open exactly the hole this lane closes — so it is refused,
+	// would re-open exactly the hole argument binding closes — so it is refused,
 	// with the two honest ways forward named.
 	var argDigest *string
 	if r.Kind == "tool" {
@@ -333,11 +333,11 @@ func (s *Store) DenyApprovalRequest(ctx context.Context, id string, decidedBy st
 }
 
 // ConsumeToolGrant admits one tool call under a live grant, consuming
-// one use atomically. P9: the consume runs under the credential's row
+// one use atomically: the consume runs under the credential's row
 // lock (lockCredential), so concurrent consumers — on one replica or
 // across replicas — take turns and each sees the previous one's commit:
 // a grant with N uses left admits exactly N concurrent calls, never
-// N+1 and (unlike the P4c FOR UPDATE SKIP LOCKED it replaces) never
+// N+1 and (unlike the FOR UPDATE SKIP LOCKED it replaces) never
 // fewer. ok=false means no consumable grant — the caller denies.
 func (s *Store) ConsumeToolGrant(ctx context.Context, credential, tool, argDigest string) (grantID string, ok bool, err error) {
 	tx, err := s.pool.Begin(ctx)
@@ -386,7 +386,7 @@ func consumeGrantLocked(ctx context.Context, tx pgx.Tx, credential, kind, subjec
 }
 
 // consumeToolGrantLocked is consumeGrantLocked for tool grants, which
-// since P12 admit ONE CALL: the grant's digest must equal the digest of
+// admit ONE CALL: the grant's digest must equal the digest of
 // the call being made. A mismatch consumes nothing, so the caller denies
 // and files a request for the call actually attempted — an approval can
 // never be spent on a different transaction. The one exception is the

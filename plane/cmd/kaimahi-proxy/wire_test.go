@@ -11,7 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/proxy"
 )
 
-// D25: ONE hardened client for BOTH seams. The proxy's Copilot path and
+// ONE hardened client for BOTH seams. The proxy's Copilot path and
 // the gateway's hosted tool upstreams must hold the very same client,
 // and it is a hardened one (its transport refuses plain http before
 // touching the network).

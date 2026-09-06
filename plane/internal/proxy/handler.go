@@ -113,7 +113,7 @@ func reasonFor(status int, msg string) metrics.Reason {
 
 // deny is the single exit for every pre-forward refusal: the denial is
 // ledgered (zero usage, cost_source=denied), then answered. reservation
-// is the hold an already-admitted call took (P9) — a refusal after
+// is the hold an already-admitted call took — a refusal after
 // admission (no upstream credential, an unbuildable request) releases
 // it through the same ledger write; empty before admission.
 func (h *handler) deny(w http.ResponseWriter, r *http.Request, cred store.Credential,
@@ -220,7 +220,7 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Budget admission, fail closed and exact (P9): one locked store
+	// Budget admission, fail closed and exact: one locked store
 	// transaction decides and, under a cap, holds the least this call
 	// can spend until its ledger row lands. Everything past this point
 	// carries the reservation to the ledger write that consumes it.
@@ -232,7 +232,7 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &d) && (d.Status == http.StatusForbidden || d.Status == http.StatusTooManyRequests) {
 			status = d.Status
 		}
-		// Deny-and-pend (D13): a budget-cap denial files a pending
+		// Deny-and-pend: a budget-cap denial files a pending
 		// approval request (deduped in the store). Filing failure never
 		// un-denies — the denial is the safe state.
 		if d.BudgetSubject != "" {
@@ -253,7 +253,7 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the real upstream credential — a Secret-mounted file only
 	// the proxy can read; the agent side never sees it. Read per request
-	// so rotation (expiring Copilot tokens, D8) needs no restart.
+	// so rotation (Copilot's tokens expire) needs no restart.
 	var secret string
 	if up.CredentialFile != "" {
 		raw, err := os.ReadFile(up.CredentialFile)
@@ -333,7 +333,7 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(resp.StatusCode)
 		u = relayStream(w, resp.Body)
 	} else {
-		// Buffer BEFORE the status goes to the client (P10): a body the
+		// Buffer BEFORE the status goes to the client: a body the
 		// hardened client cuts — too large, or stalled past its lifetime —
 		// must fail closed as a 502, never reach the agent as a 200 with
 		// half a payload, and must still be ledgered (spend is recorded

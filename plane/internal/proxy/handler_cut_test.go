@@ -27,7 +27,7 @@ func (f fixedResolver) LookupNetIP(context.Context, string, string) ([]netip.Add
 	return []netip.Addr{f.addr}, nil
 }
 
-// P10: a hosted LLM upstream whose body stalls past the lifetime (or
+// A hosted LLM upstream whose body stalls past the lifetime (or
 // exceeds the cap) fails CLOSED at the proxy — a 502, never a 200 with a
 // truncated payload — and the call is still ledgered, with zero tokens
 // and the 502, before the failure is honored.

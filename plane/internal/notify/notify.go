@@ -8,7 +8,7 @@ import (
 )
 
 // Filing is one freshly filed approval request, as the notifier names
-// it to a human. Summary (P12) is the transaction line a tool request
+// it to a human. Summary is the transaction line a tool request
 // carries — "payment_schedule: amount_cents 3255000, payee_id MER-4471"
 // — so an approver sees WHAT they are approving, not just which verb.
 type Filing struct {

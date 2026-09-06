@@ -1,25 +1,25 @@
 package config
 
-// P12 argument policy: what a tool's arguments MEAN to the plane, and
+// Argument policy: what a tool's arguments MEAN to the plane, and
 // which calls a credential may make without asking a human.
 //
 // Two declarations, both operator-committed config and never inferred:
 //
 //   - a tool's POLICY-RELEVANT FIELDS (`tools` inside a tool_upstreams
-//     entry). One declaration serves two jobs (D29): the approval digest
+//     entry). One declaration serves two jobs: the approval digest
 //     binds those fields, and the audit's human-readable summary is built
 //     from them. Where a tool declares nothing, the digest binds the whole
 //     canonical argument object — the brittle case, since an LLM
 //     re-emitting a semantically identical call is not byte-stable.
-//   - a credential's STANDING CONSTRAINTS (`standing_constraints`, D31):
+//   - a credential's STANDING CONSTRAINTS (`standing_constraints`):
 //     declarative bounds on those fields — "may call payment_schedule
 //     when amount_cents <= 1000000, and never otherwise". A call inside
 //     its bounds proceeds with no approval; a call outside them is denied
 //     and files a request, exactly as an unlisted tool does today.
 //
 // The vocabulary is deliberately tiny — comparisons on declared fields
-// and set membership, no expression language (D31 keeps the plane
-// dependency-light). Everything malformed is refused at LOAD, like every
+// and set membership, no expression language, which keeps the plane
+// dependency-light. Everything malformed is refused at LOAD, like every
 // other entry in the table: a constraint naming a field the tool does not
 // declare is an error, never a silently-ignored rule.
 
@@ -138,7 +138,7 @@ func (p PolicySet) Declared(tool string) (fields []string, ok bool) {
 // A tool name means one thing across the whole table — conflicting
 // declarations are refused at load — so this is the complete answer to
 // "what does an approval bind here", which is what a caller declaring a
-// workflow against this plane has to be able to ask (D42). The returned
+// workflow against this plane has to be able to ask. The returned
 // map is a copy: the policy set is read by every request and must not be
 // handed out for anybody to edit.
 func (p PolicySet) AllDeclared() map[string][]string {

@@ -1,6 +1,6 @@
 package config
 
-// P15: the overlay. An adopter onboarding their OWN MCP server must not
+// The overlay. An adopter onboarding their OWN MCP server must not
 // have to edit the committed table — k8s/plane/upstreams.yaml is this
 // repo's four demo upstreams, and `kmx plane` re-applies it, so an entry
 // added there is an entry the next deploy silently discards.
@@ -62,7 +62,7 @@ var mergeableBlocks = []string{"tool_upstreams", "standing_constraints"}
 // deliberately (TestEveryToolUpstreamFieldIsClassifiedAsSafeOrDenied) —
 // a denial that drifts open is worse than none.
 //
-// W32 added extra_headers and it is DENIED, not safe. An overlay is a
+// extra_headers is DENIED, not safe. An overlay is a
 // hand-edited ConfigMap; extra_headers decides what the proxy SENDS on a
 // call it makes under a credential the proxy holds. On a keyed upstream
 // that is credential-adjacent (Load already refuses a header naming the

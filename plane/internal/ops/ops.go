@@ -1,4 +1,4 @@
-// Package ops is the plane's operations listener (P9): Prometheus
+// Package ops is the plane's operations listener: Prometheus
 // metrics and the two probes, on a port of their own that no data
 // Service exposes and no agent or edge reaches. No auth — the port is
 // cluster-internal under the namespace default-deny, opened only to a

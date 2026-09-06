@@ -287,10 +287,10 @@ func slackTask(text string, m slackMention) string {
 		", thread_ts " + strconv.Quote(m.threadTS) + ", and your answer as the payload."
 }
 
-// actorOf names the PERSON an authenticated event was sent by, in P8b's
-// vocabulary (migration 00006's `decided_by`: free text prefixed by the
-// path that vouched for it) — reused rather than reinvented, so an
-// approver and a requester are named the same way.
+// actorOf names the PERSON an authenticated event was sent by, in the
+// approvals vocabulary (migration 00006's `decided_by`: free text
+// prefixed by the path that vouched for it) — reused rather than
+// reinvented, so an approver and a requester are named the same way.
 //
 // A Slack app_mention names the user who typed it, and the signature
 // the bridge just verified is what vouches for that claim. Every other

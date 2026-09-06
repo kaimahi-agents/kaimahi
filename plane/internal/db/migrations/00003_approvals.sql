@@ -1,5 +1,5 @@
 -- +goose Up
--- P4c approvals: time-boxed permits (D13). A denied action files a
+-- Approvals are time-boxed permits. A denied action files a
 -- pending approval request; a human approval mints a BOUNDED grant that
 -- compiles onto the existing enforcement rows (tool allowlist checks,
 -- budget caps) at decision time. Fail-closed inheritances from the

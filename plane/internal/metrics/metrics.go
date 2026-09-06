@@ -1,4 +1,4 @@
-// Package metrics is the plane's Prometheus surface (P9, D24): what an
+// Package metrics is the plane's Prometheus surface: what an
 // operator watches, on its own cluster-internal listener, with NO
 // identifier as a label value. Every label is drawn from a fixed
 // vocabulary — the seams, the decisions, the refusal reasons, the grant
@@ -61,14 +61,14 @@ const (
 	ReasonUpstreamCredential  Reason = "upstream_credential"
 	ReasonUpstreamError       Reason = "upstream_error"
 	ReasonUpstreamUnreachable Reason = "upstream_unreachable"
-	// ReasonEgressRefused (P10): the egress policy refused the upstream
+	// ReasonEgressRefused: the egress policy refused the upstream
 	// before any byte left — a private/metadata answer, a forbidden port
 	// or scheme, no hardened client — as distinct from an upstream that
 	// was dialed and did not answer (a cut body counts as upstream_error).
 	ReasonEgressRefused Reason = "egress_refused"
 	ReasonMethod        Reason = "method"
 	ReasonGrantCheck    Reason = "grant_check"
-	// ReasonConstraint (P12): a standing constraint decided the call —
+	// ReasonConstraint: a standing constraint decided the call —
 	// admitted because it was inside its declared bounds, or denied
 	// because it was outside them.
 	ReasonConstraint  Reason = "constraint"

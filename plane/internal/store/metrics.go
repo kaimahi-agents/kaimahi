@@ -1,6 +1,6 @@
 package store
 
-// P9: the replica-independent reads the metrics collector makes at
+// The replica-independent reads the metrics collector makes at
 // scrape time. Names only — a credential's name is public in the repo
 // and printed by every audit command; nothing here returns a token, an
 // id, or free text.

@@ -1,5 +1,5 @@
 -- +goose Up
--- P4a governance floor: Kaimahi-issued credentials (the opaque tokens the
+-- The governance floor: Kaimahi-issued credentials (the opaque tokens the
 -- governed ModelConfig presets carry — only their sha256 is stored), the
 -- per-credential monthly budget caps, and the append-only spend ledger.
 -- Schema pattern follows tomte-old's spend_entry (13_spend_ledger.sql):

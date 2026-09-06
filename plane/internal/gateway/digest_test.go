@@ -23,7 +23,7 @@ var payFields = []string{"invoice_id", "amount_cents", "payee_id"}
 // The declared fields are what an approval binds: a call that differs in
 // one of them is a DIFFERENT call, and a call that differs only outside
 // them is the same one. That second half is what keeps the binding from
-// being brittle (D29) — an LLM re-emitting a semantically identical call
+// being brittle — an LLM re-emitting a semantically identical call
 // is not byte-stable.
 func TestDigestBindsDeclaredFieldsOnly(t *testing.T) {
 	approved := Bind("pay", argsOf(t, `{"invoice_id":"INV-1","amount_cents":3255000,"payee_id":"MER-4471"}`), payFields, true)

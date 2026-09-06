@@ -1,7 +1,7 @@
 package gateway
 
 // The binding: what makes an approval an approval of a TRANSACTION
-// rather than of a verb (D29).
+// rather than of a verb.
 //
 // A tools/call's canonical arguments are reduced to two things, both
 // derived from the one canonical tree (canon.go):

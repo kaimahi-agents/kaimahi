@@ -1,6 +1,6 @@
 package store_test
 
-// P9: the governance-bearing limits are DB-exact, and that is proven
+// The governance-bearing limits are DB-exact, and that is proven
 // here against a REAL Postgres under real concurrency — goroutines
 // racing the same SQL the replicas run — not argued from the code.
 // Set KAIMAHI_TEST_PG_DSN to run (CI's go-plane job provides a service
@@ -256,7 +256,8 @@ func TestConcurrentToolCallsAgainstGrantUsesAdmitExactlyThatMany(t *testing.T) {
 			require.NoError(t, err)
 			_, err = s.ApproveRequest(ctx, id, nil, i32(uses), nil, store.DecidedByAdmin)
 			require.NoError(t, err)
-			// P4c's SKIP LOCKED never double-spent but could deny a call
+			// The FOR UPDATE SKIP LOCKED this replaced never double-spent
+			// but could deny a call
 			// while uses remained; under the credential lock the count is
 			// exact in both directions.
 			oks := race(12, func(int) bool {
@@ -450,7 +451,7 @@ func digestOf(call string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// P12, against real Postgres: the pending-request dedup key gains the
+// Against real Postgres: the pending-request dedup key carries the
 // digest, so two attempts at the SAME tool with DIFFERENT
 // policy-relevant arguments are two requests — before argument binding
 // they collapsed into one and a single approval covered both — while a

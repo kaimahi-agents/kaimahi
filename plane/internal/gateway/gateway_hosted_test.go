@@ -22,7 +22,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-// P10: a hosted (`internet: true`) tool upstream is reached only through
+// A hosted (`internet: true`) tool upstream is reached only through
 // the injected hardened client, and what the dialer decides lands on the
 // audit row of the call it decided.
 

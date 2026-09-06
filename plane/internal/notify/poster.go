@@ -1,4 +1,4 @@
-// Package notify is the P8b approval notifier: when an approval request
+// Package notify is the approval notifier: when an approval request
 // is filed, the plane posts into the pinned Slack channel that a human
 // decision is waiting, and the inbound bridge replies the outcome of a
 // Slack command in the mention's thread. Both go THROUGH the plane's own

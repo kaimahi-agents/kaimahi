@@ -1,5 +1,5 @@
 -- +goose Up
--- P8: the Slack Events loop. A subscribed event that is well-formed but
+-- The Slack Events loop. A subscribed event that is well-formed but
 -- deliberately NOT a trigger (anything but a human's app_mention — the
 -- bot's own reply landing in the channel, first of all) is acknowledged
 -- to Slack with a 2xx so it is not retried, and recorded here as

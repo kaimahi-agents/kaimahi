@@ -1,13 +1,13 @@
 package inbound
 
-// P8b: approval commands from Slack. A human mentions the bot with
+// Approval commands from Slack. A human mentions the bot with
 // `approve <id> [uses=N] [ttl=D] [amount=N]` or `deny <id>` and the
 // plane decides the request — the second verb on the boundary that
 // already exists (the slack-events hook), recognised AFTER Slack's
 // signature and the channel allowlist have been checked and BEFORE the
 // grant gate: a command needs no inbound grant (or approving would need
 // an approval), invokes no agent, and spends nothing. Who may decide is
-// the approver file, not the room (D21).
+// the approver file, not the room.
 
 import (
 	"context"
@@ -157,7 +157,7 @@ func (b *Bridge) handleCommand(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 	if ev.slack.user == "" || !approvers[ev.slack.user] {
-		// Channel membership is not authority (D21). Audited, not
+		// Channel membership is not authority. Audited, not
 		// replied: the trail names who tried; the room is not told.
 		b.deny(w, r, name, h, delivery, http.StatusForbidden,
 			"user "+ev.slack.user+" is not an approver on this hook (command: "+c.verb+")")

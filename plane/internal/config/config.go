@@ -50,7 +50,7 @@ type Upstream struct {
 	// Prices maps model name -> configured price. Only meaningful on
 	// metered upstreams.
 	Prices map[string]pricing.Price `json:"prices,omitempty"`
-	// Internet marks an upstream that lives outside the cluster (P10):
+	// Internet marks an upstream that lives outside the cluster:
 	// it is reached ONLY through the hardened dialer (internal/egress —
 	// https, port 443, every resolved address vetted, the checked address
 	// dialed, bounded and capped). Without the marker an upstream must be
@@ -66,7 +66,7 @@ type Upstream struct {
 // ToolUpstream is one MCP tool server the gateway may relay to. The
 // committed table is the whole egress surface at this layer: the gateway
 // forwards nowhere it does not name (cluster-level NetworkPolicy is a
-// documented P4b limitation, not built here).
+// documented limitation of this table, not built here).
 type ToolUpstream struct {
 	// URL is the full MCP endpoint (e.g. the in-cluster
 	// http://kagent-tools.kagent:8084/mcp).
@@ -82,7 +82,7 @@ type ToolUpstream struct {
 	// CredentialHeader is the header the credential is injected into.
 	// "authorization" (the default) sends "Authorization: Bearer <v>".
 	CredentialHeader string `json:"credential_header,omitempty"`
-	// Internet and CAFile: exactly as on Upstream (P10). A hosted MCP
+	// Internet and CAFile: exactly as on Upstream. A hosted MCP
 	// server is reached only through the hardened dialer; an unmarked
 	// entry must be in-cluster-shaped.
 	Internet bool   `json:"internet,omitempty"`
@@ -90,7 +90,7 @@ type ToolUpstream struct {
 	// ExtraHeaders are set on every forwarded request to this tool
 	// server. Non-secret values only — this is committed config.
 	//
-	// Why the tool seam needs them (W32): a HOSTED server we did not
+	// Why the tool seam needs them: a HOSTED server we did not
 	// write decides for itself which tools it offers, and the good ones
 	// let a caller narrow that. GitHub's takes X-MCP-Toolsets,
 	// X-MCP-Tools and X-MCP-Exclude-Tools; Azure DevOps' takes
@@ -108,9 +108,9 @@ type ToolUpstream struct {
 	// Load), and the credential is injected last regardless. A committed
 	// header must never be able to displace a custody-held credential.
 	ExtraHeaders map[string]string `json:"extra_headers,omitempty"`
-	// Tools (P12) declares, per tool this server offers, which argument
+	// Tools declares, per tool this server offers, which argument
 	// fields are policy-relevant: the fields an approval digest binds and
-	// the audit summary is built from (D29). Optional — an undeclared
+	// the audit summary is built from. Optional — an undeclared
 	// tool's digest binds the whole canonical argument object, which is
 	// the brittle case (policy.go, docs/tool-governance.md).
 	Tools map[string]ToolPolicy `json:"tools,omitempty"`
@@ -140,7 +140,7 @@ const (
 // whole inbound surface: the plane accepts nothing it does not name.
 type InboundHook struct {
 	// Credential is the plane credential this hook is bound to: the
-	// identity that is granted (P4c 'inbound' grants, subject = hook
+	// identity that is granted ('inbound' grants, subject = hook
 	// name) and audited. A bearer caller must present THIS credential's
 	// token; an HMAC caller proves it via the signing secret.
 	Credential string `json:"credential"`
@@ -154,7 +154,7 @@ type InboundHook struct {
 	// AgentNamespace/Agent name the kagent Agent the event triggers.
 	AgentNamespace string `json:"agent_namespace"`
 	Agent          string `json:"agent"`
-	// SlackChannelsFile (slack auth only, P8) names a Secret-mounted file
+	// SlackChannelsFile (slack auth only) names a Secret-mounted file
 	// listing the channel IDs whose mentions may trigger this hook —
 	// comma- or newline-separated, read per request. The committed table
 	// names the FILE because a channel ID is a workspace identifier this
@@ -167,11 +167,11 @@ type InboundHook struct {
 	// app is mentioned in, and an ingress that widens because a key was
 	// dropped from the table is the silent failure this file refuses.
 	SlackChannelsFile string `json:"slack_channels_file,omitempty"`
-	// SlackApproversFile (slack auth only, P8b) names a Secret-mounted
+	// SlackApproversFile (slack auth only) names a Secret-mounted
 	// file listing the Slack USER ids who may approve or deny an approval
 	// request by mentioning the bot (`@kaimahi approve <id> …`), comma-
 	// or newline-separated, read per request. Channel membership alone
-	// is not authority (D21): the room is where the demo lives, the list
+	// is not authority: the room is where the demo lives, the list
 	// is who may decide. Like the channel file it names a FILE because a
 	// user id is a workspace identifier this public repo never carries.
 	// Unreadable or empty fails a COMMAND closed (503) and leaves every
@@ -219,7 +219,7 @@ const (
 	maxSlackUses          = 1_000_000
 )
 
-// ApprovalNotifier (P8b) is how the plane tells a human that a request
+// ApprovalNotifier is how the plane tells a human that a request
 // is waiting: a post into the pinned Slack channel, THROUGH the plane's
 // own MCP gateway under the plane's OWN credential — so custody, the
 // allowlist, the channel pin and the tool audit apply to the plane's
@@ -244,16 +244,16 @@ type ApprovalNotifier struct {
 
 type Config struct {
 	Upstreams map[string]Upstream `json:"upstreams"`
-	// ToolUpstreams is the MCP gateway's table (P4b). Optional: a
-	// P4a-only config still parses; an absent table relays nothing.
+	// ToolUpstreams is the MCP gateway's table. Optional: a config with
+	// only LLM upstreams still parses; an absent table relays nothing.
 	ToolUpstreams map[string]ToolUpstream `json:"tool_upstreams,omitempty"`
-	// InboundHooks is the inbound bridge's table (P7b). Optional: absent
+	// InboundHooks is the inbound bridge's table. Optional: absent
 	// means the inbound listener accepts nothing.
 	InboundHooks map[string]InboundHook `json:"inbound_hooks,omitempty"`
-	// ApprovalNotifier (P8b) is optional: absent means nobody is told
+	// ApprovalNotifier is optional: absent means nobody is told
 	// when a request is filed, exactly as before.
 	ApprovalNotifier *ApprovalNotifier `json:"approval_notifier,omitempty"`
-	// StandingConstraints (P12/D31) are declarative bounds a credential
+	// StandingConstraints are declarative bounds a credential
 	// carries on a tool's declared policy fields: credential -> tool ->
 	// rules, ALL of which must hold. A call inside them proceeds with no
 	// approval; a call outside them is denied and files a request. Scoped
@@ -427,7 +427,7 @@ func Parse(raw []byte) (Config, error) {
 	return c, nil
 }
 
-// hostedShape is the load-time half of the egress rule (P10). An
+// hostedShape is the load-time half of the egress rule. An
 // upstream marked internet must be https on port 443 with no userinfo —
 // what the hardened dialer will accept at call time, refused here so the
 // mistake is loud at rollout, not at first use. An upstream NOT marked

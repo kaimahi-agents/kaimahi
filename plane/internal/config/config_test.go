@@ -50,7 +50,7 @@ func TestParseToolUpstreams(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "http://kagent-tools.kagent:8084/mcp", c.ToolUpstreams["kagent-tools"].URL)
 
-	// Optional: a P4a-only config still parses with no tool upstreams.
+	// Optional: a config with only LLM upstreams still parses.
 	c, err = config.Parse([]byte(`{"upstreams": {"o": {"base_url": "http://o", "path": "p", "classification": "free"}}}`))
 	require.NoError(t, err)
 	require.Empty(t, c.ToolUpstreams)
@@ -67,7 +67,7 @@ func TestParseToolUpstreams(t *testing.T) {
 	}
 }
 
-// P5a: a tool upstream may carry its OWN credential (the Slack MCP
+// A tool upstream may carry its OWN credential (the Slack MCP
 // server's SLACK_MCP_API_KEY), named — never valued — in the committed
 // table, exactly like the LLM upstreams' credential_file.
 func TestParseKeyedToolUpstreams(t *testing.T) {
@@ -118,7 +118,7 @@ func TestParseInboundHooks(t *testing.T) {
 	require.Len(t, c.InboundHooks, 4)
 	require.Equal(t, "/etc/kaimahi/slack/channel", c.InboundHooks["slack"].SlackChannelsFile)
 	require.Equal(t, "/etc/kaimahi/slack/approvers", c.InboundHooks["slack"].SlackApproversFile)
-	// P8b: a Slack approval that names no bounds gets the hook's
+	// A Slack approval that names no bounds gets the hook's
 	// defaults — one use, 15 minutes unless the table says otherwise.
 	slack := c.InboundHooks["slack"].Bounded()
 	require.Equal(t, config.DefaultSlackUses, slack.SlackDefaultUses)

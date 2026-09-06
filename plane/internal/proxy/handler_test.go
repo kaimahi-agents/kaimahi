@@ -39,14 +39,14 @@ type fakeStore struct {
 	allowlists   map[string][]string
 	allowlistErr error
 	audits       []store.ToolAuditEntry
-	// P4c approvals, in memory.
+	// Approvals, in memory.
 	requests       []*store.ApprovalRequest
 	grants         []store.Grant
 	approvalAudits []store.ApprovalAuditEntry
 	fileErr        error
-	// P7b inbound audit trail (admin read only in this package).
+	// The inbound audit trail (admin read only in this package).
 	inboundAudits []store.InboundAuditEntry
-	// P9 reservations: open holds and the ids RecordLedger consumed.
+	// Reservations: open holds and the ids RecordLedger consumed.
 	open     map[string]store.SpendHold
 	consumed []string
 	admitErr error
@@ -722,7 +722,7 @@ func TestOnlyPostChatRouteExists(t *testing.T) {
 }
 
 func TestAdmittedCallHoldsUntilItsLedgerWrite(t *testing.T) {
-	// P9: under a cap the admission leaves a reservation; the ledger
+	// Under a cap the admission leaves a reservation; the ledger
 	// write of the SAME call consumes it — on success and on a refusal
 	// taken after admission alike — so nothing stays held once the call
 	// is recorded, and a credential with no caps never holds.

@@ -1,6 +1,6 @@
 package proxy
 
-// P4c admin surface: the human decision point for approvals. Same
+// The admin surface for approvals: the human decision point. Same
 // posture as the rest of the admin plane — bearer-token auth on a port
 // no Service exposes, strict input validation (the ported permit
 // discipline: unknown fields rejected, unbounded grants refused).
@@ -60,7 +60,7 @@ func (h *handler) fileRequest(w http.ResponseWriter, r *http.Request) {
 		Credential string `json:"credential"`
 		Kind       string `json:"kind"`
 		Subject    string `json:"subject"`
-		// Arguments (P12), tool requests only: the CALL the operator wants
+		// Arguments, tool requests only: the CALL the operator wants
 		// pre-approved, as a JSON object. Omitted means the argument-less
 		// call — never "any call": since argument binding, an approval is
 		// welded to one call's digest, so a request has to name one.
@@ -69,7 +69,7 @@ func (h *handler) fileRequest(w http.ResponseWriter, r *http.Request) {
 	if !decodeStrict(w, r, &req) {
 		return
 	}
-	// P7b: 'inbound' requests name a hook (a lowercase DNS label, like a
+	// 'inbound' requests name a hook (a lowercase DNS label, like a
 	// credential) — the grant a human approves admits events on it.
 	if !credentialName.MatchString(req.Credential) ||
 		(req.Kind != "tool" && req.Kind != "budget" && req.Kind != "inbound") ||
@@ -159,8 +159,8 @@ func (h *handler) approve(w http.ResponseWriter, r *http.Request) {
 		t := time.Now().Add(time.Duration(*req.TTLSeconds) * time.Second)
 		expiresAt = &t
 	}
-	// The admin bearer is the identity this port admits (P8b: the Slack
-	// path records the person instead).
+	// The admin bearer is the identity this port admits (a decision made
+	// in Slack records the person instead).
 	g, err := h.d.Store.ApproveRequest(r.Context(), id, expiresAt, req.MaxUses, req.Amount, store.DecidedByAdmin)
 	switch {
 	case errors.Is(err, store.ErrNotFound):

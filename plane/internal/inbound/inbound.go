@@ -1,4 +1,4 @@
-// Package inbound is the P7b inbound bridge: the governance plane's
+// Package inbound is the inbound bridge: the governance plane's
 // first INGRESS surface. An external event (a webhook) may trigger a
 // kagent agent through it — and only through it, on the terms the plane
 // enforces:
@@ -15,10 +15,11 @@
 //   - replay protection: signed timestamps within a window, and a
 //     delivery id that is unique among ADMITTED events per hook (the
 //     audit row's index — an honoured event cannot be honoured twice);
-//   - triggering is an APPROVABLE action (P4c): each admitted event
+//   - triggering is an APPROVABLE action: each admitted event
 //     consumes one use of a live, bounded 'inbound' grant for the hook;
 //     without one the event is denied and a request is filed (deny and
-//     pend, deduped) — approval is constructive, exactly as P5a ruled;
+//     pend, deduped) — the denial is constructive: it files the very
+//     request whose approval admits the next event;
 //   - every inbound event causes spend, so the door previews the target
 //     agent's governed budget (the credential its preset carries) and
 //     refuses what the proxy could not admit — without consuming a grant
@@ -65,7 +66,7 @@ type Store interface {
 	OpenRun(ctx context.Context, credential, actedFor, source, delivery, eventID string, ttl time.Duration) (string, error)
 	CloseRun(ctx context.Context, id string) error
 	FileApprovalRequest(ctx context.Context, f store.Filing) (filed bool, err error)
-	// P8b: approval commands from Slack decide requests here, with the
+	// Approval commands from Slack decide requests here, with the
 	// approver's identity.
 	RequestByPrefix(ctx context.Context, prefix string) (store.ApprovalRequest, error)
 	ApproveRequest(ctx context.Context, id string, expiresAt *time.Time, maxUses *int32, amount *int64, decidedBy string) (store.Grant, error)
@@ -419,7 +420,7 @@ func (b *Bridge) receive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Where the mention was said must be a channel the hook is bound to
-	// (P8). The list is read per request from plane custody, like the
+	// The list is read per request from plane custody, like the
 	// signing secret; unreadable fails closed. The signature proved the
 	// event came from the workspace; this proves it came from the room
 	// the demo agreed to be in.
@@ -437,7 +438,7 @@ func (b *Bridge) receive(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// P8b: an approval command (`approve <id> …` / `deny <id>`) is the
+	// An approval command (`approve <id> …` / `deny <id>`) is the
 	// second verb on this boundary. Recognised here — after the signature
 	// and the channel, before the budget and the grant — because deciding
 	// a request must not itself need a grant, and never runs the agent.
@@ -481,7 +482,7 @@ func (b *Bridge) receive(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &d) && d.BudgetSubject != "" {
 			status = http.StatusTooManyRequests
 		}
-		// Deny-and-pend (D13) under the AGENT's credential: the same
+		// Deny-and-pend under the AGENT's credential: the same
 		// request the proxy would file when the agent is denied there,
 		// deduped with it.
 		if d.BudgetSubject != "" && b.fileRequest(r.Context(), target.Name, "budget", d.BudgetSubject,
@@ -659,7 +660,7 @@ func (b *Bridge) authenticate(w http.ResponseWriter, r *http.Request, name strin
 
 // fileRequest files a pending approval request on a cancel-free context.
 // A filing failure never un-denies and never trips the breaker — the
-// denial is the safe state (P4b/P4c contract).
+// denial is the safe state, as it is at the gateway and in approvals.
 func (b *Bridge) fileRequest(ctx context.Context, credential, kind, subject, detail string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
@@ -690,7 +691,8 @@ func (b *Bridge) process(j job) {
 	//
 	// The run expires a minute past the invoke timeout, so a replica
 	// that dies mid-turn cannot leave an open run poisoning every later
-	// call for that credential (P9's reservation discipline).
+	// call for that credential, the same discipline a spend reservation
+	// has.
 	// One run per credential the agent authenticates with: it spends
 	// MODEL tokens under its budget credential and makes TOOL calls
 	// under its gateway credential, and a run opened on only one of

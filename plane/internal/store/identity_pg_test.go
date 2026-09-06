@@ -1,7 +1,7 @@
 package store_test
 
-// Postgres-backed proofs for the two things this lane adds: WHO an
-// agent acted for, and credentials that expire. Set
+// Postgres-backed proofs for two things: WHO an agent acted for, and
+// credentials that expire. Set
 // KAIMAHI_TEST_PG_DSN to run (CI's go-plane job provides a service
 // container); skipped otherwise, like the rest of the store's
 // Postgres tests.

@@ -1,4 +1,4 @@
-// Package gateway is the P4b enforcing MCP gateway: the governance seam
+// Package gateway is the enforcing MCP gateway: the governance seam
 // between a kagent agent and the tool servers it calls. It RELAYS the MCP
 // streamable-HTTP protocol (kagent still runs the tools — no MCP runtime
 // here) and enforces, all fail-closed:
@@ -14,12 +14,12 @@
 //     call, and kagent's controller discovery sees the same projection;
 //   - tools/call outcomes and every attributable denial are audited
 //     (401/503 pre-auth refusals have no credential to attribute). Like
-//     P4a's ledger, the allowed row is written after the response it
+//     the spend ledger, the allowed row is written after the response it
 //     describes; a failed write trips the gateway to 503 for all
 //     SUBSEQUENT traffic until a write succeeds — the same
 //     fail-closed-degradation contract the spend plane runs under.
 //
-// Authentication is exactly the P4a proxy's: a Kaimahi-issued kmh_ opaque
+// Authentication is exactly the LLM proxy's: a Kaimahi-issued kmh_ opaque
 // token in the Authorization header (Bearer prefix optional — kagent's
 // headersFrom sends the Secret value verbatim), known to the store only
 // by sha256.
@@ -65,10 +65,10 @@ type Store interface {
 	CredentialByTokenHash(ctx context.Context, tokenHash []byte) (store.Credential, error)
 	ToolAllowlist(ctx context.Context, credentialName string) ([]string, error)
 	RecordToolAudit(ctx context.Context, e store.ToolAuditEntry) error
-	// P4c approvals: bounded grants admit tools outside the static
+	// Approvals: bounded grants admit tools outside the static
 	// allowlist (consuming a use, liveness evaluated in SQL at call
 	// time), and a denial files a pending approval request.
-	// P12: a grant admits one CALL — the digest of its canonical policy
+	// A grant admits one CALL — the digest of its canonical policy
 	// fields must match — and a filed request carries that call.
 	ConsumeToolGrant(ctx context.Context, credential, tool, argDigest string) (grantID string, ok bool, err error)
 	// Identity on the call: who the run this tool call falls inside is
@@ -81,17 +81,17 @@ type Store interface {
 type Deps struct {
 	Store     Store
 	Upstreams map[string]config.ToolUpstream
-	// Policy (P12) is the argument-policy surface built from the same
+	// Policy is the argument-policy surface built from the same
 	// committed config: which argument fields each tool declares
 	// policy-relevant, and the standing constraints each credential
 	// carries on them. The zero value declares and constrains nothing,
-	// which is exactly P4b/P4c behaviour.
+	// so every call falls through to the allowlist and to approvals.
 	Policy config.PolicySet
 	// Client makes IN-CLUSTER upstream calls. Nil gets a default that
 	// never FOLLOWS a redirect (standing guidance); the relay paths then
 	// refuse the 3xx itself with a 502. Calls are bounded at 5 minutes.
 	Client *http.Client
-	// InternetClient (P10) makes every call to an upstream marked
+	// InternetClient makes every call to an upstream marked
 	// `internet: true`: the ONE hardened client main builds
 	// (internal/egress) and shares with the LLM proxy. Nil means no
 	// hosted upstream can be reached — such a call fails closed (502,
@@ -121,13 +121,13 @@ type handler struct {
 	d Deps
 	// auditDegraded trips when an audit write fails and clears on the
 	// next success. While tripped the gateway denies everything: an
-	// action that cannot be recorded must not happen (P4a's rule for
-	// spend, applied to tool calls).
+	// action that cannot be recorded must not happen (the rule the spend
+	// ledger runs under, applied to tool calls).
 	auditDegraded atomic.Bool
 }
 
 // NewMux serves the governed MCP surface. One relay route —
-// /upstream/{name}/mcp — mirroring the P4a data plane's shape: POST
+// /upstream/{name}/mcp — mirroring the LLM data plane's shape: POST
 // carries every JSON-RPC message, DELETE terminates a session
 // (terminateOnClose), and GET answers 405 via the mux (spec-legal: the
 // gateway offers no server-initiated stream).
@@ -247,7 +247,8 @@ func writeRPC(w http.ResponseWriter, msg any) {
 }
 
 // authenticate resolves the inbound kmh_ token (Bearer prefix optional —
-// headersFrom sends the Secret value verbatim). Same contract as P4a:
+// headersFrom sends the Secret value verbatim). Same contract as the
+// LLM proxy:
 // unknown token 401, store failure 503, neither audited (no credential
 // to attribute).
 // It also returns the request to use from here on: the identity the
@@ -371,7 +372,7 @@ func (h *handler) relay(w http.ResponseWriter, r *http.Request) {
 			h.httpDeny(w, r, cred, name, method, "", http.StatusBadRequest, "tools/call params carry no tool name")
 			return
 		}
-		// P12: arguments are policy inputs now, so they must be an object
+		// Arguments are policy inputs now, so they must be an object
 		// the plane can read. Anything else is refused rather than
 		// forwarded unexamined.
 		args, ok := argumentsOf(msg)
@@ -388,13 +389,13 @@ func (h *handler) relay(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Three ways a call is admitted, in order:
-		//   1. a STANDING CONSTRAINT (D31) the call is inside — routine
+		//   1. a STANDING CONSTRAINT the call is inside — routine
 		//      traffic proceeds with no human, and no grant is burned;
 		//   2. the static allowlist — but ONLY where no constraint exists
 		//      for this credential and tool, because a constraint is a
 		//      BOUND ("may call payment_schedule when amount_cents <=
 		//      1000000, and never otherwise"), not merely another way in;
-		//   3. a live grant welded to THIS call's digest (P4c + P12).
+		//   3. a live grant welded to THIS call's digest.
 		// Anything else is denied and files a request carrying the call.
 		detail, outside := "", ""
 		admitted := false
@@ -417,7 +418,7 @@ func (h *handler) relay(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !ok {
-				// Deny-and-pend (D13), now carrying the CALL: the request
+				// Deny-and-pend, now carrying the CALL: the request
 				// and its dedup key hold the digest and the summary, so two
 				// attempts with different policy-relevant arguments file TWO
 				// requests and one approval can never cover both. A filing
@@ -533,7 +534,7 @@ func (h *handler) projectable(w http.ResponseWriter, r *http.Request, cred store
 			allowed = append(allowed, g)
 		}
 	}
-	// P12: a tool this credential carries a standing constraint for is
+	// A tool this credential carries a standing constraint for is
 	// callable right now for arguments inside those bounds, so it is
 	// visible too — the same "visible means callable" rule live grants
 	// follow.
@@ -820,14 +821,14 @@ func (h *handler) do(r *http.Request, up config.ToolUpstream, body []byte) (*htt
 
 // MsgUpstreamRedirected is the 502 body for a redirect the gateway
 // refused to follow — a 502 issued before any byte of the message reached
-// the upstream, which the notifier (P8b) may therefore retry. (P10's
-// MsgUpstreamRefused is the other such 502; the notifier's upstream is
+// the upstream, which the notifier may therefore retry. (The hosted
+// dialer's MsgUpstreamRefused is the other such 502; the notifier's upstream is
 // in-cluster, so it never sees that one.)
 const MsgUpstreamRedirected = "tool upstream redirected (refused)"
 
 // errCredentialUnavailable marks a tool upstream whose own credential
 // could not be read. It is NOT an unreachable upstream: the request is
-// failed closed as 503 (the P4a proxy's contract for the same case), so
+// failed closed as 503 (the LLM proxy's contract for the same case), so
 // a missing or unreadable Secret can never downgrade to an unauthenticated
 // call that a permissive tool server might still honour.
 var errCredentialUnavailable = errors.New("upstream credential unavailable")

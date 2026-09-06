@@ -13,7 +13,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-// W32: committed extra_headers reach the tool server. This is the lever
+// Committed extra_headers reach the tool server. This is the lever
 // that narrows a hosted server BEFORE discovery — GitHub's and Azure
 // DevOps' both read X-MCP-Toolsets — so a tool the plane does not want
 // is never offered and never projected, which no allowlist can achieve

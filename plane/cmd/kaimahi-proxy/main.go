@@ -1,11 +1,11 @@
-// kaimahi-proxy is the Kaimahi governance plane: the P4a metering and
+// kaimahi-proxy is the Kaimahi governance plane: the metering and
 // enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam, the
-// P4b enforcing MCP gateway mounted at the tool-server seam, and the P7b
+// enforcing MCP gateway mounted at the tool-server seam, and the
 // inbound bridge (the plane's one ingress: webhook → governed A2A
 // invoke). Five listeners: the LLM data plane, the MCP gateway (own
 // Service), the inbound bridge (own Service), the admin plane
 // (credentials, budgets, allowlists, ledger, audits) on a port no data
-// Service exposes, and (P9) the operations listener — Prometheus
+// Service exposes, and the operations listener — Prometheus
 // metrics and the readiness/liveness probes — on a port no Service
 // exposes at all.
 //
@@ -14,7 +14,7 @@
 // Postgres advisory lock — idempotent and replica-safe, so a rollout of
 // N replicas is its own migration step. The process holds no
 // governance state: every budget, grant, dedupe and decision is exact
-// in Postgres, so any number of replicas agree (P9, D24).
+// in Postgres, so any number of replicas agree.
 package main
 
 import (
@@ -69,14 +69,14 @@ func main() {
 	mcpAddr := env("MCP_ADDR", ":8081")
 	inboundAddr := env("INBOUND_ADDR", ":8082")
 	adminAddr := env("ADMIN_ADDR", ":9091")
-	// P9: the operations listener — Prometheus metrics and the two
+	// The operations listener — Prometheus metrics and the two
 	// probes — on a port of its own that no Service exposes.
 	opsAddr := env("OPS_ADDR", ":9092")
 	// The kagent controller's origin: the ONLY place the inbound bridge
 	// dials (per-agent A2A endpoints live under it).
 	a2aBase := env("A2A_BASE", inbound.DefaultA2ABase)
 	configFile := env("CONFIG_FILE", "/etc/kaimahi/upstreams.json")
-	// P15: the operator overlay. Fragments an operator added by
+	// The operator overlay. Fragments an operator added by
 	// onboarding their own MCP server (`kmx tools add`) live in their
 	// own ConfigMap, mounted here, and are merged over the committed
 	// table at boot. The volume is optional: an absent directory is an
@@ -126,7 +126,7 @@ func main() {
 				"file", u.CredentialFile, "err", err)
 		}
 	}
-	// Tool upstream credentials too (P10): the GitHub token is plane
+	// Tool upstream credentials too: the GitHub token is plane
 	// custody exactly like the Copilot one, and must be redacted the same.
 	for name, t := range cfg.ToolUpstreams {
 		if t.CredentialFile == "" {
@@ -180,7 +180,7 @@ func main() {
 	metrics.PrimeUpstreams(metrics.SeamProxy, slices.Sorted(maps.Keys(cfg.Upstreams)))
 	metrics.PrimeUpstreams(metrics.SeamGateway, slices.Sorted(maps.Keys(cfg.ToolUpstreams)))
 
-	// P8b: the approval notifier and the Slack command replier are one
+	// The approval notifier and the Slack command replier are one
 	// poster: a governed post through the plane's OWN gateway listener
 	// (loopback) under the plane's own credential. Optional — without
 	// the config block nobody is told, exactly as before. Every data
@@ -206,7 +206,7 @@ func main() {
 		Config:     cfg,
 		ConfigBase: configBase,
 	}
-	// P10: the ONE hardened client for every upstream marked internet —
+	// The ONE hardened client for every upstream marked internet —
 	// Copilot on the LLM seam, the hosted MCP servers on the tool seam —
 	// built once, each host vetted now (a private answer refuses the
 	// config loudly here), and injected into BOTH seams below.
@@ -219,12 +219,12 @@ func main() {
 	// ReadTimeout bounds slow request-body writers (chat requests are
 	// small; streamed RESPONSES are unaffected — WriteTimeout stays 0 so
 	// long generations can flush indefinitely).
-	// The P4b MCP gateway shares this process (and its pool, redactor,
+	// The MCP gateway shares this process (and its pool, redactor,
 	// and fail-closed machinery); its listener gets its own Service so
 	// the tool seam has its own address.
 	gwDeps := gateway.Deps{Store: filing, Upstreams: cfg.ToolUpstreams, Policy: cfg.Policy()}
 	deps, gwDeps = wireInternet(deps, gwDeps, internetClient)
-	// The P7b inbound bridge: same process, same pool and fail-closed
+	// The inbound bridge: same process, same pool and fail-closed
 	// machinery, its own Service. Its workers invoke agents asynchronously
 	// and run until shutdown.
 	bridgeDeps := inbound.Deps{Store: filing, Meter: mtr, Hooks: cfg.InboundHooks, A2ABase: a2aBase}
@@ -257,7 +257,7 @@ func main() {
 	adminSrv := &http.Server{Addr: adminAddr, Handler: proxy.NewAdminMux(deps, adminTokenFile),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 
-	// P9: readiness needs Postgres (a plane that cannot read credentials
+	// Readiness needs Postgres (a plane that cannot read credentials
 	// or write the ledger fails every call closed anyway); liveness
 	// reports only a LOCAL fault — a data listener not answering on
 	// loopback, or a pool checked out with no progress — so a Postgres

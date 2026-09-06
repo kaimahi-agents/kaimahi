@@ -44,7 +44,7 @@ type fakeStore struct {
 	filed     []string // credential/kind/subject
 	fileErr   error
 	admitCall int
-	// P8b: requests a Slack command may decide, keyed by full id.
+	// Requests a Slack command may decide, keyed by full id.
 	requests   []*store.ApprovalRequest
 	decideErr  error
 	grantsMade []store.Grant
