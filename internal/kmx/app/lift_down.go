@@ -25,6 +25,9 @@ import (
 // close, but leaving a resource quietly billing is bad enough that it is
 // reported loudly rather than mentioned.
 func (a *App) LiftDown(opt lift.Options) error {
+	if err := opt.ValidateForTeardown(); err != nil {
+		return err
+	}
 	if err := a.preflight(depAz, depKubectl); err != nil {
 		return err
 	}

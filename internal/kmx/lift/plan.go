@@ -159,6 +159,29 @@ func (o Options) Validate() error {
 	return fmt.Errorf("kmx lift: %d %s with what was asked for:\n\n- %s", len(problems), noun, strings.Join(problems, "\n- "))
 }
 
+// ValidateForTeardown checks the flags that say WHICH lift is being removed.
+//
+// It is separate from Validate because teardown needs less and must not
+// demand more: a registry is required to build a plane image and irrelevant
+// to deleting one, and refusing teardown over a missing --registry would be
+// standing between an operator and a resource that is billing. What it does
+// insist on is the pair that identifies the run, because without them there
+// is nothing to look the record up by — and going looking by name on a
+// subscription that may not be ours is the one thing teardown must never do.
+func (o Options) ValidateForTeardown() error {
+	var problems []string
+	if strings.TrimSpace(o.ResourceGroup) == "" {
+		problems = append(problems, "--resource-group is required: it is half of what identifies the run whose resources are being removed")
+	}
+	if strings.TrimSpace(o.Cluster) == "" {
+		problems = append(problems, "--cluster is required: it is the other half")
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("kmx lift down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
+}
+
 func validStep(step string) bool {
 	for _, s := range Steps {
 		if s == step {
