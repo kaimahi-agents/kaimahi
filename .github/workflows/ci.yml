@@ -559,6 +559,13 @@ jobs:
           # shell could only approximate with a 0600 file.
           grep -q 'ok  .*internal/kmx/planebuild' kmx-test.out
           grep -q 'ok  .*internal/kmx/admin' kmx-test.out
+          # W36: `kmx workflow show` and `kmx workflow run` must describe
+          # the SAME run for the same --set. That is a fact about the
+          # blueprint package — it renders and binds the carried release
+          # blueprint with four parameter sets and asserts one step list —
+          # and it is the property, where the crash it replaced was only a
+          # symptom. A skipped package here would take it with it.
+          grep -q 'ok  .*internal/kmx/blueprint' kmx-test.out
           # Milestone 3's gates: the argument ORDER of every operator verb
           # (Go's flag stops at the first positional, and an approval whose
           # --uses was silently dropped is an UNBOUNDED grant), and the
@@ -1291,6 +1298,68 @@ jobs:
           # match that row and prove nothing about this driver.
           KIND_CLUSTER=kaimahi-p1 bin/kmx approvals | tee wf-approvals.out
           grep -E 'workflow-ci +tool +create_branch .*owner kaimahi-ci, repo the-one-repo, branch release/v9.9.9, from_branch main' wf-approvals.out
+      - name: "Workflow: a run STARTS with a partial parameter set, leaving its conditional steps out"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # W36. Every assertion above drives ONE step by name, and the
+          # fixture used to have no `when:` guard anywhere — which is how
+          # eight green steps coexisted with a `kmx workflow run` that
+          # could not start any blueprint with a conditional step. This
+          # is the whole run, with the guards left unsupplied: the shape
+          # that failed, on the path that actually executes steps.
+          set +e
+          KIND_CLUSTER=kaimahi-p1 bin/kmx workflow run --file scripts/ci/workflow-fixture.yaml \
+            --set repo=kaimahi-ci/the-one-repo --set version=v9.9.9 \
+            --wait 10 --admin-port 19391 > wf-run-full.out 2>&1
+          rc=$?
+          set -e
+          cat wf-run-full.out
+          # It got past binding and reached the first approval, and then
+          # stopped there because nobody decided.
+          grep -q 'parameter problem' wf-run-full.out && { echo "the run could not start"; exit 1; } || true
+          test "$rc" != 0 || { echo "the driver proceeded with nobody having approved anything"; exit 1; }
+          grep -q 'nobody decided request' wf-run-full.out
+          grep -q 'create_branch: owner kaimahi-ci, repo the-one-repo, branch release/v9.9.9, from_branch main' wf-run-full.out
+          # And the guarded steps are OUT of the run, not run and not
+          # half-run: no agent turn happened (`look` needs --set survey)
+          # and no second branch was proposed.
+          grep -q 'cut-extra' wf-run-full.out && { echo "a step whose guard was unmet was in the run"; exit 1; } || true
+          grep -qE '^== look' wf-run-full.out && { echo "a guarded read ran"; exit 1; } || true
+          # `show` and `run` must describe the SAME run. Blueprint unit
+          # tests assert that as a property; this asserts it about the
+          # binary, on a cluster.
+          KIND_CLUSTER=kaimahi-p1 bin/kmx workflow show --file scripts/ci/workflow-fixture.yaml \
+            --set repo=kaimahi-ci/the-one-repo --set version=v9.9.9 | tee wf-show-partial.out
+          grep -qE '^  look .*not in this run — needs --set survey' wf-show-partial.out
+          grep -qE '^  cut-extra .*not in this run — needs --set hotfix_branches' wf-show-partial.out
+      - name: "Workflow: asking for a conditional step without its guard runs NOTHING, and says which flag"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set +e
+          KIND_CLUSTER=kaimahi-p1 bin/kmx workflow run --file scripts/ci/workflow-fixture.yaml \
+            --step cut-extra --set repo=kaimahi-ci/the-one-repo --set version=v9.9.9 \
+            --wait 10 --admin-port 19391 > wf-run-guard.out 2>&1
+          rc=$?
+          set -e
+          cat wf-run-guard.out
+          test "$rc" != 0 || { echo "a run that did nothing reported success"; exit 1; }
+          grep -q 'nothing to run' wf-run-guard.out
+          grep -q 'cut-extra — needs --set hotfix_branches' wf-run-guard.out
+      - name: "Workflow: supplying the guard puts the step in the run, and the driver files THAT call"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set +e
+          KIND_CLUSTER=kaimahi-p1 bin/kmx workflow run --file scripts/ci/workflow-fixture.yaml \
+            --step cut-extra --set repo=kaimahi-ci/the-one-repo --set version=v9.9.9 \
+            --set hotfix_branches=hotfix/one --wait 10 --admin-port 19391 > wf-run-extra.out 2>&1
+          rc=$?
+          set -e
+          cat wf-run-extra.out
+          test "$rc" != 0 || { echo "the driver proceeded with nobody having approved anything"; exit 1; }
+          # The request names the ITEM the operator typed, not the branch
+          # of the unguarded step and not anything a model said.
+          KIND_CLUSTER=kaimahi-p1 bin/kmx approvals | tee wf-approvals-extra.out
+          grep -E 'workflow-ci +tool +create_branch .*owner kaimahi-ci, repo the-one-repo, branch hotfix/one, from_branch main' wf-approvals-extra.out
       - name: "Workflow: the driver will not ride a grant somebody gave earlier"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1347,6 +1416,38 @@ jobs:
           test "$seam_rc" != 0 && test "$fields_rc" != 0
           grep -q 'A blueprint NAMES seams; it cannot create them' wf-bad-seam.out
           grep -q 'these two disagree about what a human would be approving' wf-bad-fields.out
+      - name: "Workflow: a blueprint whose CREDENTIAL the plane does not have applies nothing at all"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # W36. `kmx workflow govern` used to write the standing-bounds
+          # fragment and restart the proxy BEFORE discovering the
+          # credential was missing, then exit 1 with a bare
+          # `tool-allow failed (HTTP 404): no such credential` — leaving
+          # bounds that would silently attach to a credential of that
+          # name created later, and repeating the mutation on a re-run.
+          # The blueprint is renamed too, because the fragment key is
+          # derived from the name: a distinct key is what lets this
+          # assert that NOTHING was written.
+          sed -e 's/^name: ci-fixture$/name: ci-fixture-nocred/' \
+              -e 's/^credential: workflow-ci$/credential: nonesuch-agent/' \
+            scripts/ci/workflow-fixture.yaml > wf-no-credential.yaml
+          set +e
+          KIND_CLUSTER=kaimahi-p1 bin/kmx workflow govern --file wf-no-credential.yaml \
+            --set repo=kaimahi-ci/the-one-repo --set version=v9.9.9 > wf-no-credential.out 2>&1
+          rc=$?
+          set -e
+          cat wf-no-credential.out
+          test "$rc" != 0 || { echo "governance was applied for a credential that does not exist"; exit 1; }
+          grep -q 'the plane has no credential "nonesuch-agent"' wf-no-credential.out
+          grep -q 'Nothing has been applied' wf-no-credential.out
+          # It says how to create one, rather than returning an HTTP status.
+          grep -q 'kmx tools govern --credential nonesuch-agent' wf-no-credential.out
+          grep -q 'HTTP 404' wf-no-credential.out && { echo "the operator was handed a status code"; exit 1; } || true
+          # And it means it: no fragment, and the proxy was not rolled.
+          if kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams-extra \
+               -o "jsonpath={.data.workflow-ci-fixture-nocred\.json}" | grep -q .; then
+            echo "the bounds were written for a credential that does not exist" >&2; exit 1
+          fi
       - name: "Hosted upstreams: the record rebinds to the server's private address → the dialer refuses before any byte leaves, audited"
         if: steps.changes.outputs.docs_only != 'true'
         run: |

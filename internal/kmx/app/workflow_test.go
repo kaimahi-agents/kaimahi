@@ -48,6 +48,32 @@ func TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne(t *testing.T) {
 	}
 }
 
+// TestARunThatDidNothingNamesTheFlagThatWouldHaveRunSomething.
+//
+// `--step publish` with no --set ado_builds asks for a step whose `when:`
+// guard nobody met, and the honest answer is that nothing ran. "Nothing
+// ran" is only usable if it says what would have made something run —
+// W36's fix turns a refusal-to-start into an empty run, and an empty run
+// that did not name the flag would be the same dead end wearing a
+// different message.
+func TestARunThatDidNothingNamesTheFlagThatWouldHaveRunSomething(t *testing.T) {
+	b, err := blueprint.Load(kaimahi.Blueprints, "release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := guardList(b, []string{"publish", "build-ado"})
+	for _, want := range []string{"publish — needs --set ado_builds=…", "build-ado — needs --set ado_pipelines=…"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the driver said:\n%s\nwant a line reading %q", got, want)
+		}
+	}
+	// A step with no guard has no flag to name, and inventing one would
+	// be worse than listing what was asked for.
+	if got := guardList(b, []string{"cut"}); !strings.Contains(got, "Steps: cut") {
+		t.Fatalf("for an unguarded step the driver said: %s", got)
+	}
+}
+
 // TestTheSummaryReadsTheDeclaredFieldsInTheDeclaredOrder keeps the
 // driver's selector and the plane's audit line in step. The order is the
 // table's, not the blueprint's, because the audit renders the declared

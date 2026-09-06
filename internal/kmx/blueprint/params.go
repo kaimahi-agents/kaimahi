@@ -273,6 +273,42 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 	return v, nil
 }
 
+// BindRun binds for a RUN and returns the steps that will actually run.
+//
+// The question is circular, which is what W35 got wrong: `when:` is
+// answered from the parameters, and which parameters are DEMANDED is
+// answered from the steps `when:` left in. W35's driver bound every step
+// unconditionally, so a parameter that only a conditional step needs was
+// demanded in order to leave that step out — `publish` is guarded by
+// `when: ado_builds` and `ado_builds` is `required_for: [publish]`, and
+// no parameter set could satisfy both at once. Every run failed at
+// binding.
+//
+// Two passes settle it. The first demands nothing a step needs — exactly
+// the call `kmx workflow show` makes — which is enough to know what was
+// supplied, and `supplied` does not depend on the step list. The second
+// demands what the steps that survived actually need.
+func (b *Blueprint) BindRun(set map[string]string, steps []string) (Values, []string, error) {
+	probe, err := b.Bind(set, nil)
+	if err != nil {
+		// Which steps are in the run cannot be answered from values that
+		// did not bind. Report against every step asked for rather than
+		// a shorter list derived from a guess — the problems named there
+		// are a superset, and the operator's problem is upstream of the
+		// question anyway.
+		if _, full := b.Bind(set, steps); full != nil {
+			return Values{}, nil, full
+		}
+		return Values{}, nil, err
+	}
+	active := b.ActiveSteps(probe, steps)
+	v, err := b.Bind(set, active)
+	if err != nil {
+		return Values{}, nil, err
+	}
+	return v, active, nil
+}
+
 func missing(name string, p Parameter, running map[string]bool) []string {
 	if p.Required {
 		return []string{fmt.Sprintf("--set %s=… is required: %s", name, p.Help)}

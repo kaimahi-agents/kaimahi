@@ -66,6 +66,37 @@ func TestRefusals(t *testing.T) {
 		},
 		expect: "never something an agent turn produced",
 	}, {
+		// `when:` asks whether a value was SUPPLIED, and Bind treats a
+		// default as supplying one. So a guard on a defaulted parameter
+		// is never false: the step LOOKS conditional and is not. W36
+		// found this while fixing the run path, where the difference
+		// decides whether --set is the thing that turns a step on.
+		name: "a step guarded on a defaulted parameter is not conditional at all",
+		edit: func(s string) string {
+			s = strings.Replace(s, "    help: the repository", `    help: the repository
+  ref:
+    type: string
+    default: main
+    help: the branch`, 1)
+			return strings.Replace(s, `  - name: look
+    kind: read`, `  - name: look
+    kind: read
+    when: ref`, 1)
+		},
+		expect: "this guard is never false",
+	}, {
+		name: "a standing bound guarded on a defaulted parameter is not conditional either",
+		edit: func(s string) string {
+			s = strings.Replace(s, "    help: the repository", `    help: the repository
+  ref:
+    type: string
+    default: main
+    help: the branch`, 1)
+			return strings.Replace(s, `{field: owner, op: eq, value: "${repo.owner}"}`,
+				`{field: owner, op: eq, value: "${repo.owner}", when: ref}`, 1)
+		},
+		expect: "this guard is never false",
+	}, {
 		name: "a consequential tool may not also be allowlisted",
 		edit: func(s string) string {
 			return strings.Replace(s, "allow: [thing_read]", "allow: [thing_read, thing_write]", 1)

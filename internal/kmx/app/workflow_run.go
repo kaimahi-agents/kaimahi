@@ -86,9 +86,18 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 		}
 		steps = []string{opt.Step}
 	}
-	values, err := b.Bind(opt.Set, steps)
+	// BindRun, not Bind: which steps are in this run is decided by the
+	// same parameters that are being bound, and binding every step
+	// regardless of its `when:` is what left this command with no first
+	// command at all. `active` is what `kmx workflow show` shows.
+	values, active, err := b.BindRun(opt.Set, steps)
 	if err != nil {
 		return err
+	}
+	if len(active) == 0 {
+		return fmt.Errorf("nothing to run: every step asked for is conditional on a parameter that was not "+
+			"supplied. Reporting a workflow as run when it did nothing is the one thing this driver must not "+
+			"do.\n%s", guardList(b, steps))
 	}
 	if opt.AdminPort == "" {
 		opt.AdminPort = DefaultWorkflowAdminPort
@@ -130,14 +139,16 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 	if err := checkSeams(b, upstreams, declared); err != nil {
 		return err
 	}
-	rendered, err := b.Render(values, steps, declared)
+	rendered, err := b.Render(values, active, declared)
 	if err != nil {
 		return err
 	}
 	if len(rendered.Steps) == 0 {
-		return fmt.Errorf("nothing to run: every step asked for is conditional on a parameter that was not "+
-			"supplied. Reporting a workflow as run when it did nothing is the one thing this driver must not "+
-			"do.\n  Steps: %s", strings.Join(b.StepNames(), ", "))
+		// A backstop: `active` was not empty, so a step was dropped
+		// somewhere between the guard and the render. Nothing is
+		// reported as run.
+		return fmt.Errorf("nothing to run: %s resolved to no work at all. Nothing was done",
+			strings.Join(active, ", "))
 	}
 
 	run := &workflowRun{
@@ -178,6 +189,22 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 	}
 	a.notef("Who approved what, and which call")
 	return client.ApprovalAudit(a.Out, b.Credential)
+}
+
+// guardList names each step asked for that a `when:` left out, with the
+// flag that turns it on. "Nothing ran" is only a usable message if it
+// says what would have made something run.
+func guardList(b *blueprint.Bundle, steps []string) string {
+	var lines []string
+	for _, name := range steps {
+		if g := b.StepGuard(name); g != "" {
+			lines = append(lines, fmt.Sprintf("  %s — needs --set %s=…", name, g))
+		}
+	}
+	if len(lines) == 0 {
+		return "  Steps: " + strings.Join(steps, ", ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 type workflowRun struct {

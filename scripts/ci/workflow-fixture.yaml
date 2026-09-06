@@ -11,6 +11,15 @@
 # exact call named on the command line, and that it refuses to ride a
 # grant somebody gave earlier.
 #
+# TWO OF ITS THREE STEPS ARE CONDITIONAL, and that is the point of W36.
+# This fixture used to have no `when:` guard anywhere while the carried
+# release blueprint had four, so eight green assertions here coexisted
+# with a `kmx workflow run` that could not start ANY blueprint with a
+# conditional step. `hotfix_branches` reproduces the exact shape that
+# broke — a step guarded by `when:` on the very parameter that is
+# `required_for` it — and `survey` keeps the agent turn out of the run,
+# so CI can drive the REAL run path (not --dry-run) with no model.
+#
 # The credential is its own (`workflow-ci`) rather than `hello-github`,
 # because the synthetic upstream puts hello-github's constraints in the
 # BASE table and the plane refuses an overlay fragment that redefines a
@@ -18,7 +27,7 @@
 # rule worth not tripping over in CI.
 blueprint: v1
 name: ci-fixture
-summary: The CI fixture workflow — a bounded read and one consequential call, against the synthetic hosted upstream.
+summary: The CI fixture workflow — a conditional read, one consequential call and a conditional one, against the synthetic hosted upstream.
 
 credential: workflow-ci
 agent: hello-world
@@ -39,6 +48,21 @@ parameters:
     default: main
     help: the branch it is cut from
     pattern: '^[A-Za-z0-9._/-]{1,200}$'
+  survey:
+    type: string
+    required_for: [look]
+    help: >-
+      ask the agent to survey the pull requests first. Omitted, the read step is
+      not in the run at all — which is how CI drives this workflow end to end
+      with no agent turn and no model credential (D14).
+    pattern: '^[A-Za-z0-9._/-]{1,200}$'
+  hotfix_branches:
+    type: string_list
+    required_for: [cut-extra]
+    help: >-
+      extra branches to cut, comma-separated. The step that needs them is guarded
+      by `when: hotfix_branches`, so leaving them out must leave the step OUT of
+      the run rather than refuse to start it — the circular demand W35 shipped.
 
 seams:
   mcp-echo:
@@ -57,6 +81,7 @@ seams:
 steps:
   - name: look
     kind: read
+    when: survey
     prompt: Call list_pull_requests with owner ${repo.owner}, repo ${repo.name}, state closed, base ${base}.
   - name: cut
     kind: consequential
@@ -69,3 +94,16 @@ steps:
         branch: "release/${version}"
         from_branch: "${base}"
     prompt: Call create_branch with owner ${repo.owner}, repo ${repo.name}, branch release/${version}, from_branch ${base}.
+  - name: cut-extra
+    kind: consequential
+    when: hotfix_branches
+    for_each: hotfix_branches
+    call:
+      upstream: mcp-echo
+      tool: create_branch
+      args:
+        owner: "${repo.owner}"
+        repo: "${repo.name}"
+        branch: "${item}"
+        from_branch: "${base}"
+    prompt: Call create_branch with owner ${repo.owner}, repo ${repo.name}, branch ${item}, from_branch ${base}.

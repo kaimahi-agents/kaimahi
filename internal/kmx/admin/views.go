@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -195,6 +196,27 @@ func (c *Client) Credentials(out io.Writer) error {
 			trunc(str(c["created_at"]), 19))
 	}
 	return nil
+}
+
+// CredentialNames is the governed credentials, by name — the read a
+// PRECHECK makes. `kmx workflow govern` writes an overlay fragment and
+// rolls the proxy before it sets the allowlist, and the allowlist is the
+// only one of the two the plane refuses for an unknown credential. Asking
+// first is what turns "HTTP 404: no such credential" after a mutation
+// into a refusal before one.
+func (c *Client) CredentialNames() ([]string, error) {
+	doc, err := c.Get("credentials", "/admin/credentials")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, row := range rows(doc, "credentials") {
+		if name := str(row["credential"]); name != "" {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // expiryState is the word an operator scans the column for. "no expiry"

@@ -278,6 +278,19 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 		if err := checkSeams(b, upstreams, declared); err != nil {
 			return err
 		}
+		// PRECHECKED, not discovered. This command writes the overlay
+		// fragment and rolls the proxy, and only then sets the
+		// allowlist — which is the one of the two the plane refuses for
+		// a credential it does not have. Before W36 that arrived as
+		// `tool-allow failed (HTTP 404): no such credential` AFTER the
+		// bounds were on the cluster and the proxy had restarted, and a
+		// re-run repeated the mutation. It also left constraints that
+		// would silently attach to a credential of that name created
+		// later. Asked here, where "nothing has been applied" is still
+		// true.
+		if err := checkCredential(c, b.Credential, b.Agent); err != nil {
+			return err
+		}
 		rendered, err = b.Render(values, nil, declared)
 		return err
 	}); err != nil {
@@ -400,6 +413,34 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 	}
 	a.notef("Run it with: kmx workflow run %s --dry-run …", how)
 	return nil
+}
+
+// checkCredential is the assertion a blueprint makes about the plane's
+// custody: the credential its governance is written FOR has to exist
+// before anything is written. It names how to create one rather than
+// returning an HTTP status, which is the class of message W34 exists to
+// remove.
+func checkCredential(c *admin.Client, credential, agent string) error {
+	names, err := c.CredentialNames()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if name == credential {
+			return nil
+		}
+	}
+	have := "none at all"
+	if len(names) > 0 {
+		have = strings.Join(names, ", ")
+	}
+	return fmt.Errorf("the plane has no credential %q, and this blueprint's governance is written for it — "+
+		"the allowlist is set on it and the standing bounds are keyed by it.\n"+
+		"  Nothing has been applied. The plane holds: %s\n"+
+		"  Issue it, and bind it to the agent's Secret, with:\n"+
+		"    kmx tools govern --credential %s --agent %s --secret <secret-name>\n"+
+		"  A blueprint governs a credential that already exists; it never creates one, and kmx never handles "+
+		"the token (D27)", credential, have, credential, agent)
 }
 
 // checkSeams is the assertion a blueprint makes about the world.

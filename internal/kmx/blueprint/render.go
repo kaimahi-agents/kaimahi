@@ -148,7 +148,7 @@ func (b *Blueprint) render(v Values, steps []string, declared map[string][]strin
 		if !run[s.Name] {
 			continue
 		}
-		if s.When != "" && !v.Supplied(s.When) {
+		if !inRun(s, v) {
 			// In a run, a step whose condition is unmet simply does not
 			// happen. In a review it still has to be VISIBLE: an
 			// operator deciding whether to trust a workflow needs to see

@@ -526,8 +526,12 @@ func (b *Blueprint) validateConstraint(seam, tool string, i int, c Constraint, d
 		return fmt.Errorf("%s: `literal: %s` (want %s or %s)", where, c.Literal, LiteralString, LiteralInt)
 	}
 	if c.When != "" {
-		if _, ok := b.Parameters[c.When]; !ok {
+		p, ok := b.Parameters[c.When]
+		if !ok {
 			return fmt.Errorf("%s: `when: %s` names no declared parameter", where, c.When)
+		}
+		if err := guardable(where, c.When, p); err != nil {
+			return err
 		}
 	}
 	for _, ref := range references(c.Value) {
@@ -657,8 +661,12 @@ func (b *Blueprint) validateStepShape(where string, s *Step) error {
 		return fmt.Errorf("%s: no `prompt` and no `exec` — the step does nothing", where)
 	}
 	if s.When != "" {
-		if _, ok := b.Parameters[s.When]; !ok {
+		p, ok := b.Parameters[s.When]
+		if !ok {
 			return fmt.Errorf("%s: `when: %s` names no declared parameter", where, s.When)
+		}
+		if err := guardable(where, s.When, p); err != nil {
+			return err
 		}
 	}
 	if s.ForEach != "" {
@@ -861,6 +869,25 @@ func (b *Blueprint) validatePostures() error {
 	return nil
 }
 
+// guardable refuses a `when:` on a parameter that carries a default.
+//
+// `when:` asks whether a value was SUPPLIED, and Bind treats a default as
+// supplying one — deliberately, because a defaulted parameter has a value
+// everywhere else in the format and a `${release_branch}` that resolved
+// in one place and not another would be worse than either rule. The
+// consequence is that a guard on a defaulted parameter is never false, so
+// the step or the bound is not conditional at all while LOOKING
+// conditional. That is refused here rather than discovered by an operator
+// wondering why --set turns nothing off.
+func guardable(where, name string, p Parameter) error {
+	if p.Default == "" {
+		return nil
+	}
+	return fmt.Errorf("%s: `when: %s` guards on a parameter that carries a default (%q). `when:` asks whether a "+
+		"value was SUPPLIED and a default supplies one, so this guard is never false and nothing is actually "+
+		"conditional. Drop the default, or drop the guard", where, name, p.Default)
+}
+
 func (b *Blueprint) hasStep(name string) bool {
 	for _, s := range b.Steps {
 		if s.Name == name {
@@ -870,13 +897,55 @@ func (b *Blueprint) hasStep(name string) bool {
 	return false
 }
 
-// StepNames is the ordered step list, for --step and messages.
+// StepNames is the ordered step list, for --step and messages. It is
+// EVERY step, conditional ones included — what a particular run contains
+// is ActiveSteps, and the difference is what W35 shipped wrong.
 func (b *Blueprint) StepNames() []string {
 	out := make([]string, 0, len(b.Steps))
 	for _, s := range b.Steps {
 		out = append(out, s.Name)
 	}
 	return out
+}
+
+// inRun answers `when:`: a step with no guard is always in the run, and a
+// guarded one is in it when its parameter was supplied.
+//
+// This is the ONE definition of what a run contains, and it is one
+// function because it was two. `kmx workflow show` filtered on this
+// predicate while `kmx workflow run` bound every step unconditionally, so
+// the two commands described different workflows — and the one that
+// described it correctly was the one that does nothing.
+func inRun(s Step, v Values) bool { return s.When == "" || v.Supplied(s.When) }
+
+// ActiveSteps narrows `steps` to the ones these parameters turn on,
+// keeping the blueprint's order. It is what `--step` is filtered through
+// too: naming a step whose guard is unmet asks for a run with nothing in
+// it, and that is said rather than half-run.
+func (b *Blueprint) ActiveSteps(v Values, steps []string) []string {
+	asked := map[string]bool{}
+	for _, s := range steps {
+		asked[s] = true
+	}
+	out := make([]string, 0, len(steps))
+	for _, s := range b.Steps {
+		if asked[s.Name] && inRun(s, v) {
+			out = append(out, s.Name)
+		}
+	}
+	return out
+}
+
+// StepGuard is the parameter a step's `when:` names, or "" for a step
+// that is always in the run. It exists so a driver that ran nothing can
+// say WHICH --set would have turned each step on.
+func (b *Blueprint) StepGuard(name string) string {
+	for _, s := range b.Steps {
+		if s.Name == name {
+			return s.When
+		}
+	}
+	return ""
 }
 
 // Scripts names every bundled script the blueprint runs.

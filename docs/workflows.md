@@ -128,6 +128,51 @@ and `${capture.notes}` reads it back — because prose is not what an
 approval binds. The release notes are a `capture`; the tag is a
 parameter.
 
+## What is in a run: `when:`, and what `--set` turns on
+
+Most workflows are not one shape. The release blueprint builds on GitHub
+Actions, or on Azure DevOps, or on both, and publishes only once there are
+build ids to publish. Those steps carry a guard:
+
+```yaml
+  - name: build-ado
+    when: ado_pipelines
+    for_each: ado_pipelines
+```
+
+**`when:` asks whether you supplied that parameter.** Supply
+`--set ado_pipelines=41,42` and the step is in the run; leave it out and
+the step is not — it is not skipped, not failed, not reported as done.
+`kmx workflow show` prints the ones you have not enabled, with the flag
+that would:
+
+```text
+  build-ado                    bounded       (needs more: not in this run — needs --set ado_pipelines)
+```
+
+Two consequences worth knowing before you write one:
+
+- **A default counts as supplied**, so a guard on a parameter that has a
+  default would never be false. That is not a subtlety you have to
+  remember: the parser refuses it, and says to drop one or the other.
+  `--set` is the thing that turns a step on, and only a parameter with no
+  default can be the switch.
+- **`show` and `run` answer this the same way.** They did not always:
+  until W36, `kmx workflow run` bound *every* step regardless of its
+  guard, so it demanded the build ids that `when: ado_builds` exists to
+  make optional — and no parameter set could start a run. The two
+  commands now share one predicate, and a test renders and binds the
+  carried blueprint with the same `--set` and asserts the same step list.
+
+Asking for one guarded step whose guard you did not supply
+(`--step publish` with no `--set ado_builds`) runs nothing, and says so
+with the flag that would have:
+
+```text
+nothing to run: every step asked for is conditional on a parameter that was not supplied.
+  publish — needs --set ado_builds=…
+```
+
 ## Where a blueprint lives
 
 Two places, and a third that was rejected.

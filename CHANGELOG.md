@@ -35,7 +35,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   W32's release governance exactly: the same tool allowlist `make
   release-allow` sets and the same standing constraints
   `scripts/release-bind.sh` writes, proven by a test that runs those and
-  diffs the result. See [docs/workflows.md](docs/workflows.md).
+  diffs the result. Steps can be conditional (`when: <parameter>`), so one
+  blueprint covers a release that builds on GitHub Actions, on Azure DevOps,
+  or on both; `kmx workflow show` and `kmx workflow run` describe the same
+  run for the same `--set`, and a guard on a parameter that carries a default
+  is refused rather than silently always-on. See
+  [docs/workflows.md](docs/workflows.md).
 - **`kmx quickstart`** — one command from a machine that has a container
   engine to an agent that has answered a question. It runs `kmx up`'s steps in
   `kmx up`'s order, with the same waits and fail-closed checks, but defers
@@ -71,6 +76,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- `kmx workflow govern` no longer writes the standing-bounds fragment and
+  restarts the proxy before discovering that the credential its governance is
+  written for does not exist. The credential is checked first, and a missing
+  one is refused with the command that creates it rather than
+  `tool-allow failed (HTTP 404): no such credential` after the cluster has
+  already been changed.
 - The documented by-hand install used `sha256sum --ignore-missing`, a GNU
   coreutils flag that macOS (no `sha256sum`) and BusyBox (Alpine, slim images)
   both reject — so the verification step failed on two of the platforms the
