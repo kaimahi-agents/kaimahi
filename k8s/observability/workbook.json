@@ -1,0 +1,206 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "comment": [
+      "The operator's view of a governed agent running on a managed cluster.",
+      "",
+      "This ships as a template rather than as an exported workbook on purpose.",
+      "Exporting a workbook from the portal bakes the subscription id, the",
+      "resource group and the workspace resource ids into serializedData as",
+      "literals; this repository is public and refuses to carry any of them.",
+      "Everything identifying is a parameter, and the workbook's own name is",
+      "derived with guid() at deploy time rather than committed.",
+      "",
+      "serializedData is built with string() over a readable object below, so",
+      "the panels can be reviewed as JSON instead of as one escaped line.",
+      "",
+      "Two data paths, because 'enabled' and 'arriving' are different claims:",
+      "the metric panels read Managed Prometheus (the plane's own /metrics,",
+      "scraped from the pod through an explicit NetworkPolicy allowance), and",
+      "the log panels read Container Insights. If a metric panel is empty the",
+      "scrape is not landing; if a log panel is empty the add-on is not",
+      "collecting. They fail independently and they say so separately."
+    ]
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Region for the workbook resource." }
+    },
+    "runId": {
+      "type": "string",
+      "metadata": { "description": "Run identifier; makes the workbook name unique per lift so two runs never collide." }
+    },
+    "clusterResourceId": {
+      "type": "string",
+      "metadata": { "description": "The AKS cluster this workbook is pinned to." }
+    },
+    "logAnalyticsResourceId": {
+      "type": "string",
+      "metadata": { "description": "Log Analytics workspace collecting Container Insights." }
+    },
+    "azureMonitorWorkspaceResourceId": {
+      "type": "string",
+      "metadata": { "description": "Azure Monitor workspace holding the Managed Prometheus samples." }
+    }
+  },
+  "variables": {
+    "workbookName": "[guid(resourceGroup().id, parameters('runId'), 'kaimahi-plane')]",
+    "content": {
+      "version": "Notebook/1.0",
+      "items": [
+        {
+          "type": 1,
+          "name": "heading",
+          "content": {
+            "json": "## The governance plane\n\nEvery panel below is the plane answering for itself. **Decisions** is the one to read first: a governed agent that is working shows allowed calls, and a governed agent that is being stopped shows denials with a reason. An empty Decisions panel means no agent has called anything yet — not that nothing is being enforced.\n\n**Seam degraded** is the alarm. It is 1 while a seam refuses everything because its audit or ledger write last failed. That is the plane failing closed, which is the behaviour we want, but it means work is being rejected and somebody should know."
+          }
+        },
+        {
+          "type": 3,
+          "name": "decisions",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "sum by (decision, reason) (rate(kaimahi_decisions_total[5m]))",
+            "size": 0,
+            "title": "Decisions per second, by outcome and reason",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "visualization": "timechart",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "denials-by-reason",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "sum by (reason) (increase(kaimahi_decisions_total{decision=\"denied\"}[1h]))",
+            "size": 0,
+            "title": "What was refused in the last hour, and why",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "visualization": "barchart",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "seam-degraded",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "max by (seam, pod) (kaimahi_seam_degraded)",
+            "size": 0,
+            "title": "Seam failing closed (1 = refusing everything)",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "visualization": "timechart",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "upstream-latency",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "histogram_quantile(0.95, sum by (le, upstream) (rate(kaimahi_upstream_latency_seconds_bucket[5m])))",
+            "size": 0,
+            "title": "Time an admitted call spent at its upstream (p95, seconds)",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "visualization": "timechart",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "queue-headroom",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "sum by (queue, pod) (kaimahi_queue_depth) / sum by (queue, pod) (kaimahi_queue_capacity)",
+            "size": 0,
+            "title": "Bounded queue occupancy (1.0 = full, and new work is refused)",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "visualization": "timechart",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "build",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "kaimahi_build_info",
+            "size": 4,
+            "title": "Which build of the plane is answering",
+            "queryType": 21,
+            "resourceType": "microsoft.monitor/accounts",
+            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
+          }
+        },
+        {
+          "type": 1,
+          "name": "logs-heading",
+          "content": {
+            "json": "## What the plane said\n\nContainer Insights collects stdout and stderr from every pod in the `kaimahi` namespace. The plane logs a line per governance decision, so this is the same story as the panels above told in prose — and it is where a failure that never became a metric shows up."
+          }
+        },
+        {
+          "type": 3,
+          "name": "plane-logs",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "ContainerLogV2\n| where PodNamespace == 'kaimahi'\n| project TimeGenerated, PodName, ContainerName, LogMessage\n| order by TimeGenerated desc\n| take 200",
+            "size": 0,
+            "title": "Recent plane log lines",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "table",
+            "crossComponentResources": ["[parameters('logAnalyticsResourceId')]"]
+          }
+        },
+        {
+          "type": 3,
+          "name": "restarts",
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "KubePodInventory\n| where Namespace == 'kaimahi'\n| summarize Restarts = max(PodRestartCount) by Name, ControllerName, bin(TimeGenerated, 15m)\n| order by TimeGenerated desc",
+            "size": 0,
+            "title": "Pod restarts in the plane's namespace",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "table",
+            "crossComponentResources": ["[parameters('logAnalyticsResourceId')]"]
+          }
+        }
+      ],
+      "fallbackResourceIds": ["[parameters('clusterResourceId')]"],
+      "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+    }
+  },
+  "resources": [
+    {
+      "type": "microsoft.insights/workbooks",
+      "apiVersion": "2022-04-01",
+      "name": "[variables('workbookName')]",
+      "location": "[parameters('location')]",
+      "kind": "shared",
+      "properties": {
+        "displayName": "[concat('Kaimahi governance plane (', parameters('runId'), ')')]",
+        "serializedData": "[string(variables('content'))]",
+        "version": "1.0",
+        "sourceId": "[parameters('clusterResourceId')]",
+        "category": "workbook"
+      }
+    }
+  ],
+  "outputs": {
+    "workbookResourceId": {
+      "type": "string",
+      "value": "[resourceId('microsoft.insights/workbooks', variables('workbookName'))]"
+    }
+  }
+}

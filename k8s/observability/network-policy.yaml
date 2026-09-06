@@ -1,0 +1,50 @@
+# The one hole Azure-managed Prometheus needs, and nothing else.
+#
+# The plane's operations port (9092: metrics, readiness, liveness) is on NO
+# Service, deliberately. Reaching it takes either kubelet (node-originated,
+# which NetworkPolicy does not govern) or an explicit allowance like this one.
+# The port carries no authentication, so THIS RULE IS THE ACCESS CONTROL —
+# which is why it names one namespace, one pod label and one port, and why the
+# fix for "the dashboard is empty" is never to put /metrics on a Service.
+#
+# Why this is a separate file rather than an edit to the plane's own
+# network-policy.yaml: that file ships with the plane on every cluster,
+# including kind and CI, and this allowance is meaningful only where Azure's
+# metrics add-on exists. The same reasoning already keeps the Copilot and
+# hosted-upstream egress allowances out of k8s/plane/ — an allowance arrives
+# when the thing it is for is enabled, and not before. It also means the local
+# path cannot be regressed by a change made for a managed one, because kind
+# never applies this file at all.
+#
+# The scraper is the add-on's REPLICA pod, not its per-node DaemonSet: custom
+# scrape jobs supplied through the ama-metrics-prometheus-config ConfigMap are
+# executed by the replica (labelled rsName=ama-metrics), and the DaemonSet
+# runs only the node-level default targets. Allowing the DaemonSet as well
+# would open 9092 on every node for a scrape that never comes.
+#
+# Policies are additive: this grants ingress and takes nothing away. The
+# plane's default-deny and its existing rules are untouched, and removing this
+# file closes the port again.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kaimahi-proxy-metrics-azure
+  namespace: kaimahi
+  labels:
+    app.kubernetes.io/part-of: kaimahi
+spec:
+  podSelector:
+    matchLabels:
+      app: kaimahi-proxy
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              rsName: ama-metrics
+      ports:
+        - protocol: TCP
+          port: 9092

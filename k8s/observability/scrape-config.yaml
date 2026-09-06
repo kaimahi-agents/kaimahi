@@ -1,0 +1,56 @@
+# The scrape job that makes the plane's metrics arrive in Azure Monitor.
+#
+# Azure's metrics add-on reads custom scrape jobs from a ConfigMap named
+# ama-metrics-prometheus-config in kube-system, under the key
+# prometheus-config, and runs them from its replica pod. That is the whole
+# integration: no Service, no sidecar, no operator CRD.
+#
+# The job discovers PODS, not a Service, and that is the point rather than an
+# implementation detail. The operations port is on no Service on purpose, so a
+# scraper that needed one would force the port to be exposed and trade a
+# security property for a dashboard. Pod discovery reaches the port exactly
+# the way the design intends: through the NetworkPolicy allowance next to this
+# file, at the pod's own address.
+#
+# CAUTION on a cluster you did not create: this ConfigMap is cluster-wide and
+# singular. If it already exists it belongs to whoever put it there, and
+# replacing it would silently delete their scrape jobs. `kmx lift` refuses to
+# overwrite an existing one and prints the job below to merge by hand.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ama-metrics-prometheus-config
+  namespace: kube-system
+data:
+  prometheus-config: |-
+    global:
+      scrape_interval: 30s
+    scrape_configs:
+      - job_name: kaimahi-plane
+        scheme: http
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - kaimahi
+        relabel_configs:
+          # The governance plane's pods only. Everything else in the
+          # namespace — the ledger, a fixture server — exposes nothing here.
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: kaimahi-proxy
+          # And only the operations port. Pod discovery yields one target per
+          # declared container port, so without this the scraper would also
+          # try the two data ports, the admin port and the inbound port —
+          # none of which serve metrics, and one of which should never be
+          # dialled by anything but a port-forward.
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "9092"
+          # Keep the replica identifiable. The plane runs two, and the series
+          # that says a seam has stopped accepting work is per-replica: one
+          # degraded replica and one healthy one must not average out to
+          # something that looks fine.
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod

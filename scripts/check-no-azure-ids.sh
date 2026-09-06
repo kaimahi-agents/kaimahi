@@ -9,10 +9,13 @@
 # being written up, which is exactly when a pasted terminal transcript is
 # most likely to carry one.
 #
-# Scope honestly: these are SHAPE rules. A bare resource-group or cluster
-# NAME is just a string and cannot be detected this way — keeping those
-# out is the author's job, helped by the fact that every one of them is a
-# parameter with no committed default.
+# Scope honestly: these are SHAPE rules. A bare resource-group, cluster or
+# WORKSPACE name is just a string and cannot be detected this way — keeping
+# those out is the author's job, helped by the fact that every one of them is
+# a parameter with no committed default. A workspace name is caught only when
+# it appears inside a resource id or a hostname, where it has a shape; written
+# on its own it is invisible here and must be redacted by hand, in the tree
+# and in anything pasted into a pull request.
 #
 # What is refused:
 #   - GUIDs (subscription and tenant ids are the usual leak)
@@ -22,6 +25,14 @@
 #   - a LITERAL <label>.<region>.cloudapp.azure.com (the public edge's
 #     DNS label names a load balancer someone can later own — same rule,
 #     variable or placeholder only)
+#   - a LITERAL Azure Monitor workspace or Log Analytics workspace resource
+#     id. Observability adds a second workspace kind to this repo's
+#     vocabulary, and both have a fixed resource-id shape ending in the
+#     workspace NAME. Their workspace ids are GUIDs, already refused above.
+#   - a LITERAL *.monitor.azure.com endpoint. The Managed Prometheus query
+#     endpoint and a data-collection endpoint both derive their host from the
+#     workspace name plus a per-resource suffix, so the hostname identifies
+#     the workspace as surely as its id does.
 #   - a public IPv4 address (the edge's public IP). Private, loopback,
 #     link-local, CGNAT, multicast/reserved, the unspecified/broadcast
 #     addresses and the RFC 5737 documentation ranges are not
@@ -74,6 +85,18 @@ AKS_FQDN = re.compile(r"[A-Za-z0-9-]+\.[a-z0-9-]+\.azmk8s\.io")
 # of the surrounding shell quoting and become unreadable.
 ACR = re.compile(r"(?P<name>[^\s\"\x27`/=]*)\.azurecr\.io")
 CLOUDAPP = re.compile(r"(?P<name>[^\s\"\x27`/=]*)\.[a-z0-9<>$(){}_-]*\.cloudapp\.azure\.com")
+# The two workspace kinds observability adds. Both resource ids have a fixed
+# provider path and end in the workspace name, which is the half a shape rule
+# can see. Matched case-insensitively because ARM ids round-trip in whatever
+# case they were written.
+AMW_ID = re.compile(r"/providers/Microsoft\.Monitor/accounts/(?P<name>[^\s\"\x27`/,)\]]*)", re.I)
+LAW_ID = re.compile(r"/providers/Microsoft\.OperationalInsights/workspaces/(?P<name>[^\s\"\x27`/,)\]]*)", re.I)
+# Managed Prometheus query endpoints and data-collection endpoints. The
+# leading label is derived from the workspace name, so the hostname names the
+# workspace. The middle components (region, and 'prometheus' or 'ingest') vary,
+# so `name` here can span more than one dot-separated component — which is why
+# it is checked with placeholder_path rather than PLACEHOLDER.
+MONITOR_ENDPOINT = re.compile(r"(?P<name>[^\s\"\x27`/=]*)\.[a-z0-9<>$(){}_-]*\.monitor\.azure\.com", re.I)
 # Trailing: not a word char, and not ".<digit>" (a fifth component means a
 # five-component version string); a sentence-final "." after a real address
 # still matches.
@@ -86,6 +109,16 @@ PLACEHOLDER = re.compile(r"""(
 )$""", re.X)
 
 import ipaddress, pathlib
+
+def placeholder_path(name):
+    """True when every dot-separated component is a placeholder or empty.
+
+    A monitor endpoint has more components before the fixed suffix than an
+    ACR or cloudapp host does, so its parameterised form is a SEQUENCE of
+    placeholders (`$AMW.$REGION.prometheus.monitor.azure.com`) rather than a
+    single one. Checking each component keeps that form admissible without
+    admitting `realname.westus3`, where one component is a literal."""
+    return all(PLACEHOLDER.match(part) for part in name.split("."))
 
 def public_ip(s):
     """True for a syntactically valid IPv4 address that could name live
@@ -137,7 +170,24 @@ for raw in open(sys.argv[1], "rb").read().split(b"\0"):
         for m in CLOUDAPP.finditer(line):
             if not PLACEHOLDER.match(m.group("name").lstrip("(")):
                 findings.append((p, n, "literal public DNS label (cloudapp.azure.com)", m.group(0)))
+        for m in AMW_ID.finditer(line):
+            if not PLACEHOLDER.match(m.group("name")):
+                findings.append((p, n, "literal Azure Monitor workspace resource id", m.group(0)))
+        for m in LAW_ID.finditer(line):
+            if not PLACEHOLDER.match(m.group("name")):
+                findings.append((p, n, "literal Log Analytics workspace resource id", m.group(0)))
+        for m in MONITOR_ENDPOINT.finditer(line):
+            if not placeholder_path(m.group("name")):
+                findings.append((p, n, "literal Azure Monitor endpoint (monitor.azure.com)", m.group(0)))
+        # An ARM template's contentVersion is required to be four
+        # dot-separated numbers, which is indistinguishable from an address
+        # by shape alone. The exemption is the whole line rather than
+        # the value, and only where the key is named, so it cannot quietly
+        # excuse an address somewhere else in the file.
+        version_line = "contentVersion" in line
         for m in IPV4.finditer(line):
+            if version_line:
+                continue
             if public_ip(m.group("ip")):
                 findings.append((p, n, "public IPv4 address", m.group(0)))
 
