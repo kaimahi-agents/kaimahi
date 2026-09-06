@@ -10,11 +10,19 @@
 #
 # KUBE_CTX is now overridable, which is the whole point of the managed
 # path — and also its one new hazard, since `make down` can suddenly name
-# a cluster somebody cares about. Every MUTATING target below therefore
-# depends on
-# `guard` (scripts/kube-guard.sh): it prints where the action is going,
-# and demands explicit confirmation for anything that is not a local kind
-# cluster. Fail closed — no confirmation, no action.
+# a cluster somebody cares about. Nearly every MUTATING target below
+# therefore depends on `guard` (scripts/kube-guard.sh): it prints where
+# the action is going, and demands explicit confirmation for anything that
+# is not a local kind cluster. Fail closed — no confirmation, no action.
+#
+# The exceptions, stated so the rule is not trusted further than it holds:
+# `netpol-verify` and `inbound-fire` run the same guard INSIDE their
+# scripts, deriving the context from the KUBECTL they are handed rather
+# than an inherited KUBE_CTX; `aks-cluster` (and `cluster` when
+# TARGET=aks, which delegates to it) is what CREATES the cluster, so there
+# is nothing to guard yet — it points the context at the new cluster, and
+# everything after it is guarded; and `plane-image` and `erp-image` on AKS
+# build in the registry and touch no cluster at all.
 TARGET         ?= kind
 
 # A bare `make` is build-only. Provisioning a cluster is consequential and
