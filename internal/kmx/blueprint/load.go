@@ -1,6 +1,6 @@
 package blueprint
 
-// Where a blueprint lives, which is a design decision this lane owns.
+// Where a blueprint lives, and why that is a decision rather than a default.
 //
 // Three candidates were on the table, and they have different failure
 // modes:

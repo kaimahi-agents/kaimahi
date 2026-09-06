@@ -8,7 +8,7 @@
 # Custody: headersFrom resolves the agent's credential from a Secret that
 # holds ONLY the Kaimahi-issued kmh_ opaque token (`make govern-tools`
 # mints it; the plane stores its sha256). No real credential exists on
-# the agent side of this seam — the lane's tool upstream is in-cluster
+# the agent side of this seam — this demo's tool upstream is in-cluster
 # and unauthenticated, and a future keyed tool server would get its real
 # credential injected by the gateway from proxy-side custody.
 #

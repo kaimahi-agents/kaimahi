@@ -120,7 +120,7 @@ func TestEmptyPopulationsAreNoneNotZeroGoverned(t *testing.T) {
 	}
 }
 
-// The branch this lane exists for: a read that failed says so. "0 governed"
+// The branch that matters most: a read that failed says so. "0 governed"
 // would be a claim about a population nobody managed to look at.
 func TestUnreadablePopulationIsUnknownNotZero(t *testing.T) {
 	got := toolSeams(nil, `the server doesn't have a resource type "remotemcpservers"`)

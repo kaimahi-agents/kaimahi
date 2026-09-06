@@ -64,7 +64,7 @@ var (
 	// policyFieldRE is plane/internal/config/policy.go's `policyField`.
 	// Kept identical on purpose: a field this accepts and the plane
 	// refuses would be a scaffold that produces a config that will not
-	// load, which is exactly what this lane exists to stop.
+	// load, which is exactly what the scaffolder exists to stop.
 	policyFieldRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 

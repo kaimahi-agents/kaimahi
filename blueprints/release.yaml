@@ -6,8 +6,8 @@
 # of a public repository's tree and keeps kmx's rule that it accepts no
 # credential material true of a file format as well as of a flag.
 #
-# What it replaces, and this is the point of the lane: the same intent used
-# to live in four places at once —
+# What it replaces, and this is the point of a blueprint: the same intent
+# used to live in four places at once —
 #
 #   k8s/release-agent.yaml       the drill in `systemMessage`, and `toolNames`
 #   k8s/plane/upstreams.yaml     policy_fields, extra_headers, the seams

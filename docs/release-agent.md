@@ -71,8 +71,9 @@ the committed table declares
 | `actions_run_trigger` | `method`, `owner`, `repo`, `workflow_id`, `ref` |
 | `pipelines_write` | `action`, `orgName`, `project`, `pipelineId`, `previewRun` |
 
-**Why the dispatcher argument comes first.** Both servers this lane talks
-to consolidate several operations into one tool. `actions_run_trigger`'s
+**Why the dispatcher argument comes first.** Both servers the release
+agent talks to consolidate several operations into one tool.
+`actions_run_trigger`'s
 `method` chooses between running a workflow, re-running one, **cancelling**
 one and deleting its logs. `pipelines_write`'s `action` chooses between
 queueing a run, creating a pipeline, renaming one and cancelling a stage.
@@ -105,7 +106,7 @@ on the wrong one.
 
 ## What makes a destructive operation impossible
 
-The lane's hard guardrail is: no force-push, no tag deletion, no branch
+The hard guardrail is: no force-push, no tag deletion, no branch
 deletion. Four layers, and one that is honestly not available.
 
 1. **The servers are told not to offer them.** The `github-release`
@@ -115,7 +116,7 @@ deletion. Four layers, and one that is honestly not available.
    controller, is not projected to the agent, and cannot be reached even
    by an approval. This is the strongest layer, because it does not
    depend on Kaimahi's own bookkeeping. It is also why the tool seam
-   gained `extra_headers` in this lane.
+   gained `extra_headers`.
 
    **Measured, and it matters:** GitHub's server honours `X-MCP-Tools`
    only when `X-MCP-Toolsets` is absent. Sending both offered 26 tools
@@ -252,7 +253,7 @@ something an argument-level policy can bind.
 
 ## The Azure DevOps seam is not a PAT
 
-The lane was scoped expecting one. It is not available.
+This seam was designed expecting one. It is not available.
 
 `POST https://mcp.dev.azure.com/` answers `401` with
 `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/"`,
@@ -365,7 +366,7 @@ This is the first hole this project has found by pointing the plane at a
 server it did not write, and it is real: an approval to build pipeline 41
 does not constrain what it builds. Closing it needs dotted-path policy
 fields (`resources.repositories.self.refName`), which is a plane change
-and was out of this lane's scope.
+and is not built.
 
 ## Proven how
 

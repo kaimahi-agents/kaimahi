@@ -101,8 +101,8 @@ func TestResolveReadsTheThreeSourcesInOrder(t *testing.T) {
 	}
 }
 
-// The whole point of the lane: a released binary identifies itself by its
-// tag. Not "unknown", and not the sha the old install instruction made you
+// The whole point of stamping a version: a released binary identifies
+// itself by its tag. Not "unknown", and not the sha the old install instruction made you
 // type.
 func TestReleaseBuildNeverReportsUnknownOrABareSha(t *testing.T) {
 	bareSha := regexp.MustCompile(`^[0-9a-f]{7,40}$`)
@@ -129,7 +129,7 @@ func TestReleaseBuildNeverReportsUnknownOrABareSha(t *testing.T) {
 // The link between the release job and this package is a STRING in a
 // workflow file. Renaming the variable, moving the package, or dropping the
 // -X flag would produce releases that silently report a dev version — the
-// exact failure this lane exists to end. Pin the two together.
+// exact failure the stamp exists to end. Pin the two together.
 func TestReleaseWorkflowStampsThisVariable(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {

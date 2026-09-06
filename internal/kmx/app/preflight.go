@@ -25,7 +25,7 @@ var (
 	// Go is deliberately NOT fetchable. It is a toolchain and a directory
 	// tree rather than one binary, and only `kmx plane` needs it — the first
 	// answer does not (the fast path is ungoverned by design). Fetching
-	// it is the obvious next prerequisite to kill, and it is not this lane's.
+	// it is the obvious next prerequisite to kill, and it is not killed yet.
 	depGo = dependency{"go", "to fetch and build the governance plane", "https://go.dev/dl/", []string{"version"}, false}
 )
 

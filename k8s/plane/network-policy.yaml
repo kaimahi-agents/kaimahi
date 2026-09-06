@@ -1,8 +1,7 @@
 # The network boundary around the governance plane.
 #
 # Everything in the kaimahi namespace is default-deny, ingress AND egress,
-# and each workload gets back exactly the paths the delta sheets say must
-# work. Policies are additive, so every allowance below is readable on
+# and each workload gets back exactly the paths it needs to work. Policies are additive, so every allowance below is readable on
 # its own as "this pod may talk to that pod on that port" — and anything
 # not written here does not happen. This file ships WITH the plane
 # (kubectl apply -f k8s/plane/ on kind; scripts/plane-deploy.sh applies
