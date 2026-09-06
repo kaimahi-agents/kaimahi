@@ -149,6 +149,13 @@ got. The install script verifies the release checksum before it installs
 anything; the version scheme and the upgrade path are in
 [docs/releases.md](docs/releases.md).
 
+When the agent has earned a real cluster, `kmx lift` puts **the same agent** on
+AKS in one command, with Azure-managed metrics, logs and a dashboard already
+wired — and with the network boundary proven enforced before the governance
+plane is put behind it. It bills money until `kmx lift down`, and it says so.
+Bring your own cluster with `--byo`, where it never creates, deletes or adopts
+anything of yours ([docs/aks.md](docs/aks.md)).
+
 Continue with the [getting-started guide](docs/getting-started.md), or choose
 a capability from the [documentation index](docs/README.md).
 
