@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -98,13 +99,32 @@ func open(t *testing.T, handler http.HandlerFunc) (*Client, *fakeKube) {
 	return c, k
 }
 
+// health stands in for what every real plane answers before it is asked for
+// anything: it is up, and it is this version. Open probes both, in that
+// order, so a fake that skipped either would be testing a plane that does
+// not exist.
 func health(next http.HandlerFunc) http.HandlerFunc {
+	return reporting(Speaks, "v9.9.9-test", next)
+}
+
+// reporting is health with the reported contract chosen, for the skew cases.
+// A contract of ContractUnreported makes the fake behave like a v0.1.0
+// plane: the route is simply not there.
+func reporting(contract int, reported string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		switch r.URL.Path {
+		case "/healthz":
 			w.WriteHeader(http.StatusOK)
-			return
+		case "/admin/version":
+			if contract == ContractUnreported {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"version": %q, "admin_contract": %d}`, reported, contract)
+		default:
+			next(w, r)
 		}
-		next(w, r)
 	}
 }
 

@@ -423,6 +423,14 @@ func (a *App) validateOverlay(fragments map[string]string, collided *bool) error
 		for name, raw := range fragments {
 			frags[name] = json.RawMessage(raw)
 		}
+		// The reported symptom: a v0.1.0 plane has no such route, so this
+		// used to quote Go's own "404 page not found" back at the operator
+		// under a sentence about the upstream table being refused. Ask what
+		// the plane is first, and say that instead.
+		if err := c.Require(admin.ContractTableDeclared,
+			"validate an upstream table before applying it"); err != nil {
+			return err
+		}
 		status, out, err := c.Do("POST", "/admin/config/validate", body)
 		if err != nil {
 			return err

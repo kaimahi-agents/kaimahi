@@ -189,6 +189,18 @@ stop_proxy() {
   proxy_pid=""
 }
 
+# skew_test drives the CURRENT kmx's admin client against whichever plane is
+# running, from the root module. $1 is 1 when that plane is the old one.
+skew_test() {
+  (
+    cd "$here"
+    KAIMAHI_SKEW_PLANE_PORT="$admin_port" \
+    KAIMAHI_SKEW_PLANE_TOKEN="$admin_token" \
+    KAIMAHI_SKEW_PLANE_OLD="$1" \
+      go test -count=1 -run TestAgainstARealOldPlane -v ./internal/kmx/admin
+  )
+}
+
 wait_serving() { # wait_serving <logfile> — admin /healthz answers
   for _ in $(seq 1 60); do
     if curl -fsS -o /dev/null "http://127.0.0.1:$admin_port/healthz" 2>/dev/null; then
@@ -266,6 +278,20 @@ echo "old schema: migration $applied" >&2
 say "seeding governance state through the OLD plane's own admin API"
 seed "$UPGRADE_DB"
 
+# While a genuinely old plane is up, prove what a NEW kmx says to it.
+#
+# The upgrade half above is plane-to-plane. This is the other skew nobody
+# covered and the ordinary one for anyone who upgrades one and not the other:
+# a CLI ahead of the cluster it is pointed at. Before the version handshake,
+# kmx sent a request this plane has never heard of and quoted its
+# "404 page not found" back at the operator. The assertion is that it now
+# names the version gap and the fix, without sending anything.
+#
+# No cluster here either: kmx's admin session reaches a port over a forward,
+# and the test stands a shell in for kubectl exactly as its own unit tests do.
+say "a NEW kmx against the OLD plane: the version gap must be named, not 404'd"
+skew_test 1 || fail "a new kmx did not name the version gap against a plane at $OLD_REV"
+
 stop_proxy
 
 # ------------------------------------------------------- 2: the new version
@@ -282,6 +308,13 @@ now=$(psql_q "$UPGRADE_DB" "select max(version_id) from goose_db_version")
 grep -q 'migrations: applied' "$work/new.log" ||
   fail "the new plane did not log the migrations it applied"
 echo "new schema: migration $now (was $applied)" >&2
+
+# The other end of the range: a plane built from this checkout must REPORT
+# what it is, so the gap the old plane could only be inferred from is a fact
+# the new one states. Without this, the assertion above would keep passing
+# after the endpoint was accidentally removed.
+say "the NEW plane reports its version and a usable admin contract"
+skew_test 0 || fail "the plane built from this checkout did not report a usable admin contract"
 
 say "the data the old version wrote is intact"
 after_rows=$(psql_q "$UPGRADE_DB" "select count(*) from ledger_entry")

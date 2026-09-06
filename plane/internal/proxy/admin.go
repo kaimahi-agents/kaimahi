@@ -68,6 +68,9 @@ func NewAdminMux(d Deps, adminTokenFile string) *http.ServeMux {
 	// A read that decides whether an overlay would load, using
 	// the same config.Parse this binary boots with (validate.go).
 	mux.HandleFunc("POST /admin/config/validate", auth(h.validateConfig))
+	// What this plane is, so a client never has to infer it from a route
+	// that is missing (version.go).
+	mux.HandleFunc("GET /admin/version", auth(h.version))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})

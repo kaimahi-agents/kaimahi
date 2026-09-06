@@ -486,6 +486,14 @@ func checkSeams(b *blueprint.Bundle, upstreams []string, declared map[string][]s
 // comes from the parser the proxy boots with, not from a second copy of
 // it.
 func (a *App) validateWorkflowOverlay(c *admin.Client, fragments map[string]string) ([]string, map[string][]string, error) {
+	// Ask whether this plane can answer the question at all, before asking
+	// it. The check that used to live at the bottom of this function
+	// inferred the plane's age from a missing response field, which meant
+	// the request was sent first and the diagnosis rested on one field.
+	if err := c.Require(admin.ContractTableDeclared,
+		"check a workflow's `requires` against its upstream table"); err != nil {
+		return nil, nil, err
+	}
 	body := map[string]any{"fragments": map[string]json.RawMessage{}}
 	frags := body["fragments"].(map[string]json.RawMessage)
 	for name, raw := range fragments {
@@ -514,11 +522,20 @@ func (a *App) validateWorkflowOverlay(c *admin.Client, fragments map[string]stri
 	// was built for `kmx tools add`, which is onboarding the tools it is
 	// asking about. A blueprint NAMES seams it did not define, so the
 	// question it needs answered is about the whole merged table.
+	//
+	// Reaching here with no table means a plane that DECLARED it serves this
+	// and then did not, which is a different fault from an old plane and gets
+	// a different sentence: the version handshake above already turned the
+	// age case into a message naming both versions and the fix. This stays
+	// because applying a blueprint unchecked would bind whatever happened to
+	// be configured, and that must fail closed however the field went
+	// missing.
 	if resp.TableDeclared == nil {
-		return nil, nil, fmt.Errorf("this plane does not report the policy fields of its merged upstream table, " +
-			"so a blueprint's `requires` cannot be checked against it — and applying one unchecked would bind " +
-			"whatever happened to be configured.\n" +
-			"  The plane is older than this kmx. Upgrade it:\n    kmx plane")
+		return nil, nil, fmt.Errorf("this plane reports admin contract %d, which promises the policy fields of "+
+			"its merged upstream table, and then did not return them — so a workflow's `requires` cannot be "+
+			"checked and applying it unchecked would bind whatever happened to be configured.\n"+
+			"  Nothing has been applied. This is a fault in the plane, not a version gap: %s.",
+			c.Plane().Contract, c.Plane().Describe())
 	}
 	return resp.ToolUpstreams, resp.TableDeclared, nil
 }

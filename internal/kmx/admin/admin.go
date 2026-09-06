@@ -33,11 +33,13 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Namespace is where the plane lives.
@@ -73,6 +75,13 @@ type Client struct {
 	token string
 	http  *http.Client
 	fwd   *Forward
+	// plane is what the version handshake learned, once, at Open
+	// (contract.go). Every skew decision reads it rather than inferring age
+	// from whatever a given response happened to omit.
+	plane PlaneVersion
+	// kmxVersion is this binary's own version, named in skew messages so an
+	// operator can see both ends of the gap in one place.
+	kmxVersion string
 }
 
 // Forward is a `kubectl port-forward` kmx started and proved is its own.
@@ -159,6 +168,12 @@ func (f *Forward) Close() {
 // Open reads the admin token, starts the port-forward, and waits for the
 // admin API to answer.
 func Open(k Kube, port string, log io.Writer) (*Client, error) {
+	return OpenAs(k, port, log, version.Resolve(debug.ReadBuildInfo()).Version)
+}
+
+// OpenAs is Open with this kmx's version supplied rather than read from the
+// running binary, so the skew messages are testable without a release build.
+func OpenAs(k Kube, port string, log io.Writer, kmxVersion string) (*Client, error) {
 	if port == "" {
 		port = DefaultPort
 	}
@@ -173,8 +188,9 @@ func Open(k Kube, port string, log io.Writer) (*Client, error) {
 	}
 
 	c := &Client{
-		base:  "http://127.0.0.1:" + port,
-		token: string(bytes.TrimSpace(raw)),
+		base:       "http://127.0.0.1:" + port,
+		token:      string(bytes.TrimSpace(raw)),
+		kmxVersion: kmxVersion,
 		// No redirects on an authenticated call, ever: Go strips
 		// Authorization across hosts but not custom headers, and an admin
 		// bearer must not travel anywhere it was not addressed to.
@@ -198,9 +214,22 @@ func Open(k Kube, port string, log io.Writer) (*Client, error) {
 			"  The forward is up, so this is the proxy, not the port. Check `kubectl -n %s get pods`.",
 			port, fwd.Detail(), Namespace)
 	}
+	// The plane is answering. Ask what it is before asking it for anything,
+	// so a skew is a message about versions rather than a 404 quoted back at
+	// the operator (contract.go).
+	if err := c.handshake(); err != nil {
+		c.Close()
+		return nil, err
+	}
 	if log != nil {
 		fmt.Fprintf(log, "kubectl -n %s port-forward deploy/kaimahi-proxy %s:9091 # (the admin port is on no Service)\n",
 			Namespace, port)
+		// Name the plane the way the context guard names the cluster: on
+		// stderr, on every run, before anything is asked of it.
+		fmt.Fprintf(log, "%s\n", c.plane.Describe())
+		if note := c.SkewNote(); note != "" {
+			fmt.Fprintf(log, "%s\n", note)
+		}
 	}
 	return c, nil
 }
