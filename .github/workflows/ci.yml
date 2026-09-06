@@ -366,6 +366,74 @@ jobs:
           assert len(pdb) == 1 and pdb[0]["spec"].get("minAvailable") == 1, "proxy PDB missing or not minAvailable: 1"
           print(f"{len(pols)} plane policies + {len(edge)} edge policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); internet allowances are 443-only with private ranges excluded; internet ingress is the edge's 8443 only; ops port 9092 on no Service, opened only to the monitoring scraper")
           EOF
+      # The managed path's own allowance, checked separately because it
+      # ships separately. CI cannot reach Azure, so what is provable here
+      # is the shape: one namespace, one pod label, one port, ingress
+      # only — and, above all, that this file is NOT under k8s/plane/,
+      # since everything there ships to kind and CI too.
+      - name: The Azure scraper allowance opens one port to one pod, and never reaches kind
+        run: |
+          test ! -e k8s/plane/observability -a ! -e k8s/plane/scrape-config.yaml
+          python3 - <<'EOF'
+          import yaml
+          pol = yaml.safe_load(open("k8s/observability/network-policy.yaml"))
+          assert pol["kind"] == "NetworkPolicy" and pol["metadata"]["namespace"] == "kaimahi", pol["metadata"]
+          assert pol["metadata"]["name"] == "kaimahi-proxy-metrics-azure"
+          assert pol["spec"]["podSelector"]["matchLabels"] == {"app": "kaimahi-proxy"}
+          # Ingress only. An egress rule here would be a hole in the
+          # plane's outbound boundary added for a dashboard's convenience.
+          assert pol["spec"]["policyTypes"] == ["Ingress"], pol["spec"]["policyTypes"]
+          assert not pol["spec"].get("egress"), "the scraper allowance grants egress"
+          rules = pol["spec"]["ingress"]
+          assert len(rules) == 1, f"{len(rules)} ingress rules; the allowance IS the access control"
+          ports = {(p.get("protocol", "TCP"), p["port"]) for p in rules[0]["ports"]}
+          assert ports == {("TCP", 9092)}, f"opens more than the ops port: {ports}"
+          peers = rules[0]["from"]
+          assert len(peers) == 1, f"{len(peers)} peers may reach an unauthenticated port"
+          peer = peers[0]
+          assert "ipBlock" not in peer, "ops port opened to an ipBlock"
+          assert peer["namespaceSelector"]["matchLabels"] == {"kubernetes.io/metadata.name": "kube-system"}, peer
+          # The add-on's REPLICA runs custom scrape jobs; its per-node
+          # DaemonSet runs only the default targets, and allowing it would
+          # open 9092 on every node for a scrape that never comes.
+          assert peer["podSelector"]["matchLabels"] == {"rsName": "ama-metrics"}, peer
+
+          cm = yaml.safe_load(open("k8s/observability/scrape-config.yaml"))
+          assert cm["kind"] == "ConfigMap" and cm["metadata"]["namespace"] == "kube-system"
+          assert cm["metadata"]["name"] == "ama-metrics-prometheus-config"
+          job = yaml.safe_load(cm["data"]["prometheus-config"])["scrape_configs"][0]
+          # Pod discovery, not a Service. The ops port is on no Service on
+          # purpose, and a scrape job that needed one would force it to be
+          # exposed — trading a security property for a dashboard.
+          sd = job["kubernetes_sd_configs"]
+          assert len(sd) == 1 and sd[0]["role"] == "pod", sd
+          assert sd[0]["namespaces"]["names"] == ["kaimahi"], sd
+          keeps = {r["regex"] for r in job["relabel_configs"] if r.get("action") == "keep"}
+          assert keeps == {"kaimahi-proxy", "9092"}, f"scrape job keeps {keeps}"
+          print("scraper allowance: kube-system/rsName=ama-metrics -> 9092, ingress only; scrape job discovers pods in kaimahi and keeps only the ops port")
+          EOF
+      # The workbook must carry no identifiers. An exported workbook bakes
+      # the subscription id, the resource group and the workspace ids into
+      # serializedData as literals; this one takes them as parameters and
+      # derives its own name, which must be a GUID, at deploy time.
+      - name: The workbook is a template, not an export
+        run: |
+          python3 - <<'EOF'
+          import json
+          t = json.load(open("k8s/observability/workbook.json"))
+          for p in ("clusterResourceId", "logAnalyticsResourceId", "azureMonitorWorkspaceResourceId", "runId"):
+              assert p in t["parameters"], f"{p} is not a parameter, so it would have to be a literal"
+          res = t["resources"][0]
+          assert res["type"] == "microsoft.insights/workbooks"
+          assert res["name"] == "[variables('workbookName')]"
+          assert "guid(resourceGroup().id" in t["variables"]["workbookName"], "the workbook name is not derived"
+          body = json.dumps(t)
+          assert "/subscriptions/" not in body, "the workbook carries a literal resource id"
+          # Both data paths, so an empty metric panel and an empty log
+          # panel mean different things.
+          assert "kaimahi_decisions_total" in body and "ContainerLogV2" in body
+          print(f"workbook: {len(t['variables']['content']['items'])} panels, every identifier parameterised, name derived with guid()")
+          EOF
       # The committed upstream table marks every hosted upstream —
       # Copilot on the LLM seam, GitHub's MCP server on the tool seam —
       # `internet: true`, so nothing about their hardening is implicit
@@ -568,6 +636,11 @@ jobs:
           # and it is the property, where the crash it replaced was only a
           # symptom. A skipped package here would take it with it.
           grep -q 'ok  .*internal/kmx/blueprint' kmx-test.out
+          # The managed path's rules about what may be deleted on somebody
+          # else's subscription. They run perhaps twice a lane against live
+          # infrastructure, so these are the only place they are exercised
+          # often enough to catch a regression.
+          grep -q 'ok  .*internal/kmx/lift' kmx-test.out
           # Milestone 3's gates: the argument ORDER of every operator verb
           # (Go's flag stops at the first positional, and an approval whose
           # --uses was silently dropped is an UNBOUNDED grant), and the

@@ -8,9 +8,15 @@ The README has named AKS as the managed target from early on. For a
 while nothing had ever run there, and the tooling could not even *point*
 at it: every kube context was hardcoded with a `kind-` prefix. That is
 fixed. `TARGET=kind|aks` selects the environment, a private-registry
-image path replaces the kind side-load, and one real governed run on a
-real AKS cluster happened, and was then **deleted**. This is a doc for
-reproducing that run, not a description of a maintained environment.
+image path replaces the kind side-load, and real governed runs on real
+AKS clusters have happened and were then **deleted**. This is a doc for
+reproducing those runs, not a description of a maintained environment.
+
+**If you just want the short version, it is [`kmx lift`](#one-command-kmx-lift):
+one command from a working local agent to the same agent on AKS, with
+Azure-managed monitoring already wired.** Everything below it is that
+command's steps written out, which is worth reading once — the ordering
+constraints in it were paid for.
 
 > **Scope, honestly.** Two verified runs on 2026-09-01, each torn down
 > the same day: the first proved the governed Copilot path on a managed
@@ -37,6 +43,19 @@ none:
 | Environment-specific manifests | Kustomize, Helm, envsubst | **none of them**, see below |
 | Provision AKS | `az aks create` | a parameterised, tagged wrapper |
 | Enforce NetworkPolicy | the cluster's CNI (Cilium, here) | a flag the wrapper always passes, and a probe that proves it took |
+| Scrape metrics into a managed store | Azure Monitor's metrics add-on | a scrape job, and the one NetworkPolicy allowance it needs |
+| Collect container logs | Container Insights | the add-on, enabled with a workspace |
+| A dashboard | Azure workbooks | one workbook, parameterised so it carries no identifiers |
+| Package the install | Helm | **none**, deliberately, see below |
+
+**There is no Helm chart, and that is a decision rather than an
+omission.** The objection is real and worth stating: "you cannot `helm
+install` it" is a thing to hear in an enterprise review. The answer is
+that there is meant to be exactly *one* implementation of this journey —
+a chart would be a second one to keep in step with `kmx` — and that
+`kmx` already emits reviewable YAML a platform team can commit or wrap
+in a chart of their own. If that ever costs a real adopter, it is worth
+revisiting.
 
 The one place a tool would have been the obvious reach is the
 environment-dependent `imagePullPolicy`. Kustomize's `images:`
@@ -55,14 +74,32 @@ owner; a resource-group name, an ACR login server or a cluster FQDN names
 live infrastructure and invites squatting on the registry name. So every
 identifier is an operator-supplied parameter, and
 `scripts/check-no-azure-ids.sh`, which CI runs on every PR, refuses
-GUIDs, `*.azmk8s.io` FQDNs, and any literal `<name>.azurecr.io` that is
-not built from a variable or an obvious `<placeholder>`.
+GUIDs, `*.azmk8s.io` FQDNs, any literal `<name>.azurecr.io` or
+`<label>.<region>.cloudapp.azure.com` that is not built from a variable
+or an obvious `<placeholder>`, public IPv4 addresses, and — since
+monitoring arrived — Azure Monitor and Log Analytics **workspace
+resource ids** and any literal `*.monitor.azure.com` endpoint.
 
 Run it yourself before pasting terminal output anywhere:
 
 ```bash
 bash scripts/check-no-azure-ids.sh
 ```
+
+**What it cannot catch, so you have to.** These are *shape* rules. A bare
+name has no shape: a resource-group name, a cluster name, a registry
+name and — new with monitoring — a **workspace name** are all just
+strings. The scanner sees a workspace name only when it appears inside a
+resource id or a hostname. Written on its own, in a log line or a pasted
+`az` command, it is invisible to the gate and it is yours to redact.
+
+That applies to **anything you attach to a pull request**, not only to
+files in the tree: a terminal transcript is exactly where these leak.
+`kmx lift` helps a little by never printing your subscription id — the
+banner names the subscription and the signed-in account instead, which
+is what a human actually checks against — but it prints resource group,
+cluster, registry and workspace names, because an operator has to see
+where the thing is about to land.
 
 ### 2. Context safety, the net that replaced the hardcoding
 
@@ -117,11 +154,117 @@ Confirm non-interactively, in a script or for a whole session:
 export KAIMAHI_CONFIRM=$AKS_CLUSTER
 ```
 
+## One command: `kmx lift`
+
+The rest of this page is the long form — every step, and why each one is
+where it is. You do not have to run it that way. `kmx lift` is the same
+journey as one command, and it works from a released binary with no
+checkout, because the scripts and manifests it needs travel inside it.
+
+```bash
+kmx lift --resource-group <your-rg> --registry <globally-unique-name> --cluster <name>
+```
+
+It creates the resource group, a private registry and a cluster with a
+policy engine; **proves the network boundary is enforced before putting
+anything behind it**; installs the runtime, the governance plane and the
+same two agents you ran locally; wires Azure-managed monitoring; and
+finishes by asking the agent a question and checking that the answer's
+metrics and logs actually arrived in Azure.
+
+Onto a cluster you already have, which is where most adopters are:
+
+```bash
+kmx lift --byo --resource-group <their-rg> --registry <a-registry-it-can-pull-from> --cluster <name>
+```
+
+Three things are worth knowing before you run either.
+
+**It says what it will do and where, first.** The banner names the
+subscription, the signed-in account, the resource group, the cluster and
+every phase, and then refuses to continue without confirmation naming
+the cluster (`KAIMAHI_CONFIRM=<cluster>`, or type it when asked). With
+no terminal and no confirmation it stops: a cloud subscription is not
+somewhere to act on an unanswered question. `--plan` prints the banner
+and stops.
+
+**It is resumable.** Every phase is re-runnable and idempotent, so a
+failure is resumed by naming the phase that failed rather than by
+unpicking the ones before it. The error tells you which:
+
+```bash
+kmx lift --step plane --resource-group <rg> --cluster <name> --registry <reg>
+```
+
+**There is one hand-off, and it is the credential.** A managed cluster
+runs a hosted model — there is no local model server on it — so the
+plane needs a real provider token. `kmx` accepts credential material on
+no path today, so the lift checks whether the Secret is there and stops
+if it is not, naming the command that mints it:
+
+```bash
+make plane-copilot-secret        # from a checkout; reads the token on the terminal
+```
+
+This is the one step that still needs a checkout, and it is the honest
+shape rather than a limitation being hidden: a step `kmx` cannot do is a
+step it should name. Everything else on this path is clone-free.
+
+### The opinions, and how to override each one
+
+"Opinionated" means choices were made so you do not have to. Here is
+every one, what it is for, and the flag that changes it. An opinion
+nobody can find is just a default, and one nobody can override is a
+cage.
+
+| Choice | Default | Why | Escape hatch |
+|---|---|---|---|
+| Node size | `Standard_B4ms` | 4 vCPU / 16 GiB, burstable. The plane, its ledger and two agents fit with room; the cheapest size that does not make the first chat feel broken. | `--node-size` |
+| Node count | 1 | An ephemeral demonstration cluster. The plane is stateless and runs its two replicas on one node happily. | `--node-count` |
+| Region | `westus3` | Has the capacity and the price this path was measured at. | `--location` |
+| Policy engine | `cilium` | Azure CNI Overlay powered by Cilium: Microsoft's recommendation for new clusters, and the only engine this repository has watched enforce the plane's whole boundary matrix. | `--network-policy azure\|calico` |
+| Control-plane tier | Free | No control-plane charge and no SLA, which is right for a cluster that exists for an afternoon. | not exposed; edit `scripts/aks-up.sh` |
+| Where the image lives | a **private** ACR, built by `az acr build` | Built in Azure, so no local Docker and no `docker push`; private, so nothing is published and no public name is claimed. | `--registry` names it; the privacy is not optional |
+| Model | governed Copilot | AKS is Copilot-only — no Ollama is deployed there. The keyless path is already proven on kind every PR; this cluster's job is proving the plane runs on a managed one with a real model. | none today |
+| Monitoring | on | An agent that arrives on a managed cluster with nothing to look at is the gap this path exists to close. | `--observability=false` |
+| Node placement | none | The plane and the agents are ordinary workloads and go wherever the scheduler puts them. Placement is a separate, existing concern: `kmx agent create --isolation` sets `nodeSelector` and tolerations for an agent that needs a particular node. | `kmx agent create --isolation` |
+
+**Not** an opinion, and not overridable: the cluster must have a
+NetworkPolicy engine. See below.
+
+### The boundary is proven before anything is put behind it
+
+On a cluster this path creates, `aks-up.sh` always passes
+`--network-policy` and refuses a value that would not enforce. On **your**
+cluster there is no such guarantee, and a cluster without an engine
+accepts every NetworkPolicy and enforces none — the plane's manifests
+would be present and inert, which reads as protection and is worse than
+none: you would believe the ledger, the gateway and the fixture servers
+were unreachable when every pod in the cluster can reach them.
+
+So the `boundary` phase runs two gates before the plane exists:
+
+1. **Ask the control plane which engine the cluster has.** Cheap, runs
+   before anything is written, and catches the case that actually
+   happens — a cluster created with no engine at all. An unreadable
+   answer is a refusal too, not a pass.
+2. **Deploy the boundary and prove it.** The NetworkPolicies and the
+   ledger go on, and then `scripts/netpol-probe.sh` runs unchanged: it
+   asserts connections that must **time out**, against a control that
+   must succeed, so "blocked" cannot be a dead target or a runner with
+   no internet.
+
+Gate 2 writes before it proves, which is deliberate rather than
+conceded: what it writes *is* the boundary, plus an empty ledger. If the
+proof fails, no governance plane, no credential and no agent has been
+put behind a boundary that does not hold, and the message tells you
+exactly what exists and how to remove it.
+
 ## Prerequisites
 
 | Prerequisite | Why |
 |---|---|
-| `az` CLI, logged in (`az login`) | provisioning; the tooling assumes an already-authenticated CLI, same pattern as `gh` |
+| `az` CLI, logged in (`az login`) | provisioning; the tooling assumes an already-authenticated CLI, same pattern as `gh`. **`kmx` never downloads it**, unlike kind, kubectl and Helm: it is a Python distribution rather than one binary, it has a real package story on every platform, it must be signed in interactively anyway — and a tool that quietly installs the thing that then holds your cloud credentials is a different kind of surprise from one that drops a `kubectl` in a cache. |
 | A subscription that can create resource groups, an ACR, and an AKS cluster | `--attach-acr` also needs permission to create a role assignment |
 | `kubectl`, `helm`, `make`, `python3` | as for kind |
 | `python3` with **PyYAML** | AKS-only, and the one prerequisite kind does not share: `scripts/plane-deploy.sh` parses `proxy.yaml` to render the registry image and pull policy. The kind branch returns before that import, so a kind-only user never needs it. `pip install pyyaml` |
@@ -382,6 +525,77 @@ stand in front of `az group delete`, which is recursive and irreversible:
 It waits for completion and then re-checks that the group is gone, because
 *"I asked Azure to delete it"* is not the same claim as *"it is gone"*.
 
+`kmx lift down` is the same thing with the same two gates:
+
+```bash
+KAIMAHI_CONFIRM=<your-rg> kmx lift down --resource-group <your-rg> --cluster <name>
+```
+
+### Teardown on a cluster you did not create
+
+**The rule is the opposite, and it is absolute: your cluster and your
+resource group are never deleted and never adopted.** `kmx lift down
+--byo` removes only what the lift added — the two monitoring workspaces,
+the data-collection rules the add-ons created, the workbook, and the two
+cluster-side objects — and it removes them **by the resource id it
+recorded when it created them**, never by name.
+
+The distinction is not pedantry. Name matching on a subscription you do
+not own is how a demo deletes a stranger's production monitoring: names
+collide and get re-used, resource ids do not. So every resource the lift
+creates gets a **run-scoped unique name** *and* has its id recorded, and
+teardown:
+
+- deletes a resource only when its recorded id still resolves to that
+  same resource;
+- **fails closed** when the id cannot be re-resolved, or when the name
+  now resolves to something with a different id — it leaves the resource
+  alone, names it, prints its id and what it costs, and exits non-zero;
+- keeps the run record when anything is left behind, so it can be
+  re-run once you have looked.
+
+The record lives in `kmx`'s own state directory (`$KMX_HOME`, else your
+user config directory), never in a checkout — it contains resource ids,
+which contain a subscription id, and a file written into a working tree
+is a file that eventually gets committed. **If you lose the record, `kmx
+lift down` refuses rather than going looking by name.** Remove the
+resources by hand from the portal in that case.
+
+Two more refusals worth knowing, both on the bring-your-own branch:
+
+- **The scrape ConfigMap is not overwritten.**
+  `ama-metrics-prometheus-config` is cluster-wide and singular. If one
+  already exists it holds *your* scrape jobs, and applying ours over it
+  would delete them silently. The lift stops and prints the job to merge
+  into yours. At teardown, a ConfigMap carrying jobs other than this
+  one is left alone.
+- **`AcrPull` is not granted.** The lift checks whether your cluster can
+  pull from the registry you named and refuses if it cannot. Granting a
+  role assignment on your subscription is a change to your cluster's
+  identity, and a demo has no business making it silently.
+
+### What keeps billing after the demo ends
+
+On a cluster **this path created**, nothing: it is all inside one
+resource group, and `az group exists` returning `false` is a complete
+proof.
+
+On **your** cluster, an empty-resource-group check proves nothing,
+because the group is not ours to delete. These are what the lift adds
+that continue to cost you until they are removed:
+
+| Resource | What it charges for |
+|---|---|
+| Azure Monitor workspace (Managed Prometheus) | per sample ingested and per query; retains samples for 18 months |
+| Log Analytics workspace (Container Insights) | per GB ingested, plus retention beyond the included period — this is the larger of the two, and it keeps costing while anything still sends to it |
+| Data collection rules and endpoints | no standing charge of their own; they are what routes data to the workspaces, which do charge |
+| The workbook | nothing. A workbook is a saved set of queries. |
+
+The two add-ons themselves are free; what they collect is not. Turning
+them off (which `kmx lift down --byo` does first, before deleting
+anything they point at) stops the ingestion charge immediately;
+deleting the workspaces stops the retention charge.
+
 ## What this costs
 
 Measured choices, not guesses (Azure retail prices API, 2026-09-01):
@@ -402,6 +616,105 @@ existed for about 29 minutes (17:52–18:22 UTC) and cost roughly
 **US$0.10**; the NetworkPolicy run existed for about 26 minutes
 (22:39–23:05 UTC) and cost about the same. Cilium adds no line item.
 The dominant risk to the bill is not the rate. It is forgetting step 7.
+
+## Observability, and the one thing it must not trade away
+
+`kmx lift` wires two Azure-managed data paths by default. They are
+separate on purpose, because they fail separately and an operator needs
+to be able to tell which one is broken:
+
+- **Managed Prometheus** scrapes the plane's own `/metrics` into an
+  Azure Monitor workspace.
+- **Container Insights** collects the plane's stdout and stderr into a
+  Log Analytics workspace.
+
+Both workspaces are created **inside the same resource group as the
+cluster**, so on the branch that creates that group, deleting it
+accounts for them too.
+
+### The ops port stays on no Service
+
+The plane's operations port (9092 — metrics, readiness, liveness) is on
+**no Service**, deliberately: reaching it takes either kubelet
+(node-originated, which NetworkPolicy does not govern) or an explicit
+NetworkPolicy allowance. The port carries **no authentication**, so that
+allowance *is* the access control.
+
+The obvious shortcut — put `/metrics` on a Service so a scraper can find
+it — trades a security property for a dashboard, and it is not taken
+here. Instead the scrape job uses **pod** service discovery, which
+reaches the port at the pod's own address exactly the way the design
+intends, and `k8s/observability/network-policy.yaml` opens 9092 to one
+namespace, one pod label and one port:
+
+```yaml
+from:
+  - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+    podSelector:       { matchLabels: { rsName: ama-metrics } }
+ports: [{ protocol: TCP, port: 9092 }]
+```
+
+`rsName: ama-metrics` is the add-on's **replica** pod, which is what runs
+custom scrape jobs; its per-node DaemonSet runs only the default targets
+and is deliberately not allowed, since that would open 9092 on every
+node for a scrape that never comes.
+
+This file lives outside `k8s/plane/` for the same reason the Copilot and
+hosted-upstream egress allowances do: an allowance arrives when the
+thing it is for is enabled, and not before. kind never applies it, which
+is also what makes "the local path is unchanged" a fact rather than a
+claim.
+
+### The scrape job
+
+`k8s/observability/scrape-config.yaml` is the `ama-metrics-prometheus-config`
+ConfigMap the add-on reads. It keeps only pods labelled
+`app: kaimahi-proxy` and only container port 9092 — without the second
+filter, pod discovery would also try the two data ports, the inbound
+port and the **admin** port, which should never be dialled by anything
+but a port-forward.
+
+### The dashboard
+
+An Azure **workbook** is deployed into the resource group, named
+`Kaimahi governance plane (<run id>)` and pinned to the cluster: find it
+under **Monitoring → Workbooks** on the cluster in the portal. It reads
+both data paths, so an empty metric panel and an empty log panel mean
+different things.
+
+It is committed as an ARM **template**, not as an exported workbook,
+because exporting one bakes the subscription id, the resource group and
+the workspace ids into its serialized data as literals — which this
+repository refuses to carry. Every identifying value is a parameter, and
+the workbook's own name (which must be a GUID) is derived with `guid()`
+at deploy time rather than committed.
+
+The panels: decisions per second by outcome and reason; what was refused
+in the last hour and why; **seam degraded**, which is the alarm — 1
+while a seam refuses everything because its audit or ledger write last
+failed; upstream latency; queue occupancy; which build is answering; and
+the plane's recent log lines and pod restarts from Container Insights.
+
+### Enabled and arriving are different claims
+
+The `verify` phase does not stop at "the add-on is on". It queries
+Managed Prometheus for `kaimahi_build_info` — a series the plane sets at
+startup, so it exists whether or not anyone has used the system yet —
+and it queries Log Analytics for an actual log line from a plane pod.
+Each waits, because the two have very different latencies (a scrape is
+30 seconds; Container Insights routinely takes several minutes to become
+queryable), and each fails with the specific things to check.
+
+A panel that is empty because nobody has used the system is otherwise
+indistinguishable from a scrape that is not landing, and that confusion
+is the whole reason this check exists.
+
+### The `make` path does not do any of this
+
+Observability is `kmx lift` only. The step-by-step `make` path above
+builds the same cluster and the same governed agent, and leaves you with
+`/metrics` on a cluster-internal port and nothing reading it, exactly as
+before.
 
 ## What differs from kind
 
