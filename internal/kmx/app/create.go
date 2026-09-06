@@ -58,6 +58,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if opt.NoApply && opt.DryRun {
 		return fmt.Errorf("--no-apply and --dry-run cannot be used together")
 	}
+	if err := refuseFlagsBYODrops(opt); err != nil {
+		return err
+	}
 	namespace := opt.Namespace
 	if namespace == "" {
 		namespace = config.DefaultNamespace
@@ -139,7 +142,15 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 			a.notef("WARNING: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
 				"         `make plane` then `make govern` puts the plane in front of an agent.", modelConfig)
 		}
-		if tools == nil {
+		if opt.Image != "" {
+			// NOT the declarative report. A BYO manifest carries no
+			// toolNames, so "agent allowlist only" would name an allowlist
+			// that is not in the document — a governance claim about a
+			// control that does not exist.
+			a.notef("CAPABILITIES\n  Tools: whatever the image reaches for; kmx cannot enumerate them.\n" +
+				"  Governance: the gateway is the only control, and only for calls the\n" +
+				"  image actually sends through KAIMAHI_MCP_URL. `kmx audit tool` is the evidence.")
+		} else if tools == nil {
 			a.notef("CAPABILITIES\n  Tools: none\n  Add later: kmx agent create <name> --tools <server>:<tool>[,<tool>...]")
 		} else {
 			a.notef("CAPABILITIES\n  Tools: %s via %s\n  Governance: agent allowlist only; no gateway audit until `kmx tools govern`", strings.Join(tools.Tools, ", "), tools.Server)
@@ -396,4 +407,39 @@ func (a *App) noteBYO(image string, governance []scaffold.EnvVar, placement *sca
 		a.notef("No placement profile: this pod schedules like any other. `--isolation\n" +
 			"         virtual-node` puts it on an ACI virtual node instead.")
 	}
+}
+
+// refuseFlagsBYODrops rejects the flags a BYO manifest would silently discard.
+//
+// `spec.byo` has one property, `deployment`. There is no `systemMessage` and
+// no `tools`, so `--instructions` and `--tools` do not reach the document at
+// all — and `--tools` was worse than inert: the capabilities report printed
+// the allowlist back, so kmx claimed a control that was not in the manifest
+// it had just written. The same rule the isolation flags follow: a flag that
+// quietly does nothing is worse than no flag.
+//
+// `--model` is NOT refused. It does not reach a BYO document either — the
+// image chooses its own model — but it still decides whether the governed
+// seams are injected as env, which is a real effect on a real artifact.
+func refuseFlagsBYODrops(opt CreateOptions) error {
+	if opt.Image == "" {
+		return nil
+	}
+	var dropped []string
+	if opt.Tools != "" {
+		dropped = append(dropped, "--tools")
+	}
+	if opt.Instructions != "" || opt.InstructionText != "" {
+		dropped = append(dropped, "--instructions")
+	}
+	if len(dropped) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s cannot be combined with --image: kagent's Agent CRD puts\n"+
+		"systemMessage and tools under `declarative`, and a BYO agent has neither —\n"+
+		"the image supplies its own prompt and reaches its own tools. Refusing rather\n"+
+		"than dropping them, because a scaffolder that accepted --tools here would\n"+
+		"report an allowlist that is not in the manifest it wrote.\n"+
+		"  Allowlist a BYO agent's tool calls at the gateway instead: `kmx tools govern`",
+		strings.Join(dropped, " and "))
 }

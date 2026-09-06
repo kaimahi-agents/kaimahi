@@ -166,3 +166,31 @@ func TestCreateNoApplyGroupsArtifactCapabilitiesAndNextStep(t *testing.T) {
 		t.Fatalf("no-apply transcript included cluster phases:\n%s", text)
 	}
 }
+
+// A flag a BYO manifest silently drops is worse than no flag — and --tools was
+// worse still, because the capabilities report printed the allowlist back for a
+// document that had none.
+func TestCreateRefusesFlagsABYOManifestWouldDrop(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  CreateOptions
+		want string
+	}{
+		{"tools", CreateOptions{Name: "demo", Image: "acme/a:1", Tools: "srv:t1"}, "--tools"},
+		{"instructions", CreateOptions{Name: "demo", Image: "acme/a:1", Instructions: "x.md"}, "--instructions"},
+		{"instruction text", CreateOptions{Name: "demo", Image: "acme/a:1", InstructionText: "be brief"}, "--instructions"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &App{}
+			err := a.CreateAgent(tc.opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("a flag a BYO agent cannot carry was accepted: %v", err)
+			}
+		})
+	}
+	// --model still reaches a real decision — whether the governed seams are
+	// injected — so it is not swept up in the refusal.
+	if err := refuseFlagsBYODrops(CreateOptions{Image: "acme/a:1", ModelConfig: "governed-ollama"}); err != nil {
+		t.Errorf("--model was refused, but it decides whether governance is injected: %v", err)
+	}
+}

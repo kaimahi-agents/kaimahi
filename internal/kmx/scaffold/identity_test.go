@@ -155,3 +155,32 @@ func TestDeclarativeHardeningIsUntouched(t *testing.T) {
 		}
 	}
 }
+
+// The key-shape scan is a promise about the DOCUMENT, and the BYO branch
+// returned before making it.
+//
+// Every operator-supplied field is also scanned individually on the way in, so
+// the two checks overlap for everything --image accepts today. They stop
+// overlapping the moment a field reaches the manifest without being added to
+// that input list — which is what Placement does, and what the next field
+// added to renderBYO will do by default. That is the gap this closes, and it
+// is the reason the declarative path ends with the same call.
+func TestBYODocumentIsScannedForKeyShapes(t *testing.T) {
+	id, err := ParseRunAsUser("65532", "acme/agent:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Generate(Spec{
+		Name:  "a1",
+		Image: "acme/agent:1",
+		// Reaches the document; not in Generate's per-input scan.
+		Placement: &Placement{NodeSelector: map[string]string{"pool": "kmh_" + strings.Repeat("a", 12)}},
+		Identity:  id,
+	})
+	if err == nil {
+		t.Fatal("a key shape reached a BYO manifest: the final document scan was skipped")
+	}
+	if !strings.Contains(err.Error(), "credential") {
+		t.Errorf("the refusal does not name what it found: %v", err)
+	}
+}

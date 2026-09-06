@@ -305,7 +305,16 @@ func Generate(spec Spec) (string, error) {
 			return "", err
 		}
 		b.WriteString(byo)
-		return b.String(), nil
+		// The same final scan the declarative path ends with, and for the
+		// same reason: the individual inputs were checked above, but the
+		// guarantee this makes is about the DOCUMENT. A BYO manifest is the
+		// one that carries an env block, so it is the last one that should
+		// be allowed to skip the check on its way out.
+		document := b.String()
+		if err := RefuseKeyShapes(document); err != nil {
+			return "", err
+		}
+		return document, nil
 	}
 
 	b.WriteString("  type: Declarative\n")

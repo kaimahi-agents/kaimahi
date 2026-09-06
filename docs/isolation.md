@@ -63,15 +63,24 @@ L3.** A single `--sandbox` flag covering them would be a design mistake.
 | D. Hyperlight around tools | L3 | needs building | **medium** | a host process per MCP server; unmeasured per-call cost |
 | E. Contribute `runtimeClassName` upstream | L2 | no | medium, slow | unblocks Kata *and* runwasi properly, for everyone |
 
-## Chosen: A — BYO on a VM-isolated node pool
+## Chosen: A — BYO on a placement profile
 
-The closest honest answer to "hyperscale VM", and the only one that needs no
-new runtime.
+The closest honest answer to "hyperscale VM" that this CRD can express, and
+the only one that needs no new runtime.
 
 `spec.byo` takes your own image and expects A2A on port 8080. Combine it
-with the `nodeSelector`/`tolerations` that *are* exposed and target a
-Kata-enabled pool — on AKS, `kata-mshv-vm-isolation`. Each agent gets a
-micro-VM. kagent's controller and CRD stay. We write no runtime.
+with the `nodeSelector`/`tolerations` that *are* exposed. kagent's
+controller and CRD stay. We write no runtime.
+
+**This section originally targeted a Kata-enabled pool — on AKS,
+`kata-mshv-vm-isolation` — and claimed a micro-VM per agent. That claim does
+not survive the finding at the top of this note.** Landing a pod on a
+Kata-capable node without `runtimeClassName` runs an ordinary container
+there, so the pool would have bought the appearance of a micro-VM and none
+of the boundary. The shipped profile is `virtual-node`, which works because
+ACI virtual nodes are selected by nodeSelector and toleration alone. The
+paragraph is corrected rather than deleted: it is the exact overclaim the
+Risks section below warns about, and it was made here first.
 
 ### The trade it makes, stated first
 
