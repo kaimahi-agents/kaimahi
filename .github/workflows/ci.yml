@@ -3857,6 +3857,51 @@ jobs:
           # works again, end to end.
           kmx ledger | tee ledger-restored.out
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-restored.out
+      - name: "workflow — the blueprint travels in the binary, renders, and reaches the plane"
+        if: steps.changes.outputs.docs_only != 'true'
+        working-directory: /home/runner/journey
+        env:
+          KIND_CLUSTER: kmx-clone-free
+        run: |
+          # W35 made "a blueprint works from a released binary with no
+          # checkout" a REQUIREMENT, and then proved it only inside one: all
+          # eight Workflow: assertions live in e2e-runtime, which checks the
+          # repository out and passes `--file scripts/ci/workflow-fixture.yaml`.
+          # This job is the one whose premise is no checkout, and it walked
+          # past the feature that needed it most. Nothing below names a file:
+          # the blueprint has to come out of the binary or these fail.
+          test ! -e blueprints && test ! -e scripts
+
+          # 1. It travels. A mistyped embed pattern is absent at run time on
+          #    the operator's machine, which is the failure manifests_test.go
+          #    exists to catch — caught here for blueprints too, on the path
+          #    where there is no tree to fall back to.
+          kmx workflow list | tee wf-list.out
+          grep -q 'release' wf-list.out
+
+          # 2. It renders, with parameters supplied at apply time. Contoso is
+          #    a documentation name: the real repository is operator config
+          #    and is never committed (scripts/release-bind.sh).
+          kmx workflow show release --set repo=Contoso/widget | tee wf-show.out
+          grep -q 'STANDING BOUNDS' wf-show.out
+          grep -q 'STEPS' wf-show.out
+          grep -q 'Contoso' wf-show.out
+
+          # 3. A step whose parameters are missing does NOT render as if it
+          #    were fine. Empty-substituting into a policy-bound argument
+          #    would produce an approval that names nothing, which is the
+          #    P13 failure with better manners.
+          grep -q 'will not substitute an empty string into a policy-bound argument' wf-show.out
+
+          # DELIBERATELY NOT HERE YET: `kmx workflow govern`. It reaches the
+          # plane, which is the half of this path still proven only inside a
+          # checkout (e2e-runtime) — but on a plane with no `release-agent`
+          # credential it writes the standing-bounds fragment and restarts
+          # the proxy BEFORE discovering the credential is missing, then
+          # fails with a bare `tool-allow failed (HTTP 404): no such
+          # credential`. Verified by hand on kind at 6b1e572. Asserting that
+          # here would freeze a partial apply into CI. When govern prechecks
+          # the credential and applies atomically, add the round trip here.
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
