@@ -185,23 +185,35 @@ func (a *App) removeInClusterObservability(record *lift.Record) {
 // each one first, and reports everything it did not remove.
 func (a *App) removeRecorded(resources []lift.Resource) error {
 	var removals []lift.Removal
+	deleted, alreadyGone := 0, 0
 	for _, res := range resources {
 		state, resolved := a.confirmRecordedResource(res.ID)
 		rm := lift.PlanRemoval(res, state, resolved)
-		if rm.Delete {
+		switch {
+		case rm.Delete:
 			if err := a.Run.Run("az", "resource", "delete", "--ids", res.ID, "--output", "none"); err != nil {
 				rm.Delete = false
 				rm.Reason = fmt.Sprintf("the delete failed and it may still be billing: %v", err)
 			} else {
+				deleted++
 				a.notef("removed %s %s", res.Kind, res.Name)
 			}
+		case state == lift.Absent:
+			// Turning the add-ons off takes their own rules and rule groups
+			// with them, so several recorded resources are legitimately gone
+			// before we reach them. Counted rather than passed over in
+			// silence: "we deleted twelve things" and "six were already gone"
+			// are different claims, and only one of them is true.
+			alreadyGone++
+			a.notef("already gone, nothing to delete: %s %s", res.Kind, res.Name)
 		}
 		removals = append(removals, rm)
 	}
 
 	left := lift.LeftBehind(removals)
 	if len(left) == 0 {
-		fmt.Fprintln(a.Err, "\nkmx lift down: everything this run created has been removed, each confirmed by its recorded id.")
+		fmt.Fprintf(a.Err, "\nkmx lift down: nothing this run created is left. %d removed by recorded id, %d already gone.\n",
+			deleted, alreadyGone)
 		return nil
 	}
 	var b strings.Builder
