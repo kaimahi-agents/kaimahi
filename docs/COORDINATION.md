@@ -128,7 +128,8 @@ prefix.
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W33: the lift — local agent to AKS in one path, with managed observability (D41) | unassigned | SHAPED 2026-09-03 — prompt below | mostly wiring, not building; must not put /metrics on a Service; teardown + spend mandatory |
 | W34: kmx tells the truth — the ungoverned count, and a version handshake | unassigned | **RE-SHAPED 2026-09-04** — prompt below, finding (b) TRIMMED because W35 (#107) solved it for one endpoint | two findings from the W28/P15/W30 verification pass; deliberately a lane, not a coordinator PR |
-| W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 OPEN — prompt below; D42 ruled as staged option A | milestone 1 is an EQUIVALENCE test against the make targets, not "it works"; the driver keeps filing the approval itself (P13) |
+| W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
+| W36: `kmx workflow run` has no first command (from the W35 verification) | unassigned | SHAPED 2026-09-05 — prompt below; **the urgent one** | small fix, structural consequence: until it lands, W35's central claim is unusable by anyone |
 | Brand assets + architecture diagram + org/front-door plans | user-run lane (outside the board's prompt set) | PR #33 MERGED (+ kaimahi-agents/.github#1); main CI green | brand validator in the hygiene job |
 | README front door + CONTRIBUTING.md | user-run lane (outside the board's prompt set) | PR #34 MERGED; main CI green | anchored front-door checker in hygiene: section order enforced, no `npx kaimahi create` mention before the quickstart ends — PR #16's README hunk must land under "A scaffolder CLI: considered, not built" (was "Proposed CLI direction" until D23) |
 | CLI decisions + PR #16 review | user + coordinator | D19 ruled; coordinator review rounds done (2026-09-01/02) | not a build lane; parallelises with everything |
@@ -3815,7 +3816,175 @@ at PR-open-with-checks-green — do not merge. Report every deviation in
 the PR.
 ```
 
+### W36 — `kmx workflow run` has no first command (UNASSIGNED — paste into a fresh CLI session; THE URGENT ONE)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — D42, the W35 delta sheet and the W35 VERIFICATION delta sheet
+bind you, and the security standing guidance applies as always. This is
+a small lane with a structural consequence: until it lands, W35's
+central claim — that a governed workflow can be said once and run — is
+not usable by anybody, because `kmx workflow run` cannot start.
+
+**The defect, already diagnosed. Do not spend the lane rediscovering
+it.**
+- `RunWorkflow` (`internal/kmx/app/workflow_run.go`) calls
+  `b.StepNames()`, which returns EVERY step unconditionally
+  (`internal/kmx/blueprint/blueprint.go`), and passes that whole list to
+  `Bind`.
+- `Bind` then demands parameters for steps a `when:` guard should have
+  excluded, so every parameter set fails during binding.
+- `internal/kmx/blueprint/render.go` already holds the correct
+  predicate — `s.When != "" && !v.Supplied(s.When)` — but it runs during
+  rendering, which binding never reaches.
+
+The symptom a user meets is that **`kmx workflow show` and `kmx workflow
+run` disagree about what a run contains**: `show` prints `build-ado …
+(needs more: not in this run — needs --set ado_pipelines)` and `run`
+refuses to start without it. Fixing the crash while leaving them
+disagreeing is not fixing this.
+
+**The subtlety that will bite you, stated up front: defaults.** `when:`
+is answered from whether a parameter was SUPPLIED, and a parameter
+carrying a default is arguably always supplied — which would make a
+conditional step silently unconditional. `internal/kmx/blueprint/
+params.go` already comments on this distinction; read it before you
+choose. Say in the PR what "supplied" means for a defaulted parameter,
+because that choice decides whether `--set` is the thing that turns a
+step on.
+
+**What you own beyond the fix:**
+- **The two commands must agree, provably.** A test that renders and
+  binds the same blueprint with the same `--set` and asserts the same
+  step set, so this cannot drift apart again. That property, not the
+  crash, is the deliverable.
+- **The reason CI missed it, closed.** Eight green e2e assertions
+  coexisted with a path that cannot start, because the fixture blueprint
+  (`scripts/ci/workflow-fixture.yaml`) has NO `when:` guards and the
+  carried release blueprint has four. Give the fixture a conditional
+  step, or drive the carried blueprint, so the shape that broke is the
+  shape CI exercises. A fix without this leaves the same blind spot.
+- **`--dry-run` is not proof of a run.** W35 reported `--dry-run` proven
+  and the run path is what failed. Whatever you assert, assert it on the
+  path that actually executes steps.
+
+**While you are here, and only if it stays small: `kmx workflow govern`
+is not atomic.** Reproduced on kind at 6b1e572: with no `release-agent`
+credential it writes the standing-bounds fragment and restarts the proxy
+BEFORE discovering the credential is missing, then exits 1 with a bare
+`tool-allow failed (HTTP 404): no such credential`, and repeats the
+mutation on a re-run. It contradicts the "nothing has been applied"
+promise the same lane makes elsewhere, and it leaves constraints that
+would silently attach to a credential of that name created later.
+Precheck the credential before writing anything, and say what is missing
+and how to create it rather than returning an HTTP status. If this turns
+out to be more than a precheck, leave it and say so — W36's first
+obligation is that the run path works.
+
+Guardrails, all hard: kmx accepts no credential material (D27); every
+mutation through the context guard; the driver still files the approval
+request ITSELF, for the exact call the operator named, and refuses if
+the agent proposed something else (the P13 property — nothing in this
+lane may weaken it); no client-go; no Azure or Slack identifiers; no
+repo secrets in CI; CI stays keyless (D14).
+
+Verification is real: a transcript of `kmx workflow run` starting and
+reaching its first approval on the CARRIED release blueprint with a
+partial parameter set — the case that fails today — plus the
+show/run agreement test, plus the fixture change that would have caught
+this. Branch from current main; PR targets main; no stacked bases; lane
+ends at PR-open-with-checks-green — do not merge. Report deviations in
+the PR.
+```
+
 ## Delta sheets from finished lanes
+
+### W35 verification — the blueprint reproduces W32 exactly, where it reaches (2026-09-05)
+
+Run by the user against a real GitHub repository and a real Azure DevOps
+organization, on a scratch repo rather than a production one. No PR: the
+brief said a written report unless a doc or CI change came out of it, and
+the lane produced neither — deliberately, because **the headline finding
+is a bug in the thing under test, and a lane that quietly fixes what it
+was sent to measure destroys the measurement.** That discipline held and
+is worth naming, because the pull the other way is strongest exactly when
+the fix looks small.
+
+**MILESTONE 1 IS REAL, AND EXACT.** The blueprint's governance reproduced
+what the make targets produce on a LIVE cluster, not only in the
+equivalence test: the allowlist, the standing constraints, the
+`arg_summary` a human reads before approving, and the digest an approval
+is welded to. A real branch was cut through the governed path with audit
+rows identical to W32's. That is the milestone the lane was told was
+worth shipping alone, and it shipped.
+
+**MILESTONE 2 CANNOT START — and this is the finding.** `kmx workflow
+run` fails during parameter binding for EVERY parameter set, so the
+blueprint path has no first command. Confirmed independently by the
+coordinator in the code, not only reproduced:
+
+- `RunWorkflow` calls `b.StepNames()`, which returns every step
+  unconditionally (`internal/kmx/blueprint/blueprint.go`), and passes the
+  whole list to `Bind`.
+- `Bind` therefore demands parameters for steps a `when:` guard should
+  have excluded from the run.
+- `internal/kmx/blueprint/render.go` ALREADY holds the right predicate —
+  `s.When != "" && !v.Supplied(s.When)` — but it runs during rendering,
+  which binding never reaches.
+
+So **`kmx workflow show` and `kmx workflow run` disagree about what a run
+contains.** `show` prints `build-ado … (needs more: not in this run —
+needs --set ado_pipelines)`; `run` refuses to start without it. The two
+commands describe different workflows, and the one that describes it
+correctly is the one that does nothing.
+
+Note what this says about the CI that passed: the e2e steps drive the
+fixture blueprint, whose steps carry no `when:` guards. The carried
+release blueprint has four. **A conditional step is exactly what the
+fixture did not have**, which is how eight green assertions coexist with
+a path that cannot start.
+
+**The four sore items the brief named: two confirmed, two refuted.**
+
+- **CONFIRMED — `kmx workflow govern` is not atomic.** Independently
+  reproduced by the coordinator on kind at 6b1e572: with no
+  `release-agent` credential it writes the standing-bounds fragment and
+  restarts the proxy BEFORE discovering the credential is missing, then
+  exits 1 with a bare `tool-allow failed (HTTP 404): no such credential`,
+  repeating the mutation on a re-run. It contradicts the lane's own
+  promise elsewhere ("nothing has been applied"), it leaves constraints
+  that would silently attach to a credential of that name created later,
+  and the bare HTTP status is the class of message W34 exists to remove.
+- **CONFIRMED — credential capture still needs a checkout.** `make
+  release-secret` and `make ado-secret` are make targets, so the
+  clone-free path W31 and W35 built ends precisely at the credentials.
+  A `curl | sh` adopter reaches a governed workflow and then must
+  `git clone` to give it a token.
+- **REFUTED — the Entra hour.** W32's first live run was stranded twice
+  by the ~1h access token. The driver's refresh held.
+- **REFUTED — the ungoverned transfer is buried.** The publish step's
+  decision is governed and its transfer is not; the report found that
+  distinction visible to the operator rather than glossed.
+
+**Gotchas worth keeping:**
+- **A broken credential shows as Accepted for ~5 minutes.** The lag is
+  real and will be read as "it worked".
+- **`kmx up` does not deploy the plane or govern anything**, which is
+  correct after D36 and still surprises anyone who ran `up` and expected
+  a governed system.
+- **An unset current-context makes kmx fall back silently.** The context
+  guard's whole value is that it names where it is about to act; a
+  silent fallback is the one path that does not.
+
+**What the coordinator did NOT verify**, stated rather than implied: the
+live-run numbers, the digest and audit-row comparisons are the lane's,
+reproduced here from its report. What is independently confirmed is the
+`when:`/binding defect, the govern non-atomicity, and milestone 1's
+equivalence test catching a drifted make target (a one-field rename in
+`scripts/release-bind.sh` fails it with a readable diff).
+
+
 
 ### W28 — a version you can install, verify and upgrade (PR #85, merged 2026-09-03)
 
