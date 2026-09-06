@@ -80,6 +80,25 @@ func (a *App) Lift(opt lift.Options) error {
 	defer cleanup()
 
 	steps := opt.StepsToRun()
+
+	// Aim at the managed cluster ONCE, here, before any phase runs.
+	//
+	// This was originally done per phase, and a phase forgot: `--step kagent`
+	// resolved the default local context and ran `helm upgrade --install
+	// --kube-context kind-...` against the operator's own kind cluster. It
+	// failed only because that cluster happened to be stopped. Setting it in
+	// one place is the fix, because it is the only shape where a new phase
+	// cannot reintroduce the bug by omission.
+	//
+	// The kubeconfig entry has to exist first, and every phase except the one
+	// that creates the cluster can assume it does not — a resumed run starts
+	// at an arbitrary phase, in a fresh process, possibly on another day.
+	if steps[0] != "cluster" {
+		if err := a.liftCredentials(opt); err != nil {
+			return err
+		}
+	}
+	a.aimAtTheCluster(opt)
 	started := a.timeNow()
 	for i, step := range steps {
 		p := phase{current: i + 1, total: len(steps), name: lift.StepPurpose[step]}

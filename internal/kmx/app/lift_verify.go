@@ -34,8 +34,6 @@ const (
 // having its data arrive are different things, and only one of them is
 // visible from the Azure CLI's exit status.
 func (a *App) liftVerify(opt lift.Options) error {
-	a.aimAtTheCluster(opt)
-
 	if err := a.kubectlRun("-n", "kagent", "rollout", "status",
 		"deploy/hello-world", "--timeout=300s"); err != nil {
 		return err

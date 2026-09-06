@@ -66,11 +66,6 @@ func (a *App) liftCredentials(opt lift.Options) error {
 // behind a boundary that does not hold, and the operator is told exactly what
 // exists so they can remove it.
 func (a *App) liftBoundary(opt lift.Options, work string) error {
-	if err := a.liftCredentials(opt); err != nil {
-		return err
-	}
-	a.aimAtTheCluster(opt)
-
 	// Gate 1. On a cluster this path created, aks-up.sh already refused
 	// anything but an enforcing engine and read it back from the control
 	// plane; asking again is cheap and keeps the two branches honest about
@@ -191,7 +186,6 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 // one, and otherwise the same fetched-and-packaged context the local path
 // builds, produced by the same code.
 func (a *App) liftPlane(opt lift.Options, work string) error {
-	a.aimAtTheCluster(opt)
 	if err := a.Guard("deploy the governance plane", "kmx lift --step plane "+liftIdentityFlags(opt)); err != nil {
 		return err
 	}
@@ -258,7 +252,6 @@ func planeRegistryImage(registry string) string {
 // no model at all. Governing immediately after applying is what makes the
 // managed cluster's first chat a governed one.
 func (a *App) liftAgents(opt lift.Options) error {
-	a.aimAtTheCluster(opt)
 	if err := a.Guard("create the agents", "kmx lift --step agents "+liftIdentityFlags(opt)); err != nil {
 		return err
 	}

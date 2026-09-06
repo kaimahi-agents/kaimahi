@@ -29,7 +29,6 @@ const (
 // panel and an empty log panel mean different things and point at different
 // fixes.
 func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func() error, work string) error {
-	a.aimAtTheCluster(opt)
 	if err := a.Guard("wire Azure-managed observability", "kmx lift --step observability "+liftIdentityFlags(opt)); err != nil {
 		return err
 	}
