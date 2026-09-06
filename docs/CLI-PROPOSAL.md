@@ -20,7 +20,8 @@ rulings and the review notes on that pull request.
 
 A net-new CLI was not to be built without a written survey against kagent's
 existing CLI first. This document is that survey plus a proposed surface.
-It ends in the decisions that were open when it was written, since ruled.
+It ends in the decisions that were open when it was written; all have
+since been ruled on.
 
 The ask, as given: `npx kaimahi create agent --options ...` plus CRUD, an
 install path "if we really need", and the background security aspects.
