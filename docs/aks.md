@@ -789,6 +789,47 @@ socket, not at kubectl.
 
 ## What was verified, and what was not
 
+### The lift, verified live on 2026-09-06 (two clusters, both torn down)
+
+On a cluster **`kmx lift` created** (1 × `Standard_B4ms`, westus3, Cilium):
+
+- `netpol-probe` reported **"boundary enforced as written"** — the
+  existing negative matrix, run unchanged, against a live boundary;
+- the plane's image built by `az acr build` **in Azure**, pulled from the
+  private registry, and the agent answered through governed Copilot, with
+  a ledger row (`331` in, `213` out, status `200`);
+- **Managed Prometheus returned 12 series of `kaimahi_decisions_total`**,
+  both proxy replicas distinguished by the `pod` label, and
+  `sum by (seam, decision, reason) (…) > 0` gave `{proxy, allowed, ok} = 1`
+  — the chat above, as a metric;
+- **Container Insights returned real plane log lines**, including
+  `gateway: projected tools/list credential=hello-tools`;
+- the scraper's own reachability, checked directly: `curl` from the
+  `ama-metrics` pod to the plane's ops port returned 170 `kaimahi_`
+  metric lines, which is the NetworkPolicy allowance working;
+- the whole one-command run took **14m22s** with the cluster already
+  there (first cluster creation is a further ~4m; the longest phase by
+  far is enabling the two monitoring add-ons).
+
+On a cluster **`kmx lift` did NOT create**, in a resource group it did
+not create:
+
+- a cluster with **no policy engine was REFUSED in 2.6s**, before
+  anything was written — verified afterwards: the cluster still had only
+  its four default namespaces, no `kaimahi`, no `kagent`;
+- **`AcrPull` was refused, not granted**, naming the exact
+  `az aks update --attach-acr` for the owner to run;
+- with an enforcing engine and pull rights granted by hand, the same
+  path ran, and `netpol-probe` again reported the boundary enforced.
+
+**Not verified**: that the workbook's Prometheus panels render in the
+portal. Every query in it was run against the live workspaces through
+the API and returned data, and the workbook resource deployed cleanly,
+but nobody opened it in a browser. The `azure` and `calico` policy
+engines remain unexercised, as does more than one node.
+
+### Earlier runs
+
 Verified live on a real AKS cluster on 2026-09-01 (Kubernetes 1.35.7,
 1 × `Standard_B4ms`, westus3; evidence in the PR that shipped it, with
 Azure identifiers redacted):
