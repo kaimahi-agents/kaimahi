@@ -143,6 +143,7 @@ swap plus a credential the agent cannot read past.
 | `kmx ledger [<credential>]` | the spend ledger, newest first, plus month-to-date totals. The last column is `acted for`: who the call was made for |
 | `kmx grants [<credential>]` | grants, with liveness — an expired grant is not a grant |
 | `kmx audit tool\|approval [<cred>]` | the enforcement points' audit trails |
+| `kmx flow [<credential>]` | the ledger, the tool audit, the approval audit and the inbound audit as one chronological reading, oldest first — what triggered a run, what it spent, what it called, what it was refused and what a human let through. Defaults to every credential. It is a **timeline, not a trace**: the four trails share only the credential and the timestamp, so rows are ordered by time and never linked causally, and it says so under every rendering |
 | `kmx use <preset>` | switch an agent onto a preset from `k8s/models/` (`--agent`, default `hello-world`); waits until exactly one pod is on the new template |
 | `kmx budget [<credential>] [--cents n\|-] [--tokens n\|-]` | replace the monthly caps. No flags **clears** both — the same as `make budget` with no `CAP_*` |
 | `kmx approvals` | the requests waiting for a decision, each with the CALL it is about |
