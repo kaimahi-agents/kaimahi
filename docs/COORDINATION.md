@@ -129,7 +129,8 @@ prefix.
 | W33: the lift — local agent to AKS in one path, with managed observability (D41) | unassigned | SHAPED 2026-09-03 — prompt below | mostly wiring, not building; must not put /metrics on a Service; teardown + spend mandatory |
 | W34: kmx tells the truth — the ungoverned count, and a version handshake | unassigned | **RE-SHAPED 2026-09-04** — prompt below, finding (b) TRIMMED because W35 (#107) solved it for one endpoint | two findings from the W28/P15/W30 verification pass; deliberately a lane, not a coordinator PR |
 | W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
-| W36: `kmx workflow run` has no first command (from the W35 verification) | unassigned | SHAPED 2026-09-05 — prompt below; **the urgent one** | small fix, structural consequence: until it lands, W35's central claim is unusable by anyone |
+| W36: `kmx workflow run` has no first command (from the W35 verification) | W36 worker | PR #112 OPEN — show and run describe one run | coordinator verification owed |
+| W37: say the thing, not its planning number — 879 references cleaned out of code and docs | unassigned | SHAPED 2026-09-06 — prompt below | NOT a sed: about a fifth are load-bearing and need the reason written out; runs AFTER #112 merges |
 | Brand assets + architecture diagram + org/front-door plans | user-run lane (outside the board's prompt set) | PR #33 MERGED (+ kaimahi-agents/.github#1); main CI green | brand validator in the hygiene job |
 | README front door + CONTRIBUTING.md | user-run lane (outside the board's prompt set) | PR #34 MERGED; main CI green | anchored front-door checker in hygiene: section order enforced, no `npx kaimahi create` mention before the quickstart ends — PR #16's README hunk must land under "A scaffolder CLI: considered, not built" (was "Proposed CLI direction" until D23) |
 | CLI decisions + PR #16 review | user + coordinator | D19 ruled; coordinator review rounds done (2026-09-01/02) | not a build lane; parallelises with everything |
@@ -644,6 +645,45 @@ Everything without a ruling in its own heading is not GO.
   one.
 
 ## Process rules (proven over ~60 PRs; keep)
+
+- **Say the thing, not its planning number.** Recorded 2026-09-06, from
+  the user, after W36: comments and documentation across this repository
+  refer to `P4b`, `P12`, `D38`, `W35`. Measured at the time: **879
+  occurrences**, 759 in code and CI and 120 in docs, outside this board.
+  A lane identifier is a coordination artifact with no meaning to anyone
+  reading the code — including us, six months on.
+
+  **This board keeps its identifiers.** It is the planning document and
+  that is its job. Everything downstream of it — Go, YAML, shell,
+  Makefile, `docs/*.md`, PR bodies — says what the thing DOES.
+
+  Three habits, and only the third is allowed:
+
+  1. **The number as the name.** `// Package gateway is the P4b enforcing
+     MCP gateway` — the identifier carries nothing the next four words do
+     not. Delete it.
+  2. **The number as an appeal to authority.** `D38(2) asks for one
+     property: approving "publish v1.2.3" must not authorize the next
+     release.` A reader who cannot look it up learns nothing; one who can
+     is sent on a detour to reach a sentence already in front of them.
+     State the reason and drop the citation — and if the reason will not
+     survive without it, the comment was resting on the reference rather
+     than saying anything.
+  3. **A trailing pointer to a DOCUMENT.** `(see docs/approvals.md)` —
+     keep. It points at something a reader can use. A planning number is
+     not that, even when the board is in the repository.
+
+  **The coordinator is the source and this rule binds the prompts
+  first.** Worker prompts are dense with D- and W-references, workers
+  carry that register into their comments, and the coordinator then
+  verifies the result without noticing. A prompt may cite decisions —
+  that is how a lane learns what binds it — but it must ask for comments
+  that stand on their own, and it should say so explicitly.
+
+  **Mechanical stripping is not the fix.** Roughly a fifth of these sites
+  are load-bearing: remove the reference and a claim is left with nothing
+  holding it up. Those need the reason written out, which is more work
+  and the entire point.
 
 - Board is the single coordination doc; coordinator is the only writer.
   Since D17 every board change is a PR the user merges (the `protect-main`
@@ -3896,6 +3936,94 @@ show/run agreement test, plus the fixture change that would have caught
 this. Branch from current main; PR targets main; no stacked bases; lane
 ends at PR-open-with-checks-green — do not merge. Report deviations in
 the PR.
+```
+
+### W37 — say the thing, not its planning number (UNASSIGNED — paste into a fresh CLI session; runs AFTER #112 merges)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — the process rule "Say the thing, not its planning number" is
+what this lane exists to apply, and the security standing guidance
+applies as always.
+
+**The problem, raised by the user and measured before shaping.** This
+repository's comments and documentation refer to lane and decision
+identifiers — `P4b`, `P12`, `D38`, `W35` — as if a reader could use
+them. At the time of shaping: **879 occurrences**, 759 in code and CI
+and 120 in documentation, outside the board. Heaviest:
+`.github/workflows/ci.yml` (120), `Makefile` (62),
+`k8s/plane/proxy.yaml` (20), `plane/internal/gateway/gateway.go` (18),
+`internal/kmx/blueprint/blueprint.go` (18), `docs/NAMING.md` (18),
+`plane/internal/config/config.go` (17).
+
+**`docs/COORDINATION.md` IS OUT OF SCOPE and must not be touched.** It is
+the planning document; the identifiers are its subject. Everything
+downstream of it is yours: Go, YAML, shell, the Makefile, `docs/*.md`,
+and `CHANGELOG.md`.
+
+**THIS IS NOT A `sed`, AND A MECHANICAL PASS WOULD MAKE THE CODE
+WORSE.** Three shapes, and they need different treatment:
+
+1. **The number as the name.** `// Package gateway is the P4b enforcing
+   MCP gateway: the governance seam …` — the identifier carries nothing
+   the following words do not. Delete it and close the gap.
+2. **The number as a label prefix.** `// P12: a grant admits one CALL —
+   the digest of its canonical policy fields` — the sentence already
+   says it. Drop the prefix, keep the sentence.
+3. **The number doing the arguing.** `D38(2) asks for one property:
+   approving "publish v1.2.3" must not authorize the next release. That
+   is P12's argument binding …` — this one you must REWRITE, not strip.
+   The reference is holding the claim up. Say why the property holds:
+   an approval is welded to the digest of the exact call, so a grant for
+   one release cannot be spent on the next. Roughly a fifth of the sites
+   are this shape and they are the work.
+
+A trailing pointer to a DOCUMENT (`see docs/approvals.md`) is correct
+and stays. A pointer to a planning number is not, even though the board
+is in this repository.
+
+**Where the reason is genuinely long**, put it in the right document and
+point at that — `docs/approvals.md`, `docs/tool-governance.md`,
+`docs/hosted-upstreams.md` already exist and are where a reader would
+look. Creating a new doc to hold an evicted paragraph is fine; scattering
+the paragraph across six call sites is not.
+
+**Judgement calls this lane owns:**
+- **Commit messages and merged PR bodies are history — do not rewrite
+  them.** The rule is about text a reader meets while reading the code.
+- **`CHANGELOG.md` entries** describe shipped behaviour to users, so the
+  rule applies; but do not restate history that is already published
+  under a different description. Say what you did.
+- **Where a comment's only content was the reference**, the honest
+  outcome may be deleting the comment rather than inventing a
+  justification for it. Say how many you removed outright.
+- **Migration filenames and identifiers that are part of an interface**
+  (`00009_run_identity.sql`, a credential name, an audit value) are NOT
+  planning references. Leave them.
+
+**Do it in reviewable batches, not one commit of 879 edits.** One
+commit per area — the plane, kmx, the manifests, CI and the Makefile,
+the docs — so a reviewer can actually read the rewrites. The
+load-bearing rewrites are the ones needing eyes; say in the PR which
+commits contain them.
+
+Guardrails: change no behaviour. No code moves, no renames, no
+refactoring "while you are in there" — a comment lane that also edits
+logic cannot be reviewed for either. `go test ./...` (root and `plane/`),
+`go vet`, `gofmt`, the doc-link checker, the delegation checker, the
+front-door checker, the Azure-identifier checker and the docs-only guard
+meta-check must all still pass, and the CI comment edits must not
+disturb the guard assertions that parse `ci.yml`.
+
+Verification: state the before and after counts with the command that
+produced them, so the claim is checkable —
+`git grep -ohE '\b([WDP][0-9]{1,2}[a-c]?)\b' -- '*.go' '*.py' '*.sh'
+'*.yaml' '*.yml' 'Makefile' '*.md' ':!docs/COORDINATION.md' | wc -l`.
+A residue is acceptable if each survivor is justified in the PR; a zero
+that was reached by deleting comments wholesale is not. Branch from
+current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
 ## Delta sheets from finished lanes
