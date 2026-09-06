@@ -115,9 +115,9 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 	}
 	for _, id := range newResources(before, after) {
 		if err := record.Add(lift.Resource{
-			Kind: "data collection rule or endpoint (created by the monitoring add-on)",
+			Kind: "created by the monitoring add-on (" + resourceTypeFromID(id) + ")",
 			Name: resourceNameFromID(id), ID: id, InResourceGroup: inGroup,
-			Billing: "no standing charge of its own; it is what routes data to the workspaces, which do charge",
+			Billing: "no standing charge of its own; it routes or records data into the workspaces, which do charge",
 		}); err != nil {
 			return err
 		}
@@ -242,11 +242,28 @@ func (a *App) groupLocation(group string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// dataCollectionResources lists the data-collection rules and endpoints in a
-// resource group, as a set of ids.
+// addOnCreatedTypes are the resource types the monitoring add-ons create on
+// the operator's behalf. We do not choose their names, so what appeared has to
+// be established by difference rather than by matching one.
+//
+// The third entry is here because a live run found it. Enabling Managed
+// Prometheus also writes default Prometheus RULE GROUPS — eight of them on the
+// verified run — and a teardown that knew only about data-collection rules
+// would have left them on somebody else's subscription, recording series and
+// billing for them, with nothing in the run record to say they existed.
+// Watching the subscription's own activity log is what turned that up; it is
+// not in the documentation for the flag.
+var addOnCreatedTypes = []string{
+	"Microsoft.Insights/dataCollectionRules",
+	"Microsoft.Insights/dataCollectionEndpoints",
+	"Microsoft.AlertsManagement/prometheusRuleGroups",
+}
+
+// dataCollectionResources lists everything the add-ons create in a resource
+// group, as a set of ids.
 func (a *App) dataCollectionResources(group string) (map[string]bool, error) {
 	found := map[string]bool{}
-	for _, kind := range []string{"Microsoft.Insights/dataCollectionRules", "Microsoft.Insights/dataCollectionEndpoints"} {
+	for _, kind := range addOnCreatedTypes {
 		out, err := a.Run.Capture("az", "resource", "list", "--resource-group", group,
 			"--resource-type", kind, "--query", "[].id", "-o", "json")
 		if err != nil {
@@ -272,6 +289,23 @@ func newResources(before, after map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// resourceTypeFromID pulls the last provider segment out of an ARM id, so a
+// recorded resource says what KIND of thing it is rather than only its name —
+// "prometheusRuleGroups" and "dataCollectionRules" are removed the same way
+// but are worth telling apart when one is left behind.
+func resourceTypeFromID(id string) string {
+	parts := strings.Split(strings.TrimRight(id, "/"), "/")
+	for i := len(parts) - 2; i > 0; i-- {
+		if strings.EqualFold(parts[i-1], "providers") {
+			return strings.Join(parts[i:len(parts)-1], "/")
+		}
+	}
+	if len(parts) >= 2 {
+		return parts[len(parts)-2]
+	}
+	return "resource"
 }
 
 func resourceNameFromID(id string) string {
