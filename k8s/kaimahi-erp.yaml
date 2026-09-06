@@ -1,4 +1,4 @@
-# The P13 seam: a Kaimahi-owned RemoteMCPServer whose URL is the enforcing
+# The ERP seam: a Kaimahi-owned RemoteMCPServer whose URL is the enforcing
 # MCP gateway's FOURTH upstream — the demo's fixture ERP (k8s/erp-mcp.yaml).
 # Same shape as k8s/kaimahi-tools.yaml, k8s/kaimahi-slack.yaml and
 # k8s/kaimahi-github.yaml, one upstream over.

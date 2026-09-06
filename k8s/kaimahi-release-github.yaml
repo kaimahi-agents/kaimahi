@@ -1,7 +1,8 @@
-# W32: the release agent's GitHub seam — GitHub's hosted MCP server behind
+# The release agent's GitHub seam — GitHub's hosted MCP server behind
 # the enforcing MCP gateway, on the `github-release` upstream.
 #
-# Deliberately a SECOND seam rather than a wider P10 one. `kaimahi-github`
+# Deliberately a SECOND seam rather than a wider version of the read-only
+# GitHub one. `kaimahi-github`
 # (k8s/kaimahi-github.yaml) reaches the same server with a READ-ONLY token
 # and a read-only allowlist, and it keeps exactly the blast radius it was
 # reviewed with. This one reaches it with a token that can change a real

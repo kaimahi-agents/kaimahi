@@ -1,4 +1,4 @@
-# The P10 seam: a Kaimahi-owned RemoteMCPServer whose URL is the
+# The GitHub seam: a Kaimahi-owned RemoteMCPServer whose URL is the
 # enforcing MCP gateway's THIRD upstream — GitHub's hosted MCP server,
 # the first upstream the gateway reaches over the internet (through the
 # plane's hardened dialer, docs/hosted-upstreams.md). Same shape as

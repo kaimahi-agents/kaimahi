@@ -1,6 +1,6 @@
-# The P5a seam: a Kaimahi-owned RemoteMCPServer whose URL is the
+# The Slack seam: a Kaimahi-owned RemoteMCPServer whose URL is the
 # enforcing MCP gateway's SECOND upstream — the in-cluster Slack MCP
-# server. Same shape as k8s/kaimahi-tools.yaml (P4b), one upstream over.
+# server. Same shape as k8s/kaimahi-tools.yaml, one upstream over.
 #
 # Custody: headersFrom resolves the agent's credential from a Secret
 # holding ONLY the Kaimahi-issued kmh_ opaque token (`make govern-slack`

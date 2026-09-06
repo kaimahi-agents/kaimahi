@@ -1,5 +1,5 @@
 # GOVERNED preset: the in-cluster Ollama free tier, routed through the
-# Kaimahi proxy (P4a). The baseUrl is the proxy, not the model server —
+# Kaimahi model proxy. The baseUrl is the proxy, not the model server —
 # every call is authenticated, budget-checked, and ledgered.
 #
 # Custody: apiKeySecret holds a Kaimahi-ISSUED opaque token (minted by

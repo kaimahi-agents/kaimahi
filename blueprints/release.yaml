@@ -1,10 +1,10 @@
-# W32's release workflow, as a blueprint (D42, option A).
+# The release agent's workflow, declared as a blueprint: one file, one driver.
 #
 # This file is the SHAPE of the workflow. It carries no repository, no
 # organization, no project and no token — those are `parameters`, supplied
 # with --set at apply time, which is what keeps somebody's real project out
-# of a public repository's tree and keeps D27 (kmx accepts no credential
-# material) true of a file format as well as of a flag.
+# of a public repository's tree and keeps kmx's rule that it accepts no
+# credential material true of a file format as well as of a flag.
 #
 # What it replaces, and this is the point of the lane: the same intent used
 # to live in four places at once —
@@ -192,7 +192,7 @@ seams:
     # person's attention on the safest step — and it creates a race the
     # process cannot win: the Entra token lives about an hour, and the gap
     # between filing a request, a human approving it and the agent calling
-    # is exactly that long. On W32's first real run the token expired in
+    # is exactly that long. On the first real release run the token expired in
     # that window and stranded three approvals that had already been given.
     #
     # The caveat, since a constraint ADMITS: this bounds WHICH pipeline
@@ -206,7 +206,7 @@ seams:
         - {field: project,    op: eq, value: "${ado_project}", when: ado_pipelines}
         - {field: pipelineId, op: in, values: "${ado_pipelines}", when: ado_pipelines}
     # The Entra access token lives about an hour and a release session is
-    # longer. It expired twice on W32's first real run, and both times the
+    # longer. It expired twice on the first real release run, and both times the
     # symptom was the agent reporting "there is no pipelines_build tool in
     # my toolset" — the seam had gone Accepted=False and kagent dropped its
     # tools. Cause and symptom nowhere near each other.
@@ -234,9 +234,9 @@ steps:
       number and title -- do not invent a meaning for it.
       Do not create anything. Report only what the tools told you.
 
-  # A separate turn from `propose`, because of a bug W32 shipped: the
-  # proposal's whole reply became the release body, so the first real
-  # release got 80 lines of the agent's working notes. The proposal is for
+  # A separate turn from `propose`, because of a bug the first version
+  # shipped: the proposal's whole reply became the release body, so the first
+  # real release got 80 lines of the agent's working notes. The proposal is for
   # a person to read before approving; the body is a different artifact and
   # has to be asked for separately.
   - name: compose
@@ -350,7 +350,7 @@ steps:
   # naming the release, a human, a grant welded to it. The TRANSFER is not
   # — and that is stated rather than glossed. release-publish.sh moves the
   # artifacts with the operator's own `az` and `gh` (1.28 GB across five
-  # assets on W32's last real release), because the gateway is deliberately
+  # assets on the last real release), because the gateway is deliberately
   # not in that path: the request-body cap is 4 MiB and an MCP gateway
   # moving binaries would be the wrong tool at any size.
   - name: publish

@@ -64,7 +64,7 @@ spec:
               mountPath: /data
       volumes:
         # emptyDir: models re-pull on pod restart. Fine for a demo cluster;
-        # a PVC would outlive the pod but P1 keeps moving parts minimal.
+        # a PVC would outlive the pod but this demo keeps moving parts minimal.
         - name: models
           emptyDir: {}
 ---

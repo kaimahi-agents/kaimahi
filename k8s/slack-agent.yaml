@@ -1,16 +1,17 @@
-# The P5a demo agent: the first agent in this repo that can do something
+# The Slack demo agent: the first agent in this repo that can do something
 # a human would mind.
 #
 # Everything before this governed an agent that lists ConfigMaps. This
 # one posts into a Slack channel people read — so posting is NOT in its
 # allowlist. `make govern-slack` gives its credential the read-only
-# Slack tool only; the post is the APPROVED action (P4c): denied, filed,
+# Slack tool only; the post is the APPROVED action: denied, filed,
 # granted with bounds, spent, denied again.
 #
-# It runs the GOVERNED Copilot preset (D14) so one demo exercises spend
+# It runs the GOVERNED Copilot preset so one demo exercises spend
 # governance and tool governance together — and because composing a
-# message and calling a tool in the same turn is beyond qwen2.5:3b (P1
-# and P3 deltas). CI never runs this agent: CI is keyless on ollama and
+# message and calling a tool in the same turn is beyond qwen2.5:3b
+# (measured on the hello-world and hello-tools agents). CI never runs
+# this agent: CI is keyless on ollama and
 # holds no Slack or Copilot token, ever.
 #
 # The channel ID is never committed. It is supplied per task (and the
@@ -25,7 +26,7 @@ spec:
   description: Kaimahi's Slack demo agent — composes a message and asks to post it.
   type: Declarative
   declarative:
-    # Governed Copilot (P4a): the agent holds a kaimahi token; the real
+    # Governed Copilot: the agent holds a kaimahi token; the real
     # Copilot token lives only with the proxy. `make govern` /
     # `make plane-copilot-secret` set this up.
     modelConfig: governed-copilot

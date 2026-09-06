@@ -1,4 +1,4 @@
-# Postgres 16: the plane's durable store (D11) — credentials (hashes
+# Postgres 16: the plane's durable store — credentials (hashes
 # only), budgets, and the append-only spend ledger. The password comes
 # from the kaimahi-pg Secret (created by scripts/plane-secrets.sh —
 # stdin/file-only, never YAML) via POSTGRES_PASSWORD_FILE, so no secret
@@ -64,9 +64,9 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
-            # Sized for the 2-CPU CI runner (P3 delta: the node sits near
-            # its CPU-request ceiling, and agent preset switches surge a
-            # second 50m pod). Requests are scheduling promises, not caps
+            # Sized for the 2-CPU CI runner, where the node sits near its
+            # CPU-request ceiling and an agent preset switch surges a
+            # second 50m pod. Requests are scheduling promises, not caps
             # — with no CPU limit the demo's tiny query load can still
             # burst.
             requests:

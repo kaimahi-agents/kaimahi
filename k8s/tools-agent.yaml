@@ -1,20 +1,21 @@
-# The P3 deliverable: the hello-world topology grown a connector — as code.
+# The hello-world topology grown a connector — as code.
 #
 # A second declarative Agent that thinks with the same keyless in-cluster
-# model as P1 but can additionally call an MCP tool. The tool server is not
+# model as the hello-world agent but can additionally call an MCP tool. The
+# tool server is not
 # ours: kagent's own bundled kagent-tools server (enabled in
 # k8s/kagent-values.yaml, locked to read-only k8s tools) is published by the
 # kagent chart as the `kagent-tool-server` RemoteMCPServer, and this Agent
 # wires to it via spec.declarative.tools — kagent's native MCP mechanism.
-# Kaimahi ships no MCP runtime, proxy, or gateway here; that seam is where the
-# P4 governance gateway mounts.
+# Kaimahi ships no MCP runtime, proxy, or gateway here; that seam is where
+# the governance gateway mounts.
 #
-# k8s/hello-world.yaml (the P1 artifact) is deliberately never mutated: its
+# k8s/hello-world.yaml is deliberately never mutated: its
 # agent stays tool-free, and this file is the diff that "allows connectors".
 #
-# WARNING: P3 tools are UNGOVERNED. The single-tool allowlist below and the
+# WARNING: these tools are UNGOVERNED. The single-tool allowlist below and the
 # tool server's read-only lockdown are the only limits — egress enforcement,
-# tool permits, and audit arrive with the Kaimahi governance plane in P4.
+# tool permits, and audit arrive with the Kaimahi governance plane.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
@@ -24,9 +25,9 @@ spec:
   description: Hello-world agent with one MCP tool — reads live cluster state.
   type: Declarative
   declarative:
-    # Reuses the P1 ModelConfig (keyless in-cluster Ollama, qwen2.5:3b).
+    # Reuses the hello-world ModelConfig (keyless in-cluster Ollama, qwen2.5:3b).
     modelConfig: hello-world-model
-    # CI runners are 2-CPU (P1 delta) and total node requests already run
+    # CI runners are 2-CPU and total node requests already run
     # ~95% with the default agent request of 100m — halve it so the tool
     # path still schedules there.
     # The agent pod runs model output; it is the LEAST trusted workload here
@@ -83,6 +84,6 @@ spec:
           name: kagent-tool-server
           # Allowlist a single read-only tool. The server offers eight
           # k8s_* read tools; one keeps the small local model reliable and
-          # the ungoverned surface minimal until P4 permits exist.
+          # the ungoverned surface minimal until governed tool permits exist.
           toolNames:
             - k8s_get_resources

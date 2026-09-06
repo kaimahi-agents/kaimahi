@@ -1,4 +1,4 @@
-# P5a: the Slack MCP server, deployed BY kagent, running IN cluster.
+# The Slack MCP server, deployed BY kagent, running IN cluster.
 #
 # Kaimahi writes no connector code (prime directive). This is an existing,
 # third-party MCP server deployed through kagent's own MCPServer CRD:
@@ -9,8 +9,7 @@
 #   the bytes that were reviewed. The npm reference server
 #   @modelcontextprotocol/server-slack was rejected — npm marks it
 #   "no longer supported" with no publish since 2025-04-25.
-#   Provenance and the survey: docs/slack.md (full record: the P5a delta
-#   sheet in docs/COORDINATION.md).
+#   Provenance and the survey: docs/slack.md.
 #
 # CUSTODY. The bot token reaches this pod and nowhere else:
 #   - it is NEVER in this file. kagent renders `secretRefs` as

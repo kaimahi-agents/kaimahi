@@ -1,4 +1,4 @@
-# The P13 demo agent: accounts-payable exceptions — the invoices ordinary
+# The demo agent: accounts-payable exceptions — the invoices ordinary
 # three-way matching cannot resolve. It reads the ERP through Kaimahi's
 # governance gateway and holds no authority of its own.
 #
@@ -24,7 +24,8 @@
 #      (k8s/plane/upstreams.yaml). A model that forgets it changes nothing.
 #
 # The preset is governed-ollama so the demo, and CI's bounded smoke run of
-# it, stay keyless (D14). On a cluster with a real model, switch it:
+# it, stay keyless: this repository is public and fork-exposed, so CI holds
+# no hosted credential of any kind. On a cluster with a real model, switch it:
 # `make use AGENT=ap-agent PRESET=governed-copilot`. Investigation of this
 # kind is beyond qwen2.5:3b — CI asserts that the agent reaches the tools
 # and produces a turn, and NOTHING about its prose or its arithmetic.

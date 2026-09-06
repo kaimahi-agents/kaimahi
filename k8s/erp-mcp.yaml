@@ -1,9 +1,9 @@
-# P13: the demo's ERP — an MCP tool server over a fixture corpus, in the
+# The demo's ERP — an MCP tool server over a fixture corpus, in the
 # plane's namespace, reachable only through the enforcing MCP gateway.
 #
 # WHY THIS IS NOT AN MCPServer LIKE k8s/slack-mcp.yaml. That one deploys a
 # published third-party image through kagent's CRD, digest-pinned. This
-# image is OURS and is deliberately never published (P13 guardrail), so it
+# image is OURS and is deliberately never published, so it
 # is built from source by `make erp` (scripts/erp-deploy.sh) and runs as a
 # plain Deployment. The POSTURE is the same one and that is what matters:
 # it holds no credential, it dials nothing, and its NetworkPolicy admits
@@ -11,13 +11,13 @@
 #
 # "Never published" is not "kind only". On a managed cluster the image is
 # built BY a PRIVATE registry (`az acr build`, the same road the proxy
-# takes since P5b) and pulled by the kubelet identity — a private ACR is
-# not publication (D15), and no image ever leaves it.
+# takes on a managed cluster) and pulled by the kubelet identity — a
+# private ACR is not publication, and no image ever leaves it.
 #
 # THE CORPUS IS NOT IN THIS FILE AND NOT IN THE IMAGE. It is
 # k8s/erp-fixtures.json, projected as the ConfigMap kaimahi-erp-fixtures
 # by `make erp-fixtures`, which also restarts this Deployment. Editing the
-# story is editing that JSON — no rebuild (D30). One source of truth, so
+# story is editing that JSON — no rebuild. One source of truth, so
 # the corpus the Go tests check the arithmetic of
 # (internal/erp/fixtures_test.go) is the corpus that runs. The mount is
 # required, not optional: a pod with no corpus does not start, rather than

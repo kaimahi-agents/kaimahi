@@ -1,15 +1,15 @@
-# The P10 demo agent: reads issues and pull requests on a repository
+# The GitHub demo agent: reads issues and pull requests on a repository
 # through GitHub's hosted MCP server — the first tool upstream the
 # gateway reaches over the internet — and never holds the GitHub token.
 #
 # `make govern-github` gives its credential exactly two READ tools
 # (list_issues, list_pull_requests). A write tool (issue_write) is named
 # in the SELECTION below but is NOT allowlisted: calling it is the action
-# a human approves (P4c), denied → filed → granted with bounds. The token
+# a human approves, denied → filed → granted with bounds. The token
 # in plane custody is read-only too, so even a granted write stops at
 # GitHub: two independent layers.
 #
-# It runs the GOVERNED Copilot preset (D14) — relaying a tool payload the
+# It runs the GOVERNED Copilot preset — relaying a tool payload the
 # size of a GitHub listing is beyond qwen2.5:3b, and one demo then
 # exercises spend governance and tool governance together. CI never runs
 # this agent: CI is keyless and holds no GitHub or Copilot token, ever;

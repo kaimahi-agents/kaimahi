@@ -2,7 +2,7 @@
 #
 # Copy or edit this for LiteLLM gateways, vLLM, llama.cpp servers, or any
 # other endpoint speaking the OpenAI chat-completions protocol. This is also
-# the seam where Kaimahi's P4 governance proxy will mount (baseUrl -> proxy).
+# the seam where Kaimahi's governance proxy mounts (baseUrl -> proxy).
 #
 # Edit before use: baseUrl and model.
 #

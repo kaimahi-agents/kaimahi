@@ -1,4 +1,4 @@
-# P10: the gateway's internet allowance for HOSTED tool upstreams (the
+# The gateway's internet allowance for HOSTED tool upstreams (the
 # GitHub MCP server).
 #
 # Deliberately NOT part of k8s/plane/ — the plane's own boundary

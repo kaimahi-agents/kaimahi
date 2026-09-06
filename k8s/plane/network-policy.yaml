@@ -1,4 +1,4 @@
-# P7a: the network boundary around the governance plane.
+# The network boundary around the governance plane.
 #
 # Everything in the kaimahi namespace is default-deny, ingress AND egress,
 # and each workload gets back exactly the paths the delta sheets say must
@@ -31,7 +31,7 @@
 #     bearer token. Nothing in the pod network can reach 9091.
 #   - Copilot, and hosted tool upstreams. The proxy's committed upstream
 #     table names api.githubcopilot.com (twice: the Copilot LLM path and,
-#     P10, GitHub's hosted MCP server), but nothing in THIS file lets the
+#     GitHub's hosted MCP server), but nothing in THIS file lets the
 #     proxy leave the cluster. Those allowances are k8s/egress-copilot.yaml
 #     (applied by `make plane-copilot-secret`) and k8s/egress-hosted.yaml
 #     (applied by `make github-secret`) — the moment a hosted upstream is
@@ -73,7 +73,7 @@ spec:
 #
 # Out: the ledger, the three in-cluster upstreams the committed table
 # names (ollama, kagent's tool server, the Slack MCP server), the kagent
-# controller on 8083 (P7b: the inbound bridge invokes agents through its
+# controller on 8083 (the inbound bridge invokes agents through its
 # A2A endpoint), and DNS. Each upstream is pinned to its POD by label, in
 # its namespace, on its port — not to the Service, because policy is
 # evaluated on the post-NAT pod address. A new in-cluster entry in
@@ -84,7 +84,7 @@ spec:
 #
 # Not opened here: the inbound port (8082) from outside the cluster. On
 # kind the demo reaches it by port-forward (kubelet traffic, which this
-# policy does not see). The public path is opt-in (P8, `make
+# policy does not see). The public path is opt-in (`make
 # inbound-expose` on TARGET=aks): k8s/inbound-edge.yaml carries the edge
 # and the one allowance it needs, kaimahi-proxy-ingress-edge (the edge
 # pod, 8082, nothing else).
@@ -143,7 +143,7 @@ spec:
       ports:
         - protocol: TCP
           port: 13080
-    # P13: the demo's fixture ERP (k8s/erp-mcp.yaml), the fourth
+    # The demo's fixture ERP (k8s/erp-mcp.yaml), the fourth
     # in-cluster tool upstream. Pinned to its pod by label, on its port.
     # Present whether or not the ERP is deployed: an allowance to a pod
     # that does not exist opens nothing.
@@ -154,7 +154,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8085
-    # P7b: the inbound bridge invokes agents through the kagent
+    # The inbound bridge invokes agents through the kagent
     # controller's A2A endpoint (the one origin it dials, docs/inbound.md).
     # The controller only, on 8083 — not the agent pods, not the rest of
     # the kagent namespace. The controller's selector is the chart's
@@ -184,7 +184,7 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# 2b. The operations port (P9). The proxy's metrics, readiness and
+# 2b. The operations port. The proxy's metrics, readiness and
 #     liveness live on 9092, on NO Service: kubelet's probes are
 #     node-originated and need no rule, and nothing in the agent
 #     namespace or behind the edge can reach it (rule 2 opens 8080 and
@@ -241,12 +241,12 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# 4. The Slack MCP server (P5a) — the one pod here that legitimately
+# 4. The Slack MCP server — the one pod here that legitimately
 #    needs the internet. Labels are what kagent's kmcp controller puts on
 #    the MCPServer's pods (read from a live cluster, 2026-09-01).
 #
-# In: the proxy only, on 13080. This CLOSES the bypass P5a measured and
-# documented: slack-mcp-server v1.3.0 ignores its API key on the http
+# In: the proxy only, on 13080. This CLOSES a measured and documented
+# bypass: slack-mcp-server v1.3.0 ignores its API key on the http
 # transport, so until now any pod in the cluster could call it directly
 # and post as the bot, around the gateway's allowlist and audit. Now
 # the only route to it is through the gateway.
@@ -259,7 +259,7 @@ spec:
 # would rather send the workspace token. NetworkPolicy cannot express
 # "only slack.com" (no DNS-name selectors in the core API), so what
 # bounds the destination is still the server's own code plus the three
-# non-network layers P5a named (gateway allowlist, channel restriction,
+# non-network layers around it (gateway allowlist, channel restriction,
 # Slack scopes). What this DOES guarantee: no plaintext ports, no other
 # in-cluster pod (the private ranges are excluded — the ledger, ollama,
 # the tool server and the proxy's admin port are all unreachable from
@@ -310,7 +310,7 @@ spec:
         - protocol: TCP
           port: 443
 ---
-# 5. The demo's fixture ERP (P13, k8s/erp-mcp.yaml). The mirror image of
+# 5. The demo's fixture ERP (k8s/erp-mcp.yaml). The mirror image of
 #    the Slack server: that pod needs the internet, this one needs
 #    nothing at all.
 #

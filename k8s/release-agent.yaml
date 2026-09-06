@@ -1,5 +1,5 @@
-# W32: the release agent — the first thing Kaimahi is used FOR rather than
-# demonstrated with (D38). It helps cut a real release of a real project:
+# The release agent — the first thing Kaimahi is used FOR rather than
+# demonstrated with. It helps cut a real release of a real project:
 # it reads what merged since the last release and DRAFTS the notes, then
 # proposes and performs the steps a human approves.
 #
@@ -17,14 +17,14 @@
 #     pipeline that build and publish; they move the bytes.
 #   - decide to ship. Every consequential call is denied by default, files
 #     an approval request carrying the exact call, and proceeds only under
-#     a grant welded to that call (P12). Approving "cut release/v1.2.3"
+#     a grant welded to that call. Approving "cut release/v1.2.3"
 #     cannot be spent on v1.2.4.
 #   - reach a second repository. The token in plane custody is scoped to
 #     one; the read tools carry a standing constraint naming it
 #     (make release-bind); the upstream table names one server per seam.
 #
-# It runs the GOVERNED Copilot preset (D14): summarising forty pull
-# requests is beyond qwen2.5:3b, and one lane then exercises spend
+# It runs the GOVERNED Copilot preset: summarising forty pull
+# requests is beyond qwen2.5:3b, and one agent then exercises spend
 # governance and tool governance together. CI never runs this agent — CI
 # is keyless and holds no GitHub, Azure or Copilot token, ever; it proves
 # the same decisions against the synthetic hosted upstream.

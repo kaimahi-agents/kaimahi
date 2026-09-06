@@ -1,8 +1,8 @@
 # Hosted-model preset: OpenRouter (multi-provider gateway).
 #
 # kagent 0.9.12 has no OpenRouter provider; OpenRouter is OpenAI-compatible,
-# so this rides `provider: OpenAI` with a baseUrl override (see the P2 PR
-# survey). Model IDs are OpenRouter-namespaced (vendor/model).
+# so this rides `provider: OpenAI` with a baseUrl override. Model IDs are
+# OpenRouter-namespaced (vendor/model).
 #
 #   make model-secret NAME=openrouter-api-key
 #   make use PRESET=openrouter

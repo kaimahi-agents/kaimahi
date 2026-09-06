@@ -1,5 +1,5 @@
-# GOVERNED preset: the GitHub Copilot subscription endpoint (D8), routed
-# through the Kaimahi proxy (P4a).
+# GOVERNED preset: the GitHub Copilot subscription endpoint, routed
+# through the Kaimahi model proxy.
 #
 # Custody: the REAL Copilot token lives only in the kaimahi namespace
 # (Secret kaimahi-copilot-token, mounted to the proxy — mint it with
@@ -9,7 +9,7 @@
 # tokens in the ledger (metered classification — no per-token price is
 # invented; configure one in k8s/plane/upstreams.yaml to bill cents).
 #
-# D8 caveats still apply: undocumented API surface; the Copilot token
+# That endpoint's caveats still apply: undocumented API surface; the token
 # expires — re-run `make plane-copilot-secret` to rotate (the proxy reads
 # it per request; no restart needed).
 apiVersion: kagent.dev/v1alpha2

@@ -1,4 +1,4 @@
-# P8: the public edge in front of the inbound bridge — the ONLY thing in
+# The public edge in front of the inbound bridge — the ONLY thing in
 # this repo that is reachable from the internet, and the only way an
 # external event (Slack's Events API) reaches the plane on a managed
 # cluster.

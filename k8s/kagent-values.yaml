@@ -1,16 +1,16 @@
-# Helm values for the kagent chart (P1 hello-world install, P3 tools).
+# Helm values for the kagent chart: the hello-world install and its tools.
 #
 # Three jobs only:
 #  1. Point kagent's default model provider at the in-cluster Ollama service
 #     (keyless — no API-key Secret anywhere in this phase).
 #  2. Turn off the chart's sample agents and unused optional tool servers so
 #     the demo cluster contains exactly the agents we define.
-#  3. P3: re-enable kagent's own bundled MCP tool server (kagent-tools),
+#  3. Re-enable kagent's own bundled MCP tool server (kagent-tools),
 #     locked down as far as its knobs go — k8s tools only, read-only RBAC
 #     with no Secrets access, writes disabled at the app layer too. The
 #     chart itself publishes it as the `kagent-tool-server` RemoteMCPServer.
-#     Even so: P3 tools are UNGOVERNED (no egress enforcement, no tool
-#     permits, no audit) until the Kaimahi governance plane lands in P4.
+#     Even so: these tools are UNGOVERNED (no egress enforcement, no tool
+#     permits, no audit) until the Kaimahi governance plane is deployed.
 providers:
   default: ollama
   ollama:

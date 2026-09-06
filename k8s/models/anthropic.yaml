@@ -12,7 +12,8 @@ metadata:
 spec:
   provider: Anthropic
   # Any current Claude model ID works; claude-opus-5 is the current default
-  # recommendation. Spend on this endpoint is UNGOVERNED until P4 metering.
+  # recommendation. Spend on this endpoint is UNGOVERNED: it does not go
+  # through the Kaimahi proxy, so nothing meters it.
   model: claude-opus-5
   apiKeySecret: anthropic-api-key
   apiKeySecretKey: api-key

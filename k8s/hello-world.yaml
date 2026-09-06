@@ -1,4 +1,4 @@
-# The P1 deliverable: a hello-world agent as code.
+# A hello-world agent as code.
 #
 # This file IS the agent topology artifact — the model it thinks with
 # (ModelConfig) and the agent itself (Agent) in one declarative document.

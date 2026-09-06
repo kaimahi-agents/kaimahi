@@ -12,7 +12,7 @@
 #     and Kaimahi never invents one). Under a cents budget an unpriced
 #     model is denied (priced-pair gate); use a token budget instead.
 #
-# "internet": true (P10) marks an upstream that lives OUTSIDE the
+# "internet": true marks an upstream that lives OUTSIDE the
 # cluster. Such an upstream is reached only through the plane's one
 # hardened dialer (plane/internal/egress, docs/hosted-upstreams.md):
 # https on 443 to the host this table names, every resolved address
@@ -24,8 +24,8 @@
 # never take the plain in-cluster dial by omission. Copilot carries the
 # marker; the LLM proxy and the MCP gateway share the one client.
 #
-# A tool_upstreams entry's optional "tools" block is the P12 argument
-# policy declaration (D29): which of a tool's argument fields are
+# A tool_upstreams entry's optional "tools" block is the argument-policy
+# declaration: which of a tool's argument fields are
 # POLICY-RELEVANT. One declaration serves two jobs — an approval's digest
 # binds those fields, so approving "k8s_get_events in default" cannot be
 # spent on another namespace, and the audit's human-readable summary is
@@ -35,10 +35,10 @@
 # argument is policy-relevant, which is a verb-level binding. See
 # docs/tool-governance.md.
 #
-# standing_constraints (D31) are the other half: declarative bounds a
+# standing_constraints are the other half: declarative bounds a
 # CREDENTIAL carries on a tool's declared fields — a call inside them
 # proceeds with no approval, a call outside them is denied and files a
-# request. ONE is configured here (P13, docs/ap-demo.md): the
+# request. ONE is configured here (docs/ap-demo.md): the
 # accounts-payable agent may schedule a payment at or under $10,000.00
 # and never otherwise — the business rule its brief states, as a rule the
 # plane enforces rather than a sentence the model is asked to respect.
@@ -47,7 +47,7 @@
 # it BINDS — it is a bound, not another way in.
 #
 # One declaration in the github-release entry is NOT a tool that server
-# offers: `release_publish`. It is the W32 driver's own publish step —
+# offers: `release_publish`. It is the release driver's own publish step —
 # creating the release and moving the build artifacts onto it, which no
 # MCP tool can do and which the gateway is deliberately not in the path
 # of (300 MB assets; docs/release-agent.md). The declaration exists so
@@ -56,25 +56,25 @@
 # The gateway will never see a call by this name; if it somehow did, no
 # allowlist admits it.
 #
-# tool_upstreams is the P4b MCP gateway's table: the ONLY tool servers
+# tool_upstreams is the MCP gateway's table: the ONLY tool servers
 # the gateway will relay to — it forwards nowhere else, which is the
 # egress rule at this layer; k8s/plane/network-policy.yaml is the rule
 # at the network. Four entries, three in-cluster and one hosted:
-#   - kagent-tools: kagent's chart-managed tool server (P4b).
-#   - slack:        the Slack MCP server this repo deploys (P5a,
-#                   k8s/slack-mcp.yaml). The gateway's reach to it is
+#   - kagent-tools: kagent's chart-managed tool server.
+#   - slack:        the Slack MCP server this repo deploys
+#                   (k8s/slack-mcp.yaml). The gateway's reach to it is
 #                   in-cluster, but that POD talks to api.slack.com, the
 #                   first deliberate internet egress in this repo. See
 #                   docs/slack.md.
-#   - erp:          the accounts-payable demo's fixture ERP (P13,
-#                   k8s/erp-mcp.yaml) — nine tools over a corpus in a
+#   - erp:          the accounts-payable demo's fixture ERP
+#                   (k8s/erp-mcp.yaml) — nine tools over a corpus in a
 #                   ConfigMap. Keyless: no credential_file, because there
 #                   is no credential; it reaches nothing and its
 #                   NetworkPolicy admits the proxy alone. Six read tools
 #                   are on the ap-agent allowlist; the three with
 #                   consequences are not, and one of those carries the
 #                   standing constraint. See docs/ap-demo.md.
-#   - github:       GitHub's HOSTED MCP server (P10) — the first upstream
+#   - github:       GitHub's HOSTED MCP server — the first upstream
 #                   the gateway itself reaches over the internet, through
 #                   the hardened dialer. credential_file names (never
 #                   carries) a fine-grained, read-only, one-repository
@@ -94,7 +94,7 @@
 # direct-access bypass — the Slack pod's NetworkPolicy does (proxy-only
 # ingress).
 #
-# inbound_hooks is the P7b inbound bridge's table (docs/inbound.md): the
+# inbound_hooks is the inbound bridge's table (docs/inbound.md): the
 # ONLY webhooks the plane accepts, each bound to a plane credential, a
 # proof mode, the agent it triggers, and the governed credential that
 # agent spends under. Three entries:
@@ -122,11 +122,11 @@
 # private test channel has one source of truth in both directions and
 # a channel ID never appears in this file.
 # slack_approvers_file names (never carries) WHO may approve or deny a
-# request from Slack (P8b): the `approvers` key of kaimahi-slack-approvers
+# request from Slack: the `approvers` key of kaimahi-slack-approvers
 # (scripts/slack-approvers.sh), projected next to the channel file. A
 # Slack user id is a workspace identifier and never appears here. A
 # command from anyone else is refused (403) and audited; channel
-# membership alone is not authority (D21). A Slack approval that names
+# membership alone is not authority. A Slack approval that names
 # no bounds gets slack_default_uses / slack_default_ttl (1 use, 15m
 # unless set here): a chat-typed approval is the least deliberate kind,
 # so the default is the tightest grant that still admits the retried
@@ -152,7 +152,7 @@
 # every tool call in the audit trail saying nobody was there. Omit it
 # for a hook whose agent calls no tools.
 #
-# approval_notifier (P8b) is how a human learns a request is waiting:
+# approval_notifier is how a human learns a request is waiting:
 # the plane posts into the pinned channel THROUGH its own gateway
 # (tool_upstream slack, the posting tool), under its OWN credential —
 # credential_file names (never carries) the kmh_ token issued to

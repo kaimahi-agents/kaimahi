@@ -1,4 +1,4 @@
-# W32: the release agent's Azure DevOps seam — Microsoft's HOSTED Azure
+# The release agent's Azure DevOps seam — Microsoft's HOSTED Azure
 # DevOps MCP server (https://mcp.dev.azure.com/) behind the enforcing MCP
 # gateway, on the `ado` upstream.
 #

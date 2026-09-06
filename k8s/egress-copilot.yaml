@@ -1,9 +1,9 @@
-# P7a: the proxy's internet allowance for the GitHub Copilot upstream.
+# The proxy's internet allowance for the GitHub Copilot upstream.
 #
 # Deliberately NOT part of k8s/plane/ — the plane's own boundary
 # (k8s/plane/network-policy.yaml) lets the proxy reach nothing outside
 # the cluster. The Copilot path is the one governed upstream that lives
-# on the internet (api.githubcopilot.com, D8), so enabling Copilot is
+# on the internet (api.githubcopilot.com), so enabling Copilot is
 # what opens this hole and nothing else does: `make plane-copilot-secret`
 # applies this file right after minting the token, and
 # `make egress-copilot-off` deletes it. On kind and in CI (keyless,

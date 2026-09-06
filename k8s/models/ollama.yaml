@@ -1,7 +1,7 @@
-# Local-model preset: in-cluster Ollama (keyless, free — the P1 path).
+# Local-model preset: in-cluster Ollama (keyless, free).
 #
 # Identical in substance to hello-world-model in k8s/hello-world.yaml (which
-# stays self-contained as the P1 demo artifact); this copy exists so every
+# stays self-contained as the hello-world artifact); this copy exists so every
 # model target, local or hosted, switches the same way:
 #   make use PRESET=ollama
 apiVersion: kagent.dev/v1alpha2
