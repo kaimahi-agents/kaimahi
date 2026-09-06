@@ -3814,12 +3814,19 @@ jobs:
           #    exists to catch — caught here for blueprints too, on the path
           #    where there is no tree to fall back to.
           kmx workflow list | tee wf-list.out
-          grep -q 'release' wf-list.out
+          # Anchored to the record, not any line mentioning "release" — the
+          # blueprint's own one-line description contains the word, so a bare
+          # substring would pass on a listing that had lost the blueprint.
+          grep -qE '^release[[:space:]]' wf-list.out
 
           # 2. It renders, with parameters supplied at apply time. Contoso is
           #    a documentation name: the real repository is operator config
           #    and is never committed (scripts/release-bind.sh).
           kmx workflow show release --set repo=Contoso/widget | tee wf-show.out
+          # SEAMS is the section that says which upstreams the plane must
+          # already carry. A render missing it would still satisfy the other
+          # three and would have lost the half a reader checks first.
+          grep -q '^SEAMS' wf-show.out
           grep -q 'STANDING BOUNDS' wf-show.out
           grep -q 'STEPS' wf-show.out
           grep -q 'Contoso' wf-show.out
@@ -3828,6 +3835,12 @@ jobs:
           #    were fine. Empty-substituting into a policy-bound argument
           #    would produce an approval that names nothing, which is the
           #    P13 failure with better manners.
+          # Two assertions, because the message alone is weaker than it
+          # looks: `kmx workflow show` EXITS ZERO while rendering blocked
+          # steps, so a reason printed somewhere in the output does not by
+          # itself prove the step was marked blocked. Pin the step's own
+          # rendered line too.
+          grep -qE '^  cut .*needs more' wf-show.out
           grep -q 'will not substitute an empty string into a policy-bound argument' wf-show.out
 
           # DELIBERATELY NOT HERE YET: `kmx workflow govern`. It reaches the
