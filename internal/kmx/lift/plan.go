@@ -191,6 +191,12 @@ func validStep(step string) bool {
 	return false
 }
 
+// GroupName, ClusterName and RegistryName expose the three names that say
+// which lift this is, for callers that need them without the rest.
+func (o Options) GroupName() string    { return o.ResourceGroup }
+func (o Options) ClusterName() string  { return o.Cluster }
+func (o Options) RegistryName() string { return o.Registry }
+
 // Branch reports which set of teardown rules this run is under.
 func (o Options) Branch() Branch {
 	if o.BringYourOwn {

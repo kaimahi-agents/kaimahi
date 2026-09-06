@@ -191,6 +191,22 @@ func (a *App) liftPlane(opt lift.Options, work string) error {
 	}
 	image := planeRegistryImage(opt.Registry)
 
+	// On a cluster this path created, `aks-up.sh` attached the registry and
+	// confirmed the role assignment before it returned. On yours it did not,
+	// and cannot: granting AcrPull means creating a role assignment on your
+	// subscription, against your cluster's own identity, which a demo has no
+	// business doing quietly. So this checks and refuses.
+	//
+	// It is worth a check rather than letting it fail naturally, because the
+	// natural failure is ImagePullBackOff on the proxy pod — a symptom two
+	// layers away from the cause, on a cluster the operator has just been
+	// told is fine.
+	if opt.BringYourOwn {
+		if err := a.refuseWithoutRegistryPullRights(opt); err != nil {
+			return err
+		}
+	}
+
 	source, err := a.planeSource("")
 	if err != nil {
 		return err
