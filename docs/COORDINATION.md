@@ -127,7 +127,8 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | unassigned | SHAPED 2026-09-03 — prompt below; runs ALONE | the product-defining gap: nothing documents adding your own MCP server or governing an agent you already run |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W33: the lift — local agent to AKS in one path, with managed observability (D41) | unassigned | SHAPED 2026-09-03 — prompt below | mostly wiring, not building; must not put /metrics on a Service; teardown + spend mandatory |
-| W34: kmx tells the truth — the ungoverned count, and a version handshake | unassigned | **RE-SHAPED 2026-09-04** — prompt below, finding (b) TRIMMED because W35 (#107) solved it for one endpoint | two findings from the W28/P15/W30 verification pass; deliberately a lane, not a coordinator PR |
+| W34a: `kmx status` counts what is governed (finding (a), absorbing #37) | W34a worker | PR #110 MERGED (main 961391c) — closed davidgamero's #37 honestly rather than rebasing the unrebasable | coordinator verification owed |
+| W34b: kmx tells the truth about the system it is pointed at — the handshake, the guard, the lag | unassigned | **RE-CUT 2026-09-05** — prompt below; finding (a) shipped as #110, three findings from the W35 verification take its place | the context-guard fallback is the security-relevant one |
 | W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
 | W36: `kmx workflow run` has no first command (from the W35 verification) | unassigned | SHAPED 2026-09-05 — prompt below; **the urgent one** | small fix, structural consequence: until it lands, W35's central claim is unusable by anyone |
 | Brand assets + architecture diagram + org/front-door plans | user-run lane (outside the board's prompt set) | PR #33 MERGED (+ kaimahi-agents/.github#1); main CI green | brand validator in the hygiene job |
@@ -642,6 +643,57 @@ Everything without a ruling in its own heading is not GO.
   audit — before any second one, so generality is proven against a
   workflow that already works rather than designed against an imagined
   one.
+
+- **D43 (OPEN — needs a ruling): the clone-free path ends at the
+  credentials, and closing it runs straight into D27.** Raised
+  2026-09-05 by the W35 verification run, which confirmed it as one of
+  the four things it was sent to check.
+
+  **The finding.** W31 (#106) made the front door `curl | sh` then `kmx
+  quickstart` — one prerequisite, no Go, no checkout. W35 (#107) carried
+  blueprints in the binary for the same reason, so that declaring and
+  governing a workflow needs no clone either. Then `make release-secret`
+  and `make ado-secret` are **make targets in a checkout**. So an adopter
+  reaches a governed workflow by the clone-free path and must `git clone`
+  to hand it a token. The one thing that still requires the repository is
+  the step that makes the whole thing useful.
+
+  **Why it is not obvious.** D27 says kmx accepts no credential material,
+  and that guardrail has HELD precisely because kmx's surface is flags,
+  where a token would be visible in review. W35 took it seriously enough
+  to put the refusal in its blueprint parser before decode, reasoning
+  that a declarative format invites exactly one edit — "put the token in
+  the file so it runs anywhere" — arriving as a convenience rather than
+  as a policy change. That reasoning applies here too.
+
+  **The question to rule.** Does an interactive TTY prompt that never
+  touches argv, never touches the environment, and writes straight to a
+  Secret count as kmx "accepting credential material"? The W27 correction
+  drew the line at `--secret` NAMING a Secret resource rather than
+  carrying one; a stdin prompt is on neither side of that line yet.
+
+  - **Option A — kmx prompts.** `kmx credential add <name>` reads from
+    the TTY and writes the Secret. Closes the gap completely. Cost: the
+    token passes through kmx's process memory, which is the thing D27's
+    bluntness was buying us freedom from having to reason about.
+  - **Option B — the scripts travel.** Embed the secret-capture scripts
+    the way `scripts/release-publish.sh` already travels, and have kmx
+    extract and exec them. kmx never handles the material; the checkout
+    requirement disappears. Cost: a shell script is a worse review
+    surface than a Go function, and "kmx ran the thing that took your
+    token" is a distinction that may not survive contact with a reader.
+  - **Option C — leave it, and say so.** Document that credential capture
+    needs the repository, and treat the clone-free claim as scoped to
+    everything before it. Cost: the front door's headline is one
+    prerequisite, and the first genuinely useful thing an adopter does
+    breaks it.
+
+  **What does not change under any of them:** the plane holds custody,
+  the agent never sees an upstream key, and nothing is written to the
+  tree. **Sequencing:** not urgent — W36 is. But it should be ruled
+  before anyone shapes a lane against it, because all three options are
+  small to build and the disagreement is entirely about which one is
+  right.
 
 ## Process rules (proven over ~60 PRs; keep)
 
@@ -3595,7 +3647,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W34 — kmx tells the truth about the system it is pointed at (UNASSIGNED — paste into a fresh CLI session)
+### W34b — kmx tells the truth about the system it is pointed at (UNASSIGNED — paste into a fresh CLI session; re-cut 2026-09-05)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3606,7 +3658,38 @@ coordinator's verification pass produced and could not close, which are
 the same finding wearing two hats: **kmx will tell you things about a
 system it has not actually checked.**
 
-Both were reproduced; do not spend the lane rediscovering them.
+All were reproduced; do not spend the lane rediscovering them.
+
+**FINDING (a) HAS SHIPPED as #110 (W34a) — do not build it.** The
+ungoverned count exists, and it distinguishes "none" from "cannot tell".
+The original text is kept below the line for context only. In its place
+this lane carries two findings from the W35 verification run, (c) and
+(d), which are the same species: **kmx telling you something about a
+system it has not actually checked.**
+
+**(c) An unset current context makes kmx fall back SILENTLY, and this is
+the security-relevant one.** The context guard's entire value is that it
+names where it is about to act before it acts — it is the mechanism
+between an operator and the wrong cluster. A silent fallback removes the
+naming and keeps the action. This is not hypothetical: earlier in this
+project the coordinator ran `kmx govern` against the user's demo cluster
+with `KIND_CLUSTER` unset, and the guard DID print the banner naming
+`kind-kaimahi-p1` — it was defeated by piping the output to `head`. A
+careful reader can survive a banner they did not read. Nobody can survive
+a banner that was never printed. Decide what kmx does when there is no
+current context: refuse, or name the fallback loudly and require
+confirmation. Refusing is the conservative answer and the burden is on
+any other choice.
+
+**(d) A broken credential reads as Accepted for about five minutes.**
+The projected-Secret refresh lag (the P8b retry knows about it) means the
+plane reports a credential accepted while it is not usable. Five minutes
+of "it worked" is worse than an error, because the operator moves on. Say
+what the status should report during the window — the `none` versus
+`unknown` distinction W30 drew is the vocabulary, and inventing a second
+one is the thing to avoid.
+
+--- the original finding (a), SHIPPED, kept for context ---
 
 **(a) `kmx status` cannot say what is governed.** W29 was told to make
 the ungoverned state COUNTABLE rather than merely warned about once —
@@ -3674,11 +3757,13 @@ counted correctly. If you can drive a genuinely old plane the way the
 skew case is testable per-PR rather than only by hand — that probe is
 the precedent and reusing it is worth more than a new mechanism.
 
-Verification is real: a transcript in the PR showing `kmx status` on a
-cluster with both governed and ungoverned tool servers, counting them
-correctly; the same command with no plane deployed, saying so rather
-than reporting zero; and a new kmx against a deliberately older plane
-producing a message that names the version problem and the fix. Branch
+Verification is real: a transcript in the PR of a new kmx against a
+deliberately older plane, producing a message that names the version
+problem and the fix; kmx with NO current context set, doing whatever you
+decided rather than acting silently on a fallback; and a credential
+inside the projection window, reported honestly rather than as Accepted.
+The `kmx status` transcripts the original text asked for belong to #110
+and are not yours to reproduce. Branch
 from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
