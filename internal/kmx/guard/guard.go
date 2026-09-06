@@ -224,14 +224,25 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 		"----------------------------------------------------------------\n",
 		req.Action, posture.Context, source, hostShown, namespaces, posture.Label)
 
-	// Nobody chose this cluster. On a machine with no clusters at all there
-	// is nothing to confuse it with and the made-up kind name is the only
-	// sensible target, which is what keeps one-command bring-up working on an
-	// empty machine. On a machine that HAS clusters, acting on an invented
-	// name beside them is the failure this refuses: the banner is the only
+	// Nobody chose this cluster. Two cases are not the failure, and the rule
+	// has to let them through or it is friction rather than a safety net:
+	//
+	//   - A machine with no clusters at all. There is nothing to confuse the
+	//     made-up kind name with and it is the only sensible target, which is
+	//     what keeps one-command bring-up working on an empty machine.
+	//   - The made-up name is EXACTLY the context the operator is pointed at.
+	//     Nobody is being surprised: kmx would act on the same cluster their
+	//     own kubectl would. This is not following current-context — kmx acts
+	//     only on the name it resolved, and where that name and the current
+	//     context DIFFER the current one is never substituted for it. The
+	//     match is corroboration, not a source.
+	//
+	// What is left is the failure: an invented name sitting beside clusters it
+	// is not, with nothing having chosen between them. The banner is the only
 	// thing standing between an operator and the wrong cluster, and a banner
 	// naming a cluster nobody picked is not a safety net.
-	if req.Source == config.SourceDefault && len(cfg.Contexts) > 0 {
+	if req.Source == config.SourceDefault && len(cfg.Contexts) > 0 &&
+		strings.TrimSpace(cfg.CurrentContext) != req.Context {
 		return fmt.Errorf("kube-guard: nothing chose a cluster, so kmx will not act on one.\n"+
 			"  It would have used %q, which is a name kmx made up, and your kubeconfig\n"+
 			"  holds %d context(s) it could have meant instead.%s\n"+

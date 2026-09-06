@@ -264,16 +264,25 @@ kube-guard: nothing chose a cluster, so kmx will not act on one.
     kmx --context <name> ...  # or just this once
 ```
 
-On a machine with no clusters at all there is nothing to confuse it with, so
-the default stands and one-command bring-up works — and creating that cluster
-records it, so later bare commands resolve through a real choice rather than
-through the fallback again.
+Two cases are not that failure, and the default stands in both:
+
+- **A machine with no clusters at all** — there is nothing to confuse the
+  made-up name with, so one-command bring-up works. Creating that cluster
+  records it, so later bare commands resolve through a real choice.
+- **The made-up name is already the context you are pointed at** — kmx would
+  act on the same cluster your own `kubectl` would, so nobody is being
+  surprised.
 
 **kmx does not follow your current context, deliberately.** A bare `kubectl`
 does, and `az aks get-credentials` rewrites it without asking, so a command
 meant for kind could quietly aim at a managed cluster. kmx pins an explicit
 context on every call instead. The refusal names your current context so the
 most likely intended answer is in front of you; choosing it is still yours.
+
+The second exception above is not a hole in that. kmx still acts only on the
+name it resolved; where that name and your current context **differ**, the
+current one is never substituted for it. A match is corroboration that nobody
+is being surprised, not a source kmx reads a target from.
 
 "Local kind" is two independent checks, because a context **name** is
 cosmetic — anyone can name a production context `kind-prod`. The substantive

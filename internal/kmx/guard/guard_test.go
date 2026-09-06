@@ -240,3 +240,27 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 		}
 	}
 }
+
+// The other case that is not the failure: the made-up name is exactly the
+// context the operator is already pointed at. Nobody is being surprised —
+// kmx would act on the same cluster their own kubectl would — and refusing
+// there is friction rather than a safety net. It caught a real CI step that
+// names no cluster on a machine whose current context is the one it means.
+//
+// This is not following current-context. kmx still acts only on the name it
+// resolved; where that name and the current context DIFFER, the current one
+// is never substituted, which the test above holds.
+func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) {
+	var out bytes.Buffer
+	if err := Check(load(t), Request{
+		Action:  "install kagent",
+		Context: "kind-real", // the fixture's current-context
+		Source:  config.SourceDefault,
+		Command: "kmx up",
+	}, &out, nil); err != nil {
+		t.Fatalf("refused a default that matches the current context: %v", err)
+	}
+	if !strings.Contains(out.String(), "chosen by: "+config.SourceDefault) {
+		t.Errorf("the banner stopped saying nothing chose this cluster:\n%s", out.String())
+	}
+}
