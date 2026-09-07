@@ -35,7 +35,7 @@ that file was not removed by the review and should be deleted by hand.
 
 Ordered by how badly a reader relying on the sentence would be misled.
 
-### A1. Three documents say kmx never accepts a credential. `kmx credential capture` does.
+### A1. Five documents say kmx never accepts a credential. `kmx credential capture` does.
 
 CONFIRMED. `docs/getting-started.md:222-223` ("`kmx` never accepts a
 credential in any form"), `docs/operations.md:18-20` ("a captured key that
@@ -87,7 +87,7 @@ files; neither is among them.
 
 Fix: guard both, or name them as the exceptions.
 
-### A4. The README overclaims twice on the same page
+### A4. The README overclaims three times on the same page
 
 CONFIRMED.
 - `README.md:226-227` "Internet-facing tool upstreams remain unbuilt",
@@ -486,8 +486,10 @@ Each was run against the real tree and against deliberately broken copies.
 - **`bin/kmx` does not relink when twelve of its embedded files change**
   (`Makefile:96-101` `KMX_ASSETS` vs `embed.go:51-105`). Not prerequisites:
   `k8s/wasm/runtime.yaml`, `blueprints/release.yaml`,
-  `scripts/release-publish.sh`, the three `k8s/observability/*` files,
-  `k8s/egress-copilot.yaml`, and five AKS scripts. An edit to any of them in
+  `scripts/release-publish.sh`, the three `k8s/observability/*` files
+  (`network-policy.yaml`, `scrape-config.yaml`, `workbook.json`),
+  `k8s/egress-copilot.yaml`, and five scripts (`aks-up.sh`, `aks-down.sh`,
+  `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`). An edit to any of them in
   a checkout leaves a stale binary that `make sandbox`, `make lift` or a
   blueprint run applies. `delegation_test.go:345-354` guards this by
   asserting two hard-coded names. CI is unaffected (fresh runner).
