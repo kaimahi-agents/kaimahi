@@ -127,15 +127,19 @@ Rules that keep it honest:
    VM-isolated: `runtimeClassName` is not exposed, so node placement is the
    only lever, and it is only meaningful for a workload we are placing
    deliberately. Refusing is better than a flag that silently does nothing.
-3. **`--image` carries the governance seams across — when there are any.**
-   If the cluster has the governed preset (or `--model` names it), kmx
-   injects the proxy's `baseUrl` and the gateway's endpoint into
-   `deployment.env`, plus the credential reference — the same values the
-   governed preset would have used — and prints exactly what it injected.
-   If the cluster has no governance plane, there is nothing to inject: the
-   manifest carries **no `env` at all**, and kmx says the agent is
-   ungoverned rather than implying otherwise. Deploy the plane first if you
-   want a governed BYO agent.
+3. **`--image` carries the governance seams across when the agent lands on
+   a governed preset.** Then kmx injects the proxy's `baseUrl` and the
+   gateway's endpoint into `deployment.env`, plus the credential reference
+   — the same values the governed preset would have used — and prints
+   exactly what it injected. Which preset it lands on is resolved two ways,
+   and they differ: with no `--model`, kmx **asks the cluster** whether
+   `governed-ollama` exists and falls back to the keyless preset when it
+   does not, so a cluster with no plane gets a manifest with **no `env` at
+   all** and an ungoverned warning; with `--model governed-ollama`, kmx
+   takes your word for it and injects regardless of what is deployed. That
+   second case is how you scaffold ahead of a plane — and it is also how
+   you get seams pointing at something that is not there, so deploy the
+   plane before you rely on it.
 4. **And says plainly what it cannot check.** kmx cannot verify the image
    honours those variables. The command must say so rather than imply the
    agent is governed because the env is present. *"Configured, not proven"*

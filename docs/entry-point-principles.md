@@ -165,8 +165,13 @@ appropriateness read.
 
 So no package-manager namespace is claimed until those gates clear.
 Installation is the project's own `install.sh` — it downloads the release
-binary for the platform and verifies its published sha256 — or
-`go install …/cmd/kmx@latest`. That is less convenient than a tap, and it
+binary for the platform and checks it against the sha256 published beside
+it — or `go install …/cmd/kmx@latest`. The script is explicit about what
+that check is worth: binary and digest come from the same release over
+TLS, so it proves the download was not corrupted or truncated, and a
+compromised release would publish a matching digest. It is not a
+signature. `go install` is the different route, through the Go module
+proxy and its checksum database. That is less convenient than a tap, and it
 is the honest position. A tap created for developer convenience is still a
 public claim, and reversing one is much harder than delaying it.
 

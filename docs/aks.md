@@ -932,8 +932,11 @@ closed, claiming nothing**, and by the next a live grant for the
 legitimate call existed, which makes the script's opening assertion (that
 the call is denied) impossible to reach. The scenario's substantive half
 was driven by hand with that script's own probes and arguments, and every
-assertion it makes was checked. The script is unchanged and CI runs it
-end to end on kind on every PR.
+assertion still reachable was checked. The opening denial assertion was
+not among them — a live grant for the legitimate call had made it
+unreachable, which is what the third attempt ran into — so that one is
+covered by CI on kind rather than by this run. The script is unchanged and
+CI runs it end to end on every PR.
 
 
 The multi-node caveat in [egress.md](egress.md) was not exercised: all

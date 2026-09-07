@@ -56,8 +56,11 @@ python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-
 # other package for real and covers the store not at all. Point them at a
 # throwaway database to actually run them — CI's `go-plane` job uses a
 # service container and fails if they skip:
-#   docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=throwaway \
+#   docker run --rm -d -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=throwaway \
 #     -e POSTGRES_USER=kaimahi -e POSTGRES_DB=kaimahi postgres:16
+#   (the loopback prefix matters: a bare -p 5432:5432 publishes on every
+#    interface, which puts a trivially-credentialled database on the
+#    network you happen to be on)
 #   (cd plane && KAIMAHI_TEST_PG_DSN='postgres://kaimahi:throwaway@127.0.0.1:5432/kaimahi?sslmode=disable' \
 #      go test -count=1 ./...)
 

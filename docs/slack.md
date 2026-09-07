@@ -349,12 +349,15 @@ CI asserts:
   digest-pinned image, a single Secret-resolved `headersFrom`, no
   `xox[bpca]-` token shape anywhere in the tree, and **posting absent
   from the committed allowlist**;
-- the gateway's upstream table is a **closed set** of exactly six
+- the **committed** upstream table (`k8s/plane/upstreams.yaml`, deployed
+  as the `kaimahi-upstreams` ConfigMap) is a **closed set** of exactly six
   entries — `kagent-tools`, `slack` and `erp` in-cluster, and `github`,
-  `github-release` and `ado` marked `internet: true` — so a new place the
-  gateway may send a credential cannot be added to the table alone; every
-  unmarked entry resolves to an in-cluster hostname, and every marked one
-  is `https` and names its credential from the custody mount;
+  `github-release` and `ado` marked `internet: true` — so a new place this
+  repository sends a credential cannot be added to it without changing the
+  assertion too; every unmarked entry resolves to an in-cluster hostname,
+  and every marked one is `https` and names its credential from the custody
+  mount. An operator's own upstreams live in the overlay ConfigMap and are
+  not part of this count ([govern-your-agent.md](govern-your-agent.md));
 - the agent-side Secret holds only a `kmh_…` opaque token;
 - the full cycle over the `slack` upstream: post **denied 403** and a
   request auto-filed → bounded approval → **admitted**, audited
