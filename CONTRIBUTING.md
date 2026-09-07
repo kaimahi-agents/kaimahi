@@ -31,7 +31,8 @@ test -z "$(gofmt -l cmd internal embed.go)" && go vet ./... && go test ./...
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go test ./...)
 ```
 
-That last line passes **vacuously** without a database: every
+Without a database that last line still runs `gofmt`, `go vet` and every
+non-Postgres package for real — but it covers the store not at all: every
 `plane/internal/store` test skips unless `KAIMAHI_TEST_PG_DSN` points at a
 Postgres. Stand a throwaway one up and set it if your change touches the
 store — CI's `go-plane` job uses a service container and always runs them.

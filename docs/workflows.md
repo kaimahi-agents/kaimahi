@@ -32,8 +32,11 @@ announce itself: it shows up as the agent reporting those tools missing
 from its toolset.
 
 `kmx` carries the blueprints it ships, so the four commands above need no
-checkout — but the blueprint they run needs a world to run in, and for the
-release blueprint part of that world is still a checkout.
+checkout — and neither does capturing the credentials they use. What still
+needs one is **provisioning the release agent itself**: its `Agent`
+manifest and the two `RemoteMCPServer` objects are not carried by `kmx`,
+so `make govern-release` applies them from a clone, once. After that,
+running the workflow needs no checkout at any step.
 
 **What a blueprint does not create.** A blueprint governs a credential and
 an agent that already exist; it never creates either, and it cannot create
