@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -94,7 +96,9 @@ func TestMigrateTwiceConcurrentlyIsSerialAndIdempotent(t *testing.T) {
 	require.NoError(t, pool.QueryRow(context.Background(),
 		`SELECT COUNT(*), COUNT(DISTINCT version_id) FROM goose_db_version WHERE version_id > 0`).Scan(&versions, &distinct))
 	require.Equal(t, distinct, versions, "a migration was recorded twice")
-	require.GreaterOrEqual(t, versions, 7)
+	require.Equal(t, committedMigrations(t), versions,
+		"the version table must end with one row per committed migration; a hand-written floor "+
+			"goes stale the moment a migration is added and stops noticing that one did not run")
 }
 
 func TestConcurrentAdmissionsAgainstOneMoreCallAdmitExactlyOne(t *testing.T) {
@@ -609,4 +613,24 @@ func TestLegacyVerbLevelGrantIsHonouredAndComesLast(t *testing.T) {
 	_, ok, err = s.ConsumeToolGrant(ctx, name, "payment_schedule", digestOf("some other call"))
 	require.NoError(t, err)
 	require.True(t, ok)
+}
+
+// committedMigrations counts the migration files the plane embeds, so the
+// number this test expects is read off the tree rather than typed into it. The
+// number typed in here was 7 while ten migrations were committed, which is the
+// failure mode of every hand-written count: the tree moves and the count does
+// not, and a floor below the truth stops proving that every migration ran.
+func committedMigrations(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join("..", "db", "migrations"))
+	require.NoError(t, err)
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			n++
+		}
+	}
+	require.Greater(t, n, 0,
+		"no migration files found; a count with nothing in it would let this test pass by having nothing to check")
+	return n
 }

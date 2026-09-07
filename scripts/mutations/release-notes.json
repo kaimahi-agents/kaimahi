@@ -1,0 +1,72 @@
+{
+  "checker": "release-notes.py",
+  "why": "This script is the whole enforcement behind \"a release has notes\": the release job branches on its exit status, so a version with nothing written down cannot be tagged. Every edit below is a way it could start producing notes anyway — a heading anchor loosened until a subsection reads as a release, a refusal turned into a return, an empty section allowed through, or the entry point removed so the verdict never reaches an exit code.",
+  "verify": [
+    "python3",
+    "scripts/release-notes.py",
+    "--selftest"
+  ],
+  "signature": "release-notes self-test:",
+  "mutations": [
+    {
+      "name": "the heading anchor is loosened",
+      "breaks": "`## ` stops having to start a line, so a subsection inside a release — or the words '## ' anywhere in a bullet — becomes a release of its own, and one paragraph ships as the notes for the whole version.",
+      "find": "HEADING = re.compile(r\"^## +(?P<version>\\S+)(?P<rest>.*)$\", re.M)",
+      "replace": "HEADING = re.compile(r\"#+ +(?P<version>\\S+)(?P<rest>.*)$\", re.M)"
+    },
+    {
+      "name": "any heading depth counts as a release",
+      "breaks": "A `###` subsection heading is extracted as if it were a version, so the notes for a release become whichever subsection matched first.",
+      "find": "r\"^## +(?P<version>\\S+)(?P<rest>.*)$\"",
+      "replace": "r\"^#+ +(?P<version>\\S+)(?P<rest>.*)$\""
+    },
+    {
+      "name": "a version with no section returns empty notes",
+      "breaks": "The refusal that makes the release job fail becomes a successful run with nothing on stdout — a release published with blank notes, which is the exact outcome this script exists to prevent.",
+      "find": "    raise ValueError(\n        f\"CHANGELOG.md has no section for {version} \"",
+      "replace": "    return \"\"\n    raise ValueError(\n        f\"CHANGELOG.md has no section for {version} \""
+    },
+    {
+      "name": "an empty section is accepted",
+      "breaks": "A heading written before the notes were — the common half-finished state — passes as documented, and the release ships a version with an empty body.",
+      "find": "        if not body.strip():\n            raise ValueError(f\"CHANGELOG.md section for {candidate} is empty\")",
+      "replace": "        if False:\n            raise ValueError(f\"CHANGELOG.md section for {candidate} is empty\")"
+    },
+    {
+      "name": "the missing-section status collapses into success",
+      "breaks": "The exit status is the interface the release job branches on. Reporting 0 for a version with no section tells the job the notes were extracted.",
+      "find": "        print(problem, file=sys.stderr)\n        return NO_SECTION",
+      "replace": "        print(problem, file=sys.stderr)\n        return 0"
+    },
+    {
+      "name": "an unreadable changelog is reported as a missing section",
+      "breaks": "A broken repository is reported as an undocumented version, so a dry run that tolerates 'nothing written down yet' would tolerate a changelog it could not read at all.",
+      "find": "        print(f\"cannot read {path}: {problem}\", file=sys.stderr)\n        return 1",
+      "replace": "        print(f\"cannot read {path}: {problem}\", file=sys.stderr)\n        return NO_SECTION"
+    },
+    {
+      "name": "the pre-release fallback stops falling back",
+      "breaks": "A release candidate no longer finds the section for the release it is a candidate for, so rehearsing a release fails for a reason that has nothing to do with the notes.",
+      "find": "    for candidate in (version, base_version(version)):",
+      "replace": "    for candidate in (version,):"
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code, and the release job reads success from a script that did nothing. A run that never happened prints no signature, which is how it is told apart from a run that passed.",
+      "find": "    raise SystemExit(main(sys.argv[1:]))",
+      "replace": "    raise SystemExit(0)"
+    },
+    {
+      "name": "the extraction returns the wrong body, checked under python3 -O",
+      "breaks": "The checks used to be assert statements, which `python3 -O` strips: under that flag the self-test ran end to end and noticed nothing. This mutation is verified under -O on purpose, so the checks are proven to be real statements rather than assertions an interpreter flag can remove.",
+      "find": "        return body.strip() + \"\\n\"",
+      "replace": "        return \"\"",
+      "verify": [
+        "python3",
+        "-O",
+        "scripts/release-notes.py",
+        "--selftest"
+      ]
+    }
+  ]
+}

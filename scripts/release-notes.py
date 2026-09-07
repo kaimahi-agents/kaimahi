@@ -91,6 +91,30 @@ def selftest() -> int:
 - first
 - also first
 """
+    # Every check here is written out rather than asserted. `python3 -O`
+    # strips assert statements, and a self-test that quietly becomes a
+    # no-op under an interpreter flag is the failure this file is here to
+    # prevent, not one to demonstrate.
+    failed = 0
+
+    def check(label: str, ok: bool) -> None:
+        nonlocal failed
+        if ok:
+            print(f"ok   {label}")
+        else:
+            print(f"FAIL {label}", file=sys.stderr)
+            failed += 1
+
+    def refuses(label: str, text: str, version: str) -> None:
+        nonlocal failed
+        try:
+            got = notes(text, version)
+        except ValueError:
+            check(label, True)
+        else:
+            print(f"FAIL {label}: returned {got!r} instead of refusing", file=sys.stderr)
+            failed += 1
+
     cases = [
         ("v0.2.0", "- second\n"),
         ("v0.1.0", "- first\n- also first\n"),
@@ -98,27 +122,24 @@ def selftest() -> int:
     ]
     for version, want in cases:
         got = notes(changelog, version)
-        assert got == want, f"{version}: got {got!r}, want {want!r}"
+        check(f"{version}: the section under its own heading", got == want)
+        if got != want:
+            print(f"     got {got!r}, want {want!r}", file=sys.stderr)
+    # A heading is a whole line beginning with `## `, so a subsection inside a
+    # release cannot be mistaken for a release of its own — which would ship
+    # one bullet list as the notes for the entire version.
+    nested = "# Changelog\n\n## v0.3.0\n\n### Fixed\n\n- a fix\n\n## v0.2.0\n\n- second\n"
+    check("a `###` subsection is not a release of its own",
+          notes(nested, "v0.3.0") == "### Fixed\n\n- a fix\n")
+    refuses("a subsection heading is not extractable as a version", nested, "Fixed")
     # An unknown version fails rather than producing empty notes.
     for missing in ("v9.9.9", "v9.9.9-rc.1"):
-        try:
-            notes(changelog, missing)
-        except ValueError:
-            pass
-        else:  # pragma: no cover - the assertion is the test
-            print(f"{missing} should have failed", file=sys.stderr)
-            return 1
+        refuses(f"{missing}: a version with no section is refused", changelog, missing)
     # An empty section is a missing section: a release with a heading and no
     # body would ship notes that say nothing.
-    try:
-        notes("## v0.1.0\n\n## v0.0.9\n\n- x\n", "v0.1.0")
-    except ValueError:
-        pass
-    else:  # pragma: no cover
-        print("an empty section should have failed", file=sys.stderr)
-        return 1
+    refuses("a heading with no body under it is refused", "## v0.1.0\n\n## v0.0.9\n\n- x\n", "v0.1.0")
     # The heading may carry a date or anything else after the version.
-    assert "second" in notes(changelog, "v0.2.0")
+    check("a heading may carry a date after the version", "second" in notes(changelog, "v0.2.0"))
 
     # The EXIT STATUS is an interface: the release job's dry run treats
     # NO_SECTION as "nothing written down yet" and every other failure as a
@@ -137,8 +158,13 @@ def selftest() -> int:
         (Path(tmp) / "empty.md").write_text("# Changelog\n\n## Unreleased\n\n## v0.1.0\n\n- x\n")
         for label, (args, want) in codes.items():
             got = main(args)
-            assert got == want, f"{label}: exit {got}, want {want}"
+            check(f"{label}: exit {want}", got == want)
+            if got != want:
+                print(f"     exit {got}, want {want}", file=sys.stderr)
 
+    if failed:
+        print(f"release-notes self-test: {failed} failure(s)", file=sys.stderr)
+        return 1
     print("release-notes self-test: extraction, pre-release fallback, both refusals, and the exit codes hold")
     return 0
 

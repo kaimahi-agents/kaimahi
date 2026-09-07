@@ -1,0 +1,98 @@
+{
+  "checker": "check-brand-assets.py",
+  "why": "This checker's default run is over assets that are all correct, so nothing about it going quiet shows up in an exit code: a requirement table emptied, a dimension comparison that no longer fires, a missing file read as a pass — every one of those leaves the run printing the same clean line. The self-test breaks a generated asset tree one way at a time and requires a refusal each time, and the edits below are the ways the checker could stop being able to refuse anything.",
+  "verify": ["python3", "scripts/check-brand-assets.py", "--selftest"],
+  "signature": "check-brand-assets self-test:",
+  "mutations": [
+    {
+      "name": "the PNG requirements are never checked",
+      "breaks": "Every PNG passes because none is opened. Dimensions, alpha and the image data itself stop being checked at all.",
+      "find": "    for relative, expected in PNG_REQUIREMENTS.items():\n        problems.extend(validate_png(root, relative, expected))",
+      "replace": "    for relative, expected in []:\n        problems.extend(validate_png(root, relative, expected))"
+    },
+    {
+      "name": "the SVG requirements are never checked",
+      "breaks": "The wordmark, the compact mark and the architecture diagram stop being checked for a viewBox or a title, which is how a diagram ends up shipping under the wrong name.",
+      "find": "    for relative, expected_title in SVG_REQUIREMENTS.items():\n        problems.extend(validate_svg(root, relative, expected_title))",
+      "replace": "    for relative, expected_title in []:\n        problems.extend(validate_svg(root, relative, expected_title))"
+    },
+    {
+      "name": "the PNG requirement table is emptied",
+      "breaks": "The checker is disabled by deleting its input rather than its code — the shape of failure that reads as a clean run over nothing.",
+      "find": "    \"brand/mascot.png\": (1536, 1536, True),\n    \"brand/mark.png\": (1024, 1024, True),\n    \"brand/hero.png\": (1600, 600, False),\n    \"brand/social-preview.png\": (1280, 640, False),\n",
+      "replace": ""
+    },
+    {
+      "name": "the SVG requirement table is emptied",
+      "breaks": "The same disabling by deletion, on the half of the table that pins what each diagram is called.",
+      "find": "    \"brand/mark.svg\": \"Kaimahi compact mark\",\n    \"brand/wordmark.svg\": \"Kaimahi wordmark\",\n    \"docs/assets/architecture.svg\": \"Kaimahi governance architecture\",\n",
+      "replace": ""
+    },
+    {
+      "name": "the brand README requirement is dropped",
+      "breaks": "The assets can ship with nothing saying what they are for or how they may be used.",
+      "find": "    if not (root / \"brand/README.md\").is_file():",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the dimension check never fires",
+      "breaks": "An asset of any size satisfies its requirement, which is the whole point of naming a size.",
+      "find": "    if actual[:2] != (width, height):",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the dimension check is made unconditional",
+      "breaks": "The comparison is thrown away in the other direction: the checker refuses correct assets, so it is no longer reading what it is comparing against. It is here because a check that always fires and one that never fires are the same amount of information.",
+      "find": "    if actual[:2] != (width, height):",
+      "replace": "    if True:"
+    },
+    {
+      "name": "the alpha requirement never fires",
+      "breaks": "The mascot and the mark can lose their transparency and still pass, which is what puts a white box behind a logo on a dark page.",
+      "find": "    if must_have_alpha and not actual[2]:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the PNG parse returns the answer it was expected to give",
+      "breaks": "The file is never read: the checker compares the requirement with itself and agrees. This is the edit that would survive every check downstream of it, including the byte flipped with its CRC re-signed.",
+      "find": "        actual = png_metadata(path)",
+      "replace": "        actual = expected"
+    },
+    {
+      "name": "a missing PNG reads as a pass",
+      "breaks": "An asset deleted from the tree stops being a problem, so the checker reports clean over files that are not there.",
+      "find": "        return [f\"{relative}: missing\"]\n    try:\n        actual = png_metadata(path)",
+      "replace": "        return []\n    try:\n        actual = png_metadata(path)"
+    },
+    {
+      "name": "a missing SVG reads as a pass",
+      "breaks": "The same hole on the SVG side, where the architecture diagram the docs embed can simply be gone.",
+      "find": "        return [f\"{relative}: missing\"]\n    try:\n        root = ET.parse(path).getroot()",
+      "replace": "        return []\n    try:\n        root = ET.parse(path).getroot()"
+    },
+    {
+      "name": "the SVG title check never fires",
+      "breaks": "A diagram can carry any title, so a copy of the wrong file passes as long as it is valid XML.",
+      "find": "    if expected_title not in titles:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "an asset no requirement names goes unnoticed",
+      "breaks": "The cross-check against the committed brand directory goes, and with it the only thing making an added asset — or a deleted requirement entry — loud.",
+      "find": "        if path.suffix.lower() == \".png\" and relative not in PNG_REQUIREMENTS:\n            problems.append(f\"{relative}: committed but named by no PNG requirement\")",
+      "replace": "        if False:\n            problems.append(f\"{relative}: committed but named by no PNG requirement\")"
+    },
+    {
+      "name": "the problems are printed and the run exits 0",
+      "breaks": "The checker finds everything and reports it, and the exit code says the tree is fine. Nothing that reads only the verdict would ever know.",
+      "find": "            print(f\"- {problem}\", file=sys.stderr)\n        return 1",
+      "replace": "            print(f\"- {problem}\", file=sys.stderr)\n        return 0"
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code at all. A run that did nothing prints no signature, which is how this is told apart from a run that passed.",
+      "find": "    raise SystemExit(main(sys.argv[1:]))",
+      "replace": "    raise SystemExit(0)"
+    }
+  ]
+}

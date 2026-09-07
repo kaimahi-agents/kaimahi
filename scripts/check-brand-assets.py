@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
+"""The committed brand assets are what they say they are.
+
+The default run checks the tree. `--selftest` builds an asset tree that
+satisfies every requirement, breaks it one way at a time, and requires the
+checker to refuse each break — because a run over a clean tree proves the
+checker said yes, and never that it can say no. Both go through the same
+entry point the tree gets.
+
+Run:  python3 scripts/check-brand-assets.py
+      python3 scripts/check-brand-assets.py --selftest
+"""
 from __future__ import annotations
 
 import struct
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
@@ -182,8 +194,8 @@ def png_metadata(path: Path) -> tuple[int, int, bool]:
     return width, height, color_type in {4, 6}
 
 
-def validate_png(relative: str, expected: tuple[int, int, bool]) -> list[str]:
-    path = ROOT / relative
+def validate_png(root: Path, relative: str, expected: tuple[int, int, bool]) -> list[str]:
+    path = root / relative
     if not path.is_file():
         return [f"{relative}: missing"]
     try:
@@ -199,8 +211,8 @@ def validate_png(relative: str, expected: tuple[int, int, bool]) -> list[str]:
     return problems
 
 
-def validate_svg(relative: str, expected_title: str) -> list[str]:
-    path = ROOT / relative
+def validate_svg(root: Path, relative: str, expected_title: str) -> list[str]:
+    path = root / relative
     if not path.is_file():
         return [f"{relative}: missing"]
     try:
@@ -224,15 +236,172 @@ def validate_svg(relative: str, expected_title: str) -> list[str]:
     return problems
 
 
-def main() -> int:
+def uncovered_assets(root: Path) -> list[str]:
+    """Assets in brand/ that no requirement names.
+
+    The two requirement tables are hand-written, which is the one thing here
+    that can go quietly wrong: an asset added and never listed is unchecked,
+    and an entry deleted with its asset still committed reads as a clean run
+    over a smaller tree. Reading brand/ back off the disk makes both loud —
+    and an emptied table stops being a checker that passes because it has
+    nothing to look at.
+    """
     problems = []
+    if not PNG_REQUIREMENTS or not SVG_REQUIREMENTS:
+        problems.append("the requirement tables are empty, so this run would check nothing")
+    brand = root / "brand"
+    for path in sorted(brand.glob("*")) if brand.is_dir() else []:
+        relative = f"brand/{path.name}"
+        if path.suffix.lower() == ".png" and relative not in PNG_REQUIREMENTS:
+            problems.append(f"{relative}: committed but named by no PNG requirement")
+        if path.suffix.lower() == ".svg" and relative not in SVG_REQUIREMENTS:
+            problems.append(f"{relative}: committed but named by no SVG requirement")
+    return problems
+
+
+def check(root: Path) -> list[str]:
+    """Every problem with the assets under root, in words."""
+    problems = uncovered_assets(root)
     for relative, expected in PNG_REQUIREMENTS.items():
-        problems.extend(validate_png(relative, expected))
+        problems.extend(validate_png(root, relative, expected))
     for relative, expected_title in SVG_REQUIREMENTS.items():
-        problems.extend(validate_svg(relative, expected_title))
-    brand_readme = ROOT / "brand/README.md"
-    if not brand_readme.is_file():
+        problems.extend(validate_svg(root, relative, expected_title))
+    if not (root / "brand/README.md").is_file():
         problems.append("brand/README.md: missing")
+    return problems
+
+
+def write_png(path: Path, width: int, height: int, alpha: bool) -> None:
+    """A minimal, valid, non-interlaced 8-bit PNG of the given size."""
+    color_type = 6 if alpha else 2
+    channels = PNG_CHANNELS[color_type]
+    raw = b"".join(b"\x00" + bytes([0x20] * width * channels) for _ in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
+    out = bytearray(PNG_SIGNATURE)
+    for chunk_type, payload in ((b"IHDR", ihdr), (b"IDAT", zlib.compress(raw)), (b"IEND", b"")):
+        out += struct.pack(">I", len(payload)) + chunk_type + payload
+        out += struct.pack(">I", zlib.crc32(chunk_type + payload) & 0xFFFFFFFF)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(out))
+
+
+def write_svg(path: Path, title: str, view_box: str = "0 0 10 10") -> None:
+    box = f' viewBox="{view_box}"' if view_box else ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f'<svg xmlns="{SVG_NAMESPACE}"{box}><title>{title}</title></svg>\n'
+    )
+
+
+def build_tree(root: Path) -> None:
+    """An asset tree that satisfies every requirement, built from the
+    requirements themselves so a new one is covered without being added in
+    two places."""
+    for relative, (width, height, alpha) in PNG_REQUIREMENTS.items():
+        write_png(root / relative, width, height, alpha)
+    for relative, title in SVG_REQUIREMENTS.items():
+        write_svg(root / relative, title)
+    (root / "brand").mkdir(parents=True, exist_ok=True)
+    (root / "brand/README.md").write_text("fixture\n")
+
+
+def resign_png_byte(path: Path) -> None:
+    """Flip one byte of the image data and re-sign the chunk's CRC, so the
+    file is structurally perfect and wrong. A checker that reads only the
+    header sees nothing here."""
+    data = bytearray(path.read_bytes())
+    offset = len(PNG_SIGNATURE)
+    while offset < len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        chunk_type = bytes(data[offset + 4 : offset + 8])
+        if chunk_type == b"IDAT":
+            body = offset + 8
+            data[body] ^= 0xFF
+            payload = bytes(data[body : body + length])
+            crc = zlib.crc32(chunk_type + payload) & 0xFFFFFFFF
+            data[body + length : body + length + 4] = struct.pack(">I", crc)
+            path.write_bytes(bytes(data))
+            return
+        offset += 12 + length
+    raise AssertionError("fixture PNG has no IDAT chunk")
+
+
+def selftest() -> int:
+    """A clean tree, then one break at a time. Each break must be refused:
+    a checker is only known to work when it has been watched saying no."""
+    failed = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        build_tree(root)
+        clean = check(root)
+        if clean:
+            print(f"FAIL a tree meeting every requirement was refused: {clean}")
+            failed += 1
+        else:
+            print("ok   a tree meeting every requirement is accepted")
+
+        png_relative = next(iter(PNG_REQUIREMENTS))
+        width, height, _alpha = PNG_REQUIREMENTS[png_relative]
+        alpha_relative = next(r for r, (_w, _h, a) in PNG_REQUIREMENTS.items() if a)
+        alpha_width, alpha_height, _ = PNG_REQUIREMENTS[alpha_relative]
+        svg_relative = next(iter(SVG_REQUIREMENTS))
+        svg_title = SVG_REQUIREMENTS[svg_relative]
+
+        cases = [
+            ("a PNG of the wrong size",
+             lambda: write_png(root / png_relative, width + 1, height, PNG_REQUIREMENTS[png_relative][2])),
+            ("a PNG that lost its alpha channel",
+             lambda: write_png(root / alpha_relative, alpha_width, alpha_height, False)),
+            ("a missing PNG", lambda: (root / png_relative).unlink()),
+            ("a PNG byte flipped with the CRC re-signed", lambda: resign_png_byte(root / png_relative)),
+            ("an SVG under the wrong title", lambda: write_svg(root / svg_relative, svg_title + " (draft)")),
+            ("an SVG with no viewBox", lambda: write_svg(root / svg_relative, svg_title, view_box="")),
+            ("an SVG that is not XML", lambda: (root / svg_relative).write_text("<svg")),
+            ("a missing SVG", lambda: (root / svg_relative).unlink()),
+            ("a missing brand README", lambda: (root / "brand/README.md").unlink()),
+            ("a committed asset no requirement names",
+             lambda: write_png(root / "brand/unlisted.png", 8, 8, False)),
+        ]
+        for name, breakage in cases:
+            build_tree(root)
+            for stray in (root / "brand").glob("unlisted.*"):
+                stray.unlink()
+            breakage()
+            if check(root):
+                print(f"ok   {name}: refused")
+            else:
+                print(f"FAIL {name}: accepted")
+                failed += 1
+
+        # The verdict has to reach the exit code. A checker that finds every
+        # problem and then returns 0 is the failure nothing else here would
+        # see, so the tree run is exercised over a tree known to be broken.
+        global ROOT
+        real_root, ROOT = ROOT, root
+        try:
+            build_tree(root)
+            for stray in (root / "brand").glob("unlisted.*"):
+                stray.unlink()
+            if main([]) != 0:
+                print("FAIL the tree run rejected a tree that meets every requirement")
+                failed += 1
+            (root / "brand/README.md").unlink()
+            if main([]) == 0:
+                print("FAIL the tree run found a problem and exited 0 anyway")
+                failed += 1
+            else:
+                print("ok   a problem found by the tree run reaches the exit code")
+        finally:
+            ROOT = real_root
+
+    print(f"check-brand-assets self-test: {failed} failure(s)")
+    return 1 if failed else 0
+
+
+def main(argv: list[str]) -> int:
+    if argv and argv[0] == "--selftest":
+        return selftest()
+    problems = check(ROOT)
     if problems:
         print("brand asset validation failed:", file=sys.stderr)
         for problem in problems:
@@ -243,4 +412,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

@@ -3,7 +3,12 @@ package metrics_test
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -200,19 +205,80 @@ func decisionValue(t *testing.T, seam, decision, reason string) float64 {
 }
 
 func TestVocabularyMatchesTheConstants(t *testing.T) {
-	// Every Reason constant must be in the vocabulary (a new constant
-	// added without a vocabulary entry would pass Decide and fail the
-	// label test only once exercised — catch it here unconditionally).
-	for _, r := range []metrics.Reason{metrics.ReasonOK, metrics.ReasonBudget, metrics.ReasonAllowlist,
-		metrics.ReasonGrant, metrics.ReasonUnauthorized, metrics.ReasonCredentialStore, metrics.ReasonRoute,
-		metrics.ReasonBadRequest, metrics.ReasonUnpricedModel, metrics.ReasonAuditDegraded, metrics.ReasonMetering,
-		metrics.ReasonUpstreamCredential, metrics.ReasonUpstreamError, metrics.ReasonUpstreamUnreachable, metrics.ReasonEgressRefused,
-		metrics.ReasonMethod, metrics.ReasonGrantCheck, metrics.ReasonRateLimit, metrics.ReasonTooLarge,
-		metrics.ReasonReplay, metrics.ReasonQueueFull, metrics.ReasonHookConfig, metrics.ReasonAdmission,
-		metrics.ReasonNotApprover, metrics.ReasonIgnored, metrics.ReasonChallenge, metrics.ReasonCommand,
-		metrics.ReasonOther} {
-		require.Contains(t, metrics.Vocabulary["reason"], string(r))
+	// Every Reason constant must be in the vocabulary: a constant added
+	// without a vocabulary entry passes Decide and fails the label test only
+	// once something exercises it, which can be months later.
+	//
+	// The set of constants is read out of the source rather than typed in
+	// here. A hand-written list is the same class of bug it is meant to
+	// catch — it was short by two constants, both of them used live, and a
+	// list missing an entry is silent by construction. Reading the source
+	// means adding a constant either satisfies this test or fails it, and
+	// never passes it by omission.
+	declared := declaredReasons(t)
+	require.GreaterOrEqual(t, len(declared), 2,
+		"no Reason constants found; a test with nothing to iterate passes for the wrong reason")
+
+	for name, value := range declared {
+		require.Containsf(t, metrics.Vocabulary["reason"], value,
+			"%s is a declared reason with no vocabulary entry, so any decision using it would carry a label outside the fixed set", name)
 	}
+	// And the other way: a vocabulary entry no constant produces is a label
+	// nothing can ever emit, usually a typo in one of the two lists.
+	values := map[string]bool{}
+	for _, v := range declared {
+		values[v] = true
+	}
+	for _, v := range metrics.Vocabulary["reason"] {
+		require.Truef(t, values[v], "the vocabulary allows reason %q, which no Reason constant produces", v)
+	}
+}
+
+// declaredReasons reads the Reason constants out of the committed source,
+// keyed by constant name and valued by the label string each one carries.
+func declaredReasons(t *testing.T) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	out := map[string]string{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		require.NoError(t, err)
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				if ident, ok := vs.Type.(*ast.Ident); !ok || ident.Name != "Reason" {
+					continue
+				}
+				for i, ident := range vs.Names {
+					if i >= len(vs.Values) {
+						continue
+					}
+					lit, ok := vs.Values[i].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						continue
+					}
+					value, err := strconv.Unquote(lit.Value)
+					require.NoError(t, err)
+					out[ident.Name] = value
+				}
+			}
+		}
+	}
+	return out
 }
 
 // kaimahi_build_info's LABEL NAMES are an interface, not an implementation
