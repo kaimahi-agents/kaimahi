@@ -10,7 +10,7 @@
 #                             CHANNEL key alone is projected by name into
 #                             the proxy too, so the posting restriction and
 #                             the inbound hook's channel allowlist have one
-#                             source of truth. The workspace token
+#                             source of truth. The workspace token itself
 #                             never reaches the proxy or any agent.
 #   kaimahi-slack-mcp-key  SLACK_MCP_API_KEY
 #                          -> the MCP server pod AND the proxy (which

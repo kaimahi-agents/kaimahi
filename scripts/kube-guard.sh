@@ -40,8 +40,8 @@
 # somewhere unintended": chat runs kmx with KUBE_CTX passed explicitly, and
 # kmx puts that context on every kubectl call it makes (an empty one is
 # refused outright), so it cannot silently retarget the way a bare-kubectl
-# probe can. Prompting on the most-used
-# command would buy nothing and teach people to type past confirmations.
+# probe can. Prompting on the most-used command would buy nothing and
+# teach people to type past confirmations.
 #
 # Usage:  KUBE_CTX=... [KUBE_NS=...] kube-guard.sh "<what is about to happen>"
 # Confirm non-interactively with:  KAIMAHI_CONFIRM=$KUBE_CTX make <target>

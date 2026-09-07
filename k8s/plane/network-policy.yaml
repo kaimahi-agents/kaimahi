@@ -32,11 +32,11 @@
 #     table names api.githubcopilot.com three times (the Copilot LLM path,
 #     GitHub's hosted MCP server, and the release driver's own entry
 #     against it) and mcp.dev.azure.com once, but nothing in THIS file
-#     lets the
-#     proxy leave the cluster. Those allowances are k8s/egress-copilot.yaml
-#     (applied by `make plane-copilot-secret`) and k8s/egress-hosted.yaml
-#     (applied by `make github-secret`) — the moment a hosted upstream is
-#     enabled is the moment the proxy needs the internet, and not before.
+#     lets the proxy leave the cluster. Those allowances are
+#     k8s/egress-copilot.yaml (applied by `make plane-copilot-secret`) and
+#     k8s/egress-hosted.yaml (applied by `make github-secret`) — the
+#     moment a hosted upstream is enabled is the moment the proxy needs
+#     the internet, and not before.
 #     Both are the same shape (443 to public addresses) and CI refuses
 #     either under k8s/plane/. On kind and in CI the proxy is provably
 #     internet-free, and the hosted path is proven with a synthetic
@@ -74,11 +74,10 @@ spec:
 #
 # Out: the ledger, the four in-cluster upstreams the committed table
 # names (ollama, kagent's tool server, the Slack MCP server, the fixture
-# ERP), the kagent
-# controller on 8083 (the inbound bridge invokes agents through its
-# A2A endpoint), and DNS. Each upstream is pinned to its POD by label, in
-# its namespace, on its port — not to the Service, because policy is
-# evaluated on the post-NAT pod address. A new in-cluster entry in
+# ERP), the kagent controller on 8083 (the inbound bridge invokes agents
+# through its A2A endpoint), and DNS. Each upstream is pinned to its POD
+# by label, in its namespace, on its port — not to the Service, because
+# policy is evaluated on the post-NAT pod address. A new in-cluster entry in
 # k8s/plane/upstreams.yaml needs a matching rule here, or the gateway's
 # 502 (or an inbound event's 'failed … agent unreachable' outcome row)
 # will say so; a hosted entry (`internet: true`) needs the opt-in

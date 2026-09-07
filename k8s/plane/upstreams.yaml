@@ -41,8 +41,8 @@
 # request. ONE is configured here (docs/ap-demo.md): the
 # accounts-payable agent may schedule a payment at or under $10,000.00,
 # and only to one of two named payees, and never otherwise — the business
-# rule its brief states, as a rule the
-# plane enforces rather than a sentence the model is asked to respect.
+# rule its brief states, as a rule the plane enforces rather than a
+# sentence the model is asked to respect.
 # Note what that buys and what it costs: `payment_schedule` is NOT on the
 # ap-agent allowlist and must not be, because where a constraint exists
 # it BINDS — it is a bound, not another way in.

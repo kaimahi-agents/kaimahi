@@ -3,8 +3,8 @@ package config
 // The overlay. An adopter onboarding their OWN MCP server must not
 // have to edit the committed table — k8s/plane/upstreams.yaml is this
 // repo's own demo table (two LLM upstreams and six tool upstreams), and
-// `kmx plane` re-applies it, so an entry
-// added there is an entry the next deploy silently discards.
+// `kmx plane` re-applies it, so an entry added there is an entry the next
+// deploy silently discards.
 //
 // So the proxy reads a base file AND a directory of operator fragments,
 // merges them, and parses the result with the ONE parser everything else
