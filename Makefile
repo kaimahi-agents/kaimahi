@@ -97,6 +97,7 @@ KMX_SOURCES  := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2
 # manifest edit has to relink it.
 KMX_ASSETS   := k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/tools-agent.yaml \
 		k8s/kaimahi-tools.yaml \
+		k8s/egress-hosted.yaml \
 		$(wildcard k8s/plane/*.yaml) $(wildcard k8s/models/*.yaml)
 # kmx reads the Makefile's own variable names, so delegation passes them
 # through rather than translating. KAIMAHI_CONFIRM rides along so a
@@ -1332,23 +1333,13 @@ egress-copilot-off: guard
 # the governed agent.
 
 ## github-secret: capture a fine-grained, read-only, one-repository
-## GitHub token stdin-only, vet it against that repository, store it as
+## GitHub token AT A PROMPT, vet it against that repository, store it as
 ## the plane-side Secret, and open the gateway's 443-to-public allowance.
+## The value is typed with the echo off and a piped stdin is refused —
+## there is no flag, variable or file that will carry it.
 ##   make github-secret GITHUB_REPO=owner/name
-github-secret: guard
-	@test -n "$(GITHUB_REPO)" || \
-		{ echo 'usage: make github-secret GITHUB_REPO=owner/name  (fine-grained read-only token on stdin)' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" GITHUB_REPO="$(GITHUB_REPO)" bash scripts/github-secret.sh
-	@# A hosted tool upstream is the moment the gateway needs the
-	@# internet: the plane's own boundary lets it reach nothing outside
-	@# the cluster; this opens TCP 443 out to public addresses, for the
-	@# proxy pod only. `make github-revoke` closes it again.
-	$(KUBECTL) apply -f k8s/egress-hosted.yaml
-	@# The Secret mount is optional, so a proxy that started without it
-	@# would not see the file until kubelet projects it (docs/aks.md):
-	@# roll, so both replicas start with the credential present.
-	$(KUBECTL) -n kaimahi rollout restart deploy/kaimahi-proxy
-	$(KUBECTL) -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
+github-secret: $(KMX)
+	@$(KMX_ENV) $(KMX) credential capture github $(GITHUB_REPO)
 
 ## github-revoke: the inverse — delete the token Secret and close the
 ## allowance. Governed GitHub calls then fail closed (503: no credential;
@@ -1426,30 +1417,20 @@ github-down: guard
 
 ## release-secret: capture the release agent's GitHub token — FINE-GRAINED,
 ## one repository, Contents+Actions write and Pull requests read. Applies
-## the hosted allowance. Stdin only.
+## the hosted allowance. Typed at a prompt; a pipe is refused.
 ##   make release-secret GITHUB_REPO=owner/name
-release-secret: guard
-	@test -n "$(GITHUB_REPO)" || \
-		{ echo 'usage: make release-secret GITHUB_REPO=owner/name  (fine-grained write token on stdin)' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" GITHUB_REPO="$(GITHUB_REPO)" bash scripts/release-secret.sh
-	$(KUBECTL) apply -f k8s/egress-hosted.yaml
-	$(KUBECTL) -n kaimahi rollout restart deploy/kaimahi-proxy
-	$(KUBECTL) -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
+release-secret: $(KMX)
+	@$(KMX_ENV) $(KMX) credential capture github-release $(GITHUB_REPO)
 
 ## ado-secret: capture an Azure DevOps ACCESS TOKEN (Entra, not a PAT —
 ## the hosted ADO MCP server accepts nothing else) and store it in plane
-## custody. It lives about an hour; re-run it before a release session.
+## custody. It lives about an hour; re-run it before a release session
+## with --replace. Mint it with `az account get-access-token --scope
+## https://mcp.dev.azure.com/.default --query accessToken -o tsv`, then
+## paste it at the prompt: a pipe is refused, deliberately.
 ##   make ado-secret ADO_ORG=<organization>
-ado-secret: guard
-	@test -n "$(ADO_ORG)" || \
-		{ echo 'usage: make ado-secret ADO_ORG=<organization>  (Entra access token on stdin)' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" ADO_ORG="$(ADO_ORG)" bash scripts/ado-secret.sh
-	@# The same 443-to-public allowance release-secret applies. Without it
-	@# an ADO-only setup stores a good token and still cannot reach
-	@# mcp.dev.azure.com. `make release-revoke` removes it.
-	$(KUBECTL) apply -f k8s/egress-hosted.yaml
-	$(KUBECTL) -n kaimahi rollout restart deploy/kaimahi-proxy
-	$(KUBECTL) -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
+ado-secret: $(KMX)
+	@$(KMX_ENV) $(KMX) credential capture ado $(ADO_ORG)
 
 ## release-revoke: delete BOTH release tokens and close the hosted
 ## allowance. Run it at the end of any session that was only a test.

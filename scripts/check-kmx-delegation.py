@@ -75,10 +75,17 @@ OWNED = {
     "restore": "kmx restore",
     "plane-metrics": "kmx metrics",
     # Credentials that expire: the view an operator watches, and the one
-    # verb that moves a deadline. Renewal mints nothing, which is the only
-    # reason a CLI that accepts no credential material can own it.
+    # verb that moves a deadline. Renewal mints nothing and moves no bytes.
     "credentials": "kmx credentials",
     "credential-renew": "kmx credential renew",
+    # And capturing the credential an upstream needs. This one used to be
+    # outside the rule on the grounds that kmx accepted credential material in
+    # no form; it accepts it here, at a prompt, on a terminal, and so it owns
+    # the target — which matters more than most, because the capture is the
+    # step that used to make a checkout compulsory.
+    "github-secret": "kmx credential capture github",
+    "release-secret": "kmx credential capture github-release",
+    "ado-secret": "kmx credential capture ado",
 }
 
 # Targets whose recipe passes an operator-settable argument (a credential, an
@@ -98,6 +105,9 @@ CARRIES_ARGUMENTS = {
     "plane-metrics",
     # NAME= and TTL= are empty in the dry run; the prefix covers the rest.
     "credential-renew",
+    # GITHUB_REPO= and ADO_ORG= name the repository or organization the
+    # credential is scoped to. Empty here, named in real use.
+    "github-secret", "release-secret", "ado-secret",
 }
 
 # A line that reaches the cluster itself. Anchored to a command position —

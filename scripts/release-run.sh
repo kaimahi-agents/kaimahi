@@ -510,11 +510,12 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 [ "$STEP" = refresh ] || for secret in kaimahi-release-pat; do
   $KUBECTL -n kaimahi get secret "$secret" >/dev/null 2>&1 \
-    || fail "Secret kaimahi/$secret is missing — run: make release-secret GITHUB_REPO=$repo"
+    || fail "Secret kaimahi/$secret is missing — run: kmx credential capture github-release $repo"
 done
 if [ -n "$ado_pipelines" ] && ! $KUBECTL -n kaimahi get secret kaimahi-ado-token >/dev/null 2>&1; then
   fail "Azure DevOps pipelines were asked for, but Secret kaimahi/kaimahi-ado-token is missing.
-  Run: make ado-secret ADO_ORG=<organization>   (that token lives about an hour)"
+  Run: kmx credential capture ado <organization>   (that token lives about an hour;
+  add --replace when one is already stored)"
 fi
 
 # A fresh credential first. The expiry is shorter than the process, so
