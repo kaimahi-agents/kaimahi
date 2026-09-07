@@ -25,6 +25,12 @@ kmx workflow govern release --set repo=owner/name
 kmx workflow run release --set repo=owner/name --set version=v1.2.3 --dry-run
 ```
 
+`--dry-run` writes nothing to the cluster, including the seam credentials
+a live run re-mints — so it rides whatever is already in custody. The run
+says which seams it did not refresh, because an expired one does not
+announce itself: it shows up as the agent reporting those tools missing
+from its toolset.
+
 Nothing here needs a checkout. `kmx` carries the blueprints it ships, so
 the sequence after [getting started](getting-started.md) is
 `kmx quickstart` → `kmx plane` → `kmx govern` → `kmx workflow govern`.
