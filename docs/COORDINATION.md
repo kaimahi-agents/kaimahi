@@ -126,6 +126,7 @@ prefix.
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
+| W40: three places we say we protect something and do not (drift review A3, A9, A15) | unassigned | SHAPED 2026-09-07 — prompt below; **the urgent one** | `kmx down` deletes under a banner saying the context is absent; `kmx workflow run` is unguarded; five manifests cite a CI assertion that does not exist |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W34a: `kmx status` counts what is governed (absorbing the stale #37) | W34a worker | PR #110 MERGED — closed #37 honestly rather than rebasing a PR whose central file no longer existed | coordinator verification owed |
@@ -4263,6 +4264,99 @@ NOT pass as success. If you added a retry, show it firing and show it
 announcing itself. Branch from current main; PR targets main; no stacked
 bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
+```
+
+### W40 — three places we say we protect something and do not (UNASSIGNED — paste into a fresh CLI session; the urgent one)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first, then `docs/reviews/2026-09-07-drift-review.md` findings A3, A9 and
+A15 — this lane closes those three. The security standing guidance binds
+you. All three were confirmed by the review and re-confirmed by the
+coordinator; do not spend the lane rediscovering them.
+
+They are one shape: **the repository states a protection that is not
+there.** That is the specific failure this project cannot afford,
+because its entire argument is that a provable control beats an asserted
+one.
+
+**(1) `kmx down` deletes a cluster under a banner saying it does not
+exist. THIS IS THE URGENT ONE.** `internal/kmx/guard/guard.go`
+classifies an absent `kind-*` context as Local, labelled "local kind
+(context not created yet)" — an allowance that exists for `kmx up`,
+which legitimately runs before the context exists. `internal/kmx/app/
+down.go` accepts that same allowance and runs `kind delete cluster
+--name <KIND_CLUSTER>`. **kind deletes by CONTAINER name, regardless of
+the kubeconfig**, so a stale or misconfigured `KUBECONFIG` plus `kmx
+down` destroys a real cluster while the banner says it is not created,
+with no confirmation. This is not hypothetical: it cost a lane a cluster
+during the version-handshake work, which reported it rather than quietly
+fixing it.
+The obvious fix is to refuse in `Down` when the context is absent. Before
+you write it, check what breaks: `kmx up` needs that allowance, teardown
+after a failed bring-up is a real case, and CI tears down clusters
+non-interactively. A fix that makes it impossible to clean up after a
+half-created cluster has traded one bad outcome for another. Say what you
+chose and what the operator does when they genuinely need to delete
+something the kubeconfig does not know about.
+
+**(2) `kmx workflow run` is not guarded at all, and it is the most
+consequential command in the product.** It files approval requests,
+drives turns that cut branches and dispatch builds, and executes
+`ungoverned:` scripts. `docs/kmx.md` says every mutating command is
+guarded. Sixteen files under `internal/kmx/app/` call the guard; this is
+not one of them — its only `Guard` reference is `b.StepGuard(name)`,
+which is a blueprint step's own guard and a different thing entirely.
+Decide where the guard belongs: once before the run starts, or before
+each consequential step. Both are defensible and they fail differently —
+a single up-front banner can scroll away before the step that matters,
+and a banner per step trains people to skip them. Say which and why.
+`kmx credential renew` is also unguarded, deliberately
+(`internal/kmx/app/views.go`). Either guard it or name it in the docs as
+the stated exception — what is not allowed is a doc claiming all
+mutating commands are guarded while two are not.
+
+**(3) Five agent manifests claim a CI assertion that does not exist.**
+`k8s/ap-agent.yaml`, `github-agent.yaml`, `hello-world.yaml`,
+`slack-agent.yaml` and `tools-agent.yaml` each say `runAsUser: 1001` is
+"pinned by a CI assertion, because a kagent bump that moves it would
+otherwise fail every agent at CreateContainer". There is no such
+assertion — the only `1001` in CI or scripts is an Azure DevOps
+pipeline-id example. **Add the assertion rather than deleting the
+claim.** The comment is right about why it matters: kagent's image
+declares its user by name, so a version bump that moves the numeric id
+breaks every agent with an error that never mentions the image. The
+check belongs where a kagent bump would be noticed — pin the id against
+the image kagent actually ships at the pinned version, and make the
+failure message say what to change. If you conclude the assertion cannot
+be written keylessly in CI, say so plainly and fix the comment instead;
+what must not survive is a claim of a check nobody performs.
+
+**Guardrails, all hard.** Change no behaviour beyond these three. `kmx
+up` must still work on a machine with no cluster — prove it. CI must
+still tear down its clusters non-interactively. kmx accepts no
+credential material beyond the ruled terminal-only prompt. Every
+mutation through the context guard — including, after this lane, the two
+that were not. No client-go. No Azure or Slack identifiers. CI stays
+keyless. Comments say what the thing does, never a lane or decision
+number.
+
+**Verification is real, and for this lane it is mostly about refusals:**
+- A transcript of `kmx down` with a `KUBECONFIG` that does not know the
+  cluster, showing it REFUSES rather than deleting — and a second
+  transcript showing the legitimate teardown path still works.
+- `kmx up` on a machine with no cluster, still working.
+- `kmx workflow run` showing its banner, naming the cluster, before
+  anything is filed or executed.
+- The new CI assertion failing when the pinned id is wrong — change it
+  deliberately, show the failure and its message, change it back.
+- `docs/kmx.md` either accurate about guarded commands or naming its
+  exceptions.
+
+Branch from current main; PR targets main; no stacked bases; lane ends
+at PR-open-with-checks-green — do not merge. Report deviations in the
+PR, and say plainly anything you could not prove.
 ```
 
 ## Delta sheets from finished lanes
