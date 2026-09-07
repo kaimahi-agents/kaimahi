@@ -56,7 +56,8 @@ const (
 	// `kmx tools add`.
 	DefaultToolServer = "kaimahi-tools"
 	// GovernedSecret is the agent-side Secret the issued token is stored in
-	// (the Makefile's GOVERNED_SECRET default), in the kagent namespace.
+	// (scripts/plane-admin.sh's GOVERNED_SECRET default), in the kagent
+	// namespace.
 	GovernedSecret         = "kaimahi-governed-token"
 	GovernedModelConfig    = "governed-ollama"
 	GuardNamespaces        = "kagent, kaimahi, ollama"

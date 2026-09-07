@@ -1,8 +1,10 @@
 // Package guard is scripts/kube-guard.sh in Go: the context-safety net in
 // front of every mutating kmx command.
 //
-// The contract is the shell script's, unchanged, because the script is the
-// spec and both implementations have to agree:
+// The four rules below are the shell script's and both implementations
+// have to agree on them. This one adds a rule the script does not have:
+// every caller must record who chose the context, and a context nobody
+// chose is refused rather than acted on.
 //
 //   - ALWAYS print where the action is about to land (context, API-server
 //     host, namespaces) on stderr, so the answer is on screen even when
@@ -45,10 +47,13 @@ import (
 // is deliberately not modelled: the guard decides on names and addresses,
 // and reading no further means it can never print or log a credential.
 type Kubeconfig struct {
-	// CurrentContext is read but never acted on. The guard NAMES it when it
-	// refuses, because an operator who set it is entitled to know kmx did
-	// not follow it — and kmx does not follow it on purpose: a bare kubectl
-	// does, and `az aks get-credentials` rewrites it silently.
+	// CurrentContext is never a SOURCE: kmx acts only on the name it
+	// resolved, and where the two differ the current one is never
+	// substituted. It is read for two things — naming it in a refusal, so
+	// an operator who set it knows kmx did not follow it, and
+	// corroborating an invented default that happens to match it, which
+	// turns a refusal into a proceed. kmx does not follow it on purpose: a
+	// bare kubectl does, and `az aks get-credentials` rewrites it silently.
 	CurrentContext string `json:"current-context"`
 	Clusters       []struct {
 		Name    string `json:"name"`

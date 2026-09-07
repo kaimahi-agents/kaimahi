@@ -44,7 +44,10 @@ type Options struct {
 	// unpicking the ones before it.
 	Step string
 
-	// Plan prints what would happen, where, and stops. It contacts nothing.
+	// Plan prints what would happen, where, and stops. It creates nothing
+	// and reads nothing on the cluster or in the subscription — only the
+	// local tool probes and `az account show`, which fill in the two lines
+	// that say where this would land.
 	Plan bool
 }
 

@@ -162,8 +162,9 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 	return fmt.Errorf(`the managed path needs a model credential, and kmx does not capture one.
 
   A managed cluster runs a hosted model — there is no local model server on
-  it — so the plane needs a real provider token. kmx accepts credential
-  material on no path that exists today, so this step is yours:
+  it — so the plane needs a real provider token. A model key is not one of
+  the upstream credentials kmx can check a value against, so kmx will not
+  store one and this step is yours:
 
     make plane-copilot-secret        # from a checkout of this repository
 

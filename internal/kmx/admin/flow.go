@@ -141,6 +141,12 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 // missing — a picture that reads like a well-behaved agent precisely where the
 // evidence is thinnest. The window therefore starts at the latest point every
 // saturated source still covers, and the caller is told the window was cut.
+//
+// KNOWN INACCURACY in that message, not in the trimming: it always names
+// flowLimit, so a window cut by the 200-row inbound trail is reported as
+// having hit a 50-row limit. Which trail saturated is not recoverable
+// here — only the timestamps are passed in — so saying it correctly means
+// carrying the limit alongside them.
 func trimToComplete(events []flowEvent, saturated []time.Time) ([]flowEvent, []string, error) {
 	sort.SliceStable(events, func(i, j int) bool { return events[i].at.Before(events[j].at) })
 	if len(saturated) == 0 {

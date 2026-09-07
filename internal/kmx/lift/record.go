@@ -176,8 +176,6 @@ func (r *Record) Add(res Resource) error {
 	return nil
 }
 
-// Outside returns the resources a resource-group check cannot vouch for,
-// which are exactly the ones the write-up has to name individually.
 // InGroup reports whether an ARM resource id names something inside the given
 // resource group, compared the way ARM compares: case-insensitively.
 //
@@ -191,6 +189,8 @@ func InGroup(resourceID, group string) bool {
 	return strings.Contains(strings.ToLower(resourceID)+"/", needle)
 }
 
+// Outside returns the resources a resource-group check cannot vouch for,
+// which are exactly the ones the write-up has to name individually.
 func (r *Record) Outside() []Resource {
 	var out []Resource
 	for _, res := range r.Created {

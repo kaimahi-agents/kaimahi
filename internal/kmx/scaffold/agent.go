@@ -281,8 +281,8 @@ func Generate(spec Spec) (string, error) {
 	}
 
 	governance := "# This agent's model calls are UNGOVERNED: no budget, no ledger, no audit\n" +
-		"# sits in front of them. `make plane` then `make govern` puts a governed\n" +
-		"# preset in front of an agent (milestone 2 of kmx will own that seam).\n"
+		"# sits in front of them. `kmx plane` then `kmx govern` puts a governed\n" +
+		"# preset in front of an agent.\n"
 	if spec.Governed {
 		governance = "# This agent thinks through a governed preset: its model calls are metered,\n" +
 			"# budgeted and ledgered by the Kaimahi plane.\n"

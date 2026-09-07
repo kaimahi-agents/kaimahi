@@ -16,9 +16,11 @@ import (
 
 // Defaults for the cluster this path creates. These ARE the opinion: an
 // adopter should not have to choose a node size to see a governed agent run
-// on a managed cluster. Every one of them is overridable by a flag, and
+// on a managed cluster. Region, node size, node count and policy engine each
+// take a flag; the OS disk does not, because the size below is what the
+// monitoring add-ons this path always enables were measured to need.
 // docs/aks.md states each with its reason — an opinion nobody can find is
-// just a default, and one nobody can override is a cage.
+// just a default.
 const (
 	// Standard_B4ms: 4 vCPU and 16 GiB, burstable. The plane, its ledger and
 	// two agents fit with room to spare, and a burstable size is the cheapest

@@ -21,8 +21,10 @@ import (
 //   - a terminal gets the reply, the tool calls and the token cost;
 //   - a pipe gets the JSON, byte for byte, because things parse it.
 //
-// That second clause is not a nicety. CI captures this output in eight
-// places (`make chat | tee chat.out`, then scripts/verify-chat.py) and
+// That second clause is not a nicety. CI captures this output in every
+// end-to-end shard (`make chat | tee chat.out`, then
+// scripts/verify-chat.py) — a dozen-odd places, deliberately not counted
+// here because the count is what went stale last time — and
 // asserts on the task's shape — status.state, the function_call and the
 // function_response payload. Pretty-printing by default would break every
 // one of them, and `--json` forces the raw form when a terminal wants it.

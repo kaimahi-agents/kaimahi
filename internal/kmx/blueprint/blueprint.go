@@ -327,7 +327,8 @@ func (c *Constraint) UnmarshalYAML(node *yaml.Node) error {
 
 // Parse reads a blueprint document and validates everything that can be
 // known without a cluster. Anything a cluster is needed for — that the
-// upstreams exist, that their declarations match — is Rendered.Check.
+// upstreams exist, that their declarations match — is checkSeams, over
+// what /admin/config/validate returns.
 func Parse(raw []byte) (*Blueprint, error) {
 	if err := refuseCredentialMaterial(raw); err != nil {
 		return nil, err

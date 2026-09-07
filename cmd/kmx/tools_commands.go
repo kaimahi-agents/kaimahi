@@ -15,7 +15,10 @@ func newToolsCommand(state *commandState) *cobra.Command {
 	return group
 }
 
-// newToolsSandboxCommand installs the WASM runtime that tool calls execute in.
+// newToolsSandboxCommand installs the WASM runtime a tool server can opt
+// into. Installing it sandboxes nothing on its own: an MCP server has to
+// set runtimeClassName before any call lands there, which is what
+// `kmx tools sandbox status` counts.
 //
 // It belongs to the `tools` family because it governs what this family
 // governs — what a tool call may do — at the runtime boundary rather than the
@@ -28,7 +31,7 @@ func newToolsCommand(state *commandState) *cobra.Command {
 func newToolsSandboxCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sandbox",
-		Short: "Install the WASM sandbox that tool calls execute in",
+		Short: "Install the WASM runtime a tool server can run in",
 		Args:  cobra.NoArgs,
 	}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.ToolSandbox() })

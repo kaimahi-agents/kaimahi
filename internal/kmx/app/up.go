@@ -19,8 +19,10 @@ var UpSteps = []string{"cluster", "ollama", "model", "kagent", "agent", "tools-a
 
 // Up runs the whole journey, or the single named step.
 //
-// This is the Makefile's kind `UP_STEPS` — cluster, ollama, model, kagent,
-// agent, tools-agent, status. RUNTIME ONLY: `kmx up` does not deploy the
+// On kind this IS the journey: the Makefile's kind `UP_STEPS` is empty and
+// `make up` is one line delegating here, so the sequence CI runs is the
+// sequence this function implements rather than a list of targets that
+// could drift from it. RUNTIME ONLY: `kmx up` does not deploy the
 // governance plane, and says so at the end rather than leaving anyone
 // to discover it from an empty ledger.
 func (a *App) Up(step string) error {
@@ -179,17 +181,6 @@ func (a *App) preflightUp(steps []string) error {
 
 // ---- cluster --------------------------------------------------------------
 
-// stepCluster brings up the kind cluster: create it, or on Podman recover it.
-//
-// `kind get clusters` failing is NOT "no clusters": a broken or absent kind,
-// or a docker socket the user cannot reach, would otherwise read as "the
-// cluster is missing" and send us straight into a create that fails later
-// and less clearly.
-//
-// The Podman half is #53's, carried across when this recipe became a
-// delegation so the fix is not lost: on that engine "listed" does not mean
-// "running", and a cluster whose nodes were stopped has to be started rather
-// than re-created.
 // rememberInventedContext turns the one context nobody chose into a choice,
 // at the moment kmx creates the cluster it names.
 //
@@ -217,6 +208,17 @@ func (a *App) rememberInventedContext() {
 		a.Cfg.KubeContext, path)
 }
 
+// stepCluster brings up the kind cluster: create it, or on Podman recover it.
+//
+// `kind get clusters` failing is NOT "no clusters": a broken or absent kind,
+// or a docker socket the user cannot reach, would otherwise read as "the
+// cluster is missing" and send us straight into a create that fails later
+// and less clearly.
+//
+// The Podman half is #53's, carried across when this recipe became a
+// delegation so the fix is not lost: on that engine "listed" does not mean
+// "running", and a cluster whose nodes were stopped has to be started rather
+// than re-created.
 func (a *App) stepCluster() (err error) {
 	// Only on success: recording a context for a cluster that failed to come
 	// up would point every later command at something that is not there.
@@ -440,13 +442,6 @@ func (a *App) installKagent(extra ...string) error {
 
 // ---- the agents -----------------------------------------------------------
 
-// liveModelConfig reads an agent's current modelConfig.
-//
-// Re-applying the committed YAML must not silently drop governance (or any
-// preset switch) from a live agent, so the current value is captured first
-// and a non-default one is restored after the apply, with a warning. Only a
-// NotFound (fresh cluster) may skip the capture — ANY other read failure
-// aborts rather than risk silently un-governing an agent.
 // isNotFound reports whether a kubectl failure was "the object is not there",
 // as opposed to "the cluster could not be reached" or "you may not read it".
 //
@@ -462,6 +457,13 @@ func isNotFound(err error) bool {
 	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
 }
 
+// liveModelConfig reads an agent's current modelConfig.
+//
+// Re-applying the committed YAML must not silently drop governance (or any
+// preset switch) from a live agent, so the current value is captured first
+// and a non-default one is restored after the apply, with a warning. Only a
+// NotFound (fresh cluster) may skip the capture — ANY other read failure
+// aborts rather than risk silently un-governing an agent.
 func (a *App) liveModelConfig(agent string) (string, error) {
 	out, err := a.kubectlCapture("-n", "kagent", "get", "agent", agent,
 		"-o", "jsonpath={.spec.declarative.modelConfig}")

@@ -18,7 +18,19 @@ const (
 	// expects `kmx` to use, and quietly shadowing it with a pinned build
 	// would be a surprise nobody asked for.
 	FromPath Source = "PATH"
-	// FromCache is a previously fetched copy, re-verified on this run.
+	// FromCache is reported when a cache entry EXISTED when this run
+	// started. It is not proof the run used it: Provision decides this
+	// from an os.Stat before calling Ensure, and Ensure deletes and
+	// re-fetches an entry whose recorded digest no longer matches. So a
+	// binary that was substituted on this machine and refetched is
+	// reported as "cache".
+	//
+	// Said plainly because it is the wrong way round for a security
+	// report — the tampered case is the one an operator most needs named,
+	// and it is the case this label hides. Ensure does print a line
+	// saying it re-fetched, so the fact is not lost, only demoted. The
+	// fix is for Ensure to return which of the two happened instead of
+	// Provision guessing beforehand.
 	FromCache Source = "cache"
 	// FromDownload is a copy fetched during this run.
 	FromDownload Source = "downloaded"

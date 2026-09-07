@@ -291,11 +291,12 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 
 // enableMetricsAddon turns Managed Prometheus on, unless it is already on.
 //
-// Already on and pointing at OUR workspace means a resumed run: nothing to do.
-// Already on and pointing at somebody ELSE'S workspace is a refusal, not a
-// silent repoint — an `az aks update` there would move their metrics stream to
-// a workspace this run owns and will later delete, which breaks monitoring
-// they were relying on and does it invisibly.
+// Already on here can only be this run's own doing: a cluster that had it
+// before was refused at the gate above (refuseIfMonitoringWasAlreadyOn),
+// which is where somebody else's monitoring is protected. So this reads as
+// a resumed run and does nothing. Unlike Container Insights, there is no
+// workspace to compare — the metrics profile does not report which Azure
+// Monitor workspace it feeds.
 func (a *App) enableMetricsAddon(opt lift.Options, metricsID string) error {
 	st, err := a.readMonitorState(opt)
 	if err != nil {

@@ -84,11 +84,6 @@ type RenderedExec struct {
 	Preview  []string
 }
 
-// Render resolves a blueprint against parameters and the steps that will
-// run. `declared` is the running plane's policy_fields (from
-// /admin/config/validate); pass nil to render without a cluster, in which
-// case the blueprint's own `requires` is used and Check must be run
-// before anything is applied.
 // RenderForReview is Render for `kmx workflow show`, which is asked
 // BEFORE an operator knows every value — the release workflow's build
 // ids do not exist until its build step has run. A step that cannot be
@@ -102,6 +97,10 @@ func (b *Blueprint) RenderForReview(v Values, declared map[string][]string) (*Re
 
 // Render resolves a blueprint against parameters and the steps that will
 // run. An unresolved reference is an error: nothing runs half-resolved.
+//
+// `declared` is the running plane's policy_fields (from
+// /admin/config/validate); pass nil to render without a cluster, in which
+// case the blueprint's own `requires` is used.
 func (b *Blueprint) Render(v Values, steps []string, declared map[string][]string) (*Rendered, error) {
 	return b.render(v, steps, declared, false)
 }

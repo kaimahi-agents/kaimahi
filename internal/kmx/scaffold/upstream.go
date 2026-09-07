@@ -266,8 +266,15 @@ func ValidateUpstreamName(name string) error {
 			"starting and ending alphanumeric, at most 40 characters — it becomes a URL path segment, "+
 			"a ConfigMap key and part of three object names", name)
 	}
-	// The committed table's own four. Refused here so the message names
-	// the reason, rather than arriving as a merge collision later.
+	// Four of the committed table's six names, refused here so the message
+	// names the reason rather than arriving as a merge collision later.
+	//
+	// The list is INCOMPLETE — `github-release` and `ado` joined the table
+	// later and are not below — so those two get the plane's merge refusal
+	// instead of this one. Not a hole: the merge refuses a redefinition
+	// outright rather than resolving it by precedence, and `kmx tools add`
+	// validates through /admin/config/validate, which runs that merge. What
+	// is lost is only the earlier, better-worded message.
 	for _, committed := range []string{"kagent-tools", "slack", "github", "erp"} {
 		if name == committed {
 			return fmt.Errorf("%q is one of this repo's committed upstreams — an overlay may not redefine it. "+

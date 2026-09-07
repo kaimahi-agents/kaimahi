@@ -25,9 +25,9 @@ import (
 // It is a CONSTANT, and equal to the tag committed in k8s/plane/proxy.yaml,
 // because the kind path applies that manifest exactly as committed — no
 // render, no transform — which is what makes "kind is unchanged" a fact
-// rather than a claim (scripts/plane-deploy.sh's opening comment). Only a
-// REGISTRY target renders, and that is still the script's job: kmx is kind
-// only.
+// rather than a claim. Only a REGISTRY target renders, and kmx is no longer
+// kind-only: `kmx lift` takes that path itself for a managed cluster, and
+// scripts/plane-deploy.sh is what it drives to do the rendering.
 //
 // The alternative — tagging by kmx's own revision — is better staleness
 // protection in general, and it is deliberately not taken
@@ -176,9 +176,9 @@ func (a *App) planeImage(opt PlaneOptions) error {
 
 // refuseForeignImageTag fails closed on PLANE_IMAGE.
 //
-// The Makefile's variable exists for the registry path, where the image
-// reference and the pull policy are RENDERED into the manifest at deploy
-// time. kmx applies the manifest unrendered, so honouring PLANE_IMAGE here
+// PLANE_IMAGE exists for the registry paths, where the image reference and
+// the pull policy are RENDERED into the manifest at deploy time. `kmx plane`
+// applies the manifest unrendered, so honouring PLANE_IMAGE here
 // would build and side-load one tag while deploying another — a plane that
 // silently keeps running the previous image. Say so instead of ignoring it.
 func (a *App) refuseForeignImageTag() error {
@@ -187,8 +187,8 @@ func (a *App) refuseForeignImageTag() error {
 		return nil
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
-		"  kmx is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
-		"  A registry-backed cluster renders the manifest instead — that is `TARGET=aks make plane` (docs/aks.md).",
+		"  `kmx plane` is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
+		"  A registry-backed cluster renders the manifest instead — `kmx lift --step plane`, or `TARGET=aks make plane` (docs/aks.md).",
 		set, PlaneImage)
 }
 

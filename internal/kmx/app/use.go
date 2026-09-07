@@ -32,10 +32,10 @@ const config_kagentNamespace = "kagent"
 //     a perfectly plausible answer from the OLD preset.
 //   - Only then is the Agent's Ready condition meaningful.
 //
-// The Makefile keeps its own copy for `use`, `govern-tools` and
-// `ungovern-tools` — targets `kmx govern` was scoped not to touch.
-// Both are exercised by the same end-to-end job; the duplication ends when
-// milestone 3 moves those targets.
+// On kind this is the ONE implementation: `make use`, `make govern-tools`
+// and `make ungovern-tools` all delegate here. The managed-cluster
+// branches of those targets keep a shell copy of the same wait, and the
+// same end-to-end job exercises both.
 //
 // `apply` names the embedded manifests to apply as part of the switch. They
 // are applied INSIDE the before/after window deliberately: the

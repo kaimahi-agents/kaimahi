@@ -153,7 +153,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		}
 		if !governed {
 			a.notef("WARNING: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
-				"         `make plane` then `make govern` puts the plane in front of an agent.", modelConfig)
+				"         `kmx plane` then `kmx govern` puts the plane in front of an agent.", modelConfig)
 		}
 		if opt.Image != "" {
 			// NOT the declarative report. A BYO manifest carries no
@@ -364,7 +364,7 @@ func (a *App) preflightModelConfig(name, namespace string) error {
 		extra = "\n  On a fresh machine that is `kmx up`."
 	}
 	if name == config.GovernedModelConfig {
-		extra = "\n  The governed presets come with the plane: `make plane` then `make govern`."
+		extra = "\n  The governed presets come with the plane: `kmx plane` then `kmx govern`."
 	}
 	return fmt.Errorf("ModelConfig %q does not exist in namespace %s.\n"+
 		"  The API server would accept the Agent and then never reconcile it, silently.\n"+

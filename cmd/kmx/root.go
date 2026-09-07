@@ -113,7 +113,7 @@ func usageArgs(min, max int, usage string) cobra.PositionalArgs {
 }
 
 func newVersionCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{Use: "version", Short: "Show this build and installed component versions", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "version", Short: "Show this build and the component versions it targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		info, ok := state.deps.buildInfo()
 		revision := "unknown (kmx plane needs --source <checkout>)"
 		if rev, err := planebuild.Revision(info, ok); err == nil {
