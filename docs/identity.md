@@ -224,11 +224,14 @@ you move on.
 kmx does not guess whether the new credential works. It declines to reuse an
 answer that was about something else:
 
-- **After kmx writes a credential**, it asks kagent to look again and waits for
-  a verdict reached *after* the write. If kagent rejects it, you get kagent's
-  own words. If kagent has not looked in time, you get `unknown` — not
-  `accepted`, which would be the lie, and not `rejected`, which would send you
-  to fix something that may be fine.
+- **After kmx writes a credential**, it records what the seam said *before*
+  the write, asks kagent to look again, and then requires the verdict to have
+  **moved past** that — the API server's clock compared only with itself, so no
+  disagreement between your machine's clock and the cluster's can make a
+  verdict kagent never revisited look like a new one. If kagent rejects the
+  credential, you get kagent's own words. If it has not looked in time, you get
+  `unknown` — not `accepted`, which would be the lie, and not `rejected`, which
+  would send you to fix something that may be fine.
 - **`kmx status` changed nothing**, so it has no write to compare against and
   must not invent one. It reports the verdict as it stands, and publishes *when*
   it was reached:

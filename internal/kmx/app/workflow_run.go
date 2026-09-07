@@ -964,13 +964,18 @@ func (r *workflowRun) refreshSeam(name string) error {
 	if err != nil {
 		return err
 	}
+	// Taken BEFORE the write, because its whole job is to be the thing the
+	// verdict afterwards has to have moved past (seamverdict.go).
+	var baseline seamBaseline
+	if ref.Seam != "" {
+		baseline = r.app.seamVerdictBaseline("kagent", ref.Seam, r.app.timeNow())
+	}
 	if err := r.app.Run.RunStdin([]byte(manifest), "kubectl", r.app.kubectl("apply", "-f", "-")...); err != nil {
 		return err
 	}
-	writtenAt := r.app.timeNow()
-	r.refreshed[name] = writtenAt
+	r.refreshed[name] = r.app.timeNow()
 	r.app.notef("Refreshed the %s credential in plane custody: %s", name, ref.Why)
-	return r.reconnectSeam(ref, writtenAt)
+	return r.reconnectSeam(ref, baseline)
 }
 
 // reconnectSeam makes kagent look again.
@@ -979,7 +984,7 @@ func (r *workflowRun) refreshSeam(name string) error {
 // tried and does not retry, so after a refresh it still reads Unauthorized
 // from minutes ago. The release workflow's first health check reported a
 // healthy credential as broken for exactly this reason.
-func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh, writtenAt time.Time) error {
+func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh, baseline seamBaseline) error {
 	if ref.Seam == "" {
 		return nil
 	}
@@ -993,7 +998,7 @@ func (r *workflowRun) reconnectSeam(ref *blueprint.Refresh, writtenAt time.Time)
 	// stood here before nudged the seam, slept, and returned without reading
 	// again — so it never learned anything, and a credential kagent went on
 	// to refuse was refreshed and then not mentioned.
-	verdict, err := r.app.waitForSeamVerdict("kagent", ref.Seam, writtenAt)
+	verdict, err := r.app.waitForSeamVerdict("kagent", ref.Seam, baseline)
 	if err != nil {
 		// Not fatal — but not silence either. An RBAC denial or a typo in
 		// `seam:` reads exactly like a healthy seam if the error is

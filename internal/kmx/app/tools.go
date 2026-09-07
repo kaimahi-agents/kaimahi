@@ -135,9 +135,12 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		return err
 	}
 
-	// When the credential lands, so a verdict kagent reached before it is
-	// never read as an answer about it.
-	credentialWrittenAt := a.timeNow()
+	// What was true before the credential lands, so a verdict kagent reached
+	// before it is never read as an answer about it. The baseline carries the
+	// seam's CURRENT verdict time as the API server recorded it, which is what
+	// lets the check afterwards prove a change without trusting kmx's clock
+	// and the cluster's to agree (seamverdict.go).
+	baseline := a.seamVerdictBaseline(config_kagentNamespace, opt.Server, a.timeNow())
 	if err := a.session(func(c *admin.Client) error {
 		if err := a.issueCredential(c, opt.Credential, GovernOptions{
 			Agent:           opt.Agent,
@@ -179,7 +182,7 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 	// cached True from before it and returns instantly, which is how a
 	// credential that cannot be used reported as working for minutes
 	// (seamverdict.go).
-	verdict, err := a.waitForSeamVerdict(config_kagentNamespace, opt.Server, credentialWrittenAt)
+	verdict, err := a.waitForSeamVerdict(config_kagentNamespace, opt.Server, baseline)
 	if err != nil {
 		return err
 	}

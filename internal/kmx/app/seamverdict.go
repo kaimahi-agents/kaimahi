@@ -78,35 +78,60 @@ func age(now, then time.Time) string {
 	return d.String()
 }
 
+// seamBaseline is what stood BEFORE the caller changed anything, and it is
+// what makes the freshness question answerable without trusting two clocks to
+// agree.
+type seamBaseline struct {
+	// Since is the caller's own clock at the moment it wrote the credential.
+	// The zero time means the caller changed nothing and is asking only what
+	// kagent currently thinks — which is what `kmx status` asks.
+	Since time.Time
+	// At is the verdict that stood before the write, in the API SERVER's
+	// clock. Zero means there was no verdict at all, which is a complete
+	// answer: any verdict that appears is about the credential we wrote.
+	At time.Time
+	// Known is false when the baseline could not be read. A change cannot be
+	// proven against a baseline nobody has, so that is `unknown` rather than
+	// an assumption in either direction.
+	Known bool
+}
+
 // classifySeamVerdict reads one `Accepted` condition.
 //
-// since is the moment the caller changed something the verdict would have to
-// be about — the credential it just wrote. Pass the zero time to ask only
-// "what does kagent currently think", which is what `kmx status` asks: it
-// changed nothing, so it has no write to compare against and must not invent
-// one.
+// Two things have to hold before a verdict counts as an answer about the
+// credential the caller just wrote, and they fail in different ways on
+// purpose:
 //
-// **This comparison assumes kmx's clock and the API server's agree**, and the
-// assumption is worth stating because the two failure directions are not
-// symmetric. `since` is kmx's wall clock; the condition's time is the API
-// server's. If kmx's clock runs AHEAD, fresh verdicts look stale and are
-// reported `unknown` — safe. If it runs BEHIND by more than the gap between
-// writing the credential and reading the verdict, a stale verdict looks fresh
-// and is reported as an answer — which is the failure this whole file exists
-// to prevent.
+//  1. **It moved.** The condition's time must be strictly later than the one
+//     that stood before the write. This is the load-bearing check, because it
+//     compares the API server's clock only with ITSELF: whatever kmx's clock
+//     says, a verdict kagent has not revisited carries the same timestamp it
+//     carried before, and no skew can make an unchanged verdict look like a
+//     new one.
+//  2. **It is not older than the write.** Kept as a second condition rather
+//     than replaced by the first. It costs nothing when the clocks agree, and
+//     where they do not it can only push the answer towards `unknown`, which
+//     is the safe direction.
 //
-// It is not defended against here, deliberately. Padding `since` by a skew
-// allowance would trade a narrow fail-open for a much broader loss: a verdict
-// arriving inside the allowance can never be newer than the padded `since`,
-// so a REJECTION — measured at 14 seconds on a live cluster, and the case
-// most worth catching — would be reported `unknown` instead. The fix that
-// costs nothing is a server-side causal marker: take the seam's current
-// lastTransitionTime BEFORE the write as the baseline and require the verdict
-// to have moved past it, comparing the API server's clock only with itself.
-// That is the change to make if this ever bites; on kind the API server
-// shares the host's clock, and on a managed cluster both ends are
-// NTP-synchronised, so it has not.
-func classifySeamVerdict(c *serverCondition, generation, observed int64, since time.Time) seamVerdict {
+// The first check is what closes a genuine fail-open hole. Comparing the
+// server's timestamp against kmx's wall clock alone is safe when kmx runs
+// AHEAD — fresh verdicts look stale and are reported `unknown` — but when kmx
+// runs BEHIND, a stale verdict looks fresh and is reported as an answer,
+// which is the failure this whole file exists to prevent.
+//
+// Padding the wall-clock comparison by a skew allowance was the obvious
+// alternative and is worse: a verdict arriving inside the allowance can never
+// be newer than a padded `Since`, so a REJECTION — measured at 14 seconds on
+// a live cluster, and the case most worth catching — would be reported
+// `unknown` instead. The causal check loses nothing, because a rejection
+// always moves the condition.
+//
+// What neither check can do is confirm a PASS: a good credential leaves the
+// verdict where it was, so it is indistinguishable from a stale one. That
+// asymmetry is the right way round for a fail-closed posture and is why the
+// wait around this reports `unknown` rather than success.
+func classifySeamVerdict(c *serverCondition, generation, observed int64, base seamBaseline) seamVerdict {
+	asking := !base.Since.IsZero()
 	if generation != 0 && observed != generation {
 		return seamVerdict{State: verdictUnknown,
 			Reason: fmt.Sprintf("kagent is still reconciling this seam (generation %d, observed %d)", generation, observed)}
@@ -118,18 +143,33 @@ func classifySeamVerdict(c *serverCondition, generation, observed int64, since t
 	if err != nil && strings.TrimSpace(c.LastTransitionTime) != "" {
 		at = time.Time{}
 	}
+	// A change cannot be proven against a baseline nobody has.
+	if asking && !base.Known {
+		return seamVerdict{State: verdictUnknown, At: at, Message: c.Message,
+			Reason: "what this seam said before the credential was written could not be read, so there is no " +
+				"way to tell whether kagent has looked at it since"}
+	}
 	// A verdict with no time cannot be told apart from one reached before
 	// the caller's change, so it cannot answer a question about that change.
-	if !since.IsZero() && at.IsZero() {
+	if asking && at.IsZero() {
 		return seamVerdict{State: verdictUnknown, Message: c.Message,
 			Reason: "kagent's verdict carries no timestamp, so it cannot be told apart from one reached " +
 				"before the credential was written"}
 	}
-	if !since.IsZero() && at.Before(since) {
+	// The causal check: the verdict has to have MOVED. Server clock against
+	// server clock, so no disagreement between kmx's clock and the cluster's
+	// can turn a verdict kagent never revisited into a fresh one.
+	if asking && !at.After(base.At) {
+		return seamVerdict{State: verdictUnknown, At: at, Message: c.Message,
+			Reason: "kagent has not changed its verdict on this seam since before the credential was " +
+				"written — a mounted Secret is not updated the instant it is written, so this is the same " +
+				"answer it gave about the credential that was there before"}
+	}
+	if asking && at.Before(base.Since) {
 		return seamVerdict{State: verdictUnknown, At: at, Message: c.Message,
 			Reason: fmt.Sprintf("kagent last checked this seam %s before the credential was written, and has not "+
 				"looked since — a mounted Secret is not updated the instant it is written, so this says nothing "+
-				"about the credential that is there now", age(since, at))}
+				"about the credential that is there now", age(base.Since, at))}
 	}
 	if c.Status == "True" {
 		return seamVerdict{State: verdictAccepted, At: at}
@@ -151,9 +191,58 @@ func pickCondition(conditions []serverCondition, kind string) *serverCondition {
 	return nil
 }
 
+// seamVerdictBaseline records what a seam said BEFORE the caller changes
+// anything, so a later verdict can be shown to have moved.
+//
+// Call it before writing the credential. A seam that is not there yet is a
+// complete answer and not a failure — there is no prior verdict, so any
+// verdict that appears is about the credential about to be written. Only a
+// read that genuinely failed leaves the baseline unknown, and that is carried
+// rather than guessed at.
+func (a *App) seamVerdictBaseline(namespace, server string, since time.Time) seamBaseline {
+	raw, err := a.kubectlCapture("-n", namespace, "get", "remotemcpserver", server, "-o", "json")
+	if err != nil {
+		if isNotFound(err) {
+			return seamBaseline{Since: since, Known: true}
+		}
+		a.notef("could not read what the %s seam said before this change (%v); its verdict afterwards "+
+			"will be reported as unknown rather than assumed", server, err)
+		return seamBaseline{Since: since}
+	}
+	at, err := parseSeamCondition(raw)
+	if err != nil {
+		a.notef("could not read what the %s seam said before this change (%v); its verdict afterwards "+
+			"will be reported as unknown rather than assumed", server, err)
+		return seamBaseline{Since: since}
+	}
+	return seamBaseline{Since: since, At: at, Known: true}
+}
+
+// parseSeamCondition returns the Accepted condition's transition time, or the
+// zero time when there is no such condition yet.
+func parseSeamCondition(raw string) (time.Time, error) {
+	var doc struct {
+		Status struct {
+			Conditions []serverCondition `json:"conditions"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return time.Time{}, err
+	}
+	c := pickCondition(doc.Status.Conditions, "Accepted")
+	if c == nil {
+		return time.Time{}, nil
+	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(c.LastTransitionTime))
+	if err != nil {
+		return time.Time{}, nil
+	}
+	return at, nil
+}
+
 // readSeamVerdict asks the cluster what kagent last decided about one
 // RemoteMCPServer, and when.
-func (a *App) readSeamVerdict(namespace, server string, since time.Time) (seamVerdict, error) {
+func (a *App) readSeamVerdict(namespace, server string, base seamBaseline) (seamVerdict, error) {
 	raw, err := a.kubectlCapture("-n", namespace, "get", "remotemcpserver", server, "-o", "json")
 	if err != nil {
 		return seamVerdict{}, fmt.Errorf("cannot read RemoteMCPServer %q in namespace %s: %w", server, namespace, err)
@@ -171,7 +260,7 @@ func (a *App) readSeamVerdict(namespace, server string, since time.Time) (seamVe
 		return seamVerdict{}, fmt.Errorf("RemoteMCPServer %q returned invalid JSON: %w", server, err)
 	}
 	return classifySeamVerdict(pickCondition(doc.Status.Conditions, "Accepted"),
-		doc.Metadata.Generation, doc.Status.ObservedGeneration, since), nil
+		doc.Metadata.Generation, doc.Status.ObservedGeneration, base), nil
 }
 
 // How long kmx waits for kagent to look again after a credential was written,
@@ -208,9 +297,9 @@ var (
 // perfectly good and kagent may simply not have looked yet. Reporting it as
 // accepted would be the lie this exists to stop, and reporting it as rejected
 // would send an operator to fix something that may be fine.
-func (a *App) waitForSeamVerdict(namespace, server string, since time.Time) (seamVerdict, error) {
+func (a *App) waitForSeamVerdict(namespace, server string, base seamBaseline) (seamVerdict, error) {
 	return waitForVerdict(
-		func() (seamVerdict, error) { return a.readSeamVerdict(namespace, server, since) },
+		func() (seamVerdict, error) { return a.readSeamVerdict(namespace, server, base) },
 		a.timeNow,
 		func() {
 			// Say what is being waited for, once. Silence here is what made

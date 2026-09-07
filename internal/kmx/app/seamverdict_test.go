@@ -15,6 +15,12 @@ const (
 	after  = "2026-09-06T10:10:00Z"
 )
 
+// baselineAt is what the seam said before the write, plus the caller's clock
+// at it — the two halves a freshness question is answered against.
+func baselineAt(stood, since string) seamBaseline {
+	return seamBaseline{Since: written(since), At: written(stood), Known: true}
+}
+
 func written(s string) time.Time {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
@@ -29,12 +35,12 @@ func written(s string) time.Time {
 func TestAVerdictReachedBeforeTheCredentialIsUnknownNotAccepted(t *testing.T) {
 	v := classifySeamVerdict(&serverCondition{
 		Type: "Accepted", Status: "True", LastTransitionTime: before,
-	}, 0, 0, written("2026-09-06T10:05:00Z"))
+	}, 0, 0, baselineAt(before, "2026-09-06T10:05:00Z"))
 
 	if v.State != verdictUnknown {
 		t.Fatalf("a stale pass was reported as %q, not unknown", v.State)
 	}
-	for _, want := range []string{"before the credential was written", "has not looked since", "5m0s"} {
+	for _, want := range []string{"has not changed its verdict", "before the credential was written"} {
 		if !strings.Contains(v.Reason, want) {
 			t.Errorf("the reason does not say %q:\n%s", want, v.Reason)
 		}
@@ -50,18 +56,18 @@ func TestAVerdictReachedBeforeTheCredentialIsUnknownNotAccepted(t *testing.T) {
 // The other side of the window, and the reading the operator is entitled to
 // once kagent has actually looked.
 func TestAVerdictReachedAfterTheCredentialIsUsed(t *testing.T) {
-	since := written("2026-09-06T10:05:00Z")
+	base := baselineAt(before, "2026-09-06T10:05:00Z")
 
 	pass := classifySeamVerdict(&serverCondition{
 		Type: "Accepted", Status: "True", LastTransitionTime: after,
-	}, 0, 0, since)
+	}, 0, 0, base)
 	if pass.State != verdictAccepted {
 		t.Errorf("a fresh pass was reported as %q: %s", pass.State, pass.Reason)
 	}
 
 	fail := classifySeamVerdict(&serverCondition{
 		Type: "Accepted", Status: "False", Message: "Unauthorized", LastTransitionTime: after,
-	}, 0, 0, since)
+	}, 0, 0, base)
 	if fail.State != verdictRejected {
 		t.Fatalf("a fresh rejection was reported as %q", fail.State)
 	}
@@ -77,7 +83,7 @@ func TestAVerdictReachedAfterTheCredentialIsUsed(t *testing.T) {
 func TestWithNoWriteToCompareAgainstTheVerdictIsReportedAsItStands(t *testing.T) {
 	v := classifySeamVerdict(&serverCondition{
 		Type: "Accepted", Status: "True", LastTransitionTime: before,
-	}, 0, 0, time.Time{})
+	}, 0, 0, seamBaseline{})
 	if v.State != verdictAccepted {
 		t.Fatalf("status was denied an answer kagent had actually given: %q (%s)", v.State, v.Reason)
 	}
@@ -89,14 +95,14 @@ func TestWithNoWriteToCompareAgainstTheVerdictIsReportedAsItStands(t *testing.T)
 // Absent and mid-reconcile are both `unknown`, and neither is `none`: kagent
 // has not said no, it has not said anything.
 func TestNoVerdictIsUnknownRatherThanAFailure(t *testing.T) {
-	absent := classifySeamVerdict(nil, 0, 0, time.Time{})
+	absent := classifySeamVerdict(nil, 0, 0, seamBaseline{})
 	if absent.State != verdictUnknown || !strings.Contains(absent.Reason, "no verdict") {
 		t.Errorf("an absent condition: %+v", absent)
 	}
 
 	reconciling := classifySeamVerdict(&serverCondition{
 		Type: "Accepted", Status: "True", LastTransitionTime: after,
-	}, 4, 3, time.Time{})
+	}, 4, 3, seamBaseline{})
 	if reconciling.State != verdictUnknown || !strings.Contains(reconciling.Reason, "still reconciling") {
 		t.Errorf("a verdict from an older generation: %+v", reconciling)
 	}
@@ -106,7 +112,7 @@ func TestNoVerdictIsUnknownRatherThanAFailure(t *testing.T) {
 // write, so it cannot answer a question about the write.
 func TestAnUndatedVerdictCannotAnswerAQuestionAboutAWrite(t *testing.T) {
 	v := classifySeamVerdict(&serverCondition{Type: "Accepted", Status: "True"},
-		0, 0, written("2026-09-06T10:05:00Z"))
+		0, 0, baselineAt(before, "2026-09-06T10:05:00Z"))
 	if v.State != verdictUnknown || !strings.Contains(v.Reason, "no timestamp") {
 		t.Errorf("an undated verdict was trusted: %+v", v)
 	}
@@ -130,8 +136,8 @@ func TestPickConditionFindsTheOneAsked(t *testing.T) {
 // instantly on a cached pass, which is how a credential that could not be
 // used reported as working.
 func TestTheWaitIsNotSatisfiedByAVerdictFromBeforeTheWrite(t *testing.T) {
-	since := written("2026-09-06T10:05:00Z")
-	clock := since
+	base := baselineAt(before, "2026-09-06T10:05:00Z")
+	clock := base.Since
 	reads, rechecks, slept := 0, 0, time.Duration(0)
 
 	v, err := waitForVerdict(
@@ -140,7 +146,7 @@ func TestTheWaitIsNotSatisfiedByAVerdictFromBeforeTheWrite(t *testing.T) {
 			// Always the same stale pass: kagent never looks again.
 			return classifySeamVerdict(&serverCondition{
 				Type: "Accepted", Status: "True", LastTransitionTime: before,
-			}, 0, 0, since), nil
+			}, 0, 0, base), nil
 		},
 		func() time.Time { return clock },
 		func() { rechecks++ },
@@ -176,8 +182,8 @@ func TestTheWaitIsNotSatisfiedByAVerdictFromBeforeTheWrite(t *testing.T) {
 
 // And it returns as soon as kagent does look, with what kagent found.
 func TestTheWaitReturnsTheVerdictKagentReachesAfterTheWrite(t *testing.T) {
-	since := written("2026-09-06T10:05:00Z")
-	clock := since
+	base := baselineAt(before, "2026-09-06T10:05:00Z")
+	clock := base.Since
 	reads := 0
 
 	v, err := waitForVerdict(
@@ -188,7 +194,7 @@ func TestTheWaitReturnsTheVerdictKagentReachesAfterTheWrite(t *testing.T) {
 				c = &serverCondition{Type: "Accepted", Status: "False", Message: "Unauthorized",
 					LastTransitionTime: after}
 			}
-			return classifySeamVerdict(c, 0, 0, since), nil
+			return classifySeamVerdict(c, 0, 0, base), nil
 		},
 		func() time.Time { return clock },
 		func() {},
@@ -226,7 +232,8 @@ func TestAgainstARealSeam(t *testing.T) {
 	a := New(cfg)
 	a.Run.Echo = false
 
-	v, err := a.readSeamVerdict("kagent", server, writtenAt)
+	v, err := a.readSeamVerdict("kagent", server,
+		seamBaseline{Since: writtenAt, At: writtenAt, Known: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +249,8 @@ func TestAgainstARealSeam(t *testing.T) {
 // credential and the allowlist are already written by the time the wait
 // starts, and a single API blip would throw that away. It keeps trying.
 func TestATransientReadFailureDoesNotEndTheWait(t *testing.T) {
-	since := written("2026-09-06T10:05:00Z")
-	clock := since
+	base := baselineAt(before, "2026-09-06T10:05:00Z")
+	clock := base.Since
 	reads := 0
 
 	v, err := waitForVerdict(
@@ -254,7 +261,7 @@ func TestATransientReadFailureDoesNotEndTheWait(t *testing.T) {
 			}
 			return classifySeamVerdict(&serverCondition{
 				Type: "Accepted", Status: "False", Message: "Unauthorized", LastTransitionTime: after,
-			}, 0, 0, since), nil
+			}, 0, 0, base), nil
 		},
 		func() time.Time { return clock },
 		func() {},
@@ -272,8 +279,8 @@ func TestATransientReadFailureDoesNotEndTheWait(t *testing.T) {
 // is not there reads exactly like a healthy seam if the error is swallowed,
 // so the deadline returns it rather than a cheerful `unknown`.
 func TestAPersistentReadFailureStillSurfaces(t *testing.T) {
-	since := written("2026-09-06T10:05:00Z")
-	clock := since
+	base := baselineAt(before, "2026-09-06T10:05:00Z")
+	clock := base.Since
 
 	_, err := waitForVerdict(
 		func() (seamVerdict, error) {
@@ -285,5 +292,69 @@ func TestAPersistentReadFailureStillSurfaces(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("a persistent read failure was swallowed: %v", err)
+	}
+}
+
+// The hole the causal check closes, and the reason the wall-clock comparison
+// is not enough on its own.
+//
+// kmx's clock and the API server's need not agree. When kmx runs BEHIND, a
+// verdict kagent reached long before the write carries a timestamp that is
+// still LATER than kmx thinks the write happened — so by the wall clock alone
+// it looks fresh, and a credential that was never tested would be reported as
+// working. The verdict has not moved, and that is what is checked.
+func TestAClockThatRunsBehindTheClusterCannotMakeAStaleVerdictLookFresh(t *testing.T) {
+	// The verdict stood at 10:00 and has not moved since. kmx believes it
+	// wrote the credential at 09:55 — five minutes behind the cluster.
+	v := classifySeamVerdict(&serverCondition{
+		Type: "Accepted", Status: "True", LastTransitionTime: before,
+	}, 0, 0, seamBaseline{
+		Since: written("2026-09-06T09:55:00Z"), At: written(before), Known: true,
+	})
+
+	if v.State == verdictAccepted {
+		t.Fatal("a verdict kagent never revisited was reported as an answer about a credential " +
+			"written afterwards, because kmx's clock runs behind the cluster's")
+	}
+	if v.State != verdictUnknown || !strings.Contains(v.Reason, "has not changed its verdict") {
+		t.Errorf("the skew case is not reported as cannot-tell: %+v", v)
+	}
+}
+
+// The wall-clock check still does its own work: a verdict that MOVED but is
+// still older than the write cannot be about it either. That is the opposite
+// skew — kmx ahead of the cluster — and it lands on `unknown`, the safe side.
+func TestAVerdictThatMovedButPredatesTheWriteIsStillUnknown(t *testing.T) {
+	v := classifySeamVerdict(&serverCondition{
+		Type: "Accepted", Status: "True", LastTransitionTime: before,
+	}, 0, 0, seamBaseline{
+		Since: written(after), At: written("2026-09-06T09:00:00Z"), Known: true,
+	})
+	if v.State != verdictUnknown || !strings.Contains(v.Reason, "has not looked since") {
+		t.Errorf("a verdict older than the write was accepted: %+v", v)
+	}
+}
+
+// A baseline nobody could read proves nothing, so the verdict afterwards is
+// `unknown` rather than an assumption in either direction.
+func TestAnUnreadableBaselineIsCannotTellRatherThanAnAssumption(t *testing.T) {
+	v := classifySeamVerdict(&serverCondition{
+		Type: "Accepted", Status: "True", LastTransitionTime: after,
+	}, 0, 0, seamBaseline{Since: written("2026-09-06T10:05:00Z")}) // Known: false
+
+	if v.State != verdictUnknown || !strings.Contains(v.Reason, "could not be read") {
+		t.Errorf("an unknown baseline was treated as an answer: %+v", v)
+	}
+}
+
+// A seam with no prior verdict at all is a complete baseline, not a missing
+// one: whatever kagent says next is about the credential just written.
+func TestASeamWithNoPriorVerdictAcceptsTheFirstOne(t *testing.T) {
+	v := classifySeamVerdict(&serverCondition{
+		Type: "Accepted", Status: "False", Message: "Unauthorized", LastTransitionTime: after,
+	}, 0, 0, seamBaseline{Since: written("2026-09-06T10:05:00Z"), Known: true})
+
+	if v.State != verdictRejected {
+		t.Fatalf("the first verdict on a fresh seam was discarded: %+v", v)
 	}
 }
