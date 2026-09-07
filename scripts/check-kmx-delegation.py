@@ -2,18 +2,25 @@
 """Fail when a Makefile recipe re-implements what kmx owns.
 
 There is ONE implementation of the developer journey: kmx implements it, and
-the Makefile's `up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
-`tools-agent`, `chat`, `status` and `down` are thin aliases that call it. That
-is what lets CI prove the code a developer actually runs — a target that
-reimplements the journey instead of delegating breaks the proof. The failure
-this guards against is not a missing alias — that would be obvious — but the
-slow kind: someone fixes a wait or adds a flag in the Makefile because that is
-where they were looking, and the two implementations drift while both stay
-green.
+the Makefile targets that carry it are thin aliases that call it. That is what
+lets CI prove the code a developer actually runs — a target that reimplements
+the journey instead of delegating breaks the proof. The failure this guards
+against is not a missing alias — that would be obvious — but the slow kind:
+someone fixes a wait or adds a flag in the Makefile because that is where they
+were looking, and the two implementations drift while both stay green.
+
+WHICH targets those are is not a list somebody keeps up to date. The set is
+derived from make's own database: every target on the kind path whose recipe
+invokes kmx. `OWNED` below then says what each of them must hand kmx, and the
+two must name exactly the same targets. That is what makes deletion loud —
+emptying `OWNED`, or dropping one entry, is a failure and not a shorter run,
+and a target that starts delegating without anyone listing it is a failure
+too.
 
 The check asks make itself rather than reading the file, so it sees the
 recipe after every conditional and variable expansion — the same lines a
-developer's invocation would run. `make -n` runs nothing.
+developer's invocation would run. Neither `make -n` nor `make -qp` runs
+anything.
 
 The rule for an owned target on the kind path: the recipe may build kmx,
 may fetch the pinned kagent CLI, and must otherwise reach the cluster ONLY
@@ -129,6 +136,96 @@ CLUSTER_TOOL = re.compile(r"(?:^|[;&|(]\s*|^\s*)(kubectl|helm|kind)\s", re.M)
 # The kmx invocation inside a recipe line, and everything it was asked to do.
 KMX_CALL = re.compile(r"\bbin/kmx\s+(?P<args>.*)$")
 
+# $(KMX) in COMMAND position in an unexpanded recipe line: at the start of the
+# line (after make's `@`, `-` and `+` prefixes and any environment prefix such
+# as `$(KMX_ENV)` or `FOO=bar`), or after a shell operator. Command position is
+# the whole point — `build`'s recipe is `@echo "kmx ready: $(abspath $(KMX))"`
+# and the link rule's is `go build -o $(KMX) ./cmd/kmx`, and neither of those
+# runs the journey. A plain "does the recipe mention $(KMX)" would count both.
+_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+|\$\([A-Za-z_]+\)\s+)*"
+KMX_INVOCATION = re.compile(r"(?:^|[;&|(]\s*)[-@+]*\s*" + _ENV_PREFIX + r"\$\(KMX\)\s+[^)\s]")
+
+
+def invokes_kmx(recipe: str) -> bool:
+    """Does this recipe RUN kmx, as opposed to merely naming the binary?"""
+    for line in recipe.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if KMX_INVOCATION.search(line):
+            return True
+    return False
+
+
+def parse_recipes(database: str) -> dict:
+    """Each target's recipe, as make itself records it in `make -qp` output.
+
+    Question mode prints the database and runs nothing, and the recipes come
+    back UNEXPANDED — `$(KMX)` rather than `bin/kmx` — which is what lets the
+    derivation below tell a real invocation from a mention. Comment and blank
+    lines separate database entries but do not end a recipe (make interleaves
+    them), so only a new target line does.
+    """
+    db = {}
+    target, body = "", []
+    for line in database.splitlines():
+        if line.startswith("\t"):
+            if target:
+                body.append(line)
+        elif line.startswith("#") or not line.strip():
+            continue
+        else:
+            if target:
+                db[target] = "\n".join(body)
+            target, body = "", []
+            name, sep, _ = line.partition(":")
+            # A variable assignment, a multi-target rule and a pattern rule
+            # are not what this is after.
+            if sep and name and not any(c in name for c in " =$%"):
+                target = name
+    if target:
+        db[target] = "\n".join(body)
+    return db
+
+
+def delegating_targets() -> set:
+    """Every kind-path target whose recipe invokes kmx, from make's database.
+
+    This is the floor: the tree itself says which targets delegate, so the
+    hand-written OWNED table below cannot be emptied, trimmed or left behind
+    without this check going red.
+    """
+    result = subprocess.run(
+        ["make", "-qp", "TARGET=kind"],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    # -q exits non-zero when a target is out of date; the database is still
+    # printed, so the exit status is not the signal here. An empty database is.
+    if not result.stdout.strip():
+        raise SystemExit(f"make -qp printed no database:\n{result.stderr}")
+    return {t for t, recipe in parse_recipes(result.stdout).items() if invokes_kmx(recipe)}
+
+
+def floor_problems(derived: set, owned: set) -> list:
+    """Where the derived set and the OWNED table disagree, in words.
+
+    A derivation that finds nothing is a broken derivation, not a clean tree:
+    the Makefile has delegating targets, so an empty floor means the parse or
+    the pattern stopped working and every comparison below it is vacuous.
+    """
+    if not derived:
+        return ["no target in the Makefile invokes kmx at all — "
+                "that is a broken derivation, not a clean tree"]
+    problems = []
+    for target in sorted(derived - owned):
+        problems.append(f"{target}: its recipe calls kmx but OWNED does not say what it must call — "
+                        "add it, so the command it delegates is checked too")
+    for target in sorted(owned - derived):
+        problems.append(f"{target}: OWNED says kmx owns it, but its recipe no longer calls kmx")
+    return problems
+
 
 def kmx_invocations(recipe: str) -> list[str]:
     """The argument list of every `bin/kmx …` call in a recipe."""
@@ -194,8 +291,21 @@ def delegates(target: str, expected: str, recipe: str) -> bool:
 
 
 def check() -> int:
-    problems = []
-    for target, expected in OWNED.items():
+    # The tree first: which targets delegate is derived, and OWNED only says
+    # what each of them must delegate. If the two disagree there is nothing
+    # useful to say about the recipes yet, so that is reported on its own.
+    derived = delegating_targets()
+    problems = floor_problems(derived, set(OWNED))
+    if problems:
+        print("kmx delegation:", *problems, sep="\n  ", file=sys.stderr)
+        print("\nThe list of owned targets and the Makefile have to agree.", file=sys.stderr)
+        return 1
+
+    # Driven by the derived set rather than by OWNED, so the table cannot
+    # shrink the work: every delegating target is looked up here, and one
+    # that is missing is an error rather than a target quietly not checked.
+    for target in sorted(derived):
+        expected = OWNED[target]
         recipe = dry_run(target)
         if not delegates(target, expected, recipe):
             problems.append(f"{target}: does not delegate — expected `{expected}`")
@@ -205,7 +315,8 @@ def check() -> int:
         print("kmx delegation:", *problems, sep="\n  ", file=sys.stderr)
         print("\nThese targets are kmx's. Change cmd/kmx and internal/kmx, not the recipe.", file=sys.stderr)
         return 1
-    print(f"kmx delegation: {len(OWNED)} targets delegate, none re-implement the journey")
+    print(f"kmx delegation: {len(derived)} targets delegate, all of them listed, "
+          "none re-implement the journey")
     return 0
 
 
@@ -228,8 +339,9 @@ SELFTEST = [
     # not exempt the rest of the line.
     ("a kubectl chained after kmx", "bin/kmx up --step ollama && kubectl apply -f k8s/extra.yaml",
      ["bin/kmx up --step ollama && kubectl apply -f k8s/extra.yaml"]),
-    # The kagent-fetch exemption is anchored to the release URL, so a line
-    # that merely mentions kagent-dev is still checked.
+    # Nothing is exempt, so a line that merely mentions kagent is still
+    # checked — naming the file after something legitimate is not a licence
+    # to reach the cluster on the same line.
     ("a kubectl on a file named after kagent-dev", "kubectl apply -f kagent-dev-values.yaml",
      ["kubectl apply -f kagent-dev-values.yaml"]),
     # …and one chained after a line that starts harmlessly. A leading `curl`
@@ -287,8 +399,81 @@ DELEGATION_SELFTEST = [
 ]
 
 
+# The derivation that makes the OWNED table a claim rather than the whole
+# truth. These run on fixture text, so they say what the parse and the
+# command-position rule mean without needing a Makefile.
+FLOOR_SELFTEST = [
+    ("a recipe that runs kmx", "\t@$(KMX_ENV) $(KMX) up", True),
+    ("...with an environment prefix instead", "\tKIND_CLUSTER=x $(KMX) status", True),
+    ("...and one hidden behind a shell operator", "\ttrue; $(KMX) down", True),
+    # `build` names the binary to print its path; the link rule names it as an
+    # output. Counting either would put a target in the floor that nobody can
+    # write a delegation for.
+    ("the binary's path, echoed", '\t@echo "kmx ready: $(abspath $(KMX))"', False),
+    ("the binary, built", "\tgo build -o $(KMX) ./cmd/kmx", False),
+    ("the managed path, which is the Makefile's own", "\t@KUBECTL=\"$(KUBECTL)\" bash scripts/plane-deploy.sh", False),
+    ("a commented-out invocation", "\t# $(KMX) up", False),
+    ("no recipe at all", "", False),
+]
+
+# `make -qp` output, in miniature: a delegating target, a target that only
+# names the binary, a variable, and a rule with no recipe.
+FLOOR_DATABASE = """\
+# Make data base
+
+KMX ?= bin/kmx
+
+up: bin/kmx
+#  Phony target (prerequisite of .PHONY).
+#  recipe to execute (from 'Makefile', line 468):
+\t@$(KMX_ENV) $(KMX) up
+
+build: bin/kmx
+\t@echo "kmx ready: $(abspath $(KMX))"
+
+lint:
+"""
+
+FLOOR_DERIVATION = [
+    ("a database with one delegating target", FLOOR_DATABASE, {"up"}),
+    ("a database with none", "# Make data base\n\nlint:\n\tgolangci-lint run\n", set()),
+]
+
+# What the floor is FOR: the disagreements it has to report. An empty derived
+# set is the important one — that is the checker having nothing to check.
+FLOOR_COMPARISON = [
+    ("the table matches the tree", {"up", "down"}, {"up", "down"}, 0),
+    ("the table was emptied", {"up", "down"}, set(), 2),
+    ("one entry was deleted", {"up", "down"}, {"up"}, 1),
+    ("a new delegating target nobody listed", {"up", "down"}, {"up", "down", "chat"}, 1),
+    ("the derivation found nothing", set(), {"up", "down"}, 1),
+    ("...even when the table is empty too", set(), set(), 1),
+]
+
+
 def selftest() -> int:
     failed = 0
+    for name, recipe, want in FLOOR_SELFTEST:
+        got = invokes_kmx(recipe)
+        if got != want:
+            failed += 1
+            print(f"FAIL [{name}] -> invokes_kmx={got}, want {want}")
+        else:
+            print(f"ok   [{name}]")
+    for name, database, want in FLOOR_DERIVATION:
+        got = {t for t, recipe in parse_recipes(database).items() if invokes_kmx(recipe)}
+        if got != want:
+            failed += 1
+            print(f"FAIL [{name}] -> {sorted(got)}, want {sorted(want)}")
+        else:
+            print(f"ok   [{name}]")
+    for name, derived, owned, want in FLOOR_COMPARISON:
+        got = floor_problems(derived, owned)
+        if len(got) != want:
+            failed += 1
+            print(f"FAIL [{name}] -> {len(got)} problem(s), want {want}: {got}")
+        else:
+            print(f"ok   [{name}]")
     for name, line, expected in SELFTEST:
         got = offending_lines(line)
         if got != expected:

@@ -1,0 +1,89 @@
+{
+  "checker": "check-kmx-delegation.py",
+  "why": "This checker is the only thing standing between the Makefile and a second implementation of the developer journey, and every way it can fail is quiet: a hand-written table emptied, a derivation that stops deriving, a pattern that stops matching, a verdict computed and dropped. It reported \"0 targets delegate\" and exited zero when its own list was deleted, so the edits below concentrate on the shapes where it checks nothing and says so cheerfully.",
+  "verify": ["python3", "scripts/check-kmx-delegation.py", "--selftest"],
+  "signature": "kmx delegation",
+  "mutations": [
+    {
+      "name": "the owned table is emptied",
+      "breaks": "The checker's input is deleted and it iterates nothing. This exact edit used to print \"0 targets delegate\" and exit 0.",
+      "verify": ["python3", "scripts/check-kmx-delegation.py"],
+      "find": "OWNED = {\n    \"up\": \"kmx up\",",
+      "replace": "OWNED = {}\n_UNLISTED = {\n    \"up\": \"kmx up\","
+    },
+    {
+      "name": "one owned target is deleted",
+      "breaks": "A target stops being checked because somebody removed its line, not because it stopped delegating.",
+      "verify": ["python3", "scripts/check-kmx-delegation.py"],
+      "find": "    \"down\": \"kmx down\",",
+      "replace": ""
+    },
+    {
+      "name": "the floor is derived from nothing",
+      "breaks": "The derivation returns an empty set, so the table has nothing to be held to and deleting an entry goes back to being silent.",
+      "verify": ["python3", "scripts/check-kmx-delegation.py"],
+      "find": "    return {t for t, recipe in parse_recipes(result.stdout).items() if invokes_kmx(recipe)}",
+      "replace": "    return set()"
+    },
+    {
+      "name": "the floor is compared and the disagreements dropped",
+      "breaks": "The Makefile is read, the table is read, and the comparison returns nothing — the cross-check is present and worthless.",
+      "find": "    problems = []\n    for target in sorted(derived - owned):",
+      "replace": "    return []\n    problems = []\n    for target in sorted(derived - owned):"
+    },
+    {
+      "name": "an empty derivation reads as a clean tree",
+      "breaks": "\"Found no delegating targets\" is accepted as \"found nothing wrong\", which is the failure this whole cross-check exists to make impossible.",
+      "find": "    if not derived:\n        return [\"no target in the Makefile invokes kmx at all — \"",
+      "replace": "    if False:\n        return [\"no target in the Makefile invokes kmx at all — \""
+    },
+    {
+      "name": "naming $(KMX) counts as invoking it",
+      "breaks": "Command position is what separates a target that runs the journey from one that echoes the binary's path, so the floor fills with targets no delegation can be written for.",
+      "find": "KMX_INVOCATION = re.compile(r\"(?:^|[;&|(]\\s*)[-@+]*\\s*\" + _ENV_PREFIX + r\"\\$\\(KMX\\)\\s+[^)\\s]\")",
+      "replace": "KMX_INVOCATION = re.compile(r\"\\$\\(KMX\\)\")"
+    },
+    {
+      "name": "the environment prefix swallows the command",
+      "breaks": "Same failure from the other side: anything at all may precede $(KMX), so `go build -o $(KMX)` counts as running it.",
+      "find": "_ENV_PREFIX = r\"(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+|\\$\\([A-Za-z_]+\\)\\s+)*\"",
+      "replace": "_ENV_PREFIX = r\".*\""
+    },
+    {
+      "name": "the recipe parse finds no targets",
+      "breaks": "make's database is read and thrown away. The derived floor is then empty for a reason that has nothing to do with the tree.",
+      "find": "    return db",
+      "replace": "    return {}"
+    },
+    {
+      "name": "every recipe is taken to delegate",
+      "breaks": "The command a target hands kmx stops being checked; only the fact that it mentions kmx survives.",
+      "find": "        if target in CARRIES_ARGUMENTS and args.startswith(wanted + \" \"):\n            return True\n    return False",
+      "replace": "        if target in CARRIES_ARGUMENTS and args.startswith(wanted + \" \"):\n            return True\n    return True"
+    },
+    {
+      "name": "the exact argument list becomes a substring",
+      "breaks": "`up` is a prefix of `up --step cluster`, so the `up` target would read as delegating even with its recipe gone and only its steps calling kmx.",
+      "find": "        if args == wanted:",
+      "replace": "        if wanted in args:"
+    },
+    {
+      "name": "no line reaches the cluster",
+      "breaks": "The second-implementation half of the check is switched off: kubectl, helm and kind become invisible in an owned recipe.",
+      "find": "        if CLUSTER_TOOL.search(line):\n            bad.append(line.strip())",
+      "replace": "        if False:\n            bad.append(line.strip())"
+    },
+    {
+      "name": "a cluster tool is only noticed at the start of a line",
+      "breaks": "`bin/kmx up --step ollama && kubectl apply -f extra.yaml` delegates and re-implements on one line, and this is the anchoring that used to let it through.",
+      "find": "CLUSTER_TOOL = re.compile(r\"(?:^|[;&|(]\\s*|^\\s*)(kubectl|helm|kind)\\s\", re.M)",
+      "replace": "CLUSTER_TOOL = re.compile(r\"^\\s*(kubectl|helm|kind)\\s\", re.M)"
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code. A self-test that imports the module and calls its functions directly stays green while the script itself always passes.",
+      "find": "    raise SystemExit(selftest() if \"--selftest\" in sys.argv else check())",
+      "replace": "    raise SystemExit(0)"
+    }
+  ]
+}

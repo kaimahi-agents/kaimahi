@@ -34,18 +34,22 @@ func dryRun(t *testing.T, args ...string) string {
 	return string(out)
 }
 
+type delegationCase struct {
+	target string
+	// vars are make variables the recipe expands — set where the
+	// delegation only becomes meaningful with an operator's argument
+	// in it (a preset, a request id, a file). An `$(if ...)` that
+	// collapses the wrong way produces a flag with no value, and that
+	// failure has to land here rather than on an operator.
+	vars []string
+	want string
+}
+
 // Every target the Makefile delegates, and the kmx command it must produce.
-func TestMakeTargetsDelegateToKmx(t *testing.T) {
-	for _, tc := range []struct {
-		target string
-		// vars are make variables the recipe expands — set where the
-		// delegation only becomes meaningful with an operator's argument
-		// in it (a preset, a request id, a file). An `$(if ...)` that
-		// collapses the wrong way produces a flag with no value, and that
-		// failure has to land here rather than on an operator.
-		vars []string
-		want string
-	}{
+// TestTheTableCoversEveryDelegatingTarget below holds this list to the
+// Makefile, so a target added or removed there cannot pass unnoticed.
+func delegationCases() []delegationCase {
+	return []delegationCase{
 		{target: "up", want: "bin/kmx up"},
 		{target: "cluster", want: "bin/kmx up --step cluster"},
 		{target: "ollama", want: "bin/kmx up --step ollama"},
@@ -97,13 +101,82 @@ func TestMakeTargetsDelegateToKmx(t *testing.T) {
 		{target: "restore", vars: []string{"FILE=ci-backup.sql"}, want: "bin/kmx restore ci-backup.sql"},
 		{target: "plane-metrics", want: "bin/kmx metrics"},
 		{target: "plane-metrics", vars: []string{"POD=kaimahi-proxy-1"}, want: "bin/kmx metrics --pod kaimahi-proxy-1"},
-	} {
+		// Credentials that expire: the view, and the one verb that moves a
+		// deadline. NAME is required by the recipe, so it is set here; TTL
+		// left out must collapse to the "unchanged" placeholder rather than
+		// to a flag with no value.
+		{target: "credentials", want: "bin/kmx credentials"},
+		{target: "credential-renew", vars: []string{"NAME=hello-world", "TTL=1h"},
+			want: `bin/kmx credential renew hello-world --ttl "1h"`},
+		{target: "credential-renew", vars: []string{"NAME=hello-world"},
+			want: `bin/kmx credential renew hello-world --ttl "-"`},
+		// Capturing the credential an upstream needs. The repository or
+		// organization the credential is scoped to has to reach kmx, or the
+		// prompt would capture a token nobody bounded. The values below are
+		// obviously-fake placeholders, not real accounts.
+		{target: "github-secret", vars: []string{"GITHUB_REPO=owner/repo"},
+			want: "bin/kmx credential capture github owner/repo"},
+		{target: "release-secret", vars: []string{"GITHUB_REPO=owner/repo"},
+			want: "bin/kmx credential capture github-release owner/repo"},
+		{target: "ado-secret", vars: []string{"ADO_ORG=example-org"},
+			want: "bin/kmx credential capture ado example-org"},
+	}
+}
+
+func TestMakeTargetsDelegateToKmx(t *testing.T) {
+	for _, tc := range delegationCases() {
 		t.Run(tc.target, func(t *testing.T) {
 			out := dryRun(t, append([]string{tc.target}, tc.vars...)...)
 			if !strings.Contains(out, tc.want) {
 				t.Errorf("`make %s` does not invoke `%s`:\n%s", tc.target, tc.want, out)
 			}
 		})
+	}
+}
+
+// $(KMX) in COMMAND position in an unexpanded recipe line: at the start of the
+// line (after make's `@`, `-` and `+` prefixes and any environment prefix such
+// as `$(KMX_ENV)` or `FOO=bar`), or after a shell operator. Command position
+// is the point — `build` echoes `$(abspath $(KMX))` and the link rule writes
+// `go build -o $(KMX)`, and neither of those runs the journey, so a plain
+// "mentions $(KMX)" would count targets no delegation can be written for.
+var kmxInvocation = regexp.MustCompile(
+	`(?m)^\s*[-@+]*\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+|\$\([A-Za-z_]+\)\s+)*\$\(KMX\)\s+[^)\s]`)
+
+// The table above is a claim about the Makefile, and a claim nobody checks
+// goes stale: `credentials` and `credential-renew` were delegating targets
+// for weeks while a comment here said this covered every one of them. So the
+// floor comes from make's own database — every kind-path target whose recipe
+// invokes kmx — and the table must cover it exactly. A target that stops
+// delegating, and one that starts without anyone adding a case, both land
+// here.
+func TestTheTableCoversEveryDelegatingTarget(t *testing.T) {
+	covered := map[string]bool{}
+	for _, tc := range delegationCases() {
+		covered[tc.target] = true
+	}
+
+	delegating := map[string]bool{}
+	for target, recipe := range recipes(t, "TARGET=kind") {
+		if kmxInvocation.MatchString(recipe) {
+			delegating[target] = true
+		}
+	}
+	// An empty derivation is a broken parse, not a Makefile with nothing in
+	// it — and it would make every comparison below vacuous.
+	if len(delegating) == 0 {
+		t.Fatalf("no Makefile target invokes kmx at all: the derivation is broken, not the tree")
+	}
+
+	for target := range delegating {
+		if !covered[target] {
+			t.Errorf("`make %s` delegates to kmx but no case here says what it must invoke", target)
+		}
+	}
+	for target := range covered {
+		if !delegating[target] {
+			t.Errorf("this test claims `make %s` delegates to kmx, but its recipe no longer calls it", target)
+		}
 	}
 }
 
