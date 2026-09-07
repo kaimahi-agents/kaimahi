@@ -29,8 +29,10 @@
 #     plane keeps its existing gate: cluster credentials, then the
 #     bearer token. Nothing in the pod network can reach 9091.
 #   - Copilot, and hosted tool upstreams. The proxy's committed upstream
-#     table names api.githubcopilot.com (twice: the Copilot LLM path and,
-#     GitHub's hosted MCP server), but nothing in THIS file lets the
+#     table names api.githubcopilot.com three times (the Copilot LLM path,
+#     GitHub's hosted MCP server, and the release driver's own entry
+#     against it) and mcp.dev.azure.com once, but nothing in THIS file
+#     lets the
 #     proxy leave the cluster. Those allowances are k8s/egress-copilot.yaml
 #     (applied by `make plane-copilot-secret`) and k8s/egress-hosted.yaml
 #     (applied by `make github-secret`) — the moment a hosted upstream is
@@ -70,8 +72,9 @@ spec:
 # credential anyway; the network's job here is "only from where agents
 # live".
 #
-# Out: the ledger, the three in-cluster upstreams the committed table
-# names (ollama, kagent's tool server, the Slack MCP server), the kagent
+# Out: the ledger, the four in-cluster upstreams the committed table
+# names (ollama, kagent's tool server, the Slack MCP server, the fixture
+# ERP), the kagent
 # controller on 8083 (the inbound bridge invokes agents through its
 # A2A endpoint), and DNS. Each upstream is pinned to its POD by label, in
 # its namespace, on its port — not to the Service, because policy is

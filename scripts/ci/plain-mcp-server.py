@@ -3,13 +3,14 @@
 
 This exists for one reason: proving the GENERIC onboarding path
 (docs/govern-your-agent.md). A proof driven against `kagent-tools`,
-`slack`, `github` or the demo ERP proves nothing about onboarding an
-arbitrary server, because each of those four has a hand-written
-NetworkPolicy pair, a hand-written table entry and a hand-written
-RemoteMCPServer committed in this repo. This one has none of that. It is
-what an adopter arrives with.
+`slack`, the demo ERP or one of the hosted entries proves nothing about
+onboarding an arbitrary server, because every one of the six committed
+tool upstreams has a hand-written table entry, a hand-written
+RemoteMCPServer, and a hand-written network allowance besides — a policy
+pair for the in-cluster ones, the opt-in hosted egress rule for the rest.
+This one has none of that. It is what an adopter arrives with.
 
-It is deliberately unlike our four in the ways that matter:
+It is deliberately unlike the committed six in the ways that matter:
 
   - plain http, in-cluster, in its OWN namespace (not `kaimahi`), so the
     scaffolded policy pair has to carry a namespaceSelector;

@@ -37,9 +37,10 @@
 #
 # `make chat` is deliberately NOT guarded, though it does spend budget and
 # write a ledger row. The distinction is not "mutates" but "can be aimed
-# somewhere unintended": chat always runs through $(KUBECTL), which
-# carries an explicit --context from KUBE_CTX, so it cannot silently
-# retarget the way a bare-kubectl probe can. Prompting on the most-used
+# somewhere unintended": chat runs kmx with KUBE_CTX passed explicitly, and
+# kmx puts that context on every kubectl call it makes (an empty one is
+# refused outright), so it cannot silently retarget the way a bare-kubectl
+# probe can. Prompting on the most-used
 # command would buy nothing and teach people to type past confirmations.
 #
 # Usage:  KUBE_CTX=... [KUBE_NS=...] kube-guard.sh "<what is about to happen>"

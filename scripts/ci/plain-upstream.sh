@@ -5,8 +5,8 @@
 # Nothing about this server is Kaimahi's: it lives in its own namespace,
 # speaks plain http, offers its own two tools, and has no NetworkPolicy,
 # no upstream-table entry and no RemoteMCPServer committed anywhere in
-# this repo. That is the point — a proof driven against one of our four
-# upstreams would prove only that our four work.
+# this repo. That is the point — a proof driven against one of the six tool
+# upstreams this repo commits would prove only that those six work.
 #
 # The Service publishes 8090 while the container listens on 9090, on
 # purpose: it is the mistake a human writing the NetworkPolicy by hand

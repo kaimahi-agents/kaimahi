@@ -172,9 +172,9 @@ func nullableUUID(id string) *string {
 }
 
 // Attribution travels on the request context at seams whose audit rows
-// are written from many places (the MCP gateway has five). Stamping in
-// the one write point beats threading a parameter through five deny
-// helpers, and it makes it impossible for an audit row to escape
+// are written from many places (the MCP gateway has four). Stamping in
+// the one write point beats threading a parameter through the three
+// deny helpers, and it makes it impossible for an audit row to escape
 // unstamped.
 type attributionKey struct{}
 

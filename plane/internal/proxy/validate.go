@@ -26,7 +26,7 @@ import (
 )
 
 // maxOverlayBytes bounds the submitted overlay. The committed table is
-// around 3KB; an overlay is one entry per onboarded server.
+// under 6KB; an overlay is one entry per onboarded server.
 const maxOverlayBytes = 256 << 10
 
 type validateRequest struct {

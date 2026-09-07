@@ -1,6 +1,6 @@
 # The tools seam: a Kaimahi-owned RemoteMCPServer whose URL is the
 # enforcing MCP gateway, which relays to kagent's chart-managed tool
-# server (the only entry in the plane's committed tool_upstreams table).
+# server (one of six entries in the plane's committed tool_upstreams table).
 # The chart-managed `kagent-tool-server` RemoteMCPServer is neither
 # shadowed nor mutated — this is a second, governed front
 # door, and `make govern-tools` points the hello-tools agent at it.

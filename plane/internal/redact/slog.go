@@ -6,8 +6,8 @@ import (
 )
 
 // Handler wraps a slog.Handler, redacting known secret values from the
-// message and every string attribute. Defense in depth: proxy and vault
-// code never logs secrets on purpose; this catches accidents.
+// message and every string attribute. Defense in depth: the proxy never
+// logs secrets on purpose; this catches accidents.
 type Handler struct {
 	Inner slog.Handler
 	R     *Redactor

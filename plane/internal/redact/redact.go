@@ -11,9 +11,11 @@ const placeholder = "[REDACTED]"
 // Redactor replaces known secret values with a fixed placeholder.
 //
 // Callers must funnel any string through Redact before it reaches a log sink;
-// the redactor cannot intercept logs it never sees. Typical wiring is to
-// construct one Redactor per run from secrets.Resolver.AllValues() and use it
-// as the single log-formatting choke point.
+// the redactor cannot intercept logs it never sees. The proxy builds one at
+// boot from every secret it holds — the Postgres password, the admin token,
+// each tool upstream's credential file and each inbound hook's signing
+// secret — and installs it as the process-wide slog handler: one Redactor
+// per run, one log-formatting choke point.
 type Redactor struct {
 	values []string
 }

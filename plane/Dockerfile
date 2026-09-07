@@ -6,7 +6,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # The git revision for kaimahi_build_info: the build context has no
-# .git, so the Makefile passes it in. Defaults to "unknown", never fails.
+# .git, so the builder passes it in — kmx out of a checkout, `az acr
+# build` from the Makefile for a registry target. Defaults to "unknown",
+# never fails.
 ARG VERSION=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-X github.com/kaimahi-agents/kaimahi/plane/internal/metrics.buildVersion=${VERSION}" \

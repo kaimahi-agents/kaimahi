@@ -5,7 +5,7 @@
 # The only thing that differs between environments is how the proxy pod
 # gets its image:
 #
-#   kind — `make plane-image` side-loads the image with `kind load`, and
+#   kind — the image is side-loaded under a LOCAL tag and
 #          k8s/plane/proxy.yaml pins `imagePullPolicy: Never`. That pin is
 #          deliberate: a side-loaded
 #          LOCAL tag must never silently fall back to PULLING a squattable
@@ -15,10 +15,14 @@
 #          the image reference and the pull policy must change. `Never`
 #          there means ErrImageNeverPull, forever.
 #
-# So the kind path runs the SAME command it always ran — literally
-# `kubectl apply -f k8s/plane/`, no rendering, no transform — which is
-# what makes "kind is unchanged" a fact rather than a claim. Only a
-# non-kind target renders proxy.yaml, and only its image/pullPolicy.
+# `make plane` on kind no longer comes through here: kmx owns that path and
+# applies k8s/plane/ UNRENDERED — no rendering, no transform — which is what
+# makes "kind is unchanged" a fact rather than a claim. What calls this
+# script is the registry path: the Makefile's non-kind `plane` target, the
+# lift to a managed cluster, and CI's render assertions. The kind branch
+# below is kept so the two paths can still be compared, and it is still
+# what a human running this script bare lands on. Only a non-kind target
+# renders proxy.yaml, and only its image/pullPolicy.
 #
 # Fail closed: the render must produce exactly the intended change, and
 # the script verifies that before anything is applied.

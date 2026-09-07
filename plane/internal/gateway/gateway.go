@@ -3,9 +3,10 @@
 // streamable-HTTP protocol (kagent still runs the tools — no MCP runtime
 // here) and enforces, all fail-closed:
 //
-//   - upstream tool servers come only from the committed, operator-owned
-//     tool_upstreams table — the gateway forwards nowhere else, which IS
-//     the egress rule at this layer;
+//   - upstream tool servers come only from the operator-owned upstream
+//     table the proxy parsed at boot — the committed base plus any
+//     operator overlay merged over it — and the gateway forwards
+//     nowhere else, which IS the egress rule at this layer;
 //   - protocol scope is tools only: initialize, notifications/initialized,
 //     tools/list, tools/call (ping is answered locally, touching no
 //     upstream); every other method is denied, not relayed;
@@ -609,7 +610,7 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request, name string,
 	defer func() { _ = resp.Body.Close() }()
 	// A redirect is refused, not relayed: the client never followed it
 	// (see Deps.clientFor), and a Location header must not leak an escape
-	// hatch from the committed upstream table.
+	// hatch from the upstream table the proxy booted with.
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		slog.Error("gateway: tool upstream answered a redirect; refusing", "upstream", name, "status", resp.StatusCode)
 		http.Error(w, MsgUpstreamRedirected, http.StatusBadGateway)

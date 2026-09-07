@@ -202,8 +202,8 @@ spec:
             name: kaimahi-upstreams
         # Optional, and on most clusters absent — an empty overlay
         # is every cluster where nobody has onboarded their own MCP
-        # server. `kmx tools add` creates and grows it; this repo's four
-        # upstreams stay in the committed ConfigMap above, untouched, so
+        # server. `kmx tools add` creates and grows it; this repo's six
+        # tool upstreams stay in the committed ConfigMap above, untouched, so
         # the next `kmx plane` cannot discard an operator's entry.
         - name: upstreams-overlay
           configMap:
