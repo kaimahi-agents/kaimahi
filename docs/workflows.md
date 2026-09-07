@@ -31,9 +31,32 @@ says which seams it did not refresh, because an expired one does not
 announce itself: it shows up as the agent reporting those tools missing
 from its toolset.
 
-Nothing here needs a checkout. `kmx` carries the blueprints it ships, so
-the sequence after [getting started](getting-started.md) is
-`kmx quickstart` → `kmx plane` → `kmx govern` → `kmx workflow govern`.
+`kmx` carries the blueprints it ships, so the four commands above need no
+checkout — but the blueprint they run needs a world to run in, and for the
+release blueprint part of that world is still a checkout.
+
+**What a blueprint does not create.** A blueprint governs a credential and
+an agent that already exist; it never creates either, and it cannot create
+a seam. `kmx workflow govern release` refuses outright when the plane has
+no `release-agent` credential, naming the command that issues one. The
+release agent's own `Agent` manifest and the two `RemoteMCPServer` objects
+that point it at the gateway (`k8s/release-agent.yaml`,
+`k8s/kaimahi-release-github.yaml`, `k8s/kaimahi-release-ado.yaml`) are not
+carried by `kmx` — `make govern-release` applies them, from a clone.
+
+So the honest sequence is:
+
+| step | needs a checkout? |
+|---|---|
+| `kmx quickstart` / `kmx up`, `kmx plane` | no — `kmx` carries the runtime and plane manifests, including the upstream table the release seams are declared in |
+| `kmx credential capture github-release owner/name`, `kmx credential capture ado <organization>` | no — typed at a prompt |
+| the release agent and its two seam objects (`make govern-release`, which also issues the credential and sets its allowlist) | **yes** |
+| issuing the credential on its own, for an agent that already exists (`kmx tools govern --credential release-agent --agent release-agent --secret …`) | no |
+| `kmx workflow list` / `show` / `govern` / `run` | no |
+
+A blueprint you write for an agent you already run needs no checkout at
+any step. It is this repository's own release agent whose manifests are
+not embedded.
 
 ## What a blueprint says, and what it deliberately cannot
 
