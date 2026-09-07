@@ -212,7 +212,7 @@ prefix trie, and Tab completes a unique or common prefix. `NO_COLOR`,
 `kmx agent chat` prints two different shapes on purpose. A terminal gets the
 reply, any tools the agent called, and the token cost. A pipe gets the raw
 A2A task, byte for byte — because things parse it: CI captures this output
-in eight places and `scripts/verify-chat.py` asserts on `status.state`, the
+and `scripts/verify-chat.py` asserts on `status.state`, the
 `function_call` and the `function_response` payload. `--json` forces the raw
 form when a terminal wants it. If the output is not a task kmx recognises —
 a transport error, a usage message — it prints what `kagent` printed rather
