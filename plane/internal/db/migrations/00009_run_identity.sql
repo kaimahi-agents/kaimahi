@@ -66,10 +66,12 @@ CREATE INDEX agent_run_open ON agent_run (credential_name, expires_at) WHERE end
 CREATE INDEX agent_run_credential_started ON agent_run (credential_name, started_at);
 
 -- The two enforcement trails gain the resolution, and a link to the run
--- it came from. run_id is NULLABLE and means exactly one thing: this
--- row was not attributed to a run — which acted_for already states in
--- words ('none', 'unknown' or 'legacy'). It is provenance, never the
--- answer, so nothing has to read a NULL to learn who acted.
+-- it came from. run_id is NULLABLE and means exactly one thing: no run
+-- was resolved for this row. It is NOT implied by acted_for: a run whose
+-- source names nobody is attributed 'none' and still carries its run id,
+-- because a run with no person is still a run. run_id is provenance,
+-- never the answer, so nothing has to read it to learn who acted —
+-- acted_for states that in words ('none', 'unknown' or 'legacy').
 ALTER TABLE ledger_entry ADD COLUMN acted_for text NOT NULL DEFAULT 'legacy';
 ALTER TABLE ledger_entry ADD COLUMN run_id uuid;
 ALTER TABLE tool_audit ADD COLUMN acted_for text NOT NULL DEFAULT 'legacy';

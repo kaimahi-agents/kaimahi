@@ -9,7 +9,13 @@ package gateway
 //   - a DIGEST, which the approval request and the grant carry and which
 //     the gateway re-computes on every call. A grant admits a call only
 //     when the digests match, so an approval for "pay 32550 to MER-4471"
-//     cannot be spent on "pay 48000 to someone else".
+//     cannot be spent on "pay 48000 to someone else". One closed
+//     exception, and the store is where it lives (store/approvals.go,
+//     consumeToolGrantLocked): grants recorded before argument binding
+//     existed carry a NULL digest and are honoured for any call on that
+//     tool. No new one can be minted — the store refuses a tool grant for
+//     a request that carries no digest — and they are consumed LAST, so
+//     a digest match is always burned first.
 //   - a SUMMARY, the human-readable line an approver reads before
 //     deciding, and the audit's record of what ran.
 //

@@ -24,13 +24,21 @@ CREATE UNIQUE INDEX approval_request_pending_uniq
     ON approval_request (credential_name, kind, subject, arg_digest)
     WHERE status = 'pending';
 
--- The grant is welded to the digest. NULLABLE on purpose, and the NULL
--- class is CLOSED by this migration: rows that predate it are the only
--- ones a NULL can describe, because the store refuses from here on to
--- mint a tool grant for a request that carries no digest. A NULL digest
--- is therefore honoured verb-level (those grants were already bounded by
--- expiry and use count when a human approved them, and no new one can be
--- created); every grant minted after this point admits one call only.
+-- The grant is welded to the digest. NULLABLE on purpose, for two
+-- unrelated reasons that must not be confused.
+--
+-- For kind = 'tool', the NULL class is CLOSED by this migration: rows
+-- that predate it are the only tool grants a NULL can describe, because
+-- the store refuses from here on to mint a tool grant for a request that
+-- carries no digest. Such a grant is honoured verb-level (it was already
+-- bounded by expiry and use count when a human approved it, and no new
+-- one can be created), and it is tried LAST; every tool grant minted
+-- after this point admits one call only.
+--
+-- For every OTHER kind — budget, inbound — a NULL is normal and
+-- permanent: those grants are not about a call, so there is no digest to
+-- bind. They are not the legacy class and are never reached by it, since
+-- the tool-grant lookup filters on kind = 'tool'.
 ALTER TABLE permit_grant ADD COLUMN arg_digest text;
 
 -- The approvals' own trail records what was approved, not just which

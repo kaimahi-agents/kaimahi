@@ -69,7 +69,11 @@ type Store interface {
 	// allowlist (consuming a use, liveness evaluated in SQL at call
 	// time), and a denial files a pending approval request.
 	// A grant admits one CALL — the digest of its canonical policy
-	// fields must match — and a filed request carries that call.
+	// fields must match — and a filed request carries that call. The one
+	// exception is the closed legacy class: a grant recorded before
+	// argument binding existed carries a NULL digest, is honoured for any
+	// call on that tool, and is consumed only after an exact match. No
+	// new one can be minted (store/approvals.go).
 	ConsumeToolGrant(ctx context.Context, credential, tool, argDigest string) (grantID string, ok bool, err error)
 	// Identity on the call: who the run this tool call falls inside is
 	// being made for. Resolution only — never enforcement.
@@ -395,7 +399,9 @@ func (h *handler) relay(w http.ResponseWriter, r *http.Request) {
 		//      for this credential and tool, because a constraint is a
 		//      BOUND ("may call payment_schedule when amount_cents <=
 		//      1000000, and never otherwise"), not merely another way in;
-		//   3. a live grant welded to THIS call's digest.
+		//   3. a live grant welded to THIS call's digest — or, from the
+		//      closed legacy class, one recorded before argument binding
+		//      existed, which carries no digest and is tried last.
 		// Anything else is denied and files a request carrying the call.
 		detail, outside := "", ""
 		admitted := false
