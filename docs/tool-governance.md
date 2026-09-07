@@ -18,8 +18,8 @@ runtime; the gateway relays the protocol and enforces.
 > bounded grant, is [approvals.md](approvals.md).
 > And the gateway is an *application-layer* egress rule: a pod that
 > ignores its RemoteMCPServer wiring can still open arbitrary
-> connections. Cluster-level NetworkPolicy is not built as of this doc;
-> a parallel lane is building it.
+> connections. Cluster-level NetworkPolicy is the rule at the network
+> layer ([egress.md](egress.md)).
 
 > The tool audit's last column is `acted for`: who the call was made
 > for, where the plane can substantiate it ([identity.md](identity.md)).
@@ -65,10 +65,11 @@ IS the allowlist projection                │ tool_allowlist,    │
   This is a second, governed front door.
 - **Upstreams.** The `tool_upstreams` table in
   [`k8s/plane/upstreams.yaml`](../k8s/plane/upstreams.yaml) lists the
-  only places the gateway will relay to. Three entries: `kagent-tools`
-  (kagent's tool server) and `slack` (the server deployed in
-  [slack.md](slack.md)), both in-cluster, and `github` (GitHub's hosted
-  MCP server), the one marked `internet: true` and reached only through
+  only places the gateway will relay to. Six entries: `kagent-tools`
+  (kagent's tool server), `slack` (the server deployed in
+  [slack.md](slack.md)) and `erp` (the accounts-payable fixture), all
+  in-cluster, and `github`, `github-release` and `ado` (hosted MCP
+  servers), the three marked `internet: true` and reached only through
   the hardened dialer ([hosted-upstreams.md](hosted-upstreams.md)).
 
 ## Declaring what arguments mean
@@ -156,7 +157,7 @@ make tool-audit     # the call you just made, in the audit trail
 
 An upstream an operator onboarded lives in a separate ConfigMap,
 `kaimahi-upstreams-extra`, merged over the committed table at boot: this
-repo's four entries are never edited by onboarding, an overlay that would
+repo's six entries are never edited by onboarding, an overlay that would
 redefine one is refused rather than resolved by precedence, and
 `make plane` cannot discard somebody's added server. `POST
 /admin/config/validate` decides whether a candidate overlay would load,
@@ -289,7 +290,8 @@ the 8 tools the upstream offers.
 ## Limitations
 
 - Application-layer only. A pod that bypasses the gateway is not
-  constrained by it; NetworkPolicy is unbuilt as of this doc.
+  constrained by it at this layer; the NetworkPolicy in
+  [egress.md](egress.md) is the rule at the network.
 - Argument policy governs INPUTS. There is no filtering or redaction of
   tool RESULTS in this project, and none is implied: a governed call's
   answer is relayed as the upstream wrote it.

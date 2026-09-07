@@ -952,8 +952,8 @@ func (r *workflowRun) refreshSeam(name string) error {
 		return nil
 	}
 	// Through a 0600 file and `--from-file`, never argv: a token in a
-	// command line is a token in the process table, which is why every
-	// secret-capture script in this repo does the same.
+	// command line is a token in the process table, which is why
+	// `kmx credential capture` keeps its Secret off argv too.
 	path := filepath.Join(r.dir, name+".cred")
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(out)), 0o600); err != nil {
 		return err

@@ -5,7 +5,7 @@ model, kagent, an agent, a conversation — and then the governance plane, a
 governed credential, and the ledger that shows what it spent. It needs no
 clone and no Makefile.
 
-It is also the only implementation of that journey. Thirty-five Makefile
+It is also the only implementation of that journey. Thirty-seven Makefile
 targets are one-line recipes that call this binary on the kind path — the
 runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
 `tools-agent`, `chat`, `status`, `down`), the plane (`plane`, `plane-image`,
@@ -13,12 +13,14 @@ runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
 `approval-audit`, `approvals`, `tool-allowlist`, `plane-metrics`,
 `backup`), and the operator verbs (`use`, `use-ollama`, `budget`,
 `approve`, `deny`, `request`, `govern-tools`, `ungovern-tools`,
-`tool-allow`, `restore`) and the credential capture (`github-secret`,
+`tool-allow`, `restore`, `credentials`, `credential-renew`) and the
+credential capture (`github-secret`,
 `release-secret`, `ado-secret`) — so CI proves the code you actually run.
 What is left in the Makefile is the Slack and inbound connector families,
 the model-key capture, AKS and the probes.
 
-**Status: milestone 3.** Nothing is published. `kmx` is a provisional name,
+**Status: milestone 3.** v0.1.0 is released ([releases.md](releases.md)); no
+package-manager namespace is claimed. `kmx` is a provisional name,
 like `kaimahi` itself, and is not claimed anywhere
 ([NAMING.md](NAMING.md)).
 
@@ -135,7 +137,7 @@ swap plus a credential the agent cannot read past.
 |---|---|
 | `kmx ctx` | print the context kmx will act on, where that came from, and its posture |
 | `kmx ctx <context>` | select that context for later commands (recorded in kmx's config directory — `~/.config/kmx/context` on Linux; set `KMX_HOME` to put it elsewhere) |
-| `kmx quickstart` | the shortest honest path to a working agent: equip the machine, create the cluster, deploy Ollama and pull the model, install kagent **without the components a first question cannot reach**, deploy one agent, ask it a question and print the answer. `--output json` for a machine, `--agent`/`--task` to change what is asked. Safe to run twice. Deploys no plane, and says so |
+| `kmx quickstart` | the shortest honest path to a working agent: equip the machine, create the cluster, deploy Ollama and pull the model, install kagent **without the components a first question cannot reach**, deploy one agent, ask it a question and print the answer. `--output json` for a machine, `--task` to change what is asked. Safe to run twice. Deploys no plane, and says so |
 | `kmx up` | check all host dependencies in one pass before the guard or first use, create the kind cluster, deploy Ollama, pull the pinned model, install kagent by helm, apply both agents, wait for each to be Ready, print status |
 | `kmx up --step <step>` | one step only: `cluster`, `ollama`, `model`, `kagent`, `agent`, `tools-agent` |
 | `kmx lift` | the same agent, on AKS: create the resource group, a private registry and a cluster with a policy engine, **prove the boundary is enforced before putting anything behind it**, install the runtime, the plane and the agents, wire Azure-managed monitoring, then check the agent answers and that its metrics and logs actually arrived. Names what it will do and where, and refuses without confirmation naming the cluster. Bills money until `kmx lift down` ([aks.md](aks.md)) |

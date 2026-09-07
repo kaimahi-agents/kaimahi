@@ -17,7 +17,7 @@
 # never on the agent.
 #
 # The upstream entry also narrows the SERVER: extra_headers set
-# X-MCP-Toolsets, X-MCP-Tools and X-MCP-Exclude-Tools, so the dozens of
+# X-MCP-Tools and X-MCP-Exclude-Tools, so the dozens of
 # write tools this server offers (delete_repository, push_files,
 # merge_pull_request, create_or_update_file …) are never offered to us at
 # all. status.discoveredTools is therefore already narrow before the

@@ -395,9 +395,6 @@ The full governed-vs-ungoverned table is in
 [README.md](README.md#what-is-governed-today-and-what-is-not). Specific
 to this path:
 
-- **Pod-level network egress is not enforced** as of this doc, and the
-  Slack pod is the reason it matters: it egresses to the internet, and
-  any pod can reach it directly. See above.
 - **The Slack MCP server's own endpoint auth is not effective**
   (v1.3.0, http transport). The plane injects a credential the server
   does not check.

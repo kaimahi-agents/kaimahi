@@ -232,7 +232,7 @@ var buildVersion string
 //	                      ^^^^^^^^^^^^ the 12-char revision
 //
 // Reading only vcs.revision therefore published kaimahi_build_info with
-// revision="unknown" on the kmx path — the one path where an operator has
+// version="unknown" on the kmx path — the one path where an operator has
 // no checkout to compare against, and so the one where the label matters
 // most.
 func Version() string {

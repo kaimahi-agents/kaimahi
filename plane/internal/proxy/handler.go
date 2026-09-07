@@ -406,8 +406,8 @@ func ledgerFor(cred store.Credential, att store.Attribution, upstream, model str
 }
 
 // readBounded reads a whole non-streamed body, refusing one larger than
-// the buffer (the hardened client caps hosted bodies at the same size;
-// this is the bound for in-cluster ones) — an error, never a silent
+// the buffer (the hardened client caps hosted bodies at its own 8 MiB
+// bound; this 50 MiB one is for in-cluster upstreams) — an error, never a silent
 // truncation.
 func readBounded(body io.Reader) ([]byte, error) {
 	raw, err := io.ReadAll(io.LimitReader(body, maxBufferedResp+1))

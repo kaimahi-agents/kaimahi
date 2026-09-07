@@ -27,7 +27,7 @@
 #   env: EXPECT=202|401|403|409|413|429|503 (default 202)
 #        DELIVERY=<id>   reuse a delivery id (the replay assertion);
 #                        default: a fresh random id
-#        AUTH=hmac|bearer|none|forged
+#        AUTH=hmac|bearer|none|forged|stale
 #        INBOUND_PORT=<local port> (default 18084)
 set -euo pipefail
 umask 077

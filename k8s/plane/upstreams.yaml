@@ -59,7 +59,8 @@
 # tool_upstreams is the MCP gateway's table: the ONLY tool servers
 # the gateway will relay to — it forwards nowhere else, which is the
 # egress rule at this layer; k8s/plane/network-policy.yaml is the rule
-# at the network. Four entries, three in-cluster and one hosted:
+# at the network. Six entries, three in-cluster and three hosted
+# (github-release and ado are described at their entries below):
 #   - kagent-tools: kagent's chart-managed tool server.
 #   - slack:        the Slack MCP server this repo deploys
 #                   (k8s/slack-mcp.yaml). The gateway's reach to it is
@@ -97,7 +98,7 @@
 # inbound_hooks is the inbound bridge's table (docs/inbound.md): the
 # ONLY webhooks the plane accepts, each bound to a plane credential, a
 # proof mode, the agent it triggers, and the governed credential that
-# agent spends under. Three entries:
+# agent spends under. Four entries:
 #   - demo:         Kaimahi's generic SIGNED webhook (kaimahi-hmac): the
 #                   primitive, and the one CI exercises end to end —
 #                   unauthenticated, forged, stale, replayed and

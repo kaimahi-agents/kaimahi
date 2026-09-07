@@ -402,8 +402,9 @@ It duplicates nothing kagent's own CLI ships: `kmx agent chat` is a
 passthrough to `kagent invoke`, there is no `kmx install`, and reading,
 updating and deleting agents print the `kubectl` command that already does
 the job. The Makefile's equivalents now call this binary, so there is one
-implementation and CI proves the code you run. Nothing is published, and
-neither `kmx` nor `kaimahi` is claimed as a package name.
+implementation and CI proves the code you run. v0.1.0 is released
+([docs/releases.md](docs/releases.md)); neither `kmx` nor `kaimahi` is
+claimed as a package name.
 
 What it is, what it refuses and what it deliberately leaves to the Makefile:
 [docs/kmx.md](docs/kmx.md). The original survey against kagent's CLI, which

@@ -38,7 +38,7 @@
 #   ASSET_GLOBS      which files inside them count as assets
 #   SLACK_USER       require this person's approval (default: anyone)
 #   DRY_RUN=1        read and draft, stop before the first write
-#   STEP=<name>      propose | compose | cut | build | watch | publish
+#   STEP=<name>      propose | compose | cut | build | watch | publish | refresh | all
 #   WATCH_TIMEOUT    seconds to poll the builds (default 3600)
 #
 # Azure identifiers never enter this repo: ADO_ORG and ADO_PROJECT are

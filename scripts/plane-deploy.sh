@@ -48,7 +48,7 @@ if [ -z "$PLANE_IMAGE" ]; then
   exit 1
 fi
 # Non-empty is not the same as well-formed. An unset ACR_NAME makes the
-# Makefile expand PLANE_IMAGE to ".azurecr.io/kaimahi-proxy:p5b" — which
+# Makefile expand PLANE_IMAGE to ".azurecr.io/kaimahi-proxy:p10" — which
 # sails past a `-z` check and would be rendered into the manifest and
 # applied. Require a registry host before the first slash.
 case "$PLANE_IMAGE" in
