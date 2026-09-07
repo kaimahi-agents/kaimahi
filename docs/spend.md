@@ -108,10 +108,15 @@ kmx agent chat hello-world "Who are you?"
 kmx ledger
 ```
 
-`kmx` is the **kind** path. On a managed cluster the plane needs a registry,
-a rendered manifest and a captured key, so `TARGET=aks make plane` /
-`TARGET=aks make govern` stay the scripts' — see [aks.md](aks.md). Budgets
-(`make budget`) and approvals are `make`'s on every target.
+On a managed cluster the plane needs a registry, a rendered manifest and a
+captured model key. `kmx lift` does the first two and stops at the third,
+naming `make plane-copilot-secret`; `TARGET=aks make plane` /
+`TARGET=aks make govern` do the same work step by step — see
+[aks.md](aks.md). Budgets and approvals are `kmx` commands —
+`kmx budget`, `kmx approvals`/`approve`/`deny`/`request` — and they act on
+whichever context you point them at. It is the *Makefile* that is split:
+`make budget` and `make approve` delegate to `kmx` on `TARGET=kind` and run
+`scripts/plane-admin.sh` on `TARGET=aks`.
 
 `make govern` leaves `hello-world` on the `governed-ollama` preset and
 also applies `governed-copilot`. Switch to the latter with
@@ -124,8 +129,8 @@ govern` switches to `governed-copilot` directly. See [aks.md](aks.md).)
 From a real run:
 
 ```text
-created (UTC)       credential   upstream  model                in    out  cents source   status
-2026-09-01T03:41:45 hello-world  ollama    qwen2.5:3b          371     27      0 free     200
+created (UTC)       credential   upstream  model                in    out  cents source   status acted for
+2026-09-01T03:41:45 hello-world  ollama    qwen2.5:3b          371     27      0 free     200    none
 ```
 
 `source` says why the cost is what it is:

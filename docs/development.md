@@ -35,7 +35,7 @@ it is also the first thing to state honestly in any doc you write.
 | `plane/internal/` | `proxy` (LLM data path + admin), `gateway` (MCP), `inbound` (webhooks), `meter` (budgets), `pricing` (tokens→cents), `store`/`db` (Postgres + migrations), `config` (upstream table), `redact` (log scrubbing), `metrics` (Prometheus, fixed label vocabularies), `ops` (metrics listener + probes). |
 | `k8s/` | Everything applied to a cluster: agents, model presets, the plane, network policy, scenario fixtures. |
 | `k8s/models/` | One `ModelConfig` per preset. `governed-*` point at the proxy; the rest go direct. |
-| `scripts/` | Key-handling and check scripts. Anything touching a credential lives here, never in a make recipe. |
+| `scripts/` | Key-handling and check scripts. A credential is handled here or in `kmx credential capture` — never in a make recipe. |
 | `docs/` | User docs by capability, plus the board (`COORDINATION.md`). |
 | `Makefile` | The operator interface. Every mutating target depends on `guard`. |
 
@@ -51,7 +51,21 @@ test -z "$(gofmt -l cmd internal embed.go)" && go vet ./... && go build ./... &&
 python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-delegation.py
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)
 
-# Repository checks (these are the CI hygiene job)
+# The plane's store tests need a real Postgres and SKIP without one, so
+# the line above passes vacuously on a machine that has none. Point them
+# at a throwaway database to actually run them — CI's `go-plane` job uses
+# a service container:
+#   docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=throwaway \
+#     -e POSTGRES_USER=kaimahi -e POSTGRES_DB=kaimahi postgres:16
+#   (cd plane && KAIMAHI_TEST_PG_DSN='postgres://kaimahi:throwaway@127.0.0.1:5432/kaimahi?sslmode=disable' \
+#      go test -count=1 ./...)
+
+# Repository checks. These are the checkers the CI hygiene job runs; the
+# job also runs each one's self-test and a set of inline meta-checks over
+# CI's own guards (that every cluster step carries the docs-only guard,
+# that the required check covers every shard, the network-policy shape,
+# the registry render, the release job staying keyless, and more). The
+# job is the authority on what runs, not this list.
 python3 scripts/check-doc-links.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
@@ -108,9 +122,10 @@ If a chat times out, check `make ledger` before assuming the plane is broken.
 Three required checks gate every PR: `hygiene` (repository checks, kmx's
 own tests), `go-plane` (the proxy module) and `e2e-hello-world`.
 
-`e2e-hello-world` owns no cluster. It is an aggregator over four shard jobs
-that run at the same time, each bringing up its own kind cluster and running
-one part of the end-to-end proof:
+`e2e-hello-world` owns no cluster. It is an aggregator over **six** shard
+jobs that run at the same time, each bringing up its own kind cluster and
+running one part of the end-to-end proof. The aggregator's `needs` list is
+the authority: a shard added there and nowhere else still gates merges.
 
 | shard | what it proves |
 |---|---|
@@ -118,12 +133,15 @@ one part of the end-to-end proof:
 | `e2e-spend` | metering, budgets, the budget approval cycle, the network boundary, the inbound bridge |
 | `e2e-tools` | the tool gateway, tool approvals, the governed Slack path, approvals from Slack, the exact races and metrics |
 | `e2e-resilience` | a replica killed mid-cycle, a Postgres outage, both replicas restarted, backup and restore |
+| `e2e-ap` | the accounts-payable demo: the fixture ERP reaches nothing, a routine invoice pays itself, the exception needs a named human, and the injected call is denied and spends no approval |
+| `e2e-quickstart` | one command from a machine with only a container engine to an agent that answered, run against the release this branch would publish; safe to run twice, and the elapsed time is asserted not to have doubled |
 
-Two more jobs run beside them and need no cluster:
+Other jobs run beside them:
 
 | job | what it proves |
 |---|---|
-| `plane-upgrade` | a plane several migrations old, with a credential, a budget, an allowlist, an approved grant and a priced ledger row in it, upgraded to this checkout's plane on the same database: the data survives, the plane serves, and a migration that cannot apply leaves the plane refusing to start with the rows untouched ([releases.md](releases.md#when-a-migration-fails-halfway)) |
+| `plane-upgrade` | a plane several migrations old, with a credential, a budget, an allowlist, an approved grant and a priced ledger row in it, upgraded to this checkout's plane on the same database: the data survives, the plane serves, and a migration that cannot apply leaves the plane refusing to start with the rows untouched ([releases.md](releases.md#when-a-migration-fails-halfway)). It needs no cluster |
+| `kmx-clone-free` | the whole journey from a `kmx` installed out of the Go proxy at this commit, with no checkout anywhere. It brings up its own cluster, but it is **not** a shard and does not gate PRs: it runs on pushes to `main` and on manual dispatch |
 | `release` (own workflow, tags only) | the tagged build: four platforms, checksums, and a binary that reports its own tag ([releases.md](releases.md#cutting-a-release)) |
 
 `plane-upgrade` is not a shard and must not become one: it holds no cluster,
@@ -230,11 +248,18 @@ expensive way.
    return HTML with a 200; gateway-style services return 200 with an error
    envelope for a bad key. `! grep` is not a gate — distinguish "no match"
    from "the scanner failed to run".
-3. **Keys come from stdin, and go into a Secret.** Never argv, env listings,
-   YAML, ConfigMaps, or logs. Key-bearing steps live in `scripts/` with
-   `set -euo pipefail`, never in a make recipe — make runs recipes without
-   pipefail, and a failed pipe stage can fail *open*. That exact bug once
-   stored an empty Secret after a failed token exchange.
+3. **Keys are typed, and go into a Secret.** Never argv, env listings,
+   YAML, ConfigMaps, or logs. There are two capture paths and each has its
+   own rule. `kmx credential capture` — the three tool upstreams whose
+   tokens can be checked against the upstream — reads from a **terminal
+   only**, echo off, and refuses a pipe or a redirect rather than reading
+   it, because a value that can arrive through a pipe can arrive from a
+   shell history or a CI log. Everything else (model keys, the Slack bot
+   token, inbound signing keys) is captured by a script in `scripts/` that
+   reads **stdin**, with `set -euo pipefail`. Neither lives in a make
+   recipe — make runs recipes without pipefail, and a failed pipe stage can
+   fail *open*. That exact bug once stored an empty Secret after a failed
+   token exchange.
 4. **Record spend before honouring a failure.** A billed call gets a ledger
    row even when the surrounding operation errors.
 5. **Never infer that something is free.** Free is an explicit

@@ -19,7 +19,7 @@ credential capture (`github-secret`,
 What is left in the Makefile is the Slack and inbound connector families,
 the model-key capture, AKS and the probes.
 
-**Status: milestone 3.** v0.1.0 is released ([releases.md](releases.md)); no
+**Status.** v0.1.0 is released ([releases.md](releases.md)); no
 package-manager namespace is claimed. `kmx` is a provisional name,
 like `kaimahi` itself, and is not claimed anywhere
 ([NAMING.md](NAMING.md)).
@@ -217,8 +217,19 @@ a transport error, a usage message — it prints what `kagent` printed rather
 than guessing at a shape that is not there.
 
 Reading, updating and deleting agents are not kmx's job — kubectl and the
-kagent CLI already do them, and `kmx agent list` says so and prints the
-commands. Scaffolding is the only letter of CRUD with a real gap
+kagent CLI already do them. `kmx agent list` is the one read kmx does
+carry, because it joins readiness, acceptance, the active ModelConfig and
+the tool wiring into one table; it prints that table and nothing else, so
+the kubectl commands for update and delete are here rather than in its
+output:
+
+```bash
+kubectl -n kagent get agent <name> -o yaml     # read
+kubectl -n kagent edit agent <name>            # update
+kubectl -n kagent delete agent <name>          # delete
+```
+
+Scaffolding is the only letter of CRUD with a real gap
 ([CLI-PROPOSAL.md](CLI-PROPOSAL.md) is the survey that established that).
 
 ## Settings

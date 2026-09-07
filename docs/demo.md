@@ -10,7 +10,7 @@ Two ways to run it:
 |---|---|---|
 | Model | in-cluster Ollama, free, small (`qwen2.5:3b`) | GitHub Copilot (`gpt-5-mini`), governed |
 | Shows | spend, tools, approvals, network boundary | all of that plus Slack both ways and a public edge |
-| Needs | Docker, kind, kubectl, helm, python3 | a logged-in `az`, a Copilot subscription, a Slack workspace you control |
+| Needs | Docker (or Podman) and python3 — kind, kubectl and helm are fetched by `kmx` if they are absent | a logged-in `az`, a Copilot subscription, a Slack workspace you control |
 | Costs | nothing | about US$1 for a few hours, then `make aks-down` |
 
 The kind path is what CI runs on every pull request. The AKS path is
@@ -59,7 +59,9 @@ is what kagent gives you on its own.
 make chat
 ```
 
-The reply is buried in the task JSON. From a real run:
+At a terminal `make chat` prints a readable view; piped to a file or a
+script it prints the raw A2A task JSON, and the reply is buried in it.
+From a real run:
 
 ```text
 "I am the hello_world agent, designed to greet users and provide
@@ -85,8 +87,8 @@ make ledger
 The chat works exactly as before; the difference is the row:
 
 ```text
-created (UTC)       credential   upstream  model       in    out  cents source   status
-2026-09-02T03:52:00 hello-world  ollama    qwen2.5:3b  380   12   0     free     200
+created (UTC)       credential   upstream  model       in    out  cents source   status acted for
+2026-09-02T03:52:00 hello-world  ollama    qwen2.5:3b  380   12   0     free     200    none
 ```
 
 Now cap it below the price of one call and try again:
@@ -132,9 +134,9 @@ make approvals
 Two pending requests, one from each denial above:
 
 ```text
-id                                   created (UTC)       credential   kind     subject
-a89f5cad-…                           2026-09-02T16:26:23 hello-tools  tool     k8s_get_events
-…                                    …                   hello-world  budget   tokens
+id                                   created (UTC)       credential   kind     subject         detail                                        call
+a89f5cad-…                           2026-09-02T16:26:23 hello-tools  tool     k8s_get_events  denied tools/call via upstream kagent-tools   k8s_get_events: …
+…                                    …                   hello-world  budget   tokens          denied qwen2.5:3b via upstream ollama          -
 ```
 
 Approve the tool one with a single use, and the budget one with a
@@ -240,8 +242,8 @@ ttl=30m`. The bot answers in the thread with the grant, and `make
 grants` shows who decided:
 
 ```text
-id            credential     kind     subject       live  expires (UTC)        uses  decided by
-48aba588-…    inbound-slack  inbound  slack-events  yes   2026-09-02T15:23:22  0/3   slack:U…
+id            credential     kind     subject       live  expires (UTC)        uses  amount  created (UTC)        decided by  binds  cred expires (UTC)
+48aba588-…    inbound-slack  inbound  slack-events  yes   2026-09-02T15:23:22  0/3   -       2026-09-02T14:53:22  slack:U…    -      2026-10-02T09:58:04
 ```
 
 Mention the bot again with the same question. This time the agent runs,

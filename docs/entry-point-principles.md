@@ -13,12 +13,14 @@ what it must never become, and how we will know it is working.*
 It is that the distance between *wanting an agent* and *having one* is
 measured in things you must already know.
 
-Today that distance is a clone, a prerequisite list, and a Makefile. The
-Makefile is good — it is the journey in glue form, and every step of it is
-proven by CI on every pull request. But it asks for something before it
-gives anything: `git clone`, then Docker or Podman, kind, kubectl, Helm,
-make, curl, then `make up KIND_CLUSTER=<your-name>`, then a five-to-ten
-minute wait during which nothing tells you whether it is working.
+When this was written, that distance was a clone, a prerequisite list, and
+a Makefile. The Makefile is good — it is the journey in glue form, and
+every step of it is proven by CI on every pull request. But it asked for
+something before it gave anything: `git clone`, then Docker or Podman,
+kind, kubectl, Helm, make, curl, then `make up KIND_CLUSTER=<your-name>`,
+then a five-to-ten minute wait during which nothing told you whether it was
+working. (The prerequisite list is now one item, a container engine: `kmx`
+fetches kind, kubectl and Helm itself, checksum-verified.)
 
 A developer who abandons at minute three has not rejected the idea. They
 never got to it.
@@ -86,16 +88,34 @@ The principle generalises: the dangerous state is not "wrong answer", it
 is "confident wrong answer". Where the tool cannot establish the truth, it
 stops.
 
-### 4. Never hold a credential
+### 4. Never hold a credential, and take one only where it can be typed
 
 The entry point does not accept an API key as a flag, an environment
 variable, or a file path. Generated manifests carry Secret *references*,
-never Secret values. Credential capture stays in dedicated scripts that
-read from stdin and write to a Kubernetes Secret.
+never Secret values.
 
 A scaffolder is exactly where a key wants to be typed, and exactly where
 it must not be. Anything that can take a key can leak one into a file the
-developer is about to commit.
+developer is about to commit. So `kmx agent create`, `kmx tools add` and
+the blueprint loader all screen their input against credential shapes and
+refuse.
+
+The principle has since been given one ruled exception, and the shape of
+the exception is the point. `kmx credential capture <upstream>
+<repository|organization>` takes the token for one of the three tool
+upstreams whose value can be checked against the upstream before anything
+is stored. It reads it **from a terminal or not at all**: echo off, no
+flag, no environment variable, no file, and a pipe or a redirect refused
+rather than read — because a credential that can arrive through a pipe can
+arrive from a shell history or a CI log. It never reaches argv, a
+temporary file, a log or the command's own output. Every other credential
+(model keys, the Slack bot token, inbound signing keys) is still captured
+by a dedicated script that reads stdin and writes a Kubernetes Secret.
+
+What the exception buys is the last step of the journey that needed a
+clone. What keeps it an exception rather than a hole is that it is one
+command, for three named upstreams, on one input channel a script cannot
+reach.
 
 ### 5. Work with the cluster you have, or give you a disposable one
 
@@ -143,10 +163,12 @@ ticker symbol**, which is now in the trademark counsel brief alongside the
 open questions about *kaimahi* itself — a te reo Māori word still awaiting a cultural
 appropriateness read.
 
-So installation is `go install …/cmd/kmx@<sha>` until those gates clear.
-That is less convenient, and it is the honest position. A tap created for
-developer convenience is still a public claim, and reversing one is much
-harder than delaying it.
+So no package-manager namespace is claimed until those gates clear.
+Installation is the project's own `install.sh` — it downloads the release
+binary for the platform and verifies its published sha256 — or
+`go install …/cmd/kmx@latest`. That is less convenient than a tap, and it
+is the honest position. A tap created for developer convenience is still a
+public claim, and reversing one is much harder than delaying it.
 
 ## How we will know it is working
 
@@ -163,27 +185,34 @@ Not by command count. By these:
 
 The first successful agent is the metric. Everything else is a means.
 
-## What is deliberately not here yet
+## What was built in slices, and what is still not here
 
-The entry point is being built in slices, and the slices are chosen so that
-each one is useful alone. What is missing is missing on purpose.
+The entry point was built in slices, and the slices were chosen so that
+each one was useful alone. All of them have since shipped, in this order,
+and the ordering is the part worth keeping:
 
-**Milestone 1 (in flight).** `ctx`, `up`, `agent create`, `agent chat`,
-`status`, `down` — the runtime journey only: kind, kagent, Ollama, the
-agents. No governance plane. A consequence was stated and accepted rather
-than discovered: on a fresh cluster `agent create` scaffolds the keyless
-preset and prints the ungoverned warning, because governed presets only
-exist once the plane does.
+**The runtime journey first.** `ctx`, `up`, `agent create`, `agent chat`,
+`status`, `down` — kind, kagent, Ollama, the agents, and no governance
+plane. A consequence was stated and accepted rather than discovered: on a
+fresh cluster `agent create` scaffolds the keyless preset and prints the
+ungoverned warning, because governed presets only exist once the plane
+does.
 
-**Milestone 2 (shaped).** `plane`, `govern <name>`, and the read-only
-views — `ledger`, `grants`, audit reads. Clone-free: the binary carries
-the manifests and fetches the plane at its own revision. kind only, which
-keeps it entirely keyless.
+**Then the plane.** `plane`, `govern <name>`, and the read-only views —
+`ledger`, `grants`, the audit reads. Clone-free: the binary carries the
+manifests and fetches the plane at its own revision. kind only, which kept
+it entirely keyless.
 
-**Milestone 3 and beyond (not scheduled).** Budget, approvals,
-backup/restore, and the connector families stay in `make` and `scripts`
-for now. So does the AKS path — `kmx` is a local-development entry point
-until there is a reason it is not.
+**Then the operator verbs, and then the rest.** `use`, `budget`,
+`approvals`/`approve`/`deny`/`request`, `tools`, `backup`/`restore`,
+`metrics`; then `quickstart` and `install.sh`, `tools add` for a server
+this repository did not write, `workflow` and blueprints, `flow`,
+`credential capture`, and `lift` for the managed-cluster path. `kmx` is no
+longer only a local-development entry point.
+
+**What is still not here.** The Slack and inbound connector families,
+capturing a model key, and the network probes stay in `make` and
+`scripts`.
 
 **Publishing.** A Homebrew tap, or any package, waits on the naming gates.
 Nothing about the design blocks it; the decision is not a technical one.
@@ -312,7 +341,10 @@ the failure mode already ruled against.
 
 ## Status
 
-`kmx` is accepted and milestone 1 is in flight. Milestone 2 — `govern` and
-the plane, clone-free — is shaped. This document describes the reasoning
+`kmx` is built and released (v0.1.0), and the whole journey it was proposed
+for — a cluster, an agent, the governance plane, the operator verbs, a
+governed workflow, and the same agent on a managed cluster — runs from the
+installed binary with no checkout. This document describes the reasoning
 those decisions encode; the decisions themselves, with their conditions and
-dissents, are in [COORDINATION.md](COORDINATION.md).
+dissents, are in [COORDINATION.md](COORDINATION.md). What each command
+actually does is [kmx.md](kmx.md).

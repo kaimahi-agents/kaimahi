@@ -145,7 +145,9 @@ Every tool call here flows agent → RemoteMCPServer URL → tool server.
 That URL is the seam. [tool-governance.md](tool-governance.md) puts
 Kaimahi's enforcing MCP gateway between the two, so allowlists,
 approvals and audit apply to every connector, including authenticated
-ones (`headersFrom` plus a Secret captured stdin-only), which this demo
+ones (`headersFrom` plus a Secret whose value is typed, never written into
+a manifest — `kmx credential capture` reads it from a terminal, and the
+connector scripts read it from stdin), which this demo
 deliberately avoids by choosing a keyless tool.
 
 ## Limitations

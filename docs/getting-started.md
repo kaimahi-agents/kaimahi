@@ -21,7 +21,7 @@ substance and different wording.
 | Docker **or** Podman | everything — kind runs Kubernetes in containers | <https://docs.docker.com/get-docker/> · <https://podman.io/docs/installation> |
 | kind, kubectl, Helm | **fetched by `kmx`** when they are absent, pinned and checksum-verified into `~/.config/kmx`. A copy you already have on PATH is used instead, always | — |
 | curl | the install script (already present on macOS and every mainstream Linux) | your package manager |
-| Go 1.26+ | **only** `kmx plane`, which builds the plane's image locally, and `go install` as an alternative way to get `kmx` | <https://go.dev/dl/> |
+| Go 1.26+ | **only** the two commands that build the plane's image — `kmx plane` (locally) and `kmx lift` (in a private registry) — and then only when they are run from outside a checkout, where they fetch the plane's source from the Go module proxy. Also `go install`, as an alternative way to get `kmx` | <https://go.dev/dl/> |
 | make, git | **only** the clone path at the bottom of this page | your package manager |
 
 `kmx` acquiring its own tools is not new behaviour invented here: it has
@@ -83,7 +83,9 @@ That downloads `kmx` for your platform, checks it against the release's
 published sha256, installs it into `~/.local/bin` (no sudo, ever), and runs
 `kmx quickstart`: a kind cluster, an in-cluster model, kagent, one agent, and
 the agent's answer to a question. Measured end to end on a clean machine with
-nothing but Docker installed: **2m43s**.
+nothing but Docker installed: **178s**, just under three minutes. That is the
+one recorded measurement of this path; the [CHANGELOG](../CHANGELOG.md) has
+it against what the same journey cost before (246s).
 
 Drop `--quickstart` to install `kmx` and stop there. Set `KMX_VERSION=v0.1.0`
 to pin a version, or `KMX_BIN_DIR=/somewhere/else` to install elsewhere.
@@ -137,9 +139,11 @@ kmx down    # delete the kind cluster (and everything in it, ledger included)
 ```
 
 `kmx` is the whole journey in one command; [kmx.md](kmx.md) is its
-reference, including what it deliberately does *not* do (budgets, approvals,
-the connector families, capturing a secret, and AKS are still the
-Makefile's).
+reference, including what it deliberately does *not* do. Budgets,
+approvals, tool governance, backup/restore, metrics and the managed-cluster
+path (`kmx lift`) are all `kmx`'s now. What is still the Makefile's: the
+Slack and inbound connector families, capturing a model key, and the
+network probes.
 
 ### Governing that agent
 
@@ -172,7 +176,9 @@ make up     # kind cluster + Ollama + model pull + kagent + two agents (first ru
 make chat   # ask the default question
 ```
 
-`make chat` prints the raw A2A task JSON. Buried in it is the reply,
+At a terminal `make chat` prints a readable view of the reply. Piped into
+a file or a script — and with `--json` — it prints the raw A2A task JSON
+instead, which is what CI asserts on. Buried in that JSON is the reply,
 from a real run:
 
 ```text
@@ -219,10 +225,20 @@ kmx agent create fleet-reporter \
 That writes `agents/fleet-reporter.yaml` — the same kind of document as the
 one below, which you own, review and commit — and applies it. The tool
 allowlist is mandatory: naming a server alone would grant every tool it
-offers, today and after its next release. `kmx` never accepts a credential
-in any form, and refuses to write a manifest with anything key-shaped in it.
-[kmx.md](kmx.md#kmx-agent-create) has the full list of what it refuses and
-why.
+offers, today and after its next release. `kmx agent create` accepts no
+credential in any form, and refuses to write a manifest with anything
+key-shaped in it. [kmx.md](kmx.md#kmx-agent-create) has the full list of
+what it refuses and why.
+
+There is exactly one path in `kmx` that takes a credential —
+`kmx credential capture <upstream> <repository|organization>`, for the
+three tool upstreams it can check a token against. The value is **typed at
+a prompt with the echo off**: no flag, no environment variable, no file,
+and a pipe or a redirect is refused rather than read, because a credential
+that can arrive through a pipe can arrive from a shell history or a CI log.
+Model keys, the Slack bot token and inbound signing keys are still captured
+by their own scripts (`make model-secret`, `make copilot-secret`,
+`make slack-secret`, `make inbound-secret`), which read from stdin.
 
 ```bash
 make status   # grouped agents, models, runtime health, next actions

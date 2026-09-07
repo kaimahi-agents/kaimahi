@@ -12,12 +12,19 @@ Assumes the plane from [spend.md](spend.md) is deployed (`make plane`, or
 
 **Which path is which.** On kind, everything on this page is `kmx`'s and
 `make` delegates to it: standing the plane up, governing an agent, the
-read-only views, and — since milestone 3 — `backup`, `restore`,
-`plane-metrics`, budgets and approvals (`kmx backup`, `kmx restore`,
-`kmx metrics`, `kmx budget`, `kmx approvals`/`approve`/`deny`/`request`).
-The whole managed-cluster path (`TARGET=aks`) is still `make` and the
-scripts, because it needs a registry, a rendered manifest and a captured
-key that `kmx` deliberately has no way to accept.
+read-only views, `backup`, `restore`, `plane-metrics`, budgets and
+approvals (`kmx backup`, `kmx restore`, `kmx metrics`, `kmx budget`,
+`kmx approvals`/`approve`/`deny`/`request`).
+
+The managed-cluster path is `kmx lift`, which creates the cluster, builds
+the plane's image in a private registry, renders the manifest for it and
+wires Azure-managed monitoring ([aks.md](aks.md)); the Makefile's
+`TARGET=aks` path still exists and does the same work step by step. The one
+step neither of them does is capturing the **model** key: a managed cluster
+runs a hosted model, and a provider token is not one of the three upstream
+credentials `kmx credential capture` can check a value against, so
+`kmx lift` stops and names `make plane-copilot-secret`, from a checkout.
+That is the only step on the managed path that still needs one.
 
 ## Shape
 
