@@ -4152,6 +4152,107 @@ PR-open-with-checks-green — do not merge. Report deviations in the PR.
 
 ## Delta sheets from finished lanes
 
+### Batch verification, seven lanes (2026-09-07)
+
+The coordinator's verification had fallen ten lanes behind — one sheet
+written while ten merged. Seven are closed here on evidence; **three are
+left open with the reason, because writing a sheet that implies coverage
+nobody has is the failure this whole loop exists to prevent.**
+
+**The WASM tool sandbox — opt-in holds, and the install is real.** `kmx
+up` left no sandbox namespace, no RuntimeClass, and no privileged pod
+(the only one on the cluster was kind's own kube-proxy). After `kmx
+tools sandbox`: the shim is on the node at
+`/opt/kwasm/bin/containerd-shim-spin-v2` (76 MB) and containerd's config
+carries the `spin` runtime handler pointing at it. Status reports three
+separate facts honestly. **Finding: the guard announces, it does not
+gate.** With stdin at `/dev/null` and no way to confirm anything, the
+install proceeded and exited 0, having printed "Nothing else in Kaimahi
+asks for these rights" and then taken them. NOT filed as a security
+defect: on kind the node is a container, so `hostPath: /` is that
+container's filesystem, and the AKS lane reported the guard demanding
+confirmation when it classified a cluster as remote. Recorded so nobody
+later assumes a confirmation happened for the most privileged operation
+in the product. Still true: the installer holds the node root through
+its `sleep infinity`, long after it needs it.
+
+**BYO agents — the hardening question was answered, and it refuted the
+coordinator's concern.** `--run-as-user` has three branches: a UID
+hardens fully, `root` opts out and says so, and unspecified declines to
+harden rather than guessing a UID that would fail at CreateContainer
+with a message that never names the image. The coordinator predicted
+from code-reading that the unhardened default would be a comment in the
+generated file and nothing else. Running it showed a printed **NOT
+HARDENED AS FAR AS IT COULD BE**, which separates what holds regardless
+(capabilities dropped, no privilege escalation, seccomp) from what does
+not (user, filesystem), and gives the `docker image inspect` command to
+resolve it. Better than what would have been asked for.
+
+**`kmx status` counts what is governed — verified live on a plane-less
+cluster.** `model seams: 0 of 2 agents governed, 2 direct`; `tool seams:
+0 of 1 tool server governed, 1 direct`; `credentials: none — no governed
+seam names one`. The line that makes it honest is the one explaining
+HOW: "Governed = the seam points at the plane, read from the cluster
+objects — no plane, credential or internet needed." So the zero is a
+real zero, not one produced by failing to look. In code, read failures
+become a stated `unknown` with one documented exception — a NotFound
+namespace is a genuine absence and reads as an empty population.
+
+**The context guard names its source.** `chosen by:` exists in
+`internal/kmx/guard/guard.go` only after that lane, with two tests
+pinning it, and the banner prints `chosen by: default` when nothing
+chose. The lane also reported, rather than quietly fixing, that
+reproducing the bug COST IT A CLUSTER: `kmx down` deleted `kaimahi-p1`
+while printing "context not created yet". It rejected the obvious fix —
+following the kubeconfig's current-context — for a stated reason: `az
+aks get-credentials` rewrites that silently, so following it trades an
+invented target for one another tool chose.
+
+**`kmx workflow run` starts.** With a partial parameter set it now
+reaches cluster contact instead of failing during binding, which is the
+whole of what was broken.
+
+**The planning-identifier cleanup rewrote comments rather than deleting
+them — measured across the tree, not spot-checked.** Go comment lines
+7504 to 7524, YAML 2772 to 2789: comment volume GREW by 37 lines while
+897 references came out. That is what the load-bearing fifth being
+rewritten looks like, and it is the outcome the prompt said a zero
+reached by deletion would fail.
+
+**`kmx flow` separates silence from blindness, and its follow-up framed
+it better than the coordinator did.** The concern raised was that a
+second view would invent a second vocabulary for "nothing here". The
+follow-up pinned it once per trail and named the trap it forbids —
+letting one unreachable trail contribute nothing so the other three
+still render, "which reads as a kindness" and quietly loses the fourth
+trail's evidence. Verified live: on a plane-less cluster `kmx flow`
+fails with the cause and the fix named, rather than printing an empty
+timeline.
+
+**NOT VERIFIED, and the reasons stand rather than being worked around:**
+- **The quickstart timings** need a genuinely clean machine to
+  reproduce; this workstation is not one.
+- **The release agent** needs the user's GitHub and Entra credentials.
+  Its governance layer was verified earlier; a real release was not.
+- **The AKS lift** needs real Azure spend. Its own PR evidences three
+  clusters torn down, `az group exists` false on each, and ~US$0.60 with
+  a per-resource breakdown. Re-proving it would cost money to re-check a
+  claim that is already carefully evidenced — a deliberate choice, not
+  an oversight.
+
+**Two process notes from doing this pass, both about the coordinator:**
+- **Twice, an assertion from reading code was wrong and running it
+  refuted the claim** — a fix reported as unbuilt was built, and a
+  missing warning was present and better than specified. Reading is a
+  hypothesis; running is the evidence.
+- **A before-and-after comparison was invalid and was withdrawn.** Two
+  binaries reporting different revisions behaved identically, because
+  the "old" one had not been built from the revision its version stamp
+  named. When comparing, build both sides explicitly from named
+  revisions; do not reuse a binary and trust `kmx version`.
+
+
+
 ### W35 verification — the blueprint reproduces W32 exactly, where it reaches (2026-09-05)
 
 Run by the user against a real GitHub repository and a real Azure DevOps
