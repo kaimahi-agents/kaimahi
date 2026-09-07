@@ -60,12 +60,12 @@ python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-
 #   (cd plane && KAIMAHI_TEST_PG_DSN='postgres://kaimahi:throwaway@127.0.0.1:5432/kaimahi?sslmode=disable' \
 #      go test -count=1 ./...)
 
-# Repository checks. These are the checkers the CI hygiene job runs; the
-# job also runs each one's self-test and a set of inline meta-checks over
-# CI's own guards (that every cluster step carries the docs-only guard,
-# that the required check covers every shard, the network-policy shape,
-# the registry render, the release job staying keyless, and more). The
-# job is the authority on what runs, not this list.
+# Repository checks. The CI hygiene job runs each checker, each checker's
+# self-test, and a set of inline meta-checks over CI's own guards (that
+# every cluster step carries the docs-only guard, that the required check
+# covers every shard, the network-policy shape, the registry render, the
+# release job staying keyless, and more). The job is the authority on what
+# runs, not this list.
 python3 scripts/check-doc-links.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py

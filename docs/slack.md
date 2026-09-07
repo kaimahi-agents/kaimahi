@@ -349,7 +349,12 @@ CI asserts:
   digest-pinned image, a single Secret-resolved `headersFrom`, no
   `xox[bpca]-` token shape anywhere in the tree, and **posting absent
   from the committed allowlist**;
-- the gateway's upstream table has both entries and both are in-cluster;
+- the gateway's upstream table is a **closed set** of exactly six
+  entries — `kagent-tools`, `slack` and `erp` in-cluster, and `github`,
+  `github-release` and `ado` marked `internet: true` — so a new place the
+  gateway may send a credential cannot be added to the table alone; every
+  unmarked entry resolves to an in-cluster hostname, and every marked one
+  is `https` and names its credential from the custody mount;
 - the agent-side Secret holds only a `kmh_…` opaque token;
 - the full cycle over the `slack` upstream: post **denied 403** and a
   request auto-filed → bounded approval → **admitted**, audited

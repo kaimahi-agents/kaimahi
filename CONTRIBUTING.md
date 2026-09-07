@@ -35,8 +35,9 @@ Postgres. Stand a throwaway one up and set it if your change touches the
 store — CI's `go-plane` job uses a service container and always runs them.
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
-job runs them, each one's self-test, and a set of inline meta-checks over
-CI's own guards; it is the authority on what gates a merge, not this list.
+job runs each checker, each checker's self-test, and a set of inline
+meta-checks over CI's own guards; it is the authority on what gates a
+merge, not this list.
 
 Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
 `plane/` is the governance plane's. The kind path of the Makefile delegates
