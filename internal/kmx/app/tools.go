@@ -31,9 +31,9 @@ type UseOptions struct {
 // Use switches an agent onto a model preset from k8s/models/.
 //
 // Hosted presets need their key Secret first (`make model-secret`,
-// `make copilot-secret`) — kmx accepts no credential in any form, so
-// it applies the preset and switches the agent, and the Secret the preset
-// NAMES is somebody else's job. A preset whose Secret is missing produces an
+// `make copilot-secret`). Those are not on kmx's one credential-accepting
+// path, so this applies the preset and switches the agent, and the Secret
+// the preset NAMES is somebody else's job. A preset whose Secret is missing produces an
 // agent that starts and then fails its calls; that is the behaviour
 // `make use` has always had.
 func (a *App) Use(preset string, opt UseOptions) error {

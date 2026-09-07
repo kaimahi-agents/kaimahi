@@ -147,9 +147,8 @@ func (c *Client) SetToolAllowlist(credential string, tools []string) error {
 }
 
 // RenewCredential extends a credential's deadline and returns the new
-// one. No token is minted, sent or read: renewal moves a date, which is
-// the only reason a CLI that accepts no credential material can offer it
-// at all.
+// one. No token is minted, sent or read: renewal moves a date, and the
+// credential bytes stay where they are.
 func (c *Client) RenewCredential(credential string, ttlSeconds *int64) (string, error) {
 	if err := ValidCredentialName(credential); err != nil {
 		return "", err

@@ -5,7 +5,7 @@ model, kagent, an agent, a conversation — and then the governance plane, a
 governed credential, and the ledger that shows what it spent. It needs no
 clone and no Makefile.
 
-It is also the only implementation of that journey. Thirty-two Makefile
+It is also the only implementation of that journey. Thirty-five Makefile
 targets are one-line recipes that call this binary on the kind path — the
 runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
 `tools-agent`, `chat`, `status`, `down`), the plane (`plane`, `plane-image`,
@@ -13,9 +13,10 @@ runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
 `approval-audit`, `approvals`, `tool-allowlist`, `plane-metrics`,
 `backup`), and the operator verbs (`use`, `use-ollama`, `budget`,
 `approve`, `deny`, `request`, `govern-tools`, `ungovern-tools`,
-`tool-allow`, `restore`) — so CI proves the code you actually run. What is
-left in the Makefile is the Slack, GitHub and inbound connector families,
-secret capture, AKS and the probes.
+`tool-allow`, `restore`) and the credential capture (`github-secret`,
+`release-secret`, `ado-secret`) — so CI proves the code you actually run.
+What is left in the Makefile is the Slack and inbound connector families,
+the model-key capture, AKS and the probes.
 
 **Status: milestone 3.** Nothing is published. `kmx` is a provisional name,
 like `kaimahi` itself, and is not claimed anywhere
@@ -28,10 +29,12 @@ Azure-managed monitoring ([aks.md](aks.md)). The Makefile's `TARGET=aks`
 path still exists and does the same work step by step.
 
 The one thing on that path kmx does **not** do is capture the model
-credential — a managed cluster runs a hosted model, and kmx accepts
-credential material on no path. `kmx lift` checks for the Secret, stops if it
-is missing, and names `make plane-copilot-secret`, which needs a checkout.
-That is the only step that still does.
+credential. A managed cluster runs a hosted model, and the model key is not
+one of the upstream credentials `kmx credential capture` knows how to check —
+storing a credential it cannot vet is the thing that path exists to avoid.
+`kmx lift` checks for the Secret, stops if it is missing, and names
+`make plane-copilot-secret`, which needs a checkout. That is the only step
+that still does.
 
 ## Install
 
@@ -151,7 +154,8 @@ swap plus a credential the agent cannot read past.
 | `kmx plane --source <path>` | build the plane from a checkout instead of fetching it (`-` forces the fetch) |
 | `kmx govern [<credential>]` | issue the governed credential (default `$CRED`), apply the governed presets, switch the agent onto one. `--ttl` sets the credential's lifetime; the plane defaults one, and there is no way to ask for "never" |
 | `kmx credentials` | the governed credentials and when each one expires, soonest first, with the state an operator scans: `EXPIRED`, `EXPIRING`, `ok`, or `no expiry` (the legacy class) ([identity.md](identity.md)) |
-| `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel — which is the only reason a CLI that accepts no credential material can own this verb. Rotating the token is still `kmx govern` |
+| `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel. Rotating the token is still `kmx govern` |
+| `kmx credential capture <upstream> <repository\|organization>` | store the credential an upstream needs, in plane custody. `github` and `github-release` take `owner/name`, `ado` takes an organization. The value is **typed at a prompt with the echo off**: there is no flag, environment variable or file that takes it, and a pipe or a redirect is refused — a credential that can arrive through a pipe can arrive from a shell history or a CI log. It is checked against the upstream first (nothing is stored if that fails) and written straight into the Secret the gateway reads; it never reaches argv, a file or a log. An upstream that already has one is refused unless `--replace` |
 | `kmx ledger [<credential>]` | the spend ledger, newest first, plus month-to-date totals. The last column is `acted for`: who the call was made for |
 | `kmx grants [<credential>]` | grants, with liveness — an expired grant is not a grant |
 | `kmx audit tool\|approval [<cred>]` | the enforcement points' audit trails |
@@ -348,7 +352,7 @@ the guard and waits for Ready.
 
 | Property | Why |
 |---|---|
-| **Never accepts a credential** — no flag, no environment variable, no file | The generator emits Secret *references*. A scaffolder that can take a key is a scaffolder that can leak one into a file you are about to commit. |
+| **This command accepts no credential** — no flag, no environment variable, no file | The generator emits Secret *references*. A scaffolder that can take a key is a scaffolder that can leak one into a file you are about to commit. (`kmx credential capture` is the one command that takes a credential, and it takes it from a terminal and writes it to a Secret — never to a file you might commit.) |
 | **Refuses key-shaped output** | Fail closed: if anything matching a known key shape reaches the manifest — including through an instructions file — writing stops. |
 | **The tool allowlist is mandatory, and validated** | `--tools server` is refused; you name the tools. Naming a server alone grants every tool it offers, today and after its next release. Names must be identifiers and are quoted on emission, so a newline cannot close the YAML sequence and append a tool nobody reviewed. |
 | **Block scalars indent uniformly** | A hostile instructions file cannot dedent out of the system message and become a sibling key. Multi-line values in single-line positions are refused rather than escaped. |
@@ -568,7 +572,7 @@ and why, is [govern-your-agent.md](govern-your-agent.md).
 
 | Property | Why |
 |---|---|
-| **Never accepts a credential** — no flag, no environment variable, no file | The same rule as `agent create`. `--secret` names a Secret RESOURCE; `kmx tools govern` is what mints a token into it. The generated document is scanned for key shapes before it is written. |
+| **This command accepts no credential** — no flag, no environment variable, no file | The same rule as `agent create`. `--secret` names a Secret RESOURCE; `kmx tools govern` is what mints a token into it. The generated document is scanned for key shapes before it is written. |
 | **A tool named without a declaration is REFUSED** | `policy_fields` decides what an approval binds to and what the audit says. kmx will not choose it, and prints what each of the three answers costs at the point of choosing. |
 | **The weakest setting announces itself in the file** | `policy_fields: []` is a verb-level binding and the shortest thing to type. The manifest carries a `WEAKEST SETTING IN USE` banner naming the tools, so a reviewer sees it too. |
 | **The policy pair is read from the live Service** | Its selector is the labels that actually route to those pods, and its resolved `targetPort` is the port they listen on. A policy written against a Service's PUBLISHED port blocks every call while reading as correct — policy is evaluated on the post-NAT pod address. A selector-less Service is refused: a policy pinned to no labels selects the whole namespace. |
@@ -632,13 +636,15 @@ Postgres client is needed.
 
 ## What is NOT in `kmx`
 
-Deliberately — these stay in the Makefile and the scripts, because each is
-entangled with capturing a credential, which kmx accepts in no form at all:
+Deliberately — these stay in the Makefile and the scripts. Most are
+entangled with capturing a credential of a kind `kmx credential capture`
+cannot vet, and a capture that stores an unchecked value would be worse than
+the script it replaced: faster at getting a broken credential into a cluster.
 
 | Not here | Where it is |
 |---|---|
-| The Slack, GitHub and inbound connector families | [slack.md](slack.md), [hosted-upstreams.md](hosted-upstreams.md), [inbound.md](inbound.md) |
-| Capturing a secret of any kind | `make model-secret`, `make copilot-secret`, `make slack-secret` — key-bearing steps stay in standalone scripts |
+| The Slack, GitHub and inbound connector families — everything but the credential capture | [slack.md](slack.md), [hosted-upstreams.md](hosted-upstreams.md), [inbound.md](inbound.md) |
+| Capturing a **model** key, a Slack token or an inbound signing key | `make model-secret`, `make copilot-secret`, `make slack-secret`, `make inbound-secret` — those steps stay in standalone scripts. `kmx credential capture` covers the three tool upstreams whose credentials it can prove something about: `github`, `github-release` and `ado` |
 | The **model credential** a managed cluster needs | `make plane-copilot-secret`. This is the one hand-off in `kmx lift`, and the one step on that path that still needs a checkout: the lift checks whether the Secret is there and stops if it is not, rather than pretending it can mint one |
 | The network and tool probes | `scripts/*-probe.sh` |
 | Publishing — a tap, a package manager namespace | nowhere. Settling the name lifted the freeze on publishing, and the first tagged release shipped checksummed binaries; `install.sh` and `go install` are the two install paths, and no npm/crates/PyPI/Homebrew namespace is claimed ([NAMING.md](NAMING.md)) |

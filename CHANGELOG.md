@@ -24,6 +24,43 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`kmx credential capture <upstream> <repository|organization>`** — the last
+  step of the journey that still needed a checkout. Installing kmx, standing a
+  cluster up, deploying the plane and governing an agent all work with no
+  clone; handing the thing a token was `make release-secret` /
+  `make ado-secret` / `make github-secret`, which are make targets in a
+  repository. The credential is now typed at a prompt, checked against the
+  upstream, and written straight into the Secret the gateway reads.
+
+  **This is the one path on which kmx accepts credential material, and it is
+  fenced.** The value is read from a terminal or not at all: there is no flag,
+  no environment variable, no file, and a pipe or a redirect is refused rather
+  than read, because a credential that can arrive through a pipe can arrive
+  from a shell history or a CI log. The terminal's echo is off while it is
+  typed. It goes to the Secret and nowhere else — not to argv (`--from-literal`
+  would put it in the process table, so the Secret is rendered in memory and
+  piped to `kubectl apply -f -`), not to a temporary file, not to a log — and
+  the buffers holding it are cleared when the write returns. The context guard
+  runs first, so the cluster about to hold the credential is named before
+  anything is typed. Everything else in kmx keeps refusing credential
+  material: the agent wizard still screens its input against credential
+  shapes, and a blueprint carrying a credential-shaped key is still refused
+  before the document is decoded.
+
+  The checks the shell scripts made are kept, and so is their honesty about
+  what cannot be checked. GitHub: refused unless the token is fine-grained,
+  reads the repository named, announces no OAuth scopes, and GitHub's answer
+  is about that repository; the expiry is REPORTED, and whether the token
+  reaches only one repository is not proven at all, because GitHub exposes no
+  endpoint that says so. Azure DevOps: refused unless it is an access token
+  with an expiry claim that has not passed and the hosted server accepts it on
+  a real handshake; the audience is REPORTED, because Entra writes it two ways
+  for the same request and refusing on it refused correct tokens. A capture
+  that is refused stores nothing.
+
+  An upstream that already holds a credential is not overwritten silently:
+  the capture stops and names `--replace`.
+
 - **`kmx workflow` and blueprints** — one declarative file says what a
   governed workflow reaches, which of its calls need no human, which need one,
   and in what order; `kmx workflow govern` applies the governance and
@@ -96,6 +133,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   and `install.sh` uses whichever of `sha256sum`, `shasum` or `openssl` exists.
 
 ### Breaking
+
+- **A credential can no longer be piped into the capture.** `az account
+  get-access-token … | make ado-secret ADO_ORG=<organization>` used to work
+  and now refuses: the value is read from a terminal only. Run the `az`
+  command, then paste its output at the prompt. The release driver's automatic
+  refresh is unaffected — it mints and stores the token without a human and
+  never goes through this path. `make github-secret`, `make release-secret`
+  and `make ado-secret` still exist and run the new command; re-capturing an
+  upstream that already has a credential now needs `--replace`.
 
 - Subcommand `--help` now succeeds and prints command-specific help instead of
   the former inconsistent `flag.FlagSet` error path. Unknown and extra

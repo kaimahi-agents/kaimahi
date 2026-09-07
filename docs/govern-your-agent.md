@@ -351,8 +351,9 @@ than our own demos would be worse than none:
   plane's own admin token. Add the `volumeMounts`/`volumes` pair to
   [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) and the entry to the
   committed table, where both are reviewed as part of this repository.
-  kmx will still never carry the value — it accepts no credential
-  material in any form.
+  kmx will still never carry the value: an overlay is a file, and the
+  only way a credential reaches kmx is typed at a prompt on a terminal
+  (`kmx credential capture`), which writes it straight into a Secret.
 - **A server outside the cluster.** `internet: true` and `ca_file` are
   refused in an overlay for the same reason, and hosted upstreams are
   reached only through the plane's hardened dialer with an opt-in 443

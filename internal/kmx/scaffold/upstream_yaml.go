@@ -288,8 +288,8 @@ func remoteServerDocument(spec UpstreamSpec) (string, error) {
 # the upstream's name rather than asking anyone to retype it.
 #
 # headersFrom resolves the agent's credential from a Secret holding ONLY
-# a Kaimahi kmh_ token (the plane stores its sha256). kmx never writes
-# that value and accepts a credential in no form; `+"`kmx tools govern`"+`
+# a Kaimahi kmh_ token (the plane stores its sha256). This scaffold never
+# writes that value; `+"`kmx tools govern`"+`
 # mints it into this Secret.
 #
 # This object is inert until then: kagent's controller discovers tools

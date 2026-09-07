@@ -44,14 +44,18 @@ Three things are new, and each is a separate opt-in:
   a plane-side Secret in `credential_file`. It is committed, so the
   plane always knows the entry and vets its host at boot; without the
   Secret and the allowance below, a call to it fails closed.
-- **The credential.** `make github-secret GITHUB_REPO=owner/name` reads
-  a fine-grained, read-only, one-repository token on stdin, proves it can
-  read that repository, and stores it as `kaimahi/kaimahi-github-pat`.
-  The gateway injects it per request. `make github-revoke` deletes it.
+- **The credential.** `kmx credential capture github owner/name` (or
+  `make github-secret GITHUB_REPO=owner/name`, which is the same command)
+  reads a fine-grained, read-only, one-repository token AT A PROMPT,
+  proves it can read that repository, and stores it as
+  `kaimahi/kaimahi-github-pat`. The gateway injects it per request.
+  `make github-revoke` deletes it.
 - **The allowance.** [`k8s/egress-hosted.yaml`](../k8s/egress-hosted.yaml)
   lets the proxy pod (the gateway lives in it) open TCP 443 to public
   addresses. `make github-secret` applies it; `make github-revoke` removes
-  it; on kind and in CI it is never applied by default.
+  it; on kind and in CI it is never applied by default. The capture
+  applies it for you, because a stored credential the gateway cannot
+  reach the internet with is a credential that cannot be used.
 
 Then `make govern-github` issues the agent's credential with a read-only
 allowlist and puts `hello-github` behind the seam, and
@@ -61,10 +65,14 @@ allowlist and puts `hello-github` behind the seam, and
 
 The GitHub token is the plane's, exactly like the Copilot token:
 
-- Captured stdin-only by [`scripts/github-secret.sh`](../scripts/github-secret.sh);
-  the bytes travel through pipes and 0600 files, never argv, env
-  listings, YAML or logs. The script stores nothing unless GitHub
-  answers a well-formed positive for the named repository.
+- Captured at a prompt by `kmx credential capture github owner/name`
+  (`internal/kmx/seam`), with the terminal's echo off. The value is read
+  from a terminal or not at all — a pipe, a redirect, a flag, an
+  environment variable and a file are all refused, so the token cannot
+  arrive from a shell history or a CI log. It never reaches argv, a
+  file, a log or a manifest on disk: the Secret is rendered in memory and
+  piped to `kubectl apply -f -`. Nothing is stored unless GitHub answers
+  a well-formed positive for the named repository.
 - Only a **fine-grained** token is accepted (`github_pat_` prefix; a
   classic PAT or an OAuth token is refused). Scope it to one repository
   with Issues: Read and Pull requests: Read. The script proves the token
@@ -205,8 +213,10 @@ done: `make github-down` removes the agent and the seam;
    keyed. Add `extra_headers` if the server lets a caller narrow what it
    offers — do that before relying on the allowlist alone. Add the Secret mount to
    [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) as an optional
-   volume, and a stdin-only sibling of `scripts/github-secret.sh` that
-   vets the token the way the server can be vetted.
+   volume, and a row in `internal/kmx/seam`'s table — the seam's name,
+   the Secret it stores, the subject it is scoped to, and a check that
+   vets the token the way that server can be vetted. A new upstream is a
+   row, not a new command.
 2. If the server's certificate is not from a public CA, put the PEM in
    the `kaimahi-upstream-ca` ConfigMap and name it in `ca_file`.
 3. Apply the allowance (`make egress-hosted`) when the server is

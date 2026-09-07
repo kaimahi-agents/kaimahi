@@ -8,7 +8,7 @@
 # scope https://mcp.dev.azure.com/.default. What makes it reachable from
 # here anyway is that Entra's answer is an ordinary bearer token in the
 # Authorization header, which is exactly what the gateway already injects
-# from custody (scripts/ado-secret.sh, Secret kaimahi-ado-token).
+# from custody (kmx credential capture ado, Secret kaimahi-ado-token).
 #
 # The consequence, written down where it will be met: that token lives
 # about an hour. The seam does not break when it dies — the server

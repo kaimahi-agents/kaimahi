@@ -13,7 +13,7 @@
 # holding ONLY the Kaimahi-issued kmh_ opaque token (`make govern-release`
 # mints it; the plane stores its sha256). The GitHub token exists only in
 # the plane namespace (Secret kaimahi-release-pat,
-# scripts/release-secret.sh) and is injected by the gateway — never here,
+# kmx credential capture github-release) and is injected by the gateway — never here,
 # never on the agent.
 #
 # The upstream entry also narrows the SERVER: extra_headers set

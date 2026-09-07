@@ -1,13 +1,14 @@
 package blueprint
 
-// kmx's no-credential rule, applied to a file format.
+// A blueprint carries no credential material, and this is the parser that
+// makes that true.
 //
-// kmx accepts no credential material in any form. That rule has held
-// because kmx's surface is flags, and a flag that took a token would be
-// visible in review. A declarative file is different: a format that wants
-// to be self-contained invites exactly one edit — "put the token in the
-// blueprint so it runs anywhere" — and it would arrive as a convenience
-// rather than as a policy change.
+// There is exactly one way to hand kmx a credential: type it at a prompt, on
+// a terminal, where it is checked against the upstream and written straight
+// into a Kubernetes Secret. A file is the opposite of that in every respect —
+// it is committable, greppable, and a format that wants to be self-contained
+// invites exactly one edit ("put the token in the blueprint so it runs
+// anywhere"), which would arrive as a convenience rather than as a decision.
 //
 // So the refusal is in the parser, before the document is even decoded,
 // and it is deliberately blunt. A blueprint NAMES Secrets (`refresh.secret`,
@@ -53,9 +54,10 @@ func refuseCredentialMaterial(raw []byte) error {
 		key := strings.ToLower(m[1])
 		for _, banned := range credentialKeys {
 			if key == banned {
-				return fmt.Errorf("blueprint: the key %q is refused. kmx accepts no credential material in any "+
-					"form: a blueprint NAMES a Kubernetes Secret and its key (`refresh: {secret: …, key: …}`) "+
-					"and the value is captured by a human, or minted by the refresh command, and never written here", m[1])
+				return fmt.Errorf("blueprint: the key %q is refused. A blueprint carries no credential "+
+					"material: it NAMES a Kubernetes Secret and its key (`refresh: {secret: …, key: …}`) "+
+					"and the value is typed at a prompt (`kmx credential capture`), or minted by the "+
+					"refresh command, and never written here", m[1])
 			}
 		}
 	}

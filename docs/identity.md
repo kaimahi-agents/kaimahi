@@ -199,9 +199,7 @@ make credential-renew NAME=hello-world TTL=720h     # or kmx credential renew
 ```
 
 Renewal moves a **date**, not material. The token does not change, so no
-Secret has to be rewritten and no credential bytes travel — which is the
-only reason a CLI that accepts no credential material in any form can own
-the verb at all.
+Secret has to be rewritten and no credential bytes travel.
 
 **Rotating the material** is what it always was: issue the credential
 again (`make govern`), which mints a fresh token and pipes it straight

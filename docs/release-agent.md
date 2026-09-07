@@ -151,28 +151,51 @@ Both in plane custody: the gateway injects them, the agent never holds
 them, and neither is ever in the tree.
 
 ```sh
-make release-secret GITHUB_REPO=owner/name   # paste the fine-grained token
-make ado-secret ADO_ORG=<organization>       # paste the Entra access token
+kmx credential capture github-release owner/name   # paste the fine-grained token
+kmx credential capture ado <organization>          # paste the Entra access token
 ```
 
-Capturing a credential is a human's job here and stays one: `kmx` accepts
-no credential material in any form. Everything after it is the agent's.
+(`make release-secret GITHUB_REPO=owner/name` and `make ado-secret
+ADO_ORG=<organization>` run exactly those.)
 
-**GitHub** ([`scripts/release-secret.sh`](../scripts/release-secret.sh)):
-a fine-grained personal access token on ONE repository, with Contents
-read+write, Pull requests read, Actions read+write. The script refuses
-anything that is not fine-grained, refuses a token that reaches more than
-one repository, refuses one with no expiry, and proves it can read the
-repository named. What it cannot prove, because GitHub does not expose a
-fine-grained token's permissions, is that you granted those and nothing
-else.
+Capturing a credential is a human's job here and stays one. It is typed at
+a prompt with the terminal's echo off, and the value is read **from a
+terminal or not at all**: there is no flag, environment variable or file
+that will take it, and a pipe or a redirect is refused rather than read,
+because a credential that can arrive through a pipe can arrive from a
+shell history or a CI log. It goes into the Secret and nowhere else —
+never argv, never a temporary file, never a log. Everything after the
+prompt is the agent's.
 
-**Azure DevOps** ([`scripts/ado-secret.sh`](../scripts/ado-secret.sh)):
-a Microsoft **Entra access token**, not a PAT — see
-[the ADO seam](#the-azure-devops-seam-is-not-a-pat). It refuses a token
-whose audience is not the MCP resource, refuses an expired one, and
-proves the server accepts it before storing anything. It reports when the
-token dies, because that is in about an hour.
+This is the one path on which `kmx` accepts credential material. Every
+other path still refuses it: the agent wizard screens its input against
+credential shapes, and a blueprint carrying a credential-shaped key is
+refused before the document is decoded.
+
+**GitHub**: a fine-grained personal access token on ONE repository, with
+Contents read+write, Pull requests read, Actions read+write. Refused if it
+is not fine-grained, if it announces OAuth scopes (which makes it a
+classic token), if it cannot read the repository named, or if GitHub's
+answer is about a different repository. **Reported, not enforced**: the
+expiry, because an answer that carries no expiry header means the answer
+carried none, not that the token never dies. **Not proven at all**: which
+permissions you granted, and whether the token reaches only that one
+repository — GitHub exposes neither. A check for the second one used to
+sit here and was removed: it asked `GET /user/repos`, which answers by the
+user's affiliations rather than the token's scope, so it refused
+correctly-scoped tokens and proved nothing about wrong ones. What actually
+holds the blast radius is `make release-bind`, below.
+
+**Azure DevOps**: a Microsoft **Entra access token**, not a PAT — see
+[the ADO seam](#the-azure-devops-seam-is-not-a-pat). Refused if it is not
+an access token, if it carries no expiry claim, if that expiry has passed,
+or if the hosted server does not accept it on a real `initialize`.
+**Reported, not enforced**: the audience, because Entra writes it two ways
+for the same request (the resource URI or the application's identifier,
+depending on the target's token version) and refusing on it refused tokens
+minted by the documented command. The server is asked instead, which is
+the only authority on it. The deadline is reported, because it is about an
+hour: re-capture with `--replace`.
 
 Both revoked by one command:
 
@@ -188,8 +211,10 @@ the command says so.
 
 ## One repository, three ways
 
-1. The GitHub token is fine-grained and scoped to one repository, and
-   `release-secret.sh` refuses a token that lists more than one.
+1. The GitHub token is fine-grained and scoped to one repository — your
+   assertion when you create it, and not something the capture can check,
+   because GitHub exposes no endpoint that reports a token's repository
+   grant. The two bounds below are what actually hold it.
 2. `make release-bind GITHUB_REPO=owner/name` adds a **standing
    constraint** — a declarative bound the credential carries, checked
    before the allowlist — so the read tools are callable only with that `owner` and
@@ -421,7 +446,7 @@ make up && make plane
 make plane-copilot-secret                       # the agent thinks on governed Copilot
 make govern
 make release-secret GITHUB_REPO=owner/name      # paste the fine-grained token
-make ado-secret ADO_ORG=<organization>          # paste the Entra access token
+make ado-secret ADO_ORG=<organization>          # paste the Entra access token (about an hour)
 make govern-release                             # credential, read allowlist, both seams, the agent
 make release-bind GITHUB_REPO=owner/name        # the reads may reach only that repository (survives make plane)
 make release GITHUB_REPO=owner/name VERSION=v1.2.3 DRY_RUN=1

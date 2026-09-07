@@ -142,12 +142,13 @@ steps:`, 1)
 		},
 		expect: "per-credential, not per-upstream",
 	}, {
-		// kmx's no-credential rule, applied to a file format.
+		// A credential reaches kmx at a prompt, on a terminal, or not at
+		// all. A file is not that, and the refusal is in the parser.
 		name: "a blueprint may not carry a credential-shaped key",
 		edit: func(s string) string {
 			return strings.Replace(s, "credential: demo-agent", "credential: demo-agent\ntoken: abc", 1)
 		},
-		expect: "kmx accepts no credential material",
+		expect: "A blueprint carries no credential material",
 	}, {
 		name: "a blueprint may not carry something shaped like a token",
 		edit: func(s string) string {

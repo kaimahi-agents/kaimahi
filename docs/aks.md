@@ -207,9 +207,11 @@ kmx lift --step plane --resource-group <rg> --cluster <name> --registry <reg>
 
 **There is one hand-off, and it is the credential.** A managed cluster
 runs a hosted model — there is no local model server on it — so the
-plane needs a real provider token. `kmx` accepts credential material on
-no path today, so the lift checks whether the Secret is there and stops
-if it is not, naming the command that mints it:
+plane needs a real provider token. The model key is not one of the
+upstream credentials `kmx credential capture` knows how to check, and
+storing a credential it cannot vet is what that path exists to avoid, so
+the lift checks whether the Secret is there and stops if it is not,
+naming the command that mints it:
 
 ```bash
 make plane-copilot-secret        # from a checkout; reads the token on the terminal

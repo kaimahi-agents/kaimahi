@@ -7,7 +7,7 @@
 # Custody: headersFrom resolves the agent's credential from a Secret
 # holding ONLY the Kaimahi-issued kmh_ opaque token (`make govern-github`
 # mints it; the plane stores its sha256). The GitHub token exists only in
-# the plane namespace (Secret kaimahi-github-pat, scripts/github-secret.sh)
+# the plane namespace (Secret kaimahi-github-pat, kmx credential capture github)
 # and is injected by the gateway — never here, never on the agent.
 #
 # Because kagent's controller discovers tools THROUGH the gateway with

@@ -78,7 +78,7 @@
 #                   the gateway itself reaches over the internet, through
 #                   the hardened dialer. credential_file names (never
 #                   carries) a fine-grained, read-only, one-repository
-#                   GitHub token in plane custody (scripts/github-secret.sh
+#                   GitHub token in plane custody (kmx credential capture github
 #                   → Secret kaimahi-github-pat); the agent's own Secret
 #                   holds only its kmh_ token. The network allowance it
 #                   needs is opt-in (k8s/egress-hosted.yaml, applied by

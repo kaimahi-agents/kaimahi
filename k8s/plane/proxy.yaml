@@ -286,7 +286,7 @@ spec:
             secretName: kaimahi-notifier-token
             optional: true
         # The GitHub hosted MCP server's credential — a fine-grained,
-        # read-only, one-repository token (scripts/github-secret.sh) —
+        # read-only, one-repository token (`kmx credential capture github`) —
         # plane custody like the Copilot key: the gateway injects it, the
         # agent never sees it. Optional, same contract: without it the
         # github upstream fails closed (503) and nothing else is affected.
@@ -308,8 +308,8 @@ spec:
         # The Azure DevOps credential — a Microsoft Entra ACCESS
         # TOKEN, not a PAT: the hosted ADO MCP server authenticates with
         # Entra only (its own metadata says so). An access token lives
-        # about an hour, which is why scripts/ado-secret.sh both stores
-        # it and reports when it dies. Optional, same contract: without
+        # about an hour, which is why `kmx credential capture ado` both
+        # stores it and reports when it dies. Optional, same contract: without
         # it the ado upstream fails closed (503) and nothing else is
         # affected.
         - name: ado-cred
