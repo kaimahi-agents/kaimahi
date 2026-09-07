@@ -465,6 +465,53 @@ before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
 
+- **D45 (RULED 2026-09-07): the gateway's in-cluster tool hop stays
+  plaintext, and here is the threat model that says so.** Raised by
+  review on the comment-drift lane: the agent-to-gateway tool seam
+  (port 8081) carries a bearer credential over plain HTTP inside the
+  cluster, and that should be an examined decision rather than an
+  unexamined default. Examined; the answer is no TLS, with the
+  conditions that would reverse it written down.
+
+  **What actually crosses that wire.**
+  - **Not the upstream credentials.** The GitHub token, the Entra token
+    and the Copilot key are injected AT THE GATEWAY, on the outbound
+    side. An agent never holds one. The highest-value secrets are not on
+    this hop at all, which is the single most important fact here.
+  - **Tool arguments and responses, which we do not treat as secret by
+    design.** Every governed call's `arg_summary` is written to the audit
+    trail on purpose. We cannot claim those need wire confidentiality
+    while recording them is the product.
+  - **One genuine secret: the agent's own `kmh_` credential.** That is
+    Kaimahi-issued, expiring, revocable, allowlist-bound and
+    argument-bound, and every use of it is audited. A stolen one buys
+    exactly what that credential was permitted to do, visibly, until it
+    is revoked — a materially smaller blast radius than a stolen
+    upstream token.
+
+  **Who could capture it.** Anything the NetworkPolicy already admits —
+  the whole `kagent` namespace, deliberately, because kagent generates
+  the agent Deployments and their labels — or something with node-level
+  packet capture. Both can generally do worse than sniff: read the
+  Secret, or exec into the agent pod. TLS on 8081 closes neither.
+
+  **The cost of the alternative.** In-cluster TLS means certificate
+  issuance, rotation and trust distribution: an operational control
+  plane, which is the thing this project has repeatedly declined to
+  build.
+
+  **What would reverse this ruling.** Written down because a threat model
+  nobody can falsify is not one:
+  - the gateway forwarding an upstream credential TO an agent — it does
+    not and must not, and this whole argument rests on that invariant;
+  - the NetworkPolicy's namespace-level admission widening, or untrusted
+    workloads running in `kagent` alongside agents;
+  - tool arguments carrying regulated data, which breaks the "already in
+    the audit log" premise;
+  - a hosted offering where a tenant boundary sits inside one cluster.
+
+  Any one of those makes this a live gap rather than an accepted one.
+
 - **D43 (RULED 2026-09-06 — option A): kmx captures the credential
   itself, at a prompt.** The clone-free path ended at credential capture:
   `curl | sh`, then quickstart, plane and workflow governance all work
@@ -684,6 +731,42 @@ Everything without a ruling in its own heading is not GO.
   one.
 
 ## Process rules (proven over ~60 PRs; keep)
+
+- **Mutating the code proves a test runs; only reading the fixture proves
+  the test could fail.** Recorded 2026-09-07, from the checker lane, and
+  it is the most reusable thing this week produced.
+
+  A mutation harness edits the code under test and asks whether the test
+  notices. That proves the assertion executes. It cannot prove the
+  assertion is capable of failing, because **the harness never edits the
+  fixture** — so an assertion whose fixture already satisfies its
+  condition by some other route is structurally invisible to it. The chat
+  verifier survived ten of thirteen edits for exactly this reason: every
+  non-completed fixture also had an empty reply, so the state check could
+  be deleted and the suite stayed green.
+
+  **The two halves need different tools.** The checker half is now
+  automated — nine checkers, 110 deliberate breakages, all noticed. The
+  fixture half was closed by hand and nothing stops it recurring, and it
+  is better spent as a review question than as a checker: **for each
+  assertion, what would have to change for this to fail?**
+
+  The proof that this is not theoretical: the lane found that a self-test
+  case it had written specifically to prove its own skip rule would still
+  have passed if that rule were deleted. Its own thesis, inside its own
+  self-test, caught only in review. It recorded that as an open argument
+  rather than a solved problem, which is the right call.
+
+- **A merge-safety check must survive line wrapping.** Recorded
+  2026-09-07. Three lanes touching two shared files published `grep -c`
+  checks so a naive conflict resolution could not silently drop a bullet
+  or restore a false sentence — a genuinely good practice that caught
+  nothing only because nothing went wrong. But one check searched for a
+  phrase that the file wraps across two lines, so it reported 0 for
+  content that was present and correct. A merge check that cries wolf
+  trains people to ignore the one that does not. Anchor on a short
+  distinctive fragment that cannot wrap, or normalise newlines before
+  matching.
 
 - **D44 (RULED 2026-09-07 — option B): a green PR merged onto a green
   main can produce a red main, and did.** Recorded 2026-09-06 from a real
