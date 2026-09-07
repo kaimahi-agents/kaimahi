@@ -32,6 +32,7 @@ Run:  python3 scripts/check-secret-shapes.py [path...]
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -93,7 +94,7 @@ def files_to_scan(argv):
     return [ROOT / p for p in listed.split("\0") if p]
 
 
-def skipped(p):
+def skipped(p, root=ROOT):
     """True for a file with no text to leak.
 
     The directory names are matched against the path RELATIVE to the
@@ -104,13 +105,13 @@ def skipped(p):
     fail-open shape the whole check exists to prevent.
     """
     try:
-        parts = p.resolve().relative_to(ROOT).parts
+        parts = p.resolve().relative_to(root).parts
     except ValueError:
         parts = p.parts  # outside the repository: judge it as given
     return p.suffix.lower() in SKIP_SUFFIX or bool(SKIP_DIRS & set(parts))
 
 
-def scan(paths, shapes):
+def scan(paths, shapes, root=ROOT):
     """(findings, files actually read).
 
     A finding is (path, line number, shape, matched text). Unreadable is
@@ -121,7 +122,7 @@ def scan(paths, shapes):
     """
     findings, examined = [], 0
     for p in paths:
-        if skipped(p):
+        if skipped(p, root):
             continue
         try:
             text = p.read_text()
@@ -202,6 +203,91 @@ def selftest():
             failed += 1
         except SystemExit:
             print("ok   a shape list with no shapes is refused")
+
+        # The skip rules judge the path RELATIVE to the repository root. A
+        # checkout can sit anywhere — this one sits under a directory named
+        # .claude — and an earlier version matched the absolute path, which
+        # skipped every file in the tree and reported it clean. That is the
+        # worst failure a scanner has, because it looks exactly like
+        # success.
+        nested = d / "outer" / ".claude" / "worktrees" / "checkout"
+        (nested / "docs").mkdir(parents=True)
+        leaky = nested / "docs" / "leak.md"
+        leaky.write_text(f"token = {shapes[0].example}\n")
+        found, examined = scan([leaky], shapes, root=nested)
+        if found and examined == 1:
+            print("ok   a checkout under a skipped-looking directory name is still scanned")
+        else:
+            print("FAIL a file was skipped because of a directory ABOVE the repository root "
+                  f"(findings={len(found)}, files read={examined})")
+            failed += 1
+        # ...while the same names INSIDE the tree are still skipped.
+        inside = nested / "bin" / "artifact.txt"
+        inside.parent.mkdir()
+        inside.write_text(f"token = {shapes[0].example}\n")
+        _, examined = scan([inside], shapes, root=nested)
+        if examined == 0:
+            print("ok   a build directory inside the tree is still skipped")
+        else:
+            print("FAIL bin/ inside the tree was scanned")
+            failed += 1
+
+        # Unreadable is not clean: a permissions problem must be reported,
+        # never allowed to quietly shrink the scanned set.
+        locked = d / "locked.md"
+        locked.write_text("nothing to see\n")
+        locked.chmod(0o000)
+        try:
+            found, examined = scan([locked], shapes)
+            if found and examined == 0:
+                print("ok   an unreadable file is reported, not skipped")
+            elif os.geteuid() == 0:
+                print("ok   (skipped) running as root, where nothing is unreadable")
+            else:
+                print("FAIL an unreadable file was skipped in silence")
+                failed += 1
+        finally:
+            locked.chmod(0o600)
+
+        # The last three cases go through main(), not through scan(): a
+        # verdict that is computed correctly and then not acted on is
+        # indistinguishable from a clean tree, and a self-test that only
+        # calls the matching function would never see it.
+        planted = d / "planted"
+        planted.mkdir()
+        (planted / "notes.md").write_text(f"token = {shapes[0].example}\n")
+        if main([str(planted)]) == 1:
+            print("ok   a directory carrying a credential shape exits non-zero")
+        else:
+            print("FAIL a directory carrying a credential shape was reported clean")
+            failed += 1
+        clean_dir = d / "clean"
+        clean_dir.mkdir()
+        (clean_dir / "notes.md").write_text("ordinary prose about secrets and keys\n")
+        if main([str(clean_dir)]) == 0:
+            print("ok   a directory carrying nothing exits zero")
+        else:
+            print("FAIL a clean directory was refused")
+            failed += 1
+        nothing = d / "nothing"
+        nothing.mkdir()
+        if main([str(nothing)]) == 1:
+            print("ok   a scan over no files at all refuses to report clean")
+        else:
+            print("FAIL a scan over no files at all was reported clean")
+            failed += 1
+        # Enumerated is not examined, and the two have to be checked
+        # separately: here there ARE files, and every one of them is
+        # skipped. A checker that only counted the enumeration would call
+        # this clean.
+        all_skipped = d / "all-skipped"
+        all_skipped.mkdir()
+        (all_skipped / "logo.png").write_bytes(b"\x89PNG not really\n")
+        if main([str(all_skipped)]) == 1:
+            print("ok   a scan whose every file was skipped refuses to report clean")
+        else:
+            print("FAIL a scan that read none of the files it found was reported clean")
+            failed += 1
     if failed:
         print(f"check-secret-shapes self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
