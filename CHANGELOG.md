@@ -110,12 +110,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   stopped rather than from the beginning. `kmx lift down` removes what the
   lift created — and on a cluster you brought, only that.
 
-  Two refusals worth knowing before you plan around them. On a cluster you
-  brought (`--byo`), one with no NetworkPolicy engine is refused before
-  anything is written — the boundary this project claims would otherwise be
-  objects sitting there enforcing nothing — and so is one whose identity
-  cannot pull from the registry, naming the `az aks update --attach-acr`
-  for its owner to run rather than granting itself the role. And the model credential is yours: a managed cluster runs a
+  Two refusals worth knowing before you plan around them. **A cluster with
+  no NetworkPolicy engine is refused on both paths**, before the boundary
+  phase writes anything: AKS accepts every NetworkPolicy on such a cluster
+  and enforces none, so the boundary would be present and inert, which
+  reads as protection and is worse than having none. On a cluster the lift
+  creates, the creation itself already refused anything but an enforcing
+  engine; on one you bring, the control plane is asked and an unreadable
+  answer is refused too, rather than assumed either way. An engine being
+  present is still not enforcement, so the boundary phase then runs the
+  existing negative probe against the live boundary. **The second refusal
+  is `--byo`-only**: a cluster whose identity cannot pull from the registry
+  is refused with the `az aks update --attach-acr` for its owner to run,
+  because granting that role means writing a role assignment on your
+  subscription, which a demo has no business doing quietly. And the model credential is yours: a managed cluster runs a
   hosted model, a provider token is not one of the three upstream
   credentials `kmx credential capture` can check a value against, and the
   lift stops and names `make plane-copilot-secret` rather than storing
