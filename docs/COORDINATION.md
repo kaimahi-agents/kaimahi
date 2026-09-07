@@ -489,16 +489,44 @@ before it is written down anywhere public.
     is revoked — a materially smaller blast radius than a stolen
     upstream token.
 
-  **Who could capture it.** Anything the NetworkPolicy already admits —
-  the whole `kagent` namespace, deliberately, because kagent generates
-  the agent Deployments and their labels — or something with node-level
-  packet capture. Both can generally do worse than sniff: read the
-  Secret, or exec into the agent pod. TLS on 8081 closes neither.
+  **Who could capture it — CORRECTED 2026-09-07 after review, because
+  the first version of this entry was wrong.** It said "anything the
+  NetworkPolicy admits", conflating being able to CONNECT to 8081 with
+  being able to READ somebody else's connection to it. Those are not the
+  same: an ordinary pod cannot see another pod's TCP stream. Capture
+  needs node-level access, `hostNetwork`, or `CAP_NET_RAW` — a much
+  smaller set, which strengthens the ruling but was stated incorrectly.
 
-  **The cost of the alternative.** In-cluster TLS means certificate
-  issuance, rotation and trust distribution: an operational control
-  plane, which is the thing this project has repeatedly declined to
-  build.
+  **The residual that survives, and it is not zero.** The claim "anyone
+  who can sniff can do worse anyway" holds for node root, which can read
+  the Secret directly. It does NOT hold universally: a capture-capable
+  position that cannot read Secrets is possible — a CNI fault, a
+  misconfigured mesh, a sidecar. And **this repository ships exactly such
+  a workload**: `kmx tools sandbox` installs a privileged DaemonSet with
+  `hostPID` and the node root mounted. It is opt-in and announced, but a
+  cluster that has run it contains something positioned to capture this
+  hop.
+
+  **The cost of the obvious alternative.** In-cluster TLS means
+  certificate issuance, rotation and trust distribution: an operational
+  control plane, which is the thing this project has repeatedly declined
+  to build.
+
+  **The alternative review surfaced, which had NOT been considered and is
+  better than TLS if it works.** Encryption is not the only way to make
+  capture useless — the bearer being on the wire at all is a choice. A
+  signed request (the credential proves possession without transmitting
+  the secret) or a short-lived token derived per call would leave the hop
+  plaintext, need no certificate management, and make a captured stream
+  unreplayable. That is a design question this entry does not answer and
+  should not pretend to. **Recorded as the open half of this ruling**:
+  the risk is accepted for now on the reasoning above, and if anyone
+  spends effort here, spend it on removing the bearer from the wire
+  before spending it on certificates.
+
+  **What this ruling is and is not.** It is an accepted risk with a named
+  residual and a cheaper alternative left open. It is not a claim that
+  the hop is safe, and it should not be quoted as one.
 
   **What would reverse this ruling.** Written down because a threat model
   nobody can falsify is not one:
@@ -508,7 +536,10 @@ before it is written down anywhere public.
     workloads running in `kagent` alongside agents;
   - tool arguments carrying regulated data, which breaks the "already in
     the audit log" premise;
-  - a hosted offering where a tenant boundary sits inside one cluster.
+  - a hosted offering where a tenant boundary sits inside one cluster;
+  - **the WASM tool sandbox becoming a default rather than opt-in**,
+    since it puts a privileged, node-root-mounting DaemonSet on every
+    node of a cluster that runs it.
 
   Any one of those makes this a live gap rather than an accepted one.
 
