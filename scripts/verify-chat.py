@@ -26,13 +26,21 @@ names which of the two it was, because a red build should not need the raw
 JSON to say what the agent was waiting for.
 
   verify-chat.py --selftest
-Runs the built-in fixtures (the PR #24 shape) and exits non-zero if the
-verifier's verdicts drift; the hygiene job runs it.
+Runs the built-in fixtures (the PR #24 shape, plus synthetic variations
+of it) and exits non-zero if the verifier's verdicts drift; the hygiene
+job runs it. Every fixture differs from the passing one in a single way,
+so each half of the verdict is the only thing deciding some case — a
+check that no fixture can fail is a check that can be deleted unnoticed.
+The last cases run this file as a program, because a verdict that never
+reaches an exit code is invisible to a fixture pair.
 """
 import copy
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 
 
 def pending_requests(d):
@@ -100,6 +108,8 @@ def verify(d, tool=None, needle=None):
 # attempt 2 (run 33562345538): the tool payload carries the real probe
 # name, the prose relays a garbled one.
 _PROBE = "probe-46649d55"
+# A second tool name, used only to record an exchange under the wrong name.
+_OTHER_TOOL = "k8s_get_pods"
 _FIXTURE = {
     "status": {"state": "completed"},
     "artifacts": [{"parts": [{"kind": "text",
@@ -159,12 +169,121 @@ _APPROVAL_FIXTURE = {
     "history": [],
 }
 
+# The same two tasks in the other wrapper shape the runtime uses: the
+# original call is buried under toolConfirmation.payload.hitl_parts instead
+# of sitting at the top of args. Both fixtures are synthetic — written to
+# match the nested shape the Go chat client parses, since the captured runs
+# to hand all used the flat one. A verifier that only understood the flat
+# shape would still fail these tasks, but for the wrong reason: it would
+# report an undecodable request instead of naming what the agent waited on,
+# and a red build would need the raw JSON to find out which it was.
+_NESTED_ASK_USER_FIXTURE = {
+    "status": {"state": "input-required", "message": {"role": "agent", "parts": [
+        {"kind": "data", "metadata": {"kagent_type": "function_call",
+                                      "kagent_is_long_running": True},
+         "data": {"id": "adk-2", "name": "adk_request_confirmation",
+                  "args": {"toolConfirmation": {"payload": {"hitl_parts": [
+                      {"originalFunctionCall": {
+                          "id": "call-nested-1", "name": "ask_user",
+                          "args": {"questions": [
+                              {"question": "Where are you?"}]}}}]}}}}}]}},
+    "history": [],
+}
+
+_NESTED_APPROVAL_FIXTURE = {
+    "status": {"state": "input-required", "message": {"role": "agent", "parts": [
+        {"kind": "data", "metadata": {"kagent_type": "function_call",
+                                      "kagent_is_long_running": True},
+         "data": {"id": "adk-2", "name": "adk_request_confirmation",
+                  "args": {"toolConfirmation": {"payload": {"hitl_parts": [
+                      {"originalFunctionCall": {
+                          "id": "call-nested-2", "name": "delete_pod",
+                          "args": {"name": "pod-a"}}}]}}}}}]}},
+    "history": [],
+}
+
+
+def _script(args):
+    """Run this file as a program, the way CI runs it, and return the
+    completed process. Calling verify() directly would leave the arguments,
+    the JSON extraction and the exit code untested — a removed entry point
+    would then be invisible to the self-test."""
+    return subprocess.run([sys.executable, os.path.abspath(__file__)] + args,
+                          capture_output=True, text=True)
+
+
+def _end_to_end():
+    """The cases that only exist once the script is given a file: the
+    argument guards, finding the task in a log, and the verdict actually
+    reaching an exit code. Returns the number that came out wrong."""
+    failed = 0
+    with tempfile.TemporaryDirectory() as d:
+        good = os.path.join(d, "chat.out")
+        with open(good, "w") as f:
+            # A real capture has the command's own chatter around the task.
+            f.write("connecting to the agent...\n"
+                    + json.dumps(_FIXTURE) + "\nbye\n")
+        failing = os.path.join(d, "errored.out")
+        errored = copy.deepcopy(_FIXTURE)
+        errored["history"][1]["parts"][0]["data"]["response"]["isError"] = True
+        with open(failing, "w") as f:
+            f.write(json.dumps(errored) + "\n")
+        bad = os.path.join(d, "prose.out")
+        with open(bad, "w") as f:
+            f.write("the agent said hello and nothing else\n")
+        checks = [
+            ("a task in a captured log -> exit 0",
+             [good, "k8s_get_resources", _PROBE], 0),
+            # A rejected task has to reach the exit code, not only the
+            # report: a verdict printed and then discarded is a green build.
+            ("a rejected task -> exit 1",
+             [failing, "k8s_get_resources", _PROBE], 1),
+            ("an empty TOOL argument is refused",
+             [good, "", _PROBE], 1),
+            ("an empty SUBSTRING argument is refused",
+             [good, "k8s_get_resources", ""], 1),
+            ("output with no task object in it is refused", [bad], 1),
+        ]
+        for name, args, want in checks:
+            got = _script(args).returncode
+            mark = "ok " if got == want else "BAD"
+            print(f"{mark} {name}: exit={got}")
+            failed += got != want
+    return failed
+
 
 def selftest():
     cases = [("probe in payload, garbled in prose -> PASS", _FIXTURE, True)]
     no_resp = copy.deepcopy(_FIXTURE)
     no_resp["history"] = no_resp["history"][:1]
     cases.append(("no function_response -> FAIL", no_resp, False))
+    # The other half of the tool path: a successful response with no call
+    # recorded before it. Without this case the call count could be dropped
+    # from the verdict and every fixture would still come out the same way.
+    no_call = copy.deepcopy(_FIXTURE)
+    no_call["history"] = no_call["history"][1:]
+    cases.append(("no function_call -> FAIL", no_call, False))
+    # A real exchange, recorded under a different tool's name than the one
+    # the run was asked about — the whole point of the tool path is that the
+    # named tool was invoked, so a call to some other tool is not an answer.
+    # The name is matched twice, on the call and on the response, and each
+    # match can be lost on its own, so each gets a case.
+    other_call = copy.deepcopy(_FIXTURE)
+    other_call["history"][0]["parts"][0]["data"]["name"] = _OTHER_TOOL
+    cases.append(("the call is under another tool's name -> FAIL",
+                  other_call, False))
+    other_resp = copy.deepcopy(_FIXTURE)
+    other_resp["history"][1]["parts"][0]["data"]["name"] = _OTHER_TOOL
+    cases.append(("the response is under another tool's name -> FAIL",
+                  other_resp, False))
+    # Half finished: prose was produced and the task never reached
+    # completed. Every other unfinished shape here also has an empty reply,
+    # so without this one the state and the reply cannot be told apart and
+    # the state could stop being checked without a fixture noticing.
+    half_done = copy.deepcopy(_FIXTURE)
+    half_done["status"]["state"] = "working"
+    cases.append(("a non-completed state with a real reply -> FAIL",
+                  half_done, False))
     wrong = copy.deepcopy(_FIXTURE)
     wrong["history"][1]["parts"][0]["data"]["response"]["content"][0]["text"] = \
         "NAME               DATA   AGE\nkube-root-ca.crt   1      4m6s\n"
@@ -177,12 +296,23 @@ def selftest():
     cases.append(("empty reply -> FAIL", empty, False))
     tool_cases = [(name, task, want, "k8s_get_resources", _PROBE)
                   for name, task, want in cases]
+    # Checked with a TOOL but no SUBSTRING — the form with no payload probe
+    # to fall back on, where the count of successful responses is the only
+    # thing left asserting that the tool answered at all.
+    tool_cases.append(("no substring given, real exchange -> PASS",
+                       _FIXTURE, True, "k8s_get_resources", None))
+    tool_cases.append(("no substring given, no function_response -> FAIL",
+                       no_resp, False, "k8s_get_resources", None))
     # Checked with no TOOL argument, so the verdict can only come from the
     # state and the reply — the plain `make chat` steps' form.
     tool_cases.append(("agent asked the user a question -> FAIL",
                        _ASK_USER_FIXTURE, False, None, None))
     tool_cases.append(("human approval pending on a real tool -> FAIL",
                        _APPROVAL_FIXTURE, False, None, None))
+    tool_cases.append(("agent asked the user a question, nested -> FAIL",
+                       _NESTED_ASK_USER_FIXTURE, False, None, None))
+    tool_cases.append(("human approval pending, nested -> FAIL",
+                       _NESTED_APPROVAL_FIXTURE, False, None, None))
     failed = False
     for name, task, want, tool, needle in tool_cases:
         got, _ = verify(task, tool, needle)
@@ -192,28 +322,45 @@ def selftest():
     # The report has to distinguish the two input-required cases, or a red
     # build cannot tell "the model asked a question" from "a human owes a
     # decision" without reading the raw task.
-    for task, want in ((_ASK_USER_FIXTURE, "ask_user"),
-                       (_APPROVAL_FIXTURE, "delete_pod")):
+    for shape, task, want in (("flat", _ASK_USER_FIXTURE, "ask_user"),
+                              ("flat", _APPROVAL_FIXTURE, "delete_pod"),
+                              ("nested", _NESTED_ASK_USER_FIXTURE, "ask_user"),
+                              ("nested", _NESTED_APPROVAL_FIXTURE, "delete_pod")):
         _, lines = verify(task)
         said = any(f"waiting for: {want}" in line for line in lines)
-        print(f"{'ok ' if said else 'BAD'} input-required names what it waits for: {want}")
+        print(f"{'ok ' if said else 'BAD'} input-required names what it waits "
+              f"for ({shape} wrapper): {want}")
         failed |= not said
-    return 1 if failed else 0
+    failed = bool(failed) or _end_to_end() > 0
+    if failed:
+        print("verify-chat self-test: a verdict drifted", file=sys.stderr)
+        return 1
+    print(f"verify-chat self-test: {len(tool_cases)} task verdicts, "
+          "both confirmation shapes named, and the script run end to end")
+    return 0
+
+
+def check_file(argv):
+    """The FILE [TOOL [SUBSTRING]] form, as an exit code."""
+    raw = open(argv[0]).read()
+    tool = argv[1] if len(argv) > 1 else None
+    needle = argv[2] if len(argv) > 2 else None
+    # An empty arg (e.g. a $var that failed to expand) must not silently
+    # skip the check it was meant to enable.
+    if tool == "" or needle == "":
+        print("empty TOOL/SUBSTRING argument — refusing to skip a check",
+              file=sys.stderr)
+        return 1
+    m = re.search(r"^\{.*\}$", raw, re.M | re.S)
+    if not m:
+        print("no JSON task object found in chat output", file=sys.stderr)
+        return 1
+    ok, lines = verify(json.loads(m.group(0)), tool, needle)
+    print("\n".join(lines))
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["--selftest"]:
         sys.exit(selftest())
-    raw = open(sys.argv[1]).read()
-    tool = sys.argv[2] if len(sys.argv) > 2 else None
-    needle = sys.argv[3] if len(sys.argv) > 3 else None
-    # An empty arg (e.g. a $var that failed to expand) must not silently
-    # skip the check it was meant to enable.
-    if tool == "" or needle == "":
-        sys.exit("empty TOOL/SUBSTRING argument — refusing to skip a check")
-    m = re.search(r"^\{.*\}$", raw, re.M | re.S)
-    if not m:
-        sys.exit("no JSON task object found in chat output")
-    ok, lines = verify(json.loads(m.group(0)), tool, needle)
-    print("\n".join(lines))
-    sys.exit(0 if ok else 1)
+    sys.exit(check_file(sys.argv[1:]))

@@ -1,0 +1,98 @@
+{
+  "checker": "verify-chat.py",
+  "why": "This is the only thing standing between a chat step that really worked and one where the model produced plausible prose. Every edit below leaves it printing a report that looks the same and passing tasks it exists to reject: a half-finished task, an answer with no tool call behind it, a call to some other tool, a failed tool call, a payload that never carried the probe, or a task still waiting on a human that nothing names.",
+  "verify": ["python3", "scripts/verify-chat.py", "--selftest"],
+  "signature": "verify-chat self-test:",
+  "mutations": [
+    {
+      "name": "the state stops being checked",
+      "breaks": "A task that never finished passes as long as it produced some prose. This is the edit that went unnoticed for as long as every unfinished fixture also had an empty reply.",
+      "find": "    ok = state == \"completed\" and bool(reply)",
+      "replace": "    ok = bool(reply)"
+    },
+    {
+      "name": "an empty reply is accepted",
+      "breaks": "A completed task with no answer in it passes — the agent said nothing and the step is green.",
+      "find": "    ok = state == \"completed\" and bool(reply)",
+      "replace": "    ok = state == \"completed\""
+    },
+    {
+      "name": "the function_call count is dropped from the verdict",
+      "breaks": "A response with no call recorded before it counts as a tool invocation, so half the tool path stops being evidence of anything.",
+      "find": "        ok = ok and calls > 0 and responses > 0",
+      "replace": "        ok = ok and responses > 0"
+    },
+    {
+      "name": "the successful-response count is dropped from the verdict",
+      "breaks": "A call that was made and never answered counts as a completed tool round-trip. With no SUBSTRING given there is nothing else left asserting the tool replied.",
+      "find": "        ok = ok and calls > 0 and responses > 0",
+      "replace": "        ok = ok and calls > 0"
+    },
+    {
+      "name": "any call counts, whatever tool it names",
+      "breaks": "The run was asked about one named tool; a call to some other tool now satisfies it. The whole point of the tool path is that the named tool was really invoked.",
+      "find": "                if kind == \"function_call\" and data.get(\"name\") == tool:",
+      "replace": "                if kind == \"function_call\":"
+    },
+    {
+      "name": "any response counts, whatever tool it names",
+      "breaks": "Another tool's successful response is read as this tool's, and its payload is searched for the probe — so a completely unrelated call can carry the step.",
+      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and not data.get(\"response\", {}).get(\"isError\", True)):",
+      "replace": "                if (kind == \"function_response\"\n                        and not data.get(\"response\", {}).get(\"isError\", True)):"
+    },
+    {
+      "name": "a failed tool call counts as a successful one",
+      "breaks": "The isError check goes away entirely: the tool was called, it returned an error, and the step is green.",
+      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and not data.get(\"response\", {}).get(\"isError\", True)):",
+      "replace": "                if (kind == \"function_response\" and data.get(\"name\") == tool):"
+    },
+    {
+      "name": "the isError test is inverted",
+      "breaks": "The sense of the flag flips, so only failed calls count. The kind of edit that comes from moving a `not` while rewrapping a line.",
+      "find": "                        and not data.get(\"response\", {}).get(\"isError\", True)):",
+      "replace": "                        and data.get(\"response\", {}).get(\"isError\", False)):"
+    },
+    {
+      "name": "the payload no longer has to contain the probe",
+      "breaks": "The unguessable probe name is still printed in the report and no longer decides anything, so a tool payload that never came from the live cluster passes.",
+      "find": "            ok = ok and payload_hits > 0",
+      "replace": "            ok = ok and payload_hits >= 0"
+    },
+    {
+      "name": "the report stops naming what the agent is waiting for",
+      "breaks": "The task still fails, but the build says only that something undecodable is pending — a reader cannot tell the model asking a question from a human owing an approval without the raw JSON.",
+      "find": "    return names",
+      "replace": "    return []"
+    },
+    {
+      "name": "only the flat confirmation wrapper is understood",
+      "breaks": "The runtime's other shape, with the original call nested under toolConfirmation.payload.hitl_parts, decodes as nothing — the same loss of the report, arriving quietly with a runtime version bump.",
+      "find": "        nested = (((args.get(\"toolConfirmation\") or {}).get(\"payload\") or {})\n                  .get(\"hitl_parts\") or [])",
+      "replace": "        nested = []"
+    },
+    {
+      "name": "an empty TOOL or SUBSTRING argument is tolerated",
+      "breaks": "A shell variable that failed to expand silently turns the tool check off, and the step passes having checked only the state and the reply.",
+      "find": "    if tool == \"\" or needle == \"\":",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the task is only found when it starts the file",
+      "breaks": "A capture with the command's own chatter around the task — which is every real capture — is refused, or worse, a looser search reads the wrong object.",
+      "find": "    m = re.search(r\"^\\{.*\\}$\", raw, re.M | re.S)",
+      "replace": "    m = re.search(r\"^\\{.*\\}$\", raw, re.S)"
+    },
+    {
+      "name": "the verdict never reaches the exit code",
+      "breaks": "The report is computed and printed correctly and the script exits 0 regardless. Nothing a fixture pair checks would notice, because the fixtures never run the script.",
+      "find": "    return 0 if ok else 1",
+      "replace": "    return 0"
+    },
+    {
+      "name": "the self-test's entry point is neutered",
+      "breaks": "`--selftest` exits 0 without running anything. The signature line is how this is told apart from a real pass.",
+      "find": "        sys.exit(selftest())",
+      "replace": "        sys.exit(0)"
+    }
+  ]
+}
