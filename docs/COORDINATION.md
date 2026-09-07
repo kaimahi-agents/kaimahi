@@ -721,8 +721,10 @@ Everything without a ruling in its own heading is not GO.
   **What B obliges us to do, or it is just the status quo with a name:**
   - **After any change touching most of the tree** — a comment sweep, a
     rename, a formatting pass — every open branch rebases before it
-    merges. The sweep's own PR should say so, and the coordinator should
-    say so in the conversation where lanes are running.
+    merges. The sweep's own PR MUST say so, and the coordinator MUST say
+    so in the conversation where lanes are running. The rebase is
+    mandatory, so announcing it is too: an unannounced requirement is one
+    nobody follows, and the announcement is the half that does the work.
   - **Detection is the load-bearing half.** A red main must be noticed
     before the next merge lands on it. Last time three merges landed
     first, which is what made a one-line fix expensive to find.
@@ -807,8 +809,14 @@ Everything without a ruling in its own heading is not GO.
   fresh.
 - Worker lanes end at PR-open-checks-green; the user merges.
 - Verification is real: run the command, boot the thing, hit the cluster.
-  Suite green at every commit. Coordinator verifies reported results
-  independently before recording (verify parameters, not just mechanisms).
+  Suite green at every commit — **this is about a LANE's own commits, and
+  it is not in tension with D44.** A worker keeps their branch green
+  commit by commit; D44 is about what can happen when two independently
+  green things are merged and the RESULT was never built. Neither excuses
+  the other: a lane may not push a red commit, and a red main is still
+  fixed immediately.
+  Coordinator verifies reported results independently before recording
+  (verify parameters, not just mechanisms).
 - Outward-facing actions (other people's repos, publishing) need the user's
   approval naming the exact artifact.
 - Ask the user the few load-bearing shaping questions BEFORE a big build;
