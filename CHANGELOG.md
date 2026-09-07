@@ -209,7 +209,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - **The prerequisite list is one item: a container engine.** It was five (Go,
   Docker or Podman, kind, kubectl, Helm) plus make and curl. Go is now needed
-  only by `kmx plane`, which builds the plane's image locally.
+  only by the two commands that build the plane's image: `kmx plane`, and
+  then only when it is run from outside a checkout, and `kmx lift`, which
+  demands it whenever its plane phase runs.
 - Measured on a clean machine (no tooling, no checkout), time from one command
   to an agent's answer: **246s → 178s**. Against the same measurement of `kmx
   up` from this branch's parent, 217s → 178s; the first-answer kagent profile
