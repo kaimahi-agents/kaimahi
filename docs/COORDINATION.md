@@ -4217,10 +4217,17 @@ replaced: it is faster at getting a broken credential into the cluster.
   different upstreams with different validation. One command with a
   subject, or one per seam? Say which and why, and make it extensible —
   a third seam should not need a third command shape.
-- **Re-capture and rotation.** What happens when the Secret already
-  exists? Overwriting silently is how somebody loses a working
-  credential; refusing is how they get stuck. Decide, and make the
-  destructive direction explicit.
+- **Re-capture and rotation, against a contract that already exists.**
+  `internal/kmx/app/govern.go` has `credentialSecretVerb(interactive,
+  secretExists)`: `create` when a person is driving and the Secret is
+  new, `apply` otherwise, with tests pinning all four combinations. Do
+  not invent a second rule beside it — either reuse it or say why it
+  does not fit. Before any mutation, check the Secret you are about to
+  write is the one this credential owns, and REFUSE a mismatch rather
+  than overwriting: a name collision must not silently replace somebody
+  else's credential. Preserve the Secret's expected key and labels;
+  a rotated credential that lands under a different key is a credential
+  nothing can find.
 - **What the make targets become.** The delegation rule is that one
   implementation exists and Makefile targets are thin aliases
   (`scripts/check-kmx-delegation.py` enforces the mapping). Either
@@ -4239,14 +4246,29 @@ number.
 Verification, and this lane's verification is unusually specific because
 the claim is about what does NOT happen:
 - A transcript capturing a credential end to end, showing the value was
-  not echoed.
+  not echoed. **Use a disposable fixture token, never a real one, and
+  never paste raw terminal input into the PR.** Note the trap: the
+  failure this check exists to catch is "the value WAS echoed", and a
+  transcript proving that failure would contain the token. Prefer PTY
+  assertions that capture prompts and program output only; if you must
+  show a terminal, show it with a value that is worthless.
 - **Evidence it is absent from the places it must be absent**: not in
   the process table during the write (check while it runs, or show the
   code path that makes it impossible), not in the shell history, not in
-  any file under the working directory afterwards, and not in kmx's own
-  output or logs.
-- The refusal when stdin is not a terminal — pipe something in and show
-  it refused rather than accepted.
+  kmx's own output or logs, and not in any file it wrote. **The working
+  directory is the wrong place to look** — a temporary file lands
+  wherever `TMPDIR` points. Run the capture with `TMPDIR` set to an
+  empty directory of your own and show that directory is still empty (or
+  holds nothing carrying the value) afterwards, as well as the working
+  directory. `kubectl ... -f -` keeps the value off disk entirely; if
+  you take that path, say so and the check becomes a proof rather than a
+  sample.
+- **A refusal per prohibited vector, not one covering case**: a flag, an
+  environment variable, a file, a pipe, and a shell redirect. For each,
+  assert two things — the input was refused, AND neither validation nor
+  any Secret write began. A refusal that happens after the token has
+  already been sent somewhere for checking has not protected anything;
+  the refusal must come first.
 - Each validation refusal exercised: not fine-grained, more than one
   repository, no expiry, wrong audience, expired.
 - The Secret exists and the plane accepts the credential afterwards.
