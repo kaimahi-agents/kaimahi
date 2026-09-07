@@ -171,12 +171,12 @@ make inbound-audit HOOK=demo  # one hook
 
 ```
 created (UTC)       hook   credential     delivery        decision  status   in  out detail                                        acted for
-2026-09-01T21:25:17 demo   inbound-demo   live-7f640710   completed    200  368    3 task 348f6222-...
-2026-09-01T21:25:09 demo   inbound-demo   live-7f640710   denied       409    0    0 replay: delivery already admitted
-2026-09-01T21:25:07 demo   inbound-demo   live-7f640710   admitted     202    0    0 granted eac9d995-...
-2026-09-01T21:25:02 demo   inbound-demo   probe-400d34b0  denied       429    0    0 target budget: monthly token budget reached; approval request filed
-2026-09-01T21:24:12 demo   inbound-demo   probe-11ac4068  denied       403    0    0 inbound trigger not permitted: no live grant for hook demo; approval request filed
-2026-09-01T21:24:10 demo   inbound-demo                   denied       401    0    0 unauthorized
+2026-09-01T21:25:17 demo   inbound-demo   live-7f640710   completed    200  368    3 task 348f6222-...                          none
+2026-09-01T21:25:09 demo   inbound-demo   live-7f640710   denied       409    0    0 replay: delivery already admitted            none
+2026-09-01T21:25:07 demo   inbound-demo   live-7f640710   admitted     202    0    0 granted eac9d995-...                         none
+2026-09-01T21:25:02 demo   inbound-demo   probe-400d34b0  denied       429    0    0 target budget: monthly token budget reached; approval request filed  none
+2026-09-01T21:24:12 demo   inbound-demo   probe-11ac4068  denied       403    0    0 inbound trigger not permitted: no live grant for hook demo; approval request filed  none
+2026-09-01T21:24:10 demo   inbound-demo                   denied       401    0    0 unauthorized                                 unknown
 ```
 
 The `admitted` row is the replay guard. Its (hook, delivery id) is unique
