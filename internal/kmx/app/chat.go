@@ -314,18 +314,38 @@ func (a *App) askAgent(agent, task, session string, interactive bool) (string, i
 
 	var out string
 	var status int
-	for attempt := 1; attempt <= 4; attempt++ {
+	// Two reasons to invoke again, kept apart because they are different
+	// failures: the controller could not reach the agent (a race, retried
+	// after a pause), and the agent asked a question nothing here can answer
+	// (a model sample, re-asked immediately). Neither can turn a failure into
+	// a success — the last output is returned unchanged either way.
+	transportRetries, questions := 0, 0
+	for {
 		out, status, err = a.Run.CaptureCombined(kagent, args...)
 		if err != nil {
 			return "", 0, err
 		}
-		if !ChatRetryable.MatchString(out) {
+		if ChatRetryable.MatchString(out) {
+			if transportRetries == 3 {
+				break
+			}
+			transportRetries++
+			a.notef("kagent could not reach agent %q yet (transport error); retry %d/3 in 5s", agent, transportRetries)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		if !chatShouldResample(session, out) {
 			break
 		}
-		if attempt != 4 {
-			a.notef("kagent could not reach agent %q yet (transport error); retry %d/3 in 5s", agent, attempt)
-			time.Sleep(5 * time.Second)
+		if questions == chatQuestionResamples {
+			a.notef("agent %q asked a question on all %d attempts; reporting the task as it is — "+
+				"answer it yourself with `kmx agent chat --interactive %s`",
+				agent, chatQuestionResamples+1, agent)
+			break
 		}
+		questions++
+		a.notef("agent %q asked the user a question instead of answering, and nothing here can answer it; "+
+			"chat re-sample %d of %d", agent, questions, chatQuestionResamples)
 	}
 	return out, status, nil
 }

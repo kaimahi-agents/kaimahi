@@ -17,6 +17,27 @@ If you want a different model, invocation-test it before trusting it:
 `make model MODEL=<tag>`, edit `model:` in the YAML, and run several fresh
 chats. "It's a known model" is not a test.
 
+## The chat came back empty and says `input-required`
+
+The agent asked *you* a question instead of answering. kagent's python
+runtime gives every agent a built-in `ask_user` tool — nothing in
+`k8s/hello-world.yaml` declares it, and the system message forbidding
+questions does not reliably stop a 3B model — and when it is called the A2A
+task ends in `input-required` with no artifacts, so the reply is empty. In a
+script or in CI nobody is there to answer, so the task simply stops.
+
+`kmx agent chat` re-asks a question like that up to twice, saying so on
+stderr each time (`chat re-sample 1 of 2`); a model that asked a question is
+being non-deterministic, and a second sample is a fair one. It re-asks only
+when the agent did nothing else — no tool call had already run — and never
+when you passed `--session`, because the question is pending in that session.
+If it still asks, answer it: `kmx agent chat --interactive hello-world` opens
+the chat that can.
+
+The same `input-required` also carries a human approval on a real tool call.
+That one is never re-asked and never treated as an answer — it is a decision
+waiting for a person, and `kmx agent chat --interactive` is where you make it.
+
 ## The tool call worked but the answer is wrong
 
 The second small-model failure mode, and the sneakier one: `hello-tools`

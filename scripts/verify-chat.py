@@ -16,6 +16,15 @@ asserted on: a 3B model garbles unguessable strings when relaying them
 `probe-466448a247` in the reply), and requiring a verbatim copy tests the
 model, not the tool path.
 
+An unanswered question is the other way a chat ends without an answer: the
+agent calls the runtime's built-in `ask_user` tool and the task ends
+state == "input-required" with no artifacts. It fails here, and must keep
+failing — nobody is present in CI to answer it. The identical state carries
+a human APPROVAL decision on a real tool call, which also fails here and
+must: a pending decision is not a completed answer either way. The report
+names which of the two it was, because a red build should not need the raw
+JSON to say what the agent was waiting for.
+
   verify-chat.py --selftest
 Runs the built-in fixtures (the PR #24 shape) and exits non-zero if the
 verifier's verdicts drift; the hygiene job runs it.
@@ -26,6 +35,24 @@ import re
 import sys
 
 
+def pending_requests(d):
+    """Names of the calls an input-required task is waiting on: `ask_user`
+    (the agent asked the human a question) or a real tool (a human approval
+    decision). Reads the confirmation wrapper in both of its shapes."""
+    names = []
+    for part in d.get("status", {}).get("message", {}).get("parts", []):
+        data = part.get("data") or {}
+        if data.get("name") != "adk_request_confirmation":
+            continue
+        args = data.get("args") or {}
+        nested = (((args.get("toolConfirmation") or {}).get("payload") or {})
+                  .get("hitl_parts") or [])
+        originals = ([n.get("originalFunctionCall") or {} for n in nested]
+                     or [args.get("originalFunctionCall") or {}])
+        names += [o.get("name", "") for o in originals]
+    return names
+
+
 def verify(d, tool=None, needle=None):
     """Return (ok, report_lines) for one A2A task object."""
     lines = []
@@ -34,6 +61,10 @@ def verify(d, tool=None, needle=None):
              for p in a.get("parts", [])]
     reply = "\n".join(t for t in texts if t.strip())
     lines.append(f"state={state}\nreply:\n{reply}")
+    if state == "input-required":
+        waiting = [n for n in pending_requests(d) if n]
+        lines.append("the agent stopped and is waiting for: "
+                     + (", ".join(waiting) or "an undecodable request"))
     ok = state == "completed" and bool(reply)
 
     if tool:
@@ -89,6 +120,46 @@ _FIXTURE = {
 }
 
 
+# The shape the e2e-tools shard went red on (2026-09-07): asked who it was
+# and where it was running, the agent answered half, called the runtime's
+# built-in `ask_user` with "Where are you?" and stopped. No artifacts, so the
+# reply is empty; the state means it is waiting for a human.
+_ASK_USER_FIXTURE = {
+    "status": {"state": "input-required", "message": {"role": "agent", "parts": [
+        {"kind": "data", "metadata": {"kagent_type": "function_call",
+                                      "kagent_is_long_running": True},
+         "data": {"id": "adk-1", "name": "adk_request_confirmation",
+                  "args": {"originalFunctionCall": {
+                      "id": "call_6bgth59d", "name": "ask_user",
+                      "args": {"questions": [{"question": "Where are you?"}]}},
+                      "toolConfirmation": {"confirmed": False,
+                                           "hint": "Where are you?"}}}}]}},
+    "history": [
+        {"role": "user", "parts": [{"kind": "text",
+                                    "text": "Hello! Who are you and where are you running?"}]},
+        {"role": "agent", "parts": [
+            {"kind": "text", "text": "I am the \"hello_world\" agent. Here's who I am:\n"},
+            {"kind": "data", "metadata": {"kagent_type": "function_call"},
+             "data": {"id": "call_6bgth59d", "name": "ask_user",
+                      "args": {"questions": [{"question": "Where are you?"}]}}}]},
+    ],
+}
+
+# The SAME state carrying a human approval decision on a real tool call —
+# what the interactive chat exists to answer. It must fail here too: a
+# pending decision is not an answer, and nothing may let one pass as one.
+_APPROVAL_FIXTURE = {
+    "status": {"state": "input-required", "message": {"role": "agent", "parts": [
+        {"kind": "data", "metadata": {"kagent_type": "function_call",
+                                      "kagent_is_long_running": True},
+         "data": {"id": "adk-1", "name": "adk_request_confirmation",
+                  "args": {"originalFunctionCall": {
+                      "id": "call-1", "name": "delete_pod",
+                      "args": {"name": "pod-a"}}}}}]}},
+    "history": [],
+}
+
+
 def selftest():
     cases = [("probe in payload, garbled in prose -> PASS", _FIXTURE, True)]
     no_resp = copy.deepcopy(_FIXTURE)
@@ -104,12 +175,29 @@ def selftest():
     empty = copy.deepcopy(_FIXTURE)
     empty["artifacts"] = []
     cases.append(("empty reply -> FAIL", empty, False))
+    tool_cases = [(name, task, want, "k8s_get_resources", _PROBE)
+                  for name, task, want in cases]
+    # Checked with no TOOL argument, so the verdict can only come from the
+    # state and the reply — the plain `make chat` steps' form.
+    tool_cases.append(("agent asked the user a question -> FAIL",
+                       _ASK_USER_FIXTURE, False, None, None))
+    tool_cases.append(("human approval pending on a real tool -> FAIL",
+                       _APPROVAL_FIXTURE, False, None, None))
     failed = False
-    for name, task, want in cases:
-        got, _ = verify(task, "k8s_get_resources", _PROBE)
+    for name, task, want, tool, needle in tool_cases:
+        got, _ = verify(task, tool, needle)
         mark = "ok " if got == want else "BAD"
         print(f"{mark} {name}: verdict={'PASS' if got else 'FAIL'}")
         failed |= got != want
+    # The report has to distinguish the two input-required cases, or a red
+    # build cannot tell "the model asked a question" from "a human owes a
+    # decision" without reading the raw task.
+    for task, want in ((_ASK_USER_FIXTURE, "ask_user"),
+                       (_APPROVAL_FIXTURE, "delete_pod")):
+        _, lines = verify(task)
+        said = any(f"waiting for: {want}" in line for line in lines)
+        print(f"{'ok ' if said else 'BAD'} input-required names what it waits for: {want}")
+        failed |= not said
     return 1 if failed else 0
 
 

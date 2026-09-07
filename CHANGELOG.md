@@ -83,6 +83,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- A one-shot `kmx agent chat` no longer reports nothing when the agent asks a
+  question instead of answering. kagent's runtime gives every agent a built-in
+  `ask_user` tool that no manifest declares and none can remove; a small model
+  occasionally calls it, and the task then ends `input-required` with an empty
+  reply that nothing in a script can answer. kmx now re-asks — at most twice,
+  only when the agent did nothing but ask, never in a resumed session, and
+  saying so on stderr every time. A pending human APPROVAL is the same
+  `input-required` state and is never re-asked: that decision is a person's.
+  Neither case can become a success — `scripts/verify-chat.py` still fails
+  closed on both, and now names which one it was.
 - `kmx workflow govern` no longer writes the standing-bounds fragment and
   restarts the proxy before discovering that the credential its governance is
   written for does not exist. The credential is checked first, and a missing
