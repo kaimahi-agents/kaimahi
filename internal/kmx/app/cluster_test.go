@@ -49,7 +49,13 @@ func TestPodmanNodesReturnsEveryNode(t *testing.T) {
 func TestClusterRefusesRatherThanReadingAFailedListingAsAbsence(t *testing.T) {
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "kind")
-	script := "#!/bin/sh\necho 'ERROR: failed to list clusters: permission denied while trying to connect to the Docker daemon socket' >&2\nexit 1\n"
+	// The stub records what it was asked before failing. Watching kmx's own
+	// output for the word "create" would prove nothing: this Runner does not
+	// echo, so the line searched for could never appear however kmx behaved.
+	// What kind was actually invoked with is the only honest witness.
+	log := filepath.Join(dir, "kind-invocations")
+	script := "#!/bin/sh\necho \"$@\" >> " + log + "\n" +
+		"echo 'ERROR: failed to list clusters: permission denied while trying to connect to the Docker daemon socket' >&2\nexit 1\n"
 	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +77,15 @@ func TestClusterRefusesRatherThanReadingAFailedListingAsAbsence(t *testing.T) {
 	if !strings.Contains(err.Error(), "kaimahi-p1") || !strings.Contains(err.Error(), "docker") {
 		t.Errorf("the refusal must name the cluster and the engine: %v", err)
 	}
-	if strings.Contains(out.String(), "create cluster") {
-		t.Errorf("kmx went on to create a cluster after it failed to look:\n%s", out.String())
+	invocations, readErr := os.ReadFile(log)
+	if readErr != nil {
+		t.Fatalf("the stub kind was never invoked, so nothing here was tested: %v", readErr)
+	}
+	if !strings.Contains(string(invocations), "get clusters") {
+		t.Errorf("kmx never asked kind what exists:\n%s", invocations)
+	}
+	if strings.Contains(string(invocations), "create cluster") {
+		t.Errorf("kmx went on to create a cluster after it failed to look:\n%s", invocations)
 	}
 }
 

@@ -3,6 +3,10 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -28,8 +32,29 @@ func TestQuickstartRejectsAnUnknownOutputBeforeDoingAnything(t *testing.T) {
 // `governed` must be false, because the fast path deliberately deploys no
 // plane and a machine-readable claim of governance would be a lie in JSON.
 func TestQuickstartResultSaysPlainlyThatNothingIsGoverned(t *testing.T) {
-	result := QuickstartResult{OK: true, Agent: "hello-world", Answer: "hello", Governed: false}
-	raw, err := json.Marshal(result)
+	// A struct literal written by the test says nothing about what kmx
+	// reports, so the claim is read where it is actually made: at the one
+	// place a result is built.
+	source, err := os.ReadFile("quickstart.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	governed := regexp.MustCompile(`Governed:\s*(\w+)`).FindAllStringSubmatch(string(source), -1)
+	if len(governed) == 0 {
+		t.Fatal("no result sets Governed at all; the field would then marshal as false by accident rather than by decision")
+	}
+	for _, set := range governed {
+		if set[1] != "false" {
+			t.Errorf("the fast path deploys no plane, but a result claims Governed: %s", set[1])
+		}
+	}
+
+	// The wire contract in both directions. A harness parses this document,
+	// so a field that vanishes breaks it and a field that appears unannounced
+	// is one nobody decided to publish. A zero value is marshalled on purpose:
+	// every key must survive it, which is what forbids `omitempty` on the
+	// answer to "did this work".
+	raw, err := json.Marshal(QuickstartResult{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +62,15 @@ func TestQuickstartResultSaysPlainlyThatNothingIsGoverned(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"ok", "context", "cluster", "agent", "question", "answer", "governed", "elapsed_seconds", "next"} {
-		if _, present := decoded[key]; !present {
-			t.Errorf("the structured output has no %q field: %s", key, raw)
-		}
+	got := make([]string, 0, len(decoded))
+	for key := range decoded {
+		got = append(got, key)
 	}
-	if decoded["governed"] != false {
-		t.Errorf("the fast path must report itself ungoverned: %s", raw)
+	sort.Strings(got)
+	want := []string{"agent", "answer", "cluster", "context", "elapsed_seconds",
+		"governed", "manifest", "next", "ok", "question", "tools"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the structured output's fields are %v, want %v: %s", got, want, raw)
 	}
 }
 

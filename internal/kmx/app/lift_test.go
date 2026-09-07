@@ -1,13 +1,16 @@
 package app
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // The managed path is the one that cannot be exercised in CI: it needs a
@@ -169,17 +172,32 @@ func TestEveryMetricTheWorkbookPlotsIsOneThePlaneExposes(t *testing.T) {
 	}
 	source, err := os.ReadFile(filepath.Join("..", "..", "..", "plane", "internal", "metrics", "metrics.go"))
 	if err != nil {
-		t.Skipf("the plane's source is not on disk here: %v", err)
+		// The plane is in this repository, so its absence is a broken
+		// checkout and not a reason to declare the workbook fine.
+		t.Fatalf("the plane's source is not on disk here: %v", err)
 	}
-	for _, metric := range []string{
-		"kaimahi_decisions_total", "kaimahi_seam_degraded", "kaimahi_upstream_latency_seconds",
-		"kaimahi_queue_depth", "kaimahi_queue_capacity", "kaimahi_build_info",
-	} {
-		if !strings.Contains(string(body), metric) {
-			continue // not plotted; nothing to check
+	// The series are taken from the workbook, not listed here. A list would
+	// pass over exactly the panel nobody remembered to add to it — the one
+	// most likely to be plotting something that does not exist.
+	plotted := map[string]bool{}
+	for _, name := range regexp.MustCompile(`kaimahi_[a-z_]+`).FindAllString(string(body), -1) {
+		plotted[name] = true
+	}
+	if len(plotted) == 0 {
+		t.Fatal("no plane metrics found in the workbook at all; either it plots nothing or this test can no longer read it")
+	}
+	for name := range plotted {
+		if strings.Contains(string(source), name) {
+			continue
 		}
-		if !strings.Contains(string(source), metric) {
-			t.Errorf("the workbook plots %s, which the plane does not expose", metric)
+		// A histogram is exported as three derived series; the plane declares
+		// only the base name, so that is what has to exist.
+		base := name
+		for _, suffix := range []string{"_bucket", "_sum", "_count"} {
+			base = strings.TrimSuffix(base, suffix)
+		}
+		if !strings.Contains(string(source), base) {
+			t.Errorf("the workbook plots %s, which the plane does not expose", name)
 		}
 	}
 }
@@ -378,5 +396,61 @@ func TestTheBoundaryIsProvenBeforeAnythingIsPutBehindIt(t *testing.T) {
 	}
 	if order["observability"] > order["verify"] {
 		t.Error("verification runs before observability is wired, so it cannot check that data arrives")
+	}
+}
+
+// A subscription id is an identifier this project keeps out of terminals, and
+// the lift banner is exactly the text an operator pastes into a pull request.
+// The banner itself has no id parameter, so asserting against its output alone
+// proves nothing — the signed-in account it is built from is where an id is in
+// scope, and the call site is where one could be handed over.
+func TestNothingTheLiftPrintsBeforeItActsCarriesTheSubscriptionID(t *testing.T) {
+	// A synthetic fixture, in the shape Azure uses and nothing more: four
+	// distinct hex digits, which is what keeps the tree's own Azure-identifier
+	// scanner able to tell an invented id from a real one.
+	const fakeSubscriptionID = "aaaaaaaa-bbbb-cccc-dddd-aaaabbbbcccc"
+
+	dir := t.TempDir()
+	stub := "#!/bin/sh\necho '{\"name\":\"Some Subscription\",\"id\":\"" +
+		fakeSubscriptionID + "\",\"user\":{\"name\":\"someone@example.com\"}}'\n"
+	if err := os.WriteFile(filepath.Join(dir, "az"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	a := &App{Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
+	acct, err := a.azAccount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Without this the rest is vacuous: a fixture carrying no id could not
+	// leak one however the code behaved.
+	if acct.ID != fakeSubscriptionID {
+		t.Fatalf("the account under test carries no subscription id (%q), so nothing here is being tested", acct.ID)
+	}
+
+	banner := lift.Options{ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo",
+		Location: "westus3", NetworkPolicy: "cilium", Observability: true}.
+		Banner(acct.User.Name, acct.Name)
+	if banner == "" {
+		t.Fatal("the banner rendered empty; there is nothing to check")
+	}
+	if strings.Contains(banner, acct.ID) {
+		t.Errorf("the banner carries the subscription id:\n%s", banner)
+	}
+
+	// The banner cannot leak what it is never given, so what actually has to
+	// hold is at the call site: the lift hands it the subscription name and
+	// the signed-in user, and never the id.
+	source, err := os.ReadFile("lift.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := regexp.MustCompile(`Banner\(([^)]*)\)`).FindStringSubmatch(string(source))
+	if call == nil {
+		t.Fatal("no Banner call found in lift.go; this test can no longer see the call site")
+	}
+	if strings.Contains(call[1], ".ID") {
+		t.Errorf("the lift passes the subscription id to the banner: Banner(%s)", call[1])
 	}
 }

@@ -3,7 +3,10 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -258,11 +261,36 @@ func TestFlowReadsTheCredentialFieldTheWireActuallyUses(t *testing.T) {
 	if blank.cred != "" {
 		t.Errorf("absent credential should stay empty in the struct, got %q", blank.cred)
 	}
+	// The rendered line has to be read column by column. Every flow line
+	// already contains a "-" in its date and in the trailing summary, so
+	// looking for one anywhere proves nothing at all.
 	var out bytes.Buffer
-	renderFlow(&out, []flowEvent{blank}, nil)
-	if !strings.Contains(out.String(), "-") {
-		t.Error("an absent credential should print as - so the column is never ambiguous")
+	renderFlow(&out, []flowEvent{blank, e}, nil)
+	credentials := flowCredentialColumn(t, out.String())
+	if want := []string{"-", "triage"}; !reflect.DeepEqual(credentials, want) {
+		t.Errorf("credential column is %v, want %v — an absent credential must print as - so the column is never ambiguous:\n%s", credentials, want, out.String())
 	}
+}
+
+// flowCredentialColumn pulls the credential cell out of each rendered event
+// line, so a test can say what that one column holds rather than searching the
+// whole page for a character that appears in every date.
+func flowCredentialColumn(t *testing.T, rendered string) []string {
+	t.Helper()
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(rendered), "\n") {
+		fields := strings.Fields(line)
+		// Skip the header and the trailing "--" notes; event lines start
+		// with the timestamp the plane stamped.
+		if len(fields) < 2 || !strings.HasPrefix(fields[0], "2026-") {
+			continue
+		}
+		got = append(got, fields[1])
+	}
+	if len(got) == 0 {
+		t.Fatalf("no event lines found; this test cannot read the rendering:\n%s", rendered)
+	}
+	return got
 }
 
 // Saturation is judged against the limit a source was ACTUALLY asked for. The
@@ -274,17 +302,48 @@ func TestFlowJudgesSaturationAgainstEachSourcesOwnLimit(t *testing.T) {
 	if inboundFlowLimit <= flowLimit {
 		t.Fatal("this test only means something while the two limits differ")
 	}
-	// A 60-row inbound page: full by flowLimit's standard, nowhere near
-	// full by its own.
-	page := make([]map[string]any, 0, 60)
-	for i := 0; i < 60; i++ {
-		page = append(page, map[string]any{"created_at": "2026-09-04T10:00:00Z", "hook": "h"})
-	}
-	if len(page) >= inboundFlowLimit {
-		t.Fatal("fixture should not reach the inbound limit")
-	}
-	if !(len(page) >= flowLimit) {
-		t.Fatal("fixture should exceed flowLimit, or it proves nothing")
+	for _, tc := range []struct {
+		name string
+		// inboundRows is how big a page the inbound endpoint answers with.
+		inboundRows int
+		// The 07:00 model call is older than every inbound row. It survives
+		// only while the inbound trail is not judged saturated.
+		wantEarlyCall bool
+		wantNote      bool
+	}{
+		// Full by flowLimit's standard, nowhere near full by its own. Judging
+		// it against the wrong limit cuts the window at 10:00 and hides the
+		// 07:00 model call on evidence that was never missing.
+		{"a page that is only full by another source's limit", 60, true, false},
+		// Genuinely full: older inbound rows really were never fetched.
+		{"a page that is full by its own limit", inboundFlowLimit, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inbound := make([]string, 0, tc.inboundRows)
+			for i := 0; i < tc.inboundRows; i++ {
+				inbound = append(inbound, `{"created_at":"2026-09-04T10:00:00Z","hook":"h","credential":"agent-1"}`)
+			}
+			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasPrefix(r.URL.Path, "/admin/inbound-audit"):
+					fmt.Fprintf(w, `{"entries":[%s]}`, strings.Join(inbound, ","))
+				case strings.HasPrefix(r.URL.Path, "/admin/ledger"):
+					io.WriteString(w, `{"entries":[{"created_at":"2026-09-04T07:00:00Z","credential":"agent-1","model":"an-early-call"}]}`)
+				default:
+					io.WriteString(w, `{"entries": []}`)
+				}
+			}))
+			var out bytes.Buffer
+			if err := c.Flow(&out, "agent-1"); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(out.String(), "an-early-call"); got != tc.wantEarlyCall {
+				t.Errorf("the 07:00 model call present=%v, want %v:\n%s", got, tc.wantEarlyCall, out.String())
+			}
+			if got := strings.Contains(out.String(), "hit its"); got != tc.wantNote {
+				t.Errorf("window-was-cut note present=%v, want %v:\n%s", got, tc.wantNote, out.String())
+			}
+		})
 	}
 }
 

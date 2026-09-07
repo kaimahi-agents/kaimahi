@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -78,6 +79,13 @@ func newCaptureFixture(t *testing.T, handler http.HandlerFunc) *captureFixture {
 		upstream: srv,
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// Every place a stray copy of the credential could land is pointed at the
+	// one directory the assertions read. Without this the "nothing on disk"
+	// scan looks only at the fixture's own scratch directory, which the
+	// capture path has no reason to write to — so it would pass however
+	// freely kmx spilled a token into a temporary file.
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("KMX_HOME", dir)
 	t.Setenv("KMX_TEST_ARGS", f.args)
 	t.Setenv("KMX_TEST_STDIN", f.stdin)
 	t.Setenv("KMX_TEST_SECRET_EXISTS", filepath.Join(dir, "absent"))
@@ -125,18 +133,28 @@ func (f *captureFixture) assertTokenIsNowhereButTheSecret(t *testing.T) {
 		t.Errorf("the credential was printed:\nstdout: %s\nstderr: %s", f.out, f.errOut)
 	}
 	// Anything left on disk. The scripts this replaces had to write a 0600
-	// file, because `kubectl create secret --from-file` needs a path.
-	entries, err := os.ReadDir(f.dir)
-	if err != nil {
+	// file, because `kubectl create secret --from-file` needs a path. The
+	// fixture points TMPDIR and KMX_HOME here, so this is where such a file
+	// would land; if it stops doing so, this scan stops meaning anything.
+	if os.TempDir() != f.dir || os.Getenv("KMX_HOME") != f.dir {
+		t.Fatalf("temporary files no longer land in the scanned directory (TMPDIR=%s KMX_HOME=%s, scanning %s)", os.TempDir(), os.Getenv("KMX_HOME"), f.dir)
+	}
+	found := 0
+	if err := filepath.WalkDir(f.dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() || path == f.stdin {
+			return err
+		}
+		found++
+		if strings.Contains(f.read(t, path), captureToken) {
+			rel, _ := filepath.Rel(f.dir, path)
+			t.Errorf("the credential was left in a file: %s", rel)
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range entries {
-		if e.Name() == "stdin" || e.IsDir() {
-			continue
-		}
-		if strings.Contains(f.read(t, filepath.Join(f.dir, e.Name())), captureToken) {
-			t.Errorf("the credential was left in a file: %s", e.Name())
-		}
+	if found == 0 {
+		t.Fatal("no files were scanned at all, so nothing on disk was actually checked")
 	}
 	// And where it IS: base64 in the Secret document, on kubectl's stdin.
 	body := f.read(t, f.stdin)
@@ -215,13 +233,69 @@ func (f *captureFixture) assertTokenIsNowhereButTheSecretIsAbsent(t *testing.T) 
 }
 
 // Terminal only. There is no flag, environment variable or file that takes
-// the value, and a stdin that is not a terminal is refused rather than read —
-// before any cluster is touched.
-func TestAPipedOrRedirectedStdinIsRefusedBeforeAnythingHappens(t *testing.T) {
+// the value, and a session that is not interactive is refused rather than
+// read — before any cluster is touched.
+//
+// What can be established without a real terminal is the refusal and its
+// cost: nothing read, nothing asked, nothing stored. Which half of the fence
+// stops a given session cannot be told apart here, because a process running
+// under `go test` has no terminal on either stream; see the note on the
+// stdin-not-a-terminal clause below.
+func TestANonInteractiveSessionIsRefusedBeforeAnythingHappens(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		stdin func(t *testing.T, dir string) *os.File
+	}{
+		// A regular file is exactly what a shell redirect (or a pipe) hands
+		// to a process, and it is not a terminal.
+		{"a redirected stdin", func(t *testing.T, dir string) *os.File {
+			path := filepath.Join(dir, "piped")
+			if err := os.WriteFile(path, []byte(captureToken+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			piped, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { piped.Close() })
+			return piped
+		}},
+		// A closed stdin: the shape a daemon or a detached CI step has.
+		{"no stdin at all", func(*testing.T, string) *os.File { return nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCaptureFixture(t, nil)
+			f.app.readSecret = nil // the real path: a terminal or nothing
+			f.app.Stdin = tc.stdin(t, f.dir)
+			f.app.guarded = false
+
+			err := f.app.CaptureCredential(CaptureOptions{Seam: "github-release", Subject: "owner/name"})
+			if err == nil {
+				t.Fatal("a non-interactive session was accepted")
+			}
+			if !strings.Contains(err.Error(), "from a terminal") {
+				t.Errorf("the refusal does not say what is wrong: %v", err)
+			}
+			// Nothing was read, and nothing was reached: not the cluster, not
+			// the upstream. A refusal that had already asked the API server
+			// would have left a trail here.
+			if args := f.read(t, f.args); args != "" {
+				t.Errorf("the cluster was touched before the terminal check:\n%s", args)
+			}
+			if body := f.read(t, f.stdin); body != "" {
+				t.Errorf("a Secret was written despite the refusal:\n%s", body)
+			}
+			if strings.Contains(f.errOut.String()+f.out.String(), captureToken) {
+				t.Error("the credential on the refused stream was read and printed")
+			}
+		})
+	}
+
+	// The redirected-stdin case above also proves that a token sitting on a
+	// redirected stdin is left unconsumed, which is a stronger statement than
+	// "an error came back".
 	f := newCaptureFixture(t, nil)
-	// A regular file is exactly what a shell redirect (or a pipe) hands to a
-	// process, and it is not a terminal.
-	path := filepath.Join(f.dir, "piped")
+	path := filepath.Join(f.dir, "unread")
 	if err := os.WriteFile(path, []byte(captureToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -230,27 +304,27 @@ func TestAPipedOrRedirectedStdinIsRefusedBeforeAnythingHappens(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer piped.Close()
-
-	f.app.readSecret = nil // the real path: a terminal or nothing
-	f.app.Stdin = piped
-	f.app.guarded = false
-	err = f.app.CaptureCredential(CaptureOptions{Seam: "github-release", Subject: "owner/name"})
-	if err == nil {
+	f.app.readSecret, f.app.Stdin, f.app.guarded = nil, piped, false
+	if err := f.app.CaptureCredential(CaptureOptions{Seam: "github-release", Subject: "owner/name"}); err == nil {
 		t.Fatal("a redirected stdin was accepted")
 	}
-	if !strings.Contains(err.Error(), "from a terminal") {
-		t.Errorf("the refusal does not say what is wrong: %v", err)
+	at, err := piped.Seek(0, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Nothing was read, and nothing was reached: not the cluster, not the
-	// upstream. A refusal that had already asked the API server would have
-	// left a trail here.
-	if args := f.read(t, f.args); args != "" {
-		t.Errorf("the cluster was touched before the terminal check:\n%s", args)
-	}
-	if strings.Contains(f.errOut.String(), captureToken) {
-		t.Error("the credential in the redirected file was read and printed")
+	if at != 0 {
+		t.Errorf("the refused stdin was read anyway: the offset moved to %d", at)
 	}
 }
+
+// The fence refuses when EITHER stream is not a terminal, and Go stops at the
+// first clause that is true. Under `go test` neither stream is a terminal, so
+// every case above is refused by the stderr clause and the
+// stdin-is-not-a-terminal clause is never reached. Telling the two apart needs
+// a real terminal on stderr, which means allocating a pty — Linux-only code
+// behind a build tag, since the ioctls that open one do not exist on macOS,
+// where contributors are told to run these tests. That is recorded here rather
+// than papered over with an assertion that cannot distinguish them.
 
 // An upstream nobody has heard of, and a subject that is not one, are both
 // refused before a credential is read: a typo costs a retype, not a token.

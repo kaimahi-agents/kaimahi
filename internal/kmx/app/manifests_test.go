@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	kaimahi "github.com/kaimahi-agents/kaimahi"
 )
 
 // kmx applies manifests from inside the binary, because it is installed with
@@ -136,12 +138,15 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 // — the credential capture, whose whole point is that an operator with no
 // checkout can hand the plane a token for an upstream on the internet. Which
 // is the rule working, not an exception to it: the test below is what keeps
-// the list honest in the other direction.
+// the list honest in the other direction. `egress-copilot.yaml` left it for
+// the same reason: `kmx lift` applies it, so claiming nothing did was simply
+// false — and it stayed false unnoticed because kmx has TWO embedded
+// filesystems and this only ever looked in one of them.
 func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
 	for _, name := range []string{
 		"kaimahi-slack.yaml", "slack-agent.yaml", "slack-mcp.yaml",
 		"kaimahi-github.yaml", "github-agent.yaml",
-		"inbound-edge.yaml", "egress-copilot.yaml",
+		"inbound-edge.yaml",
 		"ap-agent.yaml", "kaimahi-erp.yaml", "erp-mcp.yaml",
 		"release-agent.yaml", "kaimahi-release-github.yaml", "kaimahi-release-ado.yaml",
 	} {
@@ -153,7 +158,13 @@ func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
 			t.Fatalf("k8s/%s is gone, so this exclusion no longer proves anything: %v", name, err)
 		}
 		if _, err := manifest(name); err == nil {
-			t.Errorf("k8s/%s is embedded in kmx, but no kmx command applies it (milestone 3)", name)
+			t.Errorf("k8s/%s is embedded in kmx's manifest filesystem, but no kmx command applies it", name)
+		}
+		// The managed path carries its own embedded filesystem. Checking only
+		// the first one is how a manifest can be in the binary while a test
+		// says it is not.
+		if _, err := kaimahi.Managed.ReadFile("k8s/" + name); err == nil {
+			t.Errorf("k8s/%s is embedded in kmx's managed filesystem, but no kmx command applies it", name)
 		}
 	}
 }

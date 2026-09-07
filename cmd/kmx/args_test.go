@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -36,12 +38,30 @@ func TestChatMessageIsJoined(t *testing.T) {
 	}
 }
 
-func TestUsageNamesEveryCommand(t *testing.T) {
+// `kmx` with no arguments is how an operator finds out what kmx does, so a
+// command missing from that page is a command that effectively does not
+// exist. The list is taken from the tree rather than written out, because a
+// written-out list cannot notice a command that was hidden by accident.
+func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
+	var out bytes.Buffer
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	for _, command := range []string{"ctx", "up", "agent", "status", "down", "version"} {
-		child, _, err := root.Find([]string{command})
-		if err != nil || child == root {
-			t.Errorf("command tree does not contain %q", command)
+	root.SetOut(&out)
+	if err := root.Help(); err != nil {
+		t.Fatal(err)
+	}
+	named := 0
+	for _, child := range root.Commands() {
+		if child.Hidden {
+			t.Errorf("command %q is hidden, so the usage page cannot name it", child.Name())
+			continue
 		}
+		if !strings.Contains(out.String(), child.Name()+" ") {
+			t.Errorf("usage page does not name %q:\n%s", child.Name(), out.String())
+		}
+		named++
+	}
+	// An empty tree would satisfy every check above without naming anything.
+	if named < 20 {
+		t.Fatalf("usage page named only %d commands; the tree should have far more", named)
 	}
 }

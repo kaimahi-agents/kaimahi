@@ -140,8 +140,11 @@ func TestBackupWritesACompleteDump(t *testing.T) {
 	if !strings.Contains(args, "--clean --if-exists") {
 		t.Error("the dump is not a complete replacement (--clean --if-exists)")
 	}
-	// A read: no guard banner, exactly like `make backup`.
-	if strings.Contains(f.errOut.String(), "About to") {
+	// A read: no guard banner, exactly like `make backup`. The banner's own
+	// wording is what has to be looked for — searching for "About to" found
+	// nothing because the line kube-guard prints is lowercase, so no banner
+	// could ever have failed this.
+	if strings.Contains(f.errOut.String(), "about to:") || strings.Contains(f.errOut.String(), "kube-guard") {
 		t.Errorf("backup ran the guard: %q", f.errOut.String())
 	}
 }

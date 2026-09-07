@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -56,21 +59,62 @@ func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
 	}
 }
 
-func TestCobraCommandTreeContainsEveryPublicCommand(t *testing.T) {
-	root := newRootCommand(&commandState{deps: productionDependencies()})
-	paths := [][]string{
-		{"quickstart"},
-		{"ctx"}, {"up"}, {"lift"}, {"lift", "down"}, {"agent", "list"}, {"agent", "create"}, {"agent", "edit"}, {"agent", "chat"},
-		{"plane"}, {"govern"}, {"credentials"}, {"credential", "renew"}, {"ledger"}, {"grants"}, {"audit"},
-		{"use"}, {"budget"}, {"approvals"}, {"approve"}, {"deny"}, {"request"},
-		{"tools", "add"}, {"tools", "govern"}, {"tools", "ungovern"}, {"tools", "allow"}, {"tools", "allowlist"},
-		{"tools", "sandbox"}, {"tools", "sandbox", "status"},
-		{"backup"}, {"restore"}, {"metrics"}, {"status"}, {"down"}, {"completion"}, {"version"},
+// commandPaths walks the Cobra tree and returns every command a user can
+// type, as a space-joined path. Deriving the set instead of listing it is the
+// point: a hand-written list only ever proves that the commands someone
+// remembered still exist.
+func commandPaths(root *cobra.Command) []string {
+	var paths []string
+	var walk func(parent *cobra.Command, prefix string)
+	walk = func(parent *cobra.Command, prefix string) {
+		for _, child := range parent.Commands() {
+			path := strings.TrimSpace(prefix + " " + child.Name())
+			paths = append(paths, path)
+			walk(child, path)
+		}
 	}
-	for _, path := range paths {
-		command, remaining, err := root.Find(path)
+	walk(root, "")
+	sort.Strings(paths)
+	return paths
+}
+
+// The command tree is the product surface: every path in it is something an
+// operator can type, and every one of them needs a help line, a document and,
+// where it mutates, a guard. A command that arrives without anyone noticing
+// gets none of those. So this list is checked in both directions — each path
+// named here must resolve, and each command in the tree must be named here.
+// Adding or removing a subcommand fails this test until the list follows.
+func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
+	want := []string{
+		"agent", "agent chat", "agent create", "agent edit", "agent list",
+		"approvals", "approve", "audit", "backup", "budget", "completion",
+		"credential", "credential capture", "credential renew", "credentials",
+		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
+		"lift", "lift down", "metrics", "plane", "quickstart", "request",
+		"restore", "status",
+		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
+		"tools sandbox", "tools sandbox status", "tools ungovern",
+		"up", "use", "version",
+		"workflow", "workflow govern", "workflow list", "workflow run", "workflow show",
+	}
+	sort.Strings(want)
+
+	root := newRootCommand(&commandState{deps: productionDependencies()})
+	if got := commandPaths(root); !reflect.DeepEqual(got, want) {
+		t.Errorf("command tree drifted from the list in this test.\n got: %v\nwant: %v", got, want)
+	}
+
+	// Resolution is a separate property from membership: a command can be
+	// registered under a name the user cannot reach if a parent claims the
+	// argument first.
+	for _, path := range want {
+		fields := strings.Fields(path)
+		command, remaining, err := root.Find(fields)
 		if err != nil || command == root || len(remaining) != 0 {
-			t.Errorf("command %v missing: command=%v remaining=%v err=%v", path, command.Name(), remaining, err)
+			t.Errorf("command %q does not resolve: command=%v remaining=%v err=%v", path, command.Name(), remaining, err)
+		}
+		if command.RunE == nil {
+			t.Errorf("command %q resolves to a command that does nothing", path)
 		}
 	}
 }
