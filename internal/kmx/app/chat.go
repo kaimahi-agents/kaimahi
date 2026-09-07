@@ -30,24 +30,22 @@ import (
 //	AMBIGUOUS EOF / connection reset: the request may have reached the agent
 //	          and been acted on before the connection dropped.
 //
-// `chat` retries both — re-asking a question is acceptable.
+// `chat` retries both — re-asking a question is acceptable. A caller whose
+// turn can ACT retries only the refused class, because re-invoking after an
+// ambiguous drop can repeat something the agent already did.
 //
-// THAT IS NOT TRUE OF EVERY CALLER ANY MORE, and the gap is named here
-// rather than papered over. askAgent is the one invoke path, and
-// `kmx workflow run` drives its steps through it — including a bounded
-// step, whose whole job is a call with consequences. So an AMBIGUOUS
-// failure on such a step is retried today, and the agent may make the
-// call a second time. ChatRetryableSafe below is the class such a caller
-// should be using and currently has no production caller at all.
+// Which class applies is the caller's to state: askAgent takes the matcher
+// rather than choosing one. `chat` and `quickstart` pass ChatRetryable;
+// `kmx workflow run` passes ChatRetryableSafe for its bounded and
+// consequential steps, and ChatRetryable for the turns that only read and
+// draft.
 //
-// What bounds the exposure, so the size of it is not overstated: a
-// consequential step's grant is USES-bounded, so a second call is refused
-// and the run fails rather than doing it twice. A bounded step has no use
-// count — a standing constraint admits repeatedly — so a build pipeline
-// is what could actually run twice, which the release blueprint already
-// argues is repeatable, reversible and cheap. Whether that is good enough
-// is the owner's call; what is not defensible is this comment continuing
-// to say no such caller exists.
+// The step that made this matter is a BOUNDED one. A consequential step's
+// grant is USES-bounded, so a repeated call is refused and the run fails
+// rather than doing it twice; a bounded step has no use count — a standing
+// constraint admits repeatedly — so a retried build pipeline really would
+// run again. Failing the step is the safe direction: a stopped release is
+// recoverable and a doubled one is not.
 const (
 	chatErrorLine = `^Error invoking session: .*failed to send HTTP request: Post "[^"]*": `
 	chatRefused   = `dial tcp [^ ]*: connect: connection refused`
@@ -59,7 +57,7 @@ var ChatRetryable = regexp.MustCompile(`(?m)` + chatErrorLine + `(` + chatRefuse
 
 // ChatRetryableSafe matches only the failures where nothing reached the
 // agent. Kept beside its sibling because the distinction is the point: it is
-// what a future non-idempotent kmx command must use.
+// what a caller whose turn can act on the world must use.
 var ChatRetryableSafe = regexp.MustCompile(`(?m)` + chatErrorLine + `(` + chatRefused + `)$`)
 
 // ChatOptions selects one-shot or session-preserving chat behavior.
@@ -100,7 +98,7 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return err
 	}
 
-	out, status, err := a.askAgent(agent, task, opt.Session, opt.Interactive)
+	out, status, err := a.askAgent(agent, task, opt.Session, opt.Interactive, ChatRetryable)
 	if err != nil || opt.Interactive {
 		return err
 	}
@@ -289,7 +287,13 @@ func forwardedPort(output string) (string, error) {
 //
 // The interactive flag is handled here rather than by the caller so that the
 // kagent CLI is fetched once, in one place, whichever mode is asked for.
-func (a *App) askAgent(agent, task, session string, interactive bool) (string, int, error) {
+//
+// retryable is the CALLER's transport-retry policy, because only the caller
+// knows whether repeating this task is safe: ChatRetryable for a question,
+// ChatRetryableSafe for anything whose turn can act on the world. Passing it
+// in rather than choosing here is what keeps the two classes from drifting
+// back together — a new caller has to state which it is.
+func (a *App) askAgent(agent, task, session string, interactive bool, retryable *regexp.Regexp) (string, int, error) {
 	cache, err := config.CacheDir()
 	if err != nil {
 		return "", 0, err
@@ -339,7 +343,7 @@ func (a *App) askAgent(agent, task, session string, interactive bool) (string, i
 		if err != nil {
 			return "", 0, err
 		}
-		if ChatRetryable.MatchString(out) {
+		if retryable.MatchString(out) {
 			if transportRetries == 3 {
 				break
 			}

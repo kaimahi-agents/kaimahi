@@ -109,7 +109,7 @@ func TestTheReSampleFiresAnnouncesItselfAndStops(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var errOut bytes.Buffer
 			a, attempts := stubbedChat(t, tc.task, &errOut)
-			out, status, err := a.askAgent("hello-world", "hi", "", false)
+			out, status, err := a.askAgent("hello-world", "hi", "", false, ChatRetryable)
 			if err != nil {
 				t.Fatalf("askAgent: %v\n%s", err, errOut.String())
 			}

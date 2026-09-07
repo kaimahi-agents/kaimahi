@@ -91,7 +91,7 @@ func TestFlowRefusesToShowAWindowItCannotVouchFor(t *testing.T) {
 	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","tool":"get_pods"}}`)["e"].(map[string]any), "tool")
 
 	// The tool trail was saturated and reaches back only to 09:00.
-	kept, notes, err := trimToComplete([]flowEvent{old, mid, newer}, []time.Time{at(t, "2026-09-04T09:00:00Z")})
+	kept, notes, err := trimToComplete([]flowEvent{old, mid, newer}, []cutoff{{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +108,52 @@ func TestFlowRefusesToShowAWindowItCannotVouchFor(t *testing.T) {
 func TestFlowWindowIsBoundedByTheShallowestTrail(t *testing.T) {
 	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 	_, notes, err := trimToComplete([]flowEvent{e},
-		[]time.Time{at(t, "2026-09-04T08:00:00Z"), at(t, "2026-09-04T09:00:00Z")})
+		[]cutoff{{at: at(t, "2026-09-04T08:00:00Z"), limit: flowLimit},
+			{at: at(t, "2026-09-04T09:00:00Z"), limit: inboundFlowLimit}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "09:00:00") {
 		t.Fatalf("want the later watermark (09:00), got %v", notes)
+	}
+	// And the note names THAT trail's limit. The inbound page is 200 rows;
+	// reporting the 50-row limit sent an operator looking for a page size
+	// that was never involved in the cut.
+	if !strings.Contains(notes[0], "200-row") {
+		t.Fatalf("the window was cut by the 200-row inbound trail, so the note must say 200: %v", notes)
+	}
+}
+
+// TestTheNoteNamesTheLimitOfTheTrailThatCutTheWindow.
+//
+// The four trails are fetched with different limits, so "a trail hit its
+// N-row limit" is only true of one of them — the one whose evidence reaches
+// back least far. Printing a constant here was right exactly half the time
+// and wrong in the direction that matters, because the trail with the larger
+// page is the one whose saturation is most surprising.
+func TestTheNoteNamesTheLimitOfTheTrailThatCutTheWindow(t *testing.T) {
+	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"m"}}`)["e"].(map[string]any), "model")
+	for _, tc := range []struct {
+		name  string
+		cuts  []cutoff
+		wants string
+	}{
+		{"the shallow inbound page wins", []cutoff{
+			{at: at(t, "2026-09-04T08:00:00Z"), limit: flowLimit},
+			{at: at(t, "2026-09-04T09:00:00Z"), limit: inboundFlowLimit},
+		}, "200-row"},
+		{"a per-source trail wins", []cutoff{
+			{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit},
+			{at: at(t, "2026-09-04T08:00:00Z"), limit: inboundFlowLimit},
+		}, "50-row"},
+	} {
+		_, notes, err := trimToComplete([]flowEvent{e}, tc.cuts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(notes) != 1 || !strings.Contains(notes[0], tc.wants) {
+			t.Errorf("%s: want a note naming %s, got %v", tc.name, tc.wants, notes)
+		}
 	}
 }
 
@@ -314,7 +354,7 @@ func TestFlowKeepsUnreadableTimestampsEvenWhenTrimming(t *testing.T) {
 	old := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T07:00:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 
-	kept, notes, err := trimToComplete([]flowEvent{bad, old, newer}, []time.Time{at(t, "2026-09-04T09:00:00Z")})
+	kept, notes, err := trimToComplete([]flowEvent{bad, old, newer}, []cutoff{{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit}})
 	if err != nil {
 		t.Fatal(err)
 	}

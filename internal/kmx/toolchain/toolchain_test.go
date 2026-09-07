@@ -277,3 +277,93 @@ func TestProvisionRefusesAnUnknownTool(t *testing.T) {
 		t.Fatal("an unpinned tool was accepted for download")
 	}
 }
+
+// TestASubstitutedCacheEntryIsReportedAsDownloadedNotCached.
+//
+// The Source a run reports is what an operator reads to decide whether
+// anything happened to their machine. Deciding it from an os.Stat before the
+// fetch got the security-relevant case exactly backwards: a binary somebody
+// replaced in the cache is deleted and re-fetched, so the run used the
+// DOWNLOADED bytes — but the entry existed when the run started, so a
+// pre-flight Stat called it a cache hit. The one case worth surfacing was the
+// one that label hid.
+func TestASubstitutedCacheEntryIsReportedAsDownloadedNotCached(t *testing.T) {
+	binary := []byte("#!/bin/sh\necho kind\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256sum") {
+			fmt.Fprintf(w, "%s  kind-linux-amd64\n", digestOf(binary))
+			return
+		}
+		w.Write(binary)
+	}))
+	defer srv.Close()
+
+	spec, _ := Pinned("kind", "linux", "amd64")
+	opt := Options{CacheDir: t.TempDir(), BaseOverride: srv.URL}
+
+	path, source, err := EnsureReporting(spec, opt)
+	if err != nil {
+		t.Fatalf("first fetch: %v", err)
+	}
+	if source != FromDownload {
+		t.Errorf("first fetch reported %q, want %q", source, FromDownload)
+	}
+
+	// An intact cache entry really was used, and says so.
+	if _, source, err = EnsureReporting(spec, opt); err != nil {
+		t.Fatal(err)
+	}
+	if source != FromCache {
+		t.Errorf("an intact cache entry reported %q, want %q", source, FromCache)
+	}
+
+	// Substituted: re-verification fails, the entry is replaced, and the run
+	// must not call that a cache hit.
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho pwned\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, source, err = EnsureReporting(spec, opt); err != nil {
+		t.Fatalf("a tampered entry should be replaced, not fatal: %v", err)
+	}
+	if source != FromDownload {
+		t.Fatalf("a tampered cache entry was reported as %q — the run re-downloaded it, and saying "+
+			"%q is the wrong way round for the one case that matters", source, FromCache)
+	}
+}
+
+// Provision reports what the fetch actually did, not what a Stat guessed.
+func TestProvisionReportsTheSourceTheFetchUsed(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	binary := []byte("#!/bin/sh\necho kind\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256sum") {
+			fmt.Fprintf(w, "%s  kind-linux-amd64\n", digestOf(binary))
+			return
+		}
+		w.Write(binary)
+	}))
+	defer srv.Close()
+
+	cache, link := t.TempDir(), t.TempDir()
+	opt := Options{CacheDir: cache, BaseOverride: srv.URL}
+	spec, _ := Pinned("kind", "linux", "amd64")
+
+	if _, _, err := EnsureReporting(spec, opt); err != nil {
+		t.Fatal(err)
+	}
+	// Tamper, then provision: the entry exists, so the old pre-flight Stat
+	// would have reported "cache".
+	if err := os.WriteFile(spec.CachePath(cache), []byte("#!/bin/sh\necho pwned\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tools, err := Provision([]string{"kind"}, link, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("provisioned %d tools, want 1", len(tools))
+	}
+	if tools[0].Source != FromDownload {
+		t.Fatalf("Provision reported %q for a re-downloaded binary, want %q", tools[0].Source, FromDownload)
+	}
+}

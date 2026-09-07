@@ -179,6 +179,18 @@ func (s Spec) CachePath(cacheDir string) string {
 // cache does not already hold that exact version — and re-verifying it when
 // it does.
 func Ensure(spec Spec, opt Options) (string, error) {
+	path, _, err := EnsureReporting(spec, opt)
+	return path, err
+}
+
+// EnsureReporting is Ensure, and also says which of the two things happened.
+//
+// The caller cannot work this out beforehand: a cache entry that EXISTS may
+// still be re-fetched here, because an entry whose recorded digest no longer
+// matches is deleted rather than run. Deciding from an os.Stat before the
+// call reports the tampered case — the one an operator most needs named — as
+// an ordinary cache hit.
+func EnsureReporting(spec Spec, opt Options) (string, Source, error) {
 	path := spec.CachePath(opt.CacheDir)
 
 	// A cache hit is re-verified against the digest recorded beside it when
@@ -186,7 +198,7 @@ func Ensure(spec Spec, opt Options) (string, error) {
 	// substituted binary holds the kubeconfig.
 	if cached, err := os.ReadFile(path); err == nil {
 		if recorded, err := os.ReadFile(path + ".sha256"); err == nil && Verify(spec.Name, cached, recorded) == nil {
-			return path, nil
+			return path, FromCache, nil
 		}
 		if opt.Log != nil {
 			fmt.Fprintf(opt.Log, "cached %s at %s does not match its recorded digest — re-fetching\n", spec.Name, path)
@@ -208,27 +220,27 @@ func Ensure(spec Spec, opt Options) (string, error) {
 
 	payload, err := get(url)
 	if err != nil {
-		return "", err
+		return "", FromDownload, err
 	}
 	checksumFile, err := get(checksumURL)
 	if err != nil {
-		return "", err
+		return "", FromDownload, err
 	}
 	// The published digest covers what was published: the binary, or the
 	// archive it travels in. Verify THAT, then extract — never the other way
 	// round, which would run an unverified archive through a decompressor.
 	if err := Verify(spec.Name, payload, checksumFile); err != nil {
-		return "", err
+		return "", FromDownload, err
 	}
 	binary := payload
 	if spec.ArchiveMember != "" {
 		if binary, err = memberOf(payload, spec.ArchiveMember); err != nil {
-			return "", fmt.Errorf("%s: %w", spec.Name, err)
+			return "", FromDownload, fmt.Errorf("%s: %w", spec.Name, err)
 		}
 	}
 
 	if err := install(path, binary); err != nil {
-		return "", err
+		return "", FromDownload, err
 	}
 	// Record the digest of the file that was installed, so the next run can
 	// re-verify what it is about to execute without going back to the
@@ -236,9 +248,9 @@ func Ensure(spec Spec, opt Options) (string, error) {
 	// a binary with no digest is simply re-fetched.
 	line := fmt.Sprintf("%s  %s\n", digest(binary), spec.Name)
 	if err := os.WriteFile(path+".sha256", []byte(line), 0o644); err != nil {
-		return "", err
+		return "", FromDownload, err
 	}
-	return path, nil
+	return path, FromDownload, nil
 }
 
 // install writes the binary atomically: a killed download must not leave a

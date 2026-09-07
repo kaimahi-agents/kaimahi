@@ -135,7 +135,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	var status int
 	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + agent + " a question"}, func() error {
 		var err error
-		raw, status, err = a.askAgent(agent, task, "", false)
+		raw, status, err = a.askAgent(agent, task, "", false, ChatRetryable)
 		return err
 	}); err != nil {
 		return err

@@ -44,6 +44,16 @@ const flowLimit = 50
 // was never missing.
 const inboundFlowLimit = 200
 
+// cutoff is how far back one saturated source's evidence reaches, and the
+// limit it was asked for. Both travel together because the trails are
+// fetched with different limits: the window is cut by whichever saturated
+// source reaches back LEAST far, and the note has to name that source's
+// limit rather than a constant chosen at the point of printing.
+type cutoff struct {
+	at    time.Time
+	limit int
+}
+
 // flowEvent is one thing that happened, flattened out of whichever trail
 // recorded it so the four can be sorted together.
 type flowEvent struct {
@@ -103,7 +113,7 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 	}
 
 	var events []flowEvent
-	var saturated []time.Time
+	var saturated []cutoff
 	collect := func(doc map[string]any, kind string, limit int, filter bool) {
 		list := rows(doc, "entries")
 		for _, r := range list {
@@ -121,7 +131,7 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 		// window would silently keep older events from the other trails.
 		if len(list) >= limit {
 			if oldest, ok := oldestRow(list); ok {
-				saturated = append(saturated, oldest)
+				saturated = append(saturated, cutoff{at: oldest, limit: limit})
 			}
 		}
 	}
@@ -142,22 +152,23 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 // evidence is thinnest. The window therefore starts at the latest point every
 // saturated source still covers, and the caller is told the window was cut.
 //
-// KNOWN INACCURACY in that message, not in the trimming: it always names
-// flowLimit, so a window cut by the 200-row inbound trail is reported as
-// having hit a 50-row limit. Which trail saturated is not recoverable
-// here — only the timestamps are passed in — so saying it correctly means
-// carrying the limit alongside them.
-func trimToComplete(events []flowEvent, saturated []time.Time) ([]flowEvent, []string, error) {
+// The note names the limit belonging to the trail whose watermark WON,
+// which is why each cutoff carries its own: the trails are fetched with
+// different limits, and reporting the 50-row one for a window cut by the
+// 200-row inbound page told an operator to look for a page size that was
+// never involved.
+func trimToComplete(events []flowEvent, saturated []cutoff) ([]flowEvent, []string, error) {
 	sort.SliceStable(events, func(i, j int) bool { return events[i].at.Before(events[j].at) })
 	if len(saturated) == 0 {
 		return events, nil, nil
 	}
-	watermark := saturated[0]
-	for _, t := range saturated[1:] {
-		if t.After(watermark) {
-			watermark = t
+	cut := saturated[0]
+	for _, c := range saturated[1:] {
+		if c.at.After(cut.at) {
+			cut = c
 		}
 	}
+	watermark := cut.at
 	kept := make([]flowEvent, 0, len(events))
 	for _, e := range events {
 		// A row whose timestamp would not parse has no position to compare
@@ -170,7 +181,7 @@ func trimToComplete(events []flowEvent, saturated []time.Time) ([]flowEvent, []s
 	}
 	note := fmt.Sprintf("window starts %s — a trail hit its %d-row limit, so anything "+
 		"older is not shown rather than shown incomplete",
-		watermark.UTC().Format("2006-01-02T15:04:05"), flowLimit)
+		watermark.UTC().Format("2006-01-02T15:04:05"), cut.limit)
 	return kept, []string{note}, nil
 }
 

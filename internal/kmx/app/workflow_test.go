@@ -293,6 +293,54 @@ func TestANewAuditRowIsIdentifiedNotCounted(t *testing.T) {
 	}
 }
 
+// TestAGovernedCallIsNotRetriedAfterAnAmbiguousDrop.
+//
+// The two transport classes are not interchangeable. REFUSED means nothing
+// reached the agent, so re-invoking is free. AMBIGUOUS means the request may
+// have arrived and been acted on before the connection went — and a bounded
+// step's turn IS the governed call, admitted by a standing constraint that
+// has no use count, so a retry runs the pipeline again. A consequential step
+// is protected by its uses-bounded grant; a bounded one is protected by
+// nothing but this choice.
+//
+// Read and draft turns keep retrying both: re-asking a question costs a
+// sample, and the flake this was built for is real.
+func TestAGovernedCallIsNotRetriedAfterAnAmbiguousDrop(t *testing.T) {
+	const (
+		refused   = `Error invoking session: x failed to send HTTP request: Post "http://h": dial tcp 127.0.0.1:8083: connect: connection refused`
+		ambiguous = `Error invoking session: x failed to send HTTP request: Post "http://h": EOF`
+	)
+	for _, tc := range []struct {
+		kind             string
+		retriesAmbiguous bool
+	}{
+		{blueprint.KindBounded, false},
+		{blueprint.KindConsequential, false},
+		{blueprint.KindRead, true},
+		{blueprint.KindPropose, true},
+		{blueprint.KindPoll, true},
+	} {
+		policy := retryPolicyFor(tc.kind)
+		// Every kind retries the refused class: nothing reached the agent,
+		// so nothing can have happened twice.
+		if !policy.MatchString(refused) {
+			t.Errorf("%s: a refused connection must be retried — nothing reached the agent", tc.kind)
+		}
+		if got := policy.MatchString(ambiguous); got != tc.retriesAmbiguous {
+			t.Errorf("%s: retries an AMBIGUOUS drop = %v, want %v. A step whose turn makes the "+
+				"governed call must fail rather than risk making it twice", tc.kind, got, tc.retriesAmbiguous)
+		}
+	}
+	// And the safe class really is the narrower of the two, so the table
+	// above cannot pass by both matchers being the same thing.
+	if ChatRetryableSafe.MatchString(ambiguous) {
+		t.Fatal("ChatRetryableSafe matched an ambiguous drop; it is supposed to match only the refused class")
+	}
+	if !ChatRetryable.MatchString(ambiguous) {
+		t.Fatal("ChatRetryable no longer matches an ambiguous drop, so chat lost its retry")
+	}
+}
+
 // TestADryRunRefreshesNoCredentialAndWritesNoSecret.
 //
 // `--dry-run` promises the operator that nothing is created. The refresh

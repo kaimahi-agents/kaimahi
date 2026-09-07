@@ -42,6 +42,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -331,12 +332,28 @@ func (r *workflowRun) turnStep(s blueprint.RenderedStep) error {
 // scripts/release-run.sh printed a note and returned success on a failed
 // turn, which is the exact thing this repository's agent brief forbids,
 // in the code that enforces it.
+// retryPolicyFor picks the transport-retry class a step's turn may use.
+//
+// A read or a draft can be re-asked: nothing it does outlives the reply. A
+// bounded or consequential step's turn makes the governed call, so an
+// AMBIGUOUS drop — the request may have arrived and been acted on before the
+// connection went — must NOT be retried. It fails the step instead, which is
+// the recoverable direction: a stopped release can be resumed with --step,
+// and a pipeline that ran twice cannot be un-run.
+func retryPolicyFor(kind string) *regexp.Regexp {
+	switch kind {
+	case blueprint.KindBounded, blueprint.KindConsequential:
+		return ChatRetryableSafe
+	}
+	return ChatRetryable
+}
+
 func (r *workflowRun) turn(s blueprint.RenderedStep) (string, error) {
 	prompt, err := r.resolveCaptures(s.Prompt)
 	if err != nil {
 		return "", err
 	}
-	out, status, err := r.app.askAgent(r.bundle.Agent, prompt, "", false)
+	out, status, err := r.app.askAgent(r.bundle.Agent, prompt, "", false, retryPolicyFor(s.Kind))
 	if err != nil {
 		return "", err
 	}
