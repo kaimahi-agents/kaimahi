@@ -43,21 +43,30 @@ jobs:
                   failed = True
           sys.exit(1 if failed else 0)
           EOF
-      - name: No secrets in tree
-        # Fail closed: distinguish "no match" (grep exit 1, pass) from both
-        # "match found" (exit 0) and "scanner failed to run" (exit >= 2) —
-        # a bare `! grep` lets a grep error pass the gate.
-        run: |
-          set +e
-          grep -rEIn --exclude-dir=.git \
-            '(sk[-]ant-|sk[-]proj-|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{20,})' .
-          rc=$?
-          set -e
-          if [ "$rc" -eq 0 ]; then
-            echo "possible credential committed"; exit 1
-          elif [ "$rc" -ne 1 ]; then
-            echo "secret scan failed to run (grep exit $rc)"; exit 1
-          fi
+      # This grep used to match two vendor key prefixes and a quoted
+      # api_key assignment, and nothing else — while the manifest
+      # scaffolder knew eight shapes and the blueprint parser seven. The
+      # shortest of the three lists guarded the largest surface: a GitHub
+      # token, a Slack token, an Azure DevOps PAT or this plane's own
+      # credential could sit in a documentation file and pass. There is now
+      # one list, internal/kmx/secretshapes/shapes.json, and all three read
+      # it.
+      #
+      # The scanner is itself a gate that can fail open, so it proves it
+      # still catches every shape before its verdict on the tree is
+      # trusted — the same order the Azure scanner runs in.
+      - name: Credential-shape scanner still catches every shape
+        run: python3 scripts/check-secret-shapes.py --selftest
+      - name: No credential shapes in tree
+        run: python3 scripts/check-secret-shapes.py
+      # And the checkers themselves: each one is copied, broken on purpose
+      # in a named way, and required to notice. A self-test built from
+      # fixture pairs proves a checker gets today's answer right; it does
+      # not prove the checker would notice tomorrow's wrong answer, and
+      # every gap this closes was found by editing a checker until it was
+      # worthless and watching its own self-test stay green.
+      - name: Every checker notices being broken
+        run: python3 scripts/check-mutations.py
       # This repo is public and documents a managed-cluster path.
       # A subscription/tenant GUID, an AKS FQDN, or a real ACR login server
       # must never land in the tree — every Azure identifier is supplied by
@@ -512,11 +521,11 @@ jobs:
                            "contract_get", "payment_policy_get"], named
           print("ap: erp keyless; payment_schedule bounded at $10,000.00 AND to known payees, not allowlisted")
           EOF
-          set +e
-          grep -rIn --exclude-dir=.git -E 'github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}' .
-          rc=$?
-          set -e
-          test "$rc" -eq 1 || { echo "possible GitHub token committed (or scanner failed: exit $rc)"; exit 1; }
+          # A GitHub token shape in the tree is refused by the hygiene job,
+          # on every run. It used to be greped for only here, inside a step
+          # this job skips on a docs-only change — so the one kind of pull
+          # request most likely to paste a token was the one kind that
+          # never looked.
 
       # CI flake class 2: the chat verifier's verdicts on the PR #24 task
       # shape must not drift — probe in the tool payload passes; a missing,
@@ -612,42 +621,95 @@ jobs:
           # reason; say it explicitly here.
           set -o pipefail
           go test ./... 2>&1 | tee kmx-test.out
-          # The guard port and the scaffolder's refusals are the reason this
-          # job is required; a silently skipped package would be a green
-          # no-op. Assert they ran.
-          grep -q 'ok  .*internal/kmx/guard' kmx-test.out
-          grep -q 'ok  .*internal/kmx/scaffold' kmx-test.out
-          grep -q 'ok  .*internal/kmx/kagentcli' kmx-test.out
-          # kmx now downloads kind, kubectl and Helm as well as the
-          # kagent CLI, which is the difference between five prerequisites
-          # and one. A binary it fetches runs with the operator's kubeconfig,
-          # so the digest checks are not decoration either.
-          grep -q 'ok  .*internal/kmx/toolchain' kmx-test.out
-          grep -q 'ok  .*internal/kmx/delegation' kmx-test.out
-          # Milestone 2's own gates: which revision the plane is fetched at,
-          # the GOBIN cross-compile refusal, and the credential custody the
-          # shell could only approximate with a 0600 file.
-          grep -q 'ok  .*internal/kmx/planebuild' kmx-test.out
-          grep -q 'ok  .*internal/kmx/admin' kmx-test.out
-          # `kmx workflow show` and `kmx workflow run` must describe
-          # the SAME run for the same --set. That is a fact about the
-          # blueprint package — it renders and binds the carried release
-          # blueprint with four parameter sets and asserts one step list —
-          # and it is the property, where the crash it replaced was only a
-          # symptom. A skipped package here would take it with it.
-          grep -q 'ok  .*internal/kmx/blueprint' kmx-test.out
-          # The managed path's rules about what may be deleted on somebody
-          # else's subscription. They run perhaps twice a lane against live
-          # infrastructure, so these are the only place they are exercised
-          # often enough to catch a regression.
-          grep -q 'ok  .*internal/kmx/lift' kmx-test.out
-          # Milestone 3's gates: the argument ORDER of every operator verb
-          # (Go's flag stops at the first positional, and an approval whose
-          # --uses was silently dropped is an UNBOUNDED grant), and the
-          # backup/restore fail-closed checks — a truncated dump refused,
-          # and the proxies scaled back after a failed load.
-          grep -q 'ok  .*kaimahi/cmd/kmx' kmx-test.out
-          grep -q 'ok  .*internal/kmx/app' kmx-test.out
+          # `ok  <package>` is printed for a package whose every test
+          # SKIPPED, so grepping for it proves the package compiled and
+          # nothing more. These packages are the reason this job is
+          # required, and a silently skipped one would be a green no-op, so
+          # the assertion is that each ran at least one test and that none
+          # of its tests failed. The second run is served from the test
+          # cache; it re-reports the same results in a form that can be
+          # counted.
+          go test ./... -json > kmx-test.json 2>&1 || true
+          python3 - <<'EOF'
+          import collections, json, sys
+
+          # Why each of these is required, rather than just being a package
+          # that happens to exist:
+          REQUIRED = {
+              # The reason this job is required at all.
+              "internal/kmx/guard": "the context guard's port decisions",
+              "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
+              "internal/kmx/kagentcli": "the pinned kagent CLI's checksum",
+              # kmx downloads kind, kubectl and Helm as well as the kagent
+              # CLI — the difference between five prerequisites and one. A
+              # binary it fetches runs with the operator's kubeconfig, so
+              # the digest checks are not decoration.
+              "internal/kmx/toolchain": "the fetched toolchain's digests",
+              "internal/kmx/delegation": "make and kmx being one implementation",
+              # Which revision the plane is fetched at, the GOBIN
+              # cross-compile refusal, and the credential custody the shell
+              # could only approximate with a 0600 file.
+              "internal/kmx/planebuild": "the revision the plane is built at",
+              "internal/kmx/admin": "credential custody on the admin path",
+              # `kmx workflow show` and `kmx workflow run` must describe the
+              # SAME run for the same --set: the blueprint package renders
+              # and binds the carried release blueprint with four parameter
+              # sets and asserts one step list. That is the property; the
+              # crash it replaced was only a symptom.
+              "internal/kmx/blueprint": "show and run describing one run",
+              # The managed path's rules about what may be deleted on
+              # somebody else's subscription. They run perhaps twice a lane
+              # against live infrastructure, so this is the only place they
+              # are exercised often enough to catch a regression.
+              "internal/kmx/lift": "what may be deleted on a managed cluster",
+              # The argument ORDER of every operator verb — Go's flag
+              # parsing stops at the first positional, and an approval whose
+              # --uses was silently dropped is an UNBOUNDED grant — and the
+              # backup/restore fail-closed checks.
+              "cmd/kmx": "the argument order of every operator verb",
+              "internal/kmx/app": "the operator verbs and their refusals",
+              # One list of credential shapes, read by the scaffolder, the
+              # blueprint parser and the tree scan.
+              "internal/kmx/secretshapes": "the shared credential-shape list",
+          }
+
+          passed = collections.Counter()
+          failed_tests = collections.Counter()
+          result = {}
+          for line in open("kmx-test.json"):
+              try:
+                  event = json.loads(line)
+              except ValueError:
+                  continue  # a compile error prints plain text; the run above already failed on it
+              package, action, test = event.get("Package", ""), event.get("Action"), event.get("Test")
+              if test and action == "pass":
+                  passed[package] += 1
+              if test and action == "fail":
+                  failed_tests[package] += 1
+              if not test and action in ("pass", "fail", "skip"):
+                  result[package] = action
+
+          problems = []
+          for suffix, why in REQUIRED.items():
+              named = [p for p in result if p.endswith("/" + suffix)]
+              if not named:
+                  problems.append(f"{suffix}: no such package ran — {why} was not exercised")
+                  continue
+              for package in named:
+                  if result[package] != "pass":
+                      problems.append(f"{package}: reported {result[package]}")
+                  elif failed_tests[package]:
+                      problems.append(f"{package}: {failed_tests[package]} test(s) failed")
+                  elif not passed[package]:
+                      problems.append(f"{package}: reported ok without a single test passing — "
+                                      f"{why} was not exercised")
+          for line in problems:
+              print(line)
+          if problems:
+              sys.exit(1)
+          print(f"every required package ran its own tests: {sum(passed.values())} passed "
+                f"across {len(REQUIRED)} required packages")
+          EOF
           # The generated-manifest check is the only test that hands the
           # scaffolder's output to a REAL YAML parser, and it skips itself
           # when python3/PyYAML are missing — right on a laptop, a green
@@ -2263,12 +2325,10 @@ jobs:
               print(line)
           sys.exit(1 if fail else 0)
           EOF
-          # No Slack token shape anywhere in the tree.
-          set +e
-          grep -rIn --exclude-dir=.git -E 'xox[bpca]-[A-Za-z0-9-]{10,}' .
-          rc=$?
-          set -e
-          test "$rc" -eq 1 || { echo "possible Slack token committed (or scanner failed: exit $rc)"; exit 1; }
+          # A Slack token shape in the tree is refused by the hygiene job,
+          # on every run, along with the app-level `xapp-` token this grep
+          # never knew about. It used to be checked only here, in a shard
+          # that a docs-only change skips entirely.
       - name: Gateway upstream table — three in-cluster entries, three hosted ones (all marked, all naming a credential)
         if: steps.changes.outputs.docs_only != 'true'
         run: |
