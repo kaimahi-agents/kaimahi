@@ -243,6 +243,10 @@ def _end_to_end():
             ("an empty SUBSTRING argument is refused",
              [good, "k8s_get_resources", ""], 1),
             ("output with no task object in it is refused", [bad], 1),
+            # Called with nothing at all. 2 means "called wrong", which is
+            # a different fact from "the chat did not pass" and the release
+            # job's own convention — a traceback would report neither.
+            ("no arguments at all is a usage error, not a verdict", [], 2),
         ]
         for name, args, want in checks:
             got = _script(args).returncode
@@ -342,6 +346,13 @@ def selftest():
 
 def check_file(argv):
     """The FILE [TOOL [SUBSTRING]] form, as an exit code."""
+    # Called with nothing at all, say so rather than raising IndexError at
+    # the reader: a traceback is not a verdict, and a CI step that reads
+    # this script's exit code deserves the usage line instead.
+    if not argv:
+        print(__doc__.strip().splitlines()[0], file=sys.stderr)
+        print("usage: verify-chat.py FILE [TOOL [SUBSTRING]] | --selftest", file=sys.stderr)
+        return 2
     raw = open(argv[0]).read()
     tool = argv[1] if len(argv) > 1 else None
     needle = argv[2] if len(argv) > 2 else None

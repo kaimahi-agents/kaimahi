@@ -132,29 +132,35 @@ def prove(spec_path: pathlib.Path) -> list[str]:
     if not mutations:
         return [f"{spec_path.name}: declares no mutations, so it proves nothing about {checker}"]
 
-    # The unmutated checker must pass its own verification first, or every
-    # "the mutant failed" below would be meaningless — a checker that is
-    # already red fails for every mutation without noticing any of them.
     # The line the checker prints when it has actually finished its work.
     # A mutant "passes" only if it exits zero AND says this, because a
     # checker whose entry point was removed exits zero having done nothing
     # — the loudest possible failure, and invisible to an exit code alone.
     signature = spec["signature"]
 
-    clean = mirror(checker, source)
-    try:
-        got = run(verify, clean)
-        if got.returncode != 0:
-            failures.append(f"{checker}: its own verification fails on the UNMUTATED checker "
-                            f"(exit {got.returncode}), so no mutation below proves anything\n"
-                            + indent(got.stdout + got.stderr))
-            return failures
-        if signature not in got.stdout + got.stderr:
-            failures.append(f"{checker}: the unmutated checker never printed {signature!r}, so that string "
-                            "cannot be used to tell a real run from a run that did nothing")
-            return failures
-    finally:
-        shutil.rmtree(clean, ignore_errors=True)
+    # Every verification used below has to pass on the UNMUTATED checker
+    # first, or "the mutant failed" means nothing: a command that is
+    # already red fails for every mutation without noticing any of them,
+    # which is a passing condition looser than the claim it makes. That
+    # covers the spec's own command AND any per-mutation override, because
+    # an override is exactly where an always-red command would sit
+    # unnoticed.
+    for command in dedupe([verify] + [m["verify"] for m in mutations if "verify" in m]):
+        clean = mirror(checker, source)
+        try:
+            got = run(command, clean)
+            if got.returncode != 0:
+                failures.append(f"{checker}: `{' '.join(command)}` fails on the UNMUTATED checker "
+                                f"(exit {got.returncode}), so no mutation using it proves anything\n"
+                                + indent(got.stdout + got.stderr))
+                return failures
+            if signature not in got.stdout + got.stderr:
+                failures.append(f"{checker}: `{' '.join(command)}` never printed {signature!r} on the "
+                                "unmutated checker, so that string cannot tell a real run from one "
+                                "that did nothing")
+                return failures
+        finally:
+            shutil.rmtree(clean, ignore_errors=True)
 
     for m in mutations:
         try:
@@ -175,6 +181,17 @@ def prove(spec_path: pathlib.Path) -> list[str]:
             how = f"exit {got.returncode}" if got.returncode else "it never ran"
             print(f"ok   {checker} [{m['name']}] — noticed ({how})")
     return failures
+
+
+def dedupe(commands: list[list[str]]) -> list[list[str]]:
+    """The distinct commands, in the order first seen."""
+    seen, out = set(), []
+    for command in commands:
+        key = tuple(command)
+        if key not in seen:
+            seen.add(key)
+            out.append(command)
+    return out
 
 
 def indent(text: str) -> str:

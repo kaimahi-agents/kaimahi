@@ -105,7 +105,11 @@ def skipped(p, root=ROOT):
     fail-open shape the whole check exists to prevent.
     """
     try:
-        parts = p.resolve().relative_to(root).parts
+        # Both sides resolved, or a symlink anywhere above the root makes
+        # every file look like it is outside the repository and fall through
+        # to the absolute-path reading this rule exists to avoid. On macOS
+        # /tmp is exactly such a symlink.
+        parts = p.resolve().relative_to(root.resolve()).parts
     except ValueError:
         parts = p.parts  # outside the repository: judge it as given
     return p.suffix.lower() in SKIP_SUFFIX or bool(SKIP_DIRS & set(parts))
@@ -221,11 +225,16 @@ def selftest():
             print("FAIL a file was skipped because of a directory ABOVE the repository root "
                   f"(findings={len(found)}, files read={examined})")
             failed += 1
-        # ...while the same names INSIDE the tree are still skipped.
-        inside = nested / "bin" / "artifact.txt"
-        inside.parent.mkdir()
+        # ...while the same names INSIDE the tree are still skipped. This
+        # checkout is deliberately NOT the nested one above: under a root
+        # that itself sits below a directory named .claude, a file would be
+        # skipped whether the rule read the relative path or the absolute
+        # one, and the case would pass without testing its own rule.
+        plain = d / "plain" / "checkout"
+        inside = plain / "bin" / "artifact.txt"
+        inside.parent.mkdir(parents=True)
         inside.write_text(f"token = {shapes[0].example}\n")
-        _, examined = scan([inside], shapes, root=nested)
+        _, examined = scan([inside], shapes, root=plain)
         if examined == 0:
             print("ok   a build directory inside the tree is still skipped")
         else:
