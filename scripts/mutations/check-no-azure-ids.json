@@ -1,0 +1,86 @@
+{
+  "checker": "check-no-azure-ids.sh",
+  "why": "This repository is public and the scanner is the only thing standing between a pasted terminal transcript and a committed subscription id. Every edit below leaves it exiting 0 on a tree that carries an identifier: a rule deleted, an exemption widened until it exempts nearly every real GUID, a scan that reached no content, or a verdict computed and then thrown away.",
+  "verify": ["bash", "scripts/check-no-azure-ids-test.sh"],
+  "signature": "check-no-azure-ids-test: scanner catches every class",
+  "mutations": [
+    {
+      "name": "the GUID rule finds nothing",
+      "breaks": "Subscription and tenant ids are the usual leak, and the rule that catches them stops recording anything.",
+      "find": "            findings.append((p, n, \"GUID (subscription/tenant id?)\", m.group(0)))",
+      "replace": "            pass"
+    },
+    {
+      "name": "the synthetic-fixture exemption is widened to 15",
+      "breaks": "The exemption for obviously-fake GUIDs becomes an exemption for about nineteen in twenty real ones. No rule is deleted and nothing else changes.",
+      "find": "            if len(set(m.group(0).replace(\"-\", \"\"))) <= 4:",
+      "replace": "            if len(set(m.group(0).replace(\"-\", \"\"))) <= 15:"
+    },
+    {
+      "name": "the AKS API-server FQDN rule finds nothing",
+      "breaks": "A per-cluster, per-tenant control-plane hostname sits in the tree with no symptom.",
+      "find": "            findings.append((p, n, \"AKS cluster FQDN\", m.group(0)))",
+      "replace": "            pass"
+    },
+    {
+      "name": "the ACR rule finds nothing",
+      "breaks": "A literal registry login server names live infrastructure and invites squatting on the registry name.",
+      "find": "                findings.append((p, n, \"literal ACR login server\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "the cloudapp DNS-label rule finds nothing",
+      "breaks": "The public edge's DNS label names a load balancer somebody else can later own.",
+      "find": "                findings.append((p, n, \"literal public DNS label (cloudapp.azure.com)\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "the Azure Monitor workspace rule finds nothing",
+      "breaks": "A workspace resource id ends in the workspace name — the half a shape rule can see, and the half that names the tenant's observability estate.",
+      "find": "                findings.append((p, n, \"literal Azure Monitor workspace resource id\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "the Log Analytics workspace rule finds nothing",
+      "breaks": "There are two workspace kinds with two rules; deleting one leaves the other looking like coverage for both.",
+      "find": "                findings.append((p, n, \"literal Log Analytics workspace resource id\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "the monitor-endpoint rule finds nothing",
+      "breaks": "A Managed Prometheus query endpoint or a data-collection endpoint derives its hostname from the workspace name, so the hostname identifies the workspace as surely as its id does.",
+      "find": "                findings.append((p, n, \"literal Azure Monitor endpoint (monitor.azure.com)\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "the public-IPv4 rule finds nothing",
+      "breaks": "The edge's public address gets committed. The private and documentation ranges still pass, so the exemptions look tested while the rule they qualify does nothing.",
+      "find": "                findings.append((p, n, \"public IPv4 address\", m.group(0)))",
+      "replace": "                pass"
+    },
+    {
+      "name": "an empty file list is reported as a clean tree",
+      "breaks": "An enumeration that failed — a bad path, a git command that errored — becomes a pass. \"Nothing to check\" answers as \"checked, found nothing\".",
+      "find": "if [ ! -s \"$workdir/files\" ]; then",
+      "replace": "if false; then"
+    },
+    {
+      "name": "a placeholder path is judged by its first component only",
+      "breaks": "A parameterised-looking prefix carries a real workspace name behind it: ${AMW}.realname.westus3 reads as parameterised and passes.",
+      "find": "    return all(PLACEHOLDER.match(part) for part in name.split(\".\"))",
+      "replace": "    return bool(PLACEHOLDER.match(name.split(\".\")[0]))"
+    },
+    {
+      "name": "an unreadable file is skipped in silence",
+      "breaks": "A permissions problem shrinks the scanned set with no symptom, and the report still reads clean.",
+      "find": "        findings.append((p, 0, \"could not be read (not scanned)\", str(e)))",
+      "replace": "        pass"
+    },
+    {
+      "name": "findings are printed and then reported as clean",
+      "breaks": "The scan is correct and its verdict is discarded: the output names every identifier and the exit code says the tree is fine, so CI stays green.",
+      "find": "    sys.exit(1)",
+      "replace": "    sys.exit(0)"
+    }
+  ]
+}

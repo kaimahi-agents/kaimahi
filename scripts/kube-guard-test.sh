@@ -16,11 +16,14 @@ guard="$here/kube-guard.sh"
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
-# Three contexts in the kubeconfig, chosen to separate NAME from ADDRESS:
-#   kind-real    kind-named  + loopback   -> local, no confirmation
-#   kind-sneaky  kind-named  + remote     -> remote (a name proves nothing)
-#   aks-remote   other name  + remote     -> remote
-# A fourth name, kind-not-created-yet, is tested precisely by being ABSENT
+# Four contexts in the kubeconfig, chosen to separate NAME from ADDRESS:
+#   kind-real       kind-named  + loopback   -> local, no confirmation
+#   kind-sneaky     kind-named  + remote     -> remote (a name proves nothing)
+#   aks-remote      other name  + remote     -> remote
+#   docker-desktop  other name  + loopback   -> remote (an address proves
+#                   nothing either: a cluster on 127.0.0.1 that this repo
+#                   did not create is still someone else's cluster)
+# A fifth name, kind-not-created-yet, is tested precisely by being ABSENT
 # from this file — that is `make up` on an empty machine.
 cat > "$workdir/kubeconfig" <<'YAML'
 apiVersion: v1
@@ -37,6 +40,8 @@ contexts:
     context: {cluster: c-remote, user: u}
   - name: aks-remote
     context: {cluster: c-remote, user: u}
+  - name: docker-desktop
+    context: {cluster: c-local, user: u}
 users:
   - name: u
     user: {}
@@ -85,6 +90,13 @@ run 1 "absent non-kind context is a typo" KUBE_CTX=prod-oops
 # the API server and not just the name.
 run 1 "kind-named remote still needs confirmation" KUBE_CTX=kind-sneaky
 
+# Refused: locally ADDRESSED but not kind-named. The mirror image of the
+# case above, and the half that had no test: with only the loopback check
+# left, the guard would call any cluster on 127.0.0.1 "local kind" and
+# apply to it without asking — a docker-desktop or k3d cluster the user
+# runs for something else entirely.
+run 1 "loopback but not kind-named still needs confirmation" KUBE_CTX=docker-desktop
+
 # Refused: remote, no TTY, no pre-confirmation -> fail closed, never hang.
 run 1 "remote without confirmation is refused" KUBE_CTX=aks-remote
 
@@ -99,6 +111,31 @@ run 0 "exact confirmation admits a remote context" \
 
 # Refused: no context named at all.
 run 1 "empty KUBE_CTX is refused" KUBE_CTX=
+
+# Refused: a kubeconfig the guard cannot read. It has no way to tell where
+# the context points, and "I could not look" must never resolve to "go
+# ahead" — the guard's fail-closed rule names this case explicitly.
+unreadable="$workdir/unreadable-kubeconfig"
+cp "$workdir/kubeconfig" "$unreadable"
+chmod 000 "$unreadable"
+if head -c 1 "$unreadable" >/dev/null 2>&1; then
+  # Root, and some container filesystems, ignore the mode bits: the file is
+  # still readable, so this case would pass while testing nothing. Say so
+  # rather than counting a vacuous pass as coverage.
+  echo "SKIP [unreadable kubeconfig]: this user can read a mode-000 file (running as root?)"
+else
+  rc=0
+  env -u KAIMAHI_CONFIRM -u KUBE_NS KUBECONFIG="$unreadable" KUBE_CTX=kind-real \
+    bash "$guard" "unreadable kubeconfig" </dev/null >"$workdir/out" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ] && grep -q "cannot read the kubeconfig" "$workdir/out"; then
+    echo "ok   [unreadable kubeconfig] exit $rc"
+  else
+    fails=$((fails + 1))
+    echo "FAIL [unreadable kubeconfig]: exit $rc, want a non-zero exit naming the kubeconfig"
+    sed 's/^/    | /' "$workdir/out"
+  fi
+fi
+chmod 600 "$unreadable"
 
 # The banner is the other half of the contract: even when it proceeds
 # without asking, the guard must say where the action is going.

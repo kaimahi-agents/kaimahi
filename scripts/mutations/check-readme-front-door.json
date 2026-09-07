@@ -1,0 +1,104 @@
+{
+  "checker": "check-readme-front-door.py",
+  "why": "This checker is a list of markers plus an ordering rule, and both halves fail open: a pattern that matches anything, or a search that starts again from the top of the file, reports the front door intact while it is being dismantled. Each edit below removes one claim the checker makes, and none of them removes code a reader would miss.",
+  "verify": ["python3", "scripts/check-readme-front-door-test.py"],
+  "signature": "check-readme-front-door self-test:",
+  "mutations": [
+    {
+      "name": "the hero image marker matches anything",
+      "breaks": "The image at the top of the page can be removed or renamed and the check still passes.",
+      "find": "    (\"hero image\", r'src=\"brand/hero\\.png\"'),",
+      "replace": "    (\"hero image\", r''),"
+    },
+    {
+      "name": "the product line marker matches anything",
+      "breaks": "The one line that says what this project is can be reworded into anything, or deleted.",
+      "find": "    (\"product line\", r\"^## Build and govern cloud-native AI agents on Kubernetes\\.$\"),",
+      "replace": "    (\"product line\", r\"\"),"
+    },
+    {
+      "name": "the 'control model spend' outcome marker matches anything",
+      "breaks": "One of the three promises the page makes stops being required.",
+      "find": "    (\"outcome: control model spend\", r\"^### Control model spend$\"),",
+      "replace": "    (\"outcome: control model spend\", r\"\"),"
+    },
+    {
+      "name": "the 'constrain tool calls' outcome marker matches anything",
+      "breaks": "The second promise stops being required while the other two still look enforced.",
+      "find": "    (\"outcome: constrain tool calls\", r\"^### Constrain tool calls$\"),",
+      "replace": "    (\"outcome: constrain tool calls\", r\"\"),"
+    },
+    {
+      "name": "the 'approve consequential actions' outcome marker matches anything",
+      "breaks": "The third promise stops being required.",
+      "find": "    (\"outcome: approve consequential actions\", r\"^### Approve consequential actions$\"),",
+      "replace": "    (\"outcome: approve consequential actions\", r\"\"),"
+    },
+    {
+      "name": "the architecture diagram marker matches anything",
+      "breaks": "The diagram that shows where governance sits can vanish from the page unnoticed.",
+      "find": "    (\"architecture diagram\", r'src=\"docs/assets/architecture\\.svg\"'),",
+      "replace": "    (\"architecture diagram\", r''),"
+    },
+    {
+      "name": "the one-command install marker matches anything",
+      "breaks": "The first line a reader can paste stops being required, so the quickstart can go back to opening with a prerequisite.",
+      "find": "    (\"the one-command install\", r\"^curl -fsSL https://raw\\.githubusercontent\\.com/kaimahi-agents/kaimahi/[^|]*install\\.sh \\|\"),",
+      "replace": "    (\"the one-command install\", r\"\"),"
+    },
+    {
+      "name": "the 'kmx agent chat' marker matches anything",
+      "breaks": "The quickstart can bring up a cluster and never talk to the agent, which is the payoff the whole sequence exists for.",
+      "find": "    (\"kmx agent chat\", r\"^kmx agent chat\\b\"),",
+      "replace": "    (\"kmx agent chat\", r\"\"),"
+    },
+    {
+      "name": "the 'kmx govern' marker matches anything",
+      "breaks": "The command that actually puts a seam under governance stops being required, while the plane and the ledger on either side of it still look enforced.",
+      "find": "    (\"kmx govern\", r\"^kmx govern\\b\"),",
+      "replace": "    (\"kmx govern\", r\"\"),"
+    },
+    {
+      "name": "the quickstart command list is emptied",
+      "breaks": "The checker iterates a hand-written list, and an empty list is satisfied by every block. The Quickstart may then contain any commands at all, or none.",
+      "find": "QUICKSTART_COMMANDS = [\n",
+      "replace": "QUICKSTART_COMMANDS = []\nUNUSED_QUICKSTART_COMMANDS = [\n"
+    },
+    {
+      "name": "the clone command list is emptied",
+      "breaks": "`make up` and `make chat` are what CI runs and what every other document's commands assume; with an empty list any second fenced block satisfies the clone path.",
+      "find": "CLONE_COMMANDS = [(\"make up\", r\"^make up\\b\"), (\"make chat\", r\"^make chat\\b\")]",
+      "replace": "CLONE_COMMANDS = []"
+    },
+    {
+      "name": "the clone-path check is dropped",
+      "breaks": "The clone path can disappear from the Quickstart entirely, taking every other document's commands with it.",
+      "find": "            if not any(ordered_in(block, CLONE_COMMANDS) is None for block in blocks[1:]):",
+      "replace": "            if False:"
+    },
+    {
+      "name": "command order is searched from the top of the block",
+      "breaks": "The commands become a set rather than a sequence: chatting before the cluster is up reads as valid, and the reader who follows it gets an error instead of an agent.",
+      "find": "        found = re.compile(pattern, re.M).search(block, position)",
+      "replace": "        found = re.compile(pattern, re.M).search(block, 0)"
+    },
+    {
+      "name": "marker order is searched from the top of the file",
+      "breaks": "The hierarchy stops being a hierarchy: the outcomes may sit below the diagram and the quickstart above the product line, and every marker is still \"present\".",
+      "find": "        match = re.compile(pattern, re.M).search(text, position)",
+      "replace": "        match = re.compile(pattern, re.M).search(text, 0)"
+    },
+    {
+      "name": "the proposed-CLI position check is dropped",
+      "breaks": "A CLI that does not exist yet may be advertised above the working path and above the honest status section.",
+      "find": "    if cli is not None and cli.start() < status_start:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code. A self-test that imports the module and calls check() directly stays green while the script itself always passes.",
+      "find": "    raise SystemExit(main(target))",
+      "replace": "    raise SystemExit(0)"
+    }
+  ]
+}

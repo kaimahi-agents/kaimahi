@@ -66,6 +66,21 @@ expect refused "data collection endpoint"     "$dce"                            
 # rules at once. This case proves the workspace rule fires on its own, on the
 # relative id shape that carries no GUID at all.
 expect refused "workspace id with no GUID"    "$bare_amw"                                        "Azure Monitor workspace resource id"
+# The synthetic-fixture exemption is a threshold on how few distinct hex
+# digits a GUID uses, and a threshold nobody tests can be widened to admit
+# almost every real GUID. This id uses five distinct digits — one more than
+# the exemption allows — so it pins the threshold from below. Every other
+# refused GUID here happens to use all sixteen, which a widened exemption
+# would still refuse, so the widening would go unnoticed.
+low_entropy_guid=$(printf '12345123-4512-3451-2345-%s' 123451234512)
+expect refused "GUID just above the synthetic-fixture threshold" "sub $low_entropy_guid"        "GUID"
+# A monitor endpoint's parameterised form is a SEQUENCE of placeholders, so
+# the rule has to look at every dot-separated component. Here the first
+# component is a placeholder and the second is a real workspace name: a rule
+# that stopped after the first component would call this parameterised and
+# let a live workspace name through.
+mixed_ep=$(printf '${AMW}.kaimahi-metrics-live.prometheus.monitor.%s' azure.com)
+expect refused "monitor endpoint with one literal component" "https://$mixed_ep/api/v1/query"   "Azure Monitor endpoint"
 
 # --- must pass -----------------------------------------------------------------
 expect clean "variable ACR reference"         'image: $(ACR_NAME).azurecr.io/kaimahi-proxy:p8'
@@ -93,6 +108,50 @@ expect clean "ARM template contentVersion"    "$cv,"
 # address written on the same line is still an address, or the gate could be
 # walked around by putting two things on one line.
 expect refused "address beside a contentVersion" "$cv, \"host\": \"$ip1\"" "public IPv4 address"
+
+# --- the scanner's own failure modes -------------------------------------------
+# Everything above hands the scanner a file to read. These two cases are
+# about the scanner reaching no content at all, which is the shape a gate
+# fails open in: "nothing to check" reported as "checked, found nothing".
+
+# An enumeration that produced no files is a broken scan, not a clean tree.
+empty=$(mktemp -d "$workdir/empty.XXXXXX")
+set +e
+bash "$scanner" "$empty" > "$workdir/empty.out" 2>&1
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && grep -q "no files to scan" "$workdir/empty.out"; then
+  echo "ok   refused  an empty file list"
+else
+  echo "FAIL want=refused (no files to scan) got=rc$rc  an empty file list"
+  sed 's/^/     /' "$workdir/empty.out"
+  fail=1
+fi
+
+# A file the scanner cannot read has not been cleared. Skipping it would let
+# a permissions problem shrink the scanned set with no symptom at all.
+unreadable=$(mktemp -d "$workdir/unreadable.XXXXXX")
+printf 'nothing interesting\n' > "$unreadable/file.txt"
+chmod 000 "$unreadable/file.txt"
+if head -c 1 "$unreadable/file.txt" >/dev/null 2>&1; then
+  # Root (and some container filesystems) ignore the mode bits, so the file
+  # is still readable and this case would pass without testing anything.
+  # Say so rather than counting a vacuous pass as coverage.
+  echo "SKIP unreadable-file case: this user can read a mode-000 file (running as root?)"
+else
+  set +e
+  bash "$scanner" "$unreadable" > "$workdir/unreadable.out" 2>&1
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ] && grep -q "could not be read" "$workdir/unreadable.out"; then
+    echo "ok   refused  an unreadable file is reported, not skipped"
+  else
+    echo "FAIL want=refused (could not be read) got=rc$rc  an unreadable file"
+    sed 's/^/     /' "$workdir/unreadable.out"
+    fail=1
+  fi
+fi
+chmod 644 "$unreadable/file.txt"
 
 if [ "$fail" -ne 0 ]; then
   echo "check-no-azure-ids-test: the scanner no longer behaves as documented" >&2
