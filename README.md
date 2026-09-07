@@ -189,7 +189,7 @@ cache (checksum-verified), port-forwards the controller, and invokes the agent.
 | Consume it as | How |
 |---|---|
 | **Local dev** | `make up` on kind; keyless, free, offline-capable model |
-| **Any conformant cluster** | the manifests are plain CRDs; **AKS** is the named managed target, and the governance plane has been [run there once](docs/aks.md) |
+| **Any conformant cluster** | the manifests are plain CRDs; **AKS** is the named managed target, and the governance plane has been [run there five times, on five clusters, each deleted the same day](docs/aks.md) |
 | **CI / automation** | the same targets run headless — this repo's [CI](.github/workflows/ci.yml) boots a cluster and asserts a real reply, and a real tool call, on every PR |
 | **Your own repo** | copy `k8s/` + the make targets; each agent is one YAML file |
 | **Existing kagent install** | `kubectl apply -f k8s/hello-world.yaml` — no kaimahi runtime required |
@@ -222,9 +222,13 @@ approved, and it governs tool INPUTS only — nothing filters or redacts a
 tool's results. Governance is opt-in per agent: an
 *ungoverned* preset still bills with no ledger, and an ungoverned tools wiring
 still acts with no audit. The plane's namespace is default-deny in both
-directions and the Slack pod is the one thing allowed out, on 443 only; the
-`kagent` and `ollama` namespaces are not policed. Internet-facing tool
-upstreams remain unbuilt; Slack is the only chat route for approvals (the
+directions; the Slack pod is the one thing allowed out to the internet by
+default, on 443 only, and the proxy gains the same 443 allowance the moment
+a hosted upstream or Copilot is opted in. Both of those pods also get DNS
+on 53; Postgres and the fixture ERP get no egress at all
+([docs/egress.md](docs/egress.md) has the whole table). The
+`kagent` and `ollama` namespaces are not policed. Slack is the only chat
+route for approvals (the
 `make approve` path remains, recording `admin`). The plane runs as two
 stateless replicas that agree on every decision in Postgres; Postgres
 itself is one replica with `make backup` / `make restore`, not a highly
@@ -233,8 +237,8 @@ available database ([docs/operations.md](docs/operations.md)).
 Cloud-agnostic — it runs on any conformant Kubernetes — with first-class
 attention to the Azure path: **AKS** as the managed target, **Azure AI
 Foundry** among the model endpoints. On AKS, be precise about what that means.
-It has been **demonstrated, not maintained**: one verified run on 2026-09-01,
-then torn down. There is no standing cluster and no Azure credential in CI —
+It has been **demonstrated, not maintained**: five verified runs across
+2026-09-01, 09-02 and 09-06, each cluster torn down the same day. There is no standing cluster and no Azure credential in CI —
 the repo is public and fork-exposed, so CI stays on kind and keyless,
 re-proving the portability *logic* (the context guard's decisions, the
 registry render) on every PR rather than the cloud itself.
@@ -255,7 +259,15 @@ to do, and holds the one table of what is governed today and what is not:
 
 ## Governance in practice
 
-Every control is one make target, and each is asserted in CI.
+Every control below is one make target. CI asserts the decision each one
+makes, on every pull request — but not always by running that target. CI is
+keyless and holds no Slack, GitHub, Azure or Copilot token, so the keyed
+families are proven a step to the side: the Slack manifests are applied
+directly and the deny → approve → post → burn cycle driven against the
+plane, the hosted-upstream path runs against a synthetic public server, and
+the release agent is never run at all — its governance is asserted against
+that same stand-in ([k8s/release-agent.yaml](k8s/release-agent.yaml) says
+so in the file).
 
 | Command | Does | Docs |
 |---|---|---|

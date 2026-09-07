@@ -18,11 +18,16 @@ Azure-managed monitoring already wired.** Everything below it is that
 command's steps written out, which is worth reading once — the ordering
 constraints in it were paid for.
 
-> **Scope, honestly.** Two verified runs on 2026-09-01, each torn down
-> the same day: the first proved the governed Copilot path on a managed
-> cluster; the second proved the NetworkPolicy boundary is **enforced**
-> there, which the first cluster, created without a policy engine,
-> could not have. AKS is *demonstrated*, not *maintained*: there is no
+> **Scope, honestly.** Five verified runs on five clusters, across
+> 2026-09-01 (two), 09-02 and 09-06 (two), each torn down the same day.
+> They proved, in order: the governed Copilot path on a managed cluster;
+> the NetworkPolicy boundary **enforced** there, which the first cluster,
+> created without a policy engine, could not have; the Slack loop through
+> a public edge; and `kmx lift` end to end with Azure-managed monitoring,
+> on a cluster it created and on one it did not. All of them are recorded
+> below, under [What was verified, and what was
+> not](#what-was-verified-and-what-was-not).
+> AKS is *demonstrated*, not *maintained*: there is no
 > standing cluster, no scheduled job re-proving it, and no Azure
 > credential in CI, ever.
 > CI stays on kind and keyless. What re-runs on every PR is the
