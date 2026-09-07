@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/blueprint"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // base is a minimal well-formed blueprint the cases below vary.
@@ -349,5 +350,31 @@ func TestAnUnknownKeyInsideAConstraintIsRefused(t *testing.T) {
 	if _, err := blueprint.Parse([]byte(doc)); err == nil ||
 		!strings.Contains(err.Error(), `no "note" field`) {
 		t.Fatalf("an unknown key inside a constraint was accepted: %v", err)
+	}
+}
+
+// TestEveryCredentialShapeInTheSharedListIsRefused.
+//
+// The parser used to keep its own list of seven token shapes, the manifest
+// scaffolder kept eight, and CI's tree scan matched three. This proves the
+// property that replaced them: a shape added to
+// internal/kmx/secretshapes is refused HERE, without anyone remembering to
+// add it here as well.
+func TestEveryCredentialShapeInTheSharedListIsRefused(t *testing.T) {
+	all := secretshapes.All()
+	if len(all) == 0 {
+		t.Fatal("the shared shape list is empty, so this test proves nothing")
+	}
+	for _, shape := range all {
+		t.Run(shape.Name, func(t *testing.T) {
+			// The example is assembled from parts inside the shared list,
+			// so no whole credential shape is written into any file here.
+			doc := strings.Replace(base, "summary: a demo workflow",
+				"summary: a demo workflow "+shape.Example, 1)
+			_, err := blueprint.Parse([]byte(doc))
+			if err == nil || !strings.Contains(err.Error(), "shaped like a credential") {
+				t.Fatalf("a blueprint carrying %s was accepted: %v", shape.What, err)
+			}
+		})
 	}
 }

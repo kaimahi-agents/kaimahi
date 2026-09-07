@@ -19,7 +19,11 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-const goodToken = "kmh_test_token"
+// Split so this file carries no whole credential shape of its own — the
+// tree scan reads test files like any other, and the claim it makes is
+// that nothing key-shaped is committed anywhere, with no exceptions to
+// remember. The value is unchanged.
+const goodToken = "kmh_" + "test_token"
 
 type fakeStore struct {
 	allow      []string

@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	callerToken = "kmh_inbound_test_token"
-	otherToken  = "kmh_some_other_credential"
+	// Split so this file carries no whole credential shape of its own —
+	// the tree scan reads test files like any other. The values are
+	// unchanged.
+	callerToken = "kmh_" + "inbound_test_token"
+	otherToken  = "kmh_" + "some_other_credential"
 	secret      = "shared-signing-secret"
 )
 

@@ -20,20 +20,19 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
-// tokenShapes are prefixes and shapes of credentials this project and its
-// upstreams actually issue. Not an attempt at a universal secret scanner
-// — this catches the credential a person would paste into THIS file.
-var tokenShapes = []*regexp.Regexp{
-	regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{16,}`),                  // GitHub classic
-	regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{20,}`),                // GitHub fine-grained
-	regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9-]{10,}`),                // Slack
-	regexp.MustCompile(`\bkmh_[A-Za-z0-9_-]{16,}`),                      // this plane's own
-	regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}`),                         // OpenAI-shaped
-	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.`), // a JWT (the Entra token)
-	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
-}
+// The token shapes are not written here. They are
+// internal/kmx/secretshapes, the one list this repository keeps, which
+// the manifest scaffolder and the tree scan in CI read too. There used to
+// be three lists — seven shapes here, eight in the scaffolder, three in
+// CI — and the shortest guarded the largest surface.
+//
+// False positives are acceptable in this parser: the cost of one is an
+// operator renaming a parameter; the cost of a miss is a token in
+// somebody's git history.
 
 // credentialKeys are field names a blueprint may not carry at all,
 // matched case-insensitively at the start of a YAML key. `secret` itself
@@ -61,12 +60,10 @@ func refuseCredentialMaterial(raw []byte) error {
 			}
 		}
 	}
-	for _, re := range tokenShapes {
-		if loc := re.FindStringIndex(text); loc != nil {
-			return fmt.Errorf("blueprint: this document contains something shaped like a credential "+
-				"(at byte %d). kmx will not read it. Revoke that value if it is real, then name a Secret "+
-				"instead of carrying one", loc[0])
-		}
+	if shape, at := secretshapes.MatchIndex(text); shape != nil {
+		return fmt.Errorf("blueprint: this document contains something shaped like a credential "+
+			"(at byte %d). kmx will not read it. Revoke that value if it is real, then name a Secret "+
+			"instead of carrying one", at)
 	}
 	return nil
 }

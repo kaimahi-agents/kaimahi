@@ -32,6 +32,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // Spec is everything the generator needs. There is deliberately no field
@@ -157,32 +159,12 @@ func ParseTools(value string) (*ToolWiring, error) {
 	return wiring, nil
 }
 
-// Key shapes the generator refuses to write. The first three are the CI
-// secret scanner's; kmh_ is this project's own agent credential, which
-// belongs in a Secret the Agent REFERENCES and never in the Agent itself;
-// the rest are the provider prefixes most likely to be pasted into an
-// instructions file by accident.
-//
-// The first two are written with a one-character class — `sk-[a]nt-` rather
-// than the literal — so this file does not itself trip the repository's
-// "No secrets in tree" scan, which greps for exactly those prefixes.
-var keyShapes = []struct {
-	what string
-	re   *regexp.Regexp
-}{
-	{"an Anthropic API key", regexp.MustCompile(`sk-[a]nt-`)},
-	{"an OpenAI project key", regexp.MustCompile(`sk-[p]roj-`)},
-	// The `\\?` is not decoration: on the way into a double-quoted scalar a
-	// quote becomes \", so on the emitted document the separator and the
-	// quote are no longer adjacent. Without it this shape could never fire
-	// on the field it was written for — found in review, reproduced, fixed.
-	{"an assigned API key", regexp.MustCompile(`(?i)api[_-]?key\s*[:=]\s*\\?["'][A-Za-z0-9_-]{20,}`)},
-	{"a Kaimahi agent credential", regexp.MustCompile(`kmh_[A-Za-z0-9]{8,}`)},
-	{"a GitHub token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}`)},
-	{"a GitHub fine-grained token", regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`)},
-	{"a Slack token", regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)},
-	{"a private key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
-}
+// The key shapes the generator refuses to write are not written here.
+// They are internal/kmx/secretshapes, the one list this repository keeps,
+// which the blueprint parser and the tree scan in CI read too. There used
+// to be three lists — eight shapes here, seven in the parser, three in CI
+// — and the shortest guarded the largest surface. A shape added to that
+// list is refused in all three places at once.
 
 // RefuseKeyShapes fails closed when anything key-shaped is present.
 //
@@ -195,12 +177,10 @@ var keyShapes = []struct {
 // key through. (Found in review, reproduced, fixed.) Checking the value the
 // operator actually typed removes that whole class.
 func RefuseKeyShapes(document string) error {
-	for _, shape := range keyShapes {
-		if shape.re.MatchString(document) {
-			return fmt.Errorf("refusing to write this manifest: it contains something shaped like %s.\n"+
-				"  kmx never handles keys. An agent references a Secret; it does not carry one:\n"+
-				"    kubectl -n kagent create secret generic <name> --from-file=api-key=/dev/stdin", shape.what)
-		}
+	if shape := secretshapes.Match(document); shape != nil {
+		return fmt.Errorf("refusing to write this manifest: it contains something shaped like %s.\n"+
+			"  kmx never handles keys. An agent references a Secret; it does not carry one:\n"+
+			"    kubectl -n kagent create secret generic <name> --from-file=api-key=/dev/stdin", shape.What)
 	}
 	return nil
 }

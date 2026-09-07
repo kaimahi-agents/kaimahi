@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 func mustGenerate(t *testing.T, spec Spec) string {
@@ -136,7 +138,7 @@ func TestKeyShapedContentIsRefused(t *testing.T) {
 		"ghp_" + strings.Repeat("d", 36),
 		"github" + "_pat_" + strings.Repeat("e", 30),
 		"xoxb-" + strings.Repeat("1", 12) + "-abcdef",
-		"-----BEGIN RSA PRIVATE KEY-----",
+		"-----BEGIN RSA " + "PRIVATE KEY-----",
 		`api_key: "` + strings.Repeat("f", 24) + `"`,
 	}
 	for _, key := range keys {
@@ -411,5 +413,30 @@ func TestScaffoldedAgentIsHardened(t *testing.T) {
 		if !strings.Contains(doc, want) {
 			t.Errorf("scaffolded agent is missing %q:\n%s", want, doc)
 		}
+	}
+}
+
+// TestEveryCredentialShapeInTheSharedListIsRefused.
+//
+// This generator used to keep its own list of eight key shapes, the
+// blueprint parser kept seven, and CI's tree scan matched three. This
+// proves the property that replaced them: a shape added to
+// internal/kmx/secretshapes is refused HERE, without anyone remembering to
+// add it here as well.
+func TestEveryCredentialShapeInTheSharedListIsRefused(t *testing.T) {
+	all := secretshapes.All()
+	if len(all) == 0 {
+		t.Fatal("the shared shape list is empty, so this test proves nothing")
+	}
+	for _, shape := range all {
+		t.Run(shape.Name, func(t *testing.T) {
+			// The example is assembled from parts inside the shared list,
+			// so no whole credential shape is written into any file here.
+			spec := base("leaky")
+			spec.Instructions = "Use this credential when you call the API:\n" + shape.Example + "\n"
+			if _, err := Generate(spec); err == nil {
+				t.Fatalf("a manifest carrying %s was written", shape.What)
+			}
+		})
 	}
 }

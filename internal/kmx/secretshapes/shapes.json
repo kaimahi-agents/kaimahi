@@ -1,0 +1,110 @@
+{
+  "_comment": [
+    "Every credential shape this project or its upstreams issue, in one place.",
+    "See doc.go for why this is data and not Go source, and for the rules a new",
+    "entry has to follow.",
+    "",
+    "`example` and `counterexample` are written as PARTS and joined by whoever",
+    "reads this file. A whole example would be a literal credential shape sitting",
+    "in the tree, which is the one thing the list exists to forbid — and the tree",
+    "scan reads this file like any other."
+  ],
+  "shapes": [
+    {
+      "name": "anthropic-api-key",
+      "what": "an Anthropic API key",
+      "why": "Anthropic issues these to whoever pays for the model calls; the prefix is fixed.",
+      "regexp": "sk-[a]nt-",
+      "example": ["sk-", "ant-", "api03-", "OBVIOUSLY-FAKE-EXAMPLE"],
+      "counterexample": ["sk-", "and-", "this-is-a-word-not-a-key"]
+    },
+    {
+      "name": "openai-project-key",
+      "what": "an OpenAI project key",
+      "why": "The project-scoped form OpenAI issues from its dashboard.",
+      "regexp": "sk-[p]roj-",
+      "example": ["sk-", "proj-", "OBVIOUSLY-FAKE-EXAMPLE"],
+      "counterexample": ["sk-", "project management notes"]
+    },
+    {
+      "name": "openai-api-key",
+      "what": "an OpenAI API key",
+      "why": "The older unscoped form, and the shape every OpenAI-compatible endpoint copied.",
+      "regexp": "\\bsk-[A-Za-z0-9]{20,}",
+      "example": ["sk-", "0000000000", "OBVIOUSLYFAKEEXAMPLE0000"],
+      "counterexample": ["sk-", "short"]
+    },
+    {
+      "name": "assigned-api-key",
+      "what": "an assigned API key",
+      "why": "Not a vendor's shape but a syntax: a long opaque value assigned to a field called api_key. It is how a key arrives in a YAML manifest or an env file whatever issued it.",
+      "regexp": "(?i)api[_-]?key\\s*[:=]\\s*\\\\?[\"'][A-Za-z0-9_-]{20,}",
+      "example": ["api_key: ", "\"", "OBVIOUSLY-FAKE-EXAMPLE-000000", "\""],
+      "counterexample": ["api_key: ", "\"", "short", "\""]
+    },
+    {
+      "name": "kaimahi-credential",
+      "what": "a Kaimahi agent credential",
+      "why": "This plane's own. It belongs in a Secret the Agent REFERENCES, never in the Agent, a blueprint, or any file in this repository — including a test fixture, which is why the fixtures that need one assemble it at run time.",
+      "regexp": "kmh_[A-Za-z0-9_-]{8,}",
+      "example": ["kmh_", "OBVIOUSLYFAKE", "000000"],
+      "counterexample": ["kmh_", "short"]
+    },
+    {
+      "name": "github-token",
+      "what": "a GitHub token",
+      "why": "The classic prefixes: ghp_ personal, gho_/ghu_ the OAuth and user-to-server tokens a Copilot device-flow login mints, ghs_ a server token, ghr_ a refresh token.",
+      "regexp": "gh[pousr]_[A-Za-z0-9]{16,}",
+      "example": ["gh", "p_", "OBVIOUSLYFAKEEXAMPLE0000"],
+      "counterexample": ["gh", "p_", "short"]
+    },
+    {
+      "name": "github-fine-grained-token",
+      "what": "a GitHub fine-grained token",
+      "why": "The repository-scoped form, which is what this project's own GitHub seams ask an operator for.",
+      "regexp": "github_pat_[A-Za-z0-9_]{20,}",
+      "example": ["github", "_pat_", "OBVIOUSLYFAKEEXAMPLE00000000"],
+      "counterexample": ["github", "_pat_", "short"]
+    },
+    {
+      "name": "slack-token",
+      "what": "a Slack token",
+      "why": "Bot, user, app-configuration and refresh tokens. The Slack seam is the one this repository has run live, so this is the shape most likely to arrive in a pasted transcript.",
+      "regexp": "xox[baprs]-[A-Za-z0-9-]{10,}",
+      "example": ["xox", "b-", "0000-0000-", "OBVIOUSLYFAKE"],
+      "counterexample": ["xox", "b-", "short"]
+    },
+    {
+      "name": "slack-app-token",
+      "what": "a Slack app-level token",
+      "why": "Socket Mode's own token, which is NOT an xox shape and so was missed by every list that only knew about xoxb.",
+      "regexp": "xapp-[0-9]-[A-Za-z0-9-]{10,}",
+      "example": ["xapp", "-1-", "A00000000-0000000000000-", "OBVIOUSLYFAKE"],
+      "counterexample": ["xapp", "-1-", "short"]
+    },
+    {
+      "name": "azure-devops-pat",
+      "what": "an Azure DevOps personal access token",
+      "why": "Azure DevOps issues a bare 52-character base32 value with no prefix at all, so this is a shape rule and nothing more: a 52-character run of lowercase letters and the digits 2 to 7, whole-word. It is the loosest rule in this list and the only one that could in principle fire on something that is not a credential; a real hex digest carries 0, 1, 8 or 9 and a base64 value carries uppercase or +/=, so neither matches.",
+      "regexp": "\\b[a-z2-7]{52}\\b",
+      "example": ["obviouslyfakeexample", "obviouslyfakeexample", "obviouslyfak"],
+      "counterexample": ["obviouslyfakeexample", "obviouslyfakeexample", "obviouslyfa"]
+    },
+    {
+      "name": "json-web-token",
+      "what": "a JSON Web Token",
+      "why": "The Entra access token an ADO or Azure seam refreshes into, and any other bearer JWT. Its header always begins with the base64 of {\"alg\", which is eyJ.",
+      "regexp": "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.",
+      "example": ["eyJ", "OBVIOUSLYFAKE", ".", "OBVIOUSLYFAKE", ".", "OBVIOUSLYFAKE"],
+      "counterexample": ["eyJ", "short", ".", "short", "."]
+    },
+    {
+      "name": "private-key",
+      "what": "a private key",
+      "why": "A PEM header. No upstream here issues one, which is exactly why a file carrying it is a mistake rather than a design.",
+      "regexp": "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+      "example": ["-----BEGIN ", "OBVIOUSLY FAKE ", "PRIVATE KEY", "-----"],
+      "counterexample": ["-----BEGIN ", "CERTIFICATE", "-----"]
+    }
+  ]
+}
