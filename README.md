@@ -172,7 +172,7 @@ make chat   # talk to the default agent
 |---|---|---|
 | Docker **or** Podman | everything: kind runs Kubernetes in containers | <https://docs.docker.com/get-docker/> · <https://podman.io/docs/installation> |
 | kind, kubectl, Helm | fetched and checksum-verified by `kmx` when absent — yours are used if you have them | — |
-| Go 1.26+ | only `kmx plane` (it builds the plane's image locally) and `go install` | <https://go.dev/dl/> |
+| Go 1.26+ | only the two commands that build the plane's image — `kmx plane` (and then only outside a checkout) and `kmx lift` — plus `go install` | <https://go.dev/dl/> |
 | make, git | only the clone path below | your package manager |
 
 ```bash

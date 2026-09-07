@@ -91,7 +91,7 @@ make up    # build if stale, then create/update the local runtime
 |---|---|
 | Docker **or** Podman | kind runs Kubernetes in containers. **The only thing you must install.** |
 | kind, kubectl, Helm | kmx downloads them if the machine has none, pinned and checksum-verified; a copy already on PATH is preferred and never shadowed |
-| Go 1.26+ | only for `kmx plane` (it builds the plane's image locally) and for `go install` |
+| Go 1.26+ | only for the two commands that build the plane's image — `kmx plane` (and then only outside a checkout, where it fetches the source from the Go module proxy) and `kmx lift` (whenever its plane phase runs) — and for `go install` |
 
 kmx has always fetched the pinned kagent CLI itself, checksum-verified, the
 first time you chat. The cluster tools now work the same way: pinned
