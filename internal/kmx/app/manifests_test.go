@@ -128,15 +128,20 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 }
 
 // What kmx carries is still a decision, not a directory listing. The Slack,
-// GitHub, inbound and AP families must NOT ride along: their targets are
-// the Makefile's, each is entangled with capturing a credential, and a
-// manifest in the binary that no kmx command applies is a claim kmx cannot
-// honour.
+// GitHub, inbound and accounts-payable families must NOT ride along: their
+// targets are the Makefile's, and a manifest in the binary that no kmx
+// command applies is a claim kmx cannot honour.
+//
+// `egress-hosted.yaml` left this list when a kmx command started applying it
+// — the credential capture, whose whole point is that an operator with no
+// checkout can hand the plane a token for an upstream on the internet. Which
+// is the rule working, not an exception to it: the test below is what keeps
+// the list honest in the other direction.
 func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
 	for _, name := range []string{
 		"kaimahi-slack.yaml", "slack-agent.yaml", "slack-mcp.yaml",
 		"kaimahi-github.yaml", "github-agent.yaml",
-		"inbound-edge.yaml", "egress-copilot.yaml", "egress-hosted.yaml",
+		"inbound-edge.yaml", "egress-copilot.yaml",
 		"ap-agent.yaml", "kaimahi-erp.yaml", "erp-mcp.yaml",
 		"release-agent.yaml", "kaimahi-release-github.yaml", "kaimahi-release-ado.yaml",
 	} {
@@ -150,5 +155,15 @@ func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
 		if _, err := manifest(name); err == nil {
 			t.Errorf("k8s/%s is embedded in kmx, but no kmx command applies it (milestone 3)", name)
 		}
+	}
+}
+
+// And the inverse of that list: a manifest a kmx command DOES apply has to be
+// in the binary, or the command works in a clone and fails everywhere else —
+// which is the failure mode that is invisible to everyone who develops here.
+func TestTheHostedEgressAllowanceTravelsInTheBinary(t *testing.T) {
+	if _, err := manifest("egress-hosted.yaml"); err != nil {
+		t.Fatalf("kmx applies k8s/egress-hosted.yaml when it captures a credential for a "+
+			"hosted upstream, but it is not embedded: %v", err)
 	}
 }

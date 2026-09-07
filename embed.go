@@ -18,10 +18,15 @@ import "embed"
 //
 // The files are named individually rather than embedding `k8s` wholesale, so
 // that what kmx carries is a decision rather than a side effect of a
-// directory listing: the Slack, GitHub, inbound and egress manifests belong
-// to families kmx does not own (they are entangled with secret capture,
-// which stays in the scripts because kmx accepts a credential in no form)
-// and must not ride along.
+// directory listing: the Slack, GitHub, inbound and accounts-payable
+// manifests belong to families kmx does not own and must not ride along.
+//
+// `k8s/egress-hosted.yaml` DOES ride along, and it is the one exception that
+// was argued rather than assumed. It is the gateway's way out to the
+// internet, and it is applied by exactly one command: the one that stores a
+// credential for an upstream on the internet. A credential stored without it
+// is a credential the plane cannot use, and an operator who never cloned this
+// repository has no file on disk to apply.
 //
 // `k8s/models/` IS embedded whole as of milestone 3, because `kmx use` is
 // `make use` and `make use PRESET=anthropic` has always been a documented
@@ -30,7 +35,8 @@ import "embed"
 // credential anywhere near kmx: a preset is a ModelConfig that NAMES a
 // Secret (`apiKeySecret`), it never carries a key, and minting that Secret
 // stays outside kmx — `make model-secret`, `make copilot-secret`, the
-// scripts. kmx still accepts a credential in no form at all.
+// scripts. The one credential kmx does take, it takes at a prompt and writes
+// to a Secret of its own; no manifest here carries a value either way.
 //
 // k8s/wasm/runtime.yaml is the tool sandbox's runtime: a node installer and
 // the RuntimeClass that selects it. It rides along because `kmx tools
@@ -48,6 +54,7 @@ import "embed"
 //go:embed k8s/plane/upstreams.yaml k8s/plane/network-policy.yaml
 //go:embed k8s/models
 //go:embed k8s/wasm/runtime.yaml
+//go:embed k8s/egress-hosted.yaml
 var Manifests embed.FS
 
 // Blueprints holds the governed-workflow blueprints kmx carries,

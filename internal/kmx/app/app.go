@@ -19,6 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/seam"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
 
@@ -39,6 +40,16 @@ type App struct {
 	// command that reports structured output can say what it put on the
 	// machine.
 	provisioned []toolchain.Tool
+
+	// readSecret replaces the terminal read on the one path that accepts
+	// credential material, so the capture's checks and refusals can be
+	// exercised without a TTY. It is nil in every real invocation, and the
+	// nil case is what enforces the terminal-only rule — no flag,
+	// environment variable or file can set it.
+	readSecret func() ([]byte, error)
+	// seamEnv points the upstream checks at a test server instead of the
+	// real ones. Nil everywhere but in tests.
+	seamEnv *seam.Env
 
 	// guarded records that the context guard has already run in this
 	// process, so a multi-step command asks at most once — the same

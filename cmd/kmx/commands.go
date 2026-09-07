@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -8,6 +9,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/seam"
 )
 
 func newCtxCommand(state *commandState) *cobra.Command {
@@ -110,8 +112,53 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 		}
 		return a.RenewCredential(renew.Flags().Arg(0), parsed)
 	})
-	group.AddCommand(renew)
+	group.AddCommand(renew, newCaptureCommand(state))
 	return group
+}
+
+// newCaptureCommand is the one command in kmx that accepts credential
+// material, and it takes it from a terminal or not at all.
+//
+// One command with a SUBJECT, rather than one command per upstream: three
+// upstreams take a credential today, they differ only in which token they
+// want and what can be proven about it, and both of those are a row in
+// internal/kmx/seam's table. A fourth upstream should be a row too, not a
+// fourth command shape to learn.
+func newCaptureCommand(state *commandState) *cobra.Command {
+	var replace bool
+	cmd := &cobra.Command{
+		Use:   "capture <upstream> <repository|organization>",
+		Short: "Store an upstream credential in plane custody, read from the terminal",
+		Long: "Store an upstream credential in plane custody, read from the terminal.\n\n" +
+			"The value is typed at a prompt with the echo off. There is deliberately no\n" +
+			"flag, environment variable or file that takes it instead, and a piped or\n" +
+			"redirected stdin is refused rather than read: a credential that can arrive\n" +
+			"through a pipe can arrive from a shell history or a CI log. It is checked\n" +
+			"against the upstream before anything is stored, and it goes into a Kubernetes\n" +
+			"Secret the gateway reads — never into a manifest, a file or a command line.\n\n" +
+			"Upstreams:\n" + captureUpstreams(),
+		Args:      usageArgs(2, 2, "kmx credential capture <upstream> <repository|organization> [--replace]"),
+		ValidArgs: seam.Names(),
+	}
+	cmd.Flags().BoolVar(&replace, "replace", false,
+		"overwrite a credential this upstream already has (it is refused otherwise)")
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		return a.CaptureCredential(app.CaptureOptions{
+			Seam:    cmd.Flags().Arg(0),
+			Subject: cmd.Flags().Arg(1),
+			Replace: replace,
+		})
+	})
+	return cmd
+}
+
+func captureUpstreams() string {
+	var b strings.Builder
+	for _, s := range seam.All() {
+		fmt.Fprintf(&b, "  kmx credential capture %s %s\n      %s; stored as Secret %s\n",
+			s.Name, s.SubjectHint, s.Summary, s.Secret)
+	}
+	return b.String()
 }
 
 func newLedgerCommand(state *commandState) *cobra.Command {
