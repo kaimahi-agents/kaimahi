@@ -124,7 +124,9 @@ prefix.
 | W32: the release agent — Kaimahi's first real user (D38) | W32 worker | PR #95 MERGED (main 56c6efa) — ran before W31 as D38(4) ordered, and the friction it measured went into W31's prompt |narrow agent: drafts and proposes, human approves, CI moves bytes; ADO via its official hosted MCP server |
 | W31: `create-kaimahi-agent` — nothing to a working agent, fast (D36, D37) | W31 worker | PR #106 MERGED (main 95a4e1f) — **5 prerequisites become 1, 246s becomes 178s**; `install.sh` + `kmx quickstart` + a checksum-verifying toolchain provisioner | coordinator verification owed; the front door is now `curl \| sh` then one command, with no Go and no checkout |
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
-| W29: govern your own agent — the generic onboarding path (D35) | unassigned | SHAPED 2026-09-03 — prompt below; runs ALONE | the product-defining gap: nothing documents adding your own MCP server or governing an agent you already run |
+| W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
+| W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
+| W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W34a: `kmx status` counts what is governed (absorbing the stale #37) | W34a worker | PR #110 MERGED — closed #37 honestly rather than rebasing a PR whose central file no longer existed | coordinator verification owed |
 | W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
@@ -4353,6 +4355,45 @@ timeline.
   the "old" one had not been built from the revision its version stamp
   named. When comparing, build both sides explicitly from named
   revisions; do not reuse a binary and trust `kmx version`.
+### The credential prompt — verified against a brief the worker never saw (2026-09-07)
+
+Recorded because the sequence was unusual and worth not repeating blind.
+The lane ran from a prompt handed over in conversation; the board copy
+was still in review when the work landed, and four review findings
+improved that prompt AFTER the worker had already started. So the
+shipped code was checked against the IMPROVED brief rather than the one
+it was given.
+
+**It holds on every point, independently arrived at.** Verified by
+reading `internal/kmx/app/capture.go` and its tests on main:
+- `term.IsTerminal` on BOTH stdin and stderr, so a pipe or a redirect is
+  refused rather than read.
+- `term.ReadPassword` — echo off for the duration, terminal restored.
+- `--from-literal` explicitly rejected in a comment that says why: it
+  would put the value in the process table.
+- Nine tests, including that a piped or redirected stdin is refused
+  **before anything happens**, that a captured credential goes to the
+  Secret and nowhere else, and that a stored credential is not replaced
+  silently.
+
+That last one matters: the review finding asked for the existing
+`credentialSecretVerb` contract to be preserved rather than a second
+rule invented beside it, and the lane reached the same place without
+being told.
+
+**What is NOT yet verified**, so it is not claimed: whether the
+absence check extends beyond the working directory to wherever `TMPDIR`
+points, and whether each prohibited vector — flag, environment
+variable, file — has its own negative case rather than being covered by
+the piped-stdin test. Both were review findings on the prompt; neither
+has been checked against the code.
+
+**The lesson, and it is about sequencing rather than the lane.** A
+prompt handed over in conversation and a prompt on the board can drift
+apart the moment review touches one of them. When a lane is launched
+from an inline copy, the review findings on the board copy reach nobody.
+Either launch from the board, or treat the inline copy as the brief and
+land the review fixes as verification notes instead.
 
 
 
