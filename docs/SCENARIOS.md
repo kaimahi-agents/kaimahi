@@ -151,8 +151,11 @@ last question in that list — *how do we make them confident the solution
 they are building isn't going to expose their secrets?* — is the same
 question that decides the shape of the scaffolder CLI, and is treated at
 length in `docs/CLI-PROPOSAL.md` (proposed separately). Today's answer in
-this repo is narrow but real: keys are captured from stdin only, live in
-Kubernetes Secrets, and never reach agent pods, YAML, argv, or logs.
+this repo is narrow but real: a key is typed and never written down — at a
+terminal prompt with the echo off for the three tool upstreams
+`kmx credential capture` can check a value against, on stdin for every
+other capture script — and it lives in a Kubernetes Secret, never reaching
+agent pods, YAML, argv, or logs.
 
 ## Note on the source documents
 
