@@ -211,8 +211,11 @@ this repository did not write, `workflow` and blueprints, `flow`,
 longer only a local-development entry point.
 
 **What is still not here.** The Slack and inbound connector families,
-capturing a model key, and the network probes stay in `make` and
-`scripts`.
+the agents this repository wires from committed manifests (the release
+agent, the accounts-payable demo, the hosted-GitHub agent), capturing a
+model key, and the network probes stay in `make` and `scripts`. `kmx`
+governs and runs a workflow for an agent that exists; it does not apply
+this repository's own demo manifests.
 
 **Publishing.** A Homebrew tap, or any package, waits on the naming gates.
 Nothing about the design blocks it; the decision is not a technical one.

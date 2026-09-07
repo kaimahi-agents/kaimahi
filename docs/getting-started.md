@@ -21,7 +21,7 @@ substance and different wording.
 | Docker **or** Podman | everything — kind runs Kubernetes in containers | <https://docs.docker.com/get-docker/> · <https://podman.io/docs/installation> |
 | kind, kubectl, Helm | **fetched by `kmx`** when they are absent, pinned and checksum-verified into `~/.config/kmx`. A copy you already have on PATH is used instead, always | — |
 | curl | the install script (already present on macOS and every mainstream Linux) | your package manager |
-| Go 1.26+ | **only** the two commands that build the plane's image — `kmx plane` (locally) and `kmx lift` (in a private registry) — and then only when they are run from outside a checkout, where they fetch the plane's source from the Go module proxy. Also `go install`, as an alternative way to get `kmx` | <https://go.dev/dl/> |
+| Go 1.26+ | **only** the two commands that build the plane's image. `kmx plane` needs it just when it is run from outside a checkout, where it fetches the plane's source from the Go module proxy; `kmx lift` demands it whenever its plane phase runs, checkout or not. Also `go install`, as an alternative way to get `kmx` | <https://go.dev/dl/> |
 | make, git | **only** the clone path at the bottom of this page | your package manager |
 
 `kmx` acquiring its own tools is not new behaviour invented here: it has
@@ -142,8 +142,11 @@ kmx down    # delete the kind cluster (and everything in it, ledger included)
 reference, including what it deliberately does *not* do. Budgets,
 approvals, tool governance, backup/restore, metrics and the managed-cluster
 path (`kmx lift`) are all `kmx`'s now. What is still the Makefile's: the
-Slack and inbound connector families, capturing a model key, and the
-network probes.
+Slack and inbound connector families; the demo and first-user agents that
+are wired from committed manifests — the release agent, the
+accounts-payable demo and the hosted-GitHub agent (`make govern-release`,
+`make release`, `make erp`/`make govern-ap`/`make ap-demo`,
+`make govern-github`); capturing a model key; and the network probes.
 
 ### Governing that agent
 

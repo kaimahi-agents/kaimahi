@@ -18,15 +18,17 @@ Azure-managed monitoring already wired.** Everything below it is that
 command's steps written out, which is worth reading once — the ordering
 constraints in it were paid for.
 
-> **Scope, honestly.** Five verified runs on five clusters, across
-> 2026-09-01 (two), 09-02 and 09-06 (two), each torn down the same day.
-> They proved, in order: the governed Copilot path on a managed cluster;
-> the NetworkPolicy boundary **enforced** there, which the first cluster,
-> created without a policy engine, could not have; the Slack loop through
-> a public edge; and `kmx lift` end to end with Azure-managed monitoring,
-> on a cluster it created and on one it did not. All of them are recorded
-> below, under [What was verified, and what was
-> not](#what-was-verified-and-what-was-not).
+> **Scope, honestly.** Six verified runs on six clusters, across
+> 2026-09-01 (two), 09-02, 09-03 and 09-06 (two), each torn down the same
+> day. They proved, in order: the governed Copilot path on a managed
+> cluster; the NetworkPolicy boundary **enforced** there, which the first
+> cluster, created without a policy engine, could not have; the Slack loop
+> through a public edge; the accounts-payable demo through the registry
+> path; and `kmx lift` end to end with Azure-managed monitoring, on a
+> cluster it created and on one it did not. The list under [What was
+> verified, and what was not](#what-was-verified-and-what-was-not) is the
+> ledger this count comes from: add a run there and update this number
+> with it.
 > AKS is *demonstrated*, not *maintained*: there is no
 > standing cluster, no scheduled job re-proving it, and no Azure
 > credential in CI, ever.
@@ -912,6 +914,26 @@ US$0.70), the Slack loop through the public edge
   enforced as written;
 - the Slack app un-pointed (Request URL and subscription removed) before
   the edge and the resource group were deleted, re-checked gone.
+
+Verified live on a fourth AKS cluster on 2026-09-03 (single node,
+westus3, roughly US$0.35), the accounts-payable demo through the
+registry path ([ap-demo.md](ap-demo.md)): the fixture ERP built by
+`az acr build` and deployed from the private registry, the agent denied
+on the exception and approved by a named person for that transaction,
+and the resource group deleted afterwards and re-checked gone.
+
+Two things about that run are recorded rather than smoothed over. The
+lane found a defect only a managed cluster could surface — the
+accounts-payable agent's manifest pinned a preset that does not exist on
+a Copilot-only cluster, so its governance step would have waited for
+Ready until it timed out — and `make ap-injection` did not complete
+verbatim: one attempt elapsed its 30-minute approval window and **failed
+closed, claiming nothing**, and by the next a live grant for the
+legitimate call existed, which makes the script's opening assertion (that
+the call is denied) impossible to reach. The scenario's substantive half
+was driven by hand with that script's own probes and arguments, and every
+assertion it makes was checked. The script is unchanged and CI runs it
+end to end on kind on every PR.
 
 
 The multi-node caveat in [egress.md](egress.md) was not exercised: all

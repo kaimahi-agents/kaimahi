@@ -189,7 +189,7 @@ cache (checksum-verified), port-forwards the controller, and invokes the agent.
 | Consume it as | How |
 |---|---|
 | **Local dev** | `make up` on kind; keyless, free, offline-capable model |
-| **Any conformant cluster** | the manifests are plain CRDs; **AKS** is the named managed target, and the governance plane has been [run there five times, on five clusters, each deleted the same day](docs/aks.md) |
+| **Any conformant cluster** | the manifests are plain CRDs; **AKS** is the named managed target, and the governance plane has been [run there six times, on six clusters, each deleted the same day](docs/aks.md) |
 | **CI / automation** | the same targets run headless — this repo's [CI](.github/workflows/ci.yml) boots a cluster and asserts a real reply, and a real tool call, on every PR |
 | **Your own repo** | copy `k8s/` + the make targets; each agent is one YAML file |
 | **Existing kagent install** | `kubectl apply -f k8s/hello-world.yaml` — no kaimahi runtime required |
@@ -237,8 +237,8 @@ available database ([docs/operations.md](docs/operations.md)).
 Cloud-agnostic — it runs on any conformant Kubernetes — with first-class
 attention to the Azure path: **AKS** as the managed target, **Azure AI
 Foundry** among the model endpoints. On AKS, be precise about what that means.
-It has been **demonstrated, not maintained**: five verified runs across
-2026-09-01, 09-02 and 09-06, each cluster torn down the same day. There is no standing cluster and no Azure credential in CI —
+It has been **demonstrated, not maintained**: six verified runs across
+2026-09-01, 09-02, 09-03 and 09-06, each cluster torn down the same day. There is no standing cluster and no Azure credential in CI —
 the repo is public and fork-exposed, so CI stays on kind and keyless,
 re-proving the portability *logic* (the context guard's decisions, the
 registry render) on every PR rather than the cloud itself.
@@ -262,12 +262,13 @@ to do, and holds the one table of what is governed today and what is not:
 Every control below is one make target. CI asserts the decision each one
 makes, on every pull request — but not always by running that target. CI is
 keyless and holds no Slack, GitHub, Azure or Copilot token, so the keyed
-families are proven a step to the side: the Slack manifests are applied
-directly and the deny → approve → post → burn cycle driven against the
-plane, the hosted-upstream path runs against a synthetic public server, and
-the release agent is never run at all — its governance is asserted against
-that same stand-in ([k8s/release-agent.yaml](k8s/release-agent.yaml) says
-so in the file).
+families are proven a step to the side: the Slack manifests are validated
+against the live CRDs by a server-side dry run — no Slack agent or MCP
+server pod is created, and neither is needed — while the deny → approve →
+post → burn cycle is driven against the plane itself; the hosted-upstream
+path runs against a synthetic public server; and the release agent is
+never run at all, its governance asserted against that same stand-in
+([k8s/release-agent.yaml](k8s/release-agent.yaml) says so in the file).
 
 | Command | Does | Docs |
 |---|---|---|

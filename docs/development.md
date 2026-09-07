@@ -51,10 +51,11 @@ test -z "$(gofmt -l cmd internal embed.go)" && go vet ./... && go build ./... &&
 python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-delegation.py
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)
 
-# The plane's store tests need a real Postgres and SKIP without one, so
-# the line above passes vacuously on a machine that has none. Point them
-# at a throwaway database to actually run them — CI's `go-plane` job uses
-# a service container:
+# Every plane/internal/store test SKIPS without a real Postgres, so on a
+# machine that has none the line above runs gofmt, vet, build and every
+# other package for real and covers the store not at all. Point them at a
+# throwaway database to actually run them — CI's `go-plane` job uses a
+# service container and fails if they skip:
 #   docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=throwaway \
 #     -e POSTGRES_USER=kaimahi -e POSTGRES_DB=kaimahi postgres:16
 #   (cd plane && KAIMAHI_TEST_PG_DSN='postgres://kaimahi:throwaway@127.0.0.1:5432/kaimahi?sslmode=disable' \
@@ -81,6 +82,7 @@ python3 scripts/check-brand-assets.py
 bash   scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash   scripts/check-no-azure-ids.sh path/to/transcript.txt
 bash   scripts/kube-guard-test.sh
+python3 scripts/release-notes.py --selftest
 
 # Container image
 docker build -t kaimahi-proxy:dev plane/

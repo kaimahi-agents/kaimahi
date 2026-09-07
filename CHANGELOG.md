@@ -235,13 +235,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
-- **`kmx` no longer acts on a cluster nobody chose.** Context resolution
-  used to fall through to `kind-kaimahi-p1`, label the result as coming
-  from a `KIND_CLUSTER` variable that did not exist, and never print where
-  the choice came from. It cost a real cluster: `kmx down` announced
-  "context not created yet" and then deleted one that existed. kmx now
-  refuses when nobody chose a context, and the banner names the source of
-  the one it did choose.
+- **`kmx` no longer acts silently on a cluster nobody chose.** Context
+  resolution used to fall through to `kind-kaimahi-p1`, label the result as
+  coming from a `KIND_CLUSTER` variable that did not exist, and never print
+  where the choice came from. It cost a real cluster: `kmx down` announced
+  "context not created yet" and then deleted one that existed. Two things
+  changed. The banner now names the **source** of the context it chose, on
+  every command. And the guard **refuses** the specific case that caused
+  that loss: a context reached only by falling through to the default, on a
+  kubeconfig that has contexts, whose current-context is something else.
+  The fallback itself is still there and still right for the fresh-machine
+  case — an empty kubeconfig gets `kind-kaimahi-p1`, which is what `kmx up`
+  is about to create — so this is a narrowed refusal plus an honest label,
+  not the removal of a default.
 - **A stale `Accepted` condition is reported as `unknown`, not as a pass.**
   A Kubernetes condition records when a verdict last *changed*, not when it
   was last checked, so after a credential is replaced the old pass stands
@@ -258,8 +264,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   actually execute model output were the only workload setting no security
   context at all, while the proxy and the fixture ERP set `runAsNonRoot`,
   no privilege escalation, dropped capabilities and a read-only root
-  filesystem. The five committed agents and the `kmx` scaffolder now carry
-  the same posture, so an agent an adopter creates is hardened too. Two
+  filesystem. Five of the six committed agents and the `kmx` scaffolder now
+  carry the same posture, so an agent an adopter creates is hardened too —
+  the scaffolder is the half that matters, because without it every agent
+  an adopter creates is unhardened. `k8s/release-agent.yaml` is the one
+  committed agent still setting no security context, and it landed after
+  this change; it is a gap, not a decision. Two
   things this took a cluster to learn are written into the manifests:
   `runAsNonRoot` alone fails when the image names its user by name rather
   than by number (kagent's image says `python`, so the numeric `1001` has
