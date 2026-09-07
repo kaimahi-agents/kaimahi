@@ -571,7 +571,18 @@ is a file that eventually gets committed. **If you lose the record, `kmx
 lift down` refuses rather than going looking by name.** Remove the
 resources by hand from the portal in that case.
 
-Two more refusals worth knowing, both on the bring-your-own branch:
+Three more refusals worth knowing, all on the bring-your-own branch:
+
+- **Monitoring you already had is not taken over.** If Managed Prometheus or
+  Container Insights is already enabled when the lift arrives, the
+  observability phase stops rather than proceeding. It will not repoint your
+  telemetry into a workspace this run owns and later deletes — and it cannot
+  point the dashboard at the workspace you already use, because the cluster
+  does not report which one that is for metrics. Proceeding would create
+  workspaces nothing sends to, wire a dashboard to them, and then report the
+  scrape as broken. Skip the phase with `--observability=false`, or disable the
+  add-on first if you meant this run to own it. Teardown follows the same rule
+  from the other end: an add-on that was on before the run is left on.
 
 - **The scrape ConfigMap is not overwritten.**
   `ama-metrics-prometheus-config` is cluster-wide and singular. If one

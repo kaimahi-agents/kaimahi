@@ -69,6 +69,21 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		return err
 	}
 
+	// Refuse BEFORE creating a workspace, not after.
+	//
+	// A cluster whose monitoring was already on keeps sending where it was
+	// already sending — this path will not repoint it, because that would
+	// silently move somebody's telemetry into a workspace this run later
+	// deletes. But creating our workspace anyway and then skipping the
+	// enablement produces the worst of both: a billed, empty workspace, a
+	// workbook wired to it, and a verification that waits five minutes for
+	// samples that are arriving somewhere else and then reports the scrape as
+	// broken. The cluster is fine; the dashboard is pointed at the wrong
+	// place. So this stops before anything is created.
+	if err := a.refuseIfMonitoringWasAlreadyOn(opt, record); err != nil {
+		return err
+	}
+
 	metricsName := lift.MetricsWorkspaceName(record.RunID)
 	metricsID, err := a.ensureRecorded(record, save, lift.Resource{
 		Kind: kindMetricsWorkspace, Name: metricsName, InResourceGroup: true,
@@ -121,7 +136,10 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 	// cluster we do not own is a resource left behind with nothing to say it
 	// exists. That is the same failure the Prometheus rule groups already
 	// caused once.
-	groups := a.monitoringGroups(opt)
+	groups, err := a.monitoringGroups(opt)
+	if err != nil {
+		return err
+	}
 	before, err := a.dataCollectionResourcesIn(groups)
 	if err != nil {
 		return err
@@ -210,6 +228,52 @@ func (a *App) readMonitorState(opt lift.Options) (monitorState, error) {
 		}
 	}
 	return st, nil
+}
+
+// refuseIfMonitoringWasAlreadyOn stops a run that would produce a dashboard
+// pointing somewhere other than where the cluster's telemetry goes.
+//
+// It reads the state this run RECORDED on arrival, not the state now, and that
+// distinction is what keeps the phase resumable: an add-on this run itself
+// enabled reads as "on" the second time through, and re-running a phase must
+// not become a refusal.
+//
+// Reusing the operator's existing workspace instead would be the friendlier
+// answer, and it is not available for metrics: the cluster's metrics profile
+// does not report which Azure Monitor workspace it feeds — the link runs
+// through a data-collection rule — so there is no supported lookup to reuse.
+// Rather than guess at one, this says what is wrong and what to do.
+func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Record) error {
+	var already []string
+	if record.Before.MetricsAddonEnabled {
+		already = append(already, "Managed Prometheus")
+	}
+	if record.Before.LogsAddonEnabled {
+		already = append(already, "Container Insights")
+	}
+	if len(already) == 0 {
+		return nil
+	}
+	return fmt.Errorf(`%s already enabled on this cluster before this run.
+
+  This path will not repoint it: moving your telemetry into a workspace this
+  run owns and later deletes would break monitoring you rely on, quietly. But
+  it cannot point a dashboard at the workspace you already use either — the
+  cluster does not report which one that is for metrics.
+
+  So it would create workspaces nothing sends to, wire a dashboard to them,
+  and then report the scrape as broken. Refusing instead.
+
+  Either keep what you have and skip this phase:
+
+    kmx lift --byo --observability=false %s
+
+  or turn the add-on off first, if you meant this run to own it:
+
+    az aks disable-addons --name %s --resource-group %s --addons monitoring
+    az aks update --name %s --resource-group %s --disable-azure-monitor-metrics`,
+		strings.Join(already, " and "), liftIdentityFlags(opt),
+		opt.Cluster, opt.ResourceGroup, opt.Cluster, opt.ResourceGroup)
 }
 
 // enableMetricsAddon turns Managed Prometheus on, unless it is already on.
@@ -438,16 +502,27 @@ var addOnCreatedTypes = []string{
 // documented `MC_<group>_<cluster>_<region>` shape, because that shape is a
 // default an operator can override at create time — and a snapshot pointed at
 // a group that does not exist would silently watch nothing.
-func (a *App) monitoringGroups(opt lift.Options) []string {
-	groups := []string{opt.ResourceGroup}
+// A failed lookup is an ERROR, not a shorter list. Silently dropping the node
+// group would narrow the snapshot to the cluster's own group, and a resource
+// the snapshot never looks at is one that is never recorded — which on a
+// cluster we do not own is a resource left behind with nothing to say it
+// exists. That is precisely how the Prometheus rule groups escaped the first
+// time, and the fix must not reintroduce it one level up.
+func (a *App) monitoringGroups(opt lift.Options) ([]string, error) {
 	node, err := a.Run.Capture("az", "aks", "show", "--name", opt.Cluster,
 		"--resource-group", opt.ResourceGroup, "--query", "nodeResourceGroup", "-o", "tsv")
-	if err == nil {
-		if n := strings.TrimSpace(node); n != "" && !strings.EqualFold(n, opt.ResourceGroup) {
-			groups = append(groups, n)
-		}
+	if err != nil {
+		return nil, fmt.Errorf(`cannot read the cluster's managed node resource group, so what the monitoring add-ons create there could not be watched for.
+
+  Enabling them without that snapshot would leave resources behind with
+  nothing in the run record to say they exist. Refusing rather than
+  half-watching: %w`, err)
 	}
-	return groups
+	groups := []string{opt.ResourceGroup}
+	if n := strings.TrimSpace(node); n != "" && !strings.EqualFold(n, opt.ResourceGroup) {
+		groups = append(groups, n)
+	}
+	return groups, nil
 }
 
 // dataCollectionResourcesIn lists everything the add-ons create across the

@@ -299,6 +299,58 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 	}
 }
 
+// A cluster whose monitoring was already on keeps sending where it was
+// sending. Creating our own workspaces anyway would bill for something nothing
+// feeds, wire the dashboard to it, and then report the scrape as broken — so
+// the refusal has to come before anything is created.
+//
+// The property that matters just as much: this must NOT fire on a resumed run.
+// An add-on this run itself enabled reads as "on" the second time through, and
+// re-running a phase must not turn into a refusal.
+func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
+	a := &App{}
+	opt := lift.Options{BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
+
+	for _, tc := range []struct {
+		name   string
+		before lift.Pre
+		says   string
+	}{
+		{"metrics was already on", lift.Pre{Recorded: true, MetricsAddonEnabled: true}, "Managed Prometheus"},
+		{"logs were already on", lift.Pre{Recorded: true, LogsAddonEnabled: true}, "Container Insights"},
+		{"both were already on", lift.Pre{Recorded: true, MetricsAddonEnabled: true, LogsAddonEnabled: true}, "and"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{Before: tc.before})
+			if err == nil {
+				t.Fatal("accepted; this would create a workspace nothing sends to")
+			}
+			if !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("the refusal does not name %q: %v", tc.says, err)
+			}
+			// It has to say how to get past it, both ways.
+			if !strings.Contains(err.Error(), "--observability=false") || !strings.Contains(err.Error(), "disable-addons") {
+				t.Errorf("the refusal offers no way forward: %v", err)
+			}
+		})
+	}
+
+	t.Run("a resumed run is not refused", func(t *testing.T) {
+		// This run found both off and turned them on. Coming back to the phase
+		// must be a no-op, not a wall.
+		err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{Before: lift.Pre{Recorded: true}})
+		if err != nil {
+			t.Fatalf("a resumed run was refused: %v", err)
+		}
+	})
+
+	t.Run("a fresh cluster is not refused", func(t *testing.T) {
+		if err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{}); err != nil {
+			t.Fatalf("a run with nothing recorded was refused: %v", err)
+		}
+	})
+}
+
 // The phases must stay re-runnable and in an order where nothing is put
 // behind a boundary before the boundary is proven.
 func TestTheBoundaryIsProvenBeforeAnythingIsPutBehindIt(t *testing.T) {
