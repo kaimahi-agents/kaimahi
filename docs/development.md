@@ -70,10 +70,18 @@ python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-
 # covers every shard, the network-policy shape, the registry render, the
 # release job staying keyless, and more). The job is the authority on what
 # runs, not this list.
-python3 scripts/check-doc-links.py
+python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
 python3 scripts/check-brand-assets.py
+# Credential shapes, from ONE list the manifest scaffolder and the
+# blueprint parser read too — so a shape added in one place is refused
+# everywhere. The self-test runs first.
+python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
+# Every checker, broken on purpose and required to notice. A checker that
+# has never been watched saying no is not known to work; this applies each
+# declared breakage to a copy and fails if the checker stays quiet.
+python3 scripts/check-mutations.py
 # Azure identifiers, by SHAPE: GUIDs (subscription/tenant), AKS API-server
 # hostnames, literal container-registry login servers, literal public
 # load-balancer DNS labels, public IPv4 addresses. The self-test runs

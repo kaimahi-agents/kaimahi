@@ -18,7 +18,9 @@ architecture, the build, and the mistakes that are easy to make here.
 Run the checks relevant to your change:
 
 ```bash
-python3 scripts/check-doc-links.py
+python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
+python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
+python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
 python3 scripts/check-brand-assets.py
