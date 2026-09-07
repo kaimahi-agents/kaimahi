@@ -144,6 +144,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   both reject — so the verification step failed on two of the platforms the
   release publishes for. `docs/releases.md` now shows a portable comparison,
   and `install.sh` uses whichever of `sha256sum`, `shasum` or `openssl` exists.
+- `kmx workflow run --dry-run` no longer writes to the cluster. It printed
+  "Nothing was created" and then re-minted every seam credential the workflow
+  declares a `refresh:` for, applying a Secret into plane custody — a turn step
+  names no upstream, so the refresh ran on the FIRST step of any run, including
+  one whose opening step only reads and drafts. A dry run now rides whatever
+  credential is already in custody.
+
+  **What an operator gets in exchange for that:** a dry run whose stored
+  credential has since expired will fail where it previously refreshed itself,
+  and the symptom is the agent reporting the seam's tools missing from its
+  toolset rather than anything naming a credential. So the run now says, before
+  it starts, which seams it is deliberately not refreshing and what an expired
+  one will look like. A live run is unchanged and still refreshes.
 
 ### Breaking
 
