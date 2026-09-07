@@ -120,6 +120,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   reference was carrying the argument, the reason is written out instead of
   cited. Trailing pointers to a capability document are unchanged; the
   planning board keeps its own identifiers.
+- **`kmx agent create` and the blueprint parser refuse a wider set of
+  credential shapes**, and both now read one shared list rather than each
+  keeping its own — so a shape added in one place is refused in all of them,
+  including the repository-wide scan CI runs on every change. Neither refuses
+  less than it did before. The list gained Slack's app-level token, which is
+  not an `xox` shape and so was covered nowhere, and an Azure DevOps personal
+  access token.
 
 ### Fixed
 
