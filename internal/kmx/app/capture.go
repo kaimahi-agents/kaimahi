@@ -31,11 +31,14 @@ import (
 //     pipe can arrive from a shell history or a CI log.
 //   - NO ECHO. The terminal's echo is off while it is typed and the value is
 //     never printed back.
-//   - THE VALUE GOES TO THE SECRET AND NOWHERE ELSE. It is not logged, not
-//     written to a temporary file, and not passed as an argument to kubectl
-//     — `--from-literal` would put it in the process table, so the Secret is
-//     rendered in memory and piped to `kubectl apply -f -`, and the buffers
-//     holding it are zeroed as soon as the write returns.
+//   - THE VALUE TRAVELS TO TWO PLACES AND NO OTHERS: the upstream, in an
+//     Authorization header, because a capture that stored an unchecked value
+//     would be worse than the make target it replaced; and the Secret. It is
+//     not logged, not written to a temporary file, not printed back, and not
+//     passed as an argument to kubectl — `--from-literal` would put it in the
+//     process table, so the Secret is rendered in memory and piped to
+//     `kubectl apply -f -`, and the buffers holding it are zeroed as soon as
+//     the write returns.
 //
 // The order of the steps is part of the fence too. The terminal check comes
 // first, so a piped invocation refuses before touching a cluster. The context

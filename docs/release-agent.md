@@ -163,9 +163,10 @@ a prompt with the terminal's echo off, and the value is read **from a
 terminal or not at all**: there is no flag, environment variable or file
 that will take it, and a pipe or a redirect is refused rather than read,
 because a credential that can arrive through a pipe can arrive from a
-shell history or a CI log. It goes into the Secret and nowhere else —
-never argv, never a temporary file, never a log. Everything after the
-prompt is the agent's.
+shell history or a CI log. From there it travels to exactly two places:
+the upstream, in an `Authorization` header, which is how it is checked;
+and the Secret. Never argv, never a temporary file, never a log, never
+this command's own output. Everything after the prompt is the agent's.
 
 This is the one path on which `kmx` accepts credential material. Every
 other path still refuses it: the agent wizard screens its input against

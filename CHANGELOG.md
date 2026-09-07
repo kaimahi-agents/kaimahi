@@ -37,10 +37,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   no environment variable, no file, and a pipe or a redirect is refused rather
   than read, because a credential that can arrive through a pipe can arrive
   from a shell history or a CI log. The terminal's echo is off while it is
-  typed. It goes to the Secret and nowhere else — not to argv (`--from-literal`
-  would put it in the process table, so the Secret is rendered in memory and
-  piped to `kubectl apply -f -`), not to a temporary file, not to a log — and
-  the buffers holding it are cleared when the write returns. The context guard
+  typed. It travels to exactly two places: the upstream, in an
+  `Authorization` header, because a capture that stored an unchecked value
+  would be worse than the make target it replaced; and the Secret. Not argv
+  (`--from-literal` would put it in the process table, so the Secret is
+  rendered in memory and piped to `kubectl apply -f -`), not a temporary file,
+  not a log, not this command's own output — and the buffers holding it are
+  cleared when the write returns. The context guard
   runs first, so the cluster about to hold the credential is named before
   anything is typed. Everything else in kmx keeps refusing credential
   material: the agent wizard still screens its input against credential
