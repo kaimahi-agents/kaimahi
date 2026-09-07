@@ -358,3 +358,85 @@ func TestASeamWithNoPriorVerdictAcceptsTheFirstOne(t *testing.T) {
 		t.Fatalf("the first verdict on a fresh seam was discarded: %+v", v)
 	}
 }
+
+// The baseline distinguishes "the seam said nothing" from "I could not read
+// what the seam said", because the caller treats the first as a complete
+// answer — no prior verdict, so the next one counts — and reading the second
+// that way would let the stale verdict already sitting there count as a
+// change.
+func TestABaselineTellsNoVerdictApartFromAnUnreadableOne(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+		wantAt  string
+	}{
+		{
+			name: "no Accepted condition at all is a complete answer",
+			raw:  `{"status":{"conditions":[{"type":"Ready","status":"True"}]}}`,
+		},
+		{
+			name:   "a readable verdict is the baseline",
+			raw:    `{"status":{"conditions":[{"type":"Accepted","status":"True","lastTransitionTime":"` + before + `"}]}}`,
+			wantAt: before,
+		},
+		{
+			name:    "a verdict with an unreadable time is not 'no verdict'",
+			raw:     `{"status":{"conditions":[{"type":"Accepted","status":"True","lastTransitionTime":"whenever"}]}}`,
+			wantErr: true,
+		},
+		{
+			name:    "a verdict with no time at all is not 'no verdict' either",
+			raw:     `{"status":{"conditions":[{"type":"Accepted","status":"True"}]}}`,
+			wantErr: true,
+		},
+		{
+			name:    "unreadable JSON is an error, not an empty seam",
+			raw:     `{"status":`,
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			at, err := parseSeamCondition(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("reported as an answer, leaving the baseline usable: %v", at)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			want := time.Time{}
+			if tc.wantAt != "" {
+				want = written(tc.wantAt)
+			}
+			if !at.Equal(want) {
+				t.Errorf("baseline: got %v, want %v", at, want)
+			}
+		})
+	}
+}
+
+// And the consequence the case above exists to prevent: an unreadable
+// baseline must leave Known false, so a verdict that never moved cannot be
+// read as one that did.
+func TestAnUnreadableBaselineTimeDoesNotBecomeAnEmptyOne(t *testing.T) {
+	at, err := parseSeamCondition(
+		`{"status":{"conditions":[{"type":"Accepted","status":"True","lastTransitionTime":"whenever"}]}}`)
+	if err == nil {
+		t.Fatal("an unreadable time was accepted")
+	}
+	if !at.IsZero() {
+		t.Errorf("a failed parse still returned a time: %v", at)
+	}
+	// A baseline built from that failure proves nothing, and the verdict
+	// afterwards says so rather than counting as a change.
+	v := classifySeamVerdict(&serverCondition{
+		Type: "Accepted", Status: "True", LastTransitionTime: before,
+	}, 0, 0, seamBaseline{Since: written("2026-09-06T10:05:00Z")}) // Known: false
+	if v.State != verdictUnknown {
+		t.Errorf("a stale verdict counted as a change against a baseline nobody had: %+v", v)
+	}
+}

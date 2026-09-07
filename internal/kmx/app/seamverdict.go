@@ -218,8 +218,20 @@ func (a *App) seamVerdictBaseline(namespace, server string, since time.Time) sea
 	return seamBaseline{Since: since, At: at, Known: true}
 }
 
-// parseSeamCondition returns the Accepted condition's transition time, or the
-// zero time when there is no such condition yet.
+// parseSeamCondition returns the Accepted condition's transition time.
+//
+// The zero time is returned for exactly one case: there is no Accepted
+// condition at all. That is a complete answer — nothing has been decided about
+// this seam, so whatever is decided next is about the credential we are about
+// to write.
+//
+// A condition that EXISTS but carries a time nobody can read is the opposite,
+// and is an error. Returning the zero time there would report "I could not
+// understand what the seam said" as "the seam said nothing", and the caller
+// reads a zero baseline as "no prior verdict" — so the next verdict, including
+// the stale one already sitting there, would count as a change. That is the
+// same false absence the rest of this file exists to refuse, and it fails
+// open.
 func parseSeamCondition(raw string) (time.Time, error) {
 	var doc struct {
 		Status struct {
@@ -235,7 +247,8 @@ func parseSeamCondition(raw string) (time.Time, error) {
 	}
 	at, err := time.Parse(time.RFC3339, strings.TrimSpace(c.LastTransitionTime))
 	if err != nil {
-		return time.Time{}, nil
+		return time.Time{}, fmt.Errorf("the Accepted condition carries a time that cannot be read (%q): %w",
+			c.LastTransitionTime, err)
 	}
 	return at, nil
 }
