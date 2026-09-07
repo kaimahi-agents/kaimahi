@@ -1761,7 +1761,12 @@ jobs:
           done
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -tAc 'SELECT count(*), count(DISTINCT version_id) FROM goose_db_version WHERE version_id > 0' | tee versions.out
-          python3 -c 'n,d=open("versions.out").read().strip().split("|"); assert n==d and int(n)>=7, (n,d)'
+          # The floor comes from the committed migrations, not from a number
+          # typed here: it said 7 while there were ten, so a plane that
+          # stopped applying after the seventh would have passed. An empty
+          # migration directory is a broken derivation, not a clean run.
+          expected=$(ls plane/internal/db/migrations/*.sql | wc -l)
+          python3 -c 'import sys; n,d=open("versions.out").read().strip().split("|"); e=int(sys.argv[1]); assert e>0, "no migration files found"; assert n==d, (n,d); assert int(n)==e, ("applied", n, "committed", e)' "$expected"
       - name: Issue governed credential and switch agent through the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: make govern
