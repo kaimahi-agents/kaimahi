@@ -335,18 +335,28 @@ func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 		})
 	}
 
-	t.Run("a resumed run is not refused", func(t *testing.T) {
-		// This run found both off and turned them on. Coming back to the phase
-		// must be a no-op, not a wall.
+	// A cluster established to have had monitoring OFF — which is both a fresh
+	// cluster and a resumed run that turned the add-ons on itself. Recorded is
+	// what makes it "established"; the flags being false is what makes it
+	// "off". Re-running the phase must be a no-op, not a wall.
+	t.Run("monitoring established as off is not refused", func(t *testing.T) {
 		err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{Before: lift.Pre{Recorded: true}})
 		if err != nil {
-			t.Fatalf("a resumed run was refused: %v", err)
+			t.Fatalf("a cluster known to have had monitoring off was refused: %v", err)
 		}
 	})
 
-	t.Run("a fresh cluster is not refused", func(t *testing.T) {
-		if err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{}); err != nil {
-			t.Fatalf("a run with nothing recorded was refused: %v", err)
+	// An empty record is NOT a fresh cluster — a fresh cluster is Recorded
+	// with both flags off. It is a cluster nobody looked at, and the gate
+	// exists to not act on an unknown. Asserting that it proceeds would pin
+	// the opposite of the rule the rest of this package follows.
+	t.Run("prior state never established is refused", func(t *testing.T) {
+		err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{})
+		if err == nil {
+			t.Fatal("a run whose prior monitoring state was never established was allowed to proceed")
+		}
+		if !strings.Contains(err.Error(), "never established") {
+			t.Errorf("the refusal does not say why: %v", err)
 		}
 	})
 }

@@ -244,6 +244,19 @@ func (a *App) readMonitorState(opt lift.Options) (monitorState, error) {
 // through a data-collection rule — so there is no supported lookup to reuse.
 // Rather than guess at one, this says what is wrong and what to do.
 func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Record) error {
+	// Unestablished prior state is a refusal, not a pass.
+	//
+	// It should be unreachable — recordPreExistingState either errors or sets
+	// this — and that is exactly why it is worth stating: the gate's whole job
+	// is to not act on an unknown, and a gate that opens when it has been told
+	// nothing is one reordering away from opening for real. The rest of this
+	// package already reads unestablished state as "touch nothing"
+	// (Pre.WeEnabledMetrics and its siblings); this is the same rule pointing
+	// the other way.
+	if !record.Before.Recorded {
+		return fmt.Errorf("kmx lift: what monitoring this cluster had before this run was never established, so whether this would be enabling it or taking it over is unknown — refusing rather than proceeding blind")
+	}
+
 	var already []string
 	if record.Before.MetricsAddonEnabled {
 		already = append(already, "Managed Prometheus")
