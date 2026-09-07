@@ -130,8 +130,11 @@ prefix.
 | W34a: `kmx status` counts what is governed (absorbing the stale #37) | W34a worker | PR #110 MERGED — closed #37 honestly rather than rebasing a PR whose central file no longer existed | coordinator verification owed |
 | W34b: the version handshake, the silent context fallback, the credential lag | unassigned | **RE-CUT 2026-09-06** — prompt below; the ungoverned count shipped in #110, three findings take its place | the silent context fallback is the security-relevant one |
 | W35: a governed workflow, said once — the blueprint and one driver (D42) | W35 worker | PR #107 MERGED (main b18825d) — **milestone 1 verified live and exact; milestone 2 CANNOT START** (delta sheet below) | `kmx workflow run` binds every step regardless of `when:`, so no parameter set starts a run; W36 shaped below |
-| W36: `kmx workflow run` has no first command (from the W35 verification) | W36 worker | PR #112 OPEN — show and run describe one run | coordinator verification owed |
-| W37: say the thing, not its planning number — 879 references cleaned out of code and docs | unassigned | SHAPED 2026-09-06 — prompt below | NOT a sed: about a fifth are load-bearing and need the reason written out; runs AFTER #112 merges |
+| W36: `kmx workflow run` has no first command | W36 worker | PR #112 MERGED — show and run describe one run | coordinator verification owed |
+| W37: say the thing, not its planning number | W37 worker | PR #114 MERGED (+#115, #116 follow-ups) — 897 references to zero, comments REWRITTEN not deleted (spot-checked) | coordinator verification owed |
+| W34b: the version handshake, the context guard, the credential lag | W34b worker | PR #118 MERGED | coordinator verification owed |
+| W33: the lift — local agent to AKS with managed observability | W33 worker | PR #119 MERGED — three clusters torn down, `az group exists` false, ~US$0.60 reported | coordinator verification owed |
+| W38: the e2e chat flake — a 3B model that asks instead of answers | unassigned | SHAPED 2026-09-07 — prompt below | small; the honest-retry question is the whole lane |
 | Brand assets + architecture diagram + org/front-door plans | user-run lane (outside the board's prompt set) | PR #33 MERGED (+ kaimahi-agents/.github#1); main CI green | brand validator in the hygiene job |
 | README front door + CONTRIBUTING.md | user-run lane (outside the board's prompt set) | PR #34 MERGED; main CI green | anchored front-door checker in hygiene: section order enforced, no `npx kaimahi create` mention before the quickstart ends — PR #16's README hunk must land under "A scaffolder CLI: considered, not built" (was "Proposed CLI direction" until D23) |
 | CLI decisions + PR #16 review | user + coordinator | D19 ruled; coordinator review rounds done (2026-09-01/02) | not a build lane; parallelises with everything |
@@ -1503,12 +1506,23 @@ PR #24's e2e went red at the P3 probe step with the tool call SUCCEEDING
 `scripts/verify-chat.py` requires the probe name in the model's REPLY.
 That is the P3-delta relaying-side failure mode, now observed in CI; the
 system-message mitigation measured 10/10 at the time but is not 100%.
-Independent of the transport flake #20 fixed. Follow-up (small, not GO
-until the parallel set merges — it touches CI): the verifier should
-take the probe name from the `function_response` payload, which is the
-real proof of a live round-trip, and treat the prose as informational.
-Requiring a 3B model to copy an unguessable string verbatim tests the
-model, not the tool path. Until then: re-run the job when this shape
+Independent of the transport flake #20 fixed.
+
+**THE FOLLOW-UP DESCRIBED HERE WAS BUILT — this note was stale until
+2026-09-07.** `scripts/verify-chat.py` takes the probe name from the
+`function_response` payload and prints the model's prose without
+asserting on it; its docstring cites the case above. Requiring a 3B
+model to copy an unguessable string tested the model, not the tool path,
+and it no longer does. Recorded because the coordinator twice told the
+user this fix was outstanding, reading the board instead of the code —
+**a resolved entry that keeps its open follow-up in the present tense
+will be quoted back as open.**
+
+**A DIFFERENT SHAPE IS STILL LIVE, and W38 owns it.** On 2026-09-07 the
+`e2e-tools` shard failed on main with `state=input-required` and an
+EMPTY reply: the model asked a question instead of answering, and the
+non-interactive harness has nobody to answer it. The verifier failed
+closed, correctly. Until W38 lands: re-run the job when this shape
 appears; do not hold lanes for it.
 
 ## CI flake class 3 — the old pod answers after `use` (recorded 2026-09-01) — RESOLVED by #32 (W16)
@@ -4148,6 +4162,81 @@ A residue is acceptable if each survivor is justified in the PR; a zero
 that was reached by deleting comments wholesale is not. Branch from
 current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
+```
+
+### W38 — the e2e chat flake: a 3B model that asks instead of answers (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — the CI flake notes and the security standing guidance bind you.
+Small lane, one real question in it.
+
+**The failure, reproduced on main and not to be rediscovered.** On
+2026-09-07 the `e2e-tools` shard went red at the governed-chat step:
+
+    state=input-required
+    reply:
+
+An empty reply, and an A2A state meaning the agent is asking for input.
+`scripts/verify-chat.py` requires `state == "completed"` and a non-empty
+reply, so it failed closed — which is right. The cause is the model: a
+3B model sometimes responds to a question with a question, and
+`kagent invoke` in CI has nobody to answer it. The next merge's CI
+passed with no code change between them, which is what a flake looks
+like.
+
+**Do not confuse this with the relaying flake, which is FIXED.**
+`verify-chat.py` already reads the probe name from the
+`function_response` payload and does not assert on the model's prose.
+Read its docstring before you touch it. Your failure is a different
+shape: not a garbled string, an absent answer.
+
+**`input-required` is a REAL state, not a bug.** `kmx`'s interactive
+chat handles it deliberately — it is also how an approval confirmation
+surfaces (`internal/kmx/app/chat_interactive.go`). Nothing you do may
+make a genuine input-required look like success, in CI or anywhere
+else. If your change would let an approval prompt pass as a completed
+answer, it is wrong.
+
+**The question this lane owns, and it is the whole lane: is retrying
+honest here?** The precedent is the Go-proxy retry, which was accepted
+on a stated principle — *the class of failure decides whether repeating
+it is honest*. It retried one narrowly-matched, self-healing condition
+and let everything else fail on the first attempt, because repeating a
+compile error helps nobody. Apply the same test:
+- A model that asked a question instead of answering is
+  non-deterministic model behaviour, and a second sample is a fair
+  sample. That argues retry.
+- But a retry also hides a real defect if the agent's prompt or tool
+  set is what invites the question. **Check that first**: if
+  `hello-world` can reach a tool that asks the user anything, or its
+  system message leaves room for a clarifying question, the fix is
+  there and not in a retry. Say what you found either way.
+
+Whatever you choose: bounded, matched narrowly on this exact shape
+(`input-required` with an empty reply), never a blanket retry of a chat
+step, and it must SAY it is retrying and why — a silent retry turns a
+50% failure into an invisible one. If you retry, report how many
+attempts each CI shard actually used, so the rate is visible rather
+than hidden.
+
+**Out of scope:** changing the model. qwen2.5:3b is the keyless CI tier
+and a bigger model is not available to CI.
+
+Guardrails: CI stays keyless; no repo secrets; kmx accepts no credential
+material beyond the one ruled terminal-only prompt, which is not yours;
+every mutation through the context guard; comments say what the thing
+does, never a lane or decision number.
+
+Verification: `python3 scripts/verify-chat.py --selftest` still passes,
+with a NEW fixture for the input-required-empty-reply shape so this case
+is pinned; and evidence that a genuine input-required — the approval
+confirmation shape in `internal/kmx/app/followup_test.go` — still does
+NOT pass as success. If you added a retry, show it firing and show it
+announcing itself. Branch from current main; PR targets main; no stacked
+bases; lane ends at PR-open-with-checks-green — do not merge. Report
+deviations in the PR.
 ```
 
 ## Delta sheets from finished lanes
