@@ -167,7 +167,7 @@ rollout, by a pod that will not start. What the plane understood comes
 back:
 
 ```
-The plane validated the table: erp, github, kagent-tools, slack, warehouse.
+The plane validated the table: ado, erp, github, github-release, kagent-tools, slack, warehouse.
   stock_adjust: an approval binds sku, delta.
   stock_get: an approval binds sku.
 ```
@@ -344,8 +344,9 @@ than our own demos would be worse than none:
   an upstream's real credential from plane custody (the Slack MCP server
   works that way), but the mount for it is a volume on the proxy's own
   Deployment, and `kmx tools add` does not edit committed workloads.
-  **The overlay refuses `credential_file` and `credential_header`
-  outright**, so this is an enforced boundary and not only a convention:
+  **The overlay refuses `credential_file`, `credential_header` and
+  `extra_headers` outright**, so this is an enforced boundary and not only
+  a convention:
   a ConfigMap that could name any path the proxy can read, and any host
   it may be sent to, would be a complete exfiltration primitive for the
   plane's own admin token. Add the `volumeMounts`/`volumes` pair to
@@ -355,7 +356,8 @@ than our own demos would be worse than none:
   only way a credential reaches kmx is typed at a prompt on a terminal
   (`kmx credential capture`), which writes it straight into a Secret.
 - **A server outside the cluster.** `internet: true` and `ca_file` are
-  refused in an overlay for the same reason, and hosted upstreams are
+  refused in an overlay for the same reason — five fields in all, and the
+  plane refuses them, not just kmx — and hosted upstreams are
   reached only through the plane's hardened dialer with an opt-in 443
   allowance rather than the in-cluster policy pair:
   [hosted-upstreams.md](hosted-upstreams.md).

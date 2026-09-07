@@ -75,7 +75,7 @@ The GitHub token is the plane's, exactly like the Copilot token:
   a well-formed positive for the named repository.
 - Only a **fine-grained** token is accepted (`github_pat_` prefix; a
   classic PAT or an OAuth token is refused). Scope it to one repository
-  with Issues: Read and Pull requests: Read. The script proves the token
+  with Issues: Read and Pull requests: Read. The capture proves the token
   reads that one repository; GitHub does not expose a fine-grained
   token's permissions, so read-only is your choice at creation, and the
   gateway allowlist, which never names a write tool, is the layer the
@@ -111,7 +111,7 @@ fail-closed:
 | A host that resolves to a private, link-local, loopback, carrier-NAT, multicast, reserved or cloud-metadata address (`169.254.169.254` first of all), in IPv4, IPv6, IPv4-mapped or NAT64 form | Every resolved address is checked; one bad answer refuses the call. A private answer at boot refuses the config loudly (the pod does not start); a private answer later refuses that call, audited |
 | DNS rebinding: a record that changes after the check | The connection goes to the address that was checked, never back through the name, and every call resolves afresh (no connection reuse) |
 | Redirects | Surfaced, never followed; the gateway answers 502 and audits it |
-| A silent upstream | 10 s each to resolve, to connect and to handshake; 60 s to start answering |
+| A silent upstream | 10 s each to resolve, to connect and to handshake; 60 s to start answering. That last bound is the one operator-adjustable number in this table: `EGRESS_HEADER_TIMEOUT` on the proxy raises it, to at most 10 minutes, and a value outside that refuses at boot. A long reasoning completion legitimately exceeds a minute to first token and used to surface as a 502 naming http2 rather than the cause. It raises patience, never reach — every other refusal here is fixed |
 | A stalled or oversized body | Cut at 5 minutes or 8 MiB; the read fails with a named error rather than truncating silently. A buffered body becomes a 502 on both seams and the gateway's audit row says so; a streamed (SSE) body has already carried its status, so the stream ends and the row notes the cut |
 
 The documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`,
@@ -208,10 +208,16 @@ done: `make github-down` removes the agent and the seam;
 
 ## How to add another hosted server
 
-1. Add a `tool_upstreams` entry: an `https` URL on 443, `internet: true`,
-   and a `credential_file` naming a mounted Secret path if the server is
-   keyed. Add `extra_headers` if the server lets a caller narrow what it
-   offers — do that before relying on the allowlist alone. Add the Secret mount to
+1. Add a `tool_upstreams` entry **to the committed table**
+   ([`k8s/plane/upstreams.yaml`](../k8s/plane/upstreams.yaml)): an `https`
+   URL on 443, `internet: true`, and a `credential_file` naming a mounted
+   Secret path if the server is keyed. This cannot be done from an
+   operator overlay — the plane refuses `internet`, `ca_file`,
+   `credential_file`, `credential_header` and `extra_headers` in an
+   overlay fragment, so a hosted or keyed upstream is a reviewed change to
+   this repository by design. Add `extra_headers` if the server lets a
+   caller narrow what it offers — do that before relying on the allowlist
+   alone. Add the Secret mount to
    [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) as an optional
    volume, and a row in `internal/kmx/seam`'s table — the seam's name,
    the Secret it stores, the subject it is scoped to, and a check that
@@ -242,8 +248,8 @@ about an hour), and write tools on GitHub exist — each write denied by
 default, filed naming the artifact, and approved call by call. See
 [release-agent.md](release-agent.md).
 
-A hosted entry may also carry `extra_headers`: committed, non-secret
-headers set on every forwarded call. That is how `github-release` and
+A hosted entry may also carry `extra_headers`: committed-table only (an
+overlay is refused), non-secret headers set on every forwarded call. That is how `github-release` and
 `ado` narrow what their servers are willing to OFFER
 (`X-MCP-Toolsets`, `X-MCP-Tools`, `X-MCP-Exclude-Tools`), before
 discovery and therefore before the allowlist ever runs — a tool excluded

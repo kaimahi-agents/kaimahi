@@ -227,8 +227,8 @@ make approvals
 ```
 
 ```text
-id           credential  kind  subject           detail                          call
-c41f8a2e-…   ap-agent    tool  payment_schedule  denied tools/call via upstream erp
+id           created (UTC)       credential  kind  subject           detail                            call
+c41f8a2e-…   2026-09-02T10:14:03 ap-agent    tool  payment_schedule  denied tools/call via upstream erp
              payment_schedule: invoice_id INV-88134, amount_cents 3255000, payee_id MER-4471
 ```
 
@@ -246,8 +246,8 @@ make grants
 ```
 
 ```text
-id          credential  kind  subject           live  uses  decided by         binds
-9a3d…       ap-agent    tool  payment_schedule  yes   0/1   slack:U…           call 5f2c1e8a44b7
+id     credential  kind  subject           live  expires (UTC)        uses  amount  created (UTC)        decided by  binds              cred expires (UTC)
+9a3d…  ap-agent    tool  payment_schedule  yes   2026-09-02T10:24:11  0/1   -       2026-09-02T10:14:11  slack:U…    call e533a844d950  2026-10-02T09:58:04
 ```
 
 `binds` is the approval's whole character: it admits **one call**, the one

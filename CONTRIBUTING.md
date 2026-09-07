@@ -29,6 +29,15 @@ test -z "$(gofmt -l cmd internal embed.go)" && go vet ./... && go test ./...
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go test ./...)
 ```
 
+That last line passes **vacuously** without a database: every
+`plane/internal/store` test skips unless `KAIMAHI_TEST_PG_DSN` points at a
+Postgres. Stand a throwaway one up and set it if your change touches the
+store — CI's `go-plane` job uses a service container and always runs them.
+
+The checkers above are the ones you can usefully run by hand. CI's hygiene
+job runs them, each one's self-test, and a set of inline meta-checks over
+CI's own guards; it is the authority on what gates a merge, not this list.
+
 Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
 `plane/` is the governance plane's. The kind path of the Makefile delegates
 to `kmx`, so a change to `make up`, `make chat`, `make status`, `make down`

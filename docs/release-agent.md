@@ -31,6 +31,12 @@ Slack from a phone:
 Start with `DRY_RUN=1`. It reads, drafts the notes, and stops before the
 first consequential call.
 
+`STEP=<name>` runs one part of it instead of all of it. There are eight:
+`propose`, `compose`, `cut`, `build`, `watch`, `publish`, `refresh` and
+the default `all`. `compose` and `publish` re-run the steps they depend on
+(`publish` composes the notes itself), and `refresh` only re-mints the
+Azure DevOps credential and checks the seam.
+
 ## What the agent does, and what it cannot
 
 **It drafts.** It reads the last release, reads what merged since, and
@@ -47,9 +53,22 @@ makes and a human approves.
 gateway. The request-body cap is 4 MiB
 ([`gateway.go`](../plane/internal/gateway/gateway.go)), and an MCP gateway
 moving binaries would be the wrong tool at any size. The agent dispatches
-the GitHub workflow and the Azure DevOps pipelines; they build and publish.
+the GitHub workflow and the Azure DevOps pipelines; they build.
 This turned out to be forced rather than chosen — see
 [what the GitHub server cannot do](#what-the-github-server-cannot-do).
+
+**The last step, publishing, is the one place bytes move on this machine,
+and it is weaker than the rest.** GitHub Actions cannot reach the Azure
+DevOps organization and an ADO pipeline was ruled out, so the only host in
+both networks is the one the driver runs on: `scripts/release-publish.sh`
+creates the GitHub release with the agent's notes and streams the build
+artifacts from ADO onto it (1.28 GB across five assets on the last
+release). The **decision** is governed exactly like every other
+consequential call — a request naming the release, a named human, a grant
+welded to it — but the **transfer** is not: the gateway is not in that
+path, and the credentials are the operator's own `az` and `gh`, not plane
+custody. That is written down rather than glossed, in the script's own
+header.
 
 **It never decides to ship.** Every consequential call is denied by
 default, files an approval request carrying the exact call, and proceeds
@@ -233,7 +252,11 @@ the command says so.
    written with a single-key merge patch because other operators'
    fragments live in the same ConfigMap.
 3. The consequential calls bind `owner` and `repo` in their digest, so an
-   approval for one repository cannot be spent on another.
+   approval for one repository cannot be spent on another. (The one closed
+   exception to digest binding — grants recorded before argument binding
+   existed — is in
+   [tool-governance.md](tool-governance.md#enforcement-all-fail-closed); no
+   new one can be created, and this credential has none.)
 
 ## Long builds: the driver polls, the agent never blocks
 

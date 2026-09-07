@@ -38,13 +38,14 @@ never creates it.
 ## Hooks
 
 Hooks live in the committed upstream table, `k8s/plane/upstreams.yaml`,
-under `inbound_hooks`. Three ship:
+under `inbound_hooks`. Four ship:
 
 | hook | proof | triggers | notes |
 |---|---|---|---|
 | `demo` | Kaimahi signed webhook (`kaimahi-hmac`) | `hello-world` | the generic primitive; CI drives it end to end |
 | `demo-bearer` | bearer token (`bearer`) | `hello-world` | for a source that can set a header but cannot sign |
 | `slack-events` | Slack request signing (`slack`) | `hello-slack` | the one named source; `app_mention` only, from one channel; also carries the approval commands (`approve`/`deny`) from listed approvers (asserted keyless in CI; live verification pending); live-verified on AKS as the loop, see below |
+| `slack-tools` | Slack request signing (`slack`) | `hello-tools` | the same Slack source pointed at the tool-using agent, so a mention can drive a governed tool call; its own signing secret and its own `tool_credential` |
 
 Each hook names the plane credential it is bound to, how the caller
 proves it, the agent it triggers, and `budget_credential`: the credential
@@ -169,7 +170,7 @@ make inbound-audit HOOK=demo  # one hook
 ```
 
 ```
-created (UTC)       hook   credential     delivery        decision  status   in  out detail
+created (UTC)       hook   credential     delivery        decision  status   in  out detail                                        acted for
 2026-09-01T21:25:17 demo   inbound-demo   live-7f640710   completed    200  368    3 task 348f6222-...
 2026-09-01T21:25:09 demo   inbound-demo   live-7f640710   denied       409    0    0 replay: delivery already admitted
 2026-09-01T21:25:07 demo   inbound-demo   live-7f640710   admitted     202    0    0 granted eac9d995-...
@@ -489,8 +490,9 @@ workspace's traffic — to whoever owns the name later.
   (`x-user-id: kaimahi-inbound/<hook>`), not to whoever sent the event.
 - The plane's egress to the kagent controller on 8083 is allowed
   explicitly in `k8s/plane/network-policy.yaml` (the [egress](egress.md)
-  boundary); nothing else in the kagent namespace is reachable from the
-  plane.
+  boundary). No agent *pod* is reachable from the plane; the one other
+  thing in the kagent namespace that is, is kagent's tool server on 8084,
+  which the gateway reaches as a tool upstream.
 - No public exposure on kind, and none by default on AKS: the edge is an
   opt-in step (`make inbound-expose`) that exists for the one Slack hook,
   and `make plane` never creates it. On kind the port-forward path is

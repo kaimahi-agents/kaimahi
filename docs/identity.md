@@ -137,9 +137,11 @@ does not. The schema enforces the shape.
 ### The rules
 
 - Every credential issued from now on **has a deadline**. `make govern`
-  and `make govern-tools` apply the plane's default (30 days) unless a
-  lifetime is named; the admin surface offers **no way to ask for
-  "never"**.
+  and `make govern-tools` apply the plane's default (30 days); the admin
+  surface offers **no way to ask for "never"**. Only `kmx govern --ttl`
+  names a lifetime at issue — `kmx tools govern` has no `--ttl`, so a
+  gateway credential always takes the default and is moved afterwards
+  with `kmx credential renew`.
 - A credential with **no** expiry is the **legacy class**: issued before
   this existed, and still valid. Expiring a running estate at migration
   time would be an outage, not a control. The class can only shrink.

@@ -24,6 +24,8 @@ section below says exactly what that does and does not constrain.
 | proxy | ollama (namespace `ollama`) | 11434 | the keyless upstream |
 | proxy | kagent's tool server (`kagent-tools`) | 8084 | the gateway's first upstream |
 | proxy | Slack MCP server | 13080 | the gateway's second upstream |
+| proxy | the fixture ERP (`kaimahi-erp`) | 8085 | the gateway's in-cluster upstream for the accounts-payable demo. The rule is present whether or not the ERP is deployed; an allowance to a pod that does not exist opens nothing |
+| proxy | kagent's **controller** | 8083 | the inbound bridge invokes agents through the controller's A2A endpoint. The controller only — not the agent pods, not the rest of the namespace |
 | proxy | CoreDNS | 53 | name resolution for all of the above |
 | Slack MCP server | CoreDNS | 53 | to resolve api.slack.com |
 | Slack MCP server | public addresses | 443 | Slack's API. See the caveat below |
@@ -32,6 +34,8 @@ section below says exactly what that does and does not constrain.
 | internet | inbound edge | 8443 (443 on the load balancer) | **opt-in only**, AKS, `make inbound-expose`: the one internet ingress in the repo ([inbound.md](inbound.md#putting-it-on-the-internet)) |
 | inbound edge | proxy | 8082 | the edge forwards Slack events to the bridge; besides CoreDNS, the only in-cluster peer it may reach |
 | inbound edge | CoreDNS, public addresses | 53, 443 | to reach Let's Encrypt for its certificate |
+| a Prometheus in a namespace called `monitoring` | proxy's ops port | 9092 | **opt-in only**: the rule matches nothing until an operator creates that namespace and runs a pod labelled as Prometheus. There is no auth on the port, so the allowance *is* the access control |
+| Azure Managed Prometheus's replica pod (`rsName: ama-metrics` in `kube-system`) | proxy's ops port | 9092 | **opt-in only**, AKS: applied by `kmx lift`'s observability phase from `k8s/observability/network-policy.yaml`, never on kind. The add-on's per-node DaemonSet is deliberately **not** allowed |
 
 Everything not in the table is denied. In particular:
 

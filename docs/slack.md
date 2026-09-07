@@ -115,12 +115,14 @@ namespace kagent                          namespace kaimahi
   (verified on the live cluster), so the workspace token sits next to the
   Copilot key in `kaimahi`, and `kagent` holds nothing but opaque `kmh_`
   tokens.
-- **Upstream table**: `k8s/plane/upstreams.yaml` has a second
-  `tool_upstreams` entry, `slack`, in-cluster. CI asserts every entry
+- **Upstream table**: `k8s/plane/upstreams.yaml` carries `slack` as one
+  of its six `tool_upstreams` entries, in-cluster. CI asserts every entry
   not marked `internet: true` resolves to an in-cluster hostname; the
-  one marked entry (GitHub's hosted server) is reached only through the
-  hardened dialer ([hosted-upstreams.md](hosted-upstreams.md)), so an
-  internet-facing upstream cannot slip in silently.
+  three marked ones (GitHub's hosted MCP server, the write-scoped GitHub
+  seam the release agent uses, and Microsoft's hosted Azure DevOps server)
+  are reached only through the hardened dialer
+  ([hosted-upstreams.md](hosted-upstreams.md)), so an internet-facing
+  upstream cannot slip in silently.
 - **No ungoverned Slack path is *shipped*.** The tools docs keep an
   ungoverned wiring for contrast; this path ships none, so the only route
   this repo wires is through the gateway. That is a statement about the

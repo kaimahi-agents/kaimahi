@@ -164,8 +164,11 @@ redefine one is refused rather than resolved by precedence, and
 using the same `config.Parse` the proxy boots with — so a malformed entry
 is refused before it is applied rather than by a pod that will not start.
 An overlay entry may not set `credential_file`, `credential_header`,
-`internet` or `ca_file`: those decide what credential the proxy reads and
-which host outside the cluster it may be sent to, and belong in the
+`internet`, `ca_file` or `extra_headers`: the first four decide what
+credential the proxy reads and which host outside the cluster it may be
+sent to; `extra_headers` decides what the proxy *sends* on a call it makes
+under a credential it holds, which on a keyless in-cluster server would let
+an overlay forge whatever header that server trusts. All five belong in the
 committed table. Keyed and hosted upstreams are therefore committed-table
 only, by enforcement rather than by convention.
 
@@ -201,6 +204,13 @@ via subPath, which never live-updates.
   grant welded to this call's digest. Everything else is denied and files
   a request carrying the call. Arguments that are not a JSON object are
   refused rather than forwarded unexamined.
+
+  **One closed exception.** Grants recorded before argument binding
+  existed carry a NULL digest and are honoured for any call on that tool.
+  No new one can be minted — the store refuses a tool grant for a request
+  with no digest — and they are consumed LAST, so an exact match is always
+  burned first. Those legacy grants were still bounded by expiry and use
+  count when a human approved them. The class can only shrink.
 - **Allowlist.** Enforced on `tools/call` and **projected** onto
   `tools/list`. kagent's controller discovers through the gateway, so
   `status.discoveredTools` on `kaimahi-tools` shows exactly what the
@@ -312,8 +322,9 @@ that matters: GitHub's exposes 61 write tools including
 `delete_repository`, and Azure DevOps' consolidates four operations into
 one `pipelines_write`.
 
-A `tool_upstreams` entry may therefore carry `extra_headers`: committed,
-non-secret headers set on every forwarded call. Both of those servers
+A `tool_upstreams` entry may therefore carry `extra_headers`:
+committed-table only (an overlay is refused), non-secret headers set on
+every forwarded call. Both of those servers
 read them (`X-MCP-Toolsets`, `X-MCP-Tools`, `X-MCP-Exclude-Tools`;
 Azure DevOps also `X-MCP-Readonly`), and the release agent's seams use them
 to exclude every destructive tool at the source.
