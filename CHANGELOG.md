@@ -81,6 +81,103 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   run for the same `--set`, and a guard on a parameter that carries a default
   is refused rather than silently always-on. See
   [docs/workflows.md](docs/workflows.md).
+- **The release agent** — the first thing in this repository that is not a
+  demonstration. One command reads what merged since the last release,
+  drafts the notes, and proposes the release branch and the builds. Cutting
+  the branch and publishing are denied by default, filed naming the version
+  and the repository, approved by a person, and admitted under a grant
+  welded to that call — approving "cut release/v1.2.3" cannot be spent on
+  the next one. Build dispatch runs under a standing constraint bounded to
+  named pipelines instead, because a human approving every build is a human
+  who stops reading. It reaches two hosted seams: a write-scoped GitHub
+  credential, and Microsoft's hosted Azure DevOps server, which is
+  authenticated by Microsoft Entra rather than by a key. The agent never
+  carries a byte — the workflows and pipelines it dispatches do the
+  building. The one exception is the final publish, where no CI system is
+  in both networks: the DECISION is governed like every other consequential
+  call, but the transfer runs on the operator's machine under their own
+  credentials, which is weaker than the rest of the path and is written
+  down rather than glossed. See
+  [docs/release-agent.md](docs/release-agent.md).
+
+- **`kmx lift`** — the same agent you have been running locally, on AKS, in
+  one command. It creates the cluster (or acts on one you already have with
+  `--byo`, which it never creates, deletes or adopts), builds the plane's
+  image in a private registry, renders the manifest for it, deploys the
+  plane and the agents, and wires Azure-managed Prometheus, Container
+  Insights and a workbook. `--plan` prints what it would create and stops;
+  `--step` runs one phase, so a run that stopped can be resumed where it
+  stopped rather than from the beginning. `kmx lift down` removes what the
+  lift created — and on a cluster you brought, only that.
+
+  Two refusals worth knowing before you plan around them. On a cluster you
+  brought (`--byo`), one with no NetworkPolicy engine is refused before
+  anything is written — the boundary this project claims would otherwise be
+  objects sitting there enforcing nothing — and so is one whose identity
+  cannot pull from the registry, naming the `az aks update --attach-acr`
+  for its owner to run rather than granting itself the role. And the model credential is yours: a managed cluster runs a
+  hosted model, a provider token is not one of the three upstream
+  credentials `kmx credential capture` can check a value against, and the
+  lift stops and names `make plane-copilot-secret` rather than storing
+  something it cannot vet. That is the one step on the managed path that
+  still needs a checkout.
+
+- **`kmx tools add <name>`** — point Kaimahi at an MCP server this
+  repository did not write. It reads the server's own Service to derive the
+  pod selector and the resolved container port, scaffolds four reviewable
+  documents (the gateway's table entry as an overlay fragment, the proxy's
+  egress to that server, that server's ingress from the proxy alone, and
+  the `RemoteMCPServer` whose URL is the gateway), sends the candidate
+  table to the running plane to be parsed by the same code the proxy booted
+  with, and applies it behind the context guard. A tool named without a
+  `policy_fields` declaration is refused rather than defaulted, and the
+  weakest declaration announces itself in the file. The committed table is
+  never edited: onboarded upstreams live in a separate ConfigMap merged
+  over it at boot, and an overlay that would redefine a committed entry is
+  refused rather than resolved by precedence.
+
+- **`kmx flow [credential]`** — the ledger, the tool audit, the approvals
+  trail and the inbound trail merged into one timeline, so "what happened
+  in that run" is one command instead of four reads and a mental join.
+
+- **`kmx tools sandbox`** — installs a WASM runtime class for tool
+  execution, and `kmx tools sandbox status` reports whether it is installed
+  and what uses it. Read the banner before running it: this writes a
+  containerd shim onto every Linux node with a privileged, hostPID,
+  host-root-mounted DaemonSet, which nothing else in Kaimahi asks for.
+
+- **Bring-your-own agents.** `kmx agent create --image` scaffolds an agent
+  that runs your container serving A2A on :8080 instead of a declarative
+  one, carrying the governed seams across as environment (the proxy's
+  base URL, the gateway's endpoint, the credential reference) where the
+  cluster has a governance plane — and saying plainly that it cannot verify
+  your image honours them; the ledger is where that becomes proven.
+  `--isolation virtual-node` places it on an ACI virtual node, and is
+  refused without `--image`, because a declarative agent cannot be
+  VM-isolated. `--run-as-user` states the UID the image runs as, or `root`
+  to say it needs one, rather than kmx guessing a UID that is not yours.
+
+- **`kmx agent chat --interactive`** keeps one streamed session open
+  instead of one question per process, `--session` resumes a kagent session
+  by id, and `--json` forces the raw A2A task at a terminal. At a terminal
+  chat prints the reply, the tools the agent called and the token cost; a
+  pipe still gets the raw task, byte for byte, because things parse it.
+
+- **`kmx status` counts how much of the system is actually governed** —
+  model seams, tool seams and credentials, as "1 of 2 governed, 1 direct",
+  read from the cluster objects with no plane, credential or internet
+  needed. It never invents a zero: a count it could not take reads
+  `unknown`, which is a different word from `none`. `-o json|yaml` gives
+  the same document for automation.
+
+- **The plane reports its version, and kmx refuses to guess across a
+  gap.** `/admin/version` returns the plane's version and an integer admin
+  contract; kmx checks it once per session and refuses **per operation** —
+  a read that the older plane can still serve is served, and only the
+  operation that needs the newer contract is refused, naming both versions.
+  A plane too old to answer at all is named as such rather than assumed
+  current.
+
 - **`kmx quickstart`** — one command from a machine that has a container
   engine to an agent that has answered a question. It runs `kmx up`'s steps in
   `kmx up`'s order, with the same waits and fail-closed checks, but defers
@@ -130,6 +227,37 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- **`kmx` no longer acts on a cluster nobody chose.** Context resolution
+  used to fall through to `kind-kaimahi-p1`, label the result as coming
+  from a `KIND_CLUSTER` variable that did not exist, and never print where
+  the choice came from. It cost a real cluster: `kmx down` announced
+  "context not created yet" and then deleted one that existed. kmx now
+  refuses when nobody chose a context, and the banner names the source of
+  the one it did choose.
+- **A stale `Accepted` condition is reported as `unknown`, not as a pass.**
+  A Kubernetes condition records when a verdict last *changed*, not when it
+  was last checked, so after a credential is replaced the old pass stands
+  until kagent looks again — measured at 49 seconds on a live cluster, and
+  forever if the new credential is good, because nothing changed. kmx waits
+  90 seconds for a verdict reached after the write. That wait can confirm a
+  REJECTION and can never confirm a pass, which is the right way round: the
+  case worth blocking on is the broken credential, and a timeout is
+  reported as `unknown` rather than as success.
+- **The clone-free path waits the Go module proxy out instead of failing.**
+  A freshly pushed revision is not immediately servable by proxy.golang.org,
+  and `kmx plane` on a just-merged commit failed rather than retrying.
+- **The agent pods are hardened like the rest of the tree.** The pods that
+  actually execute model output were the only workload setting no security
+  context at all, while the proxy and the fixture ERP set `runAsNonRoot`,
+  no privilege escalation, dropped capabilities and a read-only root
+  filesystem. The five committed agents and the `kmx` scaffolder now carry
+  the same posture, so an agent an adopter creates is hardened too. Two
+  things this took a cluster to learn are written into the manifests:
+  `runAsNonRoot` alone fails when the image names its user by name rather
+  than by number (kagent's image says `python`, so the numeric `1001` has
+  to be stated alongside it), and a read-only root filesystem needs
+  somewhere to write, which is an `emptyDir` on `/tmp`.
+
 - A one-shot `kmx agent chat` no longer reports nothing when the agent asks a
   question instead of answering. kagent's runtime gives every agent a built-in
   `ask_user` tool that no manifest declares and none can remove; a small model
@@ -166,6 +294,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   one will look like. A live run is unchanged and still refreshes.
 
 ### Breaking
+
+- **`kmx status -o json` is no longer a `kubectl apply` document.** The
+  top-level kubectl `apiVersion` and `kind` are gone, because the output is
+  now kmx's own envelope — `context`, `contextSource`, a `governance` block,
+  and the kubectl objects verbatim under `items`. Anything piping this into
+  `kubectl apply` breaks; `jq '.items[]'` is unchanged.
 
 - **A credential can no longer be piped into the capture.** `az account
   get-access-token … | make ado-secret ADO_ORG=<organization>` used to work
