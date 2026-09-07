@@ -4215,9 +4215,25 @@ whole of what was broken.
 **The planning-identifier cleanup rewrote comments rather than deleting
 them — measured across the tree, not spot-checked.** Go comment lines
 7504 to 7524, YAML 2772 to 2789: comment volume GREW by 37 lines while
-897 references came out. That is what the load-bearing fifth being
-rewritten looks like, and it is the outcome the prompt said a zero
-reached by deletion would fail.
+**897** references came out, to zero. That is what the load-bearing
+fifth being rewritten looks like, and it is the outcome the prompt said
+a zero reached by deletion would fail.
+
+**On 879 versus 897, because the board states both.** The lane was
+shaped against 879 and removed 897, and neither figure is wrong: the
+tree grew by 18 references in the merges between shaping and running,
+which is what a repo-wide count does while other lanes land. The number
+to trust is the one measured at the revision the cleanup ran against.
+The same command that produced every figure here, run at a revision:
+
+    git grep -ohE '\b([WDP][0-9]{1,2}[a-c]?)\b' <rev> -- '*.go' '*.py' \
+      '*.sh' '*.yaml' '*.yml' 'Makefile' '*.md' ':!docs/COORDINATION.md' \
+      | wc -l
+
+897 at the commit immediately before the cleanup, 0 on main after it.
+The shaping-time 879 stays where it was written, because it is what the
+lane was actually told and editing it now would rewrite the brief after
+the fact.
 
 **`kmx flow` separates silence from blindness, and its follow-up framed
 it better than the coordinator did.** The concern raised was that a
