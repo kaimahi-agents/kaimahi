@@ -124,7 +124,8 @@ prefix.
 | W32: the release agent — Kaimahi's first real user (D38) | W32 worker | PR #95 MERGED (main 56c6efa) — ran before W31 as D38(4) ordered, and the friction it measured went into W31's prompt |narrow agent: drafts and proposes, human approves, CI moves bytes; ADO via its official hosted MCP server |
 | W31: `create-kaimahi-agent` — nothing to a working agent, fast (D36, D37) | W31 worker | PR #106 MERGED (main 95a4e1f) — **5 prerequisites become 1, 246s becomes 178s**; `install.sh` + `kmx quickstart` + a checksum-verifying toolchain provisioner | coordinator verification owed; the front door is now `curl \| sh` then one command, with no Go and no checkout |
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
-| W29: govern your own agent — the generic onboarding path (D35) | unassigned | SHAPED 2026-09-03 — prompt below; runs ALONE | the product-defining gap: nothing documents adding your own MCP server or governing an agent you already run |
+| W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — re-cut before relaunching** | the MCP-server half is `kmx tools add` (merged 2026-09-03). The govern-an-agent-you-did-not-write half is unverified; the prompt below still asks for both | do NOT paste as-is: a worker would rebuild `kmx tools add` |
+| W39: kmx captures the credential itself, at a prompt (D43) | unassigned | SHAPED 2026-09-07 — prompt below | the FIRST path where kmx accepts credential material, by ruling; the constraints are the lane |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
 | W33: the lift — local agent to AKS in one path, with managed observability (D41) | unassigned | SHAPED 2026-09-03 — prompt below | mostly wiring, not building; must not put /metrics on a Service; teardown + spend mandatory |
 | W34a: `kmx status` counts what is governed (absorbing the stale #37) | W34a worker | PR #110 MERGED — closed #37 honestly rather than rebasing a PR whose central file no longer existed | coordinator verification owed |
@@ -4148,6 +4149,111 @@ A residue is acceptable if each survivor is justified in the PR; a zero
 that was reached by deleting comments wholesale is not. Branch from
 current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
+```
+
+### W39 — kmx captures the credential itself, at a prompt (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — **D27 and D43 above all**, then the security standing guidance.
+D43 is ruled and you are implementing it. Read the entry in full before
+writing anything: it grants ONE exception to a rule that has held since
+D27, and the exception's fence is most of this lane.
+
+**What you are closing.** `curl | sh` installs kmx, `kmx quickstart`
+gives a working agent, `kmx plane` and `kmx workflow govern` govern it —
+all with no checkout. Then capturing the credential that makes any of it
+useful is `make release-secret` / `make ado-secret`, which are make
+targets in a clone. The clone-free path ends at the one step that makes
+it worth having.
+
+**The ruling: kmx prompts for the credential on the terminal and writes
+the Secret.** The token never appears in argv, never in the environment,
+never in a file, never in a blueprint.
+
+**THIS IS THE FIRST PATH ON WHICH kmx DELIBERATELY ACCEPTS CREDENTIAL
+MATERIAL, and the ruling was made on an assumption that turned out to be
+false** — that kmx already did something like this. It does not. kmx
+prompts interactively today (the agent wizard) and SCREENS INPUT AGAINST
+credential shapes: `internal/kmx/app/create.go` runs wizard input
+through credential-shape checks, and the blueprint parser refuses
+credential-shaped keys before the document is decoded
+(`internal/kmx/blueprint/credentials.go`). You are building the single
+deliberate exception to that posture, not extending it.
+
+**The fence, and it is not negotiable:**
+- **Terminal only.** Read from the TTY, and refuse if stdin is not a
+  terminal. Never a flag, never an environment variable, never a file,
+  never a pipe or a redirect. A token must not be able to arrive from a
+  shell history, a script, or a CI log. `internal/kmx/app/agent_wizard.go`
+  already tests `term.IsTerminal` on both stdin and stderr — that is the
+  precedent to follow, and its refusal message is the tone to match.
+- **No echo.** The typed value is not printed, and the terminal's echo
+  is off while it is typed.
+- **The value goes to the Secret and nowhere else.** Not logged, not
+  written to a temporary file, not passed as an argument to `kubectl`
+  (`--from-literal` puts it in the process table — use stdin or a file
+  descriptor that never lands on disk), and not retained in memory
+  longer than the write.
+- **Everything else keeps refusing.** The existing screens stay exactly
+  as they are. If your work touches any other credential path, say in
+  the PR which one and why it is still refusing.
+
+**Preserve the validation, which is the valuable part of what you are
+replacing.** `scripts/release-secret.sh` refuses a token that is not
+fine-grained, refuses one reaching more than one repository, refuses one
+with no expiry, and proves it can read the repository named — and it
+records honestly what it CANNOT prove, because GitHub does not expose a
+fine-grained token's permissions. `scripts/ado-secret.sh` refuses a
+token whose audience is not the MCP resource, refuses an expired one,
+proves the server accepts it before storing anything, and reports when
+it dies (about an hour). **Read both before writing either.** A prompt
+that stores an unvalidated token is worse than the make target it
+replaced: it is faster at getting a broken credential into the cluster.
+
+**Design decisions this lane owns:**
+- **What the command is called and what it covers.** These are two
+  different upstreams with different validation. One command with a
+  subject, or one per seam? Say which and why, and make it extensible —
+  a third seam should not need a third command shape.
+- **Re-capture and rotation.** What happens when the Secret already
+  exists? Overwriting silently is how somebody loses a working
+  credential; refusing is how they get stuck. Decide, and make the
+  destructive direction explicit.
+- **What the make targets become.** The delegation rule is that one
+  implementation exists and Makefile targets are thin aliases
+  (`scripts/check-kmx-delegation.py` enforces the mapping). Either
+  delegate them or say why they cannot be.
+- **The failure a user actually meets** when validation refuses. The
+  message says which check failed and what to do, never an HTTP status.
+
+Guardrails, all hard: every mutation through the context guard — this
+writes a Secret to a named cluster and the operator must see which one;
+no client-go; the plane's admin port is on no Service; no Azure or Slack
+identifiers; no repo secrets in CI; CI stays keyless, so the validation
+paths are tested against refusals and fixtures, never a live token.
+Comments and docs say what the thing does, never a lane or decision
+number.
+
+Verification, and this lane's verification is unusually specific because
+the claim is about what does NOT happen:
+- A transcript capturing a credential end to end, showing the value was
+  not echoed.
+- **Evidence it is absent from the places it must be absent**: not in
+  the process table during the write (check while it runs, or show the
+  code path that makes it impossible), not in the shell history, not in
+  any file under the working directory afterwards, and not in kmx's own
+  output or logs.
+- The refusal when stdin is not a terminal — pipe something in and show
+  it refused rather than accepted.
+- Each validation refusal exercised: not fine-grained, more than one
+  repository, no expiry, wrong audience, expired.
+- The Secret exists and the plane accepts the credential afterwards.
+
+Branch from current main; PR targets main; no stacked bases; lane ends
+at PR-open-with-checks-green — do not merge. Report deviations in the
+PR, and say plainly anything you could not prove.
 ```
 
 ## Delta sheets from finished lanes
