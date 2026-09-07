@@ -17,7 +17,9 @@ runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
 credential capture (`github-secret`,
 `release-secret`, `ado-secret`) — so CI proves the code you actually run.
 What is left in the Makefile is the Slack and inbound connector families,
-the model-key capture, AKS and the probes.
+the model-key capture, and the network probes. The managed-cluster path is
+`kmx lift`; the Makefile's `TARGET=aks` targets still exist and do the same
+work step by step.
 
 **Status.** v0.1.0 is released ([releases.md](releases.md)); no
 package-manager namespace is claimed. `kmx` is a provisional name,
