@@ -445,7 +445,8 @@ counterpart; the `equivalence_test` guard is now `len(want) < 5`.
 Each was run against the real tree and against deliberately broken copies.
 
 - **"No secrets in tree" (`ci.yml:46-59`) covers three shapes.** The grep
-  is `sk-ant-`, `sk-proj-` and `api_key: "<20+>"`. A fake `kmh_`, ADO PAT,
+  matches the Anthropic and OpenAI key prefixes and a quoted `api_key`
+  assignment, and nothing else. A fake `kmh_`, ADO PAT,
   Copilot token, `xoxb-` or `xapp-` in `docs/leak.md` passed it. GitHub
   `ghp_`/`github_pat_` are caught only by a grep inside the hosted-upstreams
   step (`:517-521`); Slack `xox[bpca]-` only in the `e2e-tools` shard
