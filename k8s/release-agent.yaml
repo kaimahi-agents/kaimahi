@@ -45,6 +45,37 @@ spec:
           memory: 320Mi
         limits:
           memory: 1Gi
+      # This was the only committed agent without a security context, and it
+      # is the one holding the write-scoped GitHub credential and the Azure
+      # DevOps seam — so it was the least constrained pod with the most
+      # authority behind it. Same block as the other five agents, which run
+      # the same image.
+      #
+      # runAsUser is not decoration: kagent's image declares its user by NAME
+      # (`python`), and Kubernetes refuses to start a runAsNonRoot container
+      # whose user it cannot prove is non-root — "image has non-numeric user
+      # (python)", at CreateContainer time, with no mention of the image or
+      # its version. 1001 is what that image runs as at 0.9.12.
+      #
+      # A read-only root filesystem needs somewhere to write, so /tmp is an
+      # emptyDir. The agent only makes MCP calls; the release artifacts are
+      # moved by the driver on the operator's machine, not by this pod.
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
     systemMessage: |
       You help cut software releases. Your tools reach GitHub and Azure
       DevOps through Kaimahi's gateway.
