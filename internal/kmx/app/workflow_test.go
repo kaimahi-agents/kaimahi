@@ -8,11 +8,15 @@ package app
 // credential of any kind.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/blueprint"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne pins, at the
@@ -286,5 +290,104 @@ func TestANewAuditRowIsIdentifiedNotCounted(t *testing.T) {
 	sameSecond := auditRow{Created: old.Created, Tool: old.Tool, Decision: "allowed", Summary: "a"}
 	if old.id() == sameSecond.id() {
 		t.Fatal("a decision change did not change the row identity")
+	}
+}
+
+// TestADryRunRefreshesNoCredentialAndWritesNoSecret.
+//
+// `--dry-run` promises the operator that nothing is created. The refresh
+// path breaks that promise in the most expensive way available to it: it
+// shells out to mint a token and then `kubectl apply`s a Secret into the
+// plane's custody. Because a turn step declares no upstream, every seam
+// with a `refresh:` is re-minted before the FIRST step of a run — so a
+// dry run of a workflow whose opening step only reads and drafts still
+// rotated a live credential before it stopped.
+//
+// The property pinned here is the flag's, not the refresh's: under
+// --dry-run the refresh command is never executed at all. The marker
+// file is the proof, because a refresh that ran leaves one behind
+// whether or not the kubectl that follows succeeds.
+func TestADryRunRefreshesNoCredentialAndWritesNoSecret(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "minted")
+	seams := map[string]blueprint.Seam{
+		"ado": {Refresh: &blueprint.Refresh{
+			// `sh` stands in for `az`: argv, no shell string, exactly as
+			// a real refresh command is spelled.
+			Command:  []string{"sh", "-c", "printf token > " + marker + "; printf token"},
+			Requires: "sh",
+			Secret:   "ado-token", Key: "api-key",
+			Why: "the token lives about an hour",
+		}},
+	}
+	// A turn step: no upstream, which is what makes it refresh EVERY seam.
+	step := blueprint.RenderedStep{Kind: blueprint.KindRead, Label: "read the release notes"}
+
+	newRun := func(dry bool) *workflowRun {
+		var out strings.Builder
+		return &workflowRun{
+			app: &App{Out: &out, Err: &out, Run: &run.Runner{Stdout: &out, Stderr: &out},
+				// Named so the kubectl a live refresh reaches is aimed at a
+				// context that does not exist, rather than at whatever this
+				// machine's current-context happens to be.
+				Cfg: &config.Config{KubeContext: "kind-no-such-cluster-kmx-test"}},
+			bundle: &blueprint.Bundle{Blueprint: &blueprint.Blueprint{Seams: seams}},
+			opt:    RunOptions{DryRun: dry},
+			dir:    t.TempDir(),
+		}
+	}
+
+	if err := newRun(true).refreshFor(step); err != nil {
+		t.Fatalf("dry run refreshFor: %v", err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("--dry-run ran the refresh command; a dry run that mints a credential and applies a " +
+			"Secret is not a dry run, however the message describes it")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	// The other side, so the assertion above cannot pass because the
+	// fixture never refreshes anything: a live run DOES execute it. It
+	// then fails at the kubectl that has no cluster, which is fine — the
+	// marker is written before that and is what is being proved.
+	_ = newRun(false).refreshFor(step)
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("a live run did not execute the refresh command either, so the dry-run assertion "+
+			"proves nothing: %v", err)
+	}
+}
+
+// TestADryRunNeedsNoneOfTheToolsItWillNotUse.
+//
+// The preflight names every binary a run will need and warns about the
+// missing ones. A dry run refreshes nothing, so naming `az` as absent
+// sends the reader to install a tool for work this invocation will not
+// do — and a preflight that cries wolf is one an operator learns to skim.
+func TestADryRunNeedsNoneOfTheToolsItWillNotUse(t *testing.T) {
+	seams := map[string]blueprint.Seam{
+		"ado": {Refresh: &blueprint.Refresh{
+			Requires: "definitely-not-on-path-kmx",
+			Command:  []string{"definitely-not-on-path-kmx"},
+			Secret:   "ado-token", Key: "api-key", Why: "expiry",
+		}},
+	}
+	for _, tc := range []struct {
+		dry   bool
+		named bool
+	}{{dry: true, named: false}, {dry: false, named: true}} {
+		var out strings.Builder
+		r := &workflowRun{
+			app:      &App{Out: &out, Err: &out, Run: &run.Runner{Stdout: &out, Stderr: &out}},
+			bundle:   &blueprint.Bundle{Blueprint: &blueprint.Blueprint{Seams: seams}},
+			rendered: &blueprint.Rendered{},
+			opt:      RunOptions{DryRun: tc.dry},
+		}
+		if err := r.preflightRequirements(); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out.String(), "definitely-not-on-path-kmx"); got != tc.named {
+			t.Fatalf("dry-run=%v: preflight named the refresh binary=%v, want %v.\n%s",
+				tc.dry, got, tc.named, out.String())
+		}
 	}
 }

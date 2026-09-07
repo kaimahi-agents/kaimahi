@@ -62,7 +62,9 @@ type RunOptions struct {
 	// an expired credential, a failed build, or a person going home.
 	Step string
 	// DryRun reads and drafts and stops before the first consequential
-	// or bounded call. Nothing is created.
+	// or bounded call. Nothing is created and nothing in the cluster is
+	// written to — including the seam credentials a live run re-mints,
+	// which is why a dry run rides whatever is already in custody.
 	DryRun bool
 	// Approver requires this person's approval (a Slack user id, as the
 	// approval trail records it). Empty means anyone the plane admits.
@@ -166,6 +168,17 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 	a.notef("source: %s", b.Source)
 	if opt.DryRun {
 		a.notef("--dry-run: the agent will read and draft, and stop before the first call with consequences.")
+		a.notef("Nothing is created and nothing in the cluster is written to.")
+		// Said here rather than discovered later: the credentials a live
+		// run re-mints are left alone, so this run rides what is already
+		// in custody. If one has expired, the agent will report the
+		// seam's tools missing from its toolset rather than say so —
+		// naming the cause up front is what makes that legible.
+		if names := refreshingSeams(b); len(names) > 0 {
+			a.notef("The %s credential is NOT refreshed (that would write a Secret). This run uses the one",
+				strings.Join(names, ", "))
+			a.notef("already in custody; if it has expired the agent will report those tools missing.")
+		}
 	}
 	if err := run.preflightRequirements(); err != nil {
 		return err
@@ -237,9 +250,14 @@ func (r *workflowRun) preflightRequirements() error {
 			}
 		}
 	}
-	for _, seam := range sortedAny(r.bundle.Seams) {
-		if ref := r.bundle.Seams[seam].Refresh; ref != nil {
-			want[ref.Requires] = append(want[ref.Requires], "refreshing the "+seam+" credential")
+	// A dry run does not refresh anything, so it does not need the tools
+	// that would: naming `az` as missing for work this run will not do
+	// sends the reader to fix the wrong thing.
+	if !r.opt.DryRun {
+		for _, seam := range sortedAny(r.bundle.Seams) {
+			if ref := r.bundle.Seams[seam].Refresh; ref != nil {
+				want[ref.Requires] = append(want[ref.Requires], "refreshing the "+seam+" credential")
+			}
 		}
 	}
 	var missing []string
@@ -908,6 +926,18 @@ func (r *workflowRun) resolveCaptures(s string) (string, error) {
 // dropped its tools. Cause and symptom nowhere near each other, and
 // nothing in the message pointing at a credential.
 func (r *workflowRun) refreshFor(s blueprint.RenderedStep) error {
+	if r.opt.DryRun {
+		// A dry run writes nothing to the cluster, and a refresh is a
+		// write: it mints a token and `kubectl apply`s a Secret into
+		// plane custody. Doing that under a flag whose whole promise is
+		// "nothing was created" is a trap, and the promise is the more
+		// valuable of the two — so the dry run rides the credential
+		// already in custody and says so before it starts. A stale one
+		// shows up as the agent reporting a tool missing from its
+		// toolset, which is the symptom the note at the top of the run
+		// names.
+		return nil
+	}
 	seam := s.Upstream
 	if seam == "" {
 		// A turn can touch any seam this workflow has, so refresh them
@@ -920,6 +950,19 @@ func (r *workflowRun) refreshFor(s blueprint.RenderedStep) error {
 		return nil
 	}
 	return r.refreshSeam(seam)
+}
+
+// refreshingSeams names the seams this workflow would re-mint a
+// credential for, in a stable order. A dry run uses it to say which
+// credentials it is deliberately leaving alone.
+func refreshingSeams(b *blueprint.Bundle) []string {
+	var names []string
+	for _, name := range sortedAny(b.Seams) {
+		if b.Seams[name].Refresh != nil {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // refreshInterval is how often one seam's credential is re-minted inside
