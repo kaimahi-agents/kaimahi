@@ -80,8 +80,16 @@ jobs:
       - name: No Azure identifiers in tree
         run: bash scripts/check-no-azure-ids.sh
       # The docs are organised by capability, with the old phase-named
-      # files kept as forwarding stubs. Every relative Markdown link and
-      # every #anchor must resolve — a broken forward is a broken doc.
+      # files kept as forwarding stubs, so a broken forward is a broken
+      # doc. The checker covers every link target that is not an absolute
+      # URL: inline links, HTML `<img src>` and `<a href>` (including tags
+      # whose attributes span several lines, which is how the README's two
+      # hero images are written and how they went unchecked), and
+      # reference links through their definitions. Each must resolve to a
+      # file in the tree, and each #anchor on a Markdown target must match
+      # a heading there. Fenced blocks and code spans are not links.
+      - name: Doc-link checker self-test
+        run: python3 scripts/check-doc-links.py --selftest
       - name: Doc links resolve
         run: python3 scripts/check-doc-links.py
       - name: README front door is ordered around working capability

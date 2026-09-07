@@ -1,0 +1,96 @@
+{
+  "checker": "check-doc-links.py",
+  "why": "A link checker fails open in silence: a form it does not read, a finding it drops, or a run over no files all look exactly like a tree whose links resolve. Each edit below removes one of the protections the checker claims — a link form, the anchor rule, the quoting rules that keep examples out of the report, the empty-run refusal, and the path the verdict takes to the exit code.",
+  "verify": [
+    "python3",
+    "scripts/check-doc-links.py",
+    "--selftest"
+  ],
+  "signature": "check-doc-links self-test:",
+  "mutations": [
+    {
+      "name": "the inline-link pattern stops matching",
+      "breaks": "The oldest rule here, disabled by a regex that no longer fires. Every inline link reads clean because none is seen.",
+      "find": "LINK = re.compile(r\"(?<!\\\\)\\[[^\\]]*\\]\\(([^)\\s]+)(?:\\s+\\\"[^\\\"]*\\\")?\\)\")",
+      "replace": "LINK = re.compile(r\"(?!x)x\")"
+    },
+    {
+      "name": "a missing target is not a problem",
+      "breaks": "The file is resolved, found not to exist, and the finding is thrown away — the check runs and reports nothing.",
+      "find": "        if not os.path.exists(resolved):\n            problems.append(f\"{path}:{lineno(pos)}: missing {what} {target}\")\n            return\n",
+      "replace": "        if not os.path.exists(resolved):\n            return\n"
+    },
+    {
+      "name": "the anchor check is dropped",
+      "breaks": "A link to a real file with a fragment that names no heading lands at the top of the page instead, and nothing says so.",
+      "find": "        if frag and resolved.endswith(\".md\"):",
+      "replace": "        if False:"
+    },
+    {
+      "name": "HTML image sources are not read",
+      "breaks": "The form the README writes its two hero pictures in. This is exactly the gap the checker shipped with: an image whose file was renamed showed a broken picture on the front page and passed.",
+      "find": "    for m in IMG.finditer(text):",
+      "replace": "    for m in []:"
+    },
+    {
+      "name": "a multi-line <img> tag is read only as far as its first line",
+      "breaks": "The README writes one attribute per line, so a src on the second line is invisible to a line-bound reader and the tag is silently skipped.",
+      "find": "IMG = re.compile(r\"<img\\b[^>]*?\\bsrc\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']\", re.IGNORECASE | re.DOTALL)",
+      "replace": "IMG = re.compile(r\"<img\\b[^>\\n]*?\\bsrc\\s*=\\s*[\\\"']([^\\\"']*)[\\\"']\", re.IGNORECASE)"
+    },
+    {
+      "name": "HTML hrefs are not read",
+      "breaks": "A badge or a picture wrapped in <a href> can point anywhere, including at a file that was deleted.",
+      "find": "    for m in AHREF.finditer(text):",
+      "replace": "    for m in []:"
+    },
+    {
+      "name": "reference definitions are collected and never checked",
+      "breaks": "A `[label]: target` line is where a reference link's target actually lives, and where a renamed file breaks every use of the label at once.",
+      "find": "    for name, m in definitions.items():",
+      "replace": "    for name, m in []:"
+    },
+    {
+      "name": "a reference with no definition is accepted",
+      "breaks": "An unmatched label renders as literal brackets: the words stay on the page and the link is simply gone, which is the hardest kind of broken link to see by reading.",
+      "find": "            if name not in definitions:",
+      "replace": "            if False:"
+    },
+    {
+      "name": "fenced code is scanned as prose",
+      "breaks": "The other direction: a checker that reports every example link in every code block produces noise people learn to scroll past.",
+      "find": "            if in_fence:\n                out.append(\"\\n\")\n                continue\n",
+      "replace": "            if False:\n                out.append(\"\\n\")\n                continue\n"
+    },
+    {
+      "name": "code spans are scanned as prose",
+      "breaks": "Same noise from the other quoting form — a `[a][b]` written about code becomes a broken reference.",
+      "find": "            out.append(CODESPAN.sub(lambda m: \" \" * len(m.group(0)), line))",
+      "replace": "            out.append(line)"
+    },
+    {
+      "name": "a run that found no files reports clean",
+      "breaks": "Nothing to check and checked-and-clean are different answers. A checker that can pass by having nothing to look at is not a gate.",
+      "find": "    if not files:\n",
+      "replace": "    if False:\n"
+    },
+    {
+      "name": "the findings are computed and then reported as clean",
+      "breaks": "Every rule above works and the verdict never reaches the exit code. This is why the self-test goes through main() rather than calling check() and reading its list.",
+      "find": "        print(f\"check-doc-links: {len(problems)} broken link(s) in {len(files)} file(s)\", file=sys.stderr)\n        return 1\n",
+      "replace": "        print(f\"check-doc-links: {len(problems)} broken link(s) in {len(files)} file(s)\", file=sys.stderr)\n        return 0\n"
+    },
+    {
+      "name": "each file's findings are dropped as it is scanned",
+      "breaks": "The scan visits every file and keeps none of what it found, so the report is a clean tree built from a complete pass.",
+      "find": "        problems.extend(check(p, cache))",
+      "replace": "        check(p, cache)"
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code. A self-test that imported the module would stay green while the script itself always passed.",
+      "find": "    sys.exit(main(sys.argv[1:]))",
+      "replace": "    sys.exit(0)"
+    }
+  ]
+}
