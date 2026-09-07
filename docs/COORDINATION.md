@@ -684,8 +684,8 @@ Everything without a ruling in its own heading is not GO.
 
 ## Process rules (proven over ~60 PRs; keep)
 
-- **D44 (OPEN — needs a ruling): a green PR merged onto a green main can
-  produce a red main, and did.** Recorded 2026-09-06 from a real
+- **D44 (RULED 2026-09-07 — option B): a green PR merged onto a green
+  main can produce a red main, and did.** Recorded 2026-09-06 from a real
   incident, cause established rather than guessed.
 
   The Go-proxy retry PR's own branch was correct: it carried the
@@ -709,17 +709,35 @@ Everything without a ruling in its own heading is not GO.
   teammate PRs and then recommended merging one first anyway — the
   warning was right and was not pressed hard enough.
 
-  **Option A — require branches up to date before merging** (a ruleset
-  setting). The merge result is what gets tested. Cost: a rebase
-  round-trip per PR and merges effectively serialise, which is real
-  friction on a repository with several parallel lanes.
-  **Option B — accept it and rely on post-merge detection**, but make the
-  detection fast and loud, and require a rebase after any repo-wide sweep
-  specifically. Cost: main is occasionally red, and this time that window
-  swallowed three more merges.
-  **Option C — require up-to-date only for branches older than the last
-  sweep**, which is where the risk actually concentrates. Cost: a rule
-  people have to remember, which is the kind that decays.
+**RULED: option B.** Accept that main can go briefly red, keep
+  detection fast and loud, and **require a rebase after any repo-wide
+  sweep**. Option A is correct in principle and serialises merges, which
+  trades a rare failure for constant friction on a repository running
+  several lanes at once; option C's "remember which branches predate the
+  sweep" is the kind of rule that decays. The incident we actually had
+  was caused by a sweep, so the sweep clause is where the protection
+  belongs.
+
+  **What B obliges us to do, or it is just the status quo with a name:**
+  - **After any change touching most of the tree** — a comment sweep, a
+    rename, a formatting pass — every open branch rebases before it
+    merges. The sweep's own PR should say so, and the coordinator should
+    say so in the conversation where lanes are running.
+  - **Detection is the load-bearing half.** A red main must be noticed
+    before the next merge lands on it. Last time three merges landed
+    first, which is what made a one-line fix expensive to find.
+  - **Nobody is at fault for a semantic conflict.** Both sides were
+    green; the merge result was never built. Treat it as a cost of
+    parallelism, fix it fast, and do not add process on top of the
+    people involved.
+
+  The rejected options, kept because the reasoning is what a later
+  revisit needs: **A — require branches up to date before merging** (a
+  ruleset setting), so the merge result is what gets tested, at the cost
+  of a rebase round-trip per PR and effectively serialised merges. **C —
+  require up-to-date only for branches older than the last sweep**,
+  concentrating the rule where the risk is, at the cost of a rule people
+  must remember.
 
 - **Do not push to a board PR after opening it.** Recorded 2026-09-06,
   third occurrence, and it is the coordinator's own failure. Two board
