@@ -1174,7 +1174,7 @@ MAP_EDITS = [
      "leaves a doc out of every list"),
     ("Thirteen internal packages and one binary", "Twelve internal packages and one binary",
      "miscounts the plane's packages"),
-    ("Postgres and ten migrations", "Postgres and nine migrations",
+    ("Postgres and eleven migrations", "Postgres and ten migrations",
      "miscounts the plane's migrations"),
     ("is called only by\n`release-run.sh`", "is called only by\n`ap-demo.sh`",
      "names the wrong caller for show-turn.py"),
