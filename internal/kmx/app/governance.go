@@ -130,6 +130,11 @@ type governance struct {
 	ModelSeams  seamPopulation       `json:"modelSeams"`
 	ToolSeams   seamPopulation       `json:"toolSeams"`
 	Credentials credentialPopulation `json:"credentials"`
+	// Certificate is the one the plane serves both seams with. It is
+	// reported here rather than left to a dashboard because it expires
+	// whether or not anyone is watching, and an expiry nobody is warned
+	// about is an outage scheduled in advance.
+	Certificate SeamCertificate `json:"certificate"`
 }
 
 // An `unknown` population publishes NO counts.
@@ -407,6 +412,10 @@ func writeGovernance(out io.Writer, g governance) {
 	fmt.Fprintf(out, "  model seams:  %s\n", seamLine(g.ModelSeams, "agents", "agent"))
 	fmt.Fprintf(out, "  tool seams:   %s\n", seamLine(g.ToolSeams, "tool servers", "tool server"))
 	fmt.Fprintf(out, "  credentials:  %s\n", credentialLine(g.Credentials))
+	fmt.Fprintf(out, "  certificate:  %s\n", g.Certificate.Line)
+	if g.Certificate.State == "expiring" || g.Certificate.State == "expired" {
+		fmt.Fprintln(out, "                Both seams stop answering when it does; `kmx plane --step certificate` renews it.")
+	}
 	fmt.Fprintln(out, "  Governed = the seam points at the plane, read from the cluster objects — no")
 	fmt.Fprintln(out, "  plane, credential or internet needed. The plane line says whether one is there.")
 }

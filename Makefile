@@ -809,7 +809,7 @@ plane: $(KMX)
 	@$(KMX_ENV) $(KMX) plane --source .
 else
 ## plane: build + deploy the Kaimahi proxy and its Postgres ledger
-plane: guard plane-image plane-secrets
+plane: guard plane-image plane-secrets plane-certificate
 	@KUBECTL="$(KUBECTL)" PLANE_TARGET=$(PLANE_TARGET) \
 		PLANE_IMAGE='$(PLANE_IMAGE)' PLANE_PULL_POLICY=$(PLANE_PULL_POLICY) \
 		bash scripts/plane-deploy.sh
@@ -850,6 +850,17 @@ else
 plane-secrets: guard
 	@KUBECTL="$(KUBECTL)" bash scripts/plane-secrets.sh
 endif
+
+## plane-certificate: mint or renew the certificate the two data seams
+## serve with, and publish the authority agents verify it against
+#
+# One implementation on every target (D27): the minting, the create-once
+# authority and the renewal decision are all decidable without a cluster and
+# live in internal/kmx/seamcert, so there is no shell version of them to keep
+# in step. The proxy refuses to start without this material, which is why it
+# is a prerequisite of `plane` rather than something to remember.
+plane-certificate: $(KMX)
+	@$(KMX_ENV) $(KMX) plane --step certificate
 
 ## govern: issue the Kaimahi credential (opaque token -> agent-side
 ## Secret), apply the governed presets, switch hello-world through the

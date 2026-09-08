@@ -110,6 +110,26 @@ printf '%s' "$PGPASSWORD" > "$work/secrets/pgpassword"
 admin_token="upgrade-probe-admin-token"
 printf '%s' "$admin_token" > "$work/secrets/admin-token"
 
+# The seam certificate. In a cluster `kmx plane` mints this and projects it
+# as a Secret; here the probe stands in for that, because the plane refuses
+# to start without it — a data listener that fell back to plaintext when its
+# material was absent would be the failure the certificate exists to prevent.
+#
+# Both loopback forms, because this probe reaches the seam by address and the
+# plane reaches its own by address too. Short-lived on purpose: nothing here
+# outlives the run and nothing here is committed.
+mkdir -p "$work/seam-tls"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -keyout "$work/seam-tls/ca.key" -out "$work/seam-tls/ca.crt" -days 2 \
+  -subj '/CN=kaimahi-plane-ca-upgrade-probe' 2>/dev/null
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -keyout "$work/seam-tls/tls.key" -out "$work/seam-tls/tls.csr" \
+  -subj '/CN=kaimahi-plane-seams' 2>/dev/null
+printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > "$work/seam-tls/san.ext"
+openssl x509 -req -in "$work/seam-tls/tls.csr" -CA "$work/seam-tls/ca.crt" \
+  -CAkey "$work/seam-tls/ca.key" -CAcreateserial -out "$work/seam-tls/tls.crt" \
+  -days 2 -extfile "$work/seam-tls/san.ext" 2>/dev/null
+
 # One metered, PRICED upstream so a forwarded call produces a ledger row
 # with a real cost, not just a token count — cost is the column an upgrade
 # would be most embarrassing to lose. 127.0.0.1 is in-cluster-shaped as far
@@ -168,8 +188,19 @@ stub_pid=$!
 # ------------------------------------------------------------ proxy control
 
 proxy_pid=""
+# Which scheme the running plane answers its DATA seam on. The old plane
+# predates the seam certificate and serves plaintext; the new one serves TLS
+# and refuses to start without material. That difference is the point of this
+# probe rather than a wrinkle in it — an upgrade crosses it exactly once, and
+# a governed call has to be made against each side to prove the state survived.
+seam_scheme="https"
 start_proxy() { # start_proxy <binary> <database> <logfile>
+  case "$1" in
+    (*/oldbin/*) seam_scheme="http" ;;
+    (*) seam_scheme="https" ;;
+  esac
   PGDATABASE="$2" \
+  SEAM_TLS_DIR="$work/seam-tls" \
   DATA_ADDR="127.0.0.1:$data_port" \
   MCP_ADDR="127.0.0.1:$mcp_port" \
   INBOUND_ADDR="127.0.0.1:$inbound_port" \
@@ -229,10 +260,15 @@ admin() { # admin <method> <path> [body]
 }
 
 governed_call() { # governed_call <token> — one metered call through the plane
-  curl -fsS -X POST -H "Authorization: Bearer $1" \
+  local trust=()
+  # Verified, never skipped: this call is the probe's evidence that the seam
+  # answers, and a client that did not verify would keep saying so after the
+  # certificate stopped being usable by any real agent.
+  [ "$seam_scheme" = https ] && trust=(--cacert "$work/seam-tls/ca.crt")
+  curl -fsS "${trust[@]}" -X POST -H "Authorization: Bearer $1" \
     -H 'Content-Type: application/json' \
     -d '{"model":"upgrade-probe-model","messages":[{"role":"user","content":"hi"}]}' \
-    "http://127.0.0.1:$data_port/upstream/stub/v1/chat/completions"
+    "$seam_scheme://127.0.0.1:$data_port/upstream/stub/v1/chat/completions"
 }
 
 seed() { # seed <database> — the state an upgrade must not lose

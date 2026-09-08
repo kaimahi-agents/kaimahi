@@ -111,15 +111,48 @@ func GovernanceEnv(governed bool) []EnvVar {
 		{Name: "OPENAI_BASE_URL", Value: ProxyBaseURL},
 		{Name: "OPENAI_API_KEY", Value: "api-key", SecretRef: GovernedSecret},
 		{Name: "KAIMAHI_MCP_URL", Value: GatewayURL(governedUpstream)},
+		// Both seam URLs are https under the plane's own authority, which no
+		// system trust store knows about. A DECLARATIVE agent gets this for
+		// free — kagent's controller reads `spec.tls` and mounts the Secret
+		// into the pod it generates. A BYO pod gets no such treatment: the
+		// controller builds no model config for it and mounts nothing, so
+		// the volume is written into the document beside this variable.
+		//
+		// Which is why the file is named rather than assumed. Nothing can
+		// make an arbitrary image read it — that is the same "configured,
+		// not proven" bargain the rest of this list is under — but an image
+		// that honours OPENAI_BASE_URL and ignores this one now fails to
+		// verify rather than quietly talking plaintext, which is the right
+		// way round.
+		{Name: CAFileEnv, Value: byoCAMountPath + "/" + PlaneCAKey},
 	}
 }
 
+const (
+	// CAFileEnv follows the convention most HTTP clients and SDKs already
+	// read, so an image that honours nothing Kaimahi-specific may still
+	// find it.
+	CAFileEnv = "SSL_CERT_FILE"
+	// Where the authority's certificate is mounted in a BYO pod.
+	byoCAMountPath = "/etc/kaimahi/plane-ca"
+)
+
 // The seams, as the committed manifests define them.
 const (
-	ProxyBaseURL = "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"
+	// https, because the model seam carries the full text of what an agent
+	// was asked and what it answered, and the ledger records identifiers,
+	// token counts and cost — no prompt and no completion. That content is
+	// in no other record we keep.
+	ProxyBaseURL = "https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"
 	// The gateway URL is DERIVED, not spelled out: GatewayURL is the one
 	// shape a governed tool seam may have, and a second literal here would
 	// be a copy that stops agreeing with it the first time it moves.
 	governedUpstream = "kagent-tools"
 	GovernedSecret   = "kaimahi-governed-token"
+	// The authority a client is told to trust when it dials either seam:
+	// the Secret's name in the agent namespace, and the key inside it. The
+	// certificate alone — public material naming who to trust, conferring
+	// nothing. The private half never leaves the plane's namespace.
+	PlaneCASecret = "kaimahi-plane-ca"
+	PlaneCAKey    = "ca.crt"
 )

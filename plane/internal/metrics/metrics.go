@@ -178,6 +178,22 @@ func init() {
 	}
 }
 
+// PublishSeamCertificate exposes how long the certificate the two data seams
+// serve with has left, as a gauge that counts down on its own.
+//
+// A certificate minted at deploy time expires whether or not anyone is
+// looking, and an expiry nobody is warned about is an outage scheduled in
+// advance. `kmx status` reads the same NotAfter and says it in words; this is
+// the half a dashboard can alert on, so nobody has to remember to look.
+// Negative once it has passed, rather than clamped at zero: "how long ago"
+// is the question being asked by then.
+func PublishSeamCertificate(notAfter time.Time, now func() time.Time) {
+	registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "kaimahi_seam_certificate_expires_in_seconds",
+		Help: "Seconds until the certificate the data seams serve with expires; negative once it has.",
+	}, func() float64 { return notAfter.Sub(now()).Seconds() }))
+}
+
 // Decide counts one governance decision.
 func Decide(seam Seam, decision Decision, reason Reason) {
 	decisions.WithLabelValues(string(seam), string(decision), string(reason)).Inc()

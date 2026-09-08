@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,10 +84,36 @@ func TestLivenessChecksTheDataListenersOnLoopback(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	defer wedged.Close()
-	addr := func(s *httptest.Server) string { return strings.TrimPrefix(s.URL, "http://") }
-	mux := ops.NewMux(ops.Deps{Listeners: []string{addr(ok)}})
+	mux := ops.NewMux(ops.Deps{Listeners: []string{ok.URL}})
 	require.Equal(t, 200, get(mux, "/livez").Code)
-	mux = ops.NewMux(ops.Deps{Listeners: []string{addr(ok), addr(wedged)}, Client: &http.Client{Timeout: 200 * time.Millisecond}})
+	mux = ops.NewMux(ops.Deps{Listeners: []string{ok.URL, wedged.URL}, Client: &http.Client{Timeout: 200 * time.Millisecond}})
+	w := get(mux, "/livez")
+	require.Equal(t, 503, w.Code)
+	require.Contains(t, w.Body.String(), "not answering")
+}
+
+// The two seams serve TLS and the inbound bridge does not, so liveness has to
+// check a mixed set. It also has to VERIFY the seam it dials: a probe that
+// skipped verification would keep reporting the plane live on the day its own
+// certificate expired, which is the failure this is here to catch.
+func TestLivenessVerifiesTheSeamsItDialsOverTLS(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	plaintext := httptest.NewServer(handler)
+	defer plaintext.Close()
+	secure := httptest.NewTLSServer(handler)
+	defer secure.Close()
+
+	mux := ops.NewMux(ops.Deps{
+		Listeners: []string{plaintext.URL, secure.URL},
+		Client:    secure.Client(),
+	})
+	require.Equal(t, 200, get(mux, "/livez").Code)
+
+	// The same listener, dialled by a client that does not trust it.
+	mux = ops.NewMux(ops.Deps{
+		Listeners: []string{secure.URL},
+		Client:    &http.Client{Timeout: time.Second},
+	})
 	w := get(mux, "/livez")
 	require.Equal(t, 503, w.Code)
 	require.Contains(t, w.Body.String(), "not answering")

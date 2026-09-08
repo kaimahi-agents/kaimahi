@@ -22,5 +22,20 @@ spec:
   model: gpt-5-mini
   apiKeySecret: kaimahi-governed-token
   apiKeySecretKey: api-key
+  # The proxy serves TLS under the plane's own authority. `kmx plane` mints
+  # it and publishes the authority's CERTIFICATE into this namespace as
+  # Secret kaimahi-plane-ca; the controller mounts it into the agent pod,
+  # so nothing here needs a pod-spec edit. The private key stays in the
+  # kaimahi namespace and is mounted into no pod at all.
+  #
+  # This block is what makes the https baseUrl below mean something. A
+  # ModelConfig is admitted with a TLS block beside an http:// baseUrl and
+  # with an https:// baseUrl and no TLS block, and neither is refused — so
+  # the two have to be changed together by whoever changes either.
+  #
+  # disableVerify is deliberately absent and must stay absent.
+  tls:
+    caCertSecretRef: kaimahi-plane-ca
+    caCertSecretKey: ca.crt
   openAI:
-    baseUrl: http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/copilot
+    baseUrl: https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/copilot

@@ -96,6 +96,65 @@ func TestGovernanceEnvIsInjectedForGovernedBYO(t *testing.T) {
 	}
 }
 
+// A declarative agent gets the plane's authority mounted by kagent, which
+// reads `spec.tls` and edits the Deployment it generates. A BYO pod gets no
+// such treatment — the controller builds no model config for it and mounts
+// nothing — so the document has to carry the volume itself, or an image that
+// honours the https seam URL cannot verify what answers.
+func TestGovernedBYOCarriesTheAuthorityItIsToldToVerifyAgainst(t *testing.T) {
+	doc, err := Generate(Spec{
+		Name: "a1", Image: "ghcr.io/x/a:1", Instructions: "x",
+		Governance: GovernanceEnv(true),
+		Identity:   Identity{UID: 1001},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		CAFileEnv, byoCAMountPath + "/" + PlaneCAKey,
+		"secretName: " + PlaneCASecret,
+		"mountPath: " + byoCAMountPath,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("a governed BYO pod must carry the authority; missing %q:\n%s", want, doc)
+		}
+	}
+	// One volumes key and one volumeMounts key. Two of either is a
+	// duplicate YAML mapping key: kubectl keeps the last and discards the
+	// first, so the pod would come up missing whichever block lost.
+	if n := strings.Count(doc, "      volumes:\n"); n != 1 {
+		t.Errorf("expected exactly one volumes key, found %d:\n%s", n, doc)
+	}
+	if n := strings.Count(doc, "      volumeMounts:\n"); n != 1 {
+		t.Errorf("expected exactly one volumeMounts key, found %d:\n%s", n, doc)
+	}
+	// /tmp exists so the image can write under a read-only root
+	// filesystem. Mounting it read-only would take away the thing it was
+	// added to provide, and the pod would fail somewhere far from here.
+	if strings.Contains(doc, "mountPath: /tmp\n          readOnly: true") {
+		t.Errorf("/tmp was mounted read-only:\n%s", doc)
+	}
+}
+
+// An ungoverned BYO pod is told to trust nothing extra, so it must not be
+// handed the authority either — a mount of a Secret that may not exist would
+// keep the pod out of Running for a reason it has no use for.
+func TestUngovernedBYOCarriesNoAuthority(t *testing.T) {
+	doc, err := Generate(Spec{
+		Name: "a1", Image: "ghcr.io/x/a:1", Instructions: "x",
+		Identity: Identity{UID: 1001},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(doc, PlaneCASecret) {
+		t.Errorf("an ungoverned BYO pod was given the plane's authority:\n%s", doc)
+	}
+	if !strings.Contains(doc, "mountPath: /tmp") {
+		t.Errorf("the hardened pod lost its writable /tmp:\n%s", doc)
+	}
+}
+
 func TestUngovernedBYOInjectsNothing(t *testing.T) {
 	if env := GovernanceEnv(false); env != nil {
 		t.Errorf("an ungoverned agent must not be given seams it does not have: %+v", env)

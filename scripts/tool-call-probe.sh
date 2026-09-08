@@ -50,6 +50,12 @@ cleanup() {
   rm -rf "$workdir"
 }
 trap cleanup EXIT
+# Both seams serve TLS under the plane's own authority; fetch what to verify
+# against. Never --insecure: a probe that skipped verification would keep
+# passing on the day the certificate stopped being valid.
+# shellcheck source=scripts/seam-tls.sh
+. "$(dirname "$0")/seam-tls.sh"
+seam_ca "$workdir/plane-ca.crt"
 
 $KUBECTL -n "$AGENT_NAMESPACE" get secret "$GOVERNED_SECRET" \
   -o jsonpath='{.data.api-key}' | base64 -d > "$workdir/token"
@@ -60,16 +66,16 @@ $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \
   svc/kaimahi-mcp-gateway "$GATEWAY_PORT:8081" >/dev/null 2>&1 &
 pf_pid=$!
 for _ in $(seq 1 150); do
-  curl -fsS -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/healthz" 2>/dev/null && break
+  curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$GATEWAY_PORT/healthz" 2>/dev/null && break
   sleep 0.2
 done
-curl -fsS -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/healthz" \
+curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$GATEWAY_PORT/healthz" \
   || { echo "gateway port-forward failed" >&2; exit 1; }
 
-mcp_url="http://127.0.0.1:$GATEWAY_PORT/upstream/$UPSTREAM/mcp"
+mcp_url="https://127.0.0.1:$GATEWAY_PORT/upstream/$UPSTREAM/mcp"
 mcp_post() { # body-file extra-header-file|- -> status; resp in $workdir/resp, headers in $workdir/resp-headers
   local body=$1 extra=$2
-  local args=(-sS -X POST -H @"$workdir/auth-header" \
+  local args=(-sS --cacert "$workdir/plane-ca.crt" -X POST -H @"$workdir/auth-header" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     --data @"$body" -D "$workdir/resp-headers" -o "$workdir/resp" -w '%{http_code}' "$mcp_url")
   [ "$extra" = - ] || args+=(-H @"$extra")

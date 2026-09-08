@@ -44,6 +44,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/ops"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/proxy"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/redact"
+	"github.com/kaimahi-agents/kaimahi/plane/internal/seamtls"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
@@ -85,9 +86,26 @@ func main() {
 	configDir := env("CONFIG_DIR", config.DefaultConfigDir)
 	adminTokenFile := env("ADMIN_TOKEN_FILE", "/etc/kaimahi/admin/token")
 	pgPasswordFile := env("PGPASSWORD_FILE", "/etc/kaimahi/pg/password")
+	// The certificate the two DATA seams serve with, projected from the
+	// Secret `kmx plane` mints. The admin and ops listeners are on no
+	// Service and are unchanged; the inbound bridge's public path already
+	// terminates TLS at an edge.
+	seamTLSDir := env("SEAM_TLS_DIR", "/etc/kaimahi/seam-tls")
 
 	pgPassword := mustReadSecretFile(pgPasswordFile, "postgres password")
 	adminToken := mustReadSecretFile(adminTokenFile, "admin token")
+
+	// Fail closed, and before anything else is built. A proxy that served
+	// its seams in the clear because its certificate was missing would be
+	// indistinguishable from a governed one to everything that looks at it,
+	// and in the clear to anything that captures — worse than never having
+	// encrypted them, because the claim would still be made.
+	seamMaterial, err := seamtls.Load(seamTLSDir)
+	if err != nil {
+		slog.Error("the data seams cannot be served", "err", err)
+		os.Exit(1)
+	}
+	metrics.PublishSeamCertificate(seamMaterial.Leaf.NotAfter, time.Now)
 
 	configBase, fragments, err := config.Read(configFile, configDir)
 	if err != nil {
@@ -189,10 +207,11 @@ func main() {
 	// the wrapper is the store.
 	filing := notify.Store{Store: st, Filer: st}
 	var poster *notify.Poster
-	gatewayURL := "http://127.0.0.1" + portOf(mcpAddr)
+	gatewayURL := "https://127.0.0.1" + portOf(mcpAddr)
 	if n := cfg.ApprovalNotifier; n != nil {
 		poster = notify.New(notify.Deps{
 			GatewayURL:     gatewayURL,
+			Transport:      seamMaterial.Transport(),
 			Upstream:       n.ToolUpstream,
 			Tool:           n.Tool,
 			CredentialFile: n.CredentialFile,
@@ -246,9 +265,9 @@ func main() {
 		close(posterDone)
 	}
 
-	dataSrv := &http.Server{Addr: dataAddr, Handler: proxy.NewDataMux(deps),
+	dataSrv := &http.Server{Addr: dataAddr, Handler: proxy.NewDataMux(deps), TLSConfig: seamMaterial.ServerConfig(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
-	mcpSrv := &http.Server{Addr: mcpAddr, Handler: gateway.NewMux(gwDeps),
+	mcpSrv := &http.Server{Addr: mcpAddr, Handler: gateway.NewMux(gwDeps), TLSConfig: seamMaterial.ServerConfig(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	// Webhook payloads are small and bounded per hook; a slow writer gets
 	// 30 seconds, not two minutes.
@@ -270,12 +289,23 @@ func main() {
 			s := pool.Stat()
 			return ops.PoolStats{Acquired: s.AcquiredConns(), Max: s.MaxConns(), AcquireCount: s.AcquireCount()}
 		},
-		Listeners: []string{"127.0.0.1" + portOf(dataAddr), "127.0.0.1" + portOf(mcpAddr), "127.0.0.1" + portOf(inboundAddr)},
+		// The two seams are dialled over TLS and VERIFIED, like any other
+		// client; the inbound bridge is not a TLS listener. The client
+		// carries the plane's own authority, so this probe fails on the
+		// day the seam certificate expires rather than reporting a live
+		// plane nothing can talk to.
+		Listeners: []string{
+			"https://127.0.0.1" + portOf(dataAddr),
+			"https://127.0.0.1" + portOf(mcpAddr),
+			"http://127.0.0.1" + portOf(inboundAddr),
+		},
+		Client: seamMaterial.LoopbackClient(),
 	}), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 
 	errCh := make(chan error, 5)
-	go func() { errCh <- dataSrv.ListenAndServe() }()
-	go func() { errCh <- mcpSrv.ListenAndServe() }()
+	// The certificate and key are on the server's TLSConfig already.
+	go func() { errCh <- dataSrv.ListenAndServeTLS("", "") }()
+	go func() { errCh <- mcpSrv.ListenAndServeTLS("", "") }()
 	go func() { errCh <- inboundSrv.ListenAndServe() }()
 	go func() { errCh <- adminSrv.ListenAndServe() }()
 	go func() { errCh <- opsSrv.ListenAndServe() }()
@@ -283,7 +313,11 @@ func main() {
 		"version", metrics.Version(),
 		"upstreams", len(cfg.Upstreams), "tool_upstreams", len(cfg.ToolUpstreams), "inbound_hooks", len(cfg.InboundHooks),
 		"hosted_upstreams", len(cfg.InternetHosts()),
-		"approval_notifier", cfg.ApprovalNotifier != nil, "notifier_gateway", gatewayURL)
+		"approval_notifier", cfg.ApprovalNotifier != nil, "notifier_gateway", gatewayURL,
+		// Named, not merely "tls=true": the first thing anybody debugging a
+		// refused handshake needs is which certificate this replica is
+		// presenting and when it stops being valid.
+		"seam_certificate", seamMaterial.Describe())
 
 	select {
 	case <-ctx.Done():

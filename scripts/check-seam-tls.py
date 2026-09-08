@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""Every manifest that points at one of the plane's data seams must use
+https AND name the authority to verify it against.
+
+Why this check exists rather than trusting admission. kagent refuses neither
+mistake:
+
+  * A ModelConfig with an `https://` baseUrl and no `spec.tls` is admitted.
+    The agent then verifies against the system trust store, which has never
+    heard of the plane, and every call fails — as a generic connection error,
+    because the certificate-naming diagnostic in kagent's own runtime is not
+    called on that path.
+  * A ModelConfig with a `spec.tls` block beside an `http://` baseUrl is also
+    admitted. Nothing fails. The TLS block is simply inert, the seam is
+    plaintext, and the manifest looks exactly like one that is not.
+
+The second is the dangerous one: it is a silent downgrade that reads as
+configured. A RemoteMCPServer has a CEL rule against that pairing; a
+ModelConfig does not, and both halves are checked here so neither depends on
+which kind happens to carry the rule.
+
+Run with --selftest to check the checker against deliberately broken input.
+"""
+import pathlib
+import sys
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - CI installs PyYAML
+    print("PyYAML is required", file=sys.stderr)
+    raise SystemExit(2)
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# The two Services the plane publishes its data seams on. A URL naming either
+# of these is a seam URL, whichever of the four DNS forms it uses.
+SEAM_SERVICES = ("kaimahi-proxy", "kaimahi-mcp-gateway")
+
+# What a seam-facing manifest must name, matching internal/kmx/config.
+CA_SECRET = "kaimahi-plane-ca"
+CA_KEY = "ca.crt"
+
+
+def seam_url(url):
+    """Is this URL one of the plane's data seams?"""
+    if not isinstance(url, str) or "://" not in url:
+        return False
+    host = url.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
+    return host.split(".")[0] in SEAM_SERVICES and ".kaimahi" in host + "."
+
+
+def urls_in(spec):
+    """Every baseUrl / url in a spec, wherever it is nested."""
+    found = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in ("baseUrl", "base_url", "url") and isinstance(child, str):
+                    found.append(child)
+                else:
+                    walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(spec)
+    return found
+
+
+def check_document(where, doc):
+    """Return a list of complaints about one YAML document."""
+    if not isinstance(doc, dict):
+        return []
+    kind = doc.get("kind")
+    if kind not in ("ModelConfig", "RemoteMCPServer"):
+        return []
+    spec = doc.get("spec") or {}
+    name = (doc.get("metadata") or {}).get("name", "?")
+    tls = spec.get("tls")
+    seams = [u for u in urls_in(spec) if seam_url(u)]
+    problems = []
+
+    if not seams:
+        # Not a seam-facing manifest. It must not carry the plane's authority
+        # either: naming a Secret it has no use for would mount it into a pod
+        # for no reason, and would keep that pod out of Running if the plane
+        # is not installed.
+        if isinstance(tls, dict) and tls.get("caCertSecretRef") == CA_SECRET:
+            problems.append(
+                f"{where}: {kind}/{name} names the plane's authority but points at no seam"
+            )
+        return problems
+
+    for url in seams:
+        if not url.startswith("https://"):
+            problems.append(
+                f"{where}: {kind}/{name} reaches a seam over plaintext: {url}"
+            )
+
+    if not isinstance(tls, dict):
+        problems.append(
+            f"{where}: {kind}/{name} points at a seam over https but names no authority "
+            f"(spec.tls.caCertSecretRef: {CA_SECRET}) — it would verify against the system "
+            f"trust store, which has never heard of the plane"
+        )
+        return problems
+
+    # Verification must not be turned off. A seam whose client skips
+    # verification costs the same certificate machinery and buys nothing,
+    # while looking like it bought something.
+    if tls.get("disableVerify"):
+        problems.append(
+            f"{where}: {kind}/{name} sets disableVerify — a seam nobody verifies is "
+            f"weaker than a plaintext one that never claimed to be verified"
+        )
+    if tls.get("caCertSecretRef") != CA_SECRET:
+        problems.append(
+            f"{where}: {kind}/{name} verifies against {tls.get('caCertSecretRef')!r}, "
+            f"not the plane's authority {CA_SECRET!r}"
+        )
+    if tls.get("caCertSecretKey") != CA_KEY:
+        problems.append(
+            f"{where}: {kind}/{name} names key {tls.get('caCertSecretKey')!r}, not {CA_KEY!r}"
+        )
+    return problems
+
+
+def scan(root):
+    problems, checked = [], 0
+    for path in sorted(root.rglob("*.yaml")):
+        try:
+            documents = list(yaml.safe_load_all(path.read_text()))
+        except yaml.YAMLError as exc:
+            problems.append(f"{path}: cannot parse: {exc}")
+            continue
+        for doc in documents:
+            if isinstance(doc, dict) and doc.get("kind") in ("ModelConfig", "RemoteMCPServer"):
+                checked += 1
+            problems.extend(check_document(path.relative_to(root), doc))
+    return problems, checked
+
+
+SELF_TEST_CASES = [
+    (
+        "plaintext seam",
+        """
+kind: ModelConfig
+metadata: {name: bad}
+spec:
+  tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: ca.crt}
+  openAI: {baseUrl: "http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1"}
+""",
+        "plaintext",
+    ),
+    (
+        "https with no authority",
+        """
+kind: ModelConfig
+metadata: {name: bad}
+spec:
+  openAI: {baseUrl: "https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1"}
+""",
+        "names no authority",
+    ),
+    (
+        "verification disabled",
+        """
+kind: RemoteMCPServer
+metadata: {name: bad}
+spec:
+  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: ca.crt, disableVerify: true}
+""",
+        "disableVerify",
+    ),
+    (
+        "wrong authority",
+        """
+kind: RemoteMCPServer
+metadata: {name: bad}
+spec:
+  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  tls: {caCertSecretRef: somebody-elses-ca, caCertSecretKey: ca.crt}
+""",
+        "not the plane's authority",
+    ),
+    (
+        "wrong key",
+        """
+kind: RemoteMCPServer
+metadata: {name: bad}
+spec:
+  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: tls.crt}
+""",
+        "names key",
+    ),
+    (
+        "authority named by a manifest pointing elsewhere",
+        """
+kind: ModelConfig
+metadata: {name: bad}
+spec:
+  tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: ca.crt}
+  openAI: {baseUrl: "https://api.example.invalid/v1"}
+""",
+        "points at no seam",
+    ),
+]
+
+SELF_TEST_CLEAN = """
+kind: ModelConfig
+metadata: {name: good}
+spec:
+  tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: ca.crt}
+  openAI: {baseUrl: "https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"}
+"""
+
+# A manifest with a real URL under a real URL key that is NOT a seam. This is
+# what stops a recogniser that answers "seam" to everything from passing: an
+# ungoverned ModelConfig must not be required to name the plane's authority,
+# because a check that fails on documents it has no business reading is a
+# check people turn off.
+SELF_TEST_UNRELATED = """
+kind: ModelConfig
+metadata: {name: direct}
+spec:
+  openAI: {baseUrl: "https://api.example.invalid/v1"}
+"""
+
+
+def exit_code_failures():
+    """Run the real scan over fixture trees and check the exit codes."""
+    import contextlib
+    import io
+    import tempfile
+
+    out = []
+    # The fixture trees produce their own verdicts on the way past; only the
+    # exit codes matter here, so the noise is swallowed rather than printed
+    # between the self-test's own lines.
+    hush = io.StringIO()
+    with tempfile.TemporaryDirectory() as tmp, \
+            contextlib.redirect_stdout(hush), contextlib.redirect_stderr(hush):
+        broken, clean = pathlib.Path(tmp) / "broken", pathlib.Path(tmp) / "clean"
+        broken.mkdir()
+        clean.mkdir()
+        for i, (_, document, _) in enumerate(SELF_TEST_CASES):
+            (broken / f"{i}.yaml").write_text(document)
+        (clean / "a.yaml").write_text(SELF_TEST_CLEAN)
+        (clean / "b.yaml").write_text(SELF_TEST_UNRELATED)
+        if report(*scan(broken)) != 1:
+            out.append("a tree full of broken manifests exited 0")
+        if report(*scan(clean)) != 0:
+            out.append("a tree of correct manifests exited non-zero")
+    return out
+
+
+def self_test():
+    """A checker that cannot fail is not a check. Break each rule in turn."""
+    failures = []
+    for name, document, expected in SELF_TEST_CASES:
+        problems = check_document("self-test", yaml.safe_load(document))
+        if not any(expected in p for p in problems):
+            failures.append(f"{name!r}: expected a complaint containing {expected!r}, got {problems}")
+    clean = check_document("self-test", yaml.safe_load(SELF_TEST_CLEAN))
+    if clean:
+        failures.append(f"a correct manifest was rejected: {clean}")
+    # A manifest with a real URL that is not a seam must be left alone. This
+    # is the case a recogniser answering "seam" to everything fails.
+    unrelated = check_document("self-test", yaml.safe_load(SELF_TEST_UNRELATED))
+    if unrelated:
+        failures.append(f"an unrelated manifest was flagged: {unrelated}")
+
+    # The verdict has to reach the exit code, so the real entry point is run
+    # over a broken tree and a clean one. A checker that finds every problem,
+    # prints it, and exits 0 is a checker nothing is gated on, and that is
+    # invisible to a self-test that only inspects the problem list.
+    failures.extend(exit_code_failures())
+    if failures:
+        for f in failures:
+            print("  " + f, file=sys.stderr)
+        print(f"seam TLS self-test: {len(failures)} of {len(SELF_TEST_CASES) + 2} cases wrong", file=sys.stderr)
+        return 1
+    print(f"seam TLS self-test: {len(SELF_TEST_CASES)} deliberate breakages all noticed, "
+          f"2 correct manifests left alone")
+    return 0
+
+
+def report(problems, checked):
+    """Print the verdict and return the exit code that carries it."""
+    if problems:
+        for p in problems:
+            print("  " + p, file=sys.stderr)
+        print(f"seam TLS: {len(problems)} manifests reach a seam without verifying it", file=sys.stderr)
+        return 1
+    print(f"seam TLS: {checked} seam-capable manifests checked, "
+          f"every seam URL is https and names {CA_SECRET}/{CA_KEY}")
+    return 0
+
+
+def main(argv):
+    if "--selftest" in argv or "--self-test" in argv:
+        return self_test()
+    return report(*scan(ROOT / "k8s"))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

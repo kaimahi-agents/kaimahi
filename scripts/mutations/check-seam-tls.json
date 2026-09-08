@@ -1,0 +1,96 @@
+{
+  "checker": "check-seam-tls.py",
+  "why": "This checker guards a downgrade that nothing else refuses. kagent admits a ModelConfig with a spec.tls block beside an http:// baseUrl: nothing fails, the block is inert, the seam is plaintext, and the manifest reads as configured. It also admits an https:// baseUrl with no tls block, which fails every call as a generic connection error far from its cause. So the checker has to fail in every way it could stop noticing either half — the scheme test, the missing-authority test, the disableVerify test, the two identity tests, the recogniser that finds no seam URLs or every URL, an empty run reported as clean, and a verdict computed and dropped. The FIXTURES are mutated too: a self-test whose broken cases stop being broken passes while checking nothing, and that is the failure this harness cannot otherwise see.",
+  "verify": [
+    "python3",
+    "scripts/check-seam-tls.py",
+    "--selftest"
+  ],
+  "signature": "seam TLS self-test:",
+  "mutations": [
+    {
+      "name": "a plaintext seam URL is no longer a problem",
+      "breaks": "The half that matters most. Every manifest could point at the seam over http, carry a tls block that is never used, and read exactly like one that is verified.",
+      "find": "        if not url.startswith(\"https://\"):",
+      "replace": "        if False:"
+    },
+    {
+      "name": "an https seam with no authority passes",
+      "breaks": "The other half. The agent verifies against the system trust store, which has never heard of the plane, and every call fails with a message that names nothing.",
+      "find": "    if not isinstance(tls, dict):\n        problems.append(",
+      "replace": "    if not isinstance(tls, dict) and False:\n        problems.append("
+    },
+    {
+      "name": "verification may be disabled",
+      "breaks": "The rule that a seam nobody verifies is weaker than a plaintext one that never claimed to be verified — it costs the same certificate machinery and buys nothing.",
+      "find": "    if tls.get(\"disableVerify\"):",
+      "replace": "    if False:"
+    },
+    {
+      "name": "any authority is accepted, not only the plane's",
+      "breaks": "The identity of the trust anchor. A manifest naming a Secret that does not exist reads clean here and is refused by kagent later, as a broken seam rather than a typo.",
+      "find": "    if tls.get(\"caCertSecretRef\") != CA_SECRET:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "any key inside the authority Secret is accepted",
+      "breaks": "The other half of the same identity. kagent refuses a caCertSecretKey the Secret does not carry, and reports it on the resource's own condition where nobody is looking.",
+      "find": "    if tls.get(\"caCertSecretKey\") != CA_KEY:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "no URL is recognised as a seam",
+      "breaks": "The recogniser, from the empty side: every manifest is treated as pointing somewhere else, so the whole file passes while examining nothing. Enumerated and examined are separate checks.",
+      "find": "    return host.split(\".\")[0] in SEAM_SERVICES and \".kaimahi\" in host + \".\"",
+      "replace": "    return False"
+    },
+    {
+      "name": "every URL is recognised as a seam",
+      "breaks": "The recogniser from the other side. An ungoverned ModelConfig pointing at Ollama is required to name the plane's authority — a check that fails on documents it has no business reading is a check people turn off.",
+      "find": "    return host.split(\".\")[0] in SEAM_SERVICES and \".kaimahi\" in host + \".\"",
+      "replace": "    return True"
+    },
+    {
+      "name": "nested URLs stop being found",
+      "breaks": "The walk. A ModelConfig's baseUrl is nested under its provider block, so a reader that only looks at the top level finds no seam URLs at all and reports every manifest clean.",
+      "find": "                if key in (\"baseUrl\", \"base_url\", \"url\") and isinstance(child, str):",
+      "replace": "                if False:"
+    },
+    {
+      "name": "the authority named by a manifest pointing nowhere near a seam is fine",
+      "breaks": "The reverse rule: a Secret mounted into a pod that has no use for it, which also keeps that pod out of Running on a cluster where the plane is not installed.",
+      "find": "        if isinstance(tls, dict) and tls.get(\"caCertSecretRef\") == CA_SECRET:",
+      "replace": "        if False:"
+    },
+    {
+      "name": "the findings are collected and the exit code ignores them",
+      "breaks": "A checker that does all its work, prints every problem, and exits 0 — the failure mode an exit code alone cannot see.",
+      "find": "        print(f\"seam TLS: {len(problems)} manifests reach a seam without verifying it\", file=sys.stderr)\n        return 1",
+      "replace": "        print(f\"seam TLS: {len(problems)} manifests reach a seam without verifying it\", file=sys.stderr)\n        return 0"
+    },
+    {
+      "name": "the self-test's entry point is neutered",
+      "breaks": "The self-test never runs at all, and the checker's verdict on the tree is trusted without anything having shown it can still fail.",
+      "find": "    if \"--selftest\" in argv or \"--self-test\" in argv:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "the self-test's broken fixtures stop being broken",
+      "breaks": "The FIXTURE, which no other mutation touches. Every case becomes a correct manifest, every expectation goes unmet, and a self-test that checks nothing is exactly as green as one that checks everything.",
+      "find": "  openAI: {baseUrl: \"http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1\"}",
+      "replace": "  openAI: {baseUrl: \"https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1\"}"
+    },
+    {
+      "name": "a correct manifest is rejected",
+      "breaks": "The other direction, and the one a breakage-only self-test cannot see: a checker that rejects everything catches every mutation above and is useless. The clean manifest is what says so.",
+      "find": "        if not url.startswith(\"https://\"):",
+      "replace": "        if not url.startswith(\"nothing-starts-with-this\"):"
+    },
+    {
+      "name": "an unrelated manifest is rejected",
+      "breaks": "The same over-reach reached through the trust anchor: an ungoverned ModelConfig pointing at a real provider is told to name the plane's authority, and a check that fails on documents it has no business reading is a check people turn off.",
+      "find": "    if not seams:",
+      "replace": "    if False:"
+    }
+  ]
+}

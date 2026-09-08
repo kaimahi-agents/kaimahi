@@ -22,7 +22,22 @@ metadata:
 spec:
   description: Kaimahi-governed GitHub — GitHub's hosted MCP server behind the enforcing MCP gateway
   protocol: STREAMABLE_HTTP
-  url: http://kaimahi-mcp-gateway.kaimahi:8081/upstream/github/mcp
+  url: https://kaimahi-mcp-gateway.kaimahi:8081/upstream/github/mcp
+  # The gateway serves TLS under the plane's own authority. `kmx plane`
+  # mints it and publishes the authority's CERTIFICATE here as Secret
+  # kaimahi-plane-ca — public material naming who to trust, never the
+  # private key, which stays in the kaimahi namespace and is mounted into
+  # no pod. Two different clients read this: kagent's controller, which
+  # discovers tools through the gateway, and the agent pod, which calls
+  # them; the controller mounts the Secret into the agent itself, so
+  # nothing here needs a pod-spec edit.
+  #
+  # disableVerify is deliberately absent and must stay absent. A client
+  # that skips verification pays for the certificate and buys nothing,
+  # while looking like it bought something.
+  tls:
+    caCertSecretRef: kaimahi-plane-ca
+    caCertSecretKey: ca.crt
   # A hosted server answers slower than an in-cluster one, and the dialer
   # re-resolves and re-handshakes on every call by design.
   timeout: 60s

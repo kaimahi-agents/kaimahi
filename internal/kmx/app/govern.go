@@ -9,6 +9,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // GovernOptions are `kmx govern`'s knobs, defaulted to what `make govern`
@@ -61,6 +62,15 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 	defer client.Close()
 
 	if err := a.issueCredential(client, credential, opt, false, false); err != nil {
+		return err
+	}
+
+	// The presets below name a CA Secret in the agent namespace, and kagent
+	// refuses a ModelConfig whose named Secret is absent — the seam would
+	// report Accepted=false rather than switching. Published here, not only
+	// by `kmx plane`, because the plane can be deployed before kagent
+	// exists and this is the first moment the namespace is certain to.
+	if err := a.publishPlaneAuthority(); err != nil {
 		return err
 	}
 
@@ -137,6 +147,9 @@ func (a *App) GovernInteractiveModel(agent string) error {
 	if err := a.issueCredential(client, credential, opt, true, secretExists); err != nil {
 		return err
 	}
+	if err := a.publishPlaneAuthority(); err != nil {
+		return err
+	}
 	manifest, err := interactiveModelManifest(preset, secret, model, true, agent)
 	if err != nil {
 		return err
@@ -155,7 +168,20 @@ func interactiveModelManifest(preset, secret, model string, governed bool, agent
 		spec["provider"] = "OpenAI"
 		spec["apiKeySecret"] = secret
 		spec["apiKeySecretKey"] = "api-key"
-		spec["openAI"] = map[string]string{"baseUrl": "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"}
+		// DERIVED, not spelled out. This was a second copy of the seam URL
+		// and it is exactly the copy that stops agreeing with the first: the
+		// committed presets moved to TLS and this literal would have stayed
+		// plaintext, which nothing refuses — a ModelConfig with a TLS block
+		// beside an http:// baseUrl is admitted and the TLS block is inert.
+		spec["openAI"] = map[string]string{"baseUrl": scaffold.ProxyBaseURL}
+		// What makes that URL verifiable: the authority's certificate, in
+		// this namespace, named here so the controller mounts it into the
+		// agent. Without it kagent uses the system trust store, which has
+		// never heard of the plane.
+		spec["tls"] = map[string]string{
+			"caCertSecretRef": scaffold.PlaneCASecret,
+			"caCertSecretKey": scaffold.PlaneCAKey,
+		}
 	} else {
 		spec["provider"] = "Ollama"
 		spec["ollama"] = map[string]string{"host": "http://ollama.ollama.svc.cluster.local:11434"}

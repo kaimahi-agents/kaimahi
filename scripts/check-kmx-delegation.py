@@ -57,6 +57,7 @@ OWNED = {
     "plane": "kmx plane --source .",
     "plane-image": "kmx plane --step image --source .",
     "plane-secrets": "kmx plane --step secrets",
+    "plane-certificate": "kmx plane --step certificate",
     "govern": "kmx govern",
     "ledger": "kmx ledger",
     "grants": "kmx grants",

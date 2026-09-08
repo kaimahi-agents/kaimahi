@@ -310,6 +310,21 @@ func controllerRequest(ctx context.Context, method, endpoint string, body io.Rea
 	return controllerClient.Do(req)
 }
 
+// seamScheme accepts both schemes a plane's seam can be addressed by.
+//
+// https is what this repository writes now, and what an operator should see.
+// http is still recognised as GOVERNED, because it is: the seam enforces on
+// the credential, and a cluster deployed before the certificate existed is
+// metered, allowlisted, bound and audited exactly as it was. Refusing to call
+// it governed would report a plane that is enforcing as one that is not,
+// which is a worse error than the one it would be guarding against — and it
+// would say so at the moment an operator is least able to check.
+//
+// What plaintext costs is confidentiality of the content on the wire, and
+// that is a different sentence from "not governed". `kmx status` names the
+// certificate; this answers the routing question only.
+func seamScheme(scheme string) bool { return scheme == "https" || scheme == "http" }
+
 func usesKaimahiModelProxy(spec map[string]any) bool {
 	var visit func(any) bool
 	visit = func(value any) bool {
@@ -322,7 +337,7 @@ func usesKaimahiModelProxy(spec map[string]any) bool {
 						if err == nil && parsed != nil {
 							host := parsed.Host
 							validHost := host == "kaimahi-proxy.kaimahi:8080" || host == "kaimahi-proxy.kaimahi.svc.cluster.local:8080"
-							if parsed.Scheme == "http" && validHost && strings.HasPrefix(parsed.Path, "/upstream/") {
+							if seamScheme(parsed.Scheme) && validHost && strings.HasPrefix(parsed.Path, "/upstream/") {
 								return true
 							}
 						}
@@ -1526,7 +1541,7 @@ func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *cha
 		governedServer := false
 		parsed, _ := url.Parse(server.Spec.URL)
 		gatewayHost := parsed != nil && (parsed.Host == "kaimahi-mcp-gateway.kaimahi:8081" || parsed.Host == "kaimahi-mcp-gateway.kaimahi.svc.cluster.local:8081")
-		if parsed != nil && parsed.Scheme == "http" && gatewayHost && strings.HasPrefix(parsed.Path, "/upstream/") {
+		if parsed != nil && seamScheme(parsed.Scheme) && gatewayHost && strings.HasPrefix(parsed.Path, "/upstream/") {
 			if !a.planeReady("kaimahi-mcp-gateway") {
 				return fmt.Errorf("RemoteMCPServer %q points at Kaimahi but the plane is not Ready", tool.MCPServer.Name)
 			}

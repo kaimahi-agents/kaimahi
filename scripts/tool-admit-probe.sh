@@ -64,6 +64,12 @@ cleanup() {
   rm -rf "$workdir"
 }
 trap cleanup EXIT
+# Both seams serve TLS under the plane's own authority; fetch what to verify
+# against. Never --insecure: a probe that skipped verification would keep
+# passing on the day the certificate stopped being valid.
+# shellcheck source=scripts/seam-tls.sh
+. "$(dirname "$0")/seam-tls.sh"
+seam_ca "$workdir/plane-ca.crt"
 
 $KUBECTL -n "$AGENT_NAMESPACE" get secret "$GOVERNED_SECRET" \
   -o jsonpath='{.data.api-key}' | base64 -d > "$workdir/token"
@@ -75,18 +81,18 @@ $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \
   svc/kaimahi-mcp-gateway "$GATEWAY_PORT:8081" >/dev/null 2>&1 &
 pf_pid=$!
 for _ in $(seq 1 150); do
-  curl -fsS -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/healthz" 2>/dev/null && break
+  curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$GATEWAY_PORT/healthz" 2>/dev/null && break
   sleep 0.2
 done
-curl -fsS -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/healthz" \
+curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$GATEWAY_PORT/healthz" \
   || { echo "gateway port-forward failed" >&2; exit 1; }
 
 printf '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "%s", "arguments": %s}}\n' \
   "$tool" "$args" > "$workdir/req"
-status=$(curl -sS -X POST -H @"$workdir/auth-header" \
+status=$(curl -sS --cacert "$workdir/plane-ca.crt" -X POST -H @"$workdir/auth-header" \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   --data @"$workdir/req" -o "$workdir/resp" -w '%{http_code}' \
-  "http://127.0.0.1:$GATEWAY_PORT/upstream/$UPSTREAM/mcp")
+  "https://127.0.0.1:$GATEWAY_PORT/upstream/$UPSTREAM/mcp")
 
 # The only 503 that means "admitted, then the forward failed": the
 # gateway could not read the UPSTREAM's own credential. Every other 503

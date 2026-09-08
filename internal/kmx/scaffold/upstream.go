@@ -30,7 +30,16 @@ import (
 // GatewayHost is the in-cluster address of the enforcing MCP gateway.
 // Every governed RemoteMCPServer's URL is this host plus the upstream's
 // name; nothing else may vary, which is why kmx derives it.
-const GatewayHost = "http://kaimahi-mcp-gateway.kaimahi:8081"
+//
+// https, because a tool RESPONSE is not recorded anywhere the plane keeps —
+// the audit row holds the decision and a capped summary of the declared
+// argument fields, never the body a tool returned. Whatever the agent read
+// crosses this wire and exists in no other record.
+//
+// The host is the two-label form, so the certificate has to carry it: a
+// certificate covering only the fully qualified name fails this URL with a
+// hostname error that reads like a network fault.
+const GatewayHost = "https://kaimahi-mcp-gateway.kaimahi:8081"
 
 // GatewayURL is the one URL shape a governed tool seam may have.
 func GatewayURL(upstream string) string {

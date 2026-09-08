@@ -193,12 +193,15 @@ makes it rather than on someone else's:
 
 ## How the plane actually works
 
-One binary (two replicas), five HTTP listeners, one Postgres:
+One binary (two replicas), five listeners, one Postgres. The two DATA
+seams serve TLS; the other three are plain HTTP and stay that way — the
+admin and ops ports are on no Service, and the inbound bridge's one
+public route terminates TLS at an edge:
 
 | Port | Listener | Carries |
 |---|---|---|
-| 8080 | **data** | OpenAI-compatible model traffic from agents |
-| 8081 | **MCP gateway** | JSON-RPC tool traffic from agents |
+| 8080 | **data** | OpenAI-compatible model traffic from agents — **TLS**, under the plane's own authority ([operations.md](operations.md)) |
+| 8081 | **MCP gateway** | JSON-RPC tool traffic from agents — **TLS**, same certificate |
 | 8082 | **inbound** | authenticated webhooks from outside |
 | 9091 | **admin** | issuing credentials, budgets, approvals — bearer-token, cluster-internal |
 | 9092 | **ops** | Prometheus `/metrics`, `/readyz`, `/livez` — no auth, on no Service ([operations.md](operations.md)) |

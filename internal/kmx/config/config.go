@@ -58,7 +58,30 @@ const (
 	// GovernedSecret is the agent-side Secret the issued token is stored in
 	// (scripts/plane-admin.sh's GOVERNED_SECRET default), in the kagent
 	// namespace.
-	GovernedSecret         = "kaimahi-governed-token"
+	GovernedSecret = "kaimahi-governed-token"
+	// The three Secrets the seam certificate lives in, and they are three
+	// on purpose.
+	//
+	// PlaneAuthoritySecret holds the certificate authority and ITS PRIVATE
+	// KEY. It lives in the plane's namespace and is mounted into no pod at
+	// all — not even the proxy's, which needs only the serving key. It is
+	// read by `kmx plane` when it signs, and by nothing else. Keeping it is
+	// what makes renewal a re-sign under an unchanged authority rather than
+	// a redistribution to every agent.
+	//
+	// PlaneSeamTLSSecret holds what the proxy serves with: the certificate,
+	// its key, and the authority's certificate so the plane can verify its
+	// own seams over loopback. No issuing power.
+	//
+	// PlaneCASecret is the authority's CERTIFICATE ONLY, copied into the
+	// agent namespace for `spec.tls.caCertSecretRef` to name. It is public
+	// material: it says who to trust, and confers nothing.
+	PlaneAuthoritySecret = "kaimahi-plane-authority"
+	PlaneSeamTLSSecret   = "kaimahi-plane-seam-tls"
+	PlaneCASecret        = "kaimahi-plane-ca"
+	// PlaneCAKey is the key inside PlaneCASecret, and the one a ModelConfig
+	// or RemoteMCPServer names in `spec.tls.caCertSecretKey`.
+	PlaneCAKey             = "ca.crt"
 	GovernedModelConfig    = "governed-ollama"
 	GuardNamespaces        = "kagent, kaimahi, ollama"
 	DefaultContainerEngine = "docker"

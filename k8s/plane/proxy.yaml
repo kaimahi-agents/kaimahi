@@ -156,6 +156,16 @@ spec:
             - name: upstream-ca
               mountPath: /etc/kaimahi/upstream-ca
               readOnly: true
+            # The certificate the two DATA seams serve with. NOT optional
+            # and NOT falling back: without it the process refuses to
+            # start, because a seam that quietly served in the clear would
+            # look governed to everything that checks and be readable by
+            # anything that captures. `kmx plane` mints it; the authority's
+            # private key stays in its own Secret and is mounted nowhere,
+            # so this pod can sign handshakes and cannot issue anything.
+            - name: seam-tls
+              mountPath: /etc/kaimahi/seam-tls
+              readOnly: true
           # Two probes that mean different things (plane/internal/ops):
           #   readiness — "route to me": needs Postgres. A Postgres
           #     outage takes every replica out of the Services and
@@ -327,6 +337,22 @@ spec:
           configMap:
             name: kaimahi-upstream-ca
             optional: true
+        # Deliberately NOT optional. Every other credential mount here can
+        # be absent because the path it feeds fails closed on its own; this
+        # one feeds the transport, and an absent transport secret has no
+        # closed state to fall into — it would simply be plaintext. So the
+        # process refuses to start instead, and says which Secret is
+        # missing.
+        - name: seam-tls
+          secret:
+            secretName: kaimahi-plane-seam-tls
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+              - key: ca.crt
+                path: ca.crt
 ---
 # A voluntary disruption (a node drain, a cluster upgrade) may take
 # one replica at a time, never both. Direct deletes are not evictions

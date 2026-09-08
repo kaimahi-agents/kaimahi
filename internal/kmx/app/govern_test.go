@@ -13,9 +13,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
 // A fake kubectl on PATH, so `kmx govern` can be driven end to end without a
@@ -31,6 +33,7 @@ JSON
     exit 0 ;;
   *"get secret kaimahi-admin"*) printf '%s' "$KMX_TEST_ADMIN_B64"; exit 0 ;;
   *"get secret kaimahi-governed-token"*) printf '%s' "$KMX_TEST_BOUND"; exit 0 ;;
+  *"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_SEAM_TLS"; exit 0 ;;
   *port-forward*)
     # A real kubectl announces the bind before anything may be sent through
     # it; kmx waits for exactly this line, so the fake has to print it.
@@ -86,6 +89,7 @@ func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *go
 	t.Setenv("KMX_TEST_ADMIN_B64", base64.StdEncoding.EncodeToString([]byte("admin-bearer")))
 	t.Setenv("KMX_TEST_ADMIN_PORT", u.Port())
 	t.Setenv("KMX_TEST_BOUND", os.Getenv("KMX_TEST_BOUND"))
+	t.Setenv("KMX_TEST_SEAM_TLS", seamTLSSecret(t))
 
 	cfg := &config.Config{
 		KindCluster: "kaimahi-p1",
@@ -381,5 +385,51 @@ func TestGoverningTheSameCredentialAgainIsFine(t *testing.T) {
 	}
 	if !strings.Contains(f.errOut.String(), "keeping both") {
 		t.Errorf("the already-issued case was not reconciled:\n%s", f.errOut.String())
+	}
+}
+
+// seamTLSSecret is the plane's seam-certificate Secret as kubectl prints it.
+//
+// `kmx govern` reads it to republish the authority into the agent namespace
+// before it points anything at a seam, so a fixture without one stands in for
+// a plane that has not been deployed — which is a different test, below.
+func seamTLSSecret(t *testing.T) string {
+	t.Helper()
+	authority, err := seamcert.MintAuthority(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serving, err := authority.Sign(seamcert.SeamNames(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{"data": map[string]string{
+		"tls.crt": base64.StdEncoding.EncodeToString(serving.CertPEM),
+		"tls.key": base64.StdEncoding.EncodeToString(serving.KeyPEM),
+		"ca.crt":  base64.StdEncoding.EncodeToString(authority.CertPEM),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// Pointing an agent at a seam it cannot verify is not a partial success. A
+// plane with no certificate has to stop the whole operation, and say which
+// command produces one — the alternative is an agent switched onto a governed
+// preset whose ModelConfig kagent then refuses for a missing Secret, which
+// reads as a broken seam rather than as a missing step.
+func TestGoverningRefusesWhenThePlaneHasNoSeamCertificate(t *testing.T) {
+	f := newGovernFixture(t, "", issued("kmh_"+strings.Repeat("a", 64)))
+	t.Setenv("KMX_TEST_SEAM_TLS", `{"data":{}}`)
+	err := f.app.Govern("hello-world", governOptions())
+	if err == nil {
+		t.Fatal("an agent was governed against a plane with no seam certificate")
+	}
+	if !strings.Contains(err.Error(), "no ca.crt") && !strings.Contains(err.Error(), "carries no ca.crt") {
+		t.Errorf("the refusal does not say what is missing: %v", err)
+	}
+	if !strings.Contains(err.Error(), "kmx plane") {
+		t.Errorf("the refusal does not name the command that fixes it: %v", err)
 	}
 }

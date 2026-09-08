@@ -26,7 +26,22 @@ metadata:
 spec:
   description: Kaimahi-governed ERP — the accounts-payable demo's fixture system of record, behind the enforcing MCP gateway
   protocol: STREAMABLE_HTTP
-  url: http://kaimahi-mcp-gateway.kaimahi:8081/upstream/erp/mcp
+  url: https://kaimahi-mcp-gateway.kaimahi:8081/upstream/erp/mcp
+  # The gateway serves TLS under the plane's own authority. `kmx plane`
+  # mints it and publishes the authority's CERTIFICATE here as Secret
+  # kaimahi-plane-ca — public material naming who to trust, never the
+  # private key, which stays in the kaimahi namespace and is mounted into
+  # no pod. Two different clients read this: kagent's controller, which
+  # discovers tools through the gateway, and the agent pod, which calls
+  # them; the controller mounts the Secret into the agent itself, so
+  # nothing here needs a pod-spec edit.
+  #
+  # disableVerify is deliberately absent and must stay absent. A client
+  # that skips verification pays for the certificate and buys nothing,
+  # while looking like it bought something.
+  tls:
+    caCertSecretRef: kaimahi-plane-ca
+    caCertSecretKey: ca.crt
   timeout: 30s
   sseReadTimeout: 5m0s
   terminateOnClose: true

@@ -386,10 +386,14 @@ type statusData struct {
 	// proxy scaled to zero beside a running Postgres is not reported ready.
 	planeDesired int
 	planeReady   int
-	serverErr    string
-	planeErr     string
-	secretErr    string
-	ollamaErr    string
+	// certificate is what the plane serves both seams with. Read
+	// tolerantly like everything else here: an absent one is a plane that
+	// has not been deployed, not a reason for status to fail.
+	certificate SeamCertificate
+	serverErr   string
+	planeErr    string
+	secretErr   string
+	ollamaErr   string
 }
 
 // collectStatus reads the cluster once.
@@ -468,6 +472,7 @@ func (a *App) collectStatus() (*statusData, error) {
 	}
 	d.serverErr = a.statusTolerant(config_kagentNamespace, "remotemcpservers", &d.servers)
 	d.secrets, d.secretErr = a.secretNames(config_kagentNamespace)
+	d.certificate = a.seamCertificate()
 	return d, nil
 }
 
@@ -490,6 +495,7 @@ func (d *statusData) governanceOf() governance {
 	}
 	return governance{
 		Plane:       plane,
+		Certificate: d.certificate,
 		ModelSeams:  modelSeams(d.agents.Items, d.models.Items),
 		ToolSeams:   toolSeams(d.servers.Items, d.serverErr),
 		Credentials: credentialSeams(d.models.Items, d.servers.Items, d.secrets, d.secretErr, seamErr),

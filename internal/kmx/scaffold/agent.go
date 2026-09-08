@@ -420,6 +420,8 @@ func renderBYO(spec Spec) (string, error) {
 		}
 	}
 
+	b.WriteString(renderBYOVolumes(spec))
+
 	if p := spec.Placement; p != nil {
 		if len(p.NodeSelector) > 0 {
 			b.WriteString("      nodeSelector:\n")
@@ -506,13 +508,63 @@ func renderBYOSecurity(id Identity) string {
 			"        # with a message that never names the image. Pass --run-as-user <uid>\n" +
 			"        # (`docker image inspect --format '{{.Config.User}}' <image>`).\n")
 	}
-	if id.UID > 0 {
-		b.WriteString("      volumes:\n" +
-			"        - name: tmp\n" +
-			"          emptyDir: {}\n" +
-			"      volumeMounts:\n" +
-			"        - name: tmp\n" +
-			"          mountPath: /tmp\n")
+	return b.String()
+}
+
+// renderBYOVolumes writes the pod's volumes and mounts — ONE volumes key and
+// one volumeMounts key, whatever combination of reasons produced them.
+//
+// They were emitted from the securityContext renderer while there was only
+// one reason to have any. There are two now, and a second block would be a
+// duplicate YAML mapping key: kubectl takes the last and silently discards
+// the first, so a read-only root filesystem would arrive with no /tmp, or a
+// governed image with no certificate authority.
+func renderBYOVolumes(spec Spec) string {
+	type mount struct {
+		name, path, source string
+		// readOnly is per mount, not for the block. /tmp exists precisely
+		// so the image can WRITE somewhere under a read-only root
+		// filesystem; mounting it read-only would take away the thing it
+		// was added to provide.
+		readOnly bool
+	}
+	var mounts []mount
+	if spec.Identity.UID > 0 {
+		mounts = append(mounts, mount{name: "tmp", path: "/tmp", source: "          emptyDir: {}\n"})
+	}
+	if governedBYO(spec) {
+		mounts = append(mounts, mount{
+			name:     "kaimahi-plane-ca",
+			path:     byoCAMountPath,
+			source:   "          secret:\n            secretName: " + PlaneCASecret + "\n",
+			readOnly: true,
+		})
+	}
+	if len(mounts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("      volumes:\n")
+	for _, m := range mounts {
+		b.WriteString("        - name: " + m.name + "\n" + m.source)
+	}
+	b.WriteString("      volumeMounts:\n")
+	for _, m := range mounts {
+		b.WriteString("        - name: " + m.name + "\n          mountPath: " + m.path + "\n")
+		if m.readOnly {
+			b.WriteString("          readOnly: true\n")
+		}
 	}
 	return b.String()
+}
+
+// governedBYO reports whether this document points the image at the plane's
+// seams, which is the only reason a BYO pod needs the authority.
+func governedBYO(spec Spec) bool {
+	for _, e := range spec.Governance {
+		if e.Name == CAFileEnv {
+			return true
+		}
+	}
+	return false
 }

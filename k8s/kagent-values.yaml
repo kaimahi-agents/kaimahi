@@ -11,6 +11,17 @@
 #     chart itself publishes it as the `kagent-tool-server` RemoteMCPServer.
 #     Even so: these tools are UNGOVERNED (no egress enforcement, no tool
 #     permits, no audit) until the Kaimahi governance plane is deployed.
+controller:
+  # Pinned off, though it is also the chart's default. When true, kagent
+  # rewrites every RemoteMCPServer URL and its own tool-discovery dial from
+  # https back to http — for clusters where a sidecar proxy originates TLS
+  # instead. On this cluster there is no such proxy: the gateway itself is
+  # the TLS endpoint, so flipping this would send the tool seam back to
+  # plaintext while every RemoteMCPServer still carried a `tls:` block that
+  # is then never used. Nothing would fail and nothing would say so, which
+  # is the only reason a default is restated here.
+  mcpEgressPlaintext: false
+
 providers:
   default: ollama
   ollama:

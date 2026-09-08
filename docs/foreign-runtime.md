@@ -8,7 +8,7 @@ in a pod — against a live plane, and writing down the interface the
 project actually offers a runtime it did not write.
 
 **The result is a qualified confirmation.** The enforcement seam is
-generic and the list of what a runtime must be told is short: five
+generic and the list of what a runtime must be told is short: six
 things, none of them an object the runtime has to create or that the
 plane reads through the Kubernetes API. Two of the four questions came
 back clean. One came back as a single line of YAML. One came back as a
@@ -29,18 +29,38 @@ the interface this project offers a foreign runtime.
    the plane only as a sha256. It goes in `Authorization`; the `Bearer `
    prefix is optional on both seams.
 2. **The tool seam's URL.**
-   `http://kaimahi-mcp-gateway.kaimahi:8081/upstream/<upstream>/mcp`.
+   `https://kaimahi-mcp-gateway.kaimahi:8081/upstream/<upstream>/mcp`.
    `POST` carries every JSON-RPC message, `DELETE` ends a session.
 3. **The name of the upstream** it is allowed to call — an operator-owned
    key in the plane's table, not a URL. The real tool server's address
    never reaches the client, and an unknown name is a `403`.
 4. **The model seam's URL**, if it spends model tokens:
-   `http://kaimahi-proxy.kaimahi:8080/upstream/<name>/<path>`, where
+   `https://kaimahi-proxy.kaimahi:8080/upstream/<name>/<path>`, where
    `<path>` must equal exactly the one path that upstream declares. The
    body must be a JSON object. `model` is what the ledger and the price
    gate read: a metered upstream under a cents budget refuses a model it
    has no price for, and nothing else requires the field.
-5. **A network position the plane admits.** Today that means a pod in a
+5. **The plane's certificate authority.** Both seam URLs are `https`
+   under an authority the plane mints for itself, so a client verifying
+   against a system trust store is refused. `kmx plane` publishes the
+   authority's certificate — and only its certificate — as Secret
+   `kaimahi-plane-ca` in the agent namespace, key `ca.crt`. Read it with
+
+   ```sh
+   kubectl -n kagent get secret kaimahi-plane-ca \
+     -o jsonpath='{.data.ca\.crt}' | base64 -d > plane-ca.crt
+   ```
+
+   and give it to the client (`curl --cacert`, `SSL_CERT_FILE`, whatever
+   its HTTP library reads). It is public material: it says who to trust
+   and confers nothing. The private half never leaves the plane's
+   namespace and is mounted into no pod.
+
+   **Do not skip verification instead.** A client that dials these seams
+   with verification off pays for the whole certificate exercise and buys
+   nothing from it, while looking from the outside exactly like one that
+   verifies.
+6. **A network position the plane admits.** Today that means a pod in a
    namespace named `kagent`. See below; this is the one that costs a
    change.
 
@@ -260,12 +280,20 @@ it.
 
 ### 3. Any position outside the cluster
 
-All five of the plane's listeners are plain HTTP; there is no TLS
-listener anywhere, and the two data seams are `ClusterIP` Services with
-no ingress path of their own. A runtime that is not in the cluster has no
-supported route to either seam. Nothing here is wrong — the plane was
-built for in-cluster agents — but "runtime-agnostic" should not be read
-as "location-agnostic".
+The two data seams serve TLS, under a certificate authority the plane
+mints for itself and no public trust store has heard of. The remaining
+three listeners are plain HTTP and stay that way: the admin and
+operations ports are on no Service at all, and the inbound bridge's one
+public route terminates TLS at an edge.
+
+That is a distribution problem rather than a routing one, and it is why a
+runtime outside the cluster still has no supported route. Both seams are
+`ClusterIP` Services with no ingress path of their own, so the address is
+unreachable from outside before the certificate is even reached; and the
+certificate is valid for in-cluster names and the loopback address, so it
+would not answer to an external one. Nothing here is wrong — the plane
+was built for in-cluster agents — but "runtime-agnostic" should not be
+read as "location-agnostic".
 
 ## The transcript
 
@@ -287,11 +315,11 @@ about it is kagent, and no kagent object exists on the cluster.
 
 ```console
 ### from namespace kagent
---- reachability of http://kaimahi-mcp-gateway.kaimahi:8081/healthz
+--- reachability of https://kaimahi-mcp-gateway.kaimahi:8081/healthz
 REACHED: ok [HTTP 200]
 
 ### from namespace foreign-runtime
---- reachability of http://kaimahi-mcp-gateway.kaimahi:8081/healthz
+--- reachability of https://kaimahi-mcp-gateway.kaimahi:8081/healthz
 NOT REACHED: curl: (28) Connection timed out after 10016 milliseconds
 
 ### control, from the same shell in foreign-runtime
@@ -356,7 +384,7 @@ would for a kagent agent.
 **The model seam**, same client, same credential, a zero token budget:
 
 ```console
---- POST http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1/chat/completions
+--- POST https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1/chat/completions
 monthly token budget reached; approval request filed — run 'make approvals'
 HTTP 429
 

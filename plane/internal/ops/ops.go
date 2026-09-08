@@ -55,9 +55,11 @@ type Deps struct {
 	Draining *atomic.Bool
 	// Stats reports the pool right now; nil skips the stall check.
 	Stats func() PoolStats
-	// Listeners are loopback addresses of the data listeners
-	// (host:port); liveness GETs each one's /healthz — unconditional
-	// "ok" handlers, so this proves only that the listener answers.
+	// Listeners are loopback ORIGINS of the data listeners
+	// (scheme://host:port); liveness GETs each one's /healthz —
+	// unconditional "ok" handlers, so this proves only that the listener
+	// answers. The scheme is carried per listener rather than assumed,
+	// because the two seams serve TLS and the inbound bridge does not.
 	Listeners []string
 	// StallAfter is how long the pool may be saturated with no acquire
 	// completing before the process is declared stuck (default 60s).
@@ -119,7 +121,7 @@ func (h *handler) live(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, addr := range h.d.Listeners {
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://"+addr+"/healthz", nil)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, addr+"/healthz", nil)
 		if err != nil {
 			http.Error(w, "not live: bad listener address", http.StatusServiceUnavailable)
 			return

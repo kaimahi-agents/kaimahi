@@ -32,9 +32,9 @@ func warehouse() UpstreamSpec {
 
 func TestTheGatewayURLIsDerivedFromTheUpstreamName(t *testing.T) {
 	for name, want := range map[string]string{
-		"warehouse":    "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp",
-		"kagent-tools": "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/kagent-tools/mcp",
-		"erp":          "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/erp/mcp",
+		"warehouse":    "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp",
+		"kagent-tools": "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/kagent-tools/mcp",
+		"erp":          "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/erp/mcp",
 	} {
 		if got := GatewayURL(name); got != want {
 			t.Fatalf("GatewayURL(%q) = %q, want %q", name, got, want)
@@ -47,7 +47,7 @@ func TestTheScaffoldedSeamPointsAtTheGatewayAndNeverAtTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(doc, `url: "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp"`) {
+	if !strings.Contains(doc, `url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp"`) {
 		t.Fatalf("the RemoteMCPServer does not point at the gateway:\n%s", doc)
 	}
 	// The server's own URL belongs in the overlay fragment, where the

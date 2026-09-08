@@ -43,6 +43,12 @@ cleanup() {
   rm -rf "$workdir"
 }
 trap cleanup EXIT
+# Both seams serve TLS under the plane's own authority; fetch what to verify
+# against. Never --insecure: a probe that skipped verification would keep
+# passing on the day the certificate stopped being valid.
+# shellcheck source=scripts/seam-tls.sh
+. "$(dirname "$0")/seam-tls.sh"
+seam_ca "$workdir/plane-ca.crt"
 
 $KUBECTL -n "$AGENT_NAMESPACE" get secret "$GOVERNED_SECRET" \
   -o jsonpath='{.data.api-key}' | base64 -d > "$workdir/token"
@@ -60,10 +66,10 @@ for i in "${!pods[@]}"; do
 done
 for port in "${ports[@]}"; do
   for _ in $(seq 1 150); do
-    curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" 2>/dev/null && break
+    curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$port/healthz" 2>/dev/null && break
     sleep 0.2
   done
-  curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" || { echo "port-forward to $port failed" >&2; exit 1; }
+  curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$port/healthz" || { echo "port-forward to $port failed" >&2; exit 1; }
 done
 
 printf '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "kaimahi-race", "version": "0"}}}\n' > "$workdir/init"
@@ -78,21 +84,21 @@ mkfifo "$workdir/gate"
 workers=()
 for i in $(seq 1 "$m"); do
   port="${ports[$(( (i - 1) % ${#ports[@]} ))]}"
-  url="http://127.0.0.1:$port/upstream/$UPSTREAM/mcp"
+  url="https://127.0.0.1:$port/upstream/$UPSTREAM/mcp"
   (
     d="$workdir/w$i"; mkdir -p "$d"
-    st=$(curl -sS -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
+    st=$(curl -sS --cacert "$workdir/plane-ca.crt" -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
       -H 'Accept: application/json, text/event-stream' --data @"$workdir/init" \
       -D "$d/init-headers" -o "$d/init-resp" -w '%{http_code}' "$url" || echo 000)
     [ "$st" = 200 ] || { echo "init:$st" > "$d/outcome"; exit 0; }
     session=$(tr -d '\r' < "$d/init-headers" | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2; exit}')
     hdr=(); [ -n "$session" ] && { printf 'Mcp-Session-Id: %s\n' "$session" > "$d/session"; hdr=(-H @"$d/session"); }
-    curl -sS -o /dev/null -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
+    curl -sS --cacert "$workdir/plane-ca.crt" -o /dev/null -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
       -H 'Accept: application/json, text/event-stream' "${hdr[@]}" --data @"$workdir/initialized" "$url" || true
     # Handshake done: report ready, then block on the gate.
     : > "$d/ready"
     read -r _ < "$workdir/gate" || true
-    st=$(curl -sS -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
+    st=$(curl -sS --cacert "$workdir/plane-ca.crt" -X POST -H @"$workdir/auth-header" -H 'Content-Type: application/json' \
       -H 'Accept: application/json, text/event-stream' "${hdr[@]}" --data @"$workdir/call" \
       -o "$d/call-resp" -w '%{http_code}' "$url" || echo 000)
     python3 - "$d/call-resp" "$st" > "$d/outcome" <<'EOF'

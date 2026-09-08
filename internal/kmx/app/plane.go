@@ -49,7 +49,7 @@ const PlaneImage = "kaimahi-proxy:p15"
 // PlaneSteps are the stages of `kmx plane`, addressable individually so the
 // Makefile's `plane-image` and `plane-secrets` targets delegate to the same
 // code rather than keeping a second copy of it.
-var PlaneSteps = []string{"image", "secrets", "deploy"}
+var PlaneSteps = []string{"image", "secrets", "certificate", "deploy"}
 
 // planeManifests are applied in the order `kubectl apply -f k8s/plane/`
 // applies them (kubectl sorts by filename), so the two paths cannot diverge
@@ -126,13 +126,20 @@ func (a *App) Plane(opt PlaneOptions) error {
 
 	for i, s := range steps {
 		var err error
-		name := map[string]string{"image": "Build and load proxy image", "secrets": "Reconcile plane secrets", "deploy": "Deploy and verify plane"}[s]
+		name := map[string]string{
+			"image":       "Build and load proxy image",
+			"secrets":     "Reconcile plane secrets",
+			"certificate": "Mint or renew the seam certificate",
+			"deploy":      "Deploy and verify plane",
+		}[s]
 		err = a.runPhase(phase{current: i + 1, total: len(steps), name: name}, func() error {
 			switch s {
 			case "image":
 				return a.planeImage(opt)
 			case "secrets":
 				return a.planeSecrets()
+			case "certificate":
+				return a.planeCertificate(opt.Step != "")
 			case "deploy":
 				return a.planeDeploy()
 			}
@@ -145,9 +152,25 @@ func (a *App) Plane(opt PlaneOptions) error {
 
 	if opt.Step == "" {
 		a.complete("Governance plane ready", started)
+		// Said on every run, not only the first, because the case it warns
+		// about looks like success from here. The seams serve TLS now; a
+		// seam object written before they did still names `http://` and
+		// carries no authority to verify against, and calls across it fail
+		// CLOSED from the moment this command finishes until the seam is
+		// re-applied. That is the right direction — nothing quietly keeps
+		// talking in the clear — but an operator upgrading an existing
+		// cluster deserves to be told which command closes the gap rather
+		// than to find out from an agent that stopped answering.
 		a.notef("\nNEXT  Nothing is governed by the plane yet:\n"+
 			"  kmx govern %s      # issue the credential and put the agent behind the plane\n"+
-			"  kmx ledger            # what it has spent", a.Cfg.Credential)
+			"  kmx ledger            # what it has spent\n"+
+			"\nUPGRADING an existing cluster? The two data seams now serve TLS. Any seam\n"+
+			"  applied before this release still points at `http://` and names no\n"+
+			"  certificate authority, so its calls fail closed until it is re-applied:\n"+
+			"  kmx govern %s      # the model seam\n"+
+			"  kmx tools govern         # the tool seam\n"+
+			"  kmx status               # the certificate, and which seams are governed",
+			a.Cfg.Credential, a.Cfg.Credential)
 	}
 	return nil
 }

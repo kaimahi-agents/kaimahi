@@ -73,10 +73,10 @@ still in the tree.
 | Area | Product | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | `demo/kaimahi-erp` | — |
-| `internal/` | `kmx/` (15 packages) | `demo/erp` | `kmx/delegation` (tests only) |
+| `internal/` | `kmx/` (16 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 47 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 23 (6 embedded in the binary, 17 operator) | 3 | 49 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -94,7 +94,7 @@ distinguished them.
 
 ## `internal/` — the product's packages, and one fixture
 
-`internal/kmx/` is fifteen packages. All but one are product — the
+`internal/kmx/` is sixteen packages. All but one are product — the
 exception, `delegation`, is below — and the line between them is
 consistent enough to state as a rule: **anything that
 can be decided without reaching a cluster lives in its own package;
@@ -106,19 +106,21 @@ five `lift*.go` files in `app` are the half that runs `az`. `blueprint`
 parses and validates a governed workflow; `workflow_run.go` in `app`
 executes it. `scaffold` generates agent YAML; `guard` decides whether a
 context may be written to; `seam`, `secretshapes`, `toolchain` and
-`version` are each one decidable question. That is why `app` is 38
+`version` are each one decidable question; `seamcert` mints and reads
+the certificate the plane's data seams serve with. That is why `app` is 39
 files: it is not a grab bag, it is everything left after the decidable
 parts were taken out, and what remains all shares one receiver holding
 a kubectl and the operator's terminal.
 
 | Package | Non-test source files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 38 | Product | Every kmx command. The shell-out orchestration layer. |
+| `kmx/app` | 39 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
 | `kmx/blueprint` | 5 | Product | The declarative governed-workflow file. |
 | `kmx/scaffold` | 7 | Product | Generates the reviewable Agent YAML. |
 | `kmx/guard` | 1 | Product | The context-safety net. A local kind context proceeds with a banner; any other requires confirmation naming it; no confirmation, unknown context or unreadable kubeconfig refuses. |
 | `kmx/seam` | 1 | Product | What kmx knows about each upstream credential. |
+| `kmx/seamcert` | 1 | Product | Mints the certificate the plane's two data seams serve with, and answers when it expires. The authority outlives what it signs, so renewal is a re-sign rather than a redistribution. |
 | `kmx/toolchain` | 2 | Product | Fetches kind/kubectl/helm, pinned and checksum-verified. |
 | `kmx/kagentcli` | 1 | Product | Fetches the pinned kagent CLI. |
 | `kmx/planebuild` | 1 | Product | Builds the plane's image. |
@@ -138,7 +140,7 @@ reader counting packages will miscount without being told.
 ## `plane/` — all product
 
 A separate Go module: the governance proxy that runs in the user's
-cluster. Thirteen internal packages and one binary, all of them product.
+cluster. Fourteen internal packages and one binary, all of them product.
 The root module cannot import it — no `require`, and no `plane/...`
 import anywhere in root `cmd/` or `internal/`. That is the point of the
 module boundary, and it is why `kmx plane` fetches the plane's source
@@ -199,10 +201,10 @@ exist for a walkthrough; `release-agent.yaml` is also not embedded but is
 not a walkthrough either — it is the one agent this project depends on.
 All six are "an agent manifest in `k8s/`" and look alike.
 
-## `scripts/` — 72 tracked files, three different jobs
+## `scripts/` — 75 tracked files, three different jobs
 
-**None is orphaned**, but "orphaned" needs care: 60 of the 72 are named
-by something outside themselves, and the twelve `scripts/mutations/*.json`
+**None is orphaned**, but "orphaned" needs care: 62 of the 75 are named
+by something outside themselves, and the thirteen `scripts/mutations/*.json`
 are named by nothing at all — `check-mutations.py` finds them by globbing
 the directory. That is deliberate (a checker added without mutations is
 meant to be a failure, so the harness must not read a list someone can
@@ -210,18 +212,18 @@ forget to update), and it means a grep for references is the wrong test
 for that one directory.
 
 The counts below come from a classification of `git ls-files scripts` in
-which all 72 files land in exactly one bucket — not from reading the
+which all 75 files land in exactly one bucket — not from reading the
 directory and estimating.
 
 | Class | Count | Files |
 |---|---|---|
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
-| **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
+| **Product** — operator scripts, reached through make, kmx, or another product script | 17 | `seam-tls.sh`, `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
-| **Scaffolding** — checkers and their self-tests | 15 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
+| **Scaffolding** — checkers and their self-tests | 16 | the thirteen `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
 | **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 6 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
-| **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
+| **Scaffolding** — mutation specifications | 13 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
 | **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements in the coordination board that `check-board.py` found, plus those found by hand where it could not look, and a record of how each was closed |
 
 **Two of those look like demo scripts and are not.** `await-approval.sh`
@@ -253,7 +255,7 @@ Three things a reader would get wrong from the directory listing alone:
 
 One file is genuinely dual-role and is counted once above:
 `kube-guard.sh` is embedded product — `kmx lift` writes it into a
-temporary tree and executes it — AND is one of the twelve checkers the
+temporary tree and executes it — AND is one of the thirteen checkers the
 mutation harness breaks on purpose.
 
 `verify-chat.py` is a checker. Neither make nor kmx runs it: every

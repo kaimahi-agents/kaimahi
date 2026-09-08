@@ -67,6 +67,12 @@ func delegationCases() []delegationCase {
 		{target: "plane", want: "bin/kmx plane --source ."},
 		{target: "plane-image", want: "bin/kmx plane --step image --source ."},
 		{target: "plane-secrets", want: "bin/kmx plane --step secrets"},
+		// One implementation on EVERY target, including the managed one: the
+		// minting, the create-once authority and the renewal decision are
+		// decidable without a cluster and live in one package, so unlike the
+		// rest of the plane's managed path there is no shell version of this
+		// to keep in step.
+		{target: "plane-certificate", want: "bin/kmx plane --step certificate"},
 		{target: "govern", want: "bin/kmx govern hello-world --agent hello-world --preset governed-ollama"},
 		{target: "ledger", want: "bin/kmx ledger hello-world"},
 		{target: "grants", want: "bin/kmx grants"},

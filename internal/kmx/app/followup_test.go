@@ -451,10 +451,22 @@ func TestGovernedModelRequiresExactProxyEndpoint(t *testing.T) {
 		url  string
 		want bool
 	}{
+		// What this repository writes now.
+		{"https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", true},
+		{"https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", true},
+		// Still governed. A cluster deployed before the seam carried a
+		// certificate is metered, allowlisted, bound and audited exactly as
+		// it was; calling it ungoverned would report an enforcing plane as
+		// one that is not. What plaintext costs is confidentiality of the
+		// content on the wire, which `kmx status` reports separately.
 		{"http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", true},
 		{"http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", true},
-		{"https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", false},
+		// The host is still exact: a scheme that is not a seam's, a host
+		// that only CONTAINS the seam's name, and an unparseable URL are
+		// all somebody else's endpoint.
+		{"ftp://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", false},
 		{"http://example.invalid/kaimahi-proxy.kaimahi:8080/upstream/x", false},
+		{"https://kaimahi-proxy.kaimahi:9999/upstream/ollama/v1", false},
 		{"http://[::1", false},
 	} {
 		if got := usesKaimahiModelProxy(map[string]any{"openAI": map[string]any{"baseUrl": tc.url}}); got != tc.want {

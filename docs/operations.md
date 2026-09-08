@@ -99,6 +99,63 @@ nothing to do. Both say which in their logs (`migrations: applied` /
 `migrations: nothing to apply`). CI deletes both pods at once and
 asserts they come back clean with one version row per migration.
 
+## The seam certificate
+
+The two data seams — the model seam on 8080 and the tool seam on 8081 —
+serve TLS. What crosses them is why: the model seam carries the full text
+of what an agent was asked and what it answered, and the tool seam
+carries the body a tool returned. Neither is written to any artifact the
+plane keeps. The ledger records identifiers, token counts, cost and
+status; the tool audit records the decision and a capped summary of
+DECLARED argument fields. So that content exists in no other record, and
+capture would be the only way to obtain it.
+
+`kmx plane` mints the material and there is no other component:
+
+| Secret | Namespace | Holds | Mounted |
+|---|---|---|---|
+| `kaimahi-plane-authority` | `kaimahi` | the certificate authority **and its private key** | nowhere at all |
+| `kaimahi-plane-seam-tls` | `kaimahi` | the serving certificate, its key, the authority's certificate | the proxy |
+| `kaimahi-plane-ca` | `kagent` | the authority's certificate **only** | the agent pods, by kagent |
+
+The authority's private key is the one piece that never leaves the
+`kaimahi` namespace and is projected into no pod, including the proxy's.
+The proxy holds a key that signs handshakes and can issue nothing.
+
+**Rotation is a re-sign, not a redistribution.** The authority is minted
+once and outlives what it signs by years; the serving certificate lasts
+398 days. `kmx plane` renews it whenever it is inside its last 30 days,
+so a cluster that gets deployed to now and then never reaches the
+expiry. What changes is only the Secret the proxy mounts — the authority
+every agent was told to trust is untouched, so there is no window where
+one side has rolled over and the other has not.
+
+A cluster nobody has deployed to in a year is the case worth naming, and
+it is why the expiry is reported in three places rather than left to be
+discovered:
+
+```bash
+kmx status          # a certificate line: subject, issuer, days remaining
+make plane-metrics  # kaimahi_seam_certificate_expires_in_seconds
+```
+
+and the proxy logs the subject, issuer and expiry at startup. Renewal on
+its own, without a full redeploy:
+
+```bash
+kmx plane --step certificate
+```
+
+That signs a new certificate under the unchanged authority and restarts
+the proxy, because the process reads the mounted material once at start.
+
+**When it does expire, both seams stop answering and every agent fails
+closed.** Nothing degrades to plaintext. Be aware of how that presents:
+kagent's agent runtime reports a failed handshake as a generic connection
+error — the certificate-naming diagnostic in its own source is not called
+on that path — so the agent's own message will not say "certificate".
+`kmx status` and the `kmx tools govern` refusal both name it.
+
 ## Backup and restore
 
 Postgres is one replica on one PVC. `make down` destroys it. Between
@@ -159,6 +216,7 @@ make plane-metrics POD=<name>   # a specific replica
 | `kaimahi_ledger_month_cents`, `kaimahi_ledger_month_tokens` | `credential` | month-to-date ledger per credential **name**, read from Postgres at scrape time |
 | `kaimahi_live_grants` | `kind` (tool, budget, inbound) | grants live right now |
 | `kaimahi_credential_expires_in_seconds` | `credential` | seconds until a credential stops authenticating, negative once it already has — how an expiry is seen coming rather than diagnosed at 3am ([identity.md](identity.md)) |
+| `kaimahi_seam_certificate_expires_in_seconds` | — | seconds until the certificate the two data seams serve with expires, negative once it has. Both seams stop answering when it does, and every agent fails closed — so this is the gauge to alert on. `kmx plane` renews it inside its last 30 days ([the seam certificate](#the-seam-certificate)) |
 | `kaimahi_credentials_without_expiry` | — | credentials issued before expiry existed, which therefore never expire. A closed class: this gauge can only fall |
 | `kaimahi_open_reservations` | — | calls admitted under a cap whose ledger row has not landed yet, across all replicas |
 | `kaimahi_upstream_latency_seconds` | `seam`, `upstream` | histogram of time spent at the upstream |

@@ -37,6 +37,12 @@ cleanup() {
   rm -rf "$workdir"
 }
 trap cleanup EXIT
+# Both seams serve TLS under the plane's own authority; fetch what to verify
+# against. Never --insecure: a probe that skipped verification would keep
+# passing on the day the certificate stopped being valid.
+# shellcheck source=scripts/seam-tls.sh
+. "$(dirname "$0")/seam-tls.sh"
+seam_ca "$workdir/plane-ca.crt"
 
 $KUBECTL -n "$SECRET_NAMESPACE" get secret "$GOVERNED_SECRET" \
   -o jsonpath='{.data.api-key}' | base64 -d > "$workdir/token"
@@ -59,19 +65,19 @@ for pair in "$a:$PORT_A" "$b:$PORT_B"; do
   $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 "pod/$pod" "$port:8080" >/dev/null 2>&1 &
   pf_pids+=("$!")
   for _ in $(seq 1 150); do
-    curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" 2>/dev/null && break
+    curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$port/healthz" 2>/dev/null && break
     sleep 0.2
   done
-  curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" || { echo "port-forward to $pod failed" >&2; exit 1; }
+  curl -fsS --cacert "$workdir/plane-ca.crt" -o /dev/null "https://127.0.0.1:$port/healthz" || { echo "port-forward to $pod failed" >&2; exit 1; }
 done
 
 before=$(ledger_rows)
 printf '{"model": "%s", "messages": [{"role": "user", "content": "Reply with the single word OK."}], "max_tokens": 8}\n' \
   "$MODEL" > "$workdir/body"
 chat() { # port -> status
-  curl -sS -o "$workdir/resp-$1" -w '%{http_code}' -X POST -H @"$workdir/auth-header" \
+  curl -sS --cacert "$workdir/plane-ca.crt" -o "$workdir/resp-$1" -w '%{http_code}' -X POST -H @"$workdir/auth-header" \
     -H 'Content-Type: application/json' --data @"$workdir/body" \
-    "http://127.0.0.1:$1/upstream/$UPSTREAM/v1/chat/completions" 2>/dev/null || echo 000
+    "https://127.0.0.1:$1/upstream/$UPSTREAM/v1/chat/completions" 2>/dev/null || echo 000
 }
 
 # 1. A call in flight on A...

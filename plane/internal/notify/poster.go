@@ -47,6 +47,11 @@ type Deps struct {
 	// channel id. Both read per post from plane custody.
 	CredentialFile string
 	ChannelFile    string
+	// Transport is what the default client dials with. The gateway is a
+	// TLS listener, including over loopback, so this carries the trust
+	// that verifies it — the plane's own seam authority. Ignored when
+	// Client is supplied.
+	Transport http.RoundTripper
 	// Client makes the gateway calls. Nil gets a default that never
 	// follows a redirect and bounds one call at CallTimeout.
 	Client      *http.Client
@@ -107,7 +112,8 @@ func New(d Deps) *Poster {
 	}
 	if d.Client == nil {
 		d.Client = &http.Client{
-			Timeout: d.CallTimeout,
+			Timeout:   d.CallTimeout,
+			Transport: d.Transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},

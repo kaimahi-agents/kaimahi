@@ -304,6 +304,20 @@ spec:
   description: %s
   protocol: STREAMABLE_HTTP
   url: %s
+  # The gateway serves TLS under the plane's own authority, which no
+  # public trust store knows about. This names the authority's
+  # certificate — public material that says who to trust and confers
+  # nothing — and both clients read it: kagent's controller, which
+  # discovers tools through the gateway, and the agent pod, which calls
+  # them. `+"`kmx plane`"+` publishes the Secret; the controller mounts it
+  # into the agent for you.
+  #
+  # Verification is NOT disabled here and must not be. A seam whose
+  # client skips verification costs the same certificate machinery and
+  # buys nothing, while looking like it bought something.
+  tls:
+    caCertSecretRef: %s
+    caCertSecretKey: %s
   timeout: 30s
   sseReadTimeout: 5m0s
   terminateOnClose: true
@@ -313,7 +327,7 @@ spec:
         type: Secret
         name: %s
         key: api-key
-`, GatewayURL(spec.Name), name, AgentNamespace, desc, url, secret), nil
+`, GatewayURL(spec.Name), name, AgentNamespace, desc, url, PlaneCASecret, PlaneCAKey, secret), nil
 }
 
 // matchLabels renders a label map as YAML, keys sorted, both sides
