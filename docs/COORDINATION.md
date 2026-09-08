@@ -9,7 +9,36 @@ PR-open-with-checks-green. The user merges.
 
 ## Mission
 
-Kaimahi makes agentic workflows accessible and safe to delegate.
+**The goal is for running agents on AKS to be easy. Kaimahi is a means to
+that, not the end.** Stated by the user 2026-09-08, and it corrects what
+this section said for six weeks — "Kaimahi makes agentic workflows
+accessible and safe to delegate", which is about the artifact and does
+not mention AKS at all. The difference is not cosmetic; the two sentences
+lead to different decisions, and several taken on this board were taken
+under the wrong one.
+
+**What follows from it, and these are the parts that change:**
+
+- **A capability landing in open-source kagent is a WIN, not a threat.**
+  If approvals, policy or audit arrive upstream, agents on AKS got easier
+  and the mission advanced. The instinct to read that as duplication —
+  written into D49 the same afternoon — is the product-centric reading
+  and it is the wrong one.
+- **Upstreaming is forward motion, not a side activity.** Three upstream
+  candidates are recorded on this board and **none has been filed**. Under
+  the artifact reading that was housekeeping. Under this one it is the
+  most direct work available: a fix in kagent helps everyone running
+  agents on Kubernetes, and helps them whether or not they ever hear of
+  this project.
+- **The AKS path is nearer the mission than the governance plane is.**
+  Not that governance stops mattering — an agent nobody dares give
+  authority to is not usable — but the lift, the quickstart and the
+  prerequisites are the mission stated directly.
+- **Success is not measured in adoption of this repository.** It is
+  measured in whether running an agent on AKS got easier, including by
+  routes that route around us entirely.
+
+Leadership goal, verbatim:
 
 Leadership goal, verbatim:
 
@@ -126,9 +155,9 @@ prefix.
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
-| W42: the audit row does not say who called (D47) | unassigned | SHAPED 2026-09-08 — prompt below | legibility, not a new control; the vocabulary deliberately does not change |
+| W42: the audit row does not say who called (D47) | W42 worker | PR #149 MERGED | legibility, not a new control; the vocabulary deliberately does not change |
 | W43: the model seam carries content that exists nowhere else (D48) | unassigned | SHAPED 2026-09-08 — prompt below | feasibility first: if kagent cannot trust a private CA, the finding IS the lane |
-| W41: govern a runtime this repository did not write | W41 worker | PR #139 MERGED (main 28a9b9c) — coordinator verification owed | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
+| W41: govern a runtime this repository did not write | W41 worker | PR #139 MERGED — the call seam is generic and proven so; what is kagent-shaped, and the three things a foreign runtime cannot get, are in `docs/foreign-runtime.md` | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
@@ -466,6 +495,103 @@ opening than three of mixed quality. U2 gets verified against the CRD
 before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
+
+- **D49 (REFRAMED 2026-09-08 by the mission correction above, still open
+  for the narrower question): the vendor of our runtime sells our feature
+  set.**
+
+  **The threat framing below is wrong and is kept as written, because the
+  correction is the useful part.** This entry was raised as an
+  existential question — does this project have a reason to exist
+  alongside its upstream's commercial offering. Under the mission as now
+  stated, that is the wrong question. If Solo ships governance, or if it
+  lands in open-source kagent, **running agents on AKS got easier and the
+  mission advanced**. Neither outcome is a loss.
+
+  **What survives as a real question, and it is much smaller:** where
+  this project's effort is best spent given somebody else is also
+  building this. Two answers suggest themselves and neither needs a
+  ruling to start:
+  - **File the upstream candidates.** Three are recorded and none filed.
+    A gap fixed in kagent helps every operator on Kubernetes, which is
+    the mission stated directly, and costs us the effort of writing an
+    issue.
+  - **Keep what nobody else is doing.** Spend metering and budget denial
+    are absent from both platforms surveyed this week. Argument-level
+    binding may be too — establishing whether their approval binds a tool
+    or a call is still worth an hour, not because losing the claim would
+    be a defeat, but because it says where the remaining effort is worth
+    spending.
+
+  **The original entry follows, with its threat framing intact.** Raised 2026-09-08 by
+  the user. **Read from two web pages and nothing else** — Solo.io's
+  kagent product page and the open-source kagent README. No code, no
+  release notes, no pricing. Everything below is a first reading and the
+  first task of anyone acting on it is to establish what is actually
+  shipped.
+
+  **The overlap, in their words.** Solo.io's commercial kagent offering
+  advertises: agent identity and policy management with
+  **"agent-on-behalf-of semantics"**; approval workflows where **"agents
+  propose, humans approve"**; complete auditability of every agent action
+  and decision path; a **Waypoint Proxy (Envoy-based)** doing L7
+  evaluation and guardrails on agent traffic; mTLS; multi-cluster; and
+  unification across LangChain, CrewAI and Google ADK.
+
+  Set against this repository: `acted_for` is agent-on-behalf-of, to the
+  phrase. P4c and P12 are approvals where the agent proposes and a human
+  approves. The tool audit trail is auditability of every call. The P4b
+  MCP gateway is an L7 proxy doing evaluation and guardrails on agent
+  traffic — theirs on Envoy, ours on a Go handler. mTLS is the gap raised
+  as D48 the same afternoon. And W41 had just finished testing the
+  cross-runtime claim they lead with.
+
+  **The nuance that decides how bad this is, and it took a second page to
+  find.** The OPEN-SOURCE kagent README documents none of it — no
+  approvals, no policy, no audit, no identity, no spend, no gateway. So
+  this project is **not** duplicating the runtime it depends on. It is
+  building, in the open, what that runtime's vendor sells as its
+  commercial tier.
+
+  That is a coherent position. It is also **not the position this board
+  has been written from**. The stated architecture is "thin layer over
+  kagent, do not build a second control plane", which reads very
+  differently once the vendor is selling the layer with Envoy underneath
+  and multi-cluster on top.
+
+  **What still looks genuinely ours**, offered as candidates to test
+  rather than as conclusions:
+  - **Argument-level binding.** Their published language is "granular
+    access control", which usually means per-tool. This repository binds
+    an approval to the canonical digest of one CALL with specific
+    arguments — approving `publish v1.2.3` cannot be spent on `v1.2.4`,
+    and a standing constraint bounds a field rather than a verb. If they
+    bind tools and we bind calls, that is a real difference and it is the
+    one worth leading with. **If they bind calls too, the strongest
+    remaining claim is gone**, and that should be established early
+    rather than discovered late.
+  - **Spend metering and budget denial.** Absent from their published
+    feature list, as it was from the other platform surveyed this week.
+    Twice now, which is either an opportunity or a sign that nobody
+    considers it part of this problem.
+  - **Self-hosted with no vendor**, and a one-command path from nothing
+    to a governed agent.
+
+  **What must be established before this is ruled**, because a product
+  page describes intent as much as shipped code:
+  - Which of those capabilities are generally available today, which are
+    announced, and which are roadmap.
+  - Whether any of it is in the open-source repository we already depend
+    on — if approvals or policy land THERE, the question changes from
+    positioning to duplication overnight.
+  - Whether their approval binds a tool or a call.
+
+  **This is not a decision the coordinator should make**, and not one
+  answerable from marketing copy. It is a question about why this project
+  exists alongside its own upstream's commercial offering, and it wants
+  whoever else has a stake in the answer.
+
+
 
 - **D48 (OPEN — needs a ruling): the model seam is plaintext, and D45's
   reasoning does not cover it.** Raised 2026-09-08 after W41 found that
@@ -1244,7 +1370,7 @@ Everything without a ruling in its own heading is not GO.
 
 ## Ready-to-paste worker prompts
 
-### W1 — P1: kagent hello world on kind (RUN — merged as #2; kept as the record of what the lane was asked for)
+### W1 — P1: kagent hello world on kind (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1278,7 +1404,7 @@ Constraints:
   anything that surprised you (delta sheet).
 ```
 
-### W2 — P2: LLM-enhanced via ModelConfig (RUN — merged as #3; kept as the record of what the lane was asked for)
+### W2 — P2: LLM-enhanced via ModelConfig (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1332,7 +1458,7 @@ Constraints:
   section (delta sheet).
 ```
 
-### W3 — P3: connectors/tools via MCP (RUN — merged as #4; kept as the record of what the lane was asked for)
+### W3 — P3: connectors/tools via MCP (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1387,7 +1513,7 @@ Constraints:
   section (delta sheet).
 ```
 
-### W-RENAME — in-repo rename tomte → kaimahi (RUN — merged as #5; kept as the record of what the lane was asked for)
+### W-RENAME — in-repo rename tomte → kaimahi (RUN — merged as #5; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for this project (repo root: this checkout — now
@@ -1433,7 +1559,7 @@ PR-open-with-checks-green — do not merge. Report deviations in the PR's
 "Deviations & decisions" section.
 ```
 
-### W4 — P4a: metering/enforcing LLM proxy (RUN — merged as #12; kept as the record of what the lane was asked for)
+### W4 — P4a: metering/enforcing LLM proxy (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1504,7 +1630,7 @@ ends at PR-open-with-checks-green — do not merge. Report deviations in
 the PR's "Deviations & decisions" section.
 ```
 
-### W5 — P4b: enforcing MCP gateway (RUN — merged as #15; kept as the record of what the lane was asked for)
+### W5 — P4b: enforcing MCP gateway (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1582,7 +1708,7 @@ Lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR's "Deviations & decisions" section.
 ```
 
-### W6 — user documentation for shipped functionality (RUN — merged as #14; kept as the record of what the lane was asked for)
+### W6 — user documentation for shipped functionality (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1649,7 +1775,7 @@ it was executed.
 Report deviations in the PR's "Deviations & decisions" section.
 ```
 
-### W7 — P4c: approvals / blast-radius permits (RUN — merged as #17; kept as the record of what the lane was asked for)
+### W7 — P4c: approvals / blast-radius permits (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1737,7 +1863,7 @@ no stacked bases. Lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR's "Deviations & decisions" section.
 ```
 
-### W8 — P5a: governed Slack connector, the demo that makes governance legible (RUN — merged as #18; kept as the record of what the lane was asked for)
+### W8 — P5a: governed Slack connector, the demo that makes governance legible (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1825,7 +1951,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR's "Deviations & decisions" section.
 ```
 
-### W9 — P5b: cluster portability + a real AKS run (RUN — merged as #19; kept as the record of what the lane was asked for)
+### W9 — P5b: cluster portability + a real AKS run (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2117,7 +2243,7 @@ explicit instead:
 5. Everything else unchanged: survey first, verification is real, suite
    green at every commit, lane ends at PR-open-with-checks-green.
 
-### W10 — P7a: NetworkPolicy egress (RUN — merged as #23; kept as the record of what the lane was asked for)
+### W10 — P7a: NetworkPolicy egress (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2173,7 +2299,7 @@ containing PR #20; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W11 — P7b: inbound connectors (RUN — merged as #24; kept as the record of what the lane was asked for)
+### W11 — P7b: inbound connectors (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2233,7 +2359,7 @@ targets main; no stacked bases; lane ends at PR-open-with-checks-green
 — do not merge. Report deviations in the PR.
 ```
 
-### W12 — P7c: docs restructure (RUN — merged as #21/#22; kept as the record of what the lane was asked for)
+### W12 — P7c: docs restructure (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2295,7 +2421,7 @@ lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR.
 ```
 
-### W13 — post-move: Go module path and owner references (RUN — merged as #26; kept as the record of what the lane was asked for)
+### W13 — post-move: Go module path and owner references (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2353,7 +2479,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations and the gambtho audit table in the PR.
 ```
 
-### W14 — CI hygiene: a verifier that proves the tool path, and a docs-only short-circuit (RUN — merged as #29; kept as the record of what the lane was asked for)
+### W14 — CI hygiene: a verifier that proves the tool path, and a docs-only short-circuit (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2393,7 +2519,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends
 at PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W15 — AKS actually enforces NetworkPolicy (RUN — merged as #30; kept as the record of what the lane was asked for)
+### W15 — AKS actually enforces NetworkPolicy (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2433,7 +2559,7 @@ targets main; no stacked bases; lane ends at PR-open-with-checks-green
 — do not merge. Report deviations in the PR.
 ```
 
-### W18 — P8b: approval routing via Slack + per-approver identity (RUN — merged as #41; kept as the record of what the lane was asked for)
+### W18 — P8b: approval routing via Slack + per-approver identity (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2538,7 +2664,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR.
 ```
 
-### W19 — P9: run it for real — a stateless, multi-replica plane with exact budgets and metrics (RUN — merged as #46; kept as the record of what the lane was asked for)
+### W19 — P9: run it for real — a stateless, multi-replica plane with exact budgets and metrics (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2637,7 +2763,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (RUN — merged as #51; kept as the record of what the lane was asked for)
+### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2760,7 +2886,7 @@ stacked bases; lane ends at PR-open-with-checks-green — do not merge.
 Report deviations in the PR.
 ```
 
-### W21 — P11: `kmx`, milestone 1 — the developer journey as one Go binary (RUN — merged as #57; kept as the record of what the lane was asked for)
+### W21 — P11: `kmx`, milestone 1 — the developer journey as one Go binary (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2860,7 +2986,7 @@ no stacked bases; lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR.
 ```
 
-### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (RUN — merged as #64; kept as the record of what the lane was asked for)
+### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2989,7 +3115,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W23 — P12: argument-level policy — standing constraints, and an approval bound to the call (RUN — merged as #62; kept as the record of what the lane was asked for)
+### W23 — P12: argument-level policy — standing constraints, and an approval bound to the call (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3126,7 +3252,7 @@ PR targets main; no stacked bases; lane ends at PR-open-with-checks-
 green — do not merge. Report deviations in the PR.
 ```
 
-### W24 — P13: the accounts-payable exception demo (RUN — merged as #73; kept as the record of what the lane was asked for)
+### W24 — P13: the accounts-payable exception demo (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3292,7 +3418,7 @@ current main; PR targets main; no stacked bases; lane ends at PR-open-
 with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W25 — CI: the e2e job takes 15 minutes on every PR (RUN — merged as #65; kept as the record of what the lane was asked for)
+### W25 — CI: the e2e job takes 15 minutes on every PR (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3370,7 +3496,7 @@ lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR.
 ```
 
-### W26 — P14: the accounts-payable demo, live on AKS (RUN — merged as #83; kept as the record of what the lane was asked for)
+### W26 — P14: the accounts-payable demo, live on AKS (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3453,7 +3579,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W27 — `kmx` milestone 3: the core plane verbs (RUN — merged as #81; kept as the record of what the lane was asked for)
+### W27 — `kmx` milestone 3: the core plane verbs (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3744,7 +3870,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W28 — ship it: a version somebody can install, and an upgrade that works (RUN — merged as #85; kept as the record of what the lane was asked for)
+### W28 — ship it: a version somebody can install, and an upgrade that works (RUN — merged as #85; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3830,7 +3956,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W29 — govern your own agent: the generic onboarding path (RUN — the onboarding half merged 2026-09-03 as `kmx tools add`; kept as the record of what the lane was asked for, and NOT to be pasted: it asks for both halves and would rebuild the merged one)
+### W29 — govern your own agent: the generic onboarding path (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3938,7 +4064,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W30 — identity on the call, and credentials that expire (RUN — merged as #86; kept as the record of what the lane was asked for)
+### W30 — identity on the call, and credentials that expire (RUN — merged as #86; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4028,7 +4154,7 @@ main; no stacked bases; lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR.
 ```
 
-### W33 — the lift: your local agent, running on AKS, with dashboards you did not ask for (RUN — merged as #119; kept as the record of what the lane was asked for)
+### W33 — the lift: your local agent, running on AKS, with dashboards you did not ask for (RUN — merged as #119; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4160,7 +4286,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W34b — kmx tells the truth about the system it is pointed at (RUN — merged as #118; kept as the record of what the lane was asked for)
+### W34b — kmx tells the truth about the system it is pointed at (RUN — merged as #118; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4422,7 +4548,7 @@ at PR-open-with-checks-green — do not merge. Report every deviation in
 the PR.
 ```
 
-### W36 — `kmx workflow run` has no first command (RUN — merged as #112; kept as the record of what the lane was asked for)
+### W36 — `kmx workflow run` has no first command (RUN — merged as #112; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4504,7 +4630,7 @@ ends at PR-open-with-checks-green — do not merge. Report deviations in
 the PR.
 ```
 
-### W37 — say the thing, not its planning number (RUN — merged as #114; kept as the record of what the lane was asked for)
+### W37 — say the thing, not its planning number (RUN — merged as #114; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4592,7 +4718,7 @@ current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W38 — the e2e chat flake: a 3B model that asks instead of answers (RUN — merged as #122; kept as the record of what the lane was asked for)
+### W38 — the e2e chat flake: a 3B model that asks instead of answers (RUN — merged as #122; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4667,7 +4793,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W40 — three places we say we protect something and do not (RUN — merged as #134; kept as the record of what the lane was asked for)
+### W40 — three places we say we protect something and do not (RUN — merged as #134; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4760,7 +4886,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR, and say plainly anything you could not prove.
 ```
 
-### W41 — govern a runtime this repository did not write (RUN — merged as #139; kept as the record of what the lane was asked for)
+### W41 — govern a runtime this repository did not write (RUN — merged as #139; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4881,7 +5007,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends
 at PR-open-with-checks-green — do not merge.
 ```
 
-### W42 — the audit row does not say who called (UNASSIGNED — paste into a fresh CLI session)
+### W42 — the audit row does not say who called (RUN — merged as #149; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
