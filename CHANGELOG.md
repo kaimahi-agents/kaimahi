@@ -237,6 +237,24 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- **A stale `bin/kmx` could apply the previous version of twelve embedded
+  files.** The manifests, blueprints and scripts kmx carries are inside the
+  binary, so editing one has to relink it — but the Makefile's list of those
+  prerequisites had drifted twelve files behind `embed.go`. Editing the WASM
+  runtime, the release blueprint, any observability manifest or any of the
+  five scripts the managed path ships left a binary built before the edit,
+  which `make sandbox`, `make lift` or a blueprint run then applied. CI never
+  saw it, because a fresh runner builds once. The test guarding this asserted
+  two hard-coded filenames and stayed green throughout; it now derives the
+  list from `embed.go`'s own directives, so the two cannot drift again.
+  Affects checkouts only — an installed kmx was never stale.
+
+- **`make ap-ask` downloaded a kagent CLI it did not use.** It delegated to
+  `make chat`, which is kmx, which fetches its own pinned copy. The
+  prerequisite is gone, and the comment that explained the duplicate away —
+  it claimed a checkout hands kmx the make-side binary — has been corrected
+  to say what actually happens.
+
 - **`kmx` no longer acts silently on a cluster nobody chose.** Context
   resolution used to fall through to `kind-kaimahi-p1`, label the result as
   coming from a `KIND_CLUSTER` variable that did not exist, and never print

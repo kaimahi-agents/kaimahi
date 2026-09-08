@@ -27,6 +27,11 @@ it is also the first thing to state honestly in any doc you write.
 
 ## Repository layout
 
+This table is where things live. [What is actually in this
+repository](repository-map.md) is what they are FOR — every area
+classified as product, demonstration or scaffolding, with the evidence.
+Read it before assuming a file you have found is part of the product.
+
 | Path | What it is |
 |---|---|
 | `plane/` | The Go governance plane, its own module. `kmx plane` fetches and builds it from the public Go proxy at kmx's own revision — `go:embed` cannot cross into it, precisely because it is a separate module. |

@@ -11,7 +11,10 @@ projects first. In the pull request, explain why configuration or integration
 cannot provide the requested behavior.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
-architecture, the build, and the mistakes that are easy to make here.
+architecture, the build, and the mistakes that are easy to make here, and
+[`docs/repository-map.md`](docs/repository-map.md) says which parts of the
+tree are the product and which are demonstrations or scaffolding — worth
+reading before you change something you found by grepping.
 
 ## Local verification
 
