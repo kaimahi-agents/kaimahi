@@ -18,8 +18,9 @@ import "embed"
 //
 // The files are named individually rather than embedding `k8s` wholesale, so
 // that what kmx carries is a decision rather than a side effect of a
-// directory listing: the Slack, GitHub, inbound and accounts-payable
-// manifests belong to families kmx does not own and must not ride along.
+// directory listing: the Slack, GitHub, inbound, accounts-payable and
+// release manifests belong to families kmx does not own and must not ride
+// along.
 //
 // `k8s/egress-hosted.yaml` DOES ride along, and it is the one exception that
 // was argued rather than assumed. It is the gateway's way out to the

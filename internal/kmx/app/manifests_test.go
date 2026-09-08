@@ -130,9 +130,9 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 }
 
 // What kmx carries is still a decision, not a directory listing. The Slack,
-// GitHub, inbound and accounts-payable families must NOT ride along: their
-// targets are the Makefile's, and a manifest in the binary that no kmx
-// command applies is a claim kmx cannot honour.
+// GitHub, inbound, accounts-payable and release families must NOT ride
+// along: their targets are the Makefile's, and a manifest in the binary
+// that no kmx command applies is a claim kmx cannot honour.
 //
 // `egress-hosted.yaml` left this list when a kmx command started applying it
 // — the credential capture, whose whole point is that an operator with no
