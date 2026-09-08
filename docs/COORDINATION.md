@@ -5004,11 +5004,26 @@ from documentation:
   discovering tools through the gateway — a different client from the
   model one, and it may answer differently.
 
-**If the answer is no, that is a complete and valuable lane.** Write it
-up as a U-row for the upstream candidates list — kagent not letting a
-downstream point an agent at a TLS endpoint it can verify is exactly the
-shape of U2b — and say plainly that D48 must then be ruled as acceptance
-with reversal conditions, because the alternative is not available to us.
+**THE TWO CLIENTS MAY ANSWER DIFFERENTLY, AND THE OUTCOMES ARE
+SEPARATE.** Report a verdict per client, never one combined answer —
+"infeasible" for the MCP client must not be allowed to sink model TLS
+that is feasible, which is the trap in reading this as a single
+yes-or-no:
+- **Model client feasible → implement it**, whatever the MCP client
+  turns out to be. D48 is about the model seam; that is the seam
+  carrying content stored nowhere, and it is the whole reason this lane
+  exists.
+- **Model client infeasible → D48 is ruled as acceptance** with reversal
+  conditions, because the alternative is not available to us.
+- **MCP client infeasible** is not D48's business at all. It belongs to
+  D45, which already ruled the tool seam and whose reasoning stands —
+  unless your tool-response finding above widened that scope, in which
+  case say so and the expanded scope inherits it.
+
+**Whichever verdicts you get, an infeasible one is a complete and
+valuable result.** Write it up as a U-row for the upstream candidates
+list — kagent not letting a downstream point an agent at a TLS endpoint
+it can verify is exactly the shape of U2b.
 **Do not work around it by disabling verification.** A TLS listener whose
 client skips verification is worse than plaintext: it costs the same
 certificate machinery and buys nothing, while looking like it bought
