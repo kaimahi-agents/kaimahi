@@ -15,6 +15,13 @@ A fourth category is a result rather than a gap: **unclear**, where the
 evidence does not settle it. Those are listed at the end, named, rather
 than rounded to the nearest confident answer.
 
+**"Unclear" is a flag, not a fourth bucket.** Every file still gets a
+best-reading classification in the tables — a map with holes in it is
+less useful than a map with question marks — and the list at the end
+names the ones where that reading rests on thin evidence. So a file can
+appear in a table AND at the end; `scripts/exposure-scan.sh` and
+`k8s/kaimahi-erp.yaml`'s neighbours do.
+
 **How each row was decided.** Not by reading names. For every file the
 question was *who invokes this* — greps for the path and the symbol
 across the Makefile, `.github/workflows/`, `scripts/`, the Go tree,
@@ -25,8 +32,10 @@ across the Makefile, `.github/workflows/`, `scripts/`, the Go tree,
   only use what is in there, so anything embedded is reachable by a real
   user by definition — including six shell scripts, which is not where
   you would look for product code.
-- **A demo's own words.** `internal/demo/erp`'s package comment says
-  "the gateway in front of it is what the demo is about", and
+- **A demo's own words.** The comment at the top of
+  `internal/demo/erp/server.go` (below the package clause, so not a
+  package doc comment) says "the gateway in front of it is what the demo
+  is about", and
   `docs/ap-demo.md` lists the ERP under **Simulated**. Where the code
   says what it is, that is the answer.
 
@@ -88,7 +97,7 @@ files: it is not a grab bag, it is everything left after the decidable
 parts were taken out, and what remains all shares one receiver holding
 a kubectl and the operator's terminal.
 
-| Package | Non-test files | Class | What it is |
+| Package | Non-test source files | Class | What it is |
 |---|---|---|---|
 | `kmx/app` | 38 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
@@ -102,7 +111,7 @@ a kubectl and the operator's terminal.
 | `kmx/lift` | 2 | Product | The cloud-free half of the AKS lift. |
 | `kmx/config` | 1 | Product | Settings resolution. |
 | `kmx/run` | 1 | Product | The shell-out layer. |
-| `kmx/secretshapes` | 1 | Product | The one list of credential shapes. |
+| `kmx/secretshapes` | 2 | Product | The one list of credential shapes — `shapes.json` is the list, `shapes.go` reads it. The only package here whose non-test files are not all Go. |
 | `kmx/version` | 1 | Product | Version and upgrade answers. |
 | `kmx/delegation` | **0** | **Scaffolding** | A package with no source at all — only `delegation_test.go`. It exists to hold the test that make and kmx are one implementation. |
 | `demo/erp` | 2 | **Demonstration** | The fixture ERP. |
@@ -169,8 +178,15 @@ walkthrough. All six are "an agent manifest in `k8s/`" and look alike.
 
 ## `scripts/` — 65 tracked files, three different jobs
 
-Every one is referenced from outside itself; none is orphaned. The
-counts below come from a classification of `git ls-files scripts` in
+**None is orphaned**, but "orphaned" needs care: 56 of the 65 are named
+by something outside themselves, and the nine `scripts/mutations/*.json`
+are named by nothing at all — `check-mutations.py` finds them by globbing
+the directory. That is deliberate (a checker added without mutations is
+meant to be a failure, so the harness must not read a list someone can
+forget to update), and it means a grep for references is the wrong test
+for that one directory.
+
+The counts below come from a classification of `git ls-files scripts` in
 which all 65 files land in exactly one bucket — not from reading the
 directory and estimating.
 
@@ -201,7 +217,10 @@ Three things a reader would get wrong from the directory listing alone:
 - **`scripts/ci/` is a separate world.** Six synthetic upstreams and
   fixtures — a fake MCP server, a fake LLM upstream, a workflow fixture —
   that exist so CI can prove a path without a real vendor. Nothing
-  outside CI reaches them, and nothing in them is product.
+  outside CI *runs* them — though two product docs,
+  `docs/hosted-upstreams.md` and `docs/govern-your-agent.md`, link them
+  as worked examples a reader can copy, which is the one way a user meets
+  them.
 - **A `check-` prefix does not mean CI-only, and a name does not mean
   ownership.** `kube-guard.sh` is shipped inside the binary and is also
   mutation-tested as a checker; `verify-chat.py` looks like it belongs to
@@ -269,8 +288,38 @@ not a brand asset.) The other five — `mark.svg`, `mark.png`,
 preview, and a design source. Nothing in the tree links them, which is why
 `scripts/check-brand-assets.py` exists: it asserts each one's exact
 dimensions and transparency and fails on an asset in the directory that no
-requirement names. Product, in the sense that the front door and the
-organisation's identity use them.
+requirement names.
+
+Precisely what it checks, because "validates the brand assets" oversells
+it: exact pixel dimensions and whether transparency is present, for the
+four PNGs only; a title-string match for the two SVGs; and — worth
+knowing if you go looking in `brand/` for everything it guards — it also
+covers `docs/assets/architecture.svg`, which is not a brand asset.
+
+Product, in the sense that the front door and the organisation's identity
+use them.
+
+## `blueprints/`, `.github/` and the root files
+
+Small, but they were missing from the first version of this map, which is
+its own kind of misleading — a reader checking whether something is
+covered needs the map to cover everything.
+
+| Path | Class | Evidence |
+|---|---|---|
+| `blueprints/release.yaml` | **Product** | Embedded — `//go:embed blueprints` is a directory pattern, so it travels in the binary, and `kmx workflow list/show/run` loads it from there. It carries no repository, organisation or token; those arrive as `--set` parameters. |
+| `install.sh` | **Product** | The documented front door. `curl … \| sh` downloads the pinned release binary, verifies its sha256, and optionally runs `kmx quickstart`. Exercised in CI. |
+| `README.md` | **Product** | The front door's front door. Its ordering is machine-checked by `check-readme-front-door.py`. |
+| `CHANGELOG.md` | **Product** | A build input, not just prose: the release workflow EXTRACTS its notes from here via `release-notes.py`, and refuses to publish a tag with no section. |
+| `CONTRIBUTING.md`, `LICENSE` | **Product** | The contributor entry point and the MIT licence. |
+| `embed.go` | **Product** | The module root's only job: the one file from which a `go:embed` directive can reach `k8s/`. |
+| `Makefile` | **Scaffolding** | The operator interface *from a checkout*. Someone who installed kmx never sees it; it delegates the developer journey to the binary and keeps the demo and connector targets kmx does not own. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | The gates, and the tag-driven release. |
+| `.github/actions/classify-change/` | **Scaffolding** | Decides whether a change is docs-only so cluster jobs can short-circuit. Fails closed. |
+| `staticcheck.conf` | **Scaffolding** | Both modules' lint configuration, and the written reason for the one check that is off. |
+| `go.mod`, `go.sum` | **Product** | The root module. |
+| `.gitignore` | **Scaffolding** | — |
+| `.dockerignore` | **Demonstration** | Its own first line says why: "The ERP image is built from the repository root." `plane/` has its own Dockerfile and context and never reads it. The root file that looks like general build hygiene exists for the demo. |
 
 ---
 
@@ -304,9 +353,11 @@ organisation's identity use them.
 
 - **`k8s/`.** The demonstration manifests are interleaved with the
   product ones, and a `k8s/demo/` split would be the largest change in
-  this lane for the smallest gain: the paths appear in the Makefile,
-  five scripts, CI's inline Python assertions, and a dozen docs, and
-  `embed.go`'s patterns cannot climb out of their own directory. The
+  this lane for the smallest gain: the demonstration manifests are named
+  by the Makefile, three scripts (`erp-deploy.sh`, `ap-demo.sh`,
+  `ap-injection.sh`), CI's inline Python assertions and several docs —
+  eleven scripts in total name some `k8s/` path — and `embed.go`'s
+  patterns cannot climb out of their own directory. The
   boundary is real but the naming already carries most of it
   (`ap-*`, `erp-*`, `*-agent.yaml`), and this table carries the rest.
 - **`scripts/`.** Same reasoning, more strongly: six of these files are
