@@ -67,7 +67,7 @@ because the tree does not say which one a given file was written under.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (15 files) | **Product** | The CLI. The documented front door is `install.sh` (`curl … | sh -s -- --quickstart`); `go install .../cmd/kmx@latest` is the stated alternative. |
+| `cmd/kmx` (15 files) | **Product** | The CLI. The documented front door is `install.sh`, piped from `curl` to `sh`; `go install .../cmd/kmx@latest` is the stated alternative. |
 | `cmd/demo/kaimahi-erp` (2 files) | **Demonstration** | A fake accounts-payable ERP. Applied by `k8s/erp-mcp.yaml` via `scripts/erp-deploy.sh`; `docs/ap-demo.md` lists it under "Simulated" — "no vendor, no bank, no payment rail". |
 
 Until this change both sat directly under `cmd/`, as peers, and nothing
@@ -120,9 +120,16 @@ reader counting packages will miscount without being told.
 
 A separate Go module: the governance proxy that runs in the user's
 cluster. Thirteen internal packages and one binary, all of them product.
-The root module CANNOT import it — that is the point of the module
-boundary, and it is why `kmx plane` fetches the plane's source from the
-public Go proxy at kmx's own revision rather than embedding it.
+The root module cannot import it — no `require`, and no `plane/...`
+import anywhere in root `cmd/` or `internal/`. That is the point of the
+module boundary, and it is why `kmx plane` fetches the plane's source
+from the public Go proxy at kmx's own revision rather than embedding it.
+
+But the two are coupled, just not at compile time:
+`internal/kmx/planebuild` holds the plane's module path as string
+constants and shells out to `go install …@<revision>`. That dependency is
+real and load-bearing, and no import graph or build tool will show it —
+worth knowing before anyone moves or renames the plane's package paths.
 
 `proxy` (LLM data path and admin API), `gateway` (MCP), `inbound`
 (webhooks), `egress`, `meter` (budgets), `pricing`, `store` and `db`
