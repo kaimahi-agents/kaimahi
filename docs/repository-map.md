@@ -16,7 +16,8 @@ It is a flag, not a fourth bucket: every file still gets a best reading in
 the tables — a map with holes is less useful than a map with question
 marks — and the list at the end names the cases where that reading rests
 on thin evidence. A file can therefore appear in a table *and* at the end.
-`scripts/exposure-scan.sh` and the connector seams do.
+`scripts/exposure-scan.sh`, `scripts/show-turn.py` and the connector
+seams do.
 
 **How each row was decided.** Not by reading names. For every file the
 question was *who invokes this* — greps for the path and the symbol
@@ -56,7 +57,7 @@ because the tree does not say which one a given file was written under.
 | `cmd/` | `kmx` | `demo/kaimahi-erp` | — |
 | `internal/` | `kmx/` (15 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
-| `k8s/` | the embedded set, the plane, the model presets | the AP, Slack, GitHub and release scenarios | — |
+| `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
 | `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 40 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 21 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
@@ -175,8 +176,10 @@ GitHub walkthroughs deploy).
 
 The distinction that matters for a reader: `hello-world.yaml` and
 `tools-agent.yaml` are inside the binary and are what `kmx up` creates;
-`ap-agent.yaml` and `release-agent.yaml` are not, and exist for a
-walkthrough. All six are "an agent manifest in `k8s/`" and look alike.
+`ap-agent.yaml`, `slack-agent.yaml` and `github-agent.yaml` are not, and
+exist for a walkthrough; `release-agent.yaml` is also not embedded but is
+not a walkthrough either — it is the one agent this project depends on.
+All six are "an agent manifest in `k8s/`" and look alike.
 
 ## `scripts/` — 65 tracked files, three different jobs
 
@@ -195,7 +198,7 @@ directory and estimating.
 | Class | Count | Files |
 |---|---|---|
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
-| **Product** — operator scripts, reached through make or kmx | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
+| **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
 | **Scaffolding** — checkers and their self-tests | 12 | the nine `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
 | **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
@@ -236,7 +239,9 @@ mutation harness breaks on purpose.
 
 `verify-chat.py` is a checker. Neither make nor kmx runs it: every
 occurrence in the Makefile and in Go is a comment. Its real callers are
-`.github/workflows/ci.yml` (seventeen call sites), `scripts/release-run.sh`,
+`.github/workflows/ci.yml` (fourteen invocations among nineteen
+mentions — the other five are comments, which is the trap),
+`scripts/release-run.sh`,
 and `docs/tools.md`, which gives it as a step a reader runs by hand.
 
 ## `docs/` — 33 tracked files, two audiences and two assets
@@ -281,16 +286,18 @@ board, and never from the documentation index.
 
 ## `brand/` — assets, and a checker that holds them to a spec
 
-Six image files plus a README. Only one of them is referenced from
-anywhere in the tree: `README.md:2` embeds `brand/hero.png`. (The
-architecture picture beside it is `docs/assets/architecture.svg`, which is
-not a brand asset.) The other five — `mark.svg`, `mark.png`,
-`wordmark.svg`, `social-preview.png`, `mascot.png` — are consumed
-*outside* this repository: the org avatar, the favicon, GitHub's social
-preview, and a design source. Nothing in the tree links them, which is why
-`scripts/check-brand-assets.py` exists: it asserts each one's exact
-dimensions and transparency and fails on an asset in the directory that no
-requirement names.
+Six image files plus a README. Only one is *used* by anything in the
+tree: `README.md:2` embeds `brand/hero.png`. (The architecture picture
+beside it is `docs/assets/architecture.svg`, which is not a brand asset.)
+The other five — `mark.svg`, `mark.png`, `wordmark.svg`,
+`social-preview.png`, `mascot.png` — are consumed *outside* this
+repository: the org avatar, the favicon, GitHub's social preview, and a
+design source. They are not unreferenced, though: `brand/README.md` gives
+each one its canvas and its use, and `scripts/check-brand-assets.py`
+enforces that table. Which is the point of the checker — an asset nothing
+in the tree renders cannot go wrong visibly, so it is held to a written
+spec instead, and an asset in the directory that no requirement names is a
+failure.
 
 Precisely what it checks, because "validates the brand assets" oversells
 it: exact pixel dimensions and whether transparency is present, for the
@@ -325,7 +332,7 @@ covered needs the map to cover everything.
 
 ---
 
-## Genuinely unclear — four, and this is a result
+## Genuinely unclear — three, and this is a result
 
 1. **`scripts/exposure-scan.sh`.** One caller — a make target — and no
    documentation of its own. Whether it is an operator tool or a
@@ -334,16 +341,17 @@ covered needs the map to cover everything.
    reached only from CI, but that one's home makes its purpose obvious.)
 2. **`scripts/show-turn.py`.** Called only from another script. Not
    dead, but no reader would find it, and nothing says what it is for.
-4. **The connector seams and their agents as a class** —
+3. **The connector seams and their agents as a class** —
    `kaimahi-slack.yaml`, `kaimahi-github.yaml`, `kaimahi-release-*.yaml`
    and the `slack-agent.yaml` / `github-agent.yaml` /
    `release-agent.yaml` manifests beside them. Each supports a
    documented capability AND is the fixture that capability's
-   walkthrough deploys. They are honestly both. The table above files
-   them under demonstration because that is how a first-time reader
-   meets them, but a maintainer should read them as the reference
-   wiring for a real connector — and nothing in the tree says which
-   reading is intended.
+   walkthrough deploys. They are honestly both. The tables above file
+   the Slack and GitHub agents under demonstration because that is how a
+   first-time reader meets them, and the release family under product on
+   its own doc's authority — but a maintainer should read all of them as
+   the reference wiring for a real connector, and nothing in the tree
+   says which reading is intended.
 
 ## What moved, and what did not
 
