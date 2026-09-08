@@ -53,12 +53,30 @@ section with no prompts, a history with no merges: each is a failure here
 rather than a clean run. A check that examined nothing has not checked
 anything.
 
-THE BOARD IS NOT THIS LANE'S TO EDIT. It has one writer. So the drift that
-exists today is recorded in scripts/board-open-drift.json — by claim and
-by lane, dated, with a sentence saying what is owed — and this file prints
-how much of it is outstanding on every run. An entry that no longer
-matches anything is a failure too: the ledger is a list of debts, and a
-paid one has to be struck off rather than left to grow stale in its turn.
+THE CHECKER DOES NOT CORRECT THE BOARD. A checker that quietly fixed the
+document would delete the evidence that it works. So drift it finds and
+nobody has closed yet is recorded in scripts/board-open-drift.json — by
+claim and by lane, dated, with a sentence saying what is owed — and this
+file prints how much of it is outstanding on every run. An entry that no
+longer matches anything is a failure too: the ledger is a list of debts,
+and a paid one has to be struck off rather than left to grow stale in its
+turn. The file keeps a `closed` list beside the open one, saying how each
+debt was settled; nothing here reads it, and that is the point — the
+record is for the reader, and only `open` can silence a finding.
+
+WHICH MEANS THE LEDGER EMPTIES, AND THE SELF-TEST MUST SURVIVE THAT. The
+cases that prove the ledger works in both directions used to borrow a
+finding the board happened to be carrying, which made the board
+unfixable: striking the last debt off turned this file's own self-test
+red, in three places, with nothing wrong. Two of the three said so
+loudly. The third — that a claim skipped for want of a merge ledger does
+not strike its open findings off — passed on an empty ledger having
+compared nothing, and one deliberate breakage went unnoticed behind it.
+That is the limit this file's own note describes, arriving from the other
+side: a mutation harness edits the code and never the fixture, so an
+assertion whose fixture already satisfies it is invisible — and here the
+fixture was the live board. The ledger cases build their own
+contradictory board now, and name what they expect on both sides of it.
 
 Run:  python3 scripts/check-board.py
       python3 scripts/check-board.py --selftest
@@ -82,6 +100,18 @@ SHEETS = "Delta sheets from finished lanes"
 # A lane's identifier as the board writes it: a phase or worker number,
 # with the letter suffix that distinguishes a lane split in two.
 LANE = r"[WP]\d+[a-z]?"
+
+# The same identifier where it OPENS a lane's row or a prompt heading, and
+# there it is not always a number: one lane on this board is named by a
+# word. A pattern that reads only numbers does not fail on that lane — it
+# stops seeing it, and a prompt nothing can read is a prompt no claim about
+# pasteable prompts covers. The one on this board invited a fresh session
+# to rename a repository that had been renamed six weeks earlier.
+#
+# Only anchored positions use this. Unanchored it would match a
+# capitalised word anywhere in a heading, so the claims that scan a line
+# for every lane it mentions keep to the numbered form.
+OPENER = r"[WP](?:\d+[a-z]?|-[A-Z][A-Z0-9-]*)"
 
 
 class Anchor(Exception):
@@ -151,7 +181,21 @@ class Row:
     with, and the worker named in the owner cell. A row whose lane cell
     opens with a phase and its milestone, owned by a numbered worker, is
     one lane under two names, and a checker reading only one of them would
-    think half the prompts below had no row at all.
+    think six of the prompts below had no row at all.
+
+    WHAT A ROW WITH NO IDENTIFIER MEANS HERE, AND WHY IT IS NOT A FINDING.
+    Seventeen of the sixty-three rows name no lane this file can read:
+    section markers, and rows the board titles by description. `ids` is
+    empty for those, and every claim keyed on a lane passes over them —
+    including the one that would notice a row saying nothing has shipped
+    for work a merge already describes. That is a real hole and it is left
+    open deliberately: making an unidentified row a finding would report
+    seventeen rows the board is not wrong about, and the writer would
+    learn to skip the output. The hole is closed on the PROMPT side
+    instead, where it does harm — a prompt is text a worker pastes, and
+    one attached to no row is the paste-and-rebuild hazard with nothing to
+    warn about it, so a prompt heading this file cannot read stops the run.
+    A row it cannot read only makes the row invisible.
     """
 
     def __init__(self, cells: list[str], line: int):
@@ -160,7 +204,7 @@ class Row:
         self.lane_cell, self.owner = cells[0], cells[1]
         self.text = flat(" | ".join(cells))
         self.ids = set()
-        opener = re.match(rf"\s*~*\s*({LANE})\s*:", self.lane_cell)
+        opener = re.match(rf"\s*~*\s*({OPENER})\s*:", self.lane_cell)
         if opener:
             self.ids.add(opener.group(1))
         self.ids |= set(re.findall(rf"\b({LANE})\s+worker\b", self.owner))
@@ -175,7 +219,7 @@ class Row:
         words the row has that no merge subject can ever share — and on
         some rows they are half the title.
         """
-        title = re.sub(rf"^\s*~*\s*{LANE}\s*:\s*", "", self.lane_cell)
+        title = re.sub(rf"^\s*~*\s*{OPENER}\s*:\s*", "", self.lane_cell)
         title = re.sub(r"\s*\([^()]*\)\s*$", "", title.strip())
         return re.sub(r"~+$", "", title).strip()
 
@@ -265,6 +309,13 @@ class Board:
         for a sheet. A heading that opens with a lane and says neither is
         a state this file has not been taught, and it stops the run rather
         than being filed under nothing.
+
+        The mirror of that is a heading that says it IS a prompt and whose
+        identifier this file cannot read. That one is not a state it has
+        not been taught — it is a prompt outside every claim about
+        pasteable prompts, which is how a heading inviting a fresh session
+        to rename a repository sat on this board for six weeks. So it
+        stops the run too, rather than being read as no prompt at all.
         """
         for heading in ("## " + PROMPTS, "## " + SHEETS):
             if heading not in self.text:
@@ -274,9 +325,23 @@ class Board:
         for offset, line in enumerate(self.text.splitlines()):
             if not line.startswith("### "):
                 continue
-            opener = re.match(rf"### ({LANE})\s+—\s", line)
-            if re.search(r"\((UNASSIGNED|RUN)\b", line) and opener:
+            opener = re.match(rf"### ({OPENER})\s+—\s", line)
+            # A prompt heading is `### <lane> — <title> (<state> …)`. The
+            # em dash is what separates the two, and it is what stops the
+            # refusal below from firing on a heading that merely has the
+            # word RUN in a parenthesis — a batch verification headed
+            # `### Batch verification, seven lanes (RUN 3, 2026-09-07)`
+            # names no lane because it is about several, and raising there
+            # would take every claim offline over a heading that is not a
+            # prompt at all.
+            named = re.match(r"### (.+?)\s+—\s", line)
+            state = re.search(r"\((UNASSIGNED|RUN)\b", line)
+            if state and opener:
                 self.prompts.append(Prompt(opener.group(1), line, offset + 1))
+            elif state and named:
+                raise Anchor(f"the heading at line {offset + 1} says it is a worker prompt and "
+                             f"this file cannot read a lane out of it, so no claim about a "
+                             f"pasteable prompt would ever reach it: {line.strip()!r}")
             elif re.search(r"\(PRs? #\d+[^)]*merged|\(20\d\d-\d\d-\d\d\)", line):
                 self.sheets.append((set(re.findall(rf"\b({LANE})\b", line)), line, offset + 1))
             elif opener:
@@ -505,6 +570,14 @@ def a_shipped_lane_has_no_pasteable_prompt(board: Board, history: History) -> li
     **HALF SHIPPED — do NOT paste the prompt below** because the prompt
     under it would rebuild a merged command. That warning is the practice;
     this is the same warning derived rather than remembered.
+
+    A pasteable prompt with NO row is not silence here. It cannot be
+    answered by this claim — nothing says whether the lane shipped — but
+    "no row found" must not read as "nothing to complain about", because a
+    prompt the table has forgotten is the paste-and-rebuild hazard with
+    the safety catch removed. `every_prompt_has_a_row` reports it, and
+    reaching that claim is why an identifier this file cannot parse stops
+    the run instead of dropping the prompt.
     """
     out = []
     for p in board.prompts:
@@ -515,6 +588,41 @@ def a_shipped_lane_has_no_pasteable_prompt(board: Board, history: History) -> li
             out.append(Finding(p.id, f"the row at line {rows[0].line} says this lane shipped and "
                                      f"the prompt at line {p.line} still reads UNASSIGNED — "
                                      "pasting it asks for work that exists"))
+    return out
+
+
+@claim
+def a_retired_prompt_cites_the_pull_request_its_row_cites(board: Board,
+                                                          history: History) -> list[Finding]:
+    """A retired prompt heading names a merge, and so does its row.
+
+    Retiring a prompt writes the pull request into the heading — `(RUN —
+    merged as #95; kept as the record of what the lane was asked for)` —
+    which is thirty-odd new assertions about the board, made by hand, one
+    per lane. Most of them the merge ledger cannot check at all: they name
+    pull requests older than its first number. What the document can
+    always check is itself, because the row for that lane names a merge
+    too, and the two are about the same lane.
+
+    Only a disagreement is reported. A heading with no number is not a
+    finding — one retired lane shipped in halves and says so in words —
+    and neither is a row that cites nothing.
+    """
+    out = []
+    for p in board.prompts:
+        if p.pasteable:
+            continue
+        said = set(re.findall(r"#(\d+)", p.heading))
+        if not said:
+            continue
+        for row in board.rows_for(p.id):
+            cited = set(re.findall(r"#(\d+)", row.text))
+            if cited and not (said & cited):
+                out.append(Finding(p.id, f"the retired prompt at line {p.line} says this lane "
+                                         f"merged as {sorted('#' + n for n in said)} and the row "
+                                         f"at line {row.line} cites "
+                                         f"{sorted('#' + n for n in cited)} — one of them is "
+                                         "about a different lane"))
     return out
 
 
@@ -754,11 +862,21 @@ BOARD_EDITS = [
      "renames a lane in the table and leaves its prompt behind",
      "every_prompt_has_a_row"),
 
-    ("### W41 — govern a runtime this repository did not write (UNASSIGNED — paste into a "
-     "fresh CLI session)\n",
-     "### W41 — govern a runtime this repository did not write (UNASSIGNED — paste into a "
-     "fresh CLI session)\n\n### W41 — govern a runtime this repository did not write, re-cut "
-     "(UNASSIGNED — paste into a fresh CLI session)\n",
+    # The same failure in the form it actually took: a row titled by
+    # description instead of opened with an identifier. The prompt above
+    # it is then about a lane the table has no name for, and until this
+    # was written that read as nothing to complain about.
+    ("| W-RENAME: in-repo rename, tomte → kaimahi (D9/D10) |",
+     "| Rename lane: in-repo tomte → kaimahi (D9/D10) |",
+     "titles a lane's row by description, leaving its prompt attached to no row",
+     "every_prompt_has_a_row"),
+
+    ("### W32 — the release agent: Kaimahi's first real user (RUN — merged as #95; kept as the "
+     "record of what the lane was asked for)\n",
+     "### W32 — the release agent: Kaimahi's first real user (RUN — merged as #95; kept as the "
+     "record of what the lane was asked for)\n\n### W32 — the release agent: Kaimahi's first "
+     "real user, re-cut (RUN — merged as #95; kept as the record of what the lane was "
+     "asked for)\n",
      "offers two prompts under one lane number",
      "one_prompt_per_lane"),
 
@@ -767,6 +885,13 @@ BOARD_EDITS = [
      "CLI session; was merged as #95;",
      "invites a fresh session to paste the prompt for a lane its own row says merged",
      "a_shipped_lane_has_no_pasteable_prompt"),
+
+    # Retiring a prompt writes a pull-request number into its heading by
+    # hand, once per lane. This is that number being wrong.
+    ("### W36 — `kmx workflow run` has no first command (RUN — merged as #112;",
+     "### W36 — `kmx workflow run` has no first command (RUN — merged as #114;",
+     "retires a prompt citing a merge that closed a different lane",
+     "a_retired_prompt_cites_the_pull_request_its_row_cites"),
 
     ("| W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED",
      "| W30: identity on the call, and credentials that expire (D35) | unassigned | PR #86 MERGED",
@@ -804,6 +929,14 @@ QUIET = [
     ("the board cites lanes that merged before the ledger's first number",
      None, None, "every_merged_pr_the_board_cites_is_in_the_ledger"),
 
+    # Six of the table's sixty-three rows are named nowhere but the owner
+    # column — `P1: kagent hello world` owned by `W1 worker` — and their
+    # prompts are headed with the worker number. Read the lane cell alone
+    # and every one of those prompts looks like a prompt for a lane the
+    # table never had. Both counts come from this file reading the board.
+    ("the prompts for lanes the table names only in its owner column",
+     None, None, "every_prompt_has_a_row"),
+
     ("a lane whose words appear only in the coordinator writing the lane down",
      "| P8b: approval routing via Slack + per-approver identity (D21) | W18 worker "
      "| PR #41 MERGED (109e08d) ahead of",
@@ -821,6 +954,78 @@ def edit(text: str, find: str, replace: str) -> str:
         raise Anchor(f"the board has {text.count(find)} places matching a self-test edit, "
                      f"not one: {find[:60]!r}")
     return text.replace(find, replace)
+
+
+# The contradictions the ledger cases are tested against, named by the
+# claim each one breaks. Two of them, unrelated, so that one can be
+# recorded in a ledger and the other has to survive it.
+LEDGER_CASES = ("no_row_says_both_unassigned_and_shipped", "one_row_per_lane")
+
+# And the case those two cannot make. A ledger keyed on the claim alone,
+# with the lane thrown away, still reports the second finding above —
+# because the two are under DIFFERENT claims. So the entry is recorded
+# against a lane that is not the one still failing, under a claim that is,
+# and only a ledger reading both survives it. Without this, the sentence
+# in Ledger's own docstring — a new lane failing an already-recorded claim
+# is a new failure — is a sentence nothing checks.
+SAME_CLAIM = "a_shipped_lane_has_no_pasteable_prompt"
+
+# A claim that cannot be answered without the merge ledger. The case that
+# proves a skipped claim does not strike its open findings off needs a
+# finding under one.
+NEEDS_HISTORY = "no_unstarted_row_for_work_already_merged"
+
+
+def contradiction(name: str) -> tuple:
+    """The deliberate contradiction above that breaks a named claim."""
+    for entry in BOARD_EDITS:
+        if entry[3] == name:
+            return entry
+    raise Anchor(f"nothing in this file's list of deliberate contradictions breaks [{name}], so "
+                 "the cases built on one have no finding of their own to work on")
+
+
+def broken_once(real: str, history: History, name: str) -> tuple[str, Finding | None]:
+    """A board carrying one contradiction, and the finding it produces."""
+    find, replace, _, _ = contradiction(name)
+    text = edit(real, find, replace)
+    _, found, _, _ = check(text, history, Ledger(None))
+    return text, next((f for f in found if f.claim == name), None)
+
+
+def broken_twice(real: str) -> str:
+    """A board carrying both of LEDGER_CASES' contradictions at once."""
+    text = real
+    for name in LEDGER_CASES:
+        find, replace, _, _ = contradiction(name)
+        text = edit(text, find, replace)
+    return text
+
+
+def two_lanes_one_claim(real: str) -> str:
+    """A board where two DIFFERENT lanes fail the same claim.
+
+    One of them is the contradiction already declared above; the other is
+    the same edit made to a second finished lane's heading, so the pair
+    differ only in the lane.
+    """
+    find, replace, _, _ = contradiction(SAME_CLAIM)
+    return edit(edit(real, find, replace),
+                "### W31 — `create-kaimahi-agent`: from nothing to a working agent, fast "
+                "(RUN — merged as #106;",
+                "### W31 — `create-kaimahi-agent`: from nothing to a working agent, fast "
+                "(UNASSIGNED — paste into a fresh CLI session; was merged as #106;")
+
+
+def manufactured(real: str, history: History) -> tuple:
+    """One finding from each of LEDGER_CASES, off a board broken twice.
+
+    Each is named individually rather than taken as "some finding",
+    because the ledger has to be shown accepting exactly what it records
+    and nothing else.
+    """
+    _, found, _, _ = check(broken_twice(real), history, Ledger(None))
+    return tuple(next((f for f in found if f.claim == name), None) for name in LEDGER_CASES)
 
 
 def selftest() -> int:
@@ -884,8 +1089,15 @@ def selftest() -> int:
             ("a board whose lane table has no rows",
              re.sub(r"(## State of the world\n\n)(?:\|.*\n)+", r"\1", real),
              "parsed to no rows"),
+            # Written against whichever state word the board is using
+            # rather than against UNASSIGNED, because the day the last
+            # pasteable prompt is retired is the day this case would
+            # otherwise stop being constructible.
             ("a board whose prompts are in a state this file was never taught",
-             real.replace("(UNASSIGNED — ", "(WITHDRAWN — "), "says neither"),
+             re.sub(r"\((UNASSIGNED|RUN) — ", "(WITHDRAWN — ", real), "says neither"),
+            ("a board with a prompt whose lane this file cannot read",
+             real.replace("### W-RENAME — ", "### The rename lane — ", 1),
+             "cannot read a lane out of it"),
             ("a board with no worker prompts left",
              real.replace("\n### W", "\n#### W").replace("\n### P", "\n#### P"),
              "no prompt headings"),
@@ -910,13 +1122,26 @@ def selftest() -> int:
     # must say so and produce nothing — and, the part that is easy to get
     # wrong, the ledger must not then read their open entries as paid.
     blind = History(root, log=history._log(), shallow=True)
+    # The ledger it runs against is manufactured, and this is the case
+    # that most needed it: reading the real one, the "not struck off" half
+    # was answered by whatever the board happened to be carrying, and on a
+    # clean board by nothing at all. It passed having compared no entries,
+    # and the deliberate breakage that removes the check for whether a
+    # claim actually ran went unnoticed behind it.
+    text, owed = broken_once(real, history, NEEDS_HISTORY)
     if blind.available or not blind.why:
         print("FAIL a shallow checkout was not recognised as having no merge ledger")
         failed += 1
+    elif owed is None:
+        print(f"FAIL no deliberate contradiction here produces a finding under [{NEEDS_HISTORY}], "
+              "so a skipped claim cannot be shown leaving its open findings alone")
+        failed += 1
     else:
-        problems, found, _, notes = check(real, blind, load_ledger(root))
+        recorded = Ledger({"open": [{"claim": owed.claim, "lanes": [owed.lane],
+                                     "raised": "2026-09-08", "owed": "a sentence"}]})
+        problems, found, _, notes = check(text, blind, recorded)
         struck = [p for p in problems if "strike it off" in p]
-        if any(f.claim == "no_unstarted_row_for_work_already_merged" for f in found):
+        if any(f.claim == NEEDS_HISTORY for f in found):
             print("FAIL a claim that reads the merge ledger produced findings without one")
             failed += 1
         elif struck:
@@ -930,27 +1155,70 @@ def selftest() -> int:
             print("ok   with no merge ledger the claims that need one are skipped, and their "
                   "open findings are not struck off")
 
-    # The ledger, in both directions.
-    live = next((f for f in base_findings if f.key() in load_ledger(root).accepted), None)
-    if live is None:
-        print("FAIL the ledger accepts nothing on today's board, so neither direction is tested")
+    # The ledger, in both directions, against findings this file made
+    # rather than against whatever the board happens to be carrying.
+    #
+    # These cases used to borrow a live entry from scripts/board-open-drift.json,
+    # and that worked only while one stood open. The ledger's whole purpose
+    # is to be struck off, so the day it succeeded was the day these two
+    # cases had no finding to work on and said so — loudly, but about a
+    # board that was finally correct.
+    live, other = manufactured(real, history)
+    if live is None or other is None:
+        print(f"FAIL a board broken twice over produced {LEDGER_CASES} findings this file could "
+              "not tell apart, so neither direction of the ledger is tested")
         failed += 1
     else:
+        broken = broken_twice(real)
         one = Ledger({"open": [{"claim": live.claim, "lanes": [live.lane], "raised": "2026-09-08",
                                 "owed": "a sentence"}]})
-        problems, _, _, _ = check(real, history, one)
+        problems, _, _, _ = check(broken, history, one)
+        # Both directions, both named. "Some problem remains" is not the
+        # assertion: an entry the board no longer earns is itself a
+        # problem, so a run that forgave every finding would still satisfy
+        # it. The recorded finding has to be gone AND the unrecorded one
+        # has to still be there, each by its own text.
         if any(str(live) == p for p in problems):
             print("FAIL a finding recorded in the ledger was reported as a failure anyway")
             failed += 1
-        elif not problems:
-            print("FAIL a ledger holding one finding forgave every other one too")
+        elif not any(str(other) == p for p in problems):
+            print(f"FAIL a ledger holding {live.lane} under [{live.claim}] also forgave "
+                  f"{other.lane} under [{other.claim}], which it does not name")
             failed += 1
         else:
-            print("ok   a recorded finding is accepted and the rest still fail")
+            print("ok   a recorded finding is accepted by name and an unrecorded one still fails")
+
+        # The lane, not just the claim. The pair above are under two
+        # different claims, so a ledger that threw the lane away and
+        # matched on the claim alone would still report the second one and
+        # pass. These two are under the same claim and differ only in the
+        # lane, which is the only shape that can tell the two apart.
+        pair_board = two_lanes_one_claim(real)
+        _, pair_found, _, _ = check(pair_board, history, Ledger(None))
+        pair = [f for f in pair_found if f.claim == SAME_CLAIM]
+        if len(pair) < 2:
+            print(f"FAIL a board with two lanes failing [{SAME_CLAIM}] produced {len(pair)} "
+                  "finding(s) under it, so the ledger is never shown reading the lane")
+            failed += 1
+        else:
+            recorded, still = pair[0], pair[1]
+            entry = Ledger({"open": [{"claim": recorded.claim, "lanes": [recorded.lane],
+                                      "raised": "2026-09-08", "owed": "a sentence"}]})
+            problems, _, _, _ = check(pair_board, history, entry)
+            if any(str(recorded) == p for p in problems):
+                print("FAIL a finding recorded in the ledger was reported as a failure anyway")
+                failed += 1
+            elif not any(str(still) == p for p in problems):
+                print(f"FAIL a ledger entry naming {recorded.lane} forgave {still.lane} under the "
+                      f"same claim, so it is not reading the lane at all")
+                failed += 1
+            else:
+                print("ok   a ledger entry forgives the lane it names and not another under the "
+                      "same claim")
 
         stale = Ledger({"open": [{"claim": live.claim, "lanes": ["W99"], "raised": "2026-09-08",
                                   "owed": "a sentence"}]})
-        problems, _, _, _ = check(real, history, stale)
+        problems, _, _, _ = check(broken, history, stale)
         if any("strike it off" in p for p in problems):
             print("ok   a ledger entry the board no longer earns is a failure")
         else:

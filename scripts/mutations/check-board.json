@@ -105,6 +105,36 @@
       "replace": "        if number not in history.merges:"
     },
     {
+      "name": "the ledger forgives a claim without caring which lane failed it",
+      "breaks": "What makes an accepted finding a debt rather than a switch. Keyed on the claim alone, one recorded entry forgives every lane that ever fails that claim, including lanes nobody has looked at — and the ledger's own sentence, that a new lane failing a recorded claim is a new failure, stops being true.",
+      "find": "        return [f for f in findings if f.key() not in self.accepted]",
+      "replace": "        names = {k.split(':', 1)[0] for k in self.accepted}\n        return [f for f in findings if f.claim not in names]"
+    },
+    {
+      "name": "a retired prompt's pull-request number is never compared to its row's",
+      "breaks": "Retiring a prompt writes a merge number into its heading by hand, once per lane, and most of those numbers are older than the merge ledger's first — so the document checking itself is the only thing that can catch a heading that cites the pull request of a different lane.",
+      "find": "            if cited and not (said & cited):",
+      "replace": "            if False:"
+    },
+    {
+      "name": "a lane's identifier is read only where it is a number",
+      "breaks": "One lane on the board is named by a word rather than a number. A pattern that reads only numbers does not fail on it, it stops seeing it — which left a prompt inviting a fresh session to rename a repository outside every claim about pasteable prompts, for six weeks.",
+      "find": "OPENER = r\"[WP](?:\\d+[a-z]?|-[A-Z][A-Z0-9-]*)\"",
+      "replace": "OPENER = LANE"
+    },
+    {
+      "name": "a heading that says it is a prompt, and names no lane this file can read, is dropped",
+      "breaks": "The mirror of the unknown-state closure. A prompt whose identifier cannot be parsed is not filed under a state nobody taught this file — it is filed under nothing, and no claim about pasteable prompts ever reaches it.",
+      "find": "            elif state and named:\n                raise Anchor(",
+      "replace": "            elif False:\n                raise Anchor("
+    },
+    {
+      "name": "the two findings the ledger cases run on are the same finding twice",
+      "breaks": "The weakening those cases exist to prevent. With one finding standing in for both, 'the recorded one is gone and an unrecorded one remains' collapses into 'something remains' — which an unearned ledger entry satisfies even when every finding has been forgiven.",
+      "find": "    return tuple(next((f for f in found if f.claim == name), None) for name in LEDGER_CASES)",
+      "replace": "    return tuple(found[0] for name in LEDGER_CASES)"
+    },
+    {
       "name": "a lane's title keeps the board's cross-references in it",
       "breaks": "A row's title ends in the decisions that authorised it, which appear in this document and nowhere else. Left in, they are words no merge subject can ever share, and a stale row's title stops resembling the merge that closed it.",
       "find": "        title = re.sub(r\"\\s*\\([^()]*\\)\\s*$\", \"\", title.strip())",

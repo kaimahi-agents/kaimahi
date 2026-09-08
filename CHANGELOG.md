@@ -104,6 +104,52 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- **The board checker's self-test only worked while the board was broken.**
+  Three of its cases needed a finding standing open in
+  `scripts/board-open-drift.json`, so striking the last one off — the day its
+  design succeeds — turned the self-test red with nothing wrong. Two of the
+  three failed loudly. The third, that a claim skipped for want of a merge
+  ledger does not strike its open findings off, passed on an empty ledger
+  having compared nothing, and one deliberate breakage went unnoticed behind
+  it. All three now build their own contradictory board. The ledger is
+  asserted in both directions by name — the finding it recorded is gone, and a
+  second one it did not record is still reported — because recording *some*
+  problem is not enough: an entry the board no longer earns is itself a
+  problem. A fourth case, added here, is the only shape that shows the ledger
+  reads the lane and not just the claim: two lanes failing one claim, with one
+  of them recorded.
+
+- **A worker prompt whose identifier was not a number was invisible to the
+  board checker**, and the one on this board invited a fresh session to rename
+  `tomte` to `kaimahi` in a repository renamed six weeks earlier. Both reasons
+  are closed for prompts: the identifier pattern used where a row or a heading
+  *opens* now admits a worded lane, and a heading that says it is a prompt
+  whose lane cannot be read stops the run rather than being filed under
+  nothing. A pasteable prompt with no row was also silently exempt from the
+  shipped-lane claim; `every_prompt_has_a_row` owns that case, and the claim
+  that declines to answer it now says so. On the *row* side the class stays
+  open by choice — seventeen of sixty-three rows name no lane the checker can
+  read, and reporting them would name seventeen rows the board is not wrong
+  about. `Row`'s docstring says so, and says why.
+
+- **A retired prompt now has to cite the pull request its own row cites.**
+  Retiring a prompt writes a merge number into its heading by hand, once per
+  lane, and sixteen of those numbers are older than the merge ledger's first —
+  so the ledger cannot check them, and the document checking itself is the
+  only thing that can.
+
+- **The board's whole open drift is closed.** Thirty-eight prompt headings
+  invited a paste into a fresh CLI session; thirty-six of them sat under rows
+  saying the lane had merged, and each of those now reads `(RUN — merged as
+  #N; kept as the record of what the lane was asked for)`, keeping the prompt
+  text — which is what makes a lane's delta sheet checkable — and dropping the
+  invitation together with the sequencing conditions written beside it in the
+  same parenthesis. The two left pasteable, W42 and W43, are for lanes whose
+  rows say unassigned and mean it. W41's row, which said `unassigned` for work
+  that merged as #139 the same day, says so.
+  `scripts/board-open-drift.json` carries no open findings and records how
+  each was closed.
+
 - **Eight claims in `docs/repository-map.md` were wrong on the day it merged**,
   found by writing the checker above. `scripts/` holds 67 tracked files and
   not 65; there are ten `check-*` scripts and not nine, so the checker bucket

@@ -1,20 +1,34 @@
 {
   "what": "The disagreements docs/COORDINATION.md carries today, recorded rather than corrected. scripts/check-board.py fails on anything not in this list, and fails again on any entry here the board no longer earns.",
   "why": "The board has one writer. A lane that quietly corrected it would delete the evidence that the check works, and would put a worker's opinion into a document that records the coordinator's. So the findings from the first run are written down, with what each one costs to close, and the coordinator strikes them off.",
-  "open": [
+  "open": [],
+  "closed": [
     {
       "claim": "a_shipped_lane_has_no_pasteable_prompt",
       "raised": "2026-09-08",
-      "owed": "One heading edit per lane. The board already has the form: three prompts for finished lanes read `(RUN — merged as #95; kept as the record of what the lane was asked for)`, and the other thirty-four still read `(UNASSIGNED — paste into a fresh CLI session)` under rows that say the lane merged. The prompt text is worth keeping; the invitation to paste it is not. The row for W29 carries the hand-written version of this warning — **HALF SHIPPED — do NOT paste the prompt below** — because pasting it would have rebuilt `kmx tools add`.",
+      "settled": "2026-09-08",
+      "owed": "One heading edit per lane. The board already has the form: three prompts for finished lanes read `(RUN — merged as #95; kept as the record of what the lane was asked for)`, and thirty-four more invited a paste under a row that says the lane merged. The prompt text is worth keeping; the invitation to paste it is not. The row for W29 carries the hand-written version of this warning — **HALF SHIPPED — do NOT paste the prompt below** — because pasting it would have rebuilt `kmx tools add`.",
+      "how": "Thirty-six headings were rewritten to the RUN form, keeping their prompt text and citing the pull request each lane's own row cites: the thirty-four recorded here, plus W41 once its row was corrected and W-RENAME once the checker could see it. Two of the thirty-eight that were pasteable stay so, W42 and W43, whose rows say unassigned and mean it. Only fourteen of the thirty-eight read the bare `(UNASSIGNED — paste into a fresh CLI session)`; the rest carried sequencing conditions in the same parenthesis, and those went with the invitation they qualified. W29 says instead that the onboarding half merged as `kmx tools add` and that the prompt asks for both halves, which is the hand-written warning moved onto the heading a worker would actually read; it is the one retired heading that cites no number. All counts here come from check-board.py reading the board before and after.",
       "lanes": ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12",
                 "W13", "W14", "W15", "W18", "W19", "W20", "W21", "W22", "W23", "W24", "W25",
-                "W26", "W27", "W28", "W29", "W30", "W33", "W34b", "W36", "W37", "W38", "W40"]
+                "W26", "W27", "W28", "W29", "W30", "W33", "W34b", "W36", "W37", "W38", "W40",
+                "W41", "W-RENAME"]
     },
     {
       "claim": "no_unstarted_row_for_work_already_merged",
       "raised": "2026-09-08",
+      "settled": "2026-09-08",
       "owed": "The row still says `unassigned` and `SHAPED 2026-09-08 — prompt below` for a lane that merged as #139 the same day. This is the fifth occurrence of the failure this checker was written for, and it was live on main when the checker first ran. The row needs the status every other finished lane's row carries, and the prompt above needs the heading the entry above describes.",
+      "how": "The row now reads `W41 worker | PR #139 MERGED (main 28a9b9c) — coordinator verification owed`, and the prompt heading was retired with the rest.",
       "lanes": ["W41"]
+    },
+    {
+      "claim": "every_prompt_has_a_row",
+      "raised": "2026-09-08",
+      "settled": "2026-09-08",
+      "owed": "Not reported by any run: the prompt inviting a fresh session to rename `tomte` to `kaimahi` was outside every claim, for two reasons. Its identifier is not a number, so nothing parsed it as a prompt at all; and its row was titled by description rather than opened with an identifier, so even parsed it would have matched no row — and a prompt with no row was treated as a prompt with nothing to say about it.",
+      "how": "The identifier pattern used where a row or a heading OPENS now admits a worded lane, a heading that says it is a prompt and cannot be parsed stops the run instead of being dropped, and the rename lane's row opens with `W-RENAME:` so the prompt and the row find each other. `every_prompt_has_a_row` owns the rowless case, and `a_shipped_lane_has_no_pasteable_prompt` says so where it declines to answer it. STILL OPEN in the general case: seventeen rows name no lane this file can read, and every claim keyed on a lane passes over them. Left that way deliberately — reporting them would name seventeen rows the board is not wrong about — and written down in Row's docstring rather than here, because it is a limit of the checker and not a debt of the board.",
+      "lanes": ["W-RENAME"]
     }
   ]
 }
