@@ -294,8 +294,17 @@ rows = d.get("entries") or []
 # today — an older plane's, a restored dump's. A newline in a cell
 # renders as a second line, which reads as a governed row nobody wrote.
 def cell(v):
+    # A value that is already one printable line with no padding prints as
+    # it is; anything else is QUOTED. Stripping instead would let a forged
+    # value render exactly like a legitimate one (see the long note in
+    # plane/internal/store/audittext.go). Spelled out rather than repr(),
+    # which quotes and escapes differently from the Go renderer's twin.
     s = "" if v is None else str(v)
-    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+    if s == s.strip() and s.isprintable():
+        return s
+    esc = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    return '"' + "".join(
+        esc.get(c, c if c.isprintable() else "\\u%04x" % ord(c)) for c in s) + '"'
 # clip shortens a cell and SAYS it shortened it — a silently shortened
 # address still looks like a whole one, and every caller in the same
 # prefix would render identically.
@@ -353,8 +362,17 @@ rows = d.get("entries") or []
 # cell keeps a value to ONE printable line — see the note on the ledger
 # view above; the same rule, for the same reason.
 def cell(v):
+    # A value that is already one printable line with no padding prints as
+    # it is; anything else is QUOTED. Stripping instead would let a forged
+    # value render exactly like a legitimate one (see the long note in
+    # plane/internal/store/audittext.go). Spelled out rather than repr(),
+    # which quotes and escapes differently from the Go renderer's twin.
     s = "" if v is None else str(v)
-    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+    if s == s.strip() and s.isprintable():
+        return s
+    esc = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    return '"' + "".join(
+        esc.get(c, c if c.isprintable() else "\\u%04x" % ord(c)) for c in s) + '"'
 # clip shortens a cell and SAYS it shortened it — a silently shortened
 # address still looks like a whole one, and every caller in the same
 # prefix would render identically.
@@ -394,8 +412,17 @@ if not rows:
 # rule is the same one the ledger and tool-audit views apply, and the
 # subject here is a caller-supplied tool name.
 def cell(v):
+    # A value that is already one printable line with no padding prints as
+    # it is; anything else is QUOTED. Stripping instead would let a forged
+    # value render exactly like a legitimate one (see the long note in
+    # plane/internal/store/audittext.go). Spelled out rather than repr(),
+    # which quotes and escapes differently from the Go renderer's twin.
     s = "" if v is None else str(v)
-    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+    if s == s.strip() and s.isprintable():
+        return s
+    esc = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    return '"' + "".join(
+        esc.get(c, c if c.isprintable() else "\\u%04x" % ord(c)) for c in s) + '"'
 fmt = "%-36s %-19s %-12s %-8s %-18s %-34s %s"
 if rows:
     print(fmt % ("id", "created (UTC)", "credential", "kind", "subject", "detail", "call"))
@@ -523,8 +550,17 @@ rows = d.get("entries") or []
 # cell keeps a value to ONE printable line — see the note on the
 # approvals view; the subject here is a caller-supplied tool name too.
 def cell(v):
+    # A value that is already one printable line with no padding prints as
+    # it is; anything else is QUOTED. Stripping instead would let a forged
+    # value render exactly like a legitimate one (see the long note in
+    # plane/internal/store/audittext.go). Spelled out rather than repr(),
+    # which quotes and escapes differently from the Go renderer's twin.
     s = "" if v is None else str(v)
-    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+    if s == s.strip() and s.isprintable():
+        return s
+    esc = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    return '"' + "".join(
+        esc.get(c, c if c.isprintable() else "\\u%04x" % ord(c)) for c in s) + '"'
 fmt = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s"
 print(fmt % ("created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"))
 for e in rows:
@@ -545,8 +581,17 @@ rows = d.get("entries") or []
 # cell keeps a value to ONE printable line — see the note on the
 # approvals view. The delivery id and the detail come off a webhook.
 def cell(v):
+    # A value that is already one printable line with no padding prints as
+    # it is; anything else is QUOTED. Stripping instead would let a forged
+    # value render exactly like a legitimate one (see the long note in
+    # plane/internal/store/audittext.go). Spelled out rather than repr(),
+    # which quotes and escapes differently from the Go renderer's twin.
     s = "" if v is None else str(v)
-    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+    if s == s.strip() and s.isprintable():
+        return s
+    esc = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    return '"' + "".join(
+        esc.get(c, c if c.isprintable() else "\\u%04x" % ord(c)) for c in s) + '"'
 fmt = "%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s"
 print(fmt % ("created (UTC)", "hook", "credential", "delivery", "decision", "status", "in", "out", "detail", "acted for"))
 for e in rows:

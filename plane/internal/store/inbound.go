@@ -65,7 +65,7 @@ func (s *Store) RecordInboundAudit(ctx context.Context, e InboundAuditEntry) err
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO inbound_audit (hook, credential_name, delivery_id, decision, status, detail, agent, input_tokens, output_tokens, acted_for)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		auditText(e.Hook), e.CredentialName, auditText(e.DeliveryID), e.Decision, e.Status, auditText(e.Detail), auditText(e.Agent), e.InputTokens, e.OutputTokens,
+		e.Hook, e.CredentialName, e.DeliveryID, e.Decision, e.Status, auditText(e.Detail), e.Agent, e.InputTokens, e.OutputTokens,
 		actedFor(e.ActedFor))
 	return err
 }
@@ -86,7 +86,7 @@ func (s *Store) AdmitInboundEvent(ctx context.Context, hook, credential, deliver
 	err = tx.QueryRow(ctx,
 		`INSERT INTO inbound_audit (hook, credential_name, delivery_id, decision, status, agent, acted_for)
 		 VALUES ($1, $2, $3, 'admitted', 202, $4, $5) RETURNING id`,
-		auditText(hook), credential, auditText(delivery), auditText(agent), actedFor(actedForID)).Scan(&eventID)
+		hook, credential, delivery, agent, actedFor(actedForID)).Scan(&eventID)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation on the admitted index
 		return "", "", ErrReplay

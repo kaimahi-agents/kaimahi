@@ -130,7 +130,7 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (credential_name, kind, subject, arg_digest) WHERE status = 'pending' DO NOTHING
 		 RETURNING id`,
-		f.Credential, f.Kind, auditText(f.Subject), auditText(f.Detail), f.ArgDigest, auditText(f.ArgSummary)).Scan(&id)
+		f.Credential, f.Kind, f.Subject, auditText(f.Detail), f.ArgDigest, auditText(f.ArgSummary)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil // an identical request is already pending — deduped
 	}
@@ -144,7 +144,7 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO approval_audit (request_id, credential_name, kind, subject, action, arg_digest, arg_summary)
 		 VALUES ($1, $2, $3, $4, 'requested', $5, $6)`,
-		id, f.Credential, f.Kind, auditText(f.Subject), f.ArgDigest, auditText(f.ArgSummary)); err != nil {
+		id, f.Credential, f.Kind, f.Subject, f.ArgDigest, auditText(f.ArgSummary)); err != nil {
 		return "", false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -286,7 +286,7 @@ func (s *Store) ApproveRequest(ctx context.Context, id string,
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO approval_audit (request_id, credential_name, kind, subject, action, bounds, decided_by, arg_digest, arg_summary)
 		 VALUES ($1, $2, $3, $4, 'approved', $5, $6, $7, $8)`,
-		r.ID, r.CredentialName, r.Kind, auditText(r.Subject), bounds, decidedBy, r.ArgDigest, auditText(r.ArgSummary)); err != nil {
+		r.ID, r.CredentialName, r.Kind, r.Subject, bounds, decidedBy, r.ArgDigest, auditText(r.ArgSummary)); err != nil {
 		return Grant{}, err
 	}
 	return g, tx.Commit(ctx)
@@ -326,7 +326,7 @@ func (s *Store) DenyApprovalRequest(ctx context.Context, id string, decidedBy st
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO approval_audit (request_id, credential_name, kind, subject, action, decided_by, arg_digest, arg_summary)
 		 VALUES ($1, $2, $3, $4, 'denied', $5, $6, $7)`,
-		r.ID, r.CredentialName, r.Kind, auditText(r.Subject), decidedBy, r.ArgDigest, auditText(r.ArgSummary)); err != nil {
+		r.ID, r.CredentialName, r.Kind, r.Subject, decidedBy, r.ArgDigest, auditText(r.ArgSummary)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

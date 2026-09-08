@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -127,6 +128,92 @@ func TestAHostileCallerNameCannotBreakTheRenderedTable(t *testing.T) {
 	}
 	if strings.Contains(got, "payment_schedule") {
 		t.Errorf("the forged tail of the caller name reached the table:\n%s", got)
+	}
+}
+
+// TestTheTwoRenderersAgreeByteForByte runs the shell renderer's own
+// python block and this package's Go one over the same document and
+// requires identical bytes.
+//
+// The format-string test below catches a width that drifts. This catches
+// the harder half: the two now ESCAPE a hostile cell rather than
+// stripping it, and Go's strconv.Quote and Python's repr() disagree on
+// the quote character and the escape forms — so the scheme is spelled
+// out twice and only running both proves they agree. The fixture is
+// deliberately nasty: a newline, a tab, a quote, a backslash, a
+// zero-width space, a multibyte name and a value long enough to clip.
+func TestTheTwoRenderersAgreeByteForByte(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available; the shell renderer cannot be run")
+	}
+	script, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "plane-admin.sh"))
+	if err != nil {
+		t.Fatalf("read plane-admin.sh: %v", err)
+	}
+	// Lift the tool-audit view's python block out of its heredoc.
+	block := string(script)
+	start := strings.Index(block, "  tool-audit)")
+	if start < 0 {
+		t.Fatal("plane-admin.sh has no tool-audit block")
+	}
+	block = block[start:]
+	from := strings.Index(block, "import json, sys")
+	to := strings.Index(block, "\nEOF\n")
+	if from < 0 || to < 0 || to < from {
+		t.Fatal("cannot delimit the tool-audit python block")
+	}
+	py := block[from:to]
+
+	doc := `{"entries": [
+	  {"created_at": "2026-09-08T13:58:28Z", "credential": "ap-agent", "upstream": "erp",
+	   "method": "tools/call", "tool": "invoice_get", "decision": "allowed", "status": 200,
+	   "detail": "", "arg_digest": "ebb1d47dba1eabc0", "arg_summary": "invoice_get: id INV-1",
+	   "acted_for": "none", "caller_claim": "ua:curl/8.5.0", "caller_addr": "127.0.0.1"},
+	  {"created_at": "2026-09-08T13:57:11Z", "credential": "ap-agent", "upstream": "erp",
+	   "method": "tools/call", "tool": "invoice_get\ttrailing", "decision": "allowed", "status": 200,
+	   "detail": "quote \" and backslash \\ and newline \n here", "arg_digest": "", "arg_summary": "",
+	   "acted_for": "none", "caller_claim": "ua:naïve/1.0 ​", "caller_addr": "fe80::1ff:fe23:4567:890a%eth0"},
+	  {"created_at": "2026-09-08T09:00:00Z", "credential": "ap-agent", "upstream": " openai",
+	   "method": "tools/list", "tool": "", "decision": "allowed", "status": 200,
+	   "detail": "", "arg_digest": "", "arg_summary": "", "acted_for": "none",
+	   "caller_claim": "legacy", "caller_addr": "legacy"}
+	]}`
+
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "doc.json")
+	if err := os.WriteFile(docPath, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pyPath := filepath.Join(dir, "render.py")
+	if err := os.WriteFile(pyPath, []byte(py), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shellOut, err := exec.Command("python3", pyPath, docPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("shell renderer failed: %v\n%s", err, shellOut)
+	}
+
+	c, _ := open(t, health(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(doc))
+	}))
+	var goOut bytes.Buffer
+	if err := c.ToolAudit(&goOut, ""); err != nil {
+		t.Fatalf("ToolAudit: %v", err)
+	}
+
+	if goOut.String() != string(shellOut) {
+		t.Errorf("the two renderers disagree.\n--- go ---\n%s\n--- shell ---\n%s", goOut.String(), shellOut)
+	}
+	// And the hostile cells really were escaped, so this is not two
+	// renderers agreeing on having done nothing.
+	for _, want := range []string{
+		`"invoice_get\ttrailing"`, // a tab, which would have padded into a lookalike
+		"\\u200b\"",               // a zero-width space, invisible if it were passed through
+		`" openai"`,               // a leading space, which would render as the real name
+	} {
+		if !strings.Contains(goOut.String(), want) {
+			t.Errorf("the fixture's hostile cell %s was not escaped:\n%s", want, goOut.String())
+		}
 	}
 }
 

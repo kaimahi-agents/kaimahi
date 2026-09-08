@@ -375,19 +375,63 @@ func yesno(v any) string {
 	return "no"
 }
 
-// oneLine is the script's `cell()`: tabs, newlines and carriage returns
-// become spaces so deliberately-split text still reads as separate words,
-// and anything else unprintable is dropped.
+// oneLine is the script's `cell()`, and it is the read-side twin of the
+// store's audit-text rule: a value that is already one printable line
+// with no padding is printed exactly as it is; anything else is QUOTED.
+//
+// Quoted rather than stripped, for the reason the store gives at length
+// (plane/internal/store/audittext.go): stripping a control character to
+// a space and letting the column pad it makes a forged value render
+// exactly like a legitimate one, which is worse than the mess it tidies.
+// The store stops such a value being written today — this is for the
+// rows it did not write: an older plane's, a restored dump's.
+//
+// The escaping is spelled out here rather than taken from strconv,
+// because plane-admin.sh has to produce the same bytes from Python and
+// `strconv.Quote` and `repr()` do not agree (quote character, escape
+// forms). TestTheTwoRenderersAgreeByteForByte holds the pair to it.
 func oneLine(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
+	if isCleanCell(s) {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if unicode.IsPrint(r) {
+				b.WriteRune(r)
+			} else {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			}
 		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// isCleanCell reports whether a cell can be printed unaltered: printable
+// throughout, and not padded at either end.
+func isCleanCell(s string) bool {
+	if s != strings.TrimSpace(s) {
+		return false
+	}
+	for _, r := range s {
 		if !unicode.IsPrint(r) {
-			return -1
+			return false
 		}
-		return r
-	}, s)
+	}
+	return true
 }
 
 // trunc cuts a cell to n characters, as the script's `e["created_at"][:19]`

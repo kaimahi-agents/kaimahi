@@ -2771,7 +2771,11 @@ jobs:
           # attributed lines before it both end in a word from the same
           # closed vocabulary, and only these two columns tell a client the
           # plane deployed from a shell script holding its token.
-          grep -qE 'ua:curl/[0-9]' tool-audit-after-run.out
+          # That row is the PROBE's, and it says so: curl, from the
+          # port-forward's loopback. Pinned to the same line the assertion
+          # above pins, so this cannot pass on some other row's caller.
+          sed -n '2p' tool-audit-after-run.out | grep -qE 'ua:curl/[0-9]'
+          sed -n '2p' tool-audit-after-run.out | grep -qE ' 127\.0\.0\.1 +none *$'
           # The agent's own calls are NOT curl. Its user agent is a library
           # version and is deliberately not pinned; "not the probe" is the
           # claim, and it is the one that would break if the gateway ever
@@ -2780,11 +2784,13 @@ jobs:
           test -s agent-rows.out
           ! grep -qE 'ua:curl/' agent-rows.out
           # Nothing written on this cluster predates the columns, so no row
-          # may claim it does. 'legacy' here would mean the writer stopped
-          # stamping and the column default took over — a caller column that
-          # silently stopped recording, which is the failure this class of
-          # check exists to catch.
-          ! grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' tool-audit-after-run.out
+          # may claim it does. Checked per FIELD, not as a pair: a check
+          # that only fires when BOTH went sentinel would pass while one of
+          # them silently stopped recording, which is the failure this class
+          # of check exists to catch.
+          actedfor='(none|unknown|legacy|slack:[A-Z0-9]+)'
+          ! grep -qE " (legacy|unrecorded) +$actedfor *\$" tool-audit-after-run.out
+          ! grep -qE " (legacy|unrecorded) +[^ ]+ +$actedfor *\$" tool-audit-after-run.out
       # Keyless: run it for real. Every step below drives the plane's
       # two replicas directly (a port-forward per POD, so both are in
       # every race by construction) rather than through kagent, whose

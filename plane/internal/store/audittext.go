@@ -83,14 +83,34 @@ func Clip(s string, n int) string {
 	if n < len(ellipsis) {
 		return ""
 	}
-	r := []rune(s)
-	for len(r) > 0 && len(string(r))+len(ellipsis) > n {
-		r = r[:len(r)-1]
+	// One forward pass over the rune boundaries, keeping the last one that
+	// still leaves room for the ellipsis. Shrinking a rune slice from the
+	// end and re-encoding it to measure was quadratic, and the input here
+	// is chosen by the caller — a header of a few kilobytes clipped to a
+	// couple of hundred bytes did millions of byte copies on the audit
+	// write path.
+	cut := 0
+	for i := range s {
+		if i+len(ellipsis) > n {
+			break
+		}
+		cut = i
 	}
-	return string(r) + ellipsis
+	return s[:cut] + ellipsis
 }
 
 // auditText is what an ordinary free-text column gets on the way in.
+//
+// DESCRIPTIVE COLUMNS ONLY. Never a column anything filters, matches or
+// deduplicates on — a tool audit's `tool` and `detail`, yes; an approval
+// request's `subject`, no. A grant is read back out of
+// `approval_request.subject` and matched against the raw tool name the
+// gateway hands `ConsumeToolGrant`, so altering it on the way in would
+// mint grants that can never be consumed. Inbound's `delivery_id` is the
+// same shape: replay detection is a unique index on the stored value, and
+// two different ids that normalised together would drop a real event as a
+// replay. Those columns stay exactly as they arrived, and the renderers
+// are what keep them from breaking a table.
 //
 // A clean value — already one printable line, no leading or trailing
 // space — is stored as it arrived. Anything else is stored in Go's

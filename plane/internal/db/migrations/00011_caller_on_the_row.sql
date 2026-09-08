@@ -73,12 +73,14 @@ ALTER TABLE tool_audit ADD CONSTRAINT tool_audit_caller_claim_check
     CHECK (caller_claim IN ('none', 'unrecorded', 'legacy') OR
            (caller_claim LIKE 'ua:%' AND octet_length(caller_claim) <= 160));
 ALTER TABLE tool_audit ADD CONSTRAINT tool_audit_caller_addr_check
-    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR octet_length(caller_addr) <= 64);
+    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR
+           (caller_addr <> '' AND octet_length(caller_addr) <= 64));
 ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_caller_claim_check
     CHECK (caller_claim IN ('none', 'unrecorded', 'legacy') OR
            (caller_claim LIKE 'ua:%' AND octet_length(caller_claim) <= 160));
 ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_caller_addr_check
-    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR octet_length(caller_addr) <= 64);
+    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR
+           (caller_addr <> '' AND octet_length(caller_addr) <= 64));
 
 -- +goose Down
 ALTER TABLE ledger_entry DROP CONSTRAINT ledger_entry_caller_addr_check;
