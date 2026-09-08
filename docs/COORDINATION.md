@@ -126,6 +126,7 @@ prefix.
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
+| W41: govern a runtime this repository did not write | unassigned | SHAPED 2026-09-08 — prompt below | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | unassigned | SHAPED 2026-09-07 — prompt below; **the urgent one** | `kmx down` deletes under a banner saying the context is absent; `kmx workflow run` is unguarded; five manifests cite a CI assertion that does not exist |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
@@ -464,6 +465,72 @@ opening than three of mixed quality. U2 gets verified against the CRD
 before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
+
+- **D46 (OPEN — needs a ruling, and the teammate in the room): where the
+  line sits between Kaimahi and AgentWeaver.** Raised 2026-09-08 by the
+  user, who pointed at a teammate's project. Read from its published
+  docs and README only — NOT its code — so everything here is a first
+  reading and the teammate should correct it before it is ruled.
+
+  **What it appears to be.** A self-hosted platform turning intent into
+  controlled repository operations: .NET and TypeScript, its own agent
+  orchestration, sandboxed git worktrees with Kata VMs on AKS, human
+  review gates before a merge, automated safety checks on generated
+  diffs, Key Vault for secrets, Postgres for state. Explicitly alpha.
+  Its stated shape is **"thin clients, thick control plane"**.
+
+  **That last phrase is the whole decision.** It is the opposite bet from
+  this project's. Kaimahi's README names a second control plane as the
+  failure to avoid; `kmx` shells out; kagent runs the agent and we
+  deliberately did not write a runtime. AgentWeaver owns the API, the
+  orchestration, the runtime, the sandbox and the UI. Two projects can
+  hold opposite architectural bets honestly, but not quietly.
+
+  **The axes differ more than a one-line description suggests.**
+  AgentWeaver is VERTICAL: one domain, owned end to end, with a
+  domain-shaped gate — review the assembled diff before it merges — and
+  isolation that is filesystem- and process-shaped (default-deny tool
+  calls, path containment, symlink protection). Kaimahi is HORIZONTAL and
+  domain-less: no UI, no sandbox, no execution model, no opinion about
+  what the agent is for, and a gate that is call-shaped — this tool, with
+  these exact arguments, under a grant welded to that call.
+
+  **The gates are not substitutes.** A diff review cannot express "may
+  schedule a payment at or under $10,000 and never otherwise". An
+  argument-bound approval cannot tell you whether a code change is any
+  good.
+
+  **Where they would compose, if the line is drawn deliberately:**
+  - **Spend.** Nothing in AgentWeaver's published material describes
+    budget or spend control. That is the metering proxy, the ledger and
+    budget denial, and they sit at the LLM seam without caring what the
+    agent is doing.
+  - **The isolation layers stack rather than compete.** A sandbox stops
+    an escape; an argument-bound allowlist stops a PERMITTED tool being
+    used for the wrong thing. An agent that may legitimately call
+    `create_branch`, inside a perfect sandbox, can still cut the wrong
+    branch.
+
+  **The honest catch, and it is ours.** "Runtime-agnostic" is currently
+  aspirational. The seam is genuinely generic — HTTP and MCP — but the
+  wiring assumes kagent: `RemoteMCPServer` CRDs, kagent's controller
+  discovering tools through the gateway, `discovered ∩ toolNames`. We
+  have onboarded a tool SERVER this repository did not write; we have
+  never governed a RUNTIME it did not write. W41 below tests that, and
+  the result matters either way.
+
+  **The organisational half, which is the actual risk.** Two agent
+  governance projects on AKS with Postgres, inside one organisation, will
+  be compared whether or not the comparison is fair — and that comparison
+  usually resolves in favour of whichever is easier to explain rather
+  than whichever is right. The line that seems true today, offered for
+  the teammate to correct: **AgentWeaver governs what an agent produces;
+  Kaimahi governs what an agent may do.** If their control plane grows
+  generic tool policy, or if this project grows a UI and an execution
+  model, that line blurs and the two compete by accident.
+
+  **Not a decision to take from this side alone.** The coordinator has
+  read two documents. Rule it with the teammate present.
 
 - **D45 (RULED 2026-09-07): the gateway's in-cluster tool hop stays
   plaintext, and here is the threat model that says so.** Raised by
@@ -4471,6 +4538,96 @@ number.
 Branch from current main; PR targets main; no stacked bases; lane ends
 at PR-open-with-checks-green — do not merge. Report deviations in the
 PR, and say plainly anything you could not prove.
+```
+
+### W41 — govern a runtime this repository did not write (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — D46 above all, then the security standing guidance and the
+hosted-upstreams and tool-governance docs.
+
+**The claim you are testing.** This project positions itself as
+horizontal: a governance plane over an agent runtime, where the runtime
+is somebody else's problem. The gateway speaks HTTP and MCP, which are
+generic. But every agent it has ever governed was deployed by kagent,
+and the wiring assumes it — `RemoteMCPServer` CRDs, kagent's controller
+discovering tools THROUGH the gateway, the `discovered ∩ toolNames`
+rule that makes an agent's tool list a selection rather than a grant.
+
+**We have onboarded a tool SERVER this repository did not write. We have
+never governed a RUNTIME it did not write.** Those are different claims
+and only the first is proven.
+
+**A refutation is worth as much as a confirmation, and you should expect
+one.** If the answer is "the seam is generic but the plumbing is not,
+and here is exactly which parts are kagent-shaped", that is a complete
+and valuable lane. What is NOT acceptable is discovering that halfway
+and quietly widening the definition of success. Say early in the PR
+which outcome you got.
+
+**What "governing a foreign runtime" means, concretely.** Not a new
+feature — a demonstration using what exists:
+1. Something that is NOT a kagent Agent makes an MCP tool call through
+   the gateway, carrying a Kaimahi-issued `kmh_` credential.
+2. That call is authenticated, allowlisted, argument-bound and audited
+   exactly as a kagent agent's call is — same ledger rows, same audit
+   trail, same refusal when it steps outside its bounds.
+3. Its model calls, if it makes any, meter through the LLM proxy against
+   a budget, and a budget denial stops it.
+
+**The simplest honest test is a plain HTTP client**, not a second
+framework. A few lines that speak MCP over streamable HTTP with a `kmh_`
+token is enough to answer the question, and it removes every variable
+that is not the seam itself. If you can do it with `curl` and a shell
+script, do that. **Do not build an adapter, a shim, or a compatibility
+layer** — this lane finds out whether one is needed, it does not write
+one.
+
+**Questions to answer, each with evidence:**
+- **What does an agent actually need to be governed?** A credential, a
+  base URL, and what else? Enumerate it, because that list IS the
+  interface this project offers a foreign runtime, and it has never been
+  written down.
+- **Which parts of the path are kagent-shaped and why?** Tool discovery
+  is the obvious suspect: `discovered ∩ toolNames` is kagent's
+  controller reconciling a CRD. What happens to a client that never
+  discovers, and just calls? Is it governed, refused, or invisible?
+- **What does the audit trail say about a call it cannot attribute to a
+  kagent agent?** The identity work established a vocabulary for "the
+  plane cannot say" — `none` versus `unknown`. Does a foreign caller get
+  an honest answer or a misleading one?
+- **Does anything assume the agent is in the `kagent` namespace?** The
+  NetworkPolicy admits that namespace deliberately. A foreign runtime
+  elsewhere is either refused by the network or requires a policy change
+  — say which, and whether that is the right default.
+
+**Guardrails, all hard.** Change no behaviour. This is an investigation:
+if it needs a product change to succeed, that is the FINDING, and the
+change belongs in a later lane shaped against what you learned. kmx
+accepts no credential material beyond the ruled terminal-only prompt. No
+Azure or Slack identifiers. CI stays keyless — whatever you build to
+prove this must run without a token, against the synthetic upstream if
+that is what it takes. Every mutation through the context guard. No
+client-go. Comments say what the thing does, never a lane or decision
+number.
+
+**Out of scope, explicitly:** integrating with any specific external
+project. A teammate's platform prompted the question and it is NOT the
+subject — testing against somebody else's alpha software would confound
+their bugs with our limits. Answer the general question with the
+simplest possible client.
+
+**Verification.** A transcript of a non-kagent client making a governed
+tool call: the ledger row, the audit row, and the refusal when it goes
+out of bounds. The enumerated list of what a runtime must provide. And
+an explicit statement of what a foreign runtime CANNOT get today, with
+the reason — that list is the real deliverable, and if it is long, say
+so plainly. The positioning rests on this being short.
+
+Branch from current main; PR targets main; no stacked bases; lane ends
+at PR-open-with-checks-green — do not merge.
 ```
 
 ## Delta sheets from finished lanes
