@@ -52,8 +52,15 @@ type Attribution struct {
 	RunID    string
 }
 
-// Unattributed is the honest default: no person, no run.
-var Unattributed = Attribution{ActedFor: ActedForNone}
+// Nobody is what a seam stamps when there was no person: no run open, so
+// nothing and nobody to carry.
+//
+// It is named for what the value ASSERTS. The name it replaced —
+// "Unattributed" — read as "nobody attributed this", which is the state
+// the plane cannot express at all, while the value beneath it claims
+// "there is no person". A name that argues against the distinction its
+// own constants draw is part of how an overclaim stays invisible.
+var Nobody = Attribution{ActedFor: ActedForNone}
 
 // Lost is what a seam stamps when it cannot resolve one.
 var Lost = Attribution{ActedFor: ActedForUnknown}
@@ -130,7 +137,7 @@ func (s *Store) ActorFor(ctx context.Context, credential string) (Attribution, e
 	}
 	switch len(found) {
 	case 0:
-		return Unattributed, nil
+		return Nobody, nil
 	case 1:
 		return found[0], nil
 	default:

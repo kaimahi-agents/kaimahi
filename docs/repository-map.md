@@ -152,7 +152,7 @@ worth knowing before anyone moves or renames the plane's package paths.
 
 `proxy` (LLM data path and admin API), `gateway` (MCP), `inbound`
 (webhooks), `egress`, `meter` (budgets), `pricing`, `store` and `db`
-(Postgres and ten migrations), `config`, `redact`, `metrics`, `notify`,
+(Postgres and eleven migrations), `config`, `redact`, `metrics`, `notify`,
 `ops`. Nothing here is a demonstration or a fixture; the synthetic
 upstreams live inside the test files rather than as separate packages.
 

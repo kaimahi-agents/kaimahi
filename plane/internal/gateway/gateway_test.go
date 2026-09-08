@@ -51,7 +51,7 @@ func (f *fakeStore) ActorFor(context.Context, string) (store.Attribution, error)
 		return store.Lost, f.actorErr
 	}
 	if f.actor.ActedFor == "" {
-		return store.Unattributed, nil
+		return store.Nobody, nil
 	}
 	return f.actor, nil
 }

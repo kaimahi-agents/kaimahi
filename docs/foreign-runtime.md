@@ -225,13 +225,31 @@ Two things make this worse than it first looks. Nothing in a tool-audit
 row distinguishes a kagent agent's call from a curl's — not the client
 name in `initialize`, which the gateway relays without reading, not the
 user agent, not the source address. And the ledger behaves identically,
-so the same overclaim lands on the spend trail.
+so the same overclaim lands on the spend trail. (**Both halves of that
+paragraph are now fixed**: the two trails carry `caller (claimed)` and
+`from (observed)`. The client name in `initialize` is still not read,
+and [identity.md](identity.md#who-called) says why — the gateway holds
+no session state, and a client can skip the handshake entirely, as this
+document proved.)
 
-This is a real finding and it is not fixed here; this lane changes no
-behaviour. Whoever fixes it should note that the honest answer is not
-obviously `unknown` either: the plane genuinely knows *nothing* about
-whether a person was involved, which is a third state the schema's CHECK
-constraints do not currently allow.
+This was a real finding and it was not fixed here; this lane changed no
+behaviour. **It has since been ruled on, and the outcome is written up
+in [identity.md](identity.md#where-none-is-stretched-and-why-that-is-accepted).**
+In short: the word does not change, because the honest answer is not
+`unknown` either — the plane genuinely knows *nothing* about whether a
+person was involved, and that is a third state the schema's CHECK
+constraints do not allow. What changed instead is the second half of the
+finding below: **every governed row now records who called**, so the
+stretched `none` is visible on the row rather than invisible. The
+imprecision is accepted, documented and bounded by there being no
+supported way to reach it; if a foreign runtime becomes supported, the
+ruling is void and the vocabulary gains a value.
+
+Two things about the transcript below still stand and are worth reading
+in that light: the rows show `none` for a curl client, which is the
+overclaim, and they carry no caller columns, because they were recorded
+before those existed. A trail captured today from the same run would
+show `ua:curl/8.5.0` beside every one of them.
 
 ### 2. Being invoked by the plane, and turn-level spend metering
 
@@ -354,3 +372,13 @@ Nothing, yet — this was an investigation and it deliberately built no
 adapter, shim or compatibility layer, because the finding is that none of
 those is what is missing. What is missing is one policy selector an
 operator can already edit, and one honest word in a column.
+
+**Since then, on the word.** The column was ruled on rather than
+changed: `none` keeps its meaning, and the row it sits on learned to say
+who called, so the case where the word is stretched is visible instead of
+invisible. That is the smaller of the two fixes and it was chosen
+deliberately — see
+[identity.md](identity.md#where-none-is-stretched-and-why-that-is-accepted)
+for the reasoning, the bound that makes the remaining imprecision
+acceptable, and the condition that voids it. The policy selector is
+still an operator's edit and still undocumented for an adopter.

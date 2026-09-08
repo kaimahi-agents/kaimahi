@@ -54,6 +54,14 @@ func NewDataMux(d Deps) *http.ServeMux {
 // disconnect must not drop the record of a call the proxy already made
 // (ported audit rule). Bounded so a stalled pool cannot hang the response.
 func (h *handler) record(r *http.Request, e store.LedgerEntry, reservation string) {
+	// Every ledger row leaves through here, so this is where WHO CALLED
+	// is stamped: the client's own word for itself, and the address the
+	// plane observed. The spend trail had the same blind spot the tool
+	// trail did — nothing in a row told an agent apart from a script
+	// holding its token. It decides nothing; the budget gate and the
+	// price gate ran before this and do not read it.
+	caller := store.CallerOf(r)
+	e.CallerClaim, e.CallerAddr = caller.Claim, caller.Addr
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
 	if err := h.d.Store.RecordLedger(ctx, e, reservation); err != nil {

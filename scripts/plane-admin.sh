@@ -283,12 +283,26 @@ rows = d.get("entries") or []
 # before it. 'none' means there is no person, 'unknown' means the plane
 # cannot say, 'legacy' means the row predates attribution: three
 # different answers that stay different.
-fmt = "%-19s %-12s %-9s %-16s %6s %6s %6s %-8s %-6s %s"
-print(fmt % ("created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "acted for"))
+#
+# The two columns before it say WHO CALLED. "caller (claimed)" is the
+# client's own word for itself and is not checked by anything; "from
+# (observed)" is the address the plane saw at its own socket. They went
+# in here, immediately before "acted for", because every existing grep
+# names a column ahead of them.
+# cell keeps a value to ONE printable line. The plane bounds what it
+# writes into an audit column, but this prints rows it did not write
+# today — an older plane's, a restored dump's. A newline in a cell
+# renders as a second line, which reads as a governed row nobody wrote.
+def cell(v):
+    s = "" if v is None else str(v)
+    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+fmt = "%-19s %-12s %-9s %-16s %6s %6s %6s %-8s %-6s %-28s %-16s %s"
+print(fmt % ("created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for"))
 for e in rows:
-    print(fmt % (e["created_at"][:19], e["credential"], e["upstream"], e["model"][:16],
-                 e["input_tokens"], e["output_tokens"], e["cost_cents"], e["cost_source"], e["status"],
-                 e.get("acted_for") or "unknown"))
+    print(fmt % (cell(e["created_at"])[:19], cell(e["credential"]), cell(e["upstream"]), cell(e["model"])[:16],
+                 e["input_tokens"], e["output_tokens"], e["cost_cents"], cell(e["cost_source"]), e["status"],
+                 cell(e.get("caller_claim") or "unrecorded")[:28], cell(e.get("caller_addr") or "unrecorded")[:16],
+                 cell(e.get("acted_for") or "unknown")))
 if "month_cents" in d:
     print(f'-- month to date: {d["month_cents"]} cents, {d["month_tokens"]} tokens')
 EOF
@@ -331,19 +345,29 @@ print(f'"'"'{d["credential"]}: {", ".join(d["tools"]) or "(empty — nothing cal
 import json, sys
 d = json.load(open(sys.argv[1]))
 rows = d.get("entries") or []
-fmt = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %s"
-print(fmt % ("created (UTC)", "credential", "upstream", "method", "tool", "decision", "status", "detail", "call", "acted for"))
+# cell keeps a value to ONE printable line — see the note on the ledger
+# view above; the same rule, for the same reason.
+def cell(v):
+    s = "" if v is None else str(v)
+    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+fmt = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %-28s %-16s %s"
+print(fmt % ("created (UTC)", "credential", "upstream", "method", "tool", "decision", "status", "detail", "call", "caller (claimed)", "from (observed)", "acted for"))
 for e in rows:
     # arg_digest identifies the call; arg_summary says what it was. Both
     # are on the denial and on the admitted call, so an approved call and
     # the call that ran are provably the same one.
-    call = e.get("arg_summary") or ""
+    call = cell(e.get("arg_summary") or "")
     if e.get("arg_digest"):
         call = (call + " ") if call else ""
-        call += "[" + e["arg_digest"][:12] + "]"
-    print(fmt % (e["created_at"][:19], e["credential"], e["upstream"], e["method"],
-                 e["tool"], e["decision"], e["status"], e["detail"], call or "-",
-                 e.get("acted_for") or "unknown"))
+        call += "[" + cell(e["arg_digest"])[:12] + "]"
+    # "caller (claimed)" is the client's own word for itself — self-reported,
+    # unverified, and bounded by the plane at the write. "from (observed)" is
+    # the peer address the plane saw. A row from before these were recorded
+    # has neither, and says so rather than reading as an empty answer.
+    print(fmt % (cell(e["created_at"])[:19], cell(e["credential"]), cell(e["upstream"]), cell(e["method"]),
+                 cell(e["tool"]), cell(e["decision"]), e["status"], cell(e["detail"]), call or "-",
+                 cell(e.get("caller_claim") or "unrecorded")[:28], cell(e.get("caller_addr") or "unrecorded")[:16],
+                 cell(e.get("acted_for") or "unknown")))
 EOF
     ;;
   approvals)

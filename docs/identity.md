@@ -50,6 +50,91 @@ kagent to add one the plane could trust is exactly what the prime
 directive exists to stop. Nothing here is an identity the plane cannot
 substantiate.
 
+### Where `none` is stretched, and why that is accepted
+
+**`none` claims more than the plane knows for a caller it never
+triggered, and this is a known limit rather than a discovered one.**
+
+`none` is reached by one question: is a run open for this credential? A
+run is a window the inbound bridge opens around an agent turn *it*
+started, and nothing else in the system opens one — there is no
+endpoint, no admin call, no `kmx` verb. So "no run open" is read as "an
+operator-driven turn, with no person behind it".
+
+That reading is sound while the only doors are kagent and the inbound
+bridge. It is **not** sound for a client the plane did not deploy: a
+shell script holding a governed credential is triggered by its own
+human, through a door the plane never saw, and the plane has no basis to
+say whether a person was involved. It records "there is no person"
+anyway. The honest answer is not `unknown` either — that word means
+attribution was *lost*, and here the plane never had any.
+
+**The bound that makes this acceptable.** No supported configuration
+reaches it. kagent and the inbound bridge are the only doors a
+production cluster has, the two data seams are `ClusterIP` Services with
+no route in from outside, and the one place the network policy admits is
+the namespace agents live in. **If a foreign runtime ever becomes a
+supported configuration, this stops being acceptable** and the fix is a
+new value in the vocabulary, not a new reading of `none`.
+
+**What was done instead, and why it is most of the value.** Adding a
+third live non-person value would have meant a migration, a widened
+constraint on all three tables, and a new word for every reader — to fix
+the word on rows nobody is meant to be able to write. What the trail
+gained instead is the ability to *show* the case, so the word can be
+read in context: every governed row now says **who called**.
+
+### Who called
+
+Two columns on the ledger and the tool audit, kept apart because they
+are worth different amounts:
+
+| Column | Means |
+|---|---|
+| `caller (claimed)` | **the caller's own word for itself** — its `User-Agent`, recorded as `ua:<name>`. Self-reported and unverified: any client can send any string, including one imitating another client. Bounded and reduced to one printable line at the write |
+| `from (observed)` | **what the plane saw at its own socket**: the peer address the request arrived from. Not a claim by the thing being governed — but still only an address. In a cluster it names a pod, not a person, and pod addresses are reused |
+| | |
+| `none` (claimed) | the caller offered no identification at all |
+| `unknown` (observed) | the plane could not read the peer address |
+| `unrecorded` | the writer resolved none — the column default, so a writer that forgets says *no record* rather than making a claim |
+| `legacy` | the row was written before the caller was recorded. Backfill only; migration `00011` closed the class |
+
+The same discipline as `acted for`: *not recorded* and *recorded as
+nothing* are different answers and stay different words.
+
+So a reader meeting `none` in the last column can now see which case it
+is:
+
+```console
+$ make tool-audit CRED_TOOLS=ap-agent
+created (UTC)       credential upstream method     tool         decision status detail  call    caller (claimed)   from (observed) acted for
+2026-09-08T13:58:28 ap-agent   erp      tools/call invoice_get  allowed     200         …       ua:kagent/0.9.12   10.244.1.7      none
+2026-09-08T13:52:04 ap-agent   erp      tools/call invoice_get  allowed     200         …       ua:curl/8.5.0      127.0.0.1       none
+```
+
+Both rows say `none`. The first is an agent the plane deployed, on an
+operator-driven turn, and the word means what it says. The second is a
+shell script, and the word is being stretched — which is now visible on
+the row rather than only in this document.
+
+**This is legibility, not a control.** Neither column is an input to any
+decision: nothing admits, denies, grants or attributes on the strength
+of them, and a call is served or refused identically whatever it calls
+itself. The MCP handshake's own `clientInfo.name` is deliberately not
+used — the gateway holds no session state and a client can skip
+`initialize` entirely, so a handshake name could not reach the rows that
+matter without state the gateway refuses to keep, to gain a value of
+exactly the same worth as the header. `X-Forwarded-For` is ignored for
+the same reason: it is a header, so reading it would let a caller choose
+the value in the column it is not supposed to be able to choose.
+
+**And it is attacker-controlled text.** The claim is bounded (160 bytes)
+and reduced to one printable line before it is written, the bound is a
+CHECK constraint in the schema as well as a rule in the writer, and both
+audit renderers reduce every cell to one line on the way out. A newline
+in a rendered cell would print as a second line, which reads as a
+governed row nobody wrote.
+
 ### How a call is joined to a person
 
 The agent pod authenticates to the proxy and to the gateway with its
@@ -95,23 +180,28 @@ credential — the same discipline spend reservations use.
 ### Reading it
 
 `acted for` is the last column on the ledger, the tool audit and the
-inbound trail:
+inbound trail, with the two caller columns immediately before it on the
+first two. The lines below are trimmed in the middle to fit this page;
+the real tables are wider:
 
 ```console
 $ make ledger
-created (UTC)       credential   upstream  model                in    out  cents source   status acted for
-2026-09-03T20:55:41 hello-world  ollama    qwen2.5:3b          724     35      0 free     200    slack:U0123ABC
-2026-09-03T20:54:12 hello-world  ollama    qwen2.5:3b          371     25      0 free     200    none
+created (UTC)       credential   upstream  model         …  status caller (claimed)   from (observed) acted for
+2026-09-03T20:55:41 hello-world  ollama    qwen2.5:3b    …  200    ua:kagent/0.9.12   10.244.1.7      slack:U0123ABC
+2026-09-03T20:54:12 hello-world  ollama    qwen2.5:3b    …  200    ua:kagent/0.9.12   10.244.1.7      none
 ```
 
 ```console
 $ make tool-audit CRED_TOOLS=hello-tools
-created (UTC)       credential   upstream     method       tool                     decision status detail                                       call                                         acted for
-2026-09-03T20:55:36 hello-tools  kagent-tools tools/call   k8s_get_resources        allowed     200                                              k8s_get_resources: (…) [3494fcafa57a]        slack:U0123ABC
+created (UTC)       credential   upstream     method     tool               … call                                   caller (claimed)  from (observed) acted for
+2026-09-03T20:55:36 hello-tools  kagent-tools tools/call k8s_get_resources  … k8s_get_resources: (…) [3494fcafa57a]  ua:kagent/0.9.12  10.244.1.7      slack:U0123ABC
 ```
 
-Both rows above are the same agent turn, under two different
-credentials, and both name the person who triggered it.
+The first and third rows are the same agent turn, under two different
+credentials, and both name the person who triggered it. The second is
+the same agent on a turn nobody triggered through the plane — and the
+caller columns are what let you tell that apart from a client the plane
+never deployed.
 
 ### What this makes possible, and what it is not
 

@@ -95,9 +95,15 @@ type LedgerEntry struct {
 	// or "we lost it" is worse than no column. RunID is the run the call
 	// fell inside, empty when there was none — provenance, never the
 	// answer.
-	ActedFor  string    `json:"acted_for"`
-	RunID     string    `json:"run_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ActedFor string `json:"acted_for"`
+	RunID    string `json:"run_id,omitempty"`
+	// CallerClaim/CallerAddr say WHO CALLED: the client's own word for
+	// itself and the address the plane observed (caller.go). Legibility,
+	// never enforcement — a reader meeting 'none' can see whether the
+	// call came through a door the plane opened.
+	CallerClaim string    `json:"caller_claim"`
+	CallerAddr  string    `json:"caller_addr"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // CreateCredential mints a credential row. expiresAt is REQUIRED: the
@@ -153,10 +159,11 @@ func (s *Store) RecordLedger(ctx context.Context, e LedgerEntry, reservationID s
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO ledger_entry (credential_name, upstream, model, input_tokens, output_tokens, cost_cents, cost_source, status, acted_for, run_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		e.CredentialName, e.Upstream, e.Model, e.InputTokens, e.OutputTokens, e.CostCents, e.CostSource, e.Status,
-		actedFor(e.ActedFor), nullableUUID(e.RunID)); err != nil {
+		`INSERT INTO ledger_entry (credential_name, upstream, model, input_tokens, output_tokens, cost_cents, cost_source, status, acted_for, run_id, caller_claim, caller_addr)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		e.CredentialName, e.Upstream, auditText(e.Model), e.InputTokens, e.OutputTokens, e.CostCents, e.CostSource, e.Status,
+		actedFor(e.ActedFor), nullableUUID(e.RunID),
+		callerClaimFor(e.CallerClaim), callerAddrFor(e.CallerAddr)); err != nil {
 		return err
 	}
 	if reservationID != "" {
@@ -191,9 +198,15 @@ type ToolAuditEntry struct {
 	ArgSummary string `json:"arg_summary,omitempty"`
 	// ActedFor/RunID: who the tool call was made for, and the run it
 	// fell inside. Same closed vocabulary as the ledger (identity.go).
-	ActedFor  string    `json:"acted_for"`
-	RunID     string    `json:"run_id,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ActedFor string `json:"acted_for"`
+	RunID    string `json:"run_id,omitempty"`
+	// CallerClaim/CallerAddr say WHO CALLED: the client's own word for
+	// itself and the address the plane observed (caller.go). Legibility,
+	// never enforcement — a reader meeting 'none' can see whether the
+	// call came through a door the plane opened.
+	CallerClaim string    `json:"caller_claim"`
+	CallerAddr  string    `json:"caller_addr"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // SetToolAllowlist replaces the credential's whole allowlist (empty
@@ -285,10 +298,12 @@ func (s *Store) CredentialsAllowlisting(ctx context.Context, tools []string) (ma
 // construction, like the spend ledger.
 func (s *Store) RecordToolAudit(ctx context.Context, e ToolAuditEntry) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO tool_audit (credential_name, upstream, method, tool, decision, status, detail, arg_digest, arg_summary, acted_for, run_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		e.CredentialName, e.Upstream, e.Method, e.Tool, e.Decision, e.Status, e.Detail, e.ArgDigest, e.ArgSummary,
-		actedFor(e.ActedFor), nullableUUID(e.RunID))
+		`INSERT INTO tool_audit (credential_name, upstream, method, tool, decision, status, detail, arg_digest, arg_summary, acted_for, run_id, caller_claim, caller_addr)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		e.CredentialName, e.Upstream, auditText(e.Method), auditText(e.Tool), e.Decision, e.Status, auditText(e.Detail),
+		e.ArgDigest, auditText(e.ArgSummary),
+		actedFor(e.ActedFor), nullableUUID(e.RunID),
+		callerClaimFor(e.CallerClaim), callerAddrFor(e.CallerAddr))
 	return err
 }
 
@@ -300,7 +315,7 @@ func (s *Store) ToolAudit(ctx context.Context, credentialName string, limit int)
 	}
 	rows, err := s.pool.Query(ctx,
 		`SELECT credential_name, upstream, method, tool, decision, status, detail, arg_digest, arg_summary,
-		        acted_for, COALESCE(run_id::text, ''), created_at
+		        acted_for, COALESCE(run_id::text, ''), caller_claim, caller_addr, created_at
 		 FROM tool_audit
 		 WHERE ($1 = '' OR credential_name = $1)
 		 ORDER BY created_at DESC LIMIT $2`,
@@ -314,7 +329,7 @@ func (s *Store) ToolAudit(ctx context.Context, credentialName string, limit int)
 		var e ToolAuditEntry
 		if err := rows.Scan(&e.CredentialName, &e.Upstream, &e.Method, &e.Tool,
 			&e.Decision, &e.Status, &e.Detail, &e.ArgDigest, &e.ArgSummary,
-			&e.ActedFor, &e.RunID, &e.CreatedAt); err != nil {
+			&e.ActedFor, &e.RunID, &e.CallerClaim, &e.CallerAddr, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -342,7 +357,7 @@ func (s *Store) Ledger(ctx context.Context, credentialName string, limit int) ([
 	}
 	rows, err := s.pool.Query(ctx,
 		`SELECT credential_name, upstream, model, input_tokens, output_tokens, cost_cents, cost_source, status,
-		        acted_for, COALESCE(run_id::text, ''), created_at
+		        acted_for, COALESCE(run_id::text, ''), caller_claim, caller_addr, created_at
 		 FROM ledger_entry
 		 WHERE ($1 = '' OR credential_name = $1)
 		 ORDER BY created_at DESC LIMIT $2`,
@@ -356,7 +371,7 @@ func (s *Store) Ledger(ctx context.Context, credentialName string, limit int) ([
 		var e LedgerEntry
 		if err := rows.Scan(&e.CredentialName, &e.Upstream, &e.Model, &e.InputTokens,
 			&e.OutputTokens, &e.CostCents, &e.CostSource, &e.Status,
-			&e.ActedFor, &e.RunID, &e.CreatedAt); err != nil {
+			&e.ActedFor, &e.RunID, &e.CallerClaim, &e.CallerAddr, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

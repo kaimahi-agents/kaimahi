@@ -87,8 +87,8 @@ make ledger
 The chat works exactly as before; the difference is the row:
 
 ```text
-created (UTC)       credential   upstream  model       in    out  cents source   status acted for
-2026-09-02T03:52:00 hello-world  ollama    qwen2.5:3b  380   12   0     free     200    none
+created (UTC)       credential   upstream  model       in    out  cents source   status caller (claimed)   from (observed) acted for
+2026-09-02T03:52:00 hello-world  ollama    qwen2.5:3b  380   12   0     free     200    ua:kagent/0.9.12   10.244.1.7      none
 ```
 
 Now cap it below the price of one call and try again:

@@ -129,8 +129,8 @@ govern` switches to `governed-copilot` directly. See [aks.md](aks.md).)
 From a real run:
 
 ```text
-created (UTC)       credential   upstream  model                in    out  cents source   status acted for
-2026-09-01T03:41:45 hello-world  ollama    qwen2.5:3b          371     27      0 free     200    none
+created (UTC)       credential   upstream  model                in    out  cents source   status caller (claimed)   from (observed) acted for
+2026-09-01T03:41:45 hello-world  ollama    qwen2.5:3b          371     27      0 free     200    ua:kagent/0.9.12   10.244.1.7      none
 ```
 
 `source` says why the cost is what it is:

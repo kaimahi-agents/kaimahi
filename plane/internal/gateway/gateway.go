@@ -155,6 +155,12 @@ func (h *handler) audit(r *http.Request, e store.ToolAuditEntry) {
 	// can forget to.
 	att := store.AttributionFrom(r.Context())
 	e.ActedFor, e.RunID = att.ActedFor, att.RunID
+	// And who CALLED, for the same reason and off the same request: the
+	// client's own word for itself, and the address the plane saw. It
+	// decides nothing — a row that could not resolve a caller is still
+	// written, and a call is admitted or refused exactly as before.
+	caller := store.CallerOf(r)
+	e.CallerClaim, e.CallerAddr = caller.Claim, caller.Addr
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
 	defer cancel()
 	if err := h.d.Store.RecordToolAudit(ctx, e); err != nil {

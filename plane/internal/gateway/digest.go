@@ -31,7 +31,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode"
+
+	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
 const (
@@ -135,39 +136,18 @@ func renderValue(v any) string {
 	return "(value)"
 }
 
-// sanitize keeps a summary to one printable line: an argument value is
-// agent-influenced text, and it lands in a Slack message and an audit
-// row.
-func sanitize(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		if !unicode.IsPrint(r) {
-			return -1
-		}
-		return r
-	}, s)
-}
+// sanitize and clipTo are the store's: what may enter a free-text audit
+// column is decided in one place, at the write, so no seam can be the
+// one that forgot (store/audittext.go). An argument value is
+// agent-influenced text and it lands in a Slack message, an approval
+// request and an audit row; the summary is bounded HERE as well because
+// the per-value and whole-line limits below are the summary's own shape,
+// not the column's.
+func sanitize(s string) string { return store.OneLine(s) }
 
 func clip(s string) string { return clipTo(s, maxSummaryValue) }
 
-// clipTo bounds a string to n BYTES, cutting on rune boundaries and
-// counting the ellipsis against the bound. Slicing by byte index would
-// cut a multibyte rune in half — the summary lands in an approval
-// request, an audit row and a Slack message, none of which should carry
-// invalid UTF-8 — and would also overrun n, since "…" is three bytes.
-func clipTo(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	const ellipsis = "…"
-	r := []rune(s)
-	for len(r) > 0 && len(string(r))+len(ellipsis) > n {
-		r = r[:len(r)-1]
-	}
-	return string(r) + ellipsis
-}
+func clipTo(s string, n int) string { return store.Clip(s, n) }
 
 // BindArguments computes a binding from raw JSON arguments — the admin
 // surface's explicit filing path (`make request KIND=tool`), which files
