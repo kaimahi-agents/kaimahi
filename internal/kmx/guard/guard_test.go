@@ -264,3 +264,77 @@ func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) 
 		t.Errorf("the banner stopped saying nothing chose this cluster:\n%s", out.String())
 	}
 }
+
+// MustBeKnown is what separates bring-up from teardown. `kmx up` names a
+// kind context before there is one and must proceed; `kmx down` deletes by
+// CONTAINER name, which no kubeconfig has a say in, so the same absent
+// context must not read as "nothing is there".
+func TestAnAbsentContextIsCreatableButNotDeletable(t *testing.T) {
+	cfg := load(t)
+	req := func(mustBeKnown bool) Request {
+		return Request{
+			Action:      "act on a context that is not in the kubeconfig",
+			Context:     "kind-not-created-yet",
+			Source:      config.SourceKubeCtx,
+			Command:     "kmx down",
+			MustBeKnown: mustBeKnown,
+		}
+	}
+
+	var up bytes.Buffer
+	if err := Check(cfg, req(false), &up, nil); err != nil {
+		t.Fatalf("bring-up must still work on a machine with no cluster: %v\n%s", err, up.String())
+	}
+
+	var down bytes.Buffer
+	err := Check(cfg, req(true), &down, nil)
+	if err == nil {
+		t.Fatalf("a caller that must not guess proceeded on a context the kubeconfig does not hold\n%s", down.String())
+	}
+	// The refusal has to say what is actually wrong. "Not a local kind
+	// cluster" is true of a production context and misleading here.
+	if !strings.Contains(err.Error(), "nothing in this kubeconfig describes") {
+		t.Errorf("the refusal does not say the kubeconfig has never heard of it: %v", err)
+	}
+	// And the banner must have told the truth before refusing — the old
+	// label said the context was not created yet, which is the sentence a
+	// real cluster was deleted under.
+	if strings.Contains(down.String(), "not created yet") {
+		t.Errorf("the banner still claims the context is not created yet:\n%s", down.String())
+	}
+	if !strings.Contains(down.String(), "does not describe it") {
+		t.Errorf("the banner does not say the kubeconfig cannot vouch for it:\n%s", down.String())
+	}
+}
+
+// It is a refusal, not a wall: an operator who genuinely has a half-created
+// cluster to remove says so by name, and CI can say it non-interactively.
+func TestAnAbsentContextCanStillBeConfirmedByName(t *testing.T) {
+	var out bytes.Buffer
+	if err := Check(load(t), Request{
+		Action:      "DELETE the kind cluster",
+		Context:     "kind-not-created-yet",
+		Source:      config.SourceKubeCtx,
+		Confirm:     "kind-not-created-yet",
+		Command:     "kmx down",
+		MustBeKnown: true,
+	}, &out, nil); err != nil {
+		t.Fatalf("a confirmation naming the context must admit it: %v\n%s", err, out.String())
+	}
+}
+
+// MustBeKnown must not weaken anything else: a context that IS a local kind
+// cluster still proceeds without a question, or teardown asks on every run
+// and the question stops being read.
+func TestMustBeKnownStillProceedsOnARealLocalCluster(t *testing.T) {
+	var out bytes.Buffer
+	if err := Check(load(t), Request{
+		Action:      "DELETE the kind cluster",
+		Context:     "kind-real",
+		Source:      config.SourceKubeCtx,
+		Command:     "kmx down",
+		MustBeKnown: true,
+	}, &out, nil); err != nil {
+		t.Fatalf("a real local kind cluster must still proceed without asking: %v\n%s", err, out.String())
+	}
+}

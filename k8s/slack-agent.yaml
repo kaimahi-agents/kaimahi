@@ -43,9 +43,11 @@ spec:
         # Kubernetes refuses to start a runAsNonRoot container it cannot
         # prove is non-root: "image has non-numeric user (python)". So the
         # numeric id has to be stated here. 1001 is what that image runs
-        # as at 0.9.12 — pinned by a CI assertion, because a kagent bump
-        # that moves it would otherwise fail every agent at CreateContainer
-        # time with a message that does not mention the version.
+        # as at 0.9.12. CI reads that number out of the image the pinned
+        # chart resolves to and fails if this line disagrees
+        # (scripts/check-agent-uid.py), because a kagent bump that moved it
+        # would otherwise fail every agent at CreateContainer time with a
+        # message that does not mention the image or its version.
         runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault

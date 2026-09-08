@@ -67,6 +67,20 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Every checker notices being broken
         run: python3 scripts/check-mutations.py
+      # Every agent manifest states the numeric uid kagent's image runs as,
+      # because that image declares its user by NAME and Kubernetes will not
+      # start a runAsNonRoot container whose user it cannot prove is
+      # non-root. A kagent bump that moved the id would fail every agent at
+      # CreateContainer time with a message that never mentions the image or
+      # its version — so the number is checked against the image the pinned
+      # chart actually resolves to, here, where the bump is being made.
+      #
+      # Keyless: the chart and the image are public, and the uid is read by
+      # running `id -u` inside the image rather than taken from a label.
+      - name: Agent-uid checker self-test
+        run: python3 scripts/check-agent-uid.py --selftest
+      - name: Agents run as the uid the kagent image ships
+        run: python3 scripts/check-agent-uid.py
       # This repo is public and documents a managed-cluster path.
       # A subscription/tenant GUID, an AKS FQDN, or a real ACR login server
       # must never land in the tree — every Azure identifier is supplied by

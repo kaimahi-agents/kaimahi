@@ -1,0 +1,72 @@
+{
+  "checker": "check-agent-uid.py",
+  "why": "This checker exists because a comment claimed it existed. It has to fail in every way a uid pin can stop being checked: the comparison that stops comparing, the missing pin that stops being a problem, a recogniser that finds no agents or every document, an empty run reported as clean, a verdict computed and dropped, and — the one a wrong answer hides behind — the version pin and the image path deciding WHICH image the number is read from.",
+  "verify": [
+    "python3",
+    "scripts/check-agent-uid.py",
+    "--selftest"
+  ],
+  "signature": "check-agent-uid self-test:",
+  "mutations": [
+    {
+      "name": "a uid that differs from the image's is not a problem",
+      "breaks": "The whole check. Every manifest reads clean whatever number it pins, which is exactly the state the comment described before this file existed.",
+      "find": "                if got != uid:",
+      "replace": "                if False:"
+    },
+    {
+      "name": "an agent with no pinned uid passes",
+      "breaks": "The manifest the tree does not yet contain: a new agent that inherits the hardening block without the number, and fails at CreateContainer time on somebody's cluster instead of here.",
+      "find": "        if got is None:",
+      "replace": "        if got is not None and False:"
+    },
+    {
+      "name": "finding no agent manifests is reported as clean",
+      "breaks": "The empty case. A rename, a moved directory, or a recogniser that stopped matching all end here, and the check goes on being counted as protection while examining nothing.",
+      "find": "    if not found:\n        print(\"check-agent-uid: no kagent Agent manifests found",
+      "replace": "    if not found and False:\n        print(\"check-agent-uid: no kagent Agent manifests found"
+    },
+    {
+      "name": "the recogniser matches no documents",
+      "breaks": "The same empty run reached from the other side: every manifest is skipped, so there is nothing to disagree with the image.",
+      "find": "            if doc.get(\"kind\") == \"Agent\" and str(doc.get(\"apiVersion\", \"\")).startswith(\"kagent.dev/\"):",
+      "replace": "            if False:"
+    },
+    {
+      "name": "the recogniser stops checking the API group",
+      "breaks": "Anything called Agent by any project is treated as a kagent agent and required to pin kagent's uid — a check that fails on documents it has no business reading is a check people turn off.",
+      "find": "            if doc.get(\"kind\") == \"Agent\" and str(doc.get(\"apiVersion\", \"\")).startswith(\"kagent.dev/\"):",
+      "replace": "            if doc.get(\"kind\") == \"Agent\":"
+    },
+    {
+      "name": "the pin is read only where it is nested today",
+      "breaks": "The walk that finds podSecurityContext wherever the CRD nests it, replaced by the fixed path it used to have. Every agent reads as unpinned — but a variant that reported them clean instead is the same edit with the branches swapped.",
+      "find": "    if isinstance(spec, dict):\n        for key, value in spec.items():",
+      "replace": "    if isinstance(spec, dict):\n        for key, value in list(spec.items())[:0]:"
+    },
+    {
+      "name": "the findings are collected and the exit code ignores them",
+      "breaks": "A checker that does all its work, prints every problem, and exits 0 — the failure mode an exit code alone cannot see.",
+      "find": "    if bad:\n        print(f\"check-agent-uid: {len(bad)} of {len(found)} agent(s) do not run as the image's uid {uid}\",\n              file=sys.stderr)\n        return 1",
+      "replace": "    if bad:\n        print(f\"check-agent-uid: {len(bad)} of {len(found)} agent(s) do not run as the image's uid {uid}\",\n              file=sys.stderr)\n        return 0"
+    },
+    {
+      "name": "two disagreeing version pins are no longer refused",
+      "breaks": "The Makefile installs one kagent and kmx installs another, and this checks the image of whichever it read first. The uid it proves belongs to a version half the repository does not run.",
+      "find": "    if makefile.group(1) != source.group(1):",
+      "replace": "    if False:"
+    },
+    {
+      "name": "this repository's values file stops overriding the chart",
+      "breaks": "The image is resolved from chart defaults alone, so a values file that pointed agents at a different registry would be invisible and the uid would come from an image the cluster never pulls.",
+      "find": "    values = merge(defaults, overrides or {})",
+      "replace": "    values = defaults"
+    },
+    {
+      "name": "an empty tag stops meaning the chart version",
+      "breaks": "The chart leaves agentImage.tag empty and defers to the chart version. Reading the empty string as a tag would test an image reference that does not exist, or — worse — a floating one.",
+      "find": "    tag = image.get(\"tag\") or values.get(\"tag\") or version",
+      "replace": "    tag = image.get(\"tag\", version)"
+    }
+  ]
+}

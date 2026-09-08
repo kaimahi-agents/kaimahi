@@ -269,9 +269,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   filesystem. Five of the six committed agents and the `kmx` scaffolder now
   carry the same posture, so an agent an adopter creates is hardened too —
   the scaffolder is the half that matters, because without it every agent
-  an adopter creates is unhardened. `k8s/release-agent.yaml` is the one
-  committed agent still setting no security context, and it landed after
-  this change; it is a gap, not a decision. Two
+  an adopter creates is unhardened. `k8s/release-agent.yaml` landed after
+  this change with no security context at all — the agent holding the
+  write-scoped GitHub credential — and now carries the same posture as the
+  other five. Two
   things this took a cluster to learn are written into the manifests:
   `runAsNonRoot` alone fails when the image names its user by name rather
   than by number (kagent's image says `python`, so the numeric `1001` has
@@ -312,6 +313,43 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   toolset rather than anything naming a credential. So the run now says, before
   it starts, which seams it is deliberately not refreshing and what an expired
   one will look like. A live run is unchanged and still refreshes.
+
+- **`kmx down` no longer deletes a cluster under a banner saying it does
+  not exist.** `kind delete cluster` deletes by **container** name and never
+  opens the kubeconfig, so a kubeconfig that has never heard of the context
+  is not evidence there is nothing to delete — but the guard's "context not
+  created yet" allowance, which exists so `kmx up` can name the cluster it
+  is about to create, was accepted here too. A stale or re-pointed
+  `KUBECONFIG` plus `kmx down` therefore destroyed a real cluster, with no
+  confirmation, under a banner saying it had never been created. It cost a
+  lane a cluster.
+
+  `kmx down` now asks the container engine first. No cluster by that name:
+  it says so and deletes nothing. A cluster the kubeconfig describes: the
+  banner and no question, exactly as before, so CI and every ordinary
+  teardown are unchanged. A cluster the kubeconfig cannot vouch for: the
+  banner says so, and it takes `KAIMAHI_CONFIRM=<context>` or a typed
+  confirmation — which is also how a half-created cluster is removed after
+  a `kmx up` that died before writing its kubeconfig entry.
+- **`kmx workflow run` and `kmx credential renew` go through the context
+  guard.** The documentation said every mutating command did; these two did
+  not. `kmx workflow run` is the one that matters: it files approval
+  requests, drives turns that cut branches and dispatch builds, and executes
+  whatever an `ungoverned:` step names, and it could do all of that on a
+  cluster nobody had looked at. It is guarded **once**, before the
+  port-forward and before the first request is filed, because every
+  consequential step already stops for a human to approve the exact call —
+  and each of those now names the cluster next to the call, so the one
+  banner scrolling away does not take the target with it.
+- **Every agent manifest's `runAsUser` is checked against the image kagent
+  ships.** Five manifests said the number was "pinned by a CI assertion".
+  There was no such assertion. There is now
+  (`scripts/check-agent-uid.py`): it resolves the agent image from the
+  pinned chart — this repository's values file layered over the chart's
+  defaults, so a moved registry moves what is tested — reads the uid by
+  running `id -u` inside it, and fails if any manifest disagrees, names no
+  uid at all, or if it found no agent manifests to check. Keyless: the
+  chart and the image are both public.
 
 ### Breaking
 

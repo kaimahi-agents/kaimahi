@@ -9,11 +9,13 @@ import (
 // The read-only views of the plane: what it has spent, what has been
 // granted, and what the enforcement points decided.
 //
-// UNGUARDED, exactly like `make ledger` and the audit targets. The line the
-// guard draws is not "mutates" but "can be aimed somewhere unintended", and
-// these reach the cluster only through kubectl carrying an explicit
-// --context: they land wherever the rest of the invocation was already going
-// to land, and they change nothing when they get there.
+// The views are UNGUARDED, exactly like `make ledger` and the audit
+// targets: they reach the cluster only through kubectl carrying an explicit
+// --context, so they land wherever the rest of the invocation was already
+// going to land, and they change nothing when they get there.
+//
+// RenewCredential at the bottom of this file is the one that does change
+// something, and it is guarded.
 
 // Ledger prints the spend ledger and the month-to-date totals.
 func (a *App) Ledger(credential string) error {
@@ -67,13 +69,16 @@ func (a *App) Credentials() error {
 	return a.session(func(c *admin.Client) error { return c.Credentials(a.Out) })
 }
 
-// RenewCredential extends a credential's deadline. It is not a mutation
-// the guard covers for the same reason the views are not: it lands
-// wherever the invocation was already going to land, and it moves no
-// credential material: renewal extends a deadline and mints nothing, so
-// no Secret has to be rewritten. (`kmx credential capture` is the one
-// path that does accept credential material, and it is not this one.)
+// RenewCredential extends a credential's deadline. Unlike the views above
+// it CHANGES something — an expiry is what stops a credential outliving the
+// work it was issued for, and moving one is a governance decision even
+// though no Secret is rewritten and no credential material moves. So it
+// goes through the guard like every other mutation: the operator sees which
+// cluster's credential they are extending before it is extended.
 func (a *App) RenewCredential(name string, ttl *int64) error {
+	if err := a.Guard(fmt.Sprintf("EXTEND the expiry of credential %q", name), "kmx credential renew "+name); err != nil {
+		return err
+	}
 	return a.session(func(c *admin.Client) error {
 		expires, err := c.RenewCredential(name, ttl)
 		if err != nil {

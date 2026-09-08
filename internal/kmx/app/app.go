@@ -116,6 +116,18 @@ func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 // local kind cluster without explicit confirmation. It runs at most once per
 // process.
 func (a *App) Guard(action, command string) error {
+	return a.guardWith(action, command, false)
+}
+
+// GuardKnown is Guard for an action that must not take the "about to be
+// created" allowance: the kubeconfig has to actually describe the cluster,
+// or the operator confirms it by name. `kmx down` is the caller — see the
+// reasoning there and on guard.Request.MustBeKnown.
+func (a *App) GuardKnown(action, command string) error {
+	return a.guardWith(action, command, true)
+}
+
+func (a *App) guardWith(action, command string, mustBeKnown bool) error {
 	if a.guarded {
 		return nil
 	}
@@ -124,12 +136,13 @@ func (a *App) Guard(action, command string) error {
 		return err
 	}
 	if err := guard.Check(cfg, guard.Request{
-		Action:     action,
-		Context:    a.Cfg.KubeContext,
-		Source:     a.Cfg.ContextSource,
-		Namespaces: config.GuardNamespaces,
-		Confirm:    a.Cfg.Confirm,
-		Command:    command,
+		Action:      action,
+		Context:     a.Cfg.KubeContext,
+		Source:      a.Cfg.ContextSource,
+		Namespaces:  config.GuardNamespaces,
+		Confirm:     a.Cfg.Confirm,
+		Command:     command,
+		MustBeKnown: mustBeKnown,
 	}, a.Err, a.Stdin); err != nil {
 		return err
 	}

@@ -11,7 +11,12 @@
 //     nothing is asked.
 //   - A LOCAL kind cluster proceeds with a banner and no question. That
 //     keeps the kind path's behaviour unchanged for existing users and for
-//     CI.
+//     CI. A kind-NAMED context the kubeconfig does not hold counts as local
+//     too, because that is bring-up naming the cluster it is about to
+//     create — but only for callers that create. A caller setting
+//     MustBeKnown is told the kubeconfig does not describe it and has to
+//     confirm, which is what stops a delete-by-container-name running under
+//     a banner saying nothing is there.
 //   - ANY other context requires explicit confirmation naming the context.
 //   - FAIL CLOSED: no confirmation, no action. An unknown context, an
 //     unreadable kubeconfig, or a non-interactive shell without
@@ -187,6 +192,20 @@ type Request struct {
 	// Command is named back to the operator in the "to proceed" hints, so
 	// the hint is the command they actually typed.
 	Command string
+	// MustBeKnown says this action needs the kubeconfig to actually
+	// describe the cluster, so the "about to be created" allowance below
+	// does not apply to it.
+	//
+	// That allowance exists for bring-up: `kmx up` names a kind context
+	// before there is one, and treating that as local is what makes
+	// one-command bring-up work on an empty machine. It is wrong for
+	// anything that DESTROYS, because `kind delete cluster` deletes by
+	// container name and never reads the kubeconfig at all — so a stale
+	// KUBECONFIG turns "this context does not exist yet" into a real
+	// cluster being deleted under a banner saying nothing is there. A
+	// caller setting this gets the truthful label and the confirmation
+	// path instead of a free pass.
+	MustBeKnown bool
 }
 
 // Check prints the banner and either returns nil (proceed) or an error
@@ -200,6 +219,16 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	posture, err := Classify(cfg, req.Context)
 	if err != nil {
 		return fmt.Errorf("kube-guard: %w", err)
+	}
+
+	// An absent kind-named context is "about to be created" only for
+	// callers that create. For the others the honest statement is that
+	// nothing here describes the cluster the command names, so nothing
+	// can vouch for it being local — and it goes down the same path any
+	// other unvouched-for context does.
+	if req.MustBeKnown && posture.Local && posture.Host == "" {
+		posture.Local = false
+		posture.Label = "kind-named, but this kubeconfig does not describe it"
 	}
 
 	namespaces := req.Namespaces
@@ -275,8 +304,8 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	// No pre-confirmation. Prompt only if a human is actually there to
 	// answer; a script or CI job reaching here must fail rather than hang.
 	if !isTerminal(in) {
-		return fmt.Errorf("kube-guard: %q is not a local kind cluster and there is no TTY to ask.\n%s",
-			req.Context, proceed)
+		return fmt.Errorf("kube-guard: %s, and there is no TTY to ask.\n%s",
+			unvouched(req, posture), proceed)
 	}
 
 	fmt.Fprint(out, "Type the context name to continue (anything else aborts): ")
@@ -286,6 +315,19 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	}
 	fmt.Fprintln(out, "kube-guard: confirmed.")
 	return nil
+}
+
+// unvouched says why a context did not proceed on its own, in the words
+// that fit the case. "Not a local kind cluster" is true of a production
+// context and misleading about a cluster whose only problem is that this
+// kubeconfig has never heard of it — and the second is the case where an
+// operator most needs to be told what kmx actually knows.
+func unvouched(req Request, posture Posture) string {
+	if req.MustBeKnown && posture.Host == "" {
+		return fmt.Sprintf("nothing in this kubeconfig describes %q, so kmx cannot tell whether it is\n"+
+			"  the local cluster you mean or another one with the same name", req.Context)
+	}
+	return fmt.Sprintf("%q is not a local kind cluster", req.Context)
 }
 
 // currentContextNote names the operator's current context without following

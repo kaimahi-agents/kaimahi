@@ -55,7 +55,9 @@ spec:
       # (`python`), and Kubernetes refuses to start a runAsNonRoot container
       # whose user it cannot prove is non-root — "image has non-numeric user
       # (python)", at CreateContainer time, with no mention of the image or
-      # its version. 1001 is what that image runs as at 0.9.12.
+      # its version. 1001 is what that image runs as at 0.9.12; CI reads that
+      # number out of the image the pinned chart resolves to and fails if
+      # this line disagrees (scripts/check-agent-uid.py).
       #
       # A read-only root filesystem needs somewhere to write, so /tmp is an
       # emptyDir. The agent only makes MCP calls; the release artifacts are

@@ -263,9 +263,22 @@ kmx reads the names this repository already uses — the Makefile's, and
 
 ## Where the command will land
 
-Every mutating command prints where it is about to act, and refuses anything
-that is not a local kind cluster without an explicit confirmation naming the
-context:
+Every command that changes a cluster or the plane prints where it is about
+to act, and refuses anything that is not a local kind cluster without an
+explicit confirmation naming the context. That includes `kmx workflow run`,
+which files approval requests and performs the calls a human approves, and
+`kmx credential renew`, which moves an expiry. The read-only views —
+`ledger`, `grants`, `flow`, `audit`, `credentials`, `status` — do not print
+a banner: they land wherever the invocation was already going and change
+nothing when they get there.
+
+One command is guarded differently, and it is named here rather than
+covered by the sentence above: `kmx lift down` deletes Azure resources,
+identified by resource group rather than by a kube context, so it prints its
+own banner listing what it created and takes a confirmation naming the
+cluster. It refuses unattended just as the context guard does.
+
+The banner:
 
 ```
 ----------------------------------------------------------------
@@ -327,6 +340,44 @@ confirmation, and a non-interactive shell with neither refuses rather than
 guessing. An absent `kind-*` context is admitted as "about to be created" —
 that is `kmx up` on an empty machine; an absent context by any other name is
 a typo, and typos are what this exists to catch.
+
+### `kmx down` does not take that allowance
+
+`kind delete cluster` deletes by **container** name and never opens the
+kubeconfig, so "this context is not in my kubeconfig" is not evidence that
+there is nothing to delete — it is a stale or re-pointed `KUBECONFIG`, and
+taking the bring-up allowance there deletes a real cluster under a banner
+saying it was never created. So `kmx down` asks the container engine first
+and refuses what the kubeconfig cannot vouch for:
+
+```console
+$ kmx down
+kind get clusters
+----------------------------------------------------------------
+  about to: DELETE the kind cluster "kaimahi-p1"
+  context:  kind-kaimahi-p1
+  chosen by: KUBE_CTX
+  server:   <none yet>
+  namespace(s): kagent, kaimahi, ollama
+  posture:  kind-named, but this kubeconfig does not describe it
+----------------------------------------------------------------
+kube-guard: nothing in this kubeconfig describes "kind-kaimahi-p1", so kmx cannot tell whether it is
+  the local cluster you mean or another one with the same name, and there is no TTY to ask.
+  to proceed:  KAIMAHI_CONFIRM=kind-kaimahi-p1 kmx down
+```
+
+Three outcomes, and only the first is new:
+
+- The kubeconfig does not describe the cluster, but the container engine
+  has one by that name. Confirm it by name — `KAIMAHI_CONFIRM=<context>`,
+  or type the context at the prompt. **This is the half-created case**: a
+  `kmx up` that died before the kubeconfig entry was written leaves node
+  containers behind, and one confirmation removes them.
+- No kind cluster by that name at all: `no kind cluster named "…" — nothing
+  to delete`, and nothing is deleted or asked.
+- An ordinary local cluster the kubeconfig knows: the banner, no question,
+  as before. This is what CI's teardown does, and it stays
+  non-interactive.
 
 Long `kmx up` and `kmx plane` runs delimit each logical phase with its position,
 outcome, and elapsed time. Native Docker, Helm, kind, kubectl, and Ollama output

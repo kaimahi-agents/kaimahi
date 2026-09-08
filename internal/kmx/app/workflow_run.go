@@ -112,6 +112,28 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 		return err
 	}
 
+	// ONCE, before the port-forward and before the first request is
+	// filed. This is the command that files approvals, drives turns that
+	// cut branches and dispatch builds, and runs whatever an
+	// `ungoverned:` step names, so it is the last command that should be
+	// able to land on a cluster nobody looked at.
+	//
+	// Once rather than per step, deliberately. Every consequential step
+	// already stops and asks a human to approve the exact call, which is
+	// where a second banner's work is already being done; a banner before
+	// each of them would be four or five identical screens in one run,
+	// and a screen people learn to scroll past protects nothing. What the
+	// single banner costs is that it can scroll away before the step that
+	// matters — so the step that matters names the cluster again, next to
+	// the call being approved.
+	action := fmt.Sprintf("run the %q workflow: file approval requests and perform the calls a human approves", b.Name)
+	if opt.DryRun {
+		action = fmt.Sprintf("read and draft the %q workflow (--dry-run: nothing is created)", b.Name)
+	}
+	if err := a.Guard(action, "kmx workflow run "+name); err != nil {
+		return err
+	}
+
 	client, err := admin.Open(a, opt.AdminPort, a.Err)
 	if err != nil {
 		return err
@@ -514,6 +536,10 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	}
 	r.app.notef("Filed as request %s. What a human is asked is the CALL:", id)
 	r.app.notef("  %s", s.Summary())
+	// The run's one banner is minutes and several steps back by now. The
+	// cluster is half of what a person is being asked to approve, so it
+	// is repeated where the decision is actually made.
+	r.app.notef("  on cluster:  %s", r.app.Cfg.KubeContext)
 	if s.Ungoverned != "" {
 		r.app.notef("")
 		r.app.notef("NOTE: this step's ACTION is not governed by the plane.")
