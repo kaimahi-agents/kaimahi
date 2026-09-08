@@ -222,7 +222,7 @@ directory and estimating.
 | **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 6 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
 | **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
-| **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements `check-board.py` found in the coordination board and may not fix itself, with a record of how each was closed |
+| **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements in the coordination board that `check-board.py` found, plus those found by hand where it could not look, and a record of how each was closed |
 
 **Two of those look like demo scripts and are not.** `await-approval.sh`
 was renamed out of the AP demo — its own comment says "so the release

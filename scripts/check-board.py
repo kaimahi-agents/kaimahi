@@ -334,8 +334,15 @@ class Board:
             # names no lane because it is about several, and raising there
             # would take every claim offline over a heading that is not a
             # prompt at all.
+            # The em dash again, inside the parenthesis this time: every
+            # prompt heading on this board writes its state as `(RUN — …)`
+            # or `(UNASSIGNED — …)`. Matching the bare word would still
+            # refuse a batch heading that put an em dash before a `(RUN
+            # …)` of its own. A prompt heading that stops using the form
+            # is not read as "not a prompt": it falls to the refusal
+            # below, which is the one for a state this file was not taught.
             named = re.match(r"### (.+?)\s+—\s", line)
-            state = re.search(r"\((UNASSIGNED|RUN)\b", line)
+            state = re.search(r"\((UNASSIGNED|RUN)\s+—", line)
             if state and opener:
                 self.prompts.append(Prompt(opener.group(1), line, offset + 1))
             elif state and named:
