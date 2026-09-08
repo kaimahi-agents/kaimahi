@@ -1571,7 +1571,7 @@ erp-image:
 		{ echo 'ACR_NAME is required for TARGET=aks (see docs/aks.md)' >&2; exit 1; }
 	az acr build --registry $(ACR_NAME) \
 		--image $(ERP_IMAGE_REPO):$(ERP_IMAGE_TAG) \
-		--file cmd/kaimahi-erp/Dockerfile .
+		--file cmd/demo/kaimahi-erp/Dockerfile .
 
 ## erp (TARGET=aks): build the ERP in the registry, project the corpus
 ## (k8s/erp-fixtures.json) as a ConfigMap and roll it out PULLING that

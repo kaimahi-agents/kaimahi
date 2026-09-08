@@ -31,6 +31,7 @@ it is also the first thing to state honestly in any doc you write.
 |---|---|
 | `plane/` | The Go governance plane, its own module. `kmx plane` fetches and builds it from the public Go proxy at kmx's own revision — `go:embed` cannot cross into it, precisely because it is a separate module. |
 | `cmd/kmx`, `internal/kmx/`, `embed.go` | `kmx`: the developer journey and the kind governance path as one binary, in the root module. `k8s/` travels inside it. |
+| `cmd/demo/`, `internal/demo/` | Fixtures that exist to SHOW the product working, never to ship with it. Today that is `kaimahi-erp`, the accounts-payable demo's fake ERP. If you are asking whether something is real, `demo/` in the path is the answer. |
 | `plane/cmd/kaimahi-proxy/` | One binary, five listeners (below). |
 | `plane/internal/` | `proxy` (LLM data path + admin), `gateway` (MCP), `inbound` (webhooks), `meter` (budgets), `pricing` (tokens→cents), `store`/`db` (Postgres + migrations), `config` (upstream table), `redact` (log scrubbing), `metrics` (Prometheus, fixed label vocabularies), `ops` (metrics listener + probes). |
 | `k8s/` | Everything applied to a cluster: agents, model presets, the plane, network policy, scenario fixtures. |

@@ -26,7 +26,7 @@
 # this script verifies that before anything is applied.
 #
 # The corpus is k8s/erp-fixtures.json — one source of truth. The Go tests
-# validate the arithmetic of that same file (internal/erp/fixtures_test.go),
+# validate the arithmetic of that same file (internal/demo/erp/fixtures_test.go),
 # and the server refuses to start on a corpus that does not add up, so an
 # edit that breaks the story fails at boot instead of answering wrongly.
 #
@@ -83,7 +83,7 @@ do_image() {
     exit 1
   fi
   echo "erp: building $ERP_IMAGE with $CONTAINER_ENGINE" >&2
-  "$CONTAINER_ENGINE" build -f cmd/kaimahi-erp/Dockerfile -t "$ERP_IMAGE" .
+  "$CONTAINER_ENGINE" build -f cmd/demo/kaimahi-erp/Dockerfile -t "$ERP_IMAGE" .
   # The podman half is the plane's, carried across with its reason (see
   # internal/kmx/app/plane.go): `kind load docker-image` reports "image not
   # present locally" for images podman demonstrably has, so non-docker

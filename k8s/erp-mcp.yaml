@@ -19,7 +19,7 @@
 # by `make erp-fixtures`, which also restarts this Deployment. Editing the
 # story is editing that JSON — no rebuild. One source of truth, so
 # the corpus the Go tests check the arithmetic of
-# (internal/erp/fixtures_test.go) is the corpus that runs. The mount is
+# (internal/demo/erp/fixtures_test.go) is the corpus that runs. The mount is
 # required, not optional: a pod with no corpus does not start, rather than
 # serving an empty ERP that looks like an answer.
 #

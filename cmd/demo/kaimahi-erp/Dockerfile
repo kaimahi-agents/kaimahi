@@ -4,13 +4,13 @@
 # never will. The corpus arrives as a mounted ConfigMap, never baked in.
 #
 # Build context is the repository root (the module root):
-#   docker build -f cmd/kaimahi-erp/Dockerfile -t kaimahi-erp:dev .
+#   docker build -f cmd/demo/kaimahi-erp/Dockerfile -t kaimahi-erp:dev .
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /kaimahi-erp ./cmd/kaimahi-erp
+RUN CGO_ENABLED=0 go build -trimpath -o /kaimahi-erp ./cmd/demo/kaimahi-erp
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /kaimahi-erp /kaimahi-erp

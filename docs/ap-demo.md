@@ -19,7 +19,7 @@ Be direct about this when you show it.
 
 | | |
 |---|---|
-| **Simulated** | The ERP. It is a small Go server in this repo (`cmd/kaimahi-erp`) answering from a fixture corpus in a ConfigMap (`k8s/erp-fixtures.json`). There is no vendor, no bank, no payment rail; the vendors and invoices are invented. |
+| **Simulated** | The ERP. It is a small Go server in this repo (`cmd/demo/kaimahi-erp`) answering from a fixture corpus in a ConfigMap (`k8s/erp-fixtures.json`). There is no vendor, no bank, no payment rail; the vendors and invoices are invented. |
 | **Real** | Everything that decides. The tool allowlist, the standing constraint, the denial, the approval request, the approval bound to one exact call, the grant, the audit rows, the network boundary. That is Kaimahi, unmodified, and it is the same code the other demos run. |
 
 The ERP is deliberately a **system of record, not a control**. Its
@@ -71,7 +71,7 @@ There are two more invoices in the corpus:
 - **`INV-88140`** — `INV-88134` resubmitted for the same $48,000.00, with
   a note attached. The note is the second half of this page.
 
-`internal/erp/fixtures_test.go` asserts every number above against the
+`internal/demo/erp/fixtures_test.go` asserts every number above against the
 committed corpus, and the server refuses to start on a corpus that does
 not add up — so an edit that breaks the story fails at boot rather than
 answering an audience wrongly.
@@ -412,7 +412,7 @@ make down        # the whole cluster
   ```
 
   `kubectl -n kaimahi logs -l app=kaimahi-erp` shows it, and
-  `go test ./internal/erp/` reproduces the same failure with no cluster
+  `go test ./internal/demo/erp/` reproduces the same failure with no cluster
   at all.
 - **`make govern-ap` hangs waiting for the RemoteMCPServer.** kagent
   discovers tools *through* the gateway, so the ERP has to be up first —
