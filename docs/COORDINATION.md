@@ -4556,9 +4556,21 @@ and the wiring assumes it — `RemoteMCPServer` CRDs, kagent's controller
 discovering tools THROUGH the gateway, the `discovered ∩ toolNames`
 rule that makes an agent's tool list a selection rather than a grant.
 
-**We have onboarded a tool SERVER this repository did not write. We have
-never governed a RUNTIME it did not write.** Those are different claims
-and only the first is proven.
+**PART OF THIS IS ALREADY PROVEN, and the first version of this prompt
+was wrong to say otherwise.** `scripts/tool-call-probe.sh` is curl — not
+a kagent agent — and it makes a REAL governed `tools/call` through the
+gateway with a `kmh_` credential, doing the full streamable-HTTP
+handshake. CI runs it thirteen times per build. So a non-kagent client
+already calls governed tools, every build, and has for weeks.
+
+**What that proves: the call seam is generic.** Authentication, the
+allowlist, argument binding and the audit row do not care what is on the
+other end of the socket.
+
+**What it does not prove, and what this lane is actually about:**
+everything a RUNTIME needs beyond one authenticated call — discovery,
+attribution, placement, and the list of what it must be told. A shell
+script making one call is not a runtime hosting an agent.
 
 **A refutation is worth as much as a confirmation, and you should expect
 one.** If the answer is "the seam is generic but the plumbing is not,
@@ -4572,18 +4584,29 @@ feature — a demonstration using what exists:
 1. Something that is NOT a kagent Agent makes an MCP tool call through
    the gateway, carrying a Kaimahi-issued `kmh_` credential.
 2. That call is authenticated, allowlisted, argument-bound and audited
-   exactly as a kagent agent's call is — same ledger rows, same audit
-   trail, same refusal when it steps outside its bounds.
-3. Its model calls, if it makes any, meter through the LLM proxy against
-   a budget, and a budget denial stops it.
+   exactly as a kagent agent's call is — **the same tool-audit row, and
+   the same refusal when it steps outside its bounds.** Note which
+   seam writes what: the gateway records a tool audit entry
+   (`RecordToolAudit`) and writes NO ledger row. Ledger rows are LLM
+   spend and come from the metering proxy. Do not go looking for a
+   ledger row after a tool call; there is not one, and the first version
+   of this prompt wrongly implied there would be.
+3. **Separately**, if the client also makes a MODEL call through the LLM
+   proxy, that meters against a budget and a budget denial stops it.
+   That is a second seam and a second test, not a consequence of the
+   first.
 
-**The simplest honest test is a plain HTTP client**, not a second
-framework. A few lines that speak MCP over streamable HTTP with a `kmh_`
-token is enough to answer the question, and it removes every variable
-that is not the seam itself. If you can do it with `curl` and a shell
-script, do that. **Do not build an adapter, a shim, or a compatibility
-layer** — this lane finds out whether one is needed, it does not write
-one.
+**Start from `scripts/tool-call-probe.sh` rather than writing a client.**
+It already does the part that works, and the protocol is not optional:
+streamable HTTP requires `initialize` with a `protocolVersion`, capturing
+the `Mcp-Session-Id` the gateway relays back, `notifications/initialized`,
+and only then `tools/call` — with `Accept: application/json,
+text/event-stream`. A bare POST is not a client, and a lane that
+concludes "the seam is broken" after skipping the handshake has found
+nothing. The probe also shows the custody pattern for the token.
+
+**Do not build an adapter, a shim, or a compatibility layer** — this lane
+finds out whether one is needed, it does not write one.
 
 **Questions to answer, each with evidence:**
 - **What does an agent actually need to be governed?** A credential, a
@@ -4607,9 +4630,14 @@ one.
 if it needs a product change to succeed, that is the FINDING, and the
 change belongs in a later lane shaped against what you learned. kmx
 accepts no credential material beyond the ruled terminal-only prompt. No
-Azure or Slack identifiers. CI stays keyless — whatever you build to
-prove this must run without a token, against the synthetic upstream if
-that is what it takes. Every mutation through the context guard. No
+Azure or Slack identifiers. CI stays keyless, which means **no externally supplied secret** — no
+GitHub, Azure, Slack or Copilot credential, ever. It does NOT mean no
+credential at all: a `kmh_` token minted by the plane on a throwaway
+cluster is generated locally, is worthless outside it, and is exactly
+what `tool-call-probe.sh` already uses. Mint a disposable one, use the
+synthetic upstream, and **redact it from every transcript** — the
+custody rules apply to it as they do to any other: pipes and 0600 files,
+never argv, never an environment listing, never a log. Every mutation through the context guard. No
 client-go. Comments say what the thing does, never a lane or decision
 number.
 
@@ -4620,8 +4648,11 @@ their bugs with our limits. Answer the general question with the
 simplest possible client.
 
 **Verification.** A transcript of a non-kagent client making a governed
-tool call: the ledger row, the audit row, and the refusal when it goes
-out of bounds. The enumerated list of what a runtime must provide. And
+tool call: the tool-audit row and the refusal when it goes out of bounds
+— and, only if you also exercise the LLM seam, the ledger row and a
+budget denial. Since the single-call case is already proven by the
+existing probe, the transcript that MATTERS is whatever you learn beyond
+it. The enumerated list of what a runtime must provide. And
 an explicit statement of what a foreign runtime CANNOT get today, with
 the reason — that list is the real deliverable, and if it is long, say
 so plainly. The positioning rests on this being short.
