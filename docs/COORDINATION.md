@@ -128,7 +128,7 @@ prefix.
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
 | W42: the audit row does not say who called (D47) | unassigned | SHAPED 2026-09-08 — prompt below | legibility, not a new control; the vocabulary deliberately does not change |
 | W43: the model seam carries content that exists nowhere else (D48) | unassigned | SHAPED 2026-09-08 — prompt below | feasibility first: if kagent cannot trust a private CA, the finding IS the lane |
-| W41: govern a runtime this repository did not write | unassigned | SHAPED 2026-09-08 — prompt below | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
+| W41: govern a runtime this repository did not write | W41 worker | PR #139 MERGED — the call seam is generic and proven so; what is kagent-shaped, and the three things a foreign runtime cannot get, are in `docs/foreign-runtime.md` | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
 | W30: identity on the call, and credentials that expire (D35) | W30 worker | PR #86 MERGED (5f49235) — same: built from the handed-over prompt while its board record was stranded | coordinator verification owed |
@@ -1244,7 +1244,7 @@ Everything without a ruling in its own heading is not GO.
 
 ## Ready-to-paste worker prompts
 
-### W1 — P1: kagent hello world on kind (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W1 — P1: kagent hello world on kind (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1278,7 +1278,7 @@ Constraints:
   anything that surprised you (delta sheet).
 ```
 
-### W2 — P2: LLM-enhanced via ModelConfig (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W2 — P2: LLM-enhanced via ModelConfig (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1332,7 +1332,7 @@ Constraints:
   section (delta sheet).
 ```
 
-### W3 — P3: connectors/tools via MCP (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W3 — P3: connectors/tools via MCP (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Tomte project (repo root: this checkout).
@@ -1387,7 +1387,7 @@ Constraints:
   section (delta sheet).
 ```
 
-### W-RENAME — in-repo rename tomte → kaimahi (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W-RENAME — in-repo rename tomte → kaimahi (RUN — merged as #5; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for this project (repo root: this checkout — now
@@ -1433,7 +1433,7 @@ PR-open-with-checks-green — do not merge. Report deviations in the PR's
 "Deviations & decisions" section.
 ```
 
-### W4 — P4a: metering/enforcing LLM proxy (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W4 — P4a: metering/enforcing LLM proxy (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1504,7 +1504,7 @@ ends at PR-open-with-checks-green — do not merge. Report deviations in
 the PR's "Deviations & decisions" section.
 ```
 
-### W5 — P4b: enforcing MCP gateway (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W5 — P4b: enforcing MCP gateway (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1582,7 +1582,7 @@ Lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR's "Deviations & decisions" section.
 ```
 
-### W6 — user documentation for shipped functionality (UNASSIGNED — paste into a fresh CLI session in this repo; runs in PARALLEL with P4b)
+### W6 — user documentation for shipped functionality (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1649,7 +1649,7 @@ it was executed.
 Report deviations in the PR's "Deviations & decisions" section.
 ```
 
-### W7 — P4c: approvals / blast-radius permits (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W7 — P4c: approvals / blast-radius permits (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1737,7 +1737,7 @@ no stacked bases. Lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR's "Deviations & decisions" section.
 ```
 
-### W8 — P5a: governed Slack connector, the demo that makes governance legible (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W8 — P5a: governed Slack connector, the demo that makes governance legible (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -1825,7 +1825,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR's "Deviations & decisions" section.
 ```
 
-### W9 — P5b: cluster portability + a real AKS run (UNASSIGNED — paste into a fresh CLI session in this repo)
+### W9 — P5b: cluster portability + a real AKS run (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2117,7 +2117,7 @@ explicit instead:
 5. Everything else unchanged: survey first, verification is real, suite
    green at every commit, lane ends at PR-open-with-checks-green.
 
-### W10 — P7a: NetworkPolicy egress (UNASSIGNED — paste into a fresh CLI session)
+### W10 — P7a: NetworkPolicy egress (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2173,7 +2173,7 @@ containing PR #20; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W11 — P7b: inbound connectors (UNASSIGNED — paste into a fresh CLI session)
+### W11 — P7b: inbound connectors (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2233,7 +2233,7 @@ targets main; no stacked bases; lane ends at PR-open-with-checks-green
 — do not merge. Report deviations in the PR.
 ```
 
-### W12 — P7c: docs restructure (UNASSIGNED — paste into a fresh CLI session)
+### W12 — P7c: docs restructure (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2295,7 +2295,7 @@ lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR.
 ```
 
-### W13 — post-move: Go module path and owner references (UNASSIGNED — paste into a fresh CLI session ONLY AFTER PRs #23 and #24 have merged)
+### W13 — post-move: Go module path and owner references (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2353,7 +2353,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations and the gambtho audit table in the PR.
 ```
 
-### W14 — CI hygiene: a verifier that proves the tool path, and a docs-only short-circuit (UNASSIGNED — paste into a fresh CLI session)
+### W14 — CI hygiene: a verifier that proves the tool path, and a docs-only short-circuit (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2393,7 +2393,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends
 at PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W15 — AKS actually enforces NetworkPolicy (UNASSIGNED — paste into a fresh CLI session)
+### W15 — AKS actually enforces NetworkPolicy (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2433,7 +2433,7 @@ targets main; no stacked bases; lane ends at PR-open-with-checks-green
 — do not merge. Report deviations in the PR.
 ```
 
-### W18 — P8b: approval routing via Slack + per-approver identity (UNASSIGNED — paste into a fresh CLI session)
+### W18 — P8b: approval routing via Slack + per-approver identity (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2538,7 +2538,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR.
 ```
 
-### W19 — P9: run it for real — a stateless, multi-replica plane with exact budgets and metrics (UNASSIGNED — paste into a fresh CLI session)
+### W19 — P9: run it for real — a stateless, multi-replica plane with exact budgets and metrics (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2637,7 +2637,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (UNASSIGNED — paste into a fresh CLI session ONLY AFTER W19 (P9) has merged)
+### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2760,7 +2760,7 @@ stacked bases; lane ends at PR-open-with-checks-green — do not merge.
 Report deviations in the PR.
 ```
 
-### W21 — P11: `kmx`, milestone 1 — the developer journey as one Go binary (UNASSIGNED — paste into a fresh CLI session)
+### W21 — P11: `kmx`, milestone 1 — the developer journey as one Go binary (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2860,7 +2860,7 @@ no stacked bases; lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR.
 ```
 
-### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (UNASSIGNED — paste into a fresh CLI session ONLY AFTER W21 (milestone 1) has merged)
+### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2989,7 +2989,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W23 — P12: argument-level policy — standing constraints, and an approval bound to the call (UNASSIGNED — paste into a fresh CLI session)
+### W23 — P12: argument-level policy — standing constraints, and an approval bound to the call (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3126,7 +3126,7 @@ PR targets main; no stacked bases; lane ends at PR-open-with-checks-
 green — do not merge. Report deviations in the PR.
 ```
 
-### W24 — P13: the accounts-payable exception demo (UNASSIGNED — paste into a fresh CLI session ONLY AFTER W23 (P12) has merged)
+### W24 — P13: the accounts-payable exception demo (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3292,7 +3292,7 @@ current main; PR targets main; no stacked bases; lane ends at PR-open-
 with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W25 — CI: the e2e job takes 15 minutes on every PR (UNASSIGNED — paste into a fresh CLI session; MERGES LAST, see D32)
+### W25 — CI: the e2e job takes 15 minutes on every PR (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3370,7 +3370,7 @@ lane ends at PR-open-with-checks-green — do not merge. Report deviations
 in the PR.
 ```
 
-### W26 — P14: the accounts-payable demo, live on AKS (UNASSIGNED — paste into a fresh CLI session; runs in PARALLEL with W27)
+### W26 — P14: the accounts-payable demo, live on AKS (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3453,7 +3453,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W27 — `kmx` milestone 3: the core plane verbs (UNASSIGNED — paste into a fresh CLI session; runs in PARALLEL with W26)
+### W27 — `kmx` milestone 3: the core plane verbs (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3744,7 +3744,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W28 — ship it: a version somebody can install, and an upgrade that works (UNASSIGNED — paste into a fresh CLI session; PARALLEL with W30)
+### W28 — ship it: a version somebody can install, and an upgrade that works (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3830,7 +3830,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W29 — govern your own agent: the generic onboarding path (UNASSIGNED — paste into a fresh CLI session; runs ALONE)
+### W29 — govern your own agent: the generic onboarding path (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3938,7 +3938,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W30 — identity on the call, and credentials that expire (UNASSIGNED — paste into a fresh CLI session; PARALLEL with W28)
+### W30 — identity on the call, and credentials that expire (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4028,7 +4028,7 @@ main; no stacked bases; lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR.
 ```
 
-### W33 — the lift: your local agent, running on AKS, with dashboards you did not ask for (UNASSIGNED — paste into a fresh CLI session)
+### W33 — the lift: your local agent, running on AKS, with dashboards you did not ask for (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4160,7 +4160,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W34b — kmx tells the truth about the system it is pointed at (UNASSIGNED — paste into a fresh CLI session; re-cut 2026-09-06)
+### W34b — kmx tells the truth about the system it is pointed at (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4422,7 +4422,7 @@ at PR-open-with-checks-green — do not merge. Report every deviation in
 the PR.
 ```
 
-### W36 — `kmx workflow run` has no first command (UNASSIGNED — paste into a fresh CLI session; THE URGENT ONE)
+### W36 — `kmx workflow run` has no first command (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4504,7 +4504,7 @@ ends at PR-open-with-checks-green — do not merge. Report deviations in
 the PR.
 ```
 
-### W37 — say the thing, not its planning number (UNASSIGNED — paste into a fresh CLI session; runs AFTER #112 merges)
+### W37 — say the thing, not its planning number (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4592,7 +4592,7 @@ current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W38 — the e2e chat flake: a 3B model that asks instead of answers (UNASSIGNED — paste into a fresh CLI session)
+### W38 — the e2e chat flake: a 3B model that asks instead of answers (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4667,7 +4667,7 @@ bases; lane ends at PR-open-with-checks-green — do not merge. Report
 deviations in the PR.
 ```
 
-### W40 — three places we say we protect something and do not (UNASSIGNED — paste into a fresh CLI session; the urgent one)
+### W40 — three places we say we protect something and do not (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4760,7 +4760,7 @@ at PR-open-with-checks-green — do not merge. Report deviations in the
 PR, and say plainly anything you could not prove.
 ```
 
-### W41 — govern a runtime this repository did not write (UNASSIGNED — paste into a fresh CLI session)
+### W41 — govern a runtime this repository did not write (RUN — kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
