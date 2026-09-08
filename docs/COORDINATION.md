@@ -126,6 +126,7 @@ prefix.
 | W28: ship it — version, release, a published install path, a documented upgrade (D34, D35) | W28 worker | PR #85 MERGED (8e08603) — ran from the prompt handed over directly, because THIS ROW and D34/D35 were stranded on a squash-merged branch (see the recovery note in the open items) | coordinator verification owed |
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
+| W42: the audit row does not say who called (D47) | unassigned | SHAPED 2026-09-08 — prompt below | legibility, not a new control; the vocabulary deliberately does not change |
 | W41: govern a runtime this repository did not write | unassigned | SHAPED 2026-09-08 — prompt below | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
@@ -520,10 +521,46 @@ before it is written down anywhere public.
   review. The exposure here is larger and the reasoning that made
   plaintext acceptable there is absent.
 
+- **D47 (RULED 2026-09-08 — option C, PLUS recording the caller): the
+  audit trail says "there is no person" in a case where it cannot
+  know.**
 
+  **The ruling, and why the pair is stronger than either half.** The
+  vocabulary does NOT change: no third live value, no migration to
+  `acted_for`, no new word for every reader. What changes is that the
+  gateway starts recording WHO CALLED, so a reader meeting `none` on a
+  row can see it came from a client the plane did not deploy and
+  interpret the word in context rather than being misled by it. Option A
+  would have made the word precise; this makes the row legible, which is
+  most of the same value at a fraction of the cost — and it fixes the
+  thing that made this invisible for months rather than only the thing
+  that made it wrong.
 
-- **D47 (OPEN — needs a ruling): the audit trail says "there is no
-  person" in a case where it cannot know.** Found by the foreign-runtime
+  **What is knowingly accepted.** `none` still asserts "there is no
+  person" for a foreign-runtime call where the plane has no basis to say
+  so. That is a known imprecision, now documented rather than discovered,
+  and it is bounded: no supported configuration reaches it, because
+  kagent and the inbound bridge are the only doors a production cluster
+  has. **If a foreign runtime ever becomes supported, this ruling is
+  void** — reopen it as option A rather than living with the word.
+
+  **Rows already written are untouched**, which is the point of not
+  changing the vocabulary: nothing is backfilled, no word acquires a
+  second meaning, and the closed `legacy` class stays the only
+  before-and-after in the schema.
+
+  **Under any option, and still required: the naming fix.**
+  `var Unattributed = Attribution{ActedFor: ActedForNone}` reads as
+  "nobody attributed this" — the missing state — while the value asserts
+  "there is no person". The name argues against the distinction its own
+  constants' comments draw, and is part of why this was easy to miss.
+
+  The finding and the rejected options are kept below, because a ruling
+  that discards its own reasoning cannot be revisited.
+
+  ---
+
+  **The finding as raised.** Found by the foreign-runtime
   lane and confirmed independently by the coordinator against
   `plane/internal/store/identity.go` and migration `00009`.
 
@@ -4841,6 +4878,92 @@ so plainly. The positioning rests on this being short.
 
 Branch from current main; PR targets main; no stacked bases; lane ends
 at PR-open-with-checks-green — do not merge.
+```
+
+### W42 — the audit row does not say who called (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — **D47 above all**, then the security standing guidance and
+`docs/foreign-runtime.md`, which is where this was found.
+
+**D47 is ruled and you are implementing it. Read the ruling before you
+write anything, including the half that was deliberately NOT taken.** The
+`acted_for` vocabulary does not change: no third live value, no migration
+to it, no new word for any reader. If you find yourself wanting one, you
+have left the lane.
+
+**What you are building: the audit row learns who called.** Today nothing
+in a `tool_audit` row distinguishes a kagent agent from a shell script.
+The gateway relays the MCP `initialize` request — which carries the
+client's own name — without reading it. Neither the user agent nor the
+source address is captured. That invisibility is why an overclaim in the
+attribution field went unnoticed for months, and it is the thing worth
+fixing.
+
+**The point is legibility, not a new control.** A reader meeting
+`acted for: none` should be able to see the call came from a client the
+plane did not deploy, and interpret the word in context. Nothing about
+this decides, denies, or grants anything.
+
+**Design decisions this lane owns:**
+- **What identifies a caller, and how much to trust it.** The client name
+  in `initialize` is SELF-REPORTED: a caller can say anything. Record it
+  as a claim and make the column's name say so, or find something the
+  plane observes rather than accepts — and if you record the
+  self-reported value, the docs must say it is self-reported, because an
+  audit field that looks authoritative and is not is worse than no field.
+- **Where it lives.** `tool_audit` has no column for this
+  (`00002_tool_governance.sql`). A migration adding one is in scope. Say
+  what happens to existing rows: they cannot know their caller, so
+  whatever they get must mean "not recorded" and must not be confusable
+  with "recorded as empty" — the same distinction the attribution
+  vocabulary draws, applied to a new column.
+- **Whether the LLM seam needs the same thing.** `ledger_entry` has the
+  same blind spot. Doing both is defensible; doing one and saying why is
+  also defensible. Doing one silently is not.
+- **Whether anything but the audit row should see it.** `kmx audit` and
+  `kmx flow` are the readers. A column nothing displays is a column
+  nobody benefits from.
+
+**Also in scope, small and required by the ruling:** rename
+`var Unattributed = Attribution{ActedFor: ActedForNone}`. It reads as
+"nobody attributed this", which is the state the plane CANNOT express,
+while the value asserts "there is no person". The name argues against the
+distinction the constants' own comments draw.
+
+**And the documentation half of the ruling.** D47 accepts a known
+imprecision: `none` still asserts "there is no person" for a
+foreign-runtime call where the plane has no basis to say so. That must be
+written where a reader of the audit trail will meet it — not only on the
+board — along with the bound that makes it acceptable: no supported
+configuration reaches it, because kagent and the inbound bridge are the
+only doors. Say plainly that if a foreign runtime becomes supported, the
+ruling is void.
+
+**Guardrails, all hard.** No change to `acted_for` values, its CHECK
+constraints, or how any of them is resolved — that is the half the
+ruling declined. The gateway still fails closed on an audit write
+failure; a new column must not become a new way for a call to proceed
+unaudited. kmx accepts no credential material beyond the ruled
+terminal-only prompt. A caller identifier is attacker-controlled text:
+treat it as data, bound its length, and make sure it cannot break the
+audit view's rendering or its JSON. No Azure or Slack identifiers. CI
+stays keyless. Comments say what the thing does, never a lane or
+decision number.
+
+**Verification.** A transcript showing two governed tool calls
+distinguished in the audit trail — one from a kagent agent, one from
+`scripts/tool-call-probe.sh`, which is the non-kagent client CI already
+runs. The migration applied and rolled forward on a cluster with existing
+rows, showing what those rows say. A caller name containing quotes,
+newlines and several kilobytes, showing it is bounded and does not break
+the view. And the documented imprecision, in the place a reader of the
+trail would look.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
 ```
 
 ## Delta sheets from finished lanes
