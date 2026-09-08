@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const shipped = "../../k8s/erp-fixtures.json"
+const shipped = "../../../k8s/erp-fixtures.json"
 
 func loadShipped(t *testing.T) *Fixtures {
 	t.Helper()

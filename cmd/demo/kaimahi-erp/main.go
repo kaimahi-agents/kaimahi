@@ -17,7 +17,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/erp"
+	"github.com/kaimahi-agents/kaimahi/internal/demo/erp"
 )
 
 func main() {
