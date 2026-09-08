@@ -43,7 +43,7 @@ import "embed"
 // sandbox` has the same clone-free problem as the plane.
 //
 // `plane/` itself is NOT here and cannot be: it carries its own go.mod, and
-// go:embed refuses to cross a module boundary ("cannot embed directory: in
+// `go:embed` refuses to cross a module boundary ("cannot embed directory: in
 // different module"). That is exactly why `kmx plane` FETCHES the plane's
 // source from the public Go proxy at kmx's own revision and builds it, and
 // why the manifest that deploys it can nevertheless travel in the binary.

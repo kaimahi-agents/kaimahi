@@ -618,6 +618,24 @@ jobs:
         run: test -z "$(gofmt -l cmd internal embed.go)"
       - name: kmx — vet
         run: go vet ./...
+      # staticcheck, pinned to a MASTER pseudo-version on purpose.
+      #
+      # The released staticcheck (2025.1.1) is built with go1.23.8 and both
+      # of this repository's modules require go1.26, so the release cannot
+      # compile the tree at all — it does not report zero findings, it
+      # refuses to load the packages. Master supports go1.26; there is no
+      # tagged release that does yet. The pin is exact so this is a
+      # deliberate choice rather than a floating `@master` that changes what
+      # CI enforces without anybody editing this file, and it should move to
+      # a real tag the moment upstream ships one that builds go1.26.
+      #
+      # Keyless: `go install` from the public module proxy, no token.
+      # The ST1005 decision, and why it is a decision, lives in
+      # staticcheck.conf at the repository root; plane/ inherits that file.
+      - name: kmx — staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          "$(go env GOPATH)/bin/staticcheck" ./...
       - name: kmx — build
         run: go build ./...
       - name: kmx — test (guard port, scaffolder, kagent checksum, make delegation)
@@ -778,6 +796,13 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Vet
         run: go vet ./...
+      # The same pinned staticcheck as the kmx job, for the same reason —
+      # see the comment there. The configuration is the repository root's
+      # staticcheck.conf, which this module inherits by being underneath it.
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          "$(go env GOPATH)/bin/staticcheck" ./...
       - name: Build
         run: go build ./...
       - name: Test (store concurrency tests against the service Postgres; metrics label-set test)
