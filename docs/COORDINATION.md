@@ -503,20 +503,48 @@ before it is written down anywhere public.
   third state, and the `agent_run` CHECK constraint admits only `none` or
   `slack:<id>`, so it has nowhere to live today.
 
-  **Option A — a fourth value**, meaning "the plane has no basis to say".
-  Honest and precise. Cost: a migration, a widened CHECK on more than one
-  table (`ledger_entry`, `inbound_audit`, `agent_run` all carry
-  `acted_for`), and every reader of the vocabulary — `kmx status`,
-  `kmx flow`, the ledger and audit views — learns a new word.
-  **Option B — redefine `none` and narrow it**, so absence-of-run stops
-  producing it and only a run that genuinely names nobody does. Smaller
-  schema change, but it changes the meaning of rows already written,
-  which is the thing the closed `legacy` class exists to avoid repeating.
+  **The value set today, stated exactly, because "a fourth value" was
+  ambiguous.** Three constants exist — `none`, `unknown`, `legacy` — plus
+  the `slack:<id>` pattern. **`legacy` is closed and nothing writes it**:
+  it exists only to describe rows written before attribution did. So
+  there are **two live non-person values**, and a new one would be the
+  third live constant rather than a fourth of anything.
+
+  **Option A — add a third live value.** Candidate name
+  `unattributable`, meaning *the plane has no basis to say* — distinct
+  from `unknown`, which means *the plane had a basis and lost it* (two
+  runs open, or a failed read). The lane may find a better word; what it
+  may not do is reuse `unknown`, because that would merge two states the
+  vocabulary deliberately separates. Cost: a migration, a widened CHECK
+  on all three tables carrying `acted_for` (`ledger_entry`,
+  `inbound_audit`, `agent_run`), and a new word for every reader —
+  `kmx status`, `kmx flow`, the ledger and audit views.
+
+  **Option B — narrow `none` so absence-of-run stops producing it**, and
+  only a run that genuinely names nobody does. **Worked through, this
+  collapses into A or into dishonesty, and that is the useful finding
+  here.** If absence-of-run no longer yields `none`, a foreign-runtime
+  call with no open run must map to *something*, and there are only two
+  candidates: `unknown`, which is documented as attribution LOST and
+  would be a second overclaim rather than a fix; or a new value, which is
+  Option A wearing a different label. B is therefore not a cheaper
+  alternative — it is A plus a redefinition of rows already written, and
+  redefining written rows is the thing the closed `legacy` class exists
+  to avoid repeating. **Recorded so nobody re-proposes it as the small
+  option.**
+
   **Option C — leave it and document the limit**, on the grounds that no
   supported configuration reaches it. Cheapest, and it leaves a known
   false statement in the audit trail with a comment beside it. Records
   the position honestly but sits badly with everything else this project
   claims.
+
+  **A naming problem to fix under any option**: the Go variable is
+  `var Unattributed = Attribution{ActedFor: ActedForNone}`. "Unattributed"
+  reads as *nobody attributed this* — the very sense that belongs to the
+  missing state — while the value it holds asserts *there is no person*.
+  The name works against the distinction the constants' own comments
+  draw, and it is part of why this was easy to miss.
 
   **Two questions any of them has to answer:**
   - **Should the gateway record anything about the caller?** Today
