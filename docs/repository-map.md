@@ -265,7 +265,7 @@ mentions — the other five are comments, which is the trap),
 `scripts/release-run.sh`,
 and `docs/tools.md`, which gives it as a step a reader runs by hand.
 
-## `docs/` — 34 tracked files, two audiences and two assets
+## `docs/` — 35 tracked files, two audiences and two assets
 
 **Product documentation (22)** — a user or operator reads it: `README.md`
 (the index), `getting-started.md`, `kmx.md`, `aks.md`, `models.md`,
@@ -284,12 +284,14 @@ describe a scenario being run rather than a capability being configured.
 `ap-demo.md` says its ERP is simulated in its own second table row;
 `demo.md` is less explicit.
 
-**Maintainer and process (8):** `development.md`, `repository-map.md`
+**Maintainer and process (9):** `development.md`, `repository-map.md`
 (this file),
 `COORDINATION.md` (the coordination board, single-writer, and by a wide
 margin the largest file in `docs/` — enough that any tool measuring
 "documentation" over this directory is mostly measuring it),
-`reviews/2026-09-07-drift-review.md`, `CLI-PROPOSAL.md` (self-labelled
+`reviews/2026-09-07-drift-review.md`,
+`reviews/2026-09-08-foreign-app-sundae-funday.md`,
+`CLI-PROPOSAL.md` (self-labelled
 superseded), `SCENARIOS.md` (self-labelled a working concept),
 `entry-point-principles.md`, `NAMING.md`.
 
