@@ -465,6 +465,78 @@ before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
 
+- **D47 (OPEN — needs a ruling): the audit trail says "there is no
+  person" in a case where it cannot know.** Found by the foreign-runtime
+  lane and confirmed independently by the coordinator against
+  `plane/internal/store/identity.go` and migration `00009`.
+
+  **The vocabulary is explicit, and that is what makes this a defect
+  rather than a wording preference.** `none` is documented as "the plane
+  CAN say there is no person… a complete answer, not a gap". `unknown` is
+  "the plane CANNOT say… never a claim that nobody was there". The
+  distinction was drawn deliberately and it is one of the better things
+  in this codebase.
+
+  **The bug is in how `none` is reached.** `identity.go` maps *no open
+  run* directly to `none`. That is sound while the only doors are kagent
+  and the inbound bridge, because then "no run" really does mean an
+  operator-driven turn. A foreign runtime — triggered by its own human,
+  through a door the plane never saw — breaks the assumption: a person
+  may well have been involved, and the plane has no way to know. It
+  records "there is no person" anyway.
+
+  **It is already happening.** `scripts/tool-call-probe.sh` is a
+  non-kagent client and CI runs it thirteen times per build, so rows
+  attributing curl's calls to nobody are being written today. Harmless in
+  a throwaway cluster; the same code path serves a real one.
+
+  **Why it matters out of proportion to its blast radius.** Nothing in
+  production reaches it — kagent and the inbound bridge are the only
+  doors. But this is an OVERCLAIM IN THE AUDIT TRAIL, which is the
+  artifact the whole product is an argument for. We tell every lane that
+  a provable control beats an asserted one; a trail that asserts more
+  than it knows is the same failure wearing our own clothes.
+
+  **`unknown` is not obviously the answer**, and the lane was right to
+  say so. `unknown` means attribution was LOST — more than one run open,
+  or a failed read. Here the plane never had a basis at all. That is a
+  third state, and the `agent_run` CHECK constraint admits only `none` or
+  `slack:<id>`, so it has nowhere to live today.
+
+  **Option A — a fourth value**, meaning "the plane has no basis to say".
+  Honest and precise. Cost: a migration, a widened CHECK on more than one
+  table (`ledger_entry`, `inbound_audit`, `agent_run` all carry
+  `acted_for`), and every reader of the vocabulary — `kmx status`,
+  `kmx flow`, the ledger and audit views — learns a new word.
+  **Option B — redefine `none` and narrow it**, so absence-of-run stops
+  producing it and only a run that genuinely names nobody does. Smaller
+  schema change, but it changes the meaning of rows already written,
+  which is the thing the closed `legacy` class exists to avoid repeating.
+  **Option C — leave it and document the limit**, on the grounds that no
+  supported configuration reaches it. Cheapest, and it leaves a known
+  false statement in the audit trail with a comment beside it. Records
+  the position honestly but sits badly with everything else this project
+  claims.
+
+  **Two questions any of them has to answer:**
+  - **Should the gateway record anything about the caller?** Today
+    nothing in a tool-audit row distinguishes a kagent agent from a curl
+    — not the client name in `initialize` (relayed without being read),
+    not the user agent, not the source address. The distinction is
+    invisible, which is why this went unnoticed. Making it visible is a
+    separate decision from fixing the word.
+  - **What happens to rows already written?** Backfilling them would be
+    inventing history. Leaving them means one word has two meanings
+    depending on when the row was written — exactly what `legacy` was
+    introduced to prevent, and a reason to prefer a new value over a
+    redefinition.
+
+  **Not a coordinator PR whichever way it goes**: audit-relevant,
+  cross-cutting, and it changes a shipped default. It gets a lane, shaped
+  after the ruling.
+
+
+
 - **D46 (OPEN — needs a ruling, and the teammate in the room): where the
   line sits between Kaimahi and AgentWeaver.** Raised 2026-09-08 by the
   user, who pointed at a teammate's project. Read from its published
