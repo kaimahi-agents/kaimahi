@@ -42,6 +42,36 @@ func TestTheGatewayURLIsDerivedFromTheUpstreamName(t *testing.T) {
 	}
 }
 
+// The scaffolded seam is GENERATED, so scripts/check-seam-tls.py cannot see
+// it — that checker reads the tree. This is the rule held over it instead,
+// and it is both halves: kagent admits an https URL with no authority (every
+// call then fails against a trust store that has never heard of the plane)
+// and a tls block beside an http URL (nothing fails, the block is inert, and
+// the manifest reads as configured).
+func TestTheScaffoldedSeamIsHttpsAndNamesTheAuthorityToVerifyIt(t *testing.T) {
+	doc, err := GenerateUpstream(warehouse())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seam := doc[strings.Index(doc, "kind: RemoteMCPServer"):]
+	if !strings.Contains(seam, `url: "https://`) {
+		t.Errorf("the scaffolded seam is not https:\n%s", seam)
+	}
+	for _, want := range []string{
+		"caCertSecretRef: " + PlaneCASecret,
+		"caCertSecretKey: " + PlaneCAKey,
+	} {
+		if !strings.Contains(seam, want) {
+			t.Errorf("the scaffolded seam does not name the authority (%q missing):\n%s", want, seam)
+		}
+	}
+	// A seam nobody verifies costs the same certificate machinery and buys
+	// nothing, while looking like it bought something.
+	if strings.Contains(seam, "disableVerify") {
+		t.Errorf("the scaffolded seam disables verification:\n%s", seam)
+	}
+}
+
 func TestTheScaffoldedSeamPointsAtTheGatewayAndNeverAtTheServer(t *testing.T) {
 	doc, err := GenerateUpstream(warehouse())
 	if err != nil {

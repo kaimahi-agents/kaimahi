@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Every manifest that points at one of the plane's data seams must use
-https AND name the authority to verify it against.
+"""Every COMMITTED manifest that points at one of the plane's data seams must
+use https AND name the authority to verify it against.
+
+Committed is the honest scope, and it is not the whole set. Two seam
+manifests are GENERATED rather than committed — the interactive ModelConfig
+`kmx govern` applies, and the RemoteMCPServer `kmx tools add` writes — and
+they are outside a tree scan by construction. Those are held to the same rule
+by Go tests in their own packages; this checks what is in the tree, which is
+what a reviewer reads and what an adopter forks.
 
 Why this check exists rather than trusting admission. kagent refuses neither
 mistake:
@@ -361,7 +368,7 @@ def report(problems, checked, minimum=0):
             print("  " + p, file=sys.stderr)
         print(f"seam TLS: {len(problems)} manifests reach a seam without verifying it", file=sys.stderr)
         return 1
-    print(f"seam TLS: {checked} seam-capable manifests checked, "
+    print(f"seam TLS: {checked} committed seam-capable manifests checked, "
           f"every seam URL is https and names {CA_SECRET}/{CA_KEY}")
     return 0
 

@@ -200,10 +200,14 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 			"  The credential and allowlist ARE written; the agent has not been repointed.%s",
 			opt.Server, verdict.Message, a.certificateNote(verdict.Message))
 	case verdictUnknown:
+		// The stale verdict this branch carries can itself be a trust
+		// failure, and it is worth naming here for the same reason as
+		// above: kagent's own message for one says only that something
+		// could not connect.
 		a.notef("The %s seam's status is %s\n"+
 			"  Repointing the agent anyway: the credential and allowlist are written and correct, and\n"+
-			"  a seam kagent has not re-checked is not a seam known to be broken.",
-			opt.Server, verdict.Line(a.timeNow()))
+			"  a seam kagent has not re-checked is not a seam known to be broken.%s",
+			opt.Server, verdict.Line(a.timeNow()), a.certificateNote(verdict.Message))
 	}
 	if err := a.patchAgentTools(opt.Server, opt.Agent, tools); err != nil {
 		return err

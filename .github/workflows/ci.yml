@@ -83,6 +83,10 @@ jobs:
       # without this being told which answer is right.
       #
       # Keyless: `git ls-files` and the tree itself.
+      - name: Repository-map checker self-test
+        run: python3 scripts/check-repository-map.py --selftest
+      - name: The repository map still describes this tree
+        run: python3 scripts/check-repository-map.py
       # The two data seams carry content that is recorded nowhere: the model
       # seam carries the full text of what an agent was asked and answered,
       # and the tool seam carries the body a tool returned. Both are served
@@ -96,15 +100,16 @@ jobs:
       # downgrade is the one this checks for, and it proves it can still
       # catch each mistake before its verdict on the tree is trusted.
       #
+      # Scope is the COMMITTED manifests. The two generated ones — the
+      # interactive ModelConfig `kmx govern` applies and the RemoteMCPServer
+      # `kmx tools add` writes — are outside a tree scan by construction and
+      # are held to the same rule by tests in their own packages.
+      #
       # Keyless: the committed manifests and nothing else.
       - name: Seam-TLS checker still catches every downgrade
         run: python3 scripts/check-seam-tls.py --selftest
-      - name: Every seam-facing manifest verifies the seam it points at
+      - name: Every committed seam-facing manifest verifies the seam it points at
         run: python3 scripts/check-seam-tls.py
-      - name: Repository-map checker self-test
-        run: python3 scripts/check-repository-map.py --selftest
-      - name: The repository map still describes this tree
-        run: python3 scripts/check-repository-map.py
       # docs/COORDINATION.md is the board every worker session is handed,
       # and its lane table said a lane was unassigned when it had already
       # shipped five times in six days. That is not a discipline problem:
