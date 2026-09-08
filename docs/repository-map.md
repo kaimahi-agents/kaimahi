@@ -48,6 +48,24 @@ agent's doc answers **"is anyone depending on this?"**, and by that test
 almost nothing here is. Neither is wrong; a reader should know both exist,
 because the tree does not say which one a given file was written under.
 
+**What here is checked, and what rests on review.**
+`scripts/check-repository-map.py` runs this document against the tree on
+every pull request. It checks what the tree can settle: the counts, the
+paths, the membership lists, the callers, the arithmetic between them —
+and, more usefully than any single number, that every tracked file under
+`cmd/`, `internal/`, `k8s/`, `scripts/`, `docs/`, `brand/` and the root is
+named by exactly one list here. Add a file and the check fails until
+somebody has said what it is.
+
+It does NOT check the classifications themselves. Whether a manifest is
+product or demonstration is a judgement, and a checker enforcing one would
+either be wrong or would freeze an opinion this tree is allowed to change.
+That column is defended by review, and by the evidence each row cites. The
+three cases at the end are neither: they are a standing question, and what
+is enforced is that the question survives — the section exists, it says
+how many cases it holds, it holds that many, and every path it rests on is
+still in the tree.
+
 ---
 
 ## The short version
@@ -58,7 +76,7 @@ because the tree does not say which one a given file was written under.
 | `internal/` | `kmx/` (15 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 40 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 44 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 21 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -181,10 +199,10 @@ exist for a walkthrough; `release-agent.yaml` is also not embedded but is
 not a walkthrough either — it is the one agent this project depends on.
 All six are "an agent manifest in `k8s/`" and look alike.
 
-## `scripts/` — 65 tracked files, three different jobs
+## `scripts/` — 69 tracked files, three different jobs
 
-**None is orphaned**, but "orphaned" needs care: 56 of the 65 are named
-by something outside themselves, and the nine `scripts/mutations/*.json`
+**None is orphaned**, but "orphaned" needs care: 58 of the 69 are named
+by something outside themselves, and the eleven `scripts/mutations/*.json`
 are named by nothing at all — `check-mutations.py` finds them by globbing
 the directory. That is deliberate (a checker added without mutations is
 meant to be a failure, so the harness must not read a list someone can
@@ -192,7 +210,7 @@ forget to update), and it means a grep for references is the wrong test
 for that one directory.
 
 The counts below come from a classification of `git ls-files scripts` in
-which all 65 files land in exactly one bucket — not from reading the
+which all 69 files land in exactly one bucket — not from reading the
 directory and estimating.
 
 | Class | Count | Files |
@@ -200,10 +218,10 @@ directory and estimating.
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
 | **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
-| **Scaffolding** — checkers and their self-tests | 12 | the nine `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
+| **Scaffolding** — checkers and their self-tests | 14 | the eleven `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
 | **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 6 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
-| **Scaffolding** — mutation specifications | 9 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
+| **Scaffolding** — mutation specifications | 11 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
 
 **Two of those look like demo scripts and are not.** `await-approval.sh`
 was renamed out of the AP demo — its own comment says "so the release
@@ -234,11 +252,13 @@ Three things a reader would get wrong from the directory listing alone:
 
 One file is genuinely dual-role and is counted once above:
 `kube-guard.sh` is embedded product — `kmx lift` writes it into a
-temporary tree and executes it — AND is one of the nine checkers the
+temporary tree and executes it — AND is one of the eleven checkers the
 mutation harness breaks on purpose.
 
 `verify-chat.py` is a checker. Neither make nor kmx runs it: every
-occurrence in the Makefile and in Go is a comment. Its real callers are
+occurrence in the Makefile is a comment line rather than a recipe, and
+every occurrence in Go is a comment or, in one case, the text of a test's
+own failure message. Its real callers are
 `.github/workflows/ci.yml` (fourteen invocations among nineteen
 mentions — the other five are comments, which is the trap),
 `scripts/release-run.sh`,
@@ -263,7 +283,8 @@ describe a scenario being run rather than a capability being configured.
 `ap-demo.md` says its ERP is simulated in its own second table row;
 `demo.md` is less explicit.
 
-**Maintainer and process (8):** `development.md`, this file,
+**Maintainer and process (8):** `development.md`, `repository-map.md`
+(this file),
 `COORDINATION.md` (the coordination board, single-writer, and by a wide
 margin the largest file in `docs/` — enough that any tool measuring
 "documentation" over this directory is mostly measuring it),
@@ -280,9 +301,9 @@ embeds). Worth one line of warning: the `.svg` has no trailing newline, so
 **Two docs are effectively unfindable**, which is a legibility problem of
 the same family this map exists to fix. `isolation.md` appears nowhere in
 `docs/README.md` — neither the by-task table nor the project-docs section
-— and is reachable only from one table cell in `kmx.md`. `docs/reviews/`
-is referenced exactly once in the entire repository, from the coordination
-board, and never from the documentation index.
+— and is reachable only from one table cell in `kmx.md`. `docs/reviews/` is
+referenced exactly once anywhere in `docs/` outside this map, from the
+coordination board, and never from the documentation index.
 
 ## `brand/` — assets, and a checker that holds them to a spec
 
@@ -366,8 +387,8 @@ covered needs the map to cover everything.
   this lane for the smallest gain: the demonstration manifests are named
   by the Makefile, three scripts (`erp-deploy.sh`, `ap-demo.sh`,
   `ap-injection.sh`), CI's inline Python assertions and several docs —
-  eleven scripts in total name some `k8s/` path — and `embed.go`'s
-  patterns cannot climb out of their own directory. The
+  fourteen tracked files under `scripts/` contain the literal `k8s/` — and
+  `embed.go`'s patterns cannot climb out of their own directory. The
   boundary is real but the naming already carries most of it
   (`ap-*`, `erp-*`, `*-agent.yaml`), and this table carries the rest.
 - **`scripts/`.** Same reasoning, more strongly: six of these files are

@@ -24,6 +24,69 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`scripts/check-repository-map.py`** — `docs/repository-map.md` asserted
+  several dozen facts about this tree and nothing checked any of them. CI now
+  runs the map against the tree on every pull request: the file counts, the
+  paths, the membership lists, the callers, and — the assertion that catches
+  the most — that every tracked file under `cmd/`, `internal/`, `k8s/`,
+  `scripts/`, `docs/`, `brand/` and the repository root is named by exactly
+  one list in the map. Adding a file fails the check until somebody has said
+  what it is.
+
+  Nothing here checks the *classification*. Whether a manifest is product or
+  demonstration is a judgement, and a checker enforcing one would freeze an
+  opinion the tree is allowed to change; what is enforced is that a
+  classification exists. The three cases the map calls genuinely unclear stay
+  a standing question by design — the check requires the section to survive,
+  to say how many cases it holds, and to name paths that are still there.
+
+  Every list is derived rather than copied: the embedded manifests come out of
+  `embed.go`'s own `go:embed` patterns, the manifests that must not ride along
+  out of the Go test that names them, every count out of `git ls-files`.
+
+### Changed
+
+- **The prerequisite list is one item: a container engine.** It was five (Go,
+  Docker or Podman, kind, kubectl, Helm) plus make and curl. Go is now needed
+  only by the two commands that build the plane's image: `kmx plane`, and
+  then only when it is run from outside a checkout, and `kmx lift`, which
+  demands it whenever its plane phase runs.
+- Measured on a clean machine (no tooling, no checkout), time from one command
+  to an agent's answer: **246s → 178s**. Against the same measurement of `kmx
+  up` from this branch's parent, 217s → 178s; the first-answer kagent profile
+  is 33s where the full one is 64s.
+- `kmx` now uses one Cobra command tree for nested commands, flags,
+  command-specific help, validation, and Bash/Zsh/Fish completion. Operational
+  behavior, context guards, Make delegation, and machine-readable stdout remain
+  in the existing application layer.
+- Documentation and code comments now say what a thing does rather than
+  citing the planning identifier that tracked it. A lane or decision number
+  is a coordination artifact nobody reading the code can resolve, so each
+  one is replaced by the mechanism or the rule it stood for — and where the
+  reference was carrying the argument, the reason is written out instead of
+  cited. Trailing pointers to a capability document are unchanged; the
+  planning board keeps its own identifiers.
+- **`kmx agent create` and the blueprint parser refuse a wider set of
+  credential shapes**, and both now read one shared list rather than each
+  keeping its own — so a shape added in one place is refused in all of them,
+  including the repository-wide scan CI runs on every change. Neither refuses
+  less than it did before. The list gained Slack's app-level token, which is
+  not an `xox` shape and so was covered nowhere, and an Azure DevOps personal
+  access token.
+
+### Fixed
+
+- **Eight claims in `docs/repository-map.md` were wrong on the day it merged**,
+  found by writing the checker above. `scripts/` holds 67 tracked files and
+  not 65; there are ten `check-*` scripts and not nine, so the checker bucket
+  is 13 and the summary table's scaffolding column was 40 where the tree said
+  42; ten mutation specifications and not nine, and ten checkers the mutation
+  harness proves rather than nine; twelve files under `scripts/` name a
+  `k8s/` path and not eleven. Two sentences were also unfalsifiable as
+  written and are now precise: `docs/reviews/` is referenced once *outside the
+  map* rather than once in the repository, and `verify-chat.py`'s occurrences
+  in Go are comments except one, which is a test's own failure message.
+
 - **`kmx credential capture <upstream> <repository|organization>`** — the last
   step of the journey that still needed a checkout. Installing kmx, standing a
   cluster up, deploying the plane and governing an agent all work with no
@@ -205,37 +268,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   shadowed. `KMX_TOOLCHAIN=off` restores the previous behaviour, where a
   missing tool is an error naming its install page.
 
-### Changed
-
-- **The prerequisite list is one item: a container engine.** It was five (Go,
-  Docker or Podman, kind, kubectl, Helm) plus make and curl. Go is now needed
-  only by the two commands that build the plane's image: `kmx plane`, and
-  then only when it is run from outside a checkout, and `kmx lift`, which
-  demands it whenever its plane phase runs.
-- Measured on a clean machine (no tooling, no checkout), time from one command
-  to an agent's answer: **246s → 178s**. Against the same measurement of `kmx
-  up` from this branch's parent, 217s → 178s; the first-answer kagent profile
-  is 33s where the full one is 64s.
-- `kmx` now uses one Cobra command tree for nested commands, flags,
-  command-specific help, validation, and Bash/Zsh/Fish completion. Operational
-  behavior, context guards, Make delegation, and machine-readable stdout remain
-  in the existing application layer.
-- Documentation and code comments now say what a thing does rather than
-  citing the planning identifier that tracked it. A lane or decision number
-  is a coordination artifact nobody reading the code can resolve, so each
-  one is replaced by the mechanism or the rule it stood for — and where the
-  reference was carrying the argument, the reason is written out instead of
-  cited. Trailing pointers to a capability document are unchanged; the
-  planning board keeps its own identifiers.
-- **`kmx agent create` and the blueprint parser refuse a wider set of
-  credential shapes**, and both now read one shared list rather than each
-  keeping its own — so a shape added in one place is refused in all of them,
-  including the repository-wide scan CI runs on every change. Neither refuses
-  less than it did before. The list gained Slack's app-level token, which is
-  not an `xox` shape and so was covered nowhere, and an Azure DevOps personal
-  access token.
-
-### Fixed
 
 - **A stale `bin/kmx` could apply the previous version of twelve embedded
   files.** The manifests, blueprints and scripts kmx carries are inside the

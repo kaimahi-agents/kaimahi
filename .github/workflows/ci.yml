@@ -59,6 +59,24 @@ jobs:
         run: python3 scripts/check-secret-shapes.py --selftest
       - name: No credential shapes in tree
         run: python3 scripts/check-secret-shapes.py
+      # docs/repository-map.md is the front door for "is this thing real?",
+      # and it is the one document in this tree whose claims are almost all
+      # mechanical: file counts, membership lists, who calls what. It was
+      # accurate the day it was written and nothing checked it — the ERP
+      # relocation the day before would have invalidated four of its rows.
+      #
+      # What is checked is counts, paths and callers. What is NOT is the
+      # classification: whether a manifest is product or demonstration is a
+      # judgement, and a checker enforcing one would freeze an opinion the
+      # tree is allowed to change. What it does enforce is that a
+      # classification EXISTS — a new file that no list names fails here
+      # without this being told which answer is right.
+      #
+      # Keyless: `git ls-files` and the tree itself.
+      - name: Repository-map checker self-test
+        run: python3 scripts/check-repository-map.py --selftest
+      - name: The repository map still describes this tree
+        run: python3 scripts/check-repository-map.py
       # And the checkers themselves: each one is copied, broken on purpose
       # in a named way, and required to notice. A self-test built from
       # fixture pairs proves a checker gets today's answer right; it does

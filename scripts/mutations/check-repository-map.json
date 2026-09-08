@@ -1,0 +1,102 @@
+{
+  "checker": "check-repository-map.py",
+  "why": "This checker's whole value is that it fails when the map and the tree disagree, and every way it can stop doing that looks like a clean run: a comparison that stops comparing, an anchor failure swallowed, a glob that reaches too far, an empty tree accepted, a registry nothing registers into, a verdict computed and dropped. Each edit below is one of those, and the self-test — which breaks the MAP and the TREE rather than this file — is what has to notice.",
+  "verify": [
+    "python3",
+    "scripts/check-repository-map.py",
+    "--selftest"
+  ],
+  "signature": "check-repository-map self-test:",
+  "mutations": [
+    {
+      "name": "a count that disagrees with the tree is not a problem",
+      "breaks": "Every number in the map. The file counts, the package counts, the bucket totals and the arithmetic between them all stop being compared, and the map reads clean whatever it says.",
+      "find": "    if doc_value == tree_value:\n        return []",
+      "replace": "    if True:\n        return []"
+    },
+    {
+      "name": "a list that does not match the tree is not a problem",
+      "breaks": "Every membership claim: the embedded manifests, the script buckets, the doc lists, the root table. A file could be in the tree and in no list, or in a list and not in the tree, and nothing would say so.",
+      "find": "def compare_sets(named: set[str], actual: set[str], what: str) -> list[str]:\n    problems = []",
+      "replace": "def compare_sets(named: set[str], actual: set[str], what: str) -> list[str]:\n    return []\n    problems = []"
+    },
+    {
+      "name": "an anchor that matches nothing is accepted",
+      "breaks": "The map stops making a claim and the checker reports the claim satisfied. This is the failure mode the whole file is written against: a checker that examined nothing has not checked anything.",
+      "find": "    if len(hits) != 1:\n        raise Anchor(f\"{what}: the map has {len(hits)} places matching this claim, not one\\n\"",
+      "replace": "    if len(hits) not in (0, 1):\n        raise Anchor(f\"{what}: the map has {len(hits)} places matching this claim, not one\\n\""
+    },
+    {
+      "name": "a claim that could not find what it checks is skipped in silence",
+      "breaks": "The same fail-open one level up. Every Anchor failure — a heading renamed, a table gone, a Go ledger deleted — becomes a claim that quietly does not run, and the summary line still counts it as checked.",
+      "find": "        except Anchor as e:\n            problems.append(f\"[{fn.__name__}] {e}\")\n            continue",
+      "replace": "        except Anchor:\n            continue"
+    },
+    {
+      "name": "a claim that cannot read the file it checks passes",
+      "breaks": "Unreadable is not clean. A file that moved out from under a claim would make it pass rather than fail, which is exactly backwards for a check about where files are.",
+      "find": "        except OSError as e:\n            problems.append(f\"[{fn.__name__}] could not read a file it checks: {e}\")\n            continue",
+      "replace": "        except OSError:\n            continue"
+    },
+    {
+      "name": "an empty tree is checked against the map and found to agree",
+      "breaks": "The empty case. A `git ls-files` that failed, or a run from the wrong directory, produces no files — and every count claim then compares the map against zero rather than refusing.",
+      "find": "        if not self.files:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} — \"",
+      "replace": "        if False:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} — \""
+    },
+    {
+      "name": "no claim is registered and the run reports the map checked",
+      "breaks": "The registry. Every claim below the decorator stops existing, the loop has nothing to run, and the checker prints its own success line having compared nothing.",
+      "find": "def claim(fn):\n    CLAIMS.append(fn)\n    return fn",
+      "replace": "def claim(fn):\n    return fn"
+    },
+    {
+      "name": "the findings are collected and the exit code ignores them",
+      "breaks": "A checker that does all its work, prints every disagreement, and exits 0 — the failure an exit code alone cannot see, and the reason this file's mutations are verified by a self-test rather than by a return value.",
+      "find": "def exit_code(problems: list[str]) -> int:\n    \"\"\"The verdict.",
+      "replace": "def exit_code(problems: list[str]) -> int:\n    return 0\n    \"\"\"The verdict."
+    },
+    {
+      "name": "a directory the map merely mentions is counted as a list entry",
+      "breaks": "Every bolded list swallows the whole directory it sits in, so each one contains every file and no file is ever missing from any list. The counts would go wrong loudly; the coverage would go wrong silently, which is the half that matters.",
+      "find": "        elif hit != whole:\n            files |= hit",
+      "replace": "        else:\n            files |= hit"
+    },
+    {
+      "name": "a glob crosses directories again",
+      "breaks": "`scripts/*-probe.sh` reaches into `scripts/ci/` and moves a file between two buckets, making both counts wrong in a way that cancels out — the shape of error a partition check exists to catch.",
+      "find": "    return (path.count(\"/\") == pattern.count(\"/\")\n            and fnmatch.fnmatch(path, pattern))",
+      "replace": "    return fnmatch.fnmatch(path, pattern)"
+    },
+    {
+      "name": "the embedded set is read from the map instead of from embed.go",
+      "breaks": "The rule that no assertion holds a third copy. Derived from the directives, this notices a manifest added to the binary and not to the map; read from the map, it agrees with the map forever.",
+      "find": "    directives = re.findall(r\"^//go:embed (.+)$\", tree.read(\"embed.go\"), re.M)",
+      "replace": "    directives = re.findall(r\"^//go:embed (.+)$\", tree.read(MAP), re.M)"
+    },
+    {
+      "name": "the excluded manifests are no longer read from the Go test that names them",
+      "breaks": "The repository's own ledger for the embedded boundary. Without it the map's non-embedded lists are checked only against each other, and the file in neither list — the JSON corpus — stops being visible at all.",
+      "find": "    m = re.search(r\"func TestTheConnectorFamiliesAreNotEmbedded\\(t \\*testing\\.T\\) \\{\\s*\"\n                  r\"for _, name := range \\[\\]string\\{(.*?)\\}\", tree.read(path), re.S)",
+      "replace": "    m = re.search(r\"(k8s)\", tree.read(MAP), re.S)"
+    },
+    {
+      "name": "a name the map uses resolves to anything at all",
+      "breaks": "The existence claim. Every path in the map reads as present whether or not the tree has it, which is the single most common way a map goes stale — a file that moved.",
+      "find": "    hit = {p for p in scope if p == tail or p.startswith(tail + \"/\")\n           or p.endswith(\"/\" + tail) or (\"/\" + tail + \"/\") in p}\n    return hit",
+      "replace": "    return scope"
+    },
+    {
+      "name": "the standing question may empty itself",
+      "breaks": "The three genuinely-unclear cases. The section could lose its items — resolved by nobody, just deleted — and this would report the map in agreement with the tree.",
+      "find": "    items = re.findall(r\"^\\d+\\. \\*\\*(.+?)\\*\\*\", body, re.M)\n    if not items:",
+      "replace": "    items = re.findall(r\"^\\d+\\. \\*\\*(.+?)\\*\\*\", body, re.M)\n    if items and False:"
+    },
+    {
+      "name": "a section's short names are read against the repository root",
+      "breaks": "`README.md` in the docs section becomes the front door instead of the documentation index, and `plane/` in the k8s section becomes the plane module instead of `k8s/plane/`. Both resolve to a real file, so nothing looks wrong — the lists are simply about different files than the map says.",
+      "find": "    candidates = []\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))\n    candidates.append(token.rstrip(\"/\"))",
+      "replace": "    candidates = [token.rstrip(\"/\")]\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))"
+    }
+  ]
+}
