@@ -2637,7 +2637,7 @@ from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge. Report deviations in the PR.
 ```
 
-### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
+### W20 — P10: hosted upstreams — the gateway reaches an MCP server on the internet, safely (RUN — merged as #51; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -2860,7 +2860,7 @@ no stacked bases; lane ends at PR-open-with-checks-green — do not
 merge. Report deviations in the PR.
 ```
 
-### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
+### W22 — P11: `kmx`, milestone 2 — `kmx govern` and the plane, clone-free (RUN — merged as #64; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -3126,7 +3126,7 @@ PR targets main; no stacked bases; lane ends at PR-open-with-checks-
 green — do not merge. Report deviations in the PR.
 ```
 
-### W24 — P13: the accounts-payable exception demo (RUN — kept as the record of what the lane was asked for; do not paste it) has merged)
+### W24 — P13: the accounts-payable exception demo (RUN — merged as #73; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4882,7 +4882,6 @@ at PR-open-with-checks-green — do not merge.
 ```
 
 ### W42 — the audit row does not say who called (UNASSIGNED — paste into a fresh CLI session)
-### W43 — the model seam carries content that exists nowhere else (UNASSIGNED — paste into a fresh CLI session)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4963,6 +4962,16 @@ rows, showing what those rows say. A caller name containing quotes,
 newlines and several kilobytes, showing it is bounded and does not break
 the view. And the documented imprecision, in the place a reader of the
 trail would look.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
+```
+
+### W43 — the model seam carries content that exists nowhere else (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
 first — **D45 and D48 above all**, then the security standing guidance.
 D48 is open; this lane produces what is needed to rule it, and
 implements the answer if feasibility allows.
