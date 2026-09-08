@@ -465,6 +465,63 @@ before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
 
+- **D48 (OPEN — needs a ruling): the model seam is plaintext, and D45's
+  reasoning does not cover it.** Raised 2026-09-08 after W41 found that
+  the plane has no TLS listener on any of its five ports. D45 examined
+  the TOOL seam and accepted plaintext there. **That ruling stands and
+  this is not a reopening of it** — the argument simply does not
+  transfer, and the coordinator did not notice at the time.
+
+  **Why D45's argument fails here.** Its load-bearing claim was that what
+  crosses the tool seam is already in the audit trail by design — every
+  governed call's `arg_summary` is recorded on purpose — so
+  confidentiality cannot be claimed for it, and the only genuine secret
+  on the wire is a bounded, expiring, revocable, audited credential.
+
+  **Checked against the schema: the model seam is the opposite case.**
+  `ledger_entry` records credential, upstream, model, input and output
+  token counts, cost and status. **It records no prompt and no
+  completion**, and nothing else in the store holds them. So the full
+  text of what an agent was asked and what it answered crosses port 8080
+  in plaintext and exists **in no other record**.
+
+  **That inverts the risk comparison.** Capture on the tool seam yields a
+  credential whose every use is bounded and audited — the theft is
+  visible and the damage is capped. Capture on the model seam yields
+  content that can be obtained no other way, retroactively unavailable
+  even to us, and invisible when it happens. Whatever an agent read is on
+  that wire: invoice contents, repository contents, pull-request bodies.
+
+  **What does not change.** The set of positions able to capture is the
+  same and is small — node-level access, `hostNetwork` or `CAP_NET_RAW`;
+  an ordinary pod cannot read another pod's stream. The admin and ops
+  ports are on no Service. The one internet-facing path already
+  terminates TLS at an edge.
+
+  **What is different about the mitigations.** D45 recorded that removing
+  the bearer from the wire — request signing, or a short-lived derived
+  token — would make capture useless without certificates. **That does
+  not help here**: the exposure is the content, not the credential, so
+  the only options are encrypting the hop or accepting it.
+
+  - **Option A — TLS on the model seam.** Costs in-cluster certificate
+    issuance, rotation and trust distribution, which is the operational
+    control plane this project has repeatedly declined to build. Scoping
+    it to one listener rather than all five is the cheaper half of it.
+  - **Option B — accept, with the reasoning written down** as D45 did,
+    and with reversal conditions. Honest only if the conditions are real
+    and someone would notice them being met.
+  - **Option C — reduce what crosses.** Not obviously available: the
+    proxy exists to meter model traffic, so the traffic must pass through
+    it. Worth someone spending an hour on before A or B is chosen.
+
+  **This one deserves more care than D45.** That entry's first version
+  contained a wrong analysis of who could capture, corrected only after
+  review. The exposure here is larger and the reasoning that made
+  plaintext acceptable there is absent.
+
+
+
 - **D47 (OPEN — needs a ruling): the audit trail says "there is no
   person" in a case where it cannot know.** Found by the foreign-runtime
   lane and confirmed independently by the coordinator against
@@ -565,8 +622,34 @@ before it is written down anywhere public.
 
 
 
-- **D46 (OPEN — needs a ruling, and the teammate in the room): where the
-  line sits between Kaimahi and AgentWeaver.** Raised 2026-09-08 by the
+- **D46 (CLOSED 2026-09-08 — no action): where the line sits between
+  Kaimahi and AgentWeaver.** Ruled by the user: nothing further to do
+  with AgentWeaver. The comparison below is kept because it is a clear
+  statement of what this project is and is not, which is worth having
+  written down whatever prompted it — but **two of its claims were wrong
+  and are corrected here rather than left in the record.**
+
+  **Correction 1: "we have never governed a runtime we did not write" was
+  false when written.** `scripts/tool-call-probe.sh` is curl, not a
+  kagent agent, and it makes real governed tool calls through the gateway
+  with a `kmh_` credential — thirteen times per CI build, for weeks
+  before this entry claimed otherwise. The call seam is demonstrably
+  generic: authentication, allowlist, argument binding and the audit row
+  do not care what is on the other end of the socket. The coordinator
+  asserted a gap from memory of the architecture instead of checking the
+  tree, which is the same failure this board spent a week cataloguing in
+  others.
+
+  **Correction 2: "runtime-agnostic" is true; "location-agnostic" is
+  not**, and the entry did not distinguish them. All five of the plane's
+  listeners are plain HTTP, there is no TLS listener anywhere, and both
+  data seams are `ClusterIP` Services with no ingress path of their own.
+  A runtime outside the cluster has no supported route to either seam.
+  Nothing about that is broken — the plane was built for in-cluster
+  agents — but the broader claim must not be made externally. See D48.
+
+  **The original comparison follows, unchanged except where those two
+  claims appeared.** Raised 2026-09-08 by the
   user, who pointed at a teammate's project. Read from its published
   docs and README only — NOT its code — so everything here is a first
   reading and the teammate should correct it before it is ruled.
@@ -610,13 +693,13 @@ before it is written down anywhere public.
     `create_branch`, inside a perfect sandbox, can still cut the wrong
     branch.
 
-  **The honest catch, and it is ours.** "Runtime-agnostic" is currently
-  aspirational. The seam is genuinely generic — HTTP and MCP — but the
-  wiring assumes kagent: `RemoteMCPServer` CRDs, kagent's controller
-  discovering tools through the gateway, `discovered ∩ toolNames`. We
-  have onboarded a tool SERVER this repository did not write; we have
-  never governed a RUNTIME it did not write. W41 below tests that, and
-  the result matters either way.
+  **The catch, as W41 later measured it.** The CALL seam is generic and
+  proven so. What is kagent-shaped is the surrounding plumbing —
+  discovery through `RemoteMCPServer` CRDs and the `discovered ∩
+  toolNames` rule, and placement — and what is missing is honest
+  attribution for a caller the plane did not deploy (D47) and any
+  supported route from outside the cluster (D48). Short list, and it is
+  written down in `docs/foreign-runtime.md`.
 
   **The organisational half, which is the actual risk.** Two agent
   governance projects on AKS with Postgres, inside one organisation, will
