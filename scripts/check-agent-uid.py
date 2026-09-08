@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
 import subprocess
 import sys
@@ -111,6 +112,20 @@ def agent_image(version: str) -> str:
     return resolve_image(defaults, yaml.safe_load(VALUES_FILE.read_text()) or {}, version)
 
 
+def engine() -> str:
+    """The container engine, by the name the rest of the repository uses.
+
+    A developer on Podman has no `docker`, and a checker CONTRIBUTING.md
+    tells them to run locally must work on the engine they actually have.
+    Only the two the Makefile accepts: an unknown name is refused here
+    rather than handed to a shell as a command.
+    """
+    name = os.environ.get("CONTAINER_ENGINE", "docker").strip() or "docker"
+    if name not in ("docker", "podman"):
+        raise LookupError(f"unknown CONTAINER_ENGINE {name!r} — expected 'docker' or 'podman'")
+    return name
+
+
 def image_uid(image: str) -> int:
     """The numeric uid the image's declared user resolves to.
 
@@ -118,9 +133,10 @@ def image_uid(image: str) -> int:
     when it refuses to start a runAsNonRoot container — the image's own
     /etc/passwd, not a label anyone can write.
     """
-    subprocess.run(["docker", "pull", "--quiet", image], check=True,
+    engine_bin = engine()
+    subprocess.run([engine_bin, "pull", "--quiet", image], check=True,
                    capture_output=True, text=True)
-    out = subprocess.run(["docker", "run", "--rm", "--entrypoint", "id", image, "-u"],
+    out = subprocess.run([engine_bin, "run", "--rm", "--entrypoint", "id", image, "-u"],
                          check=True, capture_output=True, text=True).stdout.strip()
     return int(out)
 
@@ -317,6 +333,34 @@ def selftest() -> int:
           chart, {"controller": {"agentImage": {"registry": "per.example"}}}, "per.example/org/app:9.9.9")
     image("a chart naming no agent image is refused rather than guessed",
           {"registry": "cr.example", "controller": {}}, {}, "refused")
+
+    # The engine name is handed to a subprocess, so it is checked rather
+    # than trusted: the two the Makefile accepts, and a refusal otherwise.
+    def eng(what, value, want):
+        nonlocal failed
+        if value is None:
+            os.environ.pop("CONTAINER_ENGINE", None)
+        else:
+            os.environ["CONTAINER_ENGINE"] = value
+        try:
+            got = engine()
+        except LookupError:
+            got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    before = os.environ.get("CONTAINER_ENGINE")
+    eng("no CONTAINER_ENGINE means docker", None, "docker")
+    eng("CONTAINER_ENGINE=podman is used as the engine", "podman", "podman")
+    eng("an empty CONTAINER_ENGINE falls back to docker", "", "docker")
+    eng("an unknown engine is refused, not handed to a shell", "rm -rf /", "refused")
+    if before is None:
+        os.environ.pop("CONTAINER_ENGINE", None)
+    else:
+        os.environ["CONTAINER_ENGINE"] = before
 
     if failed:
         print(f"check-agent-uid self-test: {failed} case(s) failed", file=sys.stderr)

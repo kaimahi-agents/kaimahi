@@ -256,7 +256,7 @@ kmx reads the names this repository already uses — the Makefile's, and
 | `OPS_PORT` | `19092` | local port for a replica's metrics forward |
 | `CRED` | `hello-world` | the credential `govern` issues, and the one `ledger` and `budget` read/write by default (`grants` and `audit` default to **all** credentials) |
 | `CRED_TOOLS` | `hello-tools` | the credential the MCP gateway admits — what `kmx tools` acts on, and what a `tool` request is filed against |
-| `KAIMAHI_CONFIRM` | unset | confirm a non-kind context, by name |
+| `KAIMAHI_CONFIRM` | unset | confirm a context the guard will not proceed on by itself, by name. That is a non-kind context, and — for `kmx down` only — a `kind-*` cluster the container engine lists but the kubeconfig does not describe, which is how a half-created cluster is removed |
 | `KMX_HOME` | `~/.config/kmx` | where the selected context and the cached kagent binary live |
 
 `--context <name>` overrides `KUBE_CTX` for one command.

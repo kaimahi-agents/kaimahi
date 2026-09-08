@@ -51,6 +51,18 @@
       "replace": "    if bad:\n        print(f\"check-agent-uid: {len(bad)} of {len(found)} agent(s) do not run as the image's uid {uid}\",\n              file=sys.stderr)\n        return 0"
     },
     {
+      "name": "an unknown container engine is no longer refused",
+      "breaks": "The engine name reaches a subprocess argument list. Only the two names the Makefile accepts may get there, and a checker that took any string would be a checker that ran any binary.",
+      "find": "    if name not in (\"docker\", \"podman\"):",
+      "replace": "    if False:"
+    },
+    {
+      "name": "CONTAINER_ENGINE is ignored and docker is assumed",
+      "breaks": "A developer on Podman has no docker, so the checker CONTRIBUTING.md tells them to run locally cannot run at all — and a check people cannot run is a check nobody runs.",
+      "find": "    name = os.environ.get(\"CONTAINER_ENGINE\", \"docker\").strip() or \"docker\"",
+      "replace": "    name = \"docker\""
+    },
+    {
       "name": "two disagreeing version pins are no longer refused",
       "breaks": "The Makefile installs one kagent and kmx installs another, and this checks the image of whichever it read first. The uid it proves belongs to a version half the repository does not run.",
       "find": "    if makefile.group(1) != source.group(1):",
