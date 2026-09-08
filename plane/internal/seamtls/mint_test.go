@@ -23,7 +23,18 @@ import (
 // carrying a fixture that would expire.
 func testMount(t *testing.T) map[string]string {
 	t.Helper()
-	now := time.Now()
+	return mountAt(t, time.Now())
+}
+
+// expiredMount is the same material, signed long enough ago that its life is
+// over — the state a cluster nobody has deployed to in over a year is in.
+func expiredMount(t *testing.T) map[string]string {
+	t.Helper()
+	return mountAt(t, time.Now().Add(-400*24*time.Hour))
+}
+
+func mountAt(t *testing.T, now time.Time) map[string]string {
+	t.Helper()
 
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

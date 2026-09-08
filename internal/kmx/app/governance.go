@@ -83,6 +83,17 @@ type seamPopulation struct {
 	Governed   int `json:"governed"`
 	Direct     int `json:"direct"`
 	Unresolved int `json:"unresolved"`
+	// Plaintext counts GOVERNED seams still addressed over http. They are
+	// governed — the plane enforces on the credential, never on the scheme —
+	// and since the seams began serving TLS their calls also fail closed.
+	//
+	// Counted rather than reclassified, because "not governed" and "cannot
+	// connect" are different problems with different fixes, and saying the
+	// first about a seam that is enforcing would be its own false claim.
+	// After an upgrade this is the count that matters, and without it the
+	// governed count and the certificate line are two reassuring answers
+	// about a plane no agent can reach.
+	Plaintext int `json:"plaintext"`
 	// UnresolvedRefs names what could not be resolved, one entry per member
 	// counted in Unresolved.
 	UnresolvedRefs []string `json:"unresolvedRefs,omitempty"`
@@ -151,6 +162,7 @@ func (p seamPopulation) MarshalJSON() ([]byte, error) {
 		Governed       int      `json:"governed"`
 		Direct         int      `json:"direct"`
 		Unresolved     int      `json:"unresolved"`
+		Plaintext      int      `json:"plaintext"`
 		UnresolvedRefs []string `json:"unresolvedRefs,omitempty"`
 	}
 	type bare struct {
@@ -160,7 +172,7 @@ func (p seamPopulation) MarshalJSON() ([]byte, error) {
 	if p.State == stateUnknown {
 		return json.Marshal(bare{State: p.State, Reason: p.Reason})
 	}
-	return json.Marshal(counted{p.State, p.Total, p.Governed, p.Direct, p.Unresolved, p.UnresolvedRefs})
+	return json.Marshal(counted{p.State, p.Total, p.Governed, p.Direct, p.Unresolved, p.Plaintext, p.UnresolvedRefs})
 }
 
 func (p credentialPopulation) MarshalJSON() ([]byte, error) {
@@ -223,6 +235,20 @@ func classifySeam(rawURL, service string) string {
 		return seamUnresolved
 	}
 	return planeHost(parsed.Hostname(), service)
+}
+
+// seamPlaintext reports whether a seam URL still addresses the plane over
+// http. It answers the scheme only; whether the URL is a seam at all is
+// classifySeam's question, and both are asked before this counts anything.
+//
+// It exists for one cluster state, and it is the state this release creates:
+// a seam written before the seams carried a certificate is governed,
+// unchanged, and no longer reachable. Nothing else in `kmx status` can say
+// so — the seam counts are about wiring and the certificate line is about the
+// plane's own material.
+func seamPlaintext(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	return err == nil && parsed != nil && parsed.Scheme == "http"
 }
 
 // planeHost classifies a host against one of the plane's Services.
@@ -291,6 +317,9 @@ func modelSeams(agents []agentStatus, models []modelStatus) seamPopulation {
 		switch classifySeam(model.Spec.OpenAI.BaseURL, planeProxyService) {
 		case seamGoverned:
 			population.Governed++
+			if seamPlaintext(model.Spec.OpenAI.BaseURL) {
+				population.Plaintext++
+			}
 		case seamUnresolved:
 			population.Unresolved++
 			population.UnresolvedRefs = append(population.UnresolvedRefs,
@@ -320,6 +349,9 @@ func toolSeams(servers []toolServerStatus, reason string) seamPopulation {
 		switch classifySeam(valueOr(server.Spec.URL, "-"), planeGatewayService) {
 		case seamGoverned:
 			population.Governed++
+			if seamPlaintext(server.Spec.URL) {
+				population.Plaintext++
+			}
 		case seamUnresolved:
 			population.Unresolved++
 			population.UnresolvedRefs = append(population.UnresolvedRefs,
@@ -434,6 +466,12 @@ func seamLine(p seamPopulation, plural, singular string) string {
 	line := fmt.Sprintf("%d of %d %s governed, %d direct", p.Governed, p.Total, noun, p.Direct)
 	if p.Unresolved > 0 {
 		line += fmt.Sprintf(", %d unknown (%s)", p.Unresolved, strings.Join(p.UnresolvedRefs, ", "))
+	}
+	// Said on the seam's own line rather than left to the certificate line
+	// below, because it is a fact about the SEAM: it is governed, and it is
+	// addressed over a scheme the plane stopped answering.
+	if p.Plaintext > 0 {
+		line += fmt.Sprintf("\n                %d governed over PLAINTEXT — the seams serve TLS, so those calls fail closed", p.Plaintext)
 	}
 	return line
 }

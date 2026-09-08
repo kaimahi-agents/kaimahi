@@ -299,9 +299,18 @@ read as "location-agnostic".
 
 Nothing in this repository reproduces what follows: no script, no
 manifest and no CI job. It is the record of one run, kept because the
-claims above rest on it, and every shape in it — the URLs, the ports,
-the refusal messages, the constraint bounds, the ERP's nine tools — is
-checkable against the tree.
+claims above rest on it, and every shape in it — the ports, the refusal
+messages, the constraint bounds, the ERP's nine tools — is checkable
+against the tree.
+
+**It is left exactly as that run produced it, including the `http://`
+URLs, and the run predates the seams carrying a certificate.** A record
+edited to match what the code says today would no longer be evidence for
+anything. What changed since is the scheme and the trust the client needs
+(items 2, 4 and 5 above); what the run established — that a client with
+no CRDs, no controller and no handshake is governed, projected and
+audited exactly like a kagent agent — is unaffected, because none of it
+turns on the transport.
 
 A kind cluster with the plane and the fixture ERP; no kagent. Two
 namespaces, `kagent` and `foreign-runtime`, each with one pod running
@@ -315,11 +324,11 @@ about it is kagent, and no kagent object exists on the cluster.
 
 ```console
 ### from namespace kagent
---- reachability of https://kaimahi-mcp-gateway.kaimahi:8081/healthz
+--- reachability of http://kaimahi-mcp-gateway.kaimahi:8081/healthz
 REACHED: ok [HTTP 200]
 
 ### from namespace foreign-runtime
---- reachability of https://kaimahi-mcp-gateway.kaimahi:8081/healthz
+--- reachability of http://kaimahi-mcp-gateway.kaimahi:8081/healthz
 NOT REACHED: curl: (28) Connection timed out after 10016 milliseconds
 
 ### control, from the same shell in foreign-runtime
@@ -384,7 +393,7 @@ would for a kagent agent.
 **The model seam**, same client, same credential, a zero token budget:
 
 ```console
---- POST https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1/chat/completions
+--- POST http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1/chat/completions
 monthly token budget reached; approval request filed — run 'make approvals'
 HTTP 429
 

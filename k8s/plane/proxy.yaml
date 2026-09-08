@@ -156,13 +156,13 @@ spec:
             - name: upstream-ca
               mountPath: /etc/kaimahi/upstream-ca
               readOnly: true
-            # The certificate the two DATA seams serve with. NOT optional
-            # and NOT falling back: without it the process refuses to
-            # start, because a seam that quietly served in the clear would
-            # look governed to everything that checks and be readable by
-            # anything that captures. `kmx plane` mints it; the authority's
-            # private key stays in its own Secret and is mounted nowhere,
-            # so this pod can sign handshakes and cannot issue anything.
+            # The certificate the two DATA seams serve with. There is no
+            # fallback: a seam that quietly served in the clear would look
+            # governed to everything that checks and be readable by anything
+            # that captures, so the process refuses to start rather than
+            # serve without it. `kmx plane` mints it; the authority's private
+            # key stays in its own Secret and is mounted nowhere, so this pod
+            # can sign handshakes and cannot issue anything.
             - name: seam-tls
               mountPath: /etc/kaimahi/seam-tls
               readOnly: true
@@ -337,12 +337,18 @@ spec:
           configMap:
             name: kaimahi-upstream-ca
             optional: true
-        # Deliberately NOT optional. Every other credential mount here can
-        # be absent because the path it feeds fails closed on its own; this
-        # one feeds the transport, and an absent transport secret has no
-        # closed state to fall into — it would simply be plaintext. So the
-        # process refuses to start instead, and says which Secret is
-        # missing.
+        # Deliberately NOT optional, like the Postgres password and the
+        # admin token above it and unlike every UPSTREAM credential, which
+        # can be absent because the path it feeds fails closed on its own.
+        # This one feeds the transport, and an absent transport secret has
+        # no closed state to fall into — it would simply be plaintext.
+        #
+        # Two different failures, worth telling apart when one happens. If
+        # the Secret is absent the kubelet cannot build the mount and the
+        # container never starts, so nothing in the log says anything: the
+        # pod sits in ContainerCreating and its events name the Secret. If
+        # the mount exists but a file is missing or unreadable, the process
+        # starts, refuses, and says which path.
         - name: seam-tls
           secret:
             secretName: kaimahi-plane-seam-tls

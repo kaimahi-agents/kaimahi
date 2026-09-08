@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -336,9 +337,23 @@ func (p *Poster) call(ctx context.Context, token, session string, msg any) (*htt
 	return resp, body, nil
 }
 
-// classifyErr: a dial failure is a refusal (nothing was sent); anything
-// else — a timeout, a reset, an EOF — happened after the request may
-// have gone out, and is ambiguous.
+// classifyErr: a failure that happened BEFORE any request byte left is a
+// refusal (nothing was posted, so retrying cannot double-post); anything
+// else — a timeout, a reset, an EOF — happened after the request may have
+// gone out, and is ambiguous.
+//
+// Two things land on the near side of that line. A dial failure is the
+// obvious one. The other is a TLS handshake that did not complete: the
+// gateway is a TLS listener even over loopback, and a certificate the
+// client cannot verify fails during the handshake, before a single byte of
+// the POST is written.
+//
+// Getting that second one wrong is not a near-miss. `ambiguous` means "do
+// not retry, somebody may already have been told", so an expired seam
+// certificate would silently stop every approval notification after ONE
+// attempt and log that the outcome was unknown — while the truth is that
+// nothing was sent, nothing will be until the certificate is fixed, and the
+// request is still filed.
 func classifyErr(err error) outcome {
 	var ue *url.Error
 	if errors.As(err, &ue) {
@@ -346,6 +361,28 @@ func classifyErr(err error) outcome {
 	}
 	var oe *net.OpError
 	if errors.As(err, &oe) && oe.Op == "dial" {
+		return refused
+	}
+	var cve *tls.CertificateVerificationError
+	if errors.As(err, &cve) {
+		return refused
+	}
+	// A handshake fails in more shapes than a verification error, and the
+	// shapes are not all typed. Go returns tls.RecordHeaderError for a peer
+	// that is not speaking TLS at all, a plain sentinel when the peer
+	// answered the ClientHello with an HTTP response, and an untyped
+	// permanentError carrying the peer's alert for a version or cipher
+	// mismatch. Every one of them happened before the request was written,
+	// so none of them can have posted anything.
+	var rhe tls.RecordHeaderError
+	if errors.As(err, &rhe) || errors.Is(err, http.ErrSchemeMismatch) {
+		return refused
+	}
+	// Matched on the prefix because the alert cases carry no exported type.
+	// Narrow on purpose: `tls:` and `remote error: tls:` are how the
+	// handshake reports itself, and a message merely mentioning TLS
+	// elsewhere does not begin with either.
+	if text := err.Error(); strings.HasPrefix(text, "tls: ") || strings.HasPrefix(text, "remote error: tls: ") {
 		return refused
 	}
 	return ambiguous

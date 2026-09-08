@@ -195,6 +195,49 @@ func TestAReloadedAuthoritySignsACertificateTheOldCAStillVerifies(t *testing.T) 
 	}
 }
 
+// A spent authority must refuse rather than clamp. Clamping produced a
+// certificate whose NotAfter was already in the past, applied it, restarted
+// the plane into material nothing accepts, and exited 0 — a reported success
+// that leaves both seams unusable. The calendar reaches this in ten years;
+// a restored old authority Secret or a skewed clock reaches it today.
+func TestAnExpiredAuthorityRefusesToSignRatherThanMintingSomethingDead(t *testing.T) {
+	ca, err := MintAuthority(epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ca.Sign(SeamNames(), epoch.Add(authorityLifetime+24*time.Hour))
+	if err == nil {
+		t.Fatal("an expired authority signed a certificate")
+	}
+	for _, want := range []string{authorityCommonName, "expired", "kmx plane"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q: %v", want, err)
+		}
+	}
+}
+
+// Still inside its life, but with less left than a serving certificate wants:
+// the result is clamped to the authority and is genuinely usable, so this
+// must NOT refuse.
+func TestAnAuthorityNearTheEndOfItsLifeStillSigns(t *testing.T) {
+	ca, err := MintAuthority(epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := epoch.Add(authorityLifetime - 24*time.Hour)
+	serving, err := ca.Sign(SeamNames(), at)
+	if err != nil {
+		t.Fatalf("an authority with a day left refused to sign: %v", err)
+	}
+	cert, err := ParseCertificate(serving.CertPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cert.NotAfter.After(at) {
+		t.Errorf("the clamped certificate is already expired: NotAfter=%s, signed at %s", cert.NotAfter, at)
+	}
+}
+
 func TestLoadAuthorityRefusesAMismatchedPair(t *testing.T) {
 	a, err := MintAuthority(epoch)
 	if err != nil {

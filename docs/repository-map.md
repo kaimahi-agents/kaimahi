@@ -76,7 +76,7 @@ still in the tree.
 | `internal/` | `kmx/` (16 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 23 (6 embedded in the binary, 17 operator) | 3 | 49 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 50 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -218,10 +218,10 @@ directory and estimating.
 | Class | Count | Files |
 |---|---|---|
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
-| **Product** — operator scripts, reached through make, kmx, or another product script | 17 | `seam-tls.sh`, `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
+| **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
 | **Scaffolding** — checkers and their self-tests | 16 | the thirteen `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
-| **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
+| **Scaffolding** — live-cluster probes | 14 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` — not a probe itself but sourced by nine of them, to fetch the authority the seams are verified against |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 6 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
 | **Scaffolding** — mutation specifications | 13 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
 | **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements in the coordination board that `check-board.py` found, plus those found by hand where it could not look, and a record of how each was closed |

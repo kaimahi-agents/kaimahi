@@ -42,9 +42,13 @@ func serverAt(name, url, secret string) toolServerStatus {
 }
 
 const (
-	governedModelURL = "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"
-	governedToolURL  = "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/kagent-tools/mcp"
-	directToolURL    = "http://kagent-tool-server.kagent:8084/mcp"
+	governedModelURL = "https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"
+	governedToolURL  = "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/kagent-tools/mcp"
+	// What a seam written before the seams carried a certificate still says.
+	// Governed, unchanged, and no longer reachable.
+	staleModelURL = "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1"
+	staleToolURL  = "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/kagent-tools/mcp"
+	directToolURL = "http://kagent-tool-server.kagent:8084/mcp"
 )
 
 // Every DNS form of the same Service is the plane; nothing else is, however
@@ -145,6 +149,52 @@ func TestToolSeamsCountGovernedAndDirect(t *testing.T) {
 	}
 	if line := seamLine(got, "tool servers", "tool server"); line != "1 of 3 tool servers governed, 2 direct" {
 		t.Errorf("unexpected line: %q", line)
+	}
+}
+
+// The cluster state this release creates, and the one `kmx plane` sends an
+// operator to `kmx status` to look at: a seam written before the seams
+// carried a certificate. It is still GOVERNED — the plane enforces on the
+// credential, not on the scheme — and its calls now fail closed, so a report
+// that said only "governed" would be two reassuring lines about a plane no
+// agent can reach.
+func TestAGovernedSeamStillOnPlaintextIsCountedAndSaidOutLoud(t *testing.T) {
+	models := []modelStatus{modelAt("governed-ollama", staleModelURL, "kaimahi-governed-token")}
+	agents := []agentStatus{agentOn("hello-world", "governed-ollama")}
+	got := modelSeams(agents, models)
+	if got.Governed != 1 {
+		t.Fatalf("a plaintext seam stopped being governed: %+v", got)
+	}
+	if got.Plaintext != 1 {
+		t.Fatalf("a governed seam on plaintext was not counted: %+v", got)
+	}
+	line := seamLine(got, "agents", "agent")
+	if !strings.Contains(line, "1 of 1 agent governed") {
+		t.Errorf("the governed count changed: %q", line)
+	}
+	if !strings.Contains(line, "PLAINTEXT") || !strings.Contains(line, "fail closed") {
+		t.Errorf("the line does not say the calls fail closed: %q", line)
+	}
+
+	servers := []toolServerStatus{serverAt("kaimahi-tools", staleToolURL, "kaimahi-tools-token")}
+	tools := toolSeams(servers, "")
+	if tools.Governed != 1 || tools.Plaintext != 1 {
+		t.Fatalf("the tool seam was not counted the same way: %+v", tools)
+	}
+}
+
+// And the seam this release writes says nothing extra, or the warning would
+// be noise on every healthy cluster.
+func TestASeamOverTLSCarriesNoPlaintextWarning(t *testing.T) {
+	got := modelSeams(
+		[]agentStatus{agentOn("hello-world", "governed-ollama")},
+		[]modelStatus{modelAt("governed-ollama", governedModelURL, "kaimahi-governed-token")},
+	)
+	if got.Plaintext != 0 {
+		t.Fatalf("a TLS seam was counted as plaintext: %+v", got)
+	}
+	if line := seamLine(got, "agents", "agent"); strings.Contains(line, "PLAINTEXT") {
+		t.Errorf("a healthy cluster was warned about plaintext: %q", line)
 	}
 }
 

@@ -158,7 +158,7 @@ swap plus a credential the agent cannot read past.
 | `kmx agent chat <name> --json` | the raw A2A task instead of the readable view (piped output is always raw) |
 | `kmx agent chat --interactive <name>` | live streamed chat in one session; shows active tools, tool calls/results, and supports session history/resume |
 | `kmx plane` | build the proxy image, bootstrap the plane's secrets, deploy the plane, wait for it to serve |
-| `kmx plane --step <step>` | one step only: `image`, `secrets`, `deploy` |
+| `kmx plane --step <step>` | one step only: `image`, `secrets`, `certificate`, `deploy`. `certificate` mints or renews what the two data seams serve with, and restarts the plane onto it ([operations.md](operations.md)) |
 | `kmx plane --source <path>` | build the plane from a checkout instead of fetching it (`-` forces the fetch) |
 | `kmx govern [<credential>]` | issue the governed credential (default `$CRED`), apply the governed presets, switch the agent onto one. `--ttl` sets the credential's lifetime; the plane defaults one, and there is no way to ask for "never" |
 | `kmx credentials` | the governed credentials and when each one expires, soonest first, with the state an operator scans: `EXPIRED`, `EXPIRING`, `ok`, or `no expiry` (the legacy class) ([identity.md](identity.md)) |

@@ -229,6 +229,19 @@ func (a *App) liftPlane(opt lift.Options, work string) error {
 		}
 	}
 
+	// The certificate the two data seams serve with, BEFORE the deploy that
+	// mounts it. The proxy's Secret volume is not optional and has no closed
+	// state to fall into — without this the kubelet cannot mount it, the pods
+	// never leave ContainerCreating, and the rollout below times out after
+	// five minutes on a cluster where nothing is actually wrong.
+	//
+	// Here rather than beside the other plane Secrets in the boundary phase,
+	// so that re-running `kmx lift --step plane` on its own is enough to
+	// repair a cluster whose certificate is missing or expired.
+	if err := a.planeCertificate(false); err != nil {
+		return err
+	}
+
 	// The committed manifest names a local tag with imagePullPolicy Never,
 	// which is right for a side-loaded image and would be ErrImageNeverPull
 	// forever on a registry-backed cluster. Rendering it is the carried

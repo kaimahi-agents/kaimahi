@@ -53,6 +53,43 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   [docs/identity.md](docs/identity.md#where-none-is-stretched-and-why-that-is-accepted)
   says plainly that if a foreign runtime becomes supported the position
   is void.
+- **The plane's two data seams serve TLS.** The model seam (8080) carries the
+  full text of what an agent was asked and what it answered; the tool seam
+  (8081) carries the body a tool returned. Neither is written to any artifact
+  the plane keeps — the ledger records identifiers, token counts, cost and
+  status, and the tool audit records the decision plus a summary of *declared*
+  argument fields capped at 240 bytes. That content therefore exists in no
+  other record, which is what encrypting the hop buys.
+
+  `kmx plane` mints the material and there is no new component: a certificate
+  authority created once in Secret `kaimahi-plane-authority` (its private key
+  mounted into no pod at all), a serving certificate in
+  `kaimahi-plane-seam-tls` mounted into the proxy, and the authority's
+  certificate alone in `kaimahi-plane-ca` in the agent namespace, which
+  `ModelConfig.spec.tls` and `RemoteMCPServer.spec.tls` name. kagent's
+  controller mounts that Secret into the agent pods it generates, so no
+  pod-spec edit is needed. Verification is never disabled: chain *and*
+  hostname are checked, on the agent's model calls, on kagent's own tool
+  discovery, and on the plane's two loopback self-calls.
+
+  The admin and ops ports are unchanged — they are on no Service — and the
+  inbound bridge's one public route still terminates TLS at an edge.
+- **The seam certificate's expiry is reported before it bites**, in three
+  places: a `kmx status` line naming subject, issuer and days remaining; the
+  `kaimahi_seam_certificate_expires_in_seconds` gauge on the ops port; and the
+  proxy's startup log. `kmx plane` re-signs inside the last 30 days of a
+  398-day life, and `kmx plane --step certificate` does it on demand. Renewal
+  re-signs under the *unchanged* authority, so nothing on the agent side has
+  to be redistributed and there is no window where one side has rolled over
+  and the other has not.
+- **`scripts/check-seam-tls.py`** — kagent admits both of the mistakes this
+  change could make, and refuses neither. An `https://` seam URL with no
+  `spec.tls` fails every call against a trust store that has never heard of
+  the plane; a `spec.tls` block beside an `http://` baseUrl is accepted,
+  inert, and reads as configured while the seam is plaintext. The checker
+  covers both halves, plus `disableVerify`, and proves it can still catch each
+  one before its verdict on the tree is trusted.
+
 
 ### Fixed
 
@@ -128,6 +165,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **`kmx plane` has a fourth step, `certificate`**, between `secrets` and
+  `deploy`. `make plane-certificate` delegates to it on every target.
+- **The seam URLs this repository writes are `https`**, in the two governed
+  ModelConfig presets, the six committed RemoteMCPServers, the scaffolder, and
+  the manifests `kmx tools add` and `kmx agent create --image` generate. A BYO
+  agent (`--image`) also gets the authority mounted and `SSL_CERT_FILE` set,
+  because kagent's controller mounts nothing for a BYO pod.
 - **The prerequisite list is one item: a container engine.** It was five (Go,
   Docker or Podman, kind, kubectl, Helm) plus make and curl. Go is now needed
   only by the two commands that build the plane's image: `kmx plane`, and
@@ -531,6 +575,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- **The two data seams no longer answer plain HTTP.** A `ModelConfig` or
+  `RemoteMCPServer` written before this release still names `http://` and
+  carries no certificate authority, so its calls fail closed from the moment
+  `kmx plane` finishes until the seam is re-applied. Nothing degrades to
+  plaintext — the listener answers "Client sent an HTTP request to an HTTPS
+  server" — which is the right direction, but it is a real gap and it is not
+  self-healing. See **Upgrading** below.
+
+  A non-kagent client of either seam is affected the same way and needs the
+  authority's certificate; `docs/foreign-runtime.md` says how to read it out,
+  and why skipping verification instead is worse than the plaintext it
+  replaces.
+
 - **`kmx status -o json` is no longer a `kubectl apply` document.** The
   top-level kubectl `apiVersion` and `kind` are gone, because the output is
   now kmx's own envelope — `context`, `contextSource`, a `governance` block,
@@ -551,6 +608,21 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   arguments use Cobra’s standard errors rather than being ignored by a few
   commands. Bare command groups such as `kmx agent` now print their hierarchical
   help and exit successfully instead of returning a one-line legacy usage error.
+
+### Upgrading
+
+```sh
+kmx plane                # mints the certificate; the seams become TLS here
+kmx govern <credential>  # re-applies the model seam with https + spec.tls
+kmx tools govern         # the same for the tool seam
+kmx status               # the certificate, and which seams are governed
+```
+
+`kmx plane` prints those commands when it finishes, for the same reason they
+are written out here: between the first and the rest, calls fail.
+
+A fresh cluster needs nothing extra — `kmx up` is untouched, and `kmx plane`
+followed by `kmx govern` is the order it already documented.
 
 ## v0.1.0 — 2026-09-03
 

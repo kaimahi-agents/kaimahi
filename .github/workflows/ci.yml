@@ -2939,7 +2939,11 @@ jobs:
             --url http://acme-warehouse.acme:8090/mcp \
             --tool stock_get:sku --tool stock_adjust:sku,delta --out - | tee scaffold.out
           # The seam points at the GATEWAY, never at the server.
-          grep -qF 'url: "http://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp"' scaffold.out
+          grep -qF 'url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp"' scaffold.out
+          # The https above is only half of it: a TLS block beside it is what
+          # makes the scheme mean anything, and a scaffolded seam without one
+          # is admitted by kagent and fails every call.
+          grep -qF 'caCertSecretRef: kaimahi-plane-ca' scaffold.out
           # The policy carries the CONTAINER port, not the Service's.
           grep -q 'port: 9090' scaffold.out
           if grep -qE '^ +port: 8090' scaffold.out; then

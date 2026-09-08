@@ -1,6 +1,6 @@
 {
   "checker": "check-seam-tls.py",
-  "why": "This checker guards a downgrade that nothing else refuses. kagent admits a ModelConfig with a spec.tls block beside an http:// baseUrl: nothing fails, the block is inert, the seam is plaintext, and the manifest reads as configured. It also admits an https:// baseUrl with no tls block, which fails every call as a generic connection error far from its cause. So the checker has to fail in every way it could stop noticing either half — the scheme test, the missing-authority test, the disableVerify test, the two identity tests, the recogniser that finds no seam URLs or every URL, an empty run reported as clean, and a verdict computed and dropped. The FIXTURES are mutated too: a self-test whose broken cases stop being broken passes while checking nothing, and that is the failure this harness cannot otherwise see.",
+  "why": "This checker guards a downgrade that nothing else refuses. kagent admits a ModelConfig with a spec.tls block beside an http:// baseUrl: nothing fails, the block is inert, the seam is plaintext, and the manifest reads as configured. It also admits an https:// baseUrl with no tls block, which fails every call as a generic connection error far from its cause. So the checker has to fail in every way it could stop noticing either half \u2014 the scheme test, the missing-authority test, the disableVerify test, the two identity tests, the recogniser that finds no seam URLs or every URL, the FLOOR that stops a scan which read nothing from printing the clean verdict, the enumeration that decides which files are read at all, and a verdict computed and dropped. The FIXTURES are mutated too: a self-test whose broken cases stop being broken passes while checking nothing, and that is the failure this harness cannot otherwise see.",
   "verify": [
     "python3",
     "scripts/check-seam-tls.py",
@@ -22,7 +22,7 @@
     },
     {
       "name": "verification may be disabled",
-      "breaks": "The rule that a seam nobody verifies is weaker than a plaintext one that never claimed to be verified — it costs the same certificate machinery and buys nothing.",
+      "breaks": "The rule that a seam nobody verifies is weaker than a plaintext one that never claimed to be verified \u2014 it costs the same certificate machinery and buys nothing.",
       "find": "    if tls.get(\"disableVerify\"):",
       "replace": "    if False:"
     },
@@ -41,13 +41,13 @@
     {
       "name": "no URL is recognised as a seam",
       "breaks": "The recogniser, from the empty side: every manifest is treated as pointing somewhere else, so the whole file passes while examining nothing. Enumerated and examined are separate checks.",
-      "find": "    return host.split(\".\")[0] in SEAM_SERVICES and \".kaimahi\" in host + \".\"",
+      "find": "    if labels[0] not in SEAM_SERVICES:\n        return False\n    return len(labels) == 1 or labels[1] == PLANE_NAMESPACE",
       "replace": "    return False"
     },
     {
       "name": "every URL is recognised as a seam",
-      "breaks": "The recogniser from the other side. An ungoverned ModelConfig pointing at Ollama is required to name the plane's authority — a check that fails on documents it has no business reading is a check people turn off.",
-      "find": "    return host.split(\".\")[0] in SEAM_SERVICES and \".kaimahi\" in host + \".\"",
+      "breaks": "The recogniser from the other side. An ungoverned ModelConfig pointing at Ollama is required to name the plane's authority \u2014 a check that fails on documents it has no business reading is a check people turn off.",
+      "find": "    if labels[0] not in SEAM_SERVICES:\n        return False\n    return len(labels) == 1 or labels[1] == PLANE_NAMESPACE",
       "replace": "    return True"
     },
     {
@@ -64,7 +64,7 @@
     },
     {
       "name": "the findings are collected and the exit code ignores them",
-      "breaks": "A checker that does all its work, prints every problem, and exits 0 — the failure mode an exit code alone cannot see.",
+      "breaks": "A checker that does all its work, prints every problem, and exits 0 \u2014 the failure mode an exit code alone cannot see.",
       "find": "        print(f\"seam TLS: {len(problems)} manifests reach a seam without verifying it\", file=sys.stderr)\n        return 1",
       "replace": "        print(f\"seam TLS: {len(problems)} manifests reach a seam without verifying it\", file=sys.stderr)\n        return 0"
     },
@@ -76,7 +76,7 @@
     },
     {
       "name": "the self-test's broken fixtures stop being broken",
-      "breaks": "The FIXTURE, which no other mutation touches. Every case becomes a correct manifest, every expectation goes unmet, and a self-test that checks nothing is exactly as green as one that checks everything.",
+      "breaks": "The FIXTURE, which no other mutation touches. The plaintext case becomes a correct manifest and its expectation goes unmet. One case, not all of them \u2014 but the point stands: a self-test whose broken inputs stop being broken is exactly as green as one that checks everything.",
       "find": "  openAI: {baseUrl: \"http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1\"}",
       "replace": "  openAI: {baseUrl: \"https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1\"}"
     },
@@ -91,6 +91,24 @@
       "breaks": "The same over-reach reached through the trust anchor: an ungoverned ModelConfig pointing at a real provider is told to name the plane's authority, and a check that fails on documents it has no business reading is a check people turn off.",
       "find": "    if not seams:",
       "replace": "    if False:"
+    },
+    {
+      "name": "the floor on how much was examined is removed",
+      "breaks": "The guard against a scan that read NOTHING \u2014 a renamed directory, a moved manifest, a glob that stopped matching \u2014 and printed its clean verdict anyway. This repository has shipped that failure before, in a scanner that examined 0 of 374 files and reported clean.",
+      "find": "    if not problems and checked < minimum:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "only one manifest extension is read",
+      "breaks": "The enumeration. A manifest written as .yml or .json becomes invisible, and the checker reports every seam URL https while never having opened the one that is not.",
+      "find": "    for path in sorted(p for pattern in (\"*.yaml\", \"*.yml\", \"*.json\")\n                       for p in root.rglob(pattern)):",
+      "replace": "    for path in sorted(root.rglob(\"*.nothing-matches-this\")):"
+    },
+    {
+      "name": "the one-label service name stops counting as a seam",
+      "breaks": "The form internal/kmx/seamcert deliberately mints a SAN for, so the repository treats it as a real way to address a seam. Missed, a manifest reading `url: http://kaimahi-proxy:8080/upstream/x/v1` falls into the not-a-seam branch and is exempt from every rule in this file.",
+      "find": "    return len(labels) == 1 or labels[1] == PLANE_NAMESPACE",
+      "replace": "    return len(labels) > 1 and labels[1] == PLANE_NAMESPACE"
     }
   ]
 }

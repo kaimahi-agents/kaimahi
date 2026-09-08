@@ -119,8 +119,14 @@ func SeamNames() []string {
 	// The plane dials its own seams over loopback — the liveness probe asks
 	// each data listener whether it is answering, and the approval notifier
 	// posts through its own gateway. Those are clients like any other and
-	// they verify like any other; without these names they would be the one
-	// place tempted to skip verification.
+	// they verify like any other; without a loopback name on the
+	// certificate they would be the one place tempted to skip verification.
+	//
+	// Both of them dial by ADDRESS, so it is the IP SANs in Sign that carry
+	// them. `localhost` is here for a caller that reaches a port-forward by
+	// name rather than by address — nothing in this repository does today,
+	// and a certificate that refused it would be a trap for the first one
+	// that tries.
 	return append(names, loopbackDNSName)
 }
 
@@ -214,6 +220,19 @@ func (a Authority) Sign(names []string, now time.Time) (Serving, error) {
 	serial, err := serialNumber()
 	if err != nil {
 		return Serving{}, err
+	}
+	// Refuse outright once the authority is spent, rather than clamping into
+	// a window that has already closed. Clamping alone would mint a
+	// certificate whose NotAfter is in the PAST, apply it, restart the plane
+	// into material nothing accepts, and exit 0 — a reported success that
+	// leaves both seams unusable. Reachable by clock skew or a restored old
+	// authority Secret long before it is reachable by the calendar.
+	if !now.Before(a.cert.NotAfter) {
+		return Serving{}, fmt.Errorf(
+			"the certificate authority %q expired %s and cannot sign anything.\n"+
+				"  Delete Secret kaimahi/kaimahi-plane-authority and re-run `kmx plane` to mint a new one —\n"+
+				"  every agent's trust changes with it, which kagent rolls them for",
+			a.cert.Subject.CommonName, a.cert.NotAfter.UTC().Format(time.RFC3339))
 	}
 	notAfter := now.Add(servingLifetime)
 	// Never outlive the authority. A certificate valid past its issuer is

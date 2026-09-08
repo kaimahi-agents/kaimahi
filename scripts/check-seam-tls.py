@@ -36,17 +36,34 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # of these is a seam URL, whichever of the four DNS forms it uses.
 SEAM_SERVICES = ("kaimahi-proxy", "kaimahi-mcp-gateway")
 
+# The namespace the plane's Services live in. A host whose first label
+# matches but whose namespace does not is a different endpoint.
+PLANE_NAMESPACE = "kaimahi"
+
 # What a seam-facing manifest must name, matching internal/kmx/config.
 CA_SECRET = "kaimahi-plane-ca"
 CA_KEY = "ca.crt"
 
 
 def seam_url(url):
-    """Is this URL one of the plane's data seams?"""
+    """Is this URL one of the plane's data seams?
+
+    All FOUR DNS forms count, including the bare one-label service name. That
+    is not hypothetical tidiness: internal/kmx/seamcert mints a SAN for it, so
+    the repository treats it as a real way to address a seam, and a recogniser
+    that missed it would wave through a manifest reaching the seam in the
+    clear.
+
+    A host outside the plane's namespace is somebody else's endpoint, even
+    when the first label matches — `kaimahi-proxy.other-ns` is not this seam.
+    """
     if not isinstance(url, str) or "://" not in url:
         return False
     host = url.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
-    return host.split(".")[0] in SEAM_SERVICES and ".kaimahi" in host + "."
+    labels = host.split(".")
+    if labels[0] not in SEAM_SERVICES:
+        return False
+    return len(labels) == 1 or labels[1] == PLANE_NAMESPACE
 
 
 def urls_in(spec):
@@ -128,7 +145,12 @@ def check_document(where, doc):
 
 def scan(root):
     problems, checked = [], 0
-    for path in sorted(root.rglob("*.yaml")):
+    # Every extension a manifest is written in here, not just the one this
+    # tree happens to use. scripts/plane-deploy.sh carries a comment about
+    # making exactly this mistake: a narrower glob is how a resource gets
+    # silently skipped rather than checked.
+    for path in sorted(p for pattern in ("*.yaml", "*.yml", "*.json")
+                       for p in root.rglob(pattern)):
         try:
             documents = list(yaml.safe_load_all(path.read_text()))
         except yaml.YAMLError as exc:
@@ -197,6 +219,16 @@ spec:
         "names key",
     ),
     (
+        "the one-label service name is still a seam",
+        """
+kind: RemoteMCPServer
+metadata: {name: bad}
+spec:
+  url: "http://kaimahi-mcp-gateway:8081/upstream/x/mcp"
+""",
+        "plaintext",
+    ),
+    (
         "authority named by a manifest pointing elsewhere",
         """
 kind: ModelConfig
@@ -254,7 +286,23 @@ def exit_code_failures():
             out.append("a tree full of broken manifests exited 0")
         if report(*scan(clean)) != 0:
             out.append("a tree of correct manifests exited non-zero")
+        # The floor: a scan that read NOTHING must not print the clean
+        # verdict. This is the failure that has bitten this repository
+        # before — a scanner that examined 0 of 374 files and reported
+        # clean — and enumerated is not the same check as examined.
+        empty = pathlib.Path(tmp) / "empty"
+        empty.mkdir()
+        if report(*scan(empty), minimum=MINIMUM_SEAM_MANIFESTS) != 1:
+            out.append("an empty tree passed: a scan that read nothing reported everything fine")
+        if report(*scan(clean), minimum=MINIMUM_SEAM_MANIFESTS) != 1:
+            out.append("a tree below the floor passed")
     return out
+
+
+def total_cases():
+    """Every case the self-test runs: the deliberate breakages, the two
+    manifests that must be left alone, and the four exit-code checks."""
+    return len(SELF_TEST_CASES) + 6
 
 
 def self_test():
@@ -281,15 +329,33 @@ def self_test():
     if failures:
         for f in failures:
             print("  " + f, file=sys.stderr)
-        print(f"seam TLS self-test: {len(failures)} of {len(SELF_TEST_CASES) + 2} cases wrong", file=sys.stderr)
+        print(f"seam TLS self-test: {len(failures)} of {total_cases()} cases wrong", file=sys.stderr)
         return 1
     print(f"seam TLS self-test: {len(SELF_TEST_CASES)} deliberate breakages all noticed, "
           f"2 correct manifests left alone")
     return 0
 
 
-def report(problems, checked):
-    """Print the verdict and return the exit code that carries it."""
+# The tree carries at least the two governed model presets and the six
+# committed RemoteMCPServers. The floor is deliberately well below that: it
+# exists to catch a scan that read NOTHING — a renamed directory, a manifest
+# moved, a `.yml` extension, a glob that stopped matching — not to freeze the
+# current count. A checker that examines zero files and prints its clean
+# verdict is the exact shape of a passing condition looser than its claim.
+MINIMUM_SEAM_MANIFESTS = 8
+
+
+def report(problems, checked, minimum=0):
+    """Print the verdict and return the exit code that carries it.
+
+    `minimum` is the floor for a REAL run; the self-test's fixture trees pass
+    0 because they are two files by construction.
+    """
+    if not problems and checked < minimum:
+        print(f"seam TLS: only {checked} seam-capable manifest(s) found, expected at least "
+              f"{minimum} — this scan did not read what it is supposed to check",
+              file=sys.stderr)
+        return 1
     if problems:
         for p in problems:
             print("  " + p, file=sys.stderr)
@@ -303,7 +369,7 @@ def report(problems, checked):
 def main(argv):
     if "--selftest" in argv or "--self-test" in argv:
         return self_test()
-    return report(*scan(ROOT / "k8s"))
+    return report(*scan(ROOT / "k8s"), minimum=MINIMUM_SEAM_MANIFESTS)
 
 
 if __name__ == "__main__":

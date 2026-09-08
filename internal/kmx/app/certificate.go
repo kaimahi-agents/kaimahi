@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -62,10 +63,19 @@ func (a *App) planeCertificate(singleStep bool) error {
 			"tls.key": string(material.KeyPEM),
 			"ca.crt":  string(authority.CertPEM),
 		}, nil)
-		if err := a.applySecret(body, config.PlaneSeamTLSSecret); err != nil {
+		if err := a.applySecretIn(admin.Namespace, body, config.PlaneSeamTLSSecret); err != nil {
 			return err
 		}
 	}
+
+	// Asked BEFORE the publish below overwrites the answer. Whether agents
+	// were trusting an OLDER authority is a fact about the AGENT namespace,
+	// not about whether this namespace had a serving certificate. Gating on
+	// the latter missed the case that matters most: the plane's namespace
+	// deleted and recreated while governed agents stayed where they were,
+	// which is exactly when every agent's trust anchor has just been
+	// swapped underneath them.
+	trustChanged := authorityIsNew && a.agentsTrustedAnotherAuthority(authority.CertPEM)
 
 	// The authority's certificate goes to the agent namespace on EVERY run,
 	// not only when something was signed. It is how a cluster repairs
@@ -74,7 +84,7 @@ func (a *App) planeCertificate(singleStep bool) error {
 	if err := a.publishAuthority(authority.CertPEM); err != nil {
 		return err
 	}
-	if authorityIsNew && serving != nil {
+	if trustChanged {
 		a.notef("NOTE: the authority was re-minted, so every agent's trust changed with it.\n" +
 			"  kagent rolls an agent when the CA Secret it names changes, so this propagates on its own —\n" +
 			"  but calls made between the plane restarting and that rollout finishing fail closed.")
@@ -162,18 +172,27 @@ func (a *App) servingCertificate() (*x509.Certificate, error) {
 // would be the wrong end of the problem. `kmx govern` publishes it again
 // before it needs it.
 func (a *App) publishAuthority(certPEM []byte) error {
-	body := secretManifest(config.PlaneCASecret, config_kagentNamespace,
-		map[string]string{config.PlaneCAKey: string(certPEM)}, nil)
-	if err := a.applySecretIn(config_kagentNamespace, body, config.PlaneCASecret); err != nil {
+	// The namespace is checked FIRST rather than inferred from a failed
+	// apply. `kubectl apply -f -` is run through a pipe, so its error
+	// reaches Go as a bare exit status with the message on the child's
+	// stderr — isNotFound has nothing to read, every failure looks alike,
+	// and the tolerated case is indistinguishable from a real one. Reaching
+	// for the message here made `kmx plane` fail outright on a cluster where
+	// kagent is not installed, which is the exact case this is meant to
+	// allow.
+	if _, err := a.kubectlCapture("get", "namespace", config_kagentNamespace, "-o", "name"); err != nil {
 		if isNotFound(err) {
 			a.notef("NOTE: namespace %s does not exist yet, so nothing was told what to trust.\n"+
 				"  `kmx govern` publishes Secret %s there before it points an agent at the plane.",
 				config_kagentNamespace, config.PlaneCASecret)
 			return nil
 		}
-		return err
+		return fmt.Errorf("cannot tell whether namespace %s exists (refusing to guess): %w",
+			config_kagentNamespace, err)
 	}
-	return nil
+	body := secretManifest(config.PlaneCASecret, config_kagentNamespace,
+		map[string]string{config.PlaneCAKey: string(certPEM)}, nil)
+	return a.applySecretIn(config_kagentNamespace, body, config.PlaneCASecret)
 }
 
 // publishPlaneAuthority republishes the authority's certificate into the
@@ -206,6 +225,22 @@ func (a *App) publishPlaneAuthority() error {
 			admin.Namespace, config.PlaneSeamTLSSecret, config.PlaneCAKey)
 	}
 	return a.publishAuthority(ca)
+}
+
+// agentsTrustedAnotherAuthority reports whether the agent namespace already
+// held a DIFFERENT authority than the one just minted.
+//
+// Read before it is overwritten, and answered conservatively: a namespace
+// that cannot be read, or has no Secret yet, is not evidence of a swap, and
+// warning about one that did not happen would train the reader to skip the
+// line that matters.
+func (a *App) agentsTrustedAnotherAuthority(certPEM []byte) bool {
+	data, err := a.secretData(config_kagentNamespace, config.PlaneCASecret)
+	if err != nil {
+		return false
+	}
+	existing, ok := data[config.PlaneCAKey]
+	return ok && len(existing) > 0 && !bytes.Equal(existing, certPEM)
 }
 
 // restartForCertificate rolls the proxy so it picks up a certificate this
@@ -249,10 +284,6 @@ func (a *App) secretData(namespace, name string) (map[string][]byte, error) {
 	return out, nil
 }
 
-func (a *App) applySecret(body []byte, name string) error {
-	return a.applySecretIn(admin.Namespace, body, name)
-}
-
 func (a *App) applySecretIn(namespace string, body []byte, name string) error {
 	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s)\n", a.Cfg.KubeContext, namespace, name)
 	quiet := *a.Run
@@ -293,18 +324,6 @@ func (a *App) seamCertificate() SeamCertificate {
 	return SeamCertificate{State: report.State.String(), Line: report.Line()}
 }
 
-// certificateFailure recognises kagent reporting that it could not verify the
-// plane's certificate, and answers with the certificate rather than with the
-// connection.
-//
-// This exists because of what the other side does NOT say. kagent's agent
-// runtime surfaces a failed handshake as a generic connection error — the
-// helpful, certificate-naming diagnostic in its own source is never called on
-// that path — so an operator meeting a wrong or expired certificate is told
-// only that something could not connect. That is the failure this lane was
-// warned about by name. kmx cannot fix the agent's message, but it can refuse
-// to repeat it: whenever a seam verdict carries one of these, the certificate
-// is named alongside.
 // certificateNote turns a refusal that is about trust into one that names the
 // certificate, and adds nothing to a refusal that is about anything else.
 //
@@ -323,6 +342,15 @@ func (a *App) certificateNote(message string) string {
 		a.seamCertificate().Line, config_kagentNamespace, config.PlaneCASecret)
 }
 
+// certificateFailure recognises a refusal that is about TRUST rather than
+// about reachability.
+//
+// It exists because of what the other side does not say. kagent's agent
+// runtime surfaces a failed handshake as a generic connection error — the
+// certificate-naming diagnostic in its own source is never called on that
+// path — so an operator meeting a wrong or expired certificate is told only
+// that something could not connect. kmx cannot fix that message, but it can
+// decline to repeat it.
 func certificateFailure(message string) bool {
 	lower := strings.ToLower(message)
 	for _, marker := range []string{

@@ -22,6 +22,7 @@ package seamtls
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -81,6 +82,30 @@ func Load(dir string) (*Material, error) {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("%s holds no PEM certificate", filepath.Join(dir, authorityFile))
 	}
+	// The third pairing, and the one a half-applied Secret breaks: the
+	// certificate this process SERVES has to be one the authority it ships
+	// beside actually signed.
+	//
+	// All three files load individually without complaint when they do not
+	// belong together — a restored backup, a hand-edited Secret, a partial
+	// apply — and the startup log would then name a certificate nothing can
+	// verify. What follows is a liveness probe failing on loopback and a
+	// restart loop, which says nothing about the cause. The material is all
+	// in hand here, so the check costs one signature verification.
+	//
+	// The SIGNATURE, not a chain: a chain is verified at a time, and the
+	// question here is who signed this, which has no clock in it. Expiry is
+	// reported separately and by name.
+	authority, err := x509.ParseCertificate(rootCert(caPEM))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", filepath.Join(dir, authorityFile), err)
+	}
+	if err := leaf.CheckSignatureFrom(authority); err != nil {
+		return nil, fmt.Errorf(
+			"the seam certificate in %s was not signed by the authority beside it "+
+				"(%q is not the issuer of %q): %w",
+			dir, authority.Subject.CommonName, leaf.Subject.CommonName, err)
+	}
 	return &Material{Leaf: leaf, certificate: certificate, roots: roots}, nil
 }
 
@@ -122,6 +147,17 @@ func (m *Material) Describe() string {
 // something a dashboard can alert on rather than something a person has to
 // remember to look at.
 func (m *Material) ExpiresIn(now time.Time) time.Duration { return m.Leaf.NotAfter.Sub(now) }
+
+// rootCert returns the DER of the FIRST certificate in a PEM bundle. The
+// authority file carries exactly one today; taking the first keeps a future
+// bundle from turning this check into a parse error.
+func rootCert(caPEM []byte) []byte {
+	block, _ := pem.Decode(caPEM)
+	if block == nil {
+		return nil
+	}
+	return block.Bytes
+}
 
 func read(dir, name string) ([]byte, error) {
 	path := filepath.Join(dir, name)

@@ -854,7 +854,7 @@ endif
 ## plane-certificate: mint or renew the certificate the two data seams
 ## serve with, and publish the authority agents verify it against
 #
-# One implementation on every target (D27): the minting, the create-once
+# One implementation on every target: the minting, the create-once
 # authority and the renewal decision are all decidable without a cluster and
 # live in internal/kmx/seamcert, so there is no shell version of them to keep
 # in step. The proxy refuses to start without this material, which is why it

@@ -122,9 +122,15 @@ for doc in yaml.safe_load_all(open(sys.argv[1])):
             continue
         assert c["image"] == want_image, c["image"]
         assert c["imagePullPolicy"] == want_policy, c["imagePullPolicy"]
-        # The custody surface must survive the render untouched.
+        # The custody surface must survive the render untouched. The seam
+        # certificate is here for a different reason than the other two: the
+        # process refuses to start without it, so losing it in a render would
+        # be a crash-loop rather than a silent downgrade — but a render that
+        # dropped it would also be the only way this pod could end up trying
+        # to serve its data seams without one.
         mounts = {m["mountPath"] for m in c["volumeMounts"]}
-        assert "/etc/kaimahi/pg" in mounts and "/etc/kaimahi/admin" in mounts, mounts
+        for required in ("/etc/kaimahi/pg", "/etc/kaimahi/admin", "/etc/kaimahi/seam-tls"):
+            assert required in mounts, (required, mounts)
 PY
 
 echo "plane-deploy: proxy image=$PLANE_IMAGE pullPolicy=$PLANE_PULL_POLICY" >&2

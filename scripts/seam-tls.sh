@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Shared by every probe that talks to one of the plane's two data seams.
+# Shared by the probes that reach one of the plane's two data seams on a
+# CLUSTER. plane-upgrade-probe.sh is the exception and always will be: it runs
+# the plane as a local process, so it mints its own material with openssl
+# rather than reading a Secret that does not exist.
 #
 # Both seams serve TLS under the plane's own certificate authority, which no
 # system trust store has heard of, so a probe has to be told what to verify

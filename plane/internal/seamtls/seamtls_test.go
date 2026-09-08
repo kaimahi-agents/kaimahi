@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // write lays out a mount the way the projected Secret does.
@@ -68,6 +69,43 @@ func TestLoadRefusesAKeyThatDoesNotMatchTheCertificate(t *testing.T) {
 	_, err := Load(write(t, files))
 	if err == nil {
 		t.Fatal("a certificate loaded with somebody else's key")
+	}
+}
+
+// The third pairing, and the one a half-applied Secret breaks. The
+// certificate and key agree with each other and the authority is a perfectly
+// good certificate; they simply do not belong together. Every file parses, so
+// nothing here fails on its own — the startup log would name a certificate
+// nothing can verify, and the symptom would be a liveness probe failing on
+// loopback and a restart loop that says nothing about the cause.
+func TestLoadRefusesACertificateTheShippedAuthorityDidNotSign(t *testing.T) {
+	files := testMount(t)
+	files[authorityFile] = testMount(t)[authorityFile]
+	_, err := Load(write(t, files))
+	if err == nil {
+		t.Fatal("a certificate loaded beside an authority that did not sign it")
+	}
+	for _, want := range []string{"not signed by the authority", "kaimahi-plane-ca", "kaimahi-plane-seams"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q: %v", want, err)
+		}
+	}
+}
+
+// An EXPIRED certificate must still load and serve. Expiry is reported by
+// name — in `kmx status`, in a metric and in the startup log — and refusing
+// to start on it would replace a seam that says "certificate expired" with a
+// pod that never runs and says nothing.
+func TestLoadAcceptsAnExpiredCertificateSoTheReasonCanBeReported(t *testing.T) {
+	m, err := Load(write(t, expiredMount(t)))
+	if err != nil {
+		t.Fatalf("an expired certificate stopped the plane from starting: %v", err)
+	}
+	if m.ExpiresIn(time.Now()) > 0 {
+		t.Error("the fixture is not actually expired")
+	}
+	if !strings.Contains(m.Describe(), "kaimahi-plane-seams") {
+		t.Errorf("the description does not name the certificate: %s", m.Describe())
 	}
 }
 
