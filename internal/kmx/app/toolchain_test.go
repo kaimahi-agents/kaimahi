@@ -14,6 +14,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
 
 // A machine with a container engine and nothing else must still get past
@@ -95,5 +96,45 @@ func TestTheContainerEngineIsNeverFetched(t *testing.T) {
 	err := a.preflight(a.engineDependency())
 	if err == nil || !strings.Contains(err.Error(), "docker is not on PATH") {
 		t.Fatalf("the engine was not reported as the operator's own to install: %v", err)
+	}
+}
+
+// The two lists of fetchable tools have to agree, and nothing made them.
+//
+// `dependency.fetchable` here is what decides whether kmx tries to DOWNLOAD a
+// tool; `toolchain.Fetchable` is what the toolchain package's own test walks
+// to prove every pinned spec names a URL and a checksum the upstream really
+// publishes. They are separate lists of the same thing, so a fourth fetchable
+// dependency added here — and not there — would be downloaded by a spec no
+// test has ever looked at, and the first sign of a typo would be a 404 part
+// way through somebody's first run.
+//
+// Checked in both directions on purpose. A name here and not there is an
+// unverified spec; a name there and not here is a spec for something kmx no
+// longer fetches, which is the other way the two drift apart.
+func TestTheFetchableDependenciesAreExactlyTheOnesTheToolchainVerifies(t *testing.T) {
+	declared := map[string]bool{}
+	for _, dep := range []dependency{depKubectl, depKind, depHelm, depGo} {
+		if dep.fetchable {
+			declared[dep.name] = true
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no dependency in this package is marked fetchable — this check is reading a field that " +
+			"no longer carries the decision, so it would pass while comparing nothing")
+	}
+	verified := map[string]bool{}
+	for _, name := range toolchain.Fetchable {
+		verified[name] = true
+	}
+	for name := range declared {
+		if !verified[name] {
+			t.Errorf("kmx fetches %q but toolchain.Fetchable does not list it, so its pinned spec is never checked", name)
+		}
+	}
+	for name := range verified {
+		if !declared[name] {
+			t.Errorf("toolchain.Fetchable lists %q but no dependency here is marked fetchable for it", name)
+		}
 	}
 }

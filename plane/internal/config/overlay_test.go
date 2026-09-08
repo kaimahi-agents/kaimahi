@@ -279,7 +279,7 @@ func TestReadSkipsTheSymlinksAConfigMapVolumePlants(t *testing.T) {
 	if len(frags) != 2 || frags[0].Name != "a.json" || frags[1].Name != "b.json" {
 		t.Fatalf("want a.json then b.json, got %+v", frags)
 	}
-	cfg, err := LoadDir(base, overlay)
+	cfg, err := loadDir(t, base, overlay)
 	if err != nil {
 		t.Fatalf("loaddir: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestAnAbsentOverlayDirectoryIsAnEmptyOverlayNotAnError(t *testing.T) {
 	}
 	// The volume is optional: on a cluster where nobody has onboarded
 	// anything, the directory does not exist and the plane must boot.
-	cfg, err := LoadDir(base, filepath.Join(dir, "nothing-here"))
+	cfg, err := loadDir(t, base, filepath.Join(dir, "nothing-here"))
 	if err != nil {
 		t.Fatalf("an absent overlay must not stop the plane: %v", err)
 	}
@@ -362,4 +362,25 @@ func TestEveryToolUpstreamFieldIsClassifiedAsSafeOrDenied(t *testing.T) {
 	if len(denied) == 0 {
 		t.Fatal("custodyFields is empty — the denial has been emptied out")
 	}
+}
+
+// loadDir is read, merge, parse in one call, for the tests that care about
+// the RESULT of the overlay rather than the steps.
+//
+// It lives in the test rather than in the package because nothing shipped
+// calls it: cmd/kaimahi-proxy runs the three steps itself so it can log each
+// merged fragment between Merge and Parse. Keeping the convenience wrapper in
+// the package meant exporting a function no binary uses, and a reader could
+// not tell whether it was the boot path or a leftover. It is a leftover.
+func loadDir(t *testing.T, path, dir string) (Config, error) {
+	t.Helper()
+	base, frags, err := Read(path, dir)
+	if err != nil {
+		return Config{}, err
+	}
+	merged, err := Merge(base, frags)
+	if err != nil {
+		return Config{}, err
+	}
+	return Parse(merged)
 }

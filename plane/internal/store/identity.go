@@ -138,8 +138,15 @@ func (s *Store) ActorFor(ctx context.Context, credential string) (Attribution, e
 	}
 }
 
-// RunByID reads one run (what a transcript follows from a ledger row
-// back to the delivery that caused it).
+// RunByID reads one run — a ledger or audit row's back-reference to the
+// delivery that caused it.
+//
+// Kept although no product path calls it yet. Its caller is the Postgres
+// test that proves the run row round-trips: a ledger entry carries a run id,
+// and that id resolves to the source and delivery it came from. That is an
+// assertion about persisted data, and the alternative to keeping this
+// accessor is a second copy of the SELECT inside the test, where nothing
+// would hold it to the schema the product writes.
 func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 	var r Run
 	err := s.pool.QueryRow(ctx,

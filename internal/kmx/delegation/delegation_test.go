@@ -12,7 +12,10 @@
 package delegation
 
 import (
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -415,19 +418,103 @@ func recipes(t *testing.T, args ...string) map[string]string {
 	return db
 }
 
-// The plane's manifests and the governed presets are inside the binary, so a
-// manifest edit has to RELINK it. Without this the Makefile would happily
-// reuse a bin/kmx built before the edit and deploy the previous manifest —
-// the same class of staleness the unconditional proxy restart exists for.
-func TestEditingAPlaneManifestRebuildsKmx(t *testing.T) {
-	for _, asset := range []string{
-		"k8s/plane/proxy.yaml",
-		"k8s/models/governed-ollama.yaml",
-	} {
-		if !strings.Contains(makeVariable(t, "KMX_ASSETS"), asset) {
-			t.Errorf("KMX_ASSETS does not list %s, so editing it would not relink bin/kmx", asset)
+// Everything embed.go carries is inside the binary, so editing any of it has
+// to RELINK. Without that the Makefile happily reuses a bin/kmx built before
+// the edit and applies the previous file — the same class of staleness the
+// unconditional proxy restart exists for.
+//
+// The list is DERIVED from embed.go's //go:embed directives rather than
+// restated here. The version that restated it named two files, and while it
+// sat there green KMX_ASSETS drifted twelve files behind embed.go: the WASM
+// runtime, the release blueprint, and every script and observability
+// manifest the managed path ships. A guard that repeats what it guards
+// cannot catch drift, because the drift happens in the half it does not
+// read.
+func TestEveryEmbeddedFileRelinksKmx(t *testing.T) {
+	embedded := embeddedFiles(t)
+	assets := makeVariable(t, "KMX_ASSETS")
+	for _, file := range embedded {
+		if !strings.Contains(assets, file) {
+			t.Errorf("embed.go carries %s but KMX_ASSETS does not list it, so editing it would not relink bin/kmx", file)
 		}
 	}
+}
+
+// embeddedFiles expands embed.go's //go:embed patterns to the files on disk.
+//
+// The vacuity guards here are the point of the exercise and are derived too:
+// a directive syntax that stops matching, or a pattern that expands to
+// nothing, would leave this test iterating an empty list and passing — which
+// is exactly the failure it replaced.
+func embeddedFiles(t *testing.T) []string {
+	t.Helper()
+	root := filepath.Join("..", "..", "..")
+	source, err := os.ReadFile(filepath.Join(root, "embed.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directive := regexp.MustCompile(`(?m)^//go:embed (.+)$`)
+	matches := directive.FindAllStringSubmatch(string(source), -1)
+	if len(matches) == 0 {
+		t.Fatal("no //go:embed directive found in embed.go — this scan is reading for a syntax that is " +
+			"no longer there, so it would pass while checking nothing")
+	}
+	var files []string
+	for _, match := range matches {
+		for _, pattern := range strings.Fields(match[1]) {
+			found := expandEmbedPattern(t, root, pattern)
+			if len(found) == 0 {
+				t.Errorf("//go:embed %s matches nothing on disk", pattern)
+			}
+			files = append(files, found...)
+		}
+	}
+	if len(files) == 0 {
+		t.Fatal("embed.go's directives expanded to no files at all")
+	}
+	return files
+}
+
+// expandEmbedPattern resolves one pattern the way go:embed does: a directory
+// contributes every file under it except those whose name begins with "." or
+// "_", and anything else is a path or a glob.
+func expandEmbedPattern(t *testing.T, root, pattern string) []string {
+	t.Helper()
+	info, err := os.Stat(filepath.Join(root, pattern))
+	if err == nil && info.IsDir() {
+		var found []string
+		err = filepath.WalkDir(filepath.Join(root, pattern), func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_") {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			found = append(found, filepath.ToSlash(rel))
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	globbed, err := filepath.Glob(filepath.Join(root, pattern))
+	if err != nil {
+		t.Fatalf("%s is not a usable pattern: %v", pattern, err)
+	}
+	var found []string
+	for _, path := range globbed {
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found = append(found, filepath.ToSlash(rel))
+	}
+	return found
 }
 
 // makeVariable asks make what a variable expands to, so the test reads the

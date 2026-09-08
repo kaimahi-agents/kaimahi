@@ -131,9 +131,15 @@ func slackBase(ts string, body []byte) []byte {
 	return []byte(slackVersion + ":" + ts + ":" + string(body))
 }
 
-// Sign produces Kaimahi's v1 signature for a request — exported so the
-// probe/test tooling and any Go caller sign exactly what the plane
-// verifies.
+// Sign produces Kaimahi's v1 signature for a request, over the same base
+// string verify uses, so a Go caller and the plane cannot disagree about
+// what was signed.
+//
+// Its callers today are this package's tests. scripts/inbound-probe.sh does
+// NOT use it: the probe recomputes the HMAC in Python, so the scheme has a
+// second implementation, and docs/inbound.md states it a third time in
+// prose. Nothing holds those three to each other. That is worth knowing
+// before anyone changes the base string.
 func Sign(secret []byte, ts, delivery string, body []byte) string {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(kaimahiBase(ts, delivery, body))

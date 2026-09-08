@@ -126,19 +126,6 @@ func FragmentName(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".json")
 }
 
-// LoadDir is Load plus the overlay: read, merge, parse.
-func LoadDir(path, dir string) (Config, error) {
-	base, frags, err := Read(path, dir)
-	if err != nil {
-		return Config{}, err
-	}
-	merged, err := Merge(base, frags)
-	if err != nil {
-		return Config{}, err
-	}
-	return Parse(merged)
-}
-
 // Merge folds the fragments into the base table and returns the bytes
 // Parse should read. It performs NO validation of its own beyond the
 // structural rules above — that is Parse's job, so there is exactly one

@@ -93,12 +93,26 @@ KMX_CHAT_ARGS = $(strip $(if $(filter 1,$(INTERACTIVE)),--interactive) \
 # and never sees this file. Both run the same code.
 KMX          ?= bin/kmx
 KMX_SOURCES  := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2>/dev/null)
-# The manifests are embedded in the binary (kmx runs outside a clone), so a
-# manifest edit has to relink it.
+# Everything embed.go carries is INSIDE the binary (kmx runs outside a
+# clone), so editing any of it has to relink. This list is the same set as
+# embed.go's three //go:embed blocks — manifests, blueprints and the scripts
+# the managed path ships — and it drifted from them once already: twelve
+# embedded files were missing, so an edit to any of them left a stale bin/kmx
+# that `make sandbox`, `make lift` or a blueprint run then applied. It is now
+# held to embed.go by a test that DERIVES the list from those directives
+# (internal/kmx/delegation), rather than one that restates two filenames.
+# Over-covering is harmless here — a spurious relink — so the directories use
+# wildcards.
 KMX_ASSETS   := k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/tools-agent.yaml \
 		k8s/kaimahi-tools.yaml \
-		k8s/egress-hosted.yaml \
-		$(wildcard k8s/plane/*.yaml) $(wildcard k8s/models/*.yaml)
+		k8s/egress-hosted.yaml k8s/egress-copilot.yaml \
+		k8s/wasm/runtime.yaml \
+		$(wildcard k8s/plane/*.yaml) $(wildcard k8s/models/*.yaml) \
+		$(wildcard k8s/observability/*) \
+		$(wildcard blueprints/*) \
+		scripts/release-publish.sh \
+		scripts/aks-up.sh scripts/aks-down.sh scripts/plane-deploy.sh \
+		scripts/netpol-probe.sh scripts/kube-guard.sh
 # kmx reads the Makefile's own variable names, so delegation passes them
 # through rather than translating. KAIMAHI_CONFIRM rides along so a
 # confirmation given to make is not asked for again by kmx.
@@ -1194,9 +1208,14 @@ $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 # build path, so compare digests directly.
 #
 # Still here, and still make's, because `slack-post` and `github-ask` invoke
-# the CLI through $(call kagent_forward,...). kmx has its own copy of the
-# same pinned fetch for the install-without-a-clone case; in a checkout it is
-# handed this one (KAGENT=bin/kagent) so there is a single binary on disk.
+# the CLI through $(call kagent_forward,...). kmx carries its own copy of the
+# same pinned fetch for the install-without-a-clone case, and in an ordinary
+# checkout the two are SEPARATE downloads: KMX_ENV forwards KAGENT to kmx
+# only when the variable's origin is the command line or the environment, and
+# the `?=` below makes its origin `file`. So a kmx-delegating target fetches
+# kmx's own copy, and only `make <target> KAGENT=bin/kagent` puts both on the
+# one binary. `command make -n chat` shows the KMX_ENV line with no KAGENT= in
+# it.
 $(KAGENT):
 	mkdir -p bin
 	curl -sSfLo $(KAGENT) https://github.com/kagent-dev/kagent/releases/download/v$(KAGENT_VERSION)/kagent-$(OS)-$(ARCH)
@@ -1613,7 +1632,10 @@ ap-audit:
 ## ap-ask: ask the AP agent to investigate an invoice.
 ##   make ap-ask AP_INVOICE=INV-88134
 ap-ask: export KAIMAHI_AP_TASK = Investigate invoice $(AP_INVOICE) and resolve it.
-ap-ask: $(KAGENT)
+# No $(KAGENT) prerequisite: this delegates to `chat`, which is kmx, which
+# fetches its own pinned copy. Depending on the make-side binary downloaded
+# it twice over and used neither.
+ap-ask:
 	@$(MAKE) chat AGENT=ap-agent TASK="$$KAIMAHI_AP_TASK"
 
 ## ap-demo: the exception scenario end to end — the routine invoice pays
