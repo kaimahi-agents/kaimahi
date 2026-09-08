@@ -233,17 +233,6 @@ func (a *App) secretNames(namespace string) ([]string, string) {
 	return names, ""
 }
 
-func (a *App) statusJSON(namespace, resource string, optional bool, target any) error {
-	raw, err := a.kubectlCapture("-n", namespace, "get", resource, "-o", "json", statusRequestTimeout)
-	if err != nil {
-		if optional && isNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	return json.Unmarshal([]byte(raw), target)
-}
-
 func podSummary(pods []podStatus) (ready, restarts int, rows [][]string) {
 	sort.Slice(pods, func(i, j int) bool { return pods[i].Metadata.Name < pods[j].Metadata.Name })
 	for _, pod := range pods {

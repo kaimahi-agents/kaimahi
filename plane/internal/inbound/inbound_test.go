@@ -314,7 +314,6 @@ type fixture struct {
 	bridge *Bridge
 	mux    http.Handler
 	now    time.Time
-	cancel context.CancelFunc
 	done   chan struct{}
 }
 

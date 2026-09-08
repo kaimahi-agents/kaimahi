@@ -291,9 +291,25 @@ func TestEveryStatusReadIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reads := regexp.MustCompile(`kubectlCapture\([^)]*"get"[^)]*\)`).FindAllString(string(source), -1)
-	if len(reads) < 4 {
-		t.Fatalf("the scan found %d reads — it is passing vacuously, not proving anything", len(reads))
+	// The vacuity guard is derived from the file, not a remembered count. A
+	// floor spelled `< 4` is a second copy of how many reads status.go has,
+	// and the first legitimate edit that adds or removes one fails on the
+	// number rather than on anything the test is about. What actually has to
+	// hold is that the scan is still looking at the right helper and still
+	// finding reads in it.
+	calls := regexp.MustCompile(`kubectlCapture\([^)]*\)`).FindAllString(string(source), -1)
+	if len(calls) == 0 {
+		t.Fatal("status.go makes no kubectlCapture calls at all — this scan is looking for a helper that " +
+			"is no longer there, so it would pass while proving nothing")
+	}
+	var reads []string
+	for _, call := range calls {
+		if strings.Contains(call, `"get"`) {
+			reads = append(reads, call)
+		}
+	}
+	if len(reads) == 0 {
+		t.Fatalf("none of status.go's %d kubectlCapture calls is a read — the scan is passing vacuously", len(calls))
 	}
 	for _, read := range reads {
 		if !strings.Contains(read, "statusRequestTimeout") {

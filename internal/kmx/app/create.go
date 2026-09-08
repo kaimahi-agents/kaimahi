@@ -372,22 +372,6 @@ func (a *App) preflightModelConfig(name, namespace string) error {
 		name, namespace, a.Cfg.KubeContext, namespace, extra)
 }
 
-// RefuseUnknownAgentVerb keeps update and delete in kubectl rather than
-// growing weaker copies after kmx's focused list/create/chat surface.
-func RefuseUnknownAgentVerb(verb, kubeContext string) error {
-	ctx := ""
-	if kubeContext != "" {
-		ctx = " --context " + kubeContext
-	}
-	return fmt.Errorf("kmx: unknown command 'agent %s'.\n"+
-		"Use `kmx agent list`, `kmx agent create`, `kmx agent edit`, or `kmx agent chat`.\n"+
-		"Direct live-resource editing and deletion remains kubectl's job:\n"+
-		"  kubectl%s -n kagent edit agent <name>\n"+
-		"  kubectl%s -n kagent delete agent <name>\n"+
-		"  kubectl%s apply -f agents/<name>.yaml",
-		verb, ctx, ctx, ctx)
-}
-
 // noteBYO says what a bring-your-own agent got and — the part that matters —
 // what kmx could not check.
 //

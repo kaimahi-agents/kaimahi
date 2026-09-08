@@ -143,8 +143,6 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 	return cmd
 }
 
-func stringPointer(value string) *string { return &value }
-
 func parseOptionalCredential(args []string, fallback string) string {
 	if len(args) == 1 {
 		return args[0]

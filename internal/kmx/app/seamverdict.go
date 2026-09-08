@@ -49,12 +49,6 @@ type seamVerdict struct {
 	Reason string
 }
 
-// Fresh reports whether this verdict can be used to answer a question about
-// something that happened at `since`.
-func (v seamVerdict) Fresh(since time.Time) bool {
-	return !since.IsZero() && !v.At.IsZero() && !v.At.Before(since)
-}
-
 // Line renders the verdict for a human.
 func (v seamVerdict) Line(now time.Time) string {
 	switch v.State {
