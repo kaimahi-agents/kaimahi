@@ -46,7 +46,7 @@ request and act on different layers.
 | **L1 — the artifact** | What *is* the agent? | a kagent `Agent`: model, instructions, tool allowlist | the reviewable YAML, and with it the governance wiring |
 | **L2 — the workload** | What runs the agent process? | a pod, python or go ADK, served by kagent's controller | A2A serving, sessions, model plumbing, tool wiring |
 | **L3 — tool execution** | What runs the work the agent asks for? | an MCP server in its own container | the boundary where the blast radius actually is |
-| **L4 — governance** | Who may do what, and what did it cost? | the Kaimahi plane, at protocol seams | nothing — it is runtime-agnostic |
+| **L4 — governance** | Who may do what, and what did it cost? | the Kaimahi plane, at protocol seams | one NetworkPolicy selector — and the attribution column stops meaning what it says ([foreign-runtime.md](foreign-runtime.md)) |
 
 **BYO acts on L1 and L2 together. SpinKube acts on L2. Hyperlight acts on
 L3.** A single `--sandbox` flag covering them would be a design mistake.

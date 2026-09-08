@@ -77,7 +77,7 @@ still in the tree.
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
 | `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 44 (checkers, probes, CI fixtures, mutation specs) |
-| `docs/` | 21 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
+| `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
 ---
@@ -264,14 +264,14 @@ mentions — the other five are comments, which is the trap),
 `scripts/release-run.sh`,
 and `docs/tools.md`, which gives it as a step a reader runs by hand.
 
-## `docs/` — 33 tracked files, two audiences and two assets
+## `docs/` — 34 tracked files, two audiences and two assets
 
-**Product documentation (21)** — a user or operator reads it: `README.md`
+**Product documentation (22)** — a user or operator reads it: `README.md`
 (the index), `getting-started.md`, `kmx.md`, `aks.md`, `models.md`,
 `tools.md`, `spend.md`, `tool-governance.md`, `approvals.md`,
 `govern-your-agent.md`, `egress.md`, `inbound.md`, `hosted-upstreams.md`,
 `identity.md`, `operations.md`, `releases.md`, `workflows.md`, `FAQ.md`,
-`isolation.md`, `slack.md`, and `release-agent.md`.
+`isolation.md`, `slack.md`, `foreign-runtime.md`, and `release-agent.md`.
 
 `release-agent.md` sits here rather than under demonstration on its own
 authority — it documents the one agent this project actually depends on.
