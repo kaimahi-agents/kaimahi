@@ -172,7 +172,7 @@ func TestTheTwoRenderersAgreeByteForByte(t *testing.T) {
 	  {"created_at": "2026-09-08T13:57:11Z", "credential": "ap-agent", "upstream": "erp",
 	   "method": "tools/call", "tool": "invoice_get\ttrailing", "decision": "allowed", "status": 200,
 	   "detail": "quote \" and backslash \\ and newline \n here", "arg_digest": "", "arg_summary": "",
-	   "acted_for": "none", "caller_claim": "ua:naïve/1.0 ​", "caller_addr": "fe80::1ff:fe23:4567:890a%eth0"},
+	   "acted_for": "none", "caller_claim": "ua:naïve/1.0 \u200b", "caller_addr": "fe80::1ff:fe23:4567:890a%eth0"},
 	  {"created_at": "2026-09-08T09:00:00Z", "credential": "ap-agent", "upstream": " openai",
 	   "method": "tools/list", "tool": "", "decision": "allowed", "status": 200,
 	   "detail": "", "arg_digest": "", "arg_summary": "", "acted_for": "none",
