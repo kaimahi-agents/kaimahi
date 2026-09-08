@@ -9,7 +9,8 @@ project actually offers a runtime it did not write.
 
 **The result is a qualified confirmation.** The enforcement seam is
 generic and the list of what a runtime must be told is short: five
-things, none of them a Kubernetes object. Two of the four questions came
+things, none of them an object the runtime has to create or that the
+plane reads through the Kubernetes API. Two of the four questions came
 back clean. One came back as a single line of YAML. One came back as a
 real defect: a call the plane cannot attribute is recorded as a call with
 **no person behind it**, which is a claim the plane cannot support.
@@ -36,13 +37,15 @@ the interface this project offers a foreign runtime.
 4. **The model seam's URL**, if it spends model tokens:
    `http://kaimahi-proxy.kaimahi:8080/upstream/<name>/<path>`, where
    `<path>` must equal exactly the one path that upstream declares. The
-   body is OpenAI-shaped and must carry `model`.
+   body must be a JSON object. `model` is what the ledger and the price
+   gate read: a metered upstream under a cents budget refuses a model it
+   has no price for, and nothing else requires the field.
 5. **A network position the plane admits.** Today that means a pod in a
    namespace named `kagent`. See below; this is the one that costs a
    change.
 
 Not on the list, and this is the point: no CRD, no controller, no
-sidecar, no label, no service account, no Kubernetes API access, no
+sidecar, no pod label, no service account, no Kubernetes API access, no
 Kaimahi library, no SDK. The client used here is about a hundred lines
 of `sh`, and `kubectl get crds` on the test cluster returned nothing at
 all.
@@ -55,8 +58,10 @@ Two smaller facts a client author needs:
   refused. JSON-RPC batches are refused. A duplicated JSON key anywhere
   in the message is refused rather than collapsed.
 - **The client must tolerate either framing.** A relayed response comes
-  back as the upstream sent it, plain JSON or SSE; a projected
-  `tools/list` always comes back as `application/json`.
+  back as the upstream sent it, plain JSON or SSE; a `tools/list` that
+  was projected always comes back as `application/json`. An upstream
+  error on a listing is relayed unchanged, framing included, because
+  there is nothing to project.
 
 ## What the operator must do on the plane side
 
@@ -65,7 +70,8 @@ deploy the plane; put the tool server in the upstream table (the
 committed one, or the operator overlay `kmx tools add` writes); declare
 each tool's `policy_fields`, which is what an approval's digest and the
 audit summary bind to; issue the credential; set the tool allowlist —
-absent means nothing is callable; optionally set a budget and standing
+with none set, nothing is callable except a tool covered by a standing
+constraint or a live grant; optionally set a budget and those
 constraints. The admin surface is on a port no Service exposes, so
 cluster credentials gate every one of those operations before the admin
 token does.
@@ -85,8 +91,10 @@ runtime that does not needs only the token string.
 a selection rather than a grant — is kagent's controller reconciling a
 CRD. There is no implementation of it in this repository, and nothing in
 the plane depends on it. What the plane does is different and
-independent: the gateway enforces the allowlist on `tools/call` and
-separately projects it onto `tools/list`.
+independent: the gateway enforces admission on `tools/call`, and
+separately projects onto `tools/list` what that credential can call right
+now — its allowlist, plus tools live grants admit, plus tools it carries
+a standing constraint on.
 
 A foreign client gets that projection with no CRD and no controller. In
 the transcript, a client holding a credential allowlisted for six tools
@@ -103,23 +111,34 @@ single piece of evidence for the horizontal claim.
 
 ### Placement is, by exactly one selector
 
-The plane's NetworkPolicy admits ingress to both data ports from one
-place:
+The proxy pod's namespace is default-deny, and the rule that gives the
+two data ports — the model seam on 8080 and the tool seam on 8081 — back
+to anybody admits exactly one place. Verbatim, from
+`k8s/plane/network-policy.yaml`:
 
 ```yaml
-ingress:
-  - from:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: kagent
-    ports: [8080, 8081]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kagent
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8081
 ```
 
-A runtime anywhere else is dropped by the CNI before the gateway sees the
-packet. It presents a perfectly valid credential and gets a connection
-timeout — and **there is no audit row**, because nothing arrived. That
-failure is silent from the plane's side and, from the client's side,
-indistinguishable from the gateway being down.
+(The same pod carries a second ingress rule for the ops port, admitting
+a scraper from a `monitoring` namespace. This one is about the data
+seams.)
+
+On a cluster whose CNI enforces NetworkPolicy — the file is explicit
+that this is not a given — a runtime anywhere else is dropped before the
+gateway sees the packet. It presents a perfectly valid credential and
+gets a connection timeout, and **there is no audit row**, because
+nothing arrived. That failure is silent from the plane's side and, from
+the client's side, indistinguishable from the gateway being down.
 
 The experiment was two identical pods — same image, same script, same
 mounted credential shape — one in `kagent`, one in `foreign-runtime`.
@@ -135,14 +154,23 @@ positioning. Second, the boundary is a namespace *name*, not a runtime:
 the `kagent` namespace on the test cluster contained no kagent whatsoever
 — just a pod running curl — and the plane governed it happily. The
 network rule is not identifying kagent. It is saying "only from where
-agents live", and the name is a stand-in for that. Whether the default is
-right is an operator's call, but the file should say what it is doing.
+agents live", and the name is a stand-in for that.
+
+**The default is right and the wording is not.** Admitting one named
+place and nothing else is the correct posture for a governance seam, and
+widening it by default to admit any pod in the cluster would be worse
+than the coupling it removes. What is wrong is that the rule reads as a
+statement about kagent when it is a statement about a namespace, and
+nothing tells an adopter that their runtime's namespace goes on that
+line. A foreign runtime elsewhere is refused by the network, and the fix
+is an operator's policy edit, not a product change.
 
 ### The inbound bridge is, deeply
 
 The path where the plane *invokes* an agent is kagent-shaped end to end:
-it dials `{base}/api/a2a/{namespace}/{agent}/`, sets kagent's session
-header, and reads the token counts for the turn out of kagent's
+it dials `{base}/api/a2a/{namespace}/{agent}/`, sets kagent's
+`x-user-id` — the header kagent turns into the session's actor — and
+reads the token counts for the turn out of kagent's
 `kagent_usage_metadata` envelope. A foreign runtime cannot be invoked by
 the plane and cannot have a turn metered that way.
 
@@ -154,13 +182,17 @@ thing that produces an honest attribution.
 
 ### `kmx tools add` scaffolds into `kagent` and cannot be told otherwise
 
-The namespace the scaffolder writes agent-side documents into is a
-compile-time constant. The documents it generates that *matter* to a
-foreign runtime — the upstream overlay fragment and the two
-NetworkPolicies that make the tool server reachable only through the
-proxy — are namespace-parameterised and fine. The one that is pinned is
-the `RemoteMCPServer`, which a foreign runtime discards. It is a rough
-edge in the onboarding tool, not a hole in the enforcement path.
+Every namespace the scaffolder writes is a compile-time constant except
+one. The `RemoteMCPServer` goes into `kagent`; the overlay fragment and
+the proxy-egress NetworkPolicy go into `kaimahi`; only the tool server's
+own ingress policy takes its namespace from what the operator typed.
+That is the right shape for everything except the CRD — and the CRD is
+the one document a foreign runtime discards, since it exists to tell
+kagent's controller where the seam is. So the pin is a rough edge in the
+onboarding tool, not a hole in the enforcement path: what a foreign
+runtime actually needs out of `kmx tools add` — the upstream entry and
+the policy pair that make the tool server reachable only through the
+proxy — lands in the right places already.
 
 ## What a foreign runtime cannot get today
 
@@ -173,7 +205,8 @@ Every governed row carries `acted for`. Its vocabulary is closed and
 deliberate: `slack:<user id>` is a person the plane's own door
 authenticated, `unknown` means **the plane cannot say**, and `none`
 means — in the plane's own words — *there is no person*, "a complete
-answer, not a gap".
+answer, not a gap". (There is a fourth value, `legacy`, a closed
+backfill class for rows written before any of this existed.)
 
 `none` is resolved by one query: is a **run** open for this credential?
 A run is a window the inbound bridge opens around an agent turn it
@@ -215,6 +248,12 @@ built for in-cluster agents — but "runtime-agnostic" should not be read
 as "location-agnostic".
 
 ## The transcript
+
+Nothing in this repository reproduces what follows: no script, no
+manifest and no CI job. It is the record of one run, kept because the
+claims above rest on it, and every shape in it — the URLs, the ports,
+the refusal messages, the constraint bounds, the ERP's nine tools — is
+checkable against the tree.
 
 A kind cluster with the plane and the fixture ERP; no kagent. Two
 namespaces, `kagent` and `foreign-runtime`, each with one pod running
