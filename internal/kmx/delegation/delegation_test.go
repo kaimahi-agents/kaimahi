@@ -483,11 +483,26 @@ func expandEmbedPattern(t *testing.T, root, pattern string) []string {
 	info, err := os.Stat(filepath.Join(root, pattern))
 	if err == nil && info.IsDir() {
 		var found []string
-		err = filepath.WalkDir(filepath.Join(root, pattern), func(path string, d fs.DirEntry, err error) error {
+		dir := filepath.Join(root, pattern)
+		err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_") {
+			hidden := strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")
+			if d.IsDir() {
+				// go:embed excludes a hidden directory and everything under
+				// it, so the whole subtree is skipped rather than descended
+				// into. Returning nil here would collect a non-hidden file
+				// inside `_scratch/`, which the binary would not carry — the
+				// scan would then demand a prerequisite for a file that is
+				// not embedded. The walk root itself is never skipped: it is
+				// the pattern the directive names.
+				if hidden && path != dir {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if hidden {
 				return nil
 			}
 			rel, err := filepath.Rel(root, path)

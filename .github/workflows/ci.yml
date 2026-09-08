@@ -618,23 +618,27 @@ jobs:
         run: test -z "$(gofmt -l cmd internal embed.go)"
       - name: kmx — vet
         run: go vet ./...
-      # staticcheck, pinned to a MASTER pseudo-version on purpose.
+      # staticcheck, pinned to an exact release tag.
       #
-      # The released staticcheck (2025.1.1) is built with go1.23.8 and both
-      # of this repository's modules require go1.26, so the release cannot
-      # compile the tree at all — it does not report zero findings, it
-      # refuses to load the packages. Master supports go1.26; there is no
-      # tagged release that does yet. The pin is exact so this is a
-      # deliberate choice rather than a floating `@master` that changes what
-      # CI enforces without anybody editing this file, and it should move to
-      # a real tag the moment upstream ships one that builds go1.26.
+      # The version matters and is easy to get wrong. staticcheck 2025.1.1
+      # is built with go1.23.8, and both of this repository's modules
+      # require go1.26 — so that release cannot compile the tree at all. It
+      # does not report zero findings; it refuses to load the packages, and
+      # a CI step that swallowed that would be a lint job proving nothing.
+      # 2026.2.1 builds go1.26 and is what runs here.
+      #
+      # Pinned to `@2026.2.1` — staticcheck's own release tag, which is what
+      # its documentation tells you to install and what `--version` prints —
+      # rather than the module version `v0.8.1` or a floating `@latest`. An
+      # exact pin means what CI enforces changes only when somebody edits
+      # this file.
       #
       # Keyless: `go install` from the public module proxy, no token.
       # The ST1005 decision, and why it is a decision, lives in
       # staticcheck.conf at the repository root; plane/ inherits that file.
       - name: kmx — staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
           "$(go env GOPATH)/bin/staticcheck" ./...
       - name: kmx — build
         run: go build ./...
@@ -801,7 +805,7 @@ jobs:
       # staticcheck.conf, which this module inherits by being underneath it.
       - name: staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20260824195211-6cb65e58a558
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
           "$(go env GOPATH)/bin/staticcheck" ./...
       - name: Build
         run: go build ./...
