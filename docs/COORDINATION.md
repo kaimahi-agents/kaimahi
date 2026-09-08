@@ -127,6 +127,7 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
 | W42: the audit row does not say who called (D47) | unassigned | SHAPED 2026-09-08 — prompt below | legibility, not a new control; the vocabulary deliberately does not change |
+| W43: the model seam carries content that exists nowhere else (D48) | unassigned | SHAPED 2026-09-08 — prompt below | feasibility first: if kagent cannot trust a private CA, the finding IS the lane |
 | W41: govern a runtime this repository did not write | unassigned | SHAPED 2026-09-08 — prompt below | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
@@ -4881,6 +4882,7 @@ at PR-open-with-checks-green — do not merge.
 ```
 
 ### W42 — the audit row does not say who called (UNASSIGNED — paste into a fresh CLI session)
+### W43 — the model seam carries content that exists nowhere else (UNASSIGNED — paste into a fresh CLI session)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -4961,6 +4963,97 @@ rows, showing what those rows say. A caller name containing quotes,
 newlines and several kilobytes, showing it is bounded and does not break
 the view. And the documented imprecision, in the place a reader of the
 trail would look.
+first — **D45 and D48 above all**, then the security standing guidance.
+D48 is open; this lane produces what is needed to rule it, and
+implements the answer if feasibility allows.
+
+**The premise is already validated. Do not re-derive it, but do check
+the one part left open.** Confirmed by the coordinator against the code:
+`ledger_entry` records credential, upstream, model, token counts, cost
+and status — **no prompt, no completion**. Nothing else in the store
+holds them. `plane/internal/proxy/handler.go` buffers the request body
+only to read `model` and `stream` out of the JSON, and **never logs it**.
+So the text an agent sends and receives crosses port 8080 in plaintext,
+passes through the proxy's memory, and is recorded in no artifact we
+keep.
+
+**The part left open, and check it first because it may widen the
+lane: are TOOL responses recorded?** The tool audit records the CALL —
+`arg_summary` over declared policy fields. If a tool's RESPONSE body is
+not recorded anywhere, then the tool seam also carries unrecorded content
+and D45's reasoning was incomplete there too, not just absent for the
+model seam. Establish this before designing anything, and say what you
+found. It changes the scope from one listener to two.
+
+**FEASIBILITY DECIDES THIS LANE, SO ESTABLISH IT BEFORE WRITING
+ANYTHING.** TLS on the model seam requires the CALLER to trust the
+plane's certificate. The caller is a kagent agent, and its transport is
+configured by a `ModelConfig` whose fields we use are `baseUrl`,
+`apiKeySecret` and `apiKeySecretKey` (`k8s/models/governed-*.yaml`).
+There is no CA-bundle field in what this repository sets.
+
+Answer, against the pinned kagent version's actual CRD and runtime, not
+from documentation:
+- **Can a `ModelConfig` be told to trust a private CA?** A field on the
+  CRD, an environment variable the runtime honours, or a trust store the
+  pod already reads.
+- **If not, can the CA reach the agent pod another way?** kagent
+  generates the agent Deployment, so anything requiring a pod-spec edit
+  is not ours to make. Say whether the BYO path (`--image`) changes this.
+- **The same question for the MCP client**, which is kagent's controller
+  discovering tools through the gateway — a different client from the
+  model one, and it may answer differently.
+
+**If the answer is no, that is a complete and valuable lane.** Write it
+up as a U-row for the upstream candidates list — kagent not letting a
+downstream point an agent at a TLS endpoint it can verify is exactly the
+shape of U2b — and say plainly that D48 must then be ruled as acceptance
+with reversal conditions, because the alternative is not available to us.
+**Do not work around it by disabling verification.** A TLS listener whose
+client skips verification is worse than plaintext: it costs the same
+certificate machinery and buys nothing, while looking like it bought
+something.
+
+**If the answer is yes, implement it with machinery that already
+exists.** The plane already mints credentials and projects Secrets into
+agent pods; a self-signed serving certificate minted at deploy time, with
+its CA carried the same way the `kmh_` token already is, reuses that path
+and needs no new component. **Do NOT introduce cert-manager or a service
+mesh** — that is the operational control plane this project has
+repeatedly declined to build, and D41 already recorded the objection in
+another form. Scope it to the model seam plus whatever the tool-response
+question adds; the admin and ops ports are on no Service and are out of
+scope.
+
+**Design decisions this lane owns:**
+- **Rotation.** A certificate minted at deploy time expires. `kmx plane`
+  redeploys; is that the rotation story, and what does an operator see
+  when it has not been run in a year? An expiry nobody is warned about
+  is an outage scheduled in advance.
+- **The kind path must keep working**, and it is the path everyone
+  develops on. If TLS makes local development worse, that is a cost that
+  outweighs the benefit for most users — say what it costs.
+- **What the agent does when verification fails.** Fail closed, and make
+  the message name the certificate rather than surfacing as a generic
+  connection error, which is how the seam-expiry problem presented last
+  time and cost a lane hours.
+
+**Guardrails, all hard.** No change to what is metered, allowlisted,
+bound or audited — this lane changes transport and nothing else. The
+gateway still fails closed on an audit write failure. kmx accepts no
+credential material beyond the ruled terminal-only prompt; a CA
+certificate is not credential material, but its private key is, and it
+must never leave the plane. No Azure or Slack identifiers. CI stays
+keyless. Comments say what the thing does, never a lane or decision
+number.
+
+**Verification.** Whichever outcome: a written answer to the feasibility
+questions with the evidence — the CRD field or its absence, and what the
+runtime actually does. If implemented: a transcript of a governed chat
+over TLS on a kind cluster, the certificate's issuer and expiry shown,
+verification failing closed when the CA is wrong with a message that
+names the certificate, and `kmx up` still working end to end for someone
+who has never heard of any of this.
 
 Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
