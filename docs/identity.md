@@ -82,7 +82,10 @@ third live non-person value would have meant a migration, a widened
 constraint on all three tables, and a new word for every reader — to fix
 the word on rows nobody is meant to be able to write. What the trail
 gained instead is the ability to *show* the case, so the word can be
-read in context: every governed row now says **who called**.
+read in context: the two enforcement trails — the spend ledger and the
+tool audit — now say **who called**. The inbound trail does not need it:
+that door is the one place the plane already sees who is on the other
+end, and its rows carry a person's identifier or say why they do not.
 
 ### Who called
 
@@ -103,7 +106,7 @@ The same discipline as `acted for`: *not recorded* and *recorded as
 nothing* are different answers and stay different words.
 
 So a reader meeting `none` in the last column can now see which case it
-is:
+is (trimmed in the middle to fit this page; the real table is wider):
 
 ```console
 $ make tool-audit CRED_TOOLS=ap-agent

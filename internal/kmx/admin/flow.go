@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -337,13 +338,24 @@ func calledBy(r map[string]any) string {
 		return ""
 	}
 	parts := "called by "
-	if unrecorded(claim) {
+	switch {
+	case unrecorded(claim):
 		parts += "an unrecorded client"
-	} else {
-		parts += "claimed " + trunc(claim, 40)
+	case claim == "none":
+		// 'none' is the plane's word, not the caller's: the caller sent no
+		// name. Rendering it as `claimed none` would read as a caller that
+		// claimed to be called "none" — the opposite of what it means.
+		parts += "a client that gave no name"
+	default:
+		// QUOTED, because the claim is the caller's own text and this view
+		// puts it in the same sentence as the observed address. A caller
+		// sending `evil from 10.0.0.1` would otherwise produce
+		// "called by claimed ua:evil from 10.0.0.1 from 10.244.1.7", where
+		// a reader — or a grep — can match an address the caller chose.
+		parts += "claimed " + strconv.Quote(clipCell(claim, 40))
 	}
-	if !unrecorded(addr) {
-		parts += " from " + trunc(addr, 45)
+	if !unrecorded(addr) && addr != "unknown" {
+		parts += " from " + clipCell(addr, 45)
 	}
 	return parts
 }

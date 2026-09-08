@@ -61,10 +61,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   recorded verbatim, and every renderer prints them unescaped into a
   fixed-width table. A client holding a governed credential could put a
   newline in a `tools/call` name and produce what read as a separate
-  audit row. Every free-text audit column is now bounded and reduced to
-  one printable line at the write, and both audit renderers apply the
-  same rule again on the way out — for rows they did not write today: an
-  older plane's, a restored dump's. Real tool names are unaffected.
+  audit row. **The upstream name is the same hole and looks safer than it
+  is**: it is a URL path segment, Go's mux unescapes path values, and the
+  unknown-upstream refusal is audited before any table lookup — so
+  `/upstream/x%0A…/mcp` reached a row without naming a real upstream.
+  The same held for the approvals trail, where a denied call files a
+  request carrying the tool's name.
+  Every free-text audit column on all four trails — spend, tool,
+  approvals, inbound — is now bounded at the write, and a value that is
+  not already one clean printable line is stored in Go quoted form.
+  **Quoted rather than stripped**, because stripping creates a collision
+  that is worse than the mess it tidies: mapping `openai\t` to a space
+  and padding it into a fixed-width column renders exactly like the real
+  `openai`, so the trail would show what reads as a denial against an
+  upstream nobody asked for. Both audit renderers apply a one-line rule
+  again on the way out, for rows they did not write today. Real tool and
+  upstream names are untouched — no quoting, no escaping, no change.
 
 - **`scripts/check-board.py`** — the coordination board's lane table said a
   lane was unassigned when it had already shipped five times in six days, and

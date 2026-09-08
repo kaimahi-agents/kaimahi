@@ -254,18 +254,34 @@ func actedFor(e map[string]any) string {
 // callerClaim renders what the caller said it was. The value carries its
 // own 'ua:' prefix from the plane, which is the point: this column is the
 // caller's word for itself and must never read as something the plane
-// checked. A row from a plane too old to record one has no field at all,
-// and says "unrecorded" — the same answer its own closed legacy class
-// gives, because both mean there is no record of who called.
+// checked. A row from a plane too old to serve the field renders
+// "unrecorded"; a row from this plane that predates the column renders
+// its own word, "legacy". Two different histories, neither collapsed
+// into the other, and both meaning no record of who called.
 func callerClaim(e map[string]any) string {
-	return trunc(orUnrecorded(str(e["caller_claim"])), 28)
+	return clipCell(orUnrecorded(str(e["caller_claim"])), 28)
 }
 
 // callerAddr renders the peer address the plane observed. Not a claim by
 // the thing being governed — but still only an address: in a cluster it
 // names a pod, and pod addresses are reused.
 func callerAddr(e map[string]any) string {
-	return trunc(orUnrecorded(str(e["caller_addr"])), 16)
+	return clipCell(orUnrecorded(str(e["caller_addr"])), 16)
+}
+
+// clipCell shortens a cell and SAYS it shortened it. The plain trunc is
+// right for a timestamp, where everyone knows the seconds were cut; it is
+// wrong for these two, where a silently shortened value still looks like
+// a whole one. An IPv6 address cut to sixteen characters is a different,
+// perfectly plausible address, and every caller in the same prefix
+// renders identically — which would quietly destroy the one half of the
+// pair the caller cannot choose. The script's `clip()` is this function.
+func clipCell(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func orUnrecorded(v string) string {

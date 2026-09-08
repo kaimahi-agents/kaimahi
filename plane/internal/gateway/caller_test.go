@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
@@ -102,6 +103,31 @@ func TestAHostileCallerNameCannotBreakTheAuditRow(t *testing.T) {
 	assert.NotContains(t, claim, "\r")
 	assert.LessOrEqual(t, len(claim), store.MaxCallerClaim)
 	assert.Contains(t, claim, `"`, "quotes are data, not a problem: the JSON encoder escapes them")
+}
+
+func TestAnUpstreamNameCannotForgeAnAuditLineEither(t *testing.T) {
+	// The upstream is a URL path segment, and Go's mux unescapes path
+	// values — so `%0A` arrives as a real newline. The unknown-upstream
+	// refusal is audited BEFORE any table lookup, so an attacker-chosen
+	// name reaches a row without ever naming a real upstream.
+	future := time.Now().Add(time.Hour)
+	fs := &fakeStore{credential: store.Credential{Name: "hello-tools", ExpiresAt: &future}}
+	h := NewMux(Deps{Store: fs, Upstreams: map[string]config.ToolUpstream{}})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
+		"/upstream/kagent-tools%0A2026-09-08T00:00:00%20ap-agent%20erp%20tools%2Fcall/mcp",
+		strings.NewReader(string(rpc(t, "tools/call", map[string]any{"name": "x"}))))
+	req.Header.Set("Authorization", goodToken)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	require.Len(t, fs.audits, 1)
+	assert.Contains(t, fs.audits[0].Upstream, "\n",
+		"the seam records what arrived; the store is what bounds it")
+
+	// And what the store would actually write carries no newline.
+	assert.NotContains(t, store.OneLine(fs.audits[0].Upstream), "\n")
 }
 
 func TestTheCallerDecidesNothing(t *testing.T) {

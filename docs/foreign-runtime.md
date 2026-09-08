@@ -249,7 +249,9 @@ Two things about the transcript below still stand and are worth reading
 in that light: the rows show `none` for a curl client, which is the
 overclaim, and they carry no caller columns, because they were recorded
 before those existed. A trail captured today from the same run would
-show `ua:curl/8.5.0` beside every one of them.
+show a `ua:curl/…` claim and the client pod's address beside every one
+of them. (The exact version is not recorded anywhere in this document,
+so it is not stated here either.)
 
 ### 2. Being invoked by the plane, and turn-level spend metering
 

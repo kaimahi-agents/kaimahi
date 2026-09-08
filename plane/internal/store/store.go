@@ -161,7 +161,7 @@ func (s *Store) RecordLedger(ctx context.Context, e LedgerEntry, reservationID s
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO ledger_entry (credential_name, upstream, model, input_tokens, output_tokens, cost_cents, cost_source, status, acted_for, run_id, caller_claim, caller_addr)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-		e.CredentialName, e.Upstream, auditText(e.Model), e.InputTokens, e.OutputTokens, e.CostCents, e.CostSource, e.Status,
+		e.CredentialName, auditText(e.Upstream), auditText(e.Model), e.InputTokens, e.OutputTokens, e.CostCents, e.CostSource, e.Status,
 		actedFor(e.ActedFor), nullableUUID(e.RunID),
 		callerClaimFor(e.CallerClaim), callerAddrFor(e.CallerAddr)); err != nil {
 		return err
@@ -300,7 +300,7 @@ func (s *Store) RecordToolAudit(ctx context.Context, e ToolAuditEntry) error {
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO tool_audit (credential_name, upstream, method, tool, decision, status, detail, arg_digest, arg_summary, acted_for, run_id, caller_claim, caller_addr)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		e.CredentialName, e.Upstream, auditText(e.Method), auditText(e.Tool), e.Decision, e.Status, auditText(e.Detail),
+		e.CredentialName, auditText(e.Upstream), auditText(e.Method), auditText(e.Tool), e.Decision, e.Status, auditText(e.Detail),
 		e.ArgDigest, auditText(e.ArgSummary),
 		actedFor(e.ActedFor), nullableUUID(e.RunID),
 		callerClaimFor(e.CallerClaim), callerAddrFor(e.CallerAddr))

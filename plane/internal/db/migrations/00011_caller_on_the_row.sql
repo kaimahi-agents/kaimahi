@@ -58,16 +58,27 @@ ALTER TABLE ledger_entry ALTER COLUMN caller_addr  SET DEFAULT 'unrecorded';
 -- and a bound that lives only in the writer is a bound one future writer
 -- forgets. 160 leaves room for a real user agent; an address is at most
 -- an IPv6 literal with a zone.
+--
+-- octet_length, not length: `length()` counts CHARACTERS and the writer
+-- counts BYTES, so the two would be different bounds wearing one number —
+-- and the writer's job is to make this constraint unreachable, which it
+-- can only do against the same measure.
+--
+-- Adding a validating CHECK takes ACCESS EXCLUSIVE and scans the table,
+-- and the plane migrates at boot while the previous replica still
+-- serves. That is migration 00009's pattern too, and these trails are
+-- demo-scale by design; a deployment with a large one should add these
+-- NOT VALID and validate them separately.
 ALTER TABLE tool_audit ADD CONSTRAINT tool_audit_caller_claim_check
     CHECK (caller_claim IN ('none', 'unrecorded', 'legacy') OR
-           (caller_claim LIKE 'ua:%' AND length(caller_claim) <= 160));
+           (caller_claim LIKE 'ua:%' AND octet_length(caller_claim) <= 160));
 ALTER TABLE tool_audit ADD CONSTRAINT tool_audit_caller_addr_check
-    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR length(caller_addr) <= 64);
+    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR octet_length(caller_addr) <= 64);
 ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_caller_claim_check
     CHECK (caller_claim IN ('none', 'unrecorded', 'legacy') OR
-           (caller_claim LIKE 'ua:%' AND length(caller_claim) <= 160));
+           (caller_claim LIKE 'ua:%' AND octet_length(caller_claim) <= 160));
 ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_caller_addr_check
-    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR length(caller_addr) <= 64);
+    CHECK (caller_addr IN ('unknown', 'unrecorded', 'legacy') OR octet_length(caller_addr) <= 64);
 
 -- +goose Down
 ALTER TABLE ledger_entry DROP CONSTRAINT ledger_entry_caller_addr_check;

@@ -296,12 +296,17 @@ rows = d.get("entries") or []
 def cell(v):
     s = "" if v is None else str(v)
     return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+# clip shortens a cell and SAYS it shortened it — a silently shortened
+# address still looks like a whole one, and every caller in the same
+# prefix would render identically.
+def clip(s, n):
+    return s if len(s) <= n else s[:n - 1] + "…"
 fmt = "%-19s %-12s %-9s %-16s %6s %6s %6s %-8s %-6s %-28s %-16s %s"
 print(fmt % ("created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for"))
 for e in rows:
     print(fmt % (cell(e["created_at"])[:19], cell(e["credential"]), cell(e["upstream"]), cell(e["model"])[:16],
                  e["input_tokens"], e["output_tokens"], e["cost_cents"], cell(e["cost_source"]), e["status"],
-                 cell(e.get("caller_claim") or "unrecorded")[:28], cell(e.get("caller_addr") or "unrecorded")[:16],
+                 clip(cell(e.get("caller_claim") or "unrecorded"), 28), clip(cell(e.get("caller_addr") or "unrecorded"), 16),
                  cell(e.get("acted_for") or "unknown")))
 if "month_cents" in d:
     print(f'-- month to date: {d["month_cents"]} cents, {d["month_tokens"]} tokens')
@@ -350,6 +355,11 @@ rows = d.get("entries") or []
 def cell(v):
     s = "" if v is None else str(v)
     return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
+# clip shortens a cell and SAYS it shortened it — a silently shortened
+# address still looks like a whole one, and every caller in the same
+# prefix would render identically.
+def clip(s, n):
+    return s if len(s) <= n else s[:n - 1] + "…"
 fmt = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %-28s %-16s %s"
 print(fmt % ("created (UTC)", "credential", "upstream", "method", "tool", "decision", "status", "detail", "call", "caller (claimed)", "from (observed)", "acted for"))
 for e in rows:
@@ -366,7 +376,7 @@ for e in rows:
     # has neither, and says so rather than reading as an empty answer.
     print(fmt % (cell(e["created_at"])[:19], cell(e["credential"]), cell(e["upstream"]), cell(e["method"]),
                  cell(e["tool"]), cell(e["decision"]), e["status"], cell(e["detail"]), call or "-",
-                 cell(e.get("caller_claim") or "unrecorded")[:28], cell(e.get("caller_addr") or "unrecorded")[:16],
+                 clip(cell(e.get("caller_claim") or "unrecorded"), 28), clip(cell(e.get("caller_addr") or "unrecorded"), 16),
                  cell(e.get("acted_for") or "unknown")))
 EOF
     ;;
@@ -379,14 +389,21 @@ d = json.load(open(sys.argv[1]))
 rows = d.get("pending") or []
 if not rows:
     print("no pending approval requests")
+# cell keeps a value to ONE printable line. Repeated per block because
+# each of these renderings is a self-contained python3 invocation; the
+# rule is the same one the ledger and tool-audit views apply, and the
+# subject here is a caller-supplied tool name.
+def cell(v):
+    s = "" if v is None else str(v)
+    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
 fmt = "%-36s %-19s %-12s %-8s %-18s %-34s %s"
 if rows:
     print(fmt % ("id", "created (UTC)", "credential", "kind", "subject", "detail", "call"))
 for r in rows:
     # The call is what a human is actually approving: an approver
     # who cannot see the transaction is the whole problem restated.
-    print(fmt % (r["id"], r["created_at"][:19], r["credential"], r["kind"], r["subject"],
-                 r["detail"], r.get("arg_summary") or "-"))
+    print(fmt % (cell(r["id"]), cell(r["created_at"])[:19], cell(r["credential"]), cell(r["kind"]),
+                 cell(r["subject"]), cell(r["detail"]), cell(r.get("arg_summary") or "-")))
 EOF
     ;;
   approve)
@@ -503,11 +520,17 @@ EOF
 import json, sys
 d = json.load(open(sys.argv[1]))
 rows = d.get("entries") or []
+# cell keeps a value to ONE printable line — see the note on the
+# approvals view; the subject here is a caller-supplied tool name too.
+def cell(v):
+    s = "" if v is None else str(v)
+    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
 fmt = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s"
 print(fmt % ("created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"))
 for e in rows:
-    print(fmt % (e["created_at"][:19], e["credential"], e["kind"], e["subject"], e["action"],
-                 e.get("decided_by") or "-", e["bounds"], e.get("arg_summary") or "-"))
+    print(fmt % (cell(e["created_at"])[:19], cell(e["credential"]), cell(e["kind"]), cell(e["subject"]),
+                 cell(e["action"]), cell(e.get("decided_by") or "-"), cell(e["bounds"]),
+                 cell(e.get("arg_summary") or "-")))
 EOF
     ;;
   inbound-audit)
@@ -519,12 +542,17 @@ EOF
 import json, sys
 d = json.load(open(sys.argv[1]))
 rows = d.get("entries") or []
+# cell keeps a value to ONE printable line — see the note on the
+# approvals view. The delivery id and the detail come off a webhook.
+def cell(v):
+    s = "" if v is None else str(v)
+    return "".join(" " if c in "\n\r\t" else c for c in s if c.isprintable() or c in "\n\r\t")
 fmt = "%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s"
 print(fmt % ("created (UTC)", "hook", "credential", "delivery", "decision", "status", "in", "out", "detail", "acted for"))
 for e in rows:
-    print(fmt % (e["created_at"][:19], e["hook"], e["credential"], e["delivery_id"][:20],
-                 e["decision"], e["status"], e["input_tokens"], e["output_tokens"], e["detail"],
-                 e.get("acted_for") or "unknown"))
+    print(fmt % (cell(e["created_at"])[:19], cell(e["hook"]), cell(e["credential"]), cell(e["delivery_id"])[:20],
+                 cell(e["decision"]), e["status"], e["input_tokens"], e["output_tokens"], cell(e["detail"]),
+                 cell(e.get("acted_for") or "unknown")))
 EOF
     ;;
   *)

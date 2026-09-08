@@ -88,11 +88,18 @@ func CallerOf(r *http.Request) Caller {
 // callerClaim bounds and one-lines what the caller called itself. The
 // prefix is applied after the bound so a hostile value can never push it
 // off the end.
+//
+// Only an ABSENT header is 'none'. A header that was sent and survives
+// sanitising as nothing — a lone non-breaking or zero-width space, both
+// of which Go's HTTP server accepts — keeps the prefix and an empty
+// name. Folding it into 'none' would record "the caller offered no
+// identification" about a caller that offered some, which is the exact
+// shape of overclaim this lane exists to remove.
 func callerClaim(ua string) string {
-	cleaned := strings.TrimSpace(OneLine(ua))
-	if cleaned == "" {
+	if ua == "" {
 		return CallerNone
 	}
+	cleaned := strings.TrimSpace(OneLine(ua))
 	return CallerClaimPrefix + Clip(cleaned, MaxCallerClaim-len(CallerClaimPrefix))
 }
 
@@ -134,10 +141,14 @@ func callerClaimFor(v string) string {
 
 func callerAddrFor(v string) string {
 	switch v {
-	case "":
-		return CallerUnrecorded
 	case CallerAddrUnknown, CallerUnrecorded, CallerLegacy:
 		return v
 	}
-	return Clip(OneLine(v), MaxCallerAddr)
+	// After sanitising, not before: a value that survives as nothing was
+	// no more recorded than an empty one, and writing "" would leave a
+	// column that means neither of the two things it is allowed to mean.
+	if addr := Clip(OneLine(v), MaxCallerAddr); addr != "" {
+		return addr
+	}
+	return CallerUnrecorded
 }

@@ -1892,7 +1892,9 @@ jobs:
           make ledger | tee ledger-actor.out
           # 'none' is a COMPLETE answer: nothing triggered this through
           # the plane's inbound door, so there is no person to name.
-          grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200 +none' ledger-actor.out
+          # The caller columns sit between `status` and `acted for`, so the
+          # two are no longer adjacent; `acted for` is still last.
+          grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200 .*none *$' ledger-actor.out
           # ...and it is a different word from 'unknown', which would mean
           # the attribution was LOST. Neither that nor 'legacy' (a row
           # written before attribution existed) can occur on a cluster
@@ -1928,7 +1930,7 @@ jobs:
           fi
           # Audited like every other refusal, and still attributed.
           make ledger | tee ledger-expired.out
-          grep -E 'hello-world +ollama .*denied +403 +none' ledger-expired.out
+          grep -E 'hello-world +ollama .*denied +403 .*none *$' ledger-expired.out
           # A credential with no expiry at all is the LEGACY class and
           # still authenticates: expiring a running estate at migration
           # time would be an outage, not a control.
@@ -2749,6 +2751,9 @@ jobs:
           # The SPEND names them, under the agent's budget credential...
           make ledger | tee ledger-slack-tools.out
           grep -E 'hello-world +ollama .*slack:U0CIPERSON *$' ledger-slack-tools.out
+          # The spend trail records the caller too, and on a cluster this
+          # young no row may say it predates the column.
+          ! grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' ledger-slack-tools.out
           # ...and so does the TOOL call, under a DIFFERENT credential.
           # The tool and the decision are deliberately not pinned: the
           # claim under test is the attribution, not which tool a model
@@ -2761,6 +2766,25 @@ jobs:
           make tool-audit CRED_TOOLS=hello-tools | tee tool-audit-after-run.out
           head -2 tool-audit-after-run.out
           test "$(sed -n '2p' tool-audit-after-run.out | grep -c 'none *$')" = 1
+          # And the row SAYS it was not an agent that made it. This is the
+          # whole point of the caller columns: the line above and the
+          # attributed lines before it both end in a word from the same
+          # closed vocabulary, and only these two columns tell a client the
+          # plane deployed from a shell script holding its token.
+          grep -qE 'ua:curl/[0-9]' tool-audit-after-run.out
+          # The agent's own calls are NOT curl. Its user agent is a library
+          # version and is deliberately not pinned; "not the probe" is the
+          # claim, and it is the one that would break if the gateway ever
+          # stamped the wrong request's caller onto a row.
+          grep -E 'tools/call .*slack:U0CIPERSON *$' tool-audit-slack-tools.out > agent-rows.out
+          test -s agent-rows.out
+          ! grep -qE 'ua:curl/' agent-rows.out
+          # Nothing written on this cluster predates the columns, so no row
+          # may claim it does. 'legacy' here would mean the writer stopped
+          # stamping and the column default took over — a caller column that
+          # silently stopped recording, which is the failure this class of
+          # check exists to catch.
+          ! grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' tool-audit-after-run.out
       # Keyless: run it for real. Every step below drives the plane's
       # two replicas directly (a port-forward per POD, so both are in
       # every race by construction) rather than through kagent, whose

@@ -15,7 +15,7 @@ func TestFlowSaysWhoCalledAndSaysTheNameIsClaimed(t *testing.T) {
 		"decision":"allowed","status":"200","acted_for":"none",
 		"caller_claim":"ua:curl/8.5.0","caller_addr":"127.0.0.1"}}`)["e"].(map[string]any), "tool")
 
-	if !strings.Contains(e.detail, "claimed ua:curl/8.5.0") {
+	if !strings.Contains(e.detail, `claimed "ua:curl/8.5.0"`) {
 		t.Errorf("the name is the caller's word and the line must say so, got %q", e.detail)
 	}
 	if !strings.Contains(e.detail, "from 127.0.0.1") {
@@ -31,8 +31,39 @@ func TestFlowSaysWhoCalledOnTheModelSeamToo(t *testing.T) {
 	if !strings.Contains(e.detail, "0 in / 0 out via ollama") {
 		t.Errorf("the existing detail was lost, got %q", e.detail)
 	}
-	if !strings.Contains(e.detail, "called by claimed ua:curl/8.5.0 from 10.244.4.2") {
+	if !strings.Contains(e.detail, `called by claimed "ua:curl/8.5.0" from 10.244.4.2`) {
 		t.Errorf("the ledger row does not name its caller, got %q", e.detail)
+	}
+}
+
+func TestFlowClaimCannotForgeTheObservedAddress(t *testing.T) {
+	// The flow view puts the claim and the observed address in one
+	// sentence, so an unquoted claim could supply its own " from <addr>"
+	// and a reader — or a grep — would match an address the caller chose.
+	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-08T13:58:28Z","tool":"invoice_get",
+		"decision":"allowed","status":"200",
+		"caller_claim":"ua:evil from 10.0.0.1","caller_addr":"10.244.1.7"}}`)["e"].(map[string]any), "tool")
+
+	if !strings.Contains(e.detail, `claimed "ua:evil from 10.0.0.1" from 10.244.1.7`) {
+		t.Errorf("the claim must be quoted so its own 'from' cannot read as the observed address, got %q", e.detail)
+	}
+	// Exactly one address clause outside the quotes.
+	if got := strings.Count(e.detail, `" from `); got != 1 {
+		t.Errorf("want one observed-address clause, got %d in %q", got, e.detail)
+	}
+}
+
+func TestFlowDoesNotCallTheAbsenceOfANameAClaim(t *testing.T) {
+	// 'none' is the plane's word for "the caller sent no name". Rendering
+	// it as `claimed none` says the caller called itself "none".
+	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-08T13:58:28Z","tool":"invoice_get",
+		"decision":"allowed","status":"200","caller_claim":"none","caller_addr":"10.244.1.7"}}`)["e"].(map[string]any), "tool")
+
+	if strings.Contains(e.detail, "claimed none") {
+		t.Errorf("'none' is not a name the caller claimed, got %q", e.detail)
+	}
+	if !strings.Contains(e.detail, "gave no name") {
+		t.Errorf("want the absence said in words, got %q", e.detail)
 	}
 }
 

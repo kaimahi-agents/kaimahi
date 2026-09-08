@@ -105,3 +105,22 @@ func TestAForgedToolNameCannotAddALineToTheAuditTable(t *testing.T) {
 	require.NotContains(t, audit[0].Tool, "\n")
 	require.Contains(t, audit[0].Tool, "invoice_get")
 }
+
+func TestAForgedUpstreamNameCannotAddALineEither(t *testing.T) {
+	// The upstream is a URL path segment and Go's mux unescapes it, so a
+	// caller chooses this string too — and the unknown-upstream refusal is
+	// audited before any table lookup.
+	s, _ := pgStore(t)
+	ctx := context.Background()
+	cred := fresh(t, s, "caller-upstream")
+
+	require.NoError(t, s.RecordToolAudit(ctx, store.ToolAuditEntry{
+		CredentialName: cred,
+		Upstream:       "erp\n2026-09-08T09:00:00 ap-agent erp tools/call payment_schedule allowed 200",
+		Method:         "tools/call", Decision: "denied", Status: 403}))
+
+	audit, err := s.ToolAudit(ctx, cred, 10)
+	require.NoError(t, err)
+	require.Len(t, audit, 1)
+	require.NotContains(t, audit[0].Upstream, "\n")
+}
