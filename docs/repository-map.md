@@ -11,16 +11,12 @@ marking the boundary:
 3. **Scaffolding** — it exists to build or verify. Checkers, probes,
    CI fixtures.
 
-A fourth category is a result rather than a gap: **unclear**, where the
-evidence does not settle it. Those are listed at the end, named, rather
-than rounded to the nearest confident answer.
-
-**"Unclear" is a flag, not a fourth bucket.** Every file still gets a
-best-reading classification in the tables — a map with holes in it is
-less useful than a map with question marks — and the list at the end
-names the ones where that reading rests on thin evidence. So a file can
-appear in a table AND at the end; `scripts/exposure-scan.sh` and
-`k8s/kaimahi-erp.yaml`'s neighbours do.
+**Unclear** is the fourth answer, and it is a result rather than a gap.
+It is a flag, not a fourth bucket: every file still gets a best reading in
+the tables — a map with holes is less useful than a map with question
+marks — and the list at the end names the cases where that reading rests
+on thin evidence. A file can therefore appear in a table *and* at the end.
+`scripts/exposure-scan.sh` and the connector seams do.
 
 **How each row was decided.** Not by reading names. For every file the
 question was *who invokes this* — greps for the path and the symbol
@@ -35,9 +31,8 @@ across the Makefile, `.github/workflows/`, `scripts/`, the Go tree,
 - **A demo's own words.** The comment at the top of
   `internal/demo/erp/server.go` (below the package clause, so not a
   package doc comment) says "the gateway in front of it is what the demo
-  is about", and
-  `docs/ap-demo.md` lists the ERP under **Simulated**. Where the code
-  says what it is, that is the answer.
+  is about", and `docs/ap-demo.md` lists the ERP under **Simulated**.
+  Where the code says what it is, that is the answer.
 
 **There is a second, stricter sense of "product" in this repository, and
 it disagrees with the one above.** `docs/release-agent.md:2-5` says:
