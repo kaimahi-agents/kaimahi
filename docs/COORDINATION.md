@@ -467,6 +467,77 @@ before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
 
+- **D49 (OPEN — needs a ruling, and not one the coordinator can make):
+  the vendor of our runtime sells our feature set.** Raised 2026-09-08 by
+  the user. **Read from two web pages and nothing else** — Solo.io's
+  kagent product page and the open-source kagent README. No code, no
+  release notes, no pricing. Everything below is a first reading and the
+  first task of anyone acting on it is to establish what is actually
+  shipped.
+
+  **The overlap, in their words.** Solo.io's commercial kagent offering
+  advertises: agent identity and policy management with
+  **"agent-on-behalf-of semantics"**; approval workflows where **"agents
+  propose, humans approve"**; complete auditability of every agent action
+  and decision path; a **Waypoint Proxy (Envoy-based)** doing L7
+  evaluation and guardrails on agent traffic; mTLS; multi-cluster; and
+  unification across LangChain, CrewAI and Google ADK.
+
+  Set against this repository: `acted_for` is agent-on-behalf-of, to the
+  phrase. P4c and P12 are approvals where the agent proposes and a human
+  approves. The tool audit trail is auditability of every call. The P4b
+  MCP gateway is an L7 proxy doing evaluation and guardrails on agent
+  traffic — theirs on Envoy, ours on a Go handler. mTLS is the gap raised
+  as D48 the same afternoon. And W41 had just finished testing the
+  cross-runtime claim they lead with.
+
+  **The nuance that decides how bad this is, and it took a second page to
+  find.** The OPEN-SOURCE kagent README documents none of it — no
+  approvals, no policy, no audit, no identity, no spend, no gateway. So
+  this project is **not** duplicating the runtime it depends on. It is
+  building, in the open, what that runtime's vendor sells as its
+  commercial tier.
+
+  That is a coherent position. It is also **not the position this board
+  has been written from**. The stated architecture is "thin layer over
+  kagent, do not build a second control plane", which reads very
+  differently once the vendor is selling the layer with Envoy underneath
+  and multi-cluster on top.
+
+  **What still looks genuinely ours**, offered as candidates to test
+  rather than as conclusions:
+  - **Argument-level binding.** Their published language is "granular
+    access control", which usually means per-tool. This repository binds
+    an approval to the canonical digest of one CALL with specific
+    arguments — approving `publish v1.2.3` cannot be spent on `v1.2.4`,
+    and a standing constraint bounds a field rather than a verb. If they
+    bind tools and we bind calls, that is a real difference and it is the
+    one worth leading with. **If they bind calls too, the strongest
+    remaining claim is gone**, and that should be established early
+    rather than discovered late.
+  - **Spend metering and budget denial.** Absent from their published
+    feature list, as it was from the other platform surveyed this week.
+    Twice now, which is either an opportunity or a sign that nobody
+    considers it part of this problem.
+  - **Self-hosted with no vendor**, and a one-command path from nothing
+    to a governed agent.
+
+  **What must be established before this is ruled**, because a product
+  page describes intent as much as shipped code:
+  - Which of those capabilities are generally available today, which are
+    announced, and which are roadmap.
+  - Whether any of it is in the open-source repository we already depend
+    on — if approvals or policy land THERE, the question changes from
+    positioning to duplication overnight.
+  - Whether their approval binds a tool or a call.
+
+  **This is not a decision the coordinator should make**, and not one
+  answerable from marketing copy. It is a question about why this project
+  exists alongside its own upstream's commercial offering, and it wants
+  whoever else has a stake in the answer.
+
+
+
 - **D48 (OPEN — needs a ruling): the model seam is plaintext, and D45's
   reasoning does not cover it.** Raised 2026-09-08 after W41 found that
   the plane has no TLS listener on any of its five ports. D45 examined
