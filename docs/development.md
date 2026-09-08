@@ -84,6 +84,14 @@ python3 scripts/check-brand-assets.py
 # blueprint parser read too — so a shape added in one place is refused
 # everywhere. The self-test runs first.
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
+# The two documents about this repository that are checkable rather than
+# reviewable: the map's counts and membership lists against the tree, and
+# the coordination board against itself — no two rows for one lane, no
+# ready-to-paste prompt for a lane the table says shipped. Whether a lane
+# is done is a judgement and neither checker asks it. The board checker
+# reads `git log`, so a shallow clone makes it name the claims it skipped.
+python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
+python3 scripts/check-board.py --selftest && python3 scripts/check-board.py
 # Every checker, broken on purpose and required to notice. A checker that
 # has never been watched saying no is not known to work; this applies each
 # declared breakage to a copy and fails if the checker stays quiet.

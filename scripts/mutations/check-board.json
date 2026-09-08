@@ -1,0 +1,114 @@
+{
+  "checker": "check-board.py",
+  "why": "This checker's value is that it fails when docs/COORDINATION.md contradicts itself, and every way it can stop doing that looks like a clean run: a table that parsed to nothing, a prompt list nobody could read, a ledger of accepted findings that forgives everything, a claim skipped for want of a git history and counted as having looked. Each edit below is one of those, and the self-test — which breaks the BOARD, the history and the ledger rather than this file — is what has to notice.",
+  "verify": [
+    "python3",
+    "scripts/check-board.py",
+    "--selftest"
+  ],
+  "signature": "check-board self-test:",
+  "mutations": [
+    {
+      "name": "no claim is registered and the run reports the board checked",
+      "breaks": "The registry. Every claim below the decorator stops existing, the loop has nothing to run, and the checker prints its own success line having compared nothing.",
+      "find": "def claim(fn):\n    CLAIMS.append(fn)\n    return fn",
+      "replace": "def claim(fn):\n    return fn"
+    },
+    {
+      "name": "the findings are collected and the exit code ignores them",
+      "breaks": "A checker that does all its work, prints every disagreement and exits 0 — the failure an exit code alone cannot see, and the reason these mutations are verified by a self-test rather than by a return value.",
+      "find": "def exit_code(problems: list[str]) -> int:\n    \"\"\"The verdict.",
+      "replace": "def exit_code(problems: list[str]) -> int:\n    return 0\n    \"\"\"The verdict."
+    },
+    {
+      "name": "a claim that could not find what it checks is skipped in silence",
+      "breaks": "The fail-open one level up. A heading renamed, a table gone, a form of citation the board stopped using: each becomes a claim that quietly does not run, and the summary still counts it as checked.",
+      "find": "        except Anchor as e:\n            problems.append(f\"[{fn.__name__}] {e}\")\n            continue",
+      "replace": "        except Anchor:\n            continue"
+    },
+    {
+      "name": "an empty board is read and found consistent",
+      "breaks": "The empty case at its simplest. A board that failed to read, or a path that moved, produces no text — and every claim then agrees with nothing.",
+      "find": "        if not text.strip():\n            raise Anchor(f\"{BOARD} is empty\")",
+      "replace": "        if False:\n            raise Anchor(f\"{BOARD} is empty\")"
+    },
+    {
+      "name": "a lane table that parsed to no rows is accepted",
+      "breaks": "The empty case where it actually bites: the table's format changes, every row stops parsing, and a board with no lanes in it is reported as a board that contradicts itself nowhere.",
+      "find": "        if not rows:\n            raise Anchor(f\"the {TABLE} table parsed to no rows",
+      "replace": "        if False:\n            raise Anchor(f\"the {TABLE} table parsed to no rows"
+    },
+    {
+      "name": "a board with no worker prompts is accepted",
+      "breaks": "Three claims read the prompts. If none is found — a heading level changed, a section renamed — all three pass having examined nothing, and the paste-and-rebuild hazard they exist for stops being looked at.",
+      "find": "        if not self.prompts:\n            raise Anchor(\"no prompt headings",
+      "replace": "        if False:\n            raise Anchor(\"no prompt headings"
+    },
+    {
+      "name": "a heading in a state this file was never taught is filed under nothing",
+      "breaks": "The closure that makes the prompt list trustworthy. A third state word beside UNASSIGNED and RUN would silently mean 'not a prompt', and every claim about pasteable prompts would quietly stop covering it.",
+      "find": "            elif opener:\n                raise Anchor(",
+      "replace": "            elif False:\n                raise Anchor("
+    },
+    {
+      "name": "every finding is forgiven, whether or not it is recorded",
+      "breaks": "The open-drift ledger inverted. The board could contradict itself in a hundred new ways and the run would stay green, because nothing is ever compared against what was accepted.",
+      "find": "        return [f for f in findings if f.key() not in self.accepted]",
+      "replace": "        return []"
+    },
+    {
+      "name": "a ledger entry the board no longer earns is left in place",
+      "breaks": "The other direction. Debts stay written down after they are paid, and a lane that comes back to the same contradiction is forgiven by an entry that was about a different day.",
+      "find": "    def struck(self, findings: list[Finding], claims_ran: set[str]) -> list[str]:\n        \"\"\"Entries",
+      "replace": "    def struck(self, findings: list[Finding], claims_ran: set[str]) -> list[str]:\n        return []\n        \"\"\"Entries"
+    },
+    {
+      "name": "a claim that was skipped counts as a claim that looked",
+      "breaks": "The subtle one. On a shallow checkout the claims that read the merge ledger say nothing — and if that reads as 'no disagreement', every open finding under them is struck off as paid by a run that never looked.",
+      "find": "            if name in claims_ran and key not in live:",
+      "replace": "            if key not in live:"
+    },
+    {
+      "name": "a ledger entry with no claim, no lanes, no date and no sentence is accepted",
+      "breaks": "The ledger stops being a list of debts and becomes a way to switch a claim off with no explanation and nobody to answer for it.",
+      "find": "            for field in (\"claim\", \"lanes\", \"raised\", \"owed\"):",
+      "replace": "            for field in ():"
+    },
+    {
+      "name": "a row's lane is read only from the identifier it opens with",
+      "breaks": "Half the table's lanes are named in the owner column instead — `P11: milestone 1` owned by `W21 worker`. Without them the prompts for those lanes look like prompts for lanes the table never had, and the claims that compare a prompt to its row compare it to nothing.",
+      "find": "        self.ids |= set(re.findall(rf\"\\b({LANE})\\s+worker\\b\", self.owner))",
+      "replace": "        self.ids |= set()"
+    },
+    {
+      "name": "no prompt is ever pasteable",
+      "breaks": "The word the board uses to invite a worker in. Read as always absent, the claim that a shipped lane has no pasteable prompt passes over every prompt on the board.",
+      "find": "        self.pasteable = bool(re.search(r\"\\(UNASSIGNED\\b\", heading))",
+      "replace": "        self.pasteable = False"
+    },
+    {
+      "name": "the board's own bookkeeping counts as work shipping",
+      "breaks": "A merge that changed nothing but the board is the coordinator writing a lane down, and it quotes the lane's title while doing it. Counted as evidence, the board answers 'has this shipped?' with the sentence that asked.",
+      "find": "            if number in self.bookkeeping:\n                continue",
+      "replace": "            if False:\n                continue"
+    },
+    {
+      "name": "a shallow checkout is treated as a full history",
+      "breaks": "There is no merge ledger in a default `actions/checkout`, and the claims that read one would then conclude that nothing on the board has ever shipped under its own name — quietly, and in the one place a stale row is most likely to be waiting.",
+      "find": "        self.available = bool(self.merges) and not self.shallow",
+      "replace": "        self.available = bool(self.merges)"
+    },
+    {
+      "name": "the ledger is asked about pull requests older than its first number",
+      "breaks": "The oldest lanes were rebase-merged and carry no number in any subject. Asked about them, the ledger says 'no such merge' — and twenty-three rows that are perfectly true are reported as citing pull requests that never happened.",
+      "find": "        if number >= floor and number not in history.merges:",
+      "replace": "        if number not in history.merges:"
+    },
+    {
+      "name": "a lane's title keeps the board's cross-references in it",
+      "breaks": "A row's title ends in the decisions that authorised it, which appear in this document and nowhere else. Left in, they are words no merge subject can ever share, and a stale row's title stops resembling the merge that closed it.",
+      "find": "        title = re.sub(r\"\\s*\\([^()]*\\)\\s*$\", \"\", title.strip())",
+      "replace": "        title = title.strip()"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "what": "The disagreements docs/COORDINATION.md carries today, recorded rather than corrected. scripts/check-board.py fails on anything not in this list, and fails again on any entry here the board no longer earns.",
+  "why": "The board has one writer. A lane that quietly corrected it would delete the evidence that the check works, and would put a worker's opinion into a document that records the coordinator's. So the findings from the first run are written down, with what each one costs to close, and the coordinator strikes them off.",
+  "open": [
+    {
+      "claim": "a_shipped_lane_has_no_pasteable_prompt",
+      "raised": "2026-09-08",
+      "owed": "One heading edit per lane. The board already has the form: three prompts for finished lanes read `(RUN — merged as #95; kept as the record of what the lane was asked for)`, and the other thirty-four still read `(UNASSIGNED — paste into a fresh CLI session)` under rows that say the lane merged. The prompt text is worth keeping; the invitation to paste it is not. The row for W29 carries the hand-written version of this warning — **HALF SHIPPED — do NOT paste the prompt below** — because pasting it would have rebuilt `kmx tools add`.",
+      "lanes": ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12",
+                "W13", "W14", "W15", "W18", "W19", "W20", "W21", "W22", "W23", "W24", "W25",
+                "W26", "W27", "W28", "W29", "W30", "W33", "W34b", "W36", "W37", "W38", "W40"]
+    },
+    {
+      "claim": "no_unstarted_row_for_work_already_merged",
+      "raised": "2026-09-08",
+      "owed": "The row still says `unassigned` and `SHAPED 2026-09-08 — prompt below` for a lane that merged as #139 the same day. This is the fifth occurrence of the failure this checker was written for, and it was live on main when the checker first ran. The row needs the status every other finished lane's row carries, and the prompt above needs the heading the entry above describes.",
+      "lanes": ["W41"]
+    }
+  ]
+}

@@ -20,7 +20,17 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
+      # Full history, because one check in this job reads it. The board
+      # checker asks whether a lane the coordination board says nobody has
+      # started has already merged under its own title, and the only
+      # keyless ledger of what merged is `git log`. A default checkout is
+      # shallow and has none of it; the checker then says out loud which
+      # claims it skipped rather than passing them, which is a visible
+      # skip and not a silent one — but a skip all the same, and this is
+      # what stops it happening.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Required files present
         run: |
           test -f LICENSE
@@ -77,6 +87,34 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
+      # docs/COORDINATION.md is the board every worker session is handed,
+      # and its lane table said a lane was unassigned when it had already
+      # shipped five times in six days. That is not a discipline problem:
+      # it holds sixty-one rows and thirty-eight ready-to-paste prompts and
+      # takes edits daily, and a document changing that fast whose claims
+      # are checked only by whoever remembers to look drifts by
+      # construction. A stale row invites a worker to rebuild something
+      # that exists, which nearly happened once already.
+      #
+      # What is checked is whether the board contradicts ITSELF: two rows
+      # for one lane, a row that says both unassigned and merged, a
+      # ready-to-paste prompt for a lane the table says shipped, a
+      # finished lane's delta sheet above a row that says nobody started.
+      # Whether a lane is done is a judgement and nothing here asks it.
+      #
+      # One claim reaches outside the document, to `git log`: a row saying
+      # nothing has shipped, for work a merge already describes in the
+      # row's own words. It needs the full history above, and says so when
+      # it does not have one.
+      #
+      # The board has one writer. What it gets wrong today is recorded in
+      # scripts/board-open-drift.json with what is owed, rather than fixed
+      # here — and an entry there that the board no longer earns fails
+      # too, so the record cannot outlive the debt.
+      - name: Board checker self-test
+        run: python3 scripts/check-board.py --selftest
+      - name: The coordination board still agrees with itself
+        run: python3 scripts/check-board.py
       # And the checkers themselves: each one is copied, broken on purpose
       # in a named way, and required to notice. A self-test built from
       # fixture pairs proves a checker gets today's answer right; it does

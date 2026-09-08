@@ -76,7 +76,7 @@ still in the tree.
 | `internal/` | `kmx/` (15 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 44 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 47 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -199,10 +199,10 @@ exist for a walkthrough; `release-agent.yaml` is also not embedded but is
 not a walkthrough either — it is the one agent this project depends on.
 All six are "an agent manifest in `k8s/`" and look alike.
 
-## `scripts/` — 69 tracked files, three different jobs
+## `scripts/` — 72 tracked files, three different jobs
 
-**None is orphaned**, but "orphaned" needs care: 58 of the 69 are named
-by something outside themselves, and the eleven `scripts/mutations/*.json`
+**None is orphaned**, but "orphaned" needs care: 60 of the 72 are named
+by something outside themselves, and the twelve `scripts/mutations/*.json`
 are named by nothing at all — `check-mutations.py` finds them by globbing
 the directory. That is deliberate (a checker added without mutations is
 meant to be a failure, so the harness must not read a list someone can
@@ -210,7 +210,7 @@ forget to update), and it means a grep for references is the wrong test
 for that one directory.
 
 The counts below come from a classification of `git ls-files scripts` in
-which all 69 files land in exactly one bucket — not from reading the
+which all 72 files land in exactly one bucket — not from reading the
 directory and estimating.
 
 | Class | Count | Files |
@@ -218,10 +218,11 @@ directory and estimating.
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
 | **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
-| **Scaffolding** — checkers and their self-tests | 14 | the eleven `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
+| **Scaffolding** — checkers and their self-tests | 15 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
 | **Scaffolding** — live-cluster probes | 13 | `*-probe.sh`, minus the one that is embedded |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 6 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
-| **Scaffolding** — mutation specifications | 11 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
+| **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
+| **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements `check-board.py` found in the coordination board and may not fix itself |
 
 **Two of those look like demo scripts and are not.** `await-approval.sh`
 was renamed out of the AP demo — its own comment says "so the release
@@ -252,7 +253,7 @@ Three things a reader would get wrong from the directory listing alone:
 
 One file is genuinely dual-role and is counted once above:
 `kube-guard.sh` is embedded product — `kmx lift` writes it into a
-temporary tree and executes it — AND is one of the eleven checkers the
+temporary tree and executes it — AND is one of the twelve checkers the
 mutation harness breaks on purpose.
 
 `verify-chat.py` is a checker. Neither make nor kmx runs it: every

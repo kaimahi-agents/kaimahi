@@ -24,6 +24,34 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`scripts/check-board.py`** — the coordination board's lane table said a
+  lane was unassigned when it had already shipped five times in six days, and
+  twice carried two rows for one lane that contradicted each other. Each time
+  it was found by eye and hand-patched. CI now runs the board against itself
+  on every pull request: no two rows for one lane, no row that says both
+  unassigned and merged, no ready-to-paste worker prompt for a lane the table
+  says shipped, no finished lane's delta sheet above a row saying nobody has
+  started, and every pull request the board calls merged is one that merged.
+
+  This is not cosmetic. A stale row invites a worker to rebuild something that
+  exists — one said unassigned for the lane that had shipped `kmx tools add`.
+
+  Whether a lane is *done* is a judgement and nothing here asks it. Whether the
+  board contradicts itself is not, and that is all this checks. One claim
+  reaches outside the document, to `git log`: a row claiming nothing has
+  shipped, for work a merge already describes in that row's own words. Pull
+  request titles carry no lane numbers, so the match is on the words the row
+  itself uses; on the board the day it was written it matched 17 rows to the
+  exact pull request each cites and none to a different one. It is keyless,
+  needs a full checkout, and names the claims it skipped when it does not have
+  one.
+
+  The board has one writer, so this lane did not edit it. What it found is
+  recorded in `scripts/board-open-drift.json` with what each item costs to
+  close — including the stale row that was live on main while this was being
+  written. An entry there that the board no longer earns fails the check too,
+  so the record cannot outlive the debt.
+
 - **`scripts/check-repository-map.py`** — `docs/repository-map.md` asserted
   several dozen facts about this tree and nothing checked any of them. CI now
   runs the map against the tree on every pull request: the file counts, the
