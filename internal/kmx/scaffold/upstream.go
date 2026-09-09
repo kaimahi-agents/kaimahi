@@ -267,6 +267,16 @@ func ValidateNamespace(ns string) error {
 	return nil
 }
 
+// ValidateObjectName holds a Kubernetes object name an operator typed to
+// the shape the API server will accept, so a refusal names the flag rather
+// than arriving from kubectl several steps later.
+func ValidateObjectName(name string) error {
+	if !upstreamNameRE.MatchString(name) || len(name) > 63 {
+		return fmt.Errorf("%q is not a Kubernetes object name (RFC 1123 label)", name)
+	}
+	return nil
+}
+
 // ValidateUpstreamName holds the name to the strictest shape it has to
 // satisfy anywhere it is used.
 func ValidateUpstreamName(name string) error {

@@ -93,7 +93,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"lift", "lift down", "metrics", "models", "models add", "plane", "quickstart", "request",
 		"restore", "status",
 		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
-		"tools sandbox", "tools sandbox status", "tools ungovern",
+		"tools sandbox", "tools sandbox status", "tools sidecar", "tools ungovern",
 		"up", "use", "version",
 		"workflow", "workflow govern", "workflow list", "workflow run", "workflow show",
 	}

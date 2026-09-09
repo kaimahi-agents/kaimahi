@@ -81,7 +81,7 @@ func (a *App) planeCertificate(singleStep bool) error {
 	// not only when something was signed. It is how a cluster repairs
 	// itself after the Secret was deleted, and it is what makes a
 	// re-minted authority reach the agents that have to trust it.
-	if err := a.publishAuthority(authority.CertPEM); err != nil {
+	if err := a.publishAuthority(config_kagentNamespace, authority.CertPEM); err != nil {
 		return err
 	}
 	if trustChanged {
@@ -163,15 +163,17 @@ func (a *App) servingCertificate() (*x509.Certificate, error) {
 }
 
 // publishAuthority copies the authority's certificate — and only its
-// certificate — into the agent namespace, where `spec.tls.caCertSecretRef`
-// names it.
+// certificate — into a namespace that has to verify a seam: the agent
+// namespace, where `spec.tls.caCertSecretRef` names it, and the namespace a
+// runtime holding a credential runs in, which on a cluster with no kagent
+// is the only one there is.
 //
 // Tolerant of a missing namespace, and deliberately so: `kmx plane` can be
 // run against a cluster where kagent is not installed yet, and refusing the
 // whole deploy over the absence of the thing that will be told to trust it
 // would be the wrong end of the problem. `kmx govern` publishes it again
 // before it needs it.
-func (a *App) publishAuthority(certPEM []byte) error {
+func (a *App) publishAuthority(namespace string, certPEM []byte) error {
 	// The namespace is checked FIRST rather than inferred from a failed
 	// apply. `kubectl apply -f -` is run through a pipe, so its error
 	// reaches Go as a bare exit status with the message on the child's
@@ -180,19 +182,19 @@ func (a *App) publishAuthority(certPEM []byte) error {
 	// for the message here made `kmx plane` fail outright on a cluster where
 	// kagent is not installed, which is the exact case this is meant to
 	// allow.
-	if _, err := a.kubectlCapture("get", "namespace", config_kagentNamespace, "-o", "name"); err != nil {
+	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
 		if isNotFound(err) {
 			a.notef("NOTE: namespace %s does not exist yet, so nothing was told what to trust.\n"+
 				"  `kmx govern` publishes Secret %s there before it points an agent at the plane.",
-				config_kagentNamespace, config.PlaneCASecret)
+				namespace, config.PlaneCASecret)
 			return nil
 		}
 		return fmt.Errorf("cannot tell whether namespace %s exists (refusing to guess): %w",
-			config_kagentNamespace, err)
+			namespace, err)
 	}
-	body := secretManifest(config.PlaneCASecret, config_kagentNamespace,
+	body := secretManifest(config.PlaneCASecret, namespace,
 		map[string]string{config.PlaneCAKey: string(certPEM)}, nil)
-	return a.applySecretIn(config_kagentNamespace, body, config.PlaneCASecret)
+	return a.applySecretIn(namespace, body, config.PlaneCASecret)
 }
 
 // publishPlaneAuthority republishes the authority's certificate into the
@@ -206,7 +208,7 @@ func (a *App) publishAuthority(certPEM []byte) error {
 //
 // Refuses rather than warning when the plane has no certificate: pointing an
 // agent at a TLS seam it cannot verify is not a partial success.
-func (a *App) publishPlaneAuthority() error {
+func (a *App) publishPlaneAuthority(namespace string) error {
 	data, err := a.secretData(admin.Namespace, config.PlaneSeamTLSSecret)
 	if err != nil {
 		if isNotFound(err) {
@@ -224,7 +226,7 @@ func (a *App) publishPlaneAuthority() error {
 				"  Run `kmx plane` — it mints the certificate and publishes the authority.",
 			admin.Namespace, config.PlaneSeamTLSSecret, config.PlaneCAKey)
 	}
-	return a.publishAuthority(ca)
+	return a.publishAuthority(namespace, ca)
 }
 
 // agentsTrustedAnotherAuthority reports whether the agent namespace already

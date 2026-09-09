@@ -70,7 +70,7 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 	// report Accepted=false rather than switching. Published here, not only
 	// by `kmx plane`, because the plane can be deployed before kagent
 	// exists and this is the first moment the namespace is certain to.
-	if err := a.publishPlaneAuthority(); err != nil {
+	if err := a.publishPlaneAuthority(config_kagentNamespace); err != nil {
 		return err
 	}
 
@@ -147,7 +147,7 @@ func (a *App) GovernInteractiveModel(agent string) error {
 	if err := a.issueCredential(client, credential, opt, true, secretExists); err != nil {
 		return err
 	}
-	if err := a.publishPlaneAuthority(); err != nil {
+	if err := a.publishPlaneAuthority(config_kagentNamespace); err != nil {
 		return err
 	}
 	manifest, err := interactiveModelManifest(preset, secret, model, true, agent)

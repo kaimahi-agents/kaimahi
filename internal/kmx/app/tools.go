@@ -10,6 +10,7 @@ import (
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // `kmx use` and the tool-governance verbs.
@@ -135,12 +136,31 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		return err
 	}
 
+	// A plane can govern an application this project did not write, on a
+	// cluster with no kagent at all. Six of the steps below are kagent's —
+	// the seam, its verdict, the agent patch and the rollout waits — and
+	// none of them is what makes a call governed. The credential and the
+	// allowlist are.
+	seamInstalled, err := a.kagentSeamInstalled()
+	if err != nil {
+		return err
+	}
+	// Before anything is minted: the token is shown once, so a Secret
+	// namespace that does not exist must refuse here rather than after
+	// the credential is live and unrecoverable.
+	if err := a.requireNamespace(opt.SecretNamespace, "--secret-namespace"); err != nil {
+		return err
+	}
+
 	// What was true before the credential lands, so a verdict kagent reached
 	// before it is never read as an answer about it. The baseline carries the
 	// seam's CURRENT verdict time as the API server recorded it, which is what
 	// lets the check afterwards prove a change without trusting kmx's clock
 	// and the cluster's to agree (seamverdict.go).
-	baseline := a.seamVerdictBaseline(config_kagentNamespace, opt.Server, a.timeNow())
+	var baseline seamBaseline
+	if seamInstalled {
+		baseline = a.seamVerdictBaseline(config_kagentNamespace, opt.Server, a.timeNow())
+	}
 	if err := a.session(func(c *admin.Client) error {
 		if err := a.issueCredential(c, opt.Credential, GovernOptions{
 			Agent:           opt.Agent,
@@ -155,12 +175,42 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		return err
 	}
 
-	// The seam applied below names a CA Secret in the agent namespace, and
-	// kagent refuses a RemoteMCPServer whose named Secret is absent — the
-	// seam would report Accepted=false and the wait afterwards would time
-	// out on a fault that has nothing to do with the credential.
-	if err := a.publishPlaneAuthority(); err != nil {
-		return err
+	// Both seams serve TLS under an authority the plane mints for itself,
+	// so whatever holds this credential also needs the certificate to
+	// verify against — and it needs it where it runs. The seam applied
+	// below names the same Secret in the agent namespace, and kagent
+	// refuses a RemoteMCPServer whose named Secret is absent, reporting
+	// Accepted=false on a fault that has nothing to do with the credential.
+	if seamInstalled {
+		if err := a.publishPlaneAuthority(config_kagentNamespace); err != nil {
+			return err
+		}
+	}
+	if opt.SecretNamespace != config_kagentNamespace || !seamInstalled {
+		if err := a.publishPlaneAuthority(opt.SecretNamespace); err != nil {
+			return err
+		}
+	}
+
+	if !seamInstalled {
+		// Everything left is kagent reconciling a CRD this cluster does
+		// not have. What makes a call governed is written and live.
+		a.notef("")
+		a.notef("This cluster has no kagent: the CRD %s is not installed, so there is no", remoteMCPServerCRD)
+		a.notef("RemoteMCPServer to accept and no Agent to repoint. The credential, its allowlist and")
+		a.notef("the authority to verify the seam against are written — that is the whole interface.")
+		a.notef("Point your runtime at %s, where <upstream> is",
+			scaffold.GatewayURL("<upstream>"))
+		a.notef("the name `kmx tools add` onboarded the server under — never the server's own address —")
+		a.notef("with the token in Secret %s/%s (key api-key) as `Authorization: Bearer <token>`,",
+			opt.SecretNamespace, opt.Secret)
+		a.notef("verifying against %s/%s (key %s). See docs/foreign-runtime.md.",
+			opt.SecretNamespace, config.PlaneCASecret, config.PlaneCAKey)
+		if opt.Agent != config.DefaultToolsAgent {
+			a.notef("--agent %q was not honoured: repointing an Agent is kagent's, and there is none here.",
+				opt.Agent)
+		}
+		return nil
 	}
 
 	// The committed seam is kmx's to apply; a scaffolded one was applied
@@ -216,6 +266,55 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		return err
 	}
 	return a.waitAgentReady(opt.Agent)
+}
+
+// remoteMCPServerCRD is the CustomResourceDefinition a cluster must carry
+// before a RemoteMCPServer can be applied to it.
+const remoteMCPServerCRD = "remotemcpservers.kagent.dev"
+
+// kagentSeamInstalled reports whether this cluster can accept a
+// RemoteMCPServer at all.
+//
+// The question is asked positively, of a CRD by name, because the obvious
+// read does not answer it: a cluster with no kagent answers `get
+// remotemcpserver` with "the server doesn't have a resource type", which
+// isNotFound deliberately does NOT read as absence (notfound_test.go). A
+// `get crd <name>` is a read of a resource every cluster has, so its
+// NotFound means one thing only.
+//
+// A cluster that could not be asked is an error, never an absence.
+// Treating an unreachable API server or an RBAC denial as "no kagent
+// here" would half-onboard a cluster and report success.
+func (a *App) kagentSeamInstalled() (bool, error) {
+	if _, err := a.kubectlCapture("get", "crd", remoteMCPServerCRD, "-o", "name"); err != nil {
+		if isNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("cannot tell whether this cluster has the kagent CRDs "+
+			"(refusing to guess): %w", err)
+	}
+	return true, nil
+}
+
+// requireNamespace refuses before anything is written when the namespace
+// a Secret is bound for does not exist.
+//
+// The credential's token is shown once. Minting it and THEN failing to
+// write the Secret leaves a live credential nobody holds and a recovery
+// that is a hand-written DELETE against the plane's database — which is
+// what happens when the Secret namespace defaults to `kagent` on a
+// cluster that has none.
+func (a *App) requireNamespace(namespace, flag string) error {
+	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("namespace %q does not exist, and it is where the credential's Secret would go.\n"+
+				"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
+				"  Name the namespace your runtime reads its Secret from:\n"+
+				"    %s %s", namespace, flag, "<your namespace>")
+		}
+		return fmt.Errorf("cannot tell whether namespace %q exists (refusing to guess): %w", namespace, err)
+	}
+	return nil
 }
 
 // preflightToolServer refuses early when the RemoteMCPServer this is

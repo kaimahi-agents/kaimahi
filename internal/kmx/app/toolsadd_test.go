@@ -70,9 +70,20 @@ func TestAURLThatIsNotAnInClusterServiceIsRefused(t *testing.T) {
 // fakeAddKubectl answers the reads `kmx tools add` makes. KMX_TEST_SVC is
 // the Service JSON; KMX_TEST_OVERLAY is the overlay ConfigMap's data (or
 // "notfound" / "boom" to exercise the two failure directions).
+// KMX_TEST_NO_KAGENT=1 is a cluster where the kagent CRDs were never
+// installed; "boom" is one that could not be asked.
 const fakeAddKubectl = `#!/bin/sh
 printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
+  *"apply -f -"*|*"apply --dry-run=server -f -"*)
+    [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
+    exit 0 ;;
+  *"get crd remotemcpservers.kagent.dev"*)
+    case "$KMX_TEST_NO_KAGENT" in
+      1)    printf 'Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io "remotemcpservers.kagent.dev" not found\n' >&2; exit 1 ;;
+      boom) printf 'Unable to connect to the server: dial tcp: i/o timeout\n' >&2; exit 1 ;;
+      *)    printf 'customresourcedefinition.apiextensions.k8s.io/remotemcpservers.kagent.dev\n'; exit 0 ;;
+    esac ;;
   *"config view"*)
     cat <<'JSON'
 {"clusters":[{"name":"kind-kaimahi-p1","cluster":{"server":"https://127.0.0.1:6443"}}],
@@ -80,6 +91,7 @@ case "$*" in
 JSON
     exit 0 ;;
   *"get secret kaimahi-admin"*) printf '%s' "$KMX_TEST_ADMIN_B64"; exit 0 ;;
+  *"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_SEAM_TLS"; exit 0 ;;
   *port-forward*)
     printf 'Forwarding from 127.0.0.1:%s -> 9091\n' "$KMX_TEST_ADMIN_PORT"
     exec sleep 30 ;;

@@ -11,8 +11,37 @@ import (
 
 func newToolsCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "tools", Short: "Manage governed MCP tool access", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newToolsAddCommand(state), newToolsGovernCommand(state), newToolsUngovernCommand(state), newToolsAllowCommand(state), newToolsAllowlistCommand(state), newToolsSandboxCommand(state))
+	group.AddCommand(newToolsAddCommand(state), newToolsGovernCommand(state), newToolsUngovernCommand(state), newToolsAllowCommand(state), newToolsAllowlistCommand(state), newToolsSandboxCommand(state), newToolsSidecarCommand(state))
 	return group
+}
+
+// newToolsSidecarCommand scaffolds the credential shim for a client whose
+// only configuration is a URL, and so cannot present a header.
+//
+// It registers no flag that could carry a token. The shim resolves one from
+// the Secret `kmx tools govern` wrote, which is the only path in kmx that
+// mints credential material.
+func newToolsSidecarCommand(state *commandState) *cobra.Command {
+	var opt app.SidecarOptions
+	cmd := &cobra.Command{
+		Use:   "sidecar <upstream>",
+		Short: "Scaffold a credential shim for a client that cannot set a header",
+		Args:  usageArgs(1, 1, "kmx tools sidecar <upstream> --deployment <name> [--namespace <ns>]"),
+	}
+	cmd.Flags().StringVar(&opt.Deployment, "deployment", "", "Deployment running the MCP client")
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace that Deployment runs in")
+	cmd.Flags().StringVar(&opt.Secret, "secret", "", "Secret holding the kmh_ token")
+	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
+	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write and stop")
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		opt.Upstream = cmd.Flags().Arg(0)
+		if strings.TrimSpace(opt.Deployment) == "" {
+			return errors.New("kmx tools sidecar: --deployment is required — " +
+				"the patch and the command that applies it must name the same workload")
+		}
+		return a.ToolsSidecar(opt)
+	})
+	return cmd
 }
 
 // newToolsSandboxCommand installs the WASM runtime a tool server can opt

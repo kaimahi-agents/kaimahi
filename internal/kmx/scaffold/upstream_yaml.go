@@ -38,36 +38,79 @@ var ServerEgressModes = []string{EgressNone, EgressDNS, EgressKeep}
 // Nothing here carries a credential; document 4 names a Secret and the
 // generator refuses any key-shaped byte in its own output.
 func GenerateUpstream(spec UpstreamSpec) (string, error) {
-	if err := ValidateUpstreamName(spec.Name); err != nil {
+	if err := validateUpstreamSpec(spec); err != nil {
 		return "", err
 	}
+	plane, seam, err := upstreamHalves(spec)
+	if err != nil {
+		return "", err
+	}
+	return plane + seam, nil
+}
+
+// validateUpstreamSpec refuses a spec no document can be built from, so
+// both entry points reject the same inputs with the same words.
+func validateUpstreamSpec(spec UpstreamSpec) error {
+	if err := ValidateUpstreamName(spec.Name); err != nil {
+		return err
+	}
 	if err := ValidateNamespace(spec.ServiceNamespace); err != nil {
-		return "", fmt.Errorf("upstream %q: %w", spec.Name, err)
+		return fmt.Errorf("upstream %q: %w", spec.Name, err)
 	}
 	if len(spec.PodLabels) == 0 {
-		return "", fmt.Errorf("upstream %q: no pod labels — the NetworkPolicy pair has nothing to pin", spec.Name)
+		return fmt.Errorf("upstream %q: no pod labels — the NetworkPolicy pair has nothing to pin", spec.Name)
 	}
 	if spec.PodPort <= 0 || spec.PodPort > 65535 {
-		return "", fmt.Errorf("upstream %q: pod port %d is out of range", spec.Name, spec.PodPort)
+		return fmt.Errorf("upstream %q: pod port %d is out of range", spec.Name, spec.PodPort)
 	}
 	if len(spec.Tools) == 0 {
-		return "", fmt.Errorf("upstream %q: no tools declared", spec.Name)
+		return fmt.Errorf("upstream %q: no tools declared", spec.Name)
 	}
+	return nil
+}
+
+// UpstreamDocuments renders the same four documents in two halves: the
+// three the PLANE needs — the overlay entry and the NetworkPolicy pair —
+// and, separately, the RemoteMCPServer, which only kagent's controller
+// reads.
+//
+// A cluster governing an application this project did not write has no
+// kagent to reconcile that last document, and applying it there fails on
+// a CRD that is not installed. The split is what lets the apply leave it
+// out; the FILE an operator reviews is always the whole onboarding,
+// because a cluster that has no kagent today may have one tomorrow.
+func UpstreamDocuments(spec UpstreamSpec) (plane, seam string, err error) {
+	if err := validateUpstreamSpec(spec); err != nil {
+		return "", "", err
+	}
+	return upstreamHalves(spec)
+}
+
+// upstreamHalves renders both halves and refuses key shapes in each. The
+// check runs per half rather than on the concatenation, so no subset can
+// be emitted unchecked.
+func upstreamHalves(spec UpstreamSpec) (plane, seam string, err error) {
 	var b strings.Builder
 	for _, part := range []func(UpstreamSpec) (string, error){
-		overlayDocument, proxyEgressDocument, serverIngressDocument, remoteServerDocument,
+		overlayDocument, proxyEgressDocument, serverIngressDocument,
 	} {
 		doc, err := part(spec)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		b.WriteString(doc)
 	}
-	out := b.String()
-	if err := RefuseKeyShapes(out); err != nil {
-		return "", err
+	plane = b.String()
+	if seam, err = remoteServerDocument(spec); err != nil {
+		return "", "", err
 	}
-	return out, nil
+	if err := RefuseKeyShapes(plane); err != nil {
+		return "", "", err
+	}
+	if err := RefuseKeyShapes(seam); err != nil {
+		return "", "", err
+	}
+	return plane, seam, nil
 }
 
 func overlayDocument(spec UpstreamSpec) (string, error) {

@@ -9,7 +9,10 @@
 //     nowhere else, which IS the egress rule at this layer;
 //   - protocol scope is tools only: initialize, notifications/initialized,
 //     tools/list, tools/call (ping is answered locally, touching no
-//     upstream); every other method is denied, not relayed;
+//     upstream); every other method is denied, not relayed — and the
+//     initialize handshake's capability advertisement is PROJECTED onto
+//     that scope, so the client is never offered a capability the next
+//     message would refuse;
 //   - a per-credential tool allowlist is enforced on tools/call and
 //     PROJECTED onto tools/list — an agent never sees a tool it cannot
 //     call, and kagent's controller discovery sees the same projection;
@@ -51,6 +54,13 @@ import (
 const (
 	maxRequestBody  = 4 << 20 // JSON-RPC tool calls; far beyond any sane arguments payload
 	maxBufferedResp = 8 << 20 // a buffered tools/list listing
+	// An initialize response carries capabilities, serverInfo and at most
+	// an instructions string. A megabyte is far beyond all three and an
+	// eighth of what a listing may be. Past it the handshake is REFUSED,
+	// never cut: a client that was handed the first megabyte of an
+	// advertisement would read the missing remainder as "not offered",
+	// which is the same lie in the other direction.
+	maxInitializeResp = 1 << 20
 )
 
 // JSON-RPC error codes the gateway answers denials with. -32601 is the
@@ -141,6 +151,11 @@ func NewMux(d Deps) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /upstream/{name}/mcp", h.relay)
 	mux.HandleFunc("DELETE /upstream/{name}/mcp", h.terminate)
+	// The same seam with the trailing slash a client's URL normaliser
+	// appends. `{$}` anchors the end, so this is the one extra path and
+	// not a prefix: /upstream/{name}/mcp/anything is still a 404.
+	mux.HandleFunc("POST /upstream/{name}/mcp/{$}", h.relay)
+	mux.HandleFunc("DELETE /upstream/{name}/mcp/{$}", h.terminate)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -353,8 +368,14 @@ func (h *handler) relay(w http.ResponseWriter, r *http.Request) {
 	id := rawID(msg)
 
 	switch method {
-	case "initialize", "notifications/initialized":
-		// The mandatory MCP lifecycle handshake, relayed verbatim.
+	case "initialize":
+		// The handshake, relayed with its capability advertisement cut
+		// down to what the gateway will actually relay.
+		h.forwardInitialize(w, r, name, up, body, id)
+
+	case "notifications/initialized":
+		// The other half of the lifecycle: a notification carrying
+		// nothing to project, relayed verbatim.
 		h.forward(w, r, name, up, body)
 
 	case "ping":
@@ -756,6 +777,203 @@ func (h *handler) forwardProjected(w http.ResponseWriter, r *http.Request, cred 
 		out["result"] = rpc.Result
 	}
 	writeRPC(w, out)
+}
+
+// The two refusals a projected handshake can produce. Both are 502s: the
+// upstream answered, and the gateway would not pass its answer on.
+const (
+	// MsgInitializeTooLarge is the 502 body for a handshake past the
+	// buffer bound. A refusal, never a truncation.
+	MsgInitializeTooLarge = "tool upstream handshake too large to project (refused)"
+	// MsgInitializeUnprojectable is the 502 body for a handshake the
+	// gateway could not read well enough to cut down.
+	MsgInitializeUnprojectable = "unprojectable tool-server handshake"
+)
+
+// forwardInitialize relays the MCP handshake with its capability
+// advertisement PROJECTED onto what the gateway relays: tools, and
+// nothing else.
+//
+// The gateway enforces a tools-only method set, so an upstream's
+// `prompts` or `resources` capability is an offer the client cannot
+// take up. Relaying it unchanged made a spec-compliant client — one that
+// guards `prompts/list` on the advertisement, which is what the
+// specification tells it to do — call a method the next line refuses,
+// fatally, at startup. The projection is the same idea `tools/list`
+// already gets, one message earlier: an agent is never offered something
+// it cannot have.
+//
+// Projecting means buffering, so this path has its own bound
+// (maxInitializeResp) and refuses past it rather than handing the client
+// a handshake with the tail cut off. The handshake is not audited, here
+// as before: it decides nothing and takes no tool action.
+func (h *handler) forwardInitialize(w http.ResponseWriter, r *http.Request, name string,
+	up config.ToolUpstream, body []byte, id json.RawMessage) {
+	resp, err := h.do(r, up, body)
+	if errors.Is(err, errCredentialUnavailable) {
+		http.Error(w, "tool upstream credential unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if egress.IsRefusal(err) {
+		slog.Error("gateway: tool upstream refused by the egress policy", "upstream", name, "err", err)
+		http.Error(w, MsgUpstreamRefused, http.StatusBadGateway)
+		return
+	}
+	if err != nil {
+		slog.Error("gateway: tool upstream call failed", "upstream", name, "err", err)
+		http.Error(w, "tool upstream unreachable", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// A redirect is refused, not relayed, exactly as on every other path:
+	// a Location header must not leak an escape hatch from the upstream
+	// table the proxy booted with.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		slog.Error("gateway: tool upstream answered a redirect; refusing", "upstream", name, "status", resp.StatusCode)
+		http.Error(w, MsgUpstreamRedirected, http.StatusBadGateway)
+		return
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxInitializeResp+1))
+	if err == nil && len(raw) > maxInitializeResp {
+		slog.Error("gateway: handshake past the projection bound; refusing",
+			"upstream", name, "bound", maxInitializeResp)
+		http.Error(w, MsgInitializeTooLarge, http.StatusBadGateway)
+		return
+	}
+	if err != nil {
+		slog.Error("gateway: reading the handshake response", "upstream", name, "err", err)
+		msg := "tool upstream response cut"
+		if egress.IsBodyCut(err) {
+			msg = "tool upstream response cut by the egress policy"
+		}
+		http.Error(w, msg, http.StatusBadGateway)
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		// Nothing to project on an upstream error; relay it verbatim,
+		// framing included. The client needs the upstream's own words.
+		copyResponseHeaders(w.Header(), resp.Header)
+		w.Header().Del("Content-Length")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(raw)
+		return
+	}
+
+	payload := raw
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		// The frame ANSWERING this request, not whichever came last: a
+		// handshake may be followed by a server notification, and
+		// projecting that would relay something that is not the
+		// handshake at all.
+		payload = sseDataForID(raw, id)
+	}
+	var rpc struct {
+		JSONRPC string                     `json:"jsonrpc"`
+		ID      json.RawMessage            `json:"id"`
+		Error   json.RawMessage            `json:"error,omitempty"`
+		Result  map[string]json.RawMessage `json:"result,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &rpc); err != nil || rpc.JSONRPC == "" {
+		slog.Error("gateway: unparseable handshake response; failing closed", "upstream", name, "err", err)
+		http.Error(w, MsgInitializeUnprojectable, http.StatusBadGateway)
+		return
+	}
+	if rpc.Result != nil {
+		if advertised, ok := rpc.Result["capabilities"]; ok {
+			projected, err := projectCapabilities(advertised)
+			if err != nil {
+				slog.Error("gateway: unreadable capability advertisement; failing closed",
+					"upstream", name, "err", err)
+				http.Error(w, MsgInitializeUnprojectable, http.StatusBadGateway)
+				return
+			}
+			rpc.Result["capabilities"] = projected
+		}
+	}
+
+	// The session header (Mcp-Session-Id) must survive the rewrite — it is
+	// what every later message on this session is keyed by; the upstream's
+	// framing headers must not.
+	copyResponseHeaders(w.Header(), resp.Header)
+	w.Header().Del("Content-Length")
+	out := map[string]any{"jsonrpc": rpc.JSONRPC, "id": rpc.ID}
+	if rpc.Error != nil {
+		out["error"] = rpc.Error
+	} else {
+		out["result"] = rpc.Result
+	}
+	writeRPC(w, out)
+}
+
+// projectCapabilities keeps the `tools` member of a capability
+// advertisement and drops every other, leaving the value of `tools`
+// exactly as the upstream sent it — the gateway narrows what is offered,
+// it does not describe the offer itself.
+//
+// An advertisement carrying no `tools` projects to `{}`: the gateway
+// relays nothing from that server the client can reach by capability.
+func projectCapabilities(advertised json.RawMessage) (json.RawMessage, error) {
+	var caps map[string]json.RawMessage
+	if err := json.Unmarshal(advertised, &caps); err != nil {
+		return nil, err
+	}
+	kept := map[string]json.RawMessage{}
+	if tools, ok := caps["tools"]; ok {
+		kept["tools"] = tools
+	}
+	return json.Marshal(kept)
+}
+
+// sseDataForID returns the data payload of the SSE frame carrying the
+// JSON-RPC response to id, or nil when no frame does.
+//
+// lastSSEData answers a different question — the last frame — which is
+// the right one for a listing the gateway asked for on its own. A
+// handshake is answered inside a session that may also carry
+// notifications, so the frame is chosen by what it answers.
+func sseDataForID(raw []byte, id json.RawMessage) []byte {
+	want, err := marshalCanonical(json.RawMessage(id))
+	if err != nil {
+		return nil
+	}
+	var current []byte
+	var found []byte
+	consider := func() {
+		if len(current) == 0 {
+			return
+		}
+		var msg struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if json.Unmarshal(current, &msg) == nil && len(msg.ID) > 0 {
+			if got, err := marshalCanonical(json.RawMessage(msg.ID)); err == nil &&
+				bytes.Equal(got, want) {
+				found = current
+			}
+		}
+		current = nil
+	}
+	sc := bufio.NewScanner(bytes.NewReader(raw))
+	sc.Buffer(make([]byte, 0, 64*1024), maxInitializeResp)
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			consider()
+			continue
+		}
+		payload, ok := strings.CutPrefix(line, "data:")
+		if !ok {
+			continue
+		}
+		payload = strings.TrimPrefix(payload, " ")
+		if current != nil {
+			current = append(current, '\n')
+		}
+		current = append(current, payload...)
+	}
+	consider()
+	return found
 }
 
 // terminate relays a session DELETE (terminateOnClose) so upstream

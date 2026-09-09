@@ -45,6 +45,23 @@ JSON
       exit 1
     fi
     printf 'agent.kagent.dev/hello-world\n'; exit 0 ;;
+  *"get remotemcpserver"*)
+    [ -z "$KMX_TEST_SEAM" ] && exit 0
+    printf '%s' "$KMX_TEST_SEAM"; exit 0 ;;
+  *"get crd remotemcpservers.kagent.dev"*)
+    case "$KMX_TEST_NO_KAGENT" in
+      1) printf 'Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io "remotemcpservers.kagent.dev" not found\n' >&2; exit 1 ;;
+      *) printf 'customresourcedefinition.apiextensions.k8s.io/remotemcpservers.kagent.dev\n'; exit 0 ;;
+    esac ;;
+  *"get namespace"*)
+    for missing in $KMX_TEST_NO_NAMESPACES; do
+      case "$*" in
+        *"get namespace $missing "*)
+          printf 'Error from server (NotFound): namespaces "%s" not found\n' "$missing" >&2
+          exit 1 ;;
+      esac
+    done
+    printf 'namespace/x\n'; exit 0 ;;
   *"apply -f -"*) cat >> "$KMX_TEST_STDIN"; exit 0 ;;
 esac
 exit 0

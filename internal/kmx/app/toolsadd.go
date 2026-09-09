@@ -180,28 +180,82 @@ func (a *App) AddUpstream(opt AddUpstreamOptions) error {
 		"kmx tools add "+opt.Name); err != nil {
 		return err
 	}
+	// A cluster governing an application this project did not write has
+	// no kagent to reconcile the RemoteMCPServer, and applying it there
+	// fails on a CRD that is not installed — which used to stop the
+	// command AFTER the three documents that matter had landed, so the
+	// proxy was never restarted and the upstream was applied but never
+	// loaded. The three the plane needs go either way; the fourth goes
+	// only where something can read it.
+	seamInstalled, err := a.kagentSeamInstalled()
+	if err != nil {
+		return err
+	}
+	if !seamInstalled {
+		planeDocs, _, err := scaffold.UpstreamDocuments(spec)
+		if err != nil {
+			return err
+		}
+		a.notef("")
+		a.notef("This cluster has no kagent: the CRD %s is not installed.", remoteMCPServerCRD)
+		a.notef("The RemoteMCPServer in %s is the one document only kagent reads — it tells a", path)
+		a.notef("kagent controller where the seam is — so it is NOT being applied. The three the")
+		a.notef("plane needs are, and enforcement is live without it.")
+		a.notef("If kagent is installed here later: kubectl --context %s apply -f %s",
+			a.Cfg.KubeContext, path)
+		if opt.DryRun {
+			return a.applyDocuments(planeDocs, "--dry-run=server")
+		}
+		if err := a.refuseOnOverlayDrift(spec, path, opt.Name); err != nil {
+			return err
+		}
+		if err := a.applyDocuments(planeDocs); err != nil {
+			return err
+		}
+		return a.finishOnboarding(spec, opt, collided)
+	}
 	if opt.DryRun {
 		return a.kubectlRun("apply", "--dry-run=server", "-f", path)
 	}
-	// The manifest carries the overlay's resourceVersion, so a stale
-	// apply is refused — but `kubectl apply -f` applies each document
-	// independently and does not roll back, so a refused ConfigMap still
-	// leaves the two NetworkPolicies behind. For kmx's OWN apply that
-	// window is closable, and closing it is better than explaining it:
-	// re-read the version immediately before applying and refuse here,
-	// where nothing has happened yet.
-	if _, version, err := a.readOverlay(); err != nil {
+	if err := a.refuseOnOverlayDrift(spec, path, opt.Name); err != nil {
 		return err
-	} else if version != spec.OverlayVersion {
-		return fmt.Errorf("the overlay changed while this was being scaffolded "+
-			"(read at version %s, now %s) — nothing has been applied.\n"+
-			"  Somebody else onboarded an upstream or edited a fragment. Run the same command again "+
-			"to build on their change:\n    rm %s && kmx tools add %s …",
-			quoteVersion(spec.OverlayVersion), quoteVersion(version), path, opt.Name)
 	}
 	if err := a.kubectlRun("apply", "-f", path); err != nil {
 		return err
 	}
+	return a.finishOnboarding(spec, opt, collided)
+}
+
+// refuseOnOverlayDrift re-reads the overlay's resourceVersion immediately
+// before an apply and refuses if it moved.
+//
+// The manifest carries the version it was scaffolded against, so a stale
+// apply is refused by the API server — but `kubectl apply -f` applies each
+// document independently and does not roll back, so a refused ConfigMap
+// still leaves the two NetworkPolicies behind. For kmx's OWN apply that
+// window is closable, and closing it is better than explaining it.
+func (a *App) refuseOnOverlayDrift(spec scaffold.UpstreamSpec, path, name string) error {
+	_, version, err := a.readOverlay()
+	if err != nil {
+		return err
+	}
+	if version != spec.OverlayVersion {
+		return fmt.Errorf("the overlay changed while this was being scaffolded "+
+			"(read at version %s, now %s) — nothing has been applied.\n"+
+			"  Somebody else onboarded an upstream or edited a fragment. Run the same command again "+
+			"to build on their change:\n    rm %s && kmx tools add %s …",
+			quoteVersion(spec.OverlayVersion), quoteVersion(version), path, name)
+	}
+	return nil
+}
+
+// finishOnboarding restarts the proxy so the merged table is the one being
+// enforced, and says what the new upstream can and cannot be called by.
+//
+// The restart is the step that makes the entry live, and it is why this
+// runs on both apply paths: onboarding that stops before it leaves an
+// upstream applied and unloaded.
+func (a *App) finishOnboarding(spec scaffold.UpstreamSpec, opt AddUpstreamOptions, collided bool) error {
 	// The gateway reads its table at boot and the overlay mounts by
 	// directory, so the entry is not live until the proxy restarts.
 	if err := a.rollProxy(); err != nil {
@@ -219,6 +273,18 @@ func (a *App) AddUpstream(opt AddUpstreamOptions) error {
 	a.notef("  kmx tools govern --server %s --secret %s \\", spec.ServerName(), opt.Secret)
 	a.notef("      --credential <credential> --agent <agent> --tools <the tools that agent may call>")
 	return nil
+}
+
+// applyDocuments pipes generated YAML into `kubectl apply -f -`, for the
+// paths that apply a SUBSET of the file they wrote.
+func (a *App) applyDocuments(documents string, extra ...string) error {
+	args := append([]string{"apply"}, extra...)
+	args = append(args, "-f", "-")
+	fmt.Fprintf(a.Err, "kubectl --context %s %s -f - # (the documents this cluster can accept)\n",
+		a.Cfg.KubeContext, strings.Join(append([]string{"apply"}, extra...), " "))
+	quiet := *a.Run
+	quiet.Echo = false
+	return quiet.RunStdin([]byte(documents), "kubectl", a.kubectl(args...)...)
 }
 
 // parseUpstreamURL takes the server's own MCP endpoint apart. The host
