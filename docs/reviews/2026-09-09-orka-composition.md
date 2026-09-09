@@ -84,10 +84,12 @@ clock. On kind. The AKS half was not run — see §6.
 
 ### 1a. What Orka asks for before you start
 
-Their [getting-started page](https://github.com/orka-agents/orka/blob/v0.1.3/website/docs/getting-started.md)
-lists three prerequisites for the released install: a Kubernetes cluster
-and a `kubectl` that reaches it, OpenSSL, and an API key for Anthropic,
-OpenAI, or Azure OpenAI. **Orka does not create the cluster.** There is
+Their [getting-started page at
+`v0.1.3`](https://github.com/orka-agents/orka/blob/v0.1.3/website/docs/getting-started.md)
+lists four: Docker 17.03+, `kubectl`, access to a Kubernetes cluster,
+and an LLM API key (Anthropic, OpenAI, or Azure OpenAI). (`main`'s page
+lists three and swaps Docker for OpenSSL; this lane installed the
+`v0.1.3` bundle, so the four above are the ones that applied.) **Orka does not create the cluster.** There is
 no `curl | sh`, no installer, and no published binary of their CLI —
 they publish tags but no GitHub Release entries, which their own docs
 say, so `orka` the CLI exists only behind `make build-cli` in a checkout
@@ -182,6 +184,12 @@ its own `…-client` ClusterRole and binding
 (`charts/orka/templates/rbac.yaml:192`, `serviceaccount.yaml:13`). The
 defect is confined to the raw-manifest path, which is the one printed
 first in both the README and the getting-started page.
+
+**And it is already fixed for the next release**:
+`manifest_staging/deploy/orka.yaml:602` defines `orka-api-editor-role`,
+added by the same commit that brought route authorization. This is
+recorded because the lane measured it, not because anyone should raise
+it.
 
 Everything after that point worked as documented on the first attempt.
 
@@ -409,24 +417,30 @@ conclusion deserves more of it than one that confirms.
 approval *is* the call:
 
 ```go
-// internal/approvals/key.go:73-88
-func ApprovalID(namespace, taskName, taskUID, targetTool, targetArgsDigest string,
-                targetSpecDigests ...string) string {
-    parts := []string{namespace, taskName, taskUID, targetTool, targetArgsDigest}
-    …
-    sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+// internal/approvals/key.go:74-87 (verbatim, one elision marked)
+func ApprovalID(namespace, taskName, taskUID, targetTool, targetArgsDigest string, targetSpecDigests ...string) string {
+	parts := []string{
+		strings.TrimSpace(namespace),
+		strings.TrimSpace(taskName),
+		strings.TrimSpace(taskUID),
+		strings.TrimSpace(targetTool),
+		strings.TrimSpace(targetArgsDigest),
+	}
+	// … targetSpecDigest appended when non-empty …
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 ```
 
 and redemption requires all three to match, not just the name:
 
 ```go
-// workers/ai/approval_gate.go:711-718
-func resolvedDecisionMatchesTarget(decision approvals.ResolvedApproval,
-                                   target approvals.ApprovalTarget) bool {
-    if decision.TaskUID != "" && decision.TaskUID != target.TaskUID { return false }
-    return decision.TargetTool == target.TargetTool &&
-        decision.TargetArgsDigest == target.TargetArgsDigest &&
-        decision.TargetSpecDigest == target.TargetSpecDigest
+// workers/ai/approval_gate.go:711-718 (verbatim)
+func resolvedDecisionMatchesTarget(decision approvals.ResolvedApproval, target approvals.ApprovalTarget) bool {
+	if decision.TaskUID != "" && decision.TaskUID != target.TaskUID {
+		return false
+	}
+	return decision.TargetTool == target.TargetTool &&
+		decision.TargetArgsDigest == target.TargetArgsDigest &&
+		decision.TargetSpecDigest == target.TargetSpecDigest
 }
 ```
 
@@ -526,8 +540,12 @@ Three things, and none of them is a moat:
 3. **The audit row.** Their durable events record `toolName`,
    `toolCallID` and `argumentBytes` — the byte *count* of the arguments,
    never their values (`workers/ai/main.go:1373`,
-   `approval_gate.go:1150`, both `len(…Arguments)`). This is the `type:
-   ai` path; the ACP transcript store on `main` was read, not run. The values exist only inside a pending approval's
+   `approval_gate.go:1150`, both `len(…Arguments)`). **This holds for the
+   `type: ai` path only.** On the harness-v2/ACP path tool content is
+   projected into the event's `ContentText`, redacted rather than
+   omitted (`internal/harness/v2/eventjournal/mapper.go:686-705`), and
+   harness v1 passes frame metadata through into event content
+   (`internal/harness/mapper.go:122-128`). Neither was run. The values exist only inside a pending approval's
    preview, and disappear from the readable surface once decided. Ours
    records an `arg_summary` on every call, approved or not.
 
@@ -585,7 +603,7 @@ v0.1.3 controller exposes — despite the README's "at what cost". | Postgres le
 | **Model seam for a foreign workload** | Yes — authenticated, Provider-scoped, key never leaves the cluster. Per-route authorization (SubjectAccessReview) only from `main`; at `v0.1.3` any authenticated cluster token could use it. Not a proxy unless the client sends `X-Orka-Tools: disabled`. No metering. No `/openai/v1/responses`. | Yes — metering proxy with a ledger; also no Responses support until recently, and it metered zero. | **Overlap.** Theirs has the better custody story, and from `main` the better access-control story; ours has the meter. |
 | **Tool seam for a foreign workload** | No. `Tool` describes what Orka dials, not a gateway a foreign app routes through. | Yes — enforcing MCP gateway, allowlist, argument policy, proven on a third-party app on kind and AKS. | **Complement.** The one architectural thing that composes rather than duplicates. |
 | **Governing a Deployment already running** | No adoption path: no mutating webhook in the bundle, workloads built from CRs. Model traffic only, by repointing a URL. | Two config values, their Deployment untouched. | **Complement**, narrowed to the model seam. |
-| **Durable audit / execution record** | Durable events on a PVC-backed store (`ReadWriteOnce`, `deploy/orka.yaml:11221`) — survives restart. Per-request token counts, tool names, `toolCallID`, `argumentBytes`. **Argument values are never recorded.** | Postgres ledger with `arg_summary`, caller claim and observed address. Tool *responses* recorded nowhere. | **Overlap.** Neither records what the other does — theirs the model-request shape, ours the argument values. |
+| **Durable audit / execution record** | Durable events on a PVC-backed store (`ReadWriteOnce`, `deploy/orka.yaml:11221`) — survives restart. Per-request token counts, tool names, `toolCallID`, `argumentBytes`. **Argument values are never recorded** on this path — `argumentBytes` only (`workers/ai/main.go:1373`). The harness-v2/ACP path is different: tool content is projected into the event's `ContentText`, redacted rather than omitted (`internal/harness/v2/eventjournal/mapper.go:686-705`). That path was read, not run. | Postgres ledger with `arg_summary`, caller claim and observed address. Tool *responses* recorded nowhere. | **Overlap.** Neither records what the other does — theirs the model-request shape, ours the argument values. |
 | **Credential custody** | Split, and the split is in the code. ACP runtimes never see a key — they reach the provider proxy. A native `type: ai` worker receives it: `job_builder.go:1301` mounts the Provider Secret as `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` via `secretKeyRef`, gated by `directProviderSecretsAllowed`, which is unconditional for `type: ai` because `isUntrustedComputeTask` (`:207-209`) is true only for `type: container`. Observed on a live pod, alongside `ORKA_ALLOW_BASH=true`. The README's "developers get a ServiceAccount token, not an API key" is true of developers, not of the agent process; their narrower `security.md` claims only the RuntimePool path and is accurate. | The key never reaches the agent on either seam. | **Overlap** on the proxy path, **gap on theirs** for native workers. |
 | **Orchestration, sessions, memory, chat** | Coordinator/specialist delegation, autonomous loops, transcript search, memory proposals, SSE chat with an agentic orchestrator, RuntimePools keeping Codex/Claude/Copilot/OpenCode warm over ACP. | Partly built, much smaller. | **Overlap, theirs far ahead.** Nothing here for us to add. |
 | **Runtime and CRDs** | 17 CRDs at `v0.1.3` (26 in `main`'s staged chart), its own controller, its own runtimes. | kagent as the runner, plus our plane. | **Overlap at the layer, different choices.** Not ours to reconcile. |
@@ -678,8 +696,22 @@ third-party application on two clusters. It is a new component in their
 tree and it should be offered as a proposal with our implementation as
 the reference, not as a pull request.
 
-**6. Four small correctness items**, three from §3e plus the
-raw-manifest RBAC role in §1c. Each is a few lines or a doc edit.
+**6. Three small correctness items — not four.** The three in §3e are
+still open on `main` and were re-checked there: the condition that
+cannot be `True`, the `Succeeded` phase on iteration exhaustion
+(`task_controller.go:4480-4482`, still `TaskPhaseSucceeded` at
+`597a8ab`), and the Agent that validates but cannot run a Task.
+
+**The RBAC role from §1c is already fixed and must not be offered.**
+`manifest_staging/deploy/orka.yaml:602` defines `orka-api-editor-role`,
+added by the same commit `25da6e4` that brought route authorization, so
+it ships with the next release. This report nearly listed it as a
+contribution. That is precisely the failure the W48 upstream lane
+recorded — **a candidate recorded against a pinned version decays** —
+and the only reason it was caught here is that somebody was asked to
+assume every claim in this document was false. Any of the remaining
+items should be re-checked against `main` on the day it is raised, not
+on the day it was found.
 
 **What we should not offer.** The argument-bound approval itself. Theirs
 is further along than ours, and arriving with a second implementation of
@@ -774,11 +806,23 @@ Specific, and each one because Orka does it and does it better.
   CRD count repeated three times that matched no artifact either project
   ships; and the mechanism of §1c, which is a documentation version
   mismatch rather than a missing role in one bundle. **Every one of
-  those was in a passage the author had already re-read.** Two further
-  corrections were caught before that pass — a quotation attributed to
-  the KARS report that appears only in this lane's prompt, and an
-  interval of "eight days" for something that happened five hours
-  earlier.
+  those was in a passage the author had already re-read.** A second pass
+  found five more: a contribution item that upstream has already fixed
+  and staged (§5.6), an absolute claim about argument recording that
+  holds only for the `type: ai` worker (§3d, §4), a prerequisites list
+  taken from the wrong version's page (§1a), and two code blocks
+  presented under `file:line` headers that had been reflowed rather than
+  quoted (§3a). Two further corrections were caught by the author before
+  either pass — a quotation attributed to the KARS report that appears
+  only in this lane's prompt, and an interval of "eight days" for
+  something that happened five hours earlier.
+
+  **The pattern is worth more than the individual fixes.** Every defect
+  was a claim about a *version*: main's code credited to a v0.1.3 run,
+  main's docs credited to a v0.1.3 bundle, a fix that landed three days
+  before the run, a page that changed between the tag and today. A
+  report that compares two moving projects has to say which commit each
+  sentence is about, and this one did not until it was made to.
 - **Nobody was contacted and nothing was filed.** No issue, no comment,
   no pull request, no message. This document is the output.
 
