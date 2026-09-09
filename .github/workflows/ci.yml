@@ -3289,8 +3289,7 @@ jobs:
           # two is wrong, the meter would read the wrong field — so the
           # plane refuses the table rather than resolving it.
           kubectl --context kind-kaimahi-p1 -n kaimahi patch configmap kaimahi-upstreams-extra \
-            --type merge -p '{"data":{"model-blind.json":"{\"upstreams\": {\"blind\": {\"base_url\": \"http://acme-model.acme-model:8000\", \"path\": \"v1/responses\", \"protocol\": \"chat_completions\", \"classification\": \"free\"}}}"}}' \
-            2>&1 | tee blind-patch.out || true
+            --type merge -p '{"data":{"model-blind.json":"{\"upstreams\": {\"blind\": {\"base_url\": \"http://acme-model.acme-model:8000\", \"path\": \"v1/responses\", \"protocol\": \"chat_completions\", \"classification\": \"free\"}}}"}}'
           # The plane refuses that entry at LOAD: a declared protocol that
           # disagrees with its own path is refused rather than resolved.
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
