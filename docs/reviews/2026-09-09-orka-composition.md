@@ -677,8 +677,14 @@ Specific, and each one because Orka does it and does it better.
   substantially built there, on a PVC-backed store with a review flow for
   memory proposals. Stop.
 - **Interactive chat.** Theirs is an agentic orchestrator with SSE
-  streaming that creates and manages agents for you, embedded in a
-  dashboard that ships in the controller binary. Ours is a lane. Stop.
+  streaming that creates and manages agents and tasks for you
+  (`internal/api/chat.go` and its tool loop, ~2,600 lines), embedded in
+  a dashboard of some 38,000 lines of TypeScript that ships inside the
+  controller binary. Ours merged into `main` while this lane was
+  running, as PR #158. **That timing is the point rather than an
+  awkwardness:** this recommendation is not about old work nobody
+  wanted, and saying "stop" about something merged today is the only
+  honest version of it. Stop.
 - **Multi-agent orchestration.** Never start. Coordinator/specialist
   delegation with depth and concurrency limits, autonomous loops with
   persisted plan state, and warm pools of real coding-agent CLIs are the
