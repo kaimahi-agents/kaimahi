@@ -465,8 +465,9 @@ our opinions, and the opinion is what we sell.
 
 | # | Finding | Evidence we already hold | Confidence |
 |---|---------|--------------------------|------------|
-| U1 | **The Agent's `Ready` condition never flips during a preset switch, and reconcile is async** — so `kubectl rollout status` can report on the OLD template. A consumer that waits ONLY on `Ready` (and does not also check `observedGeneration`, the pod-template hash, or termination state) therefore gets a false positive. Confirmed on a lane's cluster: the old pod was Ready AND Terminating after "successfully rolled out". | CI flake class 3 and the W16 delta sheet, including the failing run that started it — a governed chat completed and the ledger had zero rows, because the old ungoverned pod answered. Our workaround is `wait_switched`: three waits, carried into `kmx` at milestone 3, which every consumer driving kagent programmatically would otherwise reinvent. | **High.** Reproduced, understood, and the cost is borne by other people too. |
-| U3 | **`kagent invoke` emits raw JSON with no human-readable mode.** We built a readable terminal view and kept raw JSON for pipes (#71). | The chat view and its tests. | **Low.** A preference, not a defect, and possibly deliberate. Offer it; do not press it. |
+| U1 | **The Agent's `Ready` condition does not go False while the Deployment rolls**, so `kubectl wait --for=condition=Ready` returns on a stale True and callers act on a pod that is still going away. | **Reproduced live on 0.10.1 and the root cause found in source** by the verification lane, 2026-09-09; not already reported. | **FILE** — draft ready, scoped to v0.10.x. |
+| U4 | **`ModelConfig` admits a `spec.tls` block beside an `http://` baseUrl, and says nothing.** `RemoteMCPServer` rejects the same mistake, so the inconsistency is theirs to reconcile and the silent-accept side is the one that bites: a TLS block that does nothing reads as TLS that is on. | Found by the verification lane 2026-09-09 — NOT previously on this board — and reproduced live on 0.10.1, present at all three refs. | **FILE** — draft ready. |
+| U3 | **WITHDRAWN 2026-09-09 — already fixed on kagent's `main`.** The candidate was true of the release and is fixed upstream in a commit the verification lane found before drafting anything. Filing it would have repeated exactly the mistake that withdrew the original U2: asking kagent for something kagent already ships. **Third occurrence of that trap, and the third time verification caught it — see the standing check below.** | n/a | Do not file. |
 
 ### U1, as a reproduction someone else can run
 
@@ -508,7 +509,7 @@ the trap. That is `wait_switched` (Makefile, and carried into
 `Ready` mean the switch is done — or that the documentation say plainly
 that it does not, so consumers know to look further.
 
-| U2b | **kagent's agent image declares its user by NAME (`python`), not by number** — so `runAsNonRoot: true` cannot be used against it without every downstream hardcoding a UID. Kubernetes refuses the container outright: `image has non-numeric user (python), cannot verify user is non-root`, at CreateContainer time, with no mention of the image or its version. A numeric `USER` in the Dockerfile would let the image compose with ordinary Pod Security Standards. | Found while hardening our own agents (PR #102): every agent died at `CreateContainerConfigError` until `runAsUser: 1001` was added beside `runAsNonRoot`, and 1001 was discovered by RUNNING the image (`id -u`) rather than reading anything. Our five manifests and `kmx agent create` now carry that hardcoded id, with a comment explaining why — which is the cost this asks kagent to remove. | **High.** Reproduced, understood, small, and entirely inside kagent's control. Unlike the withdrawn U2, this is not asking for a field they already ship. |
+| U2b | **WITHDRAWN 2026-09-09 — fixed upstream.** The image no longer declares its user by name, so the finding that every downstream must hardcode a UID no longer holds. Our five manifests and `check-agent-uid.py` still pin 1001 and should: the checker reads the id out of the image the pinned chart resolves to, so it follows kagent rather than asserting against it. A comment on their still-open #2244 is drafted instead of a new issue. | n/a | Do not file; comment on #2244. |
 
 ### U2 is WITHDRAWN — it was ours, not kagent's
 
@@ -1316,6 +1317,26 @@ Everything without a ruling in its own heading is not GO.
   one.
 
 ## Process rules (proven over ~60 PRs; keep)
+
+- **Verify an upstream candidate against upstream's `main` before
+  drafting anything.** Recorded 2026-09-09, third occurrence. Three
+  candidates for kagent have now been withdrawn on the same grounds:
+  the original U2 (a field they already shipped), U2b (an image already
+  fixed), and U3 (already on their `main`). Every one of them was
+  written down here from a real experience of hitting it, and every one
+  had stopped being true by the time anyone looked again.
+
+  **Upstream moves while our board stands still**, and a candidate is a
+  claim about somebody else's code at a moment we did not record. A
+  drafted issue for a fixed bug costs a maintainer their afternoon and
+  costs us the standing to be listened to next time.
+
+  **So: check the release we pin AND their `main`, and say which you
+  checked.** All three withdrawals were caught by a lane instructed to
+  verify before drafting, which is the cheapest possible place to catch
+  them. None was caught by re-reading this board.
+
+
 
 - **Mutating the code proves a test runs; only reading the fixture proves
   the test could fail.** Recorded 2026-09-07, from the checker lane, and
