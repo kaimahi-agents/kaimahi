@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
@@ -42,6 +43,13 @@ const (
 	kindMetricsWorkspace = "Azure Monitor workspace (Managed Prometheus)"
 	kindLogsWorkspace    = "Log Analytics workspace (Container Insights)"
 	kindWorkbook         = "Azure Monitor workbook (the dashboard)"
+)
+
+// How long the add-on is given to install its custom resource definitions
+// after it is enabled, before the phase concludes it has none.
+const (
+	scrapeMonitorCRDWait = 4 * time.Minute
+	scrapeMonitorCRDPoll = 10 * time.Second
 )
 
 // liftObservability wires Azure-managed monitoring to a plane that is already
@@ -428,6 +436,31 @@ func noSuchResourceType(err error) bool {
 	return strings.Contains(err.Error(), "doesn't have a resource type")
 }
 
+// waitForScrapeMonitorCRD gives the add-on time to install its own custom
+// resource definitions before concluding it has none.
+//
+// The bound is a real answer either way: a cluster whose add-on supports
+// custom resources installs them within it, and one that does not never will,
+// so waiting longer would only lengthen the wrong outcome.
+func (a *App) waitForScrapeMonitorCRD() (bool, error) {
+	deadline := a.timeNow().Add(scrapeMonitorCRDWait)
+	told := false
+	for {
+		present, err := a.clusterObjectExists("crd", scrapeMonitorResource)
+		if err != nil || present {
+			return present, err
+		}
+		if a.timeNow().After(deadline) {
+			return false, nil
+		}
+		if !told {
+			a.notef("waiting for the metrics add-on to install its custom resource definitions (up to %s)", scrapeMonitorCRDWait)
+			told = true
+		}
+		time.Sleep(scrapeMonitorCRDPoll)
+	}
+}
+
 // clusterObjectExists is objectExists for an object that is not in a
 // namespace. It refuses to guess for the same reason and in the same words.
 func (a *App) clusterObjectExists(kind, name string) (bool, error) {
@@ -465,14 +498,15 @@ func (a *App) wireScrape(record *lift.Record, save func() error, work string) er
 	}
 
 	// The add-on installs this CRD itself when managed Prometheus is enabled,
-	// so its absence means the add-on on this cluster predates custom-resource
-	// support. Applying a PodMonitor to such a cluster is a manifest error, so
-	// the job is printed in its other form instead and the phase carries on:
-	// the workbook and the log path are unaffected, and it is the `verify`
-	// step's business to say that the metrics half is not arriving. Merging
-	// that ConfigMap is left to the operator on purpose — it is theirs, and it
-	// holds every other scrape job on the cluster.
-	present, err := a.clusterObjectExists("crd", scrapeMonitorResource)
+	// but not at the moment the enabling command returns. `az aks update`
+	// completes when ARM says the cluster is updated; the add-on's own
+	// components arrive in the cluster afterwards, on their own schedule. A
+	// single read here would therefore answer "absent" on a perfectly modern
+	// cluster and quietly take the fallback — applying nothing, recording
+	// nothing, and leaving `verify` to report five minutes later that no
+	// sample arrived. So it waits, and only a cluster that still has no CRD
+	// after that is treated as one whose add-on predates custom resources.
+	present, err := a.waitForScrapeMonitorCRD()
 	if err != nil {
 		return err
 	}

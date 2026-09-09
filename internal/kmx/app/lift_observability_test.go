@@ -143,26 +143,34 @@ echo "networkpolicy.networking.k8s.io/whatever"
 }
 
 // And the general form, because the specific fix above only closes one call
-// site. Every kubectl command kmx builds goes through the three helpers on
-// App, each of which prepends `--context <ctx>` — so a call whose arguments
-// omit the verb produces flags-then-a-noun, which kubectl reads as a plugin
-// name and rejects. A compiler cannot see it, a reviewer skims past it, and
-// the only other way to find out is to run the command against a cluster.
+// site.
 //
-// So the source is read instead, and two rules are enforced.
+// Every kubectl command kmx builds is assembled by App.kubectl, which prepends
+// `--context <ctx>`. So a call whose arguments omit the verb produces
+// flags-then-a-noun, which kubectl reads as a plugin name and rejects. A
+// compiler cannot see it, a reviewer skims past it, and the only other way to
+// find out is to run the command against a cluster.
 //
-// First, in every call whose arguments are written out, the first argument
-// that is neither a flag nor a flag's value must be a kubectl verb.
+// So the source is parsed instead, and two rules are enforced over both shapes
+// the package uses: the three kubectlCapture/Run/Quiet helpers, and the direct
+// `Run.Run("kubectl", a.kubectl(...)...)` form that exec, port-forward and the
+// manifest applies use. A regular expression could not do this — it cannot
+// tell `"-n", someNamespaceVariable` from `"-n"` followed by nothing, and gets
+// the position of the verb wrong the moment a flag's value is a variable,
+// which is most of them.
 //
-// Second — and this is the one that covers the defect above rather than
-// merely its neighbours — no call may hand kubectl an argument slice
-// assembled somewhere else. `objectExists` did exactly that: it took
-// `args ...string` and spread them, so the verb was the CALLER'S business
-// and no reader of either end could see whether one had been supplied. The
-// first rule cannot judge such a call, which is precisely the problem with
-// it. One pass-through survives, App.Capture, and it is named explicitly
-// rather than pattern-matched: it exists to satisfy the admin.Kube
-// interface, whose callers live in another package.
+// Rule one: the first argument that is neither a flag nor a flag's value must
+// be a kubectl verb.
+//
+// Rule two, and this is the one that covers the defect above rather than
+// merely its neighbours: no call may hand kubectl an argument slice assembled
+// somewhere else. `objectExists` did exactly that — it took `args ...string`
+// and spread them, so the verb was the CALLER'S business and no reader of
+// either end could see whether one had been supplied. Rule one cannot judge
+// such a call, which is precisely the problem with it. One pass-through
+// survives, App.Capture in app.go, named explicitly rather than
+// pattern-matched: it exists to satisfy the admin.Kube interface, whose
+// callers live in another package.
 func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 	verbs := map[string]bool{
 		"get": true, "apply": true, "create": true, "delete": true, "describe": true,
@@ -174,18 +182,17 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		"kustomize": true, "drain": true, "cordon": true, "uncordon": true, "taint": true,
 	}
 	// Flags that take a value as the NEXT argument, so the value is not
-	// mistaken for the verb.
+	// mistaken for the verb. A flag missing from here is not guessed at: the
+	// scan says so and fails, because guessing is how a check quietly starts
+	// answering a weaker question than it advertises.
 	takesValue := map[string]bool{
 		"-n": true, "--namespace": true, "-o": true, "--output": true, "-l": true,
 		"--selector": true, "-f": true, "--filename": true, "--context": true,
 		"--timeout": true, "--for": true, "--type": true, "-c": true, "--container": true,
 		"--field-selector": true, "--tail": true, "--patch": true, "-p": true,
+		"--patch-file": true, "--address": true, "--kubeconfig": true,
 	}
 
-	// Parsed rather than grepped. A regular expression over the source cannot
-	// tell `"-n", someNamespaceVariable` from `"-n"` followed by nothing, and
-	// gets the position of the verb wrong the moment a flag's value is a
-	// variable — which is most of them.
 	fset := token.NewFileSet()
 	pkg, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -195,6 +202,38 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 	}
 
 	checked := 0
+	// judge walks one kubectl argument list the way kubectl's own flag parser
+	// does, stopping at the first bare word.
+	judge := func(where token.Pos, args []ast.Expr) {
+		for i := 0; i < len(args); i++ {
+			word, isLiteral := stringLiteral(args[i])
+			if !isLiteral {
+				return // a variable here; this scan cannot judge the call
+			}
+			if strings.HasPrefix(word, "-") {
+				switch {
+				case takesValue[word]:
+					i++ // the value, whatever it is
+				case strings.Contains(word, "="):
+					// --timeout=300s and friends carry their own value
+				default:
+					t.Errorf("%s: %q is not in this test's flag table, so where the verb "+
+						"begins in this call is a guess — add it, saying whether it takes a value",
+						fset.Position(where), word)
+					return
+				}
+				continue
+			}
+			checked++
+			if !verbs[word] {
+				t.Errorf("%s: this kubectl call reaches %q where a verb belongs — kubectl "+
+					"will treat it as a plugin name and refuse to run at all",
+					fset.Position(where), word)
+			}
+			return
+		}
+	}
+
 	for _, p := range pkg {
 		for path, file := range p.Files {
 			enclosing := ""
@@ -213,59 +252,40 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 				}
 				switch sel.Sel.Name {
 				case "kubectlCapture", "kubectlRun", "kubectlQuiet":
-				default:
-					return true
-				}
-				if call.Ellipsis.IsValid() {
-					if enclosing == "Capture" && filepath.Base(path) == "app.go" {
-						return true // the admin.Kube adapter; see above
-					}
-					t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
-						"nothing here can tell whether it names a verb — pass the parts as "+
-						"named arguments and build the command line at this end",
-						fset.Position(call.Pos()), enclosing)
-					return true
-				}
-				// Walk the argument list the way kubectl's own flag parser
-				// does, stopping at the first bare word.
-				for i := 0; i < len(call.Args); i++ {
-					word, isLiteral := stringLiteral(call.Args[i])
-					if !isLiteral {
-						return true // a variable here; this scan cannot judge the call
-					}
-					if strings.HasPrefix(word, "-") {
-						switch {
-						case takesValue[word]:
-							i++ // the value, whatever it is
-						case strings.Contains(word, "="):
-							// --timeout=300s and friends carry their own value
-						default:
-							// Not known to take a value, and not self-contained.
-							// Guessing either way is how a scan starts answering
-							// a weaker question than it advertises, so it says so
-							// instead.
-							t.Errorf("%s: %q is not in this test's flag table, so where the verb "+
-								"begins in this call is a guess — add it, saying whether it takes a value",
-								fset.Position(call.Pos()), word)
-							return true
+					if call.Ellipsis.IsValid() {
+						if enclosing == "Capture" && filepath.Base(path) == "app.go" {
+							return true // the admin.Kube adapter; see above
 						}
-						continue
+						t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
+							"nothing here can tell whether it names a verb — pass the parts as "+
+							"named arguments and build the command line at this end",
+							fset.Position(call.Pos()), enclosing)
+						return true
 					}
-					checked++
-					if !verbs[word] {
-						t.Errorf("%s: this kubectl call reaches %q where a verb belongs — kubectl "+
-							"will treat it as a plugin name and refuse to run at all",
-							fset.Position(call.Pos()), word)
+					judge(call.Pos(), call.Args)
+				default:
+					// The direct form: Run.Run("kubectl", a.kubectl(...)...)
+					// and its Capture/Quiet/Pipe/RunStdin/Command siblings.
+					// The command line is inside the inner a.kubectl call.
+					for _, arg := range call.Args {
+						inner, ok := arg.(*ast.CallExpr)
+						if !ok {
+							continue
+						}
+						innerSel, ok := inner.Fun.(*ast.SelectorExpr)
+						if !ok || innerSel.Sel.Name != "kubectl" {
+							continue
+						}
+						judge(inner.Pos(), inner.Args)
 					}
-					return true
 				}
 				return true
 			})
 		}
 	}
-	// The scan has been wrong before by finding nothing: a regexp that matches
-	// no call passes every assertion in the loop it never enters.
-	if checked < 20 {
+	// A scan that matches no call passes every assertion in the loop it never
+	// enters. This package makes dozens.
+	if checked < 40 {
 		t.Fatalf("only %d kubectl calls were examined in this package — the scan is not seeing them, "+
 			"so it is passing vacuously", checked)
 	}

@@ -16,11 +16,13 @@
 # path cannot be regressed by a change made for a managed one, because kind
 # never applies this file at all.
 #
-# The scraper is the add-on's REPLICA pod, not its per-node DaemonSet: custom
-# scrape jobs supplied through the ama-metrics-prometheus-config ConfigMap are
-# executed by the replica (labelled rsName=ama-metrics), and the DaemonSet
-# runs only the node-level default targets. Allowing the DaemonSet as well
-# would open 9092 on every node for a scrape that never comes.
+# The scraper is the add-on's REPLICA pod, not its per-node DaemonSet. Every
+# custom scrape target — a PodMonitor or a ServiceMonitor, which is what this
+# project uses, and a job in the ama-metrics-prometheus-config ConfigMap alike
+# — is executed by the replica, labelled rsName=ama-metrics; the DaemonSet
+# runs only the node-level default targets, and there is no way to move a
+# custom resource's targets onto it. Allowing the DaemonSet as well would open
+# 9092 on every node for a scrape that never comes.
 #
 # Policies are additive: this grants ingress and takes nothing away. The
 # plane's default-deny and its existing rules are untouched, and removing this

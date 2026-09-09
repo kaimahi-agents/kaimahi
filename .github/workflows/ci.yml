@@ -503,10 +503,40 @@ jobs:
           peer = peers[0]
           assert "ipBlock" not in peer, "ops port opened to an ipBlock"
           assert peer["namespaceSelector"]["matchLabels"] == {"kubernetes.io/metadata.name": "kube-system"}, peer
-          # The add-on's REPLICA runs custom scrape jobs; its per-node
-          # DaemonSet runs only the default targets, and allowing it would
-          # open 9092 on every node for a scrape that never comes.
+          # The add-on's REPLICA runs every custom scrape target, custom
+          # resources included; its per-node DaemonSet runs only the default
+          # targets, and allowing it would open 9092 on every node for a
+          # scrape that never comes.
           assert peer["podSelector"]["matchLabels"] == {"rsName": "ama-metrics"}, peer
+
+          # The object that is actually APPLIED. Everything below it is the
+          # fallback text, printed only where a cluster's add-on has no CRD.
+          pm = yaml.safe_load(open("k8s/observability/podmonitor.yaml"))
+          # Azure's add-on ships its own copies of the operator CRDs under its
+          # own group so a cluster already running the open-source Prometheus
+          # operator keeps two separate sets of jobs. Under the OSS group this
+          # object is valid, applies cleanly, and is never scraped.
+          assert pm["apiVersion"] == "azmonitoring.coreos.com/v1", pm["apiVersion"]
+          assert pm["kind"] == "PodMonitor", pm["kind"]
+          assert pm["metadata"]["namespace"] == "kaimahi", pm["metadata"]
+          assert pm["spec"]["selector"]["matchLabels"] == {"app": "kaimahi-proxy"}, pm["spec"]
+          eps = pm["spec"]["podMetricsEndpoints"]
+          assert len(eps) == 1, f"{len(eps)} endpoints; the ops port is the only one that serves metrics"
+          assert eps[0]["path"] == "/metrics", eps
+          # A PodMonitor binds a port by NAME. If the plane's container stops
+          # declaring one called `ops`, this scrapes an empty target set and
+          # says nothing about it — so the two are checked against each other.
+          port = eps[0]["port"]
+          proxy = [d for d in yaml.safe_load_all(open("k8s/plane/proxy.yaml"))
+                   if d and d.get("kind") == "Deployment" and d["metadata"]["name"] == "kaimahi-proxy"][0]
+          declared = {p["name"]: p["containerPort"]
+                      for p in proxy["spec"]["template"]["spec"]["containers"][0]["ports"]}
+          assert port in declared, f"PodMonitor names port {port!r}; the plane declares {sorted(declared)}"
+          assert declared[port] == 9092, f"port {port!r} is {declared[port]}, not the ops port"
+          # Azure's collector drops a whole job that exceeds these, silently.
+          assert pm["spec"]["labelLimit"] == 63, pm["spec"]
+          assert pm["spec"]["labelNameLengthLimit"] == 511, pm["spec"]
+          assert pm["spec"]["labelValueLengthLimit"] == 1023, pm["spec"]
 
           cm = yaml.safe_load(open("k8s/observability/scrape-config.yaml"))
           assert cm["kind"] == "ConfigMap" and cm["metadata"]["namespace"] == "kube-system"
@@ -520,7 +550,9 @@ jobs:
           assert sd[0]["namespaces"]["names"] == ["kaimahi"], sd
           keeps = {r["regex"] for r in job["relabel_configs"] if r.get("action") == "keep"}
           assert keeps == {"kaimahi-proxy", "9092"}, f"scrape job keeps {keeps}"
-          print("scraper allowance: kube-system/rsName=ama-metrics -> 9092, ingress only; scrape job discovers pods in kaimahi and keeps only the ops port")
+          print(f"scraper allowance: kube-system/rsName=ama-metrics -> 9092, ingress only; "
+                f"the applied job is a PodMonitor in kaimahi bound to the port named {port!r} (9092); "
+                f"the printed fallback discovers pods in kaimahi and keeps only the ops port")
           EOF
       # The workbook must carry no identifiers. An exported workbook bakes
       # the subscription id, the resource group and the workspace ids into

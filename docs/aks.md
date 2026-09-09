@@ -737,7 +737,7 @@ spec:
   labelValueLengthLimit: 1023
 ```
 
-Four things that are easy to get wrong, and each fails silently:
+Five things that are easy to get wrong, and each fails silently:
 
 - **The API group is `azmonitoring.coreos.com`, not
   `monitoring.coreos.com`.** Azure's add-on ships its own copies of the
@@ -757,7 +757,7 @@ Four things that are easy to get wrong, and each fails silently:
   and scrapes nothing. Put it beside the pods, or set
   `namespaceSelector.matchNames`.
 - **A default-deny NetworkPolicy in your namespace will block the
-  scrape.** The allowance below is scoped to the plane's pods; yours
+  scrape.** The allowance above is scoped to the plane's pods; yours
   needs its own, admitting `rsName: ama-metrics` from `kube-system` to
   your metrics port. That is the same trade the plane makes and the
   reason it is explicit.

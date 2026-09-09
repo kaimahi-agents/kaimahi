@@ -131,11 +131,23 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 		return err
 	}
 
-	// The add-ons are turned off first. They hold references to the
-	// workspaces, and a workspace deleted while something still routes to it
-	// leaves the cluster reporting an error nobody asked for.
 	a.aimAtTheCluster(opt)
 
+	// The in-cluster objects go FIRST, before the add-ons that read them.
+	//
+	// Order matters here in a way it did not when the scrape job lived in a
+	// ConfigMap. The PodMonitor's KIND is defined by a custom resource
+	// definition the metrics add-on installs, and disabling the add-on can
+	// take that definition — and every object of that kind — with it. Removing
+	// ours afterwards would then be a delete against a kind the cluster no
+	// longer has: it would either fail, or succeed only because something else
+	// had already done the work. Neither is this command doing what it says.
+	// Removed first, the deletion is ours and is observable.
+	a.removeInClusterObservability(record)
+
+	// Then the add-ons. They hold references to the workspaces, and a
+	// workspace deleted while something still routes to it leaves the cluster
+	// reporting an error nobody asked for.
 	// Only add-ons THIS RUN enabled are turned off. An operator who already
 	// had Container Insights running would otherwise have it switched off by a
 	// teardown that was only ever meant to remove what the lift added — the
@@ -159,11 +171,6 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	} else {
 		a.notef("Container Insights was already on before this run; leaving it on.")
 	}
-
-	// The in-cluster objects, removed on the same rule: only what this run
-	// created, decided by what it recorded at the time and never by what the
-	// object contains now.
-	a.removeInClusterObservability(record)
 
 	if err := a.removeRecorded(record.Created); err != nil {
 		return err
@@ -196,14 +203,6 @@ func (a *App) removeInClusterObservability(record *lift.Record) {
 		a.notef("the NetworkPolicy %s was there before this run, or its origin was never established; leaving it.", scraperPolicy)
 	}
 
-	// A cluster whose metrics add-on has no PodMonitor CRD never carried one
-	// of ours, and asking kubectl to delete a kind it does not know is an
-	// error rather than a no-op — it would print "remove it by hand" for an
-	// object that cannot exist.
-	if present, err := a.clusterObjectExists("crd", scrapeMonitorResource); err == nil && !present {
-		a.notef("this cluster has no PodMonitor CRD, so this run created no scrape job on it.")
-		return
-	}
 	if !record.MayRemoveScrapeMonitor() {
 		a.notef("the PodMonitor %s in kaimahi was there before this run, was never applied by it, "+
 			"or its origin was never established; leaving it.", scrapeMonitor)

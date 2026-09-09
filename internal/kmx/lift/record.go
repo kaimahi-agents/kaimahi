@@ -128,9 +128,14 @@ type Pre struct {
 	// ScrapeMonitorExisted is about the PodMonitor named kaimahi-plane in the
 	// kaimahi namespace. It replaces a field that asked the same question
 	// about the cluster-wide ama-metrics-prometheus-config ConfigMap, which
-	// the lift no longer writes and teardown therefore no longer edits. A
-	// record written before that change has neither field set and answers
-	// "not established" to both, which is the safe reading.
+	// the lift no longer writes and teardown therefore no longer edits.
+	//
+	// A record written before that change does NOT answer "not established"
+	// here, and it would be comfortable to think so: it has recorded=true and
+	// the old configmap field set, while this field decodes to false — which
+	// on its own reads as "we made it". What actually protects such a record
+	// is ScrapeMonitorApplied below, which is likewise absent and false, so
+	// the run is correctly held not to have applied anything.
 	ScrapeMonitorExisted bool `json:"scrape_monitor_existed"`
 }
 
