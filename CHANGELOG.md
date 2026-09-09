@@ -93,6 +93,21 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- **`kmx lift`'s observability phase could not run at all.** The check
+  for what a cluster already had built a `kubectl` command with no verb
+  in it — `kubectl … -n kaimahi networkpolicy <name>` — which kubectl
+  reads as an attempt to run a plugin and refuses outright. It is
+  upstream of everything else in the phase and of the only line that
+  records the prior state, so no run could pass it and no resumed run
+  could skip it: **every** lift, on a cluster it created and on one it
+  did not, failed to wire Azure-managed monitoring. It failed closed, so
+  nothing was created or deleted wrongly; there was simply no dashboard.
+  Two tests now stand where nothing did: one drives the check through a
+  `kubectl` that refuses what the real one refuses, and one reads the
+  whole package's source and fails any `kubectl` call that reaches a noun
+  where a verb belongs — or that hands the command line off to a caller,
+  which is what hid this one.
+
 - **A tool name could forge a line in the audit table.** `tool_audit`'s
   `tool` and `method` come out of caller-controlled JSON and were
   recorded verbatim, and every renderer prints them unescaped into a
@@ -164,6 +179,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   out of the Go test that names them, every count out of `git ls-files`.
 
 ### Changed
+
+- **The plane's scrape job is a `PodMonitor`, and the cluster-wide scrape
+  ConfigMap is no longer touched.** `ama-metrics-prometheus-config` in
+  `kube-system` is singular: every custom scrape job on the cluster shares
+  that one document. Writing it meant either overwriting jobs this project
+  did not make or stopping to ask an operator to merge ours by hand, and
+  removing it at teardown meant deleting jobs it never made. The job is now
+  a `PodMonitor` (`azmonitoring.coreos.com/v1`) named `kaimahi-plane` in the
+  `kaimahi` namespace — a namespaced object owned by whoever created it —
+  so an adopter adds their own pods by writing their own `PodMonitor` in
+  their own namespace, touching nothing of ours. `kmx lift` neither reads,
+  writes nor deletes that ConfigMap, and a test asserts it. **Nothing about
+  the boundary changed**: the ops port is still on no Service, custom
+  resources are still scraped by the same `ama-metrics` replica pods, and
+  the one NetworkPolicy allowance is unchanged. On a cluster whose metrics
+  add-on has no `PodMonitor` CRD the phase stops and prints the job in
+  ConfigMap form to merge by hand. **Upgrading:** a lift run by an earlier
+  build never reached this step, so there is no ConfigMap of ours on any
+  cluster to clean up.
+- **The lift says what its dashboard does not cover.** The view is what
+  crossed the governance plane — allowed, refused, approved, spent. It is
+  not what happened inside an agent: no spans, no per-step timings. The
+  next-steps output and `docs/aks.md` now say so, and say that
+  OpenTelemetry is the answer to that half and is neither replaced nor
+  conflicted with.
+
 
 - **`kmx plane` has a fourth step, `certificate`**, between `secrets` and
   `deploy`. `make plane-certificate` delegates to it on every target.

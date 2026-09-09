@@ -168,15 +168,15 @@ grep: `TestTheConnectorFamiliesAreNotEmbedded`
 (`internal/kmx/app/manifests_test.go`) names the twelve manifests that must
 NOT ride along, and — because an exclusion passes for free once the thing
 it excludes stops existing — it `os.Stat`s each one and fails if it moves.
-Twenty-five of `k8s/`'s 38 files are embedded, twelve are named by that
+Twenty-six of `k8s/`'s 39 files are embedded, twelve are named by that
 test, and the thirteenth is `k8s/erp-fixtures.json`, a JSON corpus rather
 than a manifest.
 
 **Product — embedded in `kmx`, so a user with no checkout applies them
-(25):** `ollama.yaml`, `kagent-values.yaml`, `hello-world.yaml`,
+(26):** `ollama.yaml`, `kagent-values.yaml`, `hello-world.yaml`,
 `tools-agent.yaml`, `kaimahi-tools.yaml`, `egress-hosted.yaml`,
 `egress-copilot.yaml`, `wasm/runtime.yaml`, all five of `plane/`, all nine
-of `models/`, and all three of `observability/`.
+of `models/`, and all four of `observability/`.
 
 **Product — applied from a checkout only (6):** `inbound-edge.yaml`,
 `slack-mcp.yaml`, `kaimahi-slack.yaml`, `kaimahi-github.yaml`, and the

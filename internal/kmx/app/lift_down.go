@@ -176,10 +176,16 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 // only the ones this run created.
 //
 // Ownership comes from what the run RECORDED before it applied anything, never
-// from what the object looks like now. A ConfigMap holding only our scrape job
-// may still have been created by the operator, and "it looks like ours" is not
-// "we made it"; the same goes for a NetworkPolicy of that name they had
+// from what the object looks like now. A PodMonitor holding only our scrape
+// job may still have been created by the operator, and "it looks like ours" is
+// not "we made it"; the same goes for a NetworkPolicy of that name they had
 // already written themselves.
+//
+// Both objects are in the kaimahi namespace, and neither is the cluster-wide
+// ama-metrics-prometheus-config ConfigMap. Teardown does not read that
+// ConfigMap, does not edit it and does not delete it, because the lift does not
+// write it — an adopter's other scrape jobs are not something this command
+// should ever have been in a position to remove.
 func (a *App) removeInClusterObservability(record *lift.Record) {
 	if record.Before.WeCreatedScraperPolicy() {
 		if !a.kubectlQuiet("-n", "kaimahi", "delete", "networkpolicy", scraperPolicy, "--ignore-not-found") {
@@ -190,38 +196,23 @@ func (a *App) removeInClusterObservability(record *lift.Record) {
 		a.notef("the NetworkPolicy %s was there before this run, or its origin was never established; leaving it.", scraperPolicy)
 	}
 
-	if !record.Before.WeCreatedScrapeConfig() {
-		a.notef("%s in %s was there before this run, or its origin was never established; leaving it.\n"+
-			"  If you merged this run's job into it, remove the kaimahi-plane job by hand.",
-			scrapeConfigMap, scrapeConfigNamespace)
+	// A cluster whose metrics add-on has no PodMonitor CRD never carried one
+	// of ours, and asking kubectl to delete a kind it does not know is an
+	// error rather than a no-op — it would print "remove it by hand" for an
+	// object that cannot exist.
+	if present, err := a.clusterObjectExists("crd", scrapeMonitorResource); err == nil && !present {
+		a.notef("this cluster has no PodMonitor CRD, so this run created no scrape job on it.")
 		return
 	}
-	// Created by this run, so ours to remove. The contents are still read —
-	// not to establish ownership, but because an operator may have added
-	// their own jobs to it since, and taking those with it would be the same
-	// destruction by a slower route.
-	body, err := a.kubectlCapture("-n", scrapeConfigNamespace, "get", "configmap", scrapeConfigMap,
-		"-o", "jsonpath={.data.prometheus-config}")
-	switch {
-	case err == nil:
-	case isNotFound(err):
-		return // genuinely not there; nothing to take back
-	default:
-		// An unreachable API server, a missing context or an RBAC denial is
-		// not "the ConfigMap is absent". Returning silently on those left the
-		// scrape job in place with nobody told, which on a cluster we do not
-		// own is a leftover the operator never hears about.
-		a.notef("could not read %s in %s (%v) — it may still carry this run's scrape job.\n"+
-			"  Check by hand: kubectl --context %s -n %s get configmap %s",
-			scrapeConfigMap, scrapeConfigNamespace, err, a.Cfg.KubeContext, scrapeConfigNamespace, scrapeConfigMap)
+	if !record.Before.WeCreatedScrapeMonitor() {
+		a.notef("the PodMonitor %s in kaimahi was there before this run, or its origin was never established; leaving it.",
+			scrapeMonitor)
 		return
 	}
-	if strings.Contains(body, "job_name: kaimahi-plane") && strings.Count(body, "job_name:") == 1 {
-		_ = a.kubectlQuiet("-n", scrapeConfigNamespace, "delete", "configmap", scrapeConfigMap, "--ignore-not-found")
-		return
+	if !a.kubectlQuiet("-n", "kaimahi", "delete", scrapeMonitorResource, scrapeMonitor, "--ignore-not-found") {
+		a.notef("could not remove the scrape job — remove it by hand:\n"+
+			"    kubectl --context %s -n kaimahi delete %s %s", a.Cfg.KubeContext, scrapeMonitorResource, scrapeMonitor)
 	}
-	a.notef("%s in %s carries scrape jobs other than this one, so it is left alone.\n"+
-		"  Remove the kaimahi-plane job from it by hand if you no longer want it.", scrapeConfigMap, scrapeConfigNamespace)
 }
 
 // removeRecorded deletes recorded resources by their recorded id, confirming

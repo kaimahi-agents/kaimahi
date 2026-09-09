@@ -556,8 +556,9 @@ KAIMAHI_CONFIRM=<your-rg> kmx lift down --resource-group <your-rg> --cluster <na
 resource group are never deleted and never adopted.** `kmx lift down
 --byo` removes only what the lift added — the two monitoring workspaces,
 the data-collection rules the add-ons created, the workbook, and the two
-cluster-side objects — and it removes them **by the resource id it
-recorded when it created them**, never by name.
+objects it put in the `kaimahi` namespace (the scraper's NetworkPolicy
+allowance and the plane's `PodMonitor`) — and it removes the Azure ones
+**by the resource id it recorded when it created them**, never by name.
 
 The distinction is not pedantry. Name matching on a subscription you do
 not own is how a demo deletes a stranger's production monitoring: names
@@ -593,12 +594,13 @@ Three more refusals worth knowing, all on the bring-your-own branch:
   add-on first if you meant this run to own it. Teardown follows the same rule
   from the other end: an add-on that was on before the run is left on.
 
-- **The scrape ConfigMap is not overwritten.**
-  `ama-metrics-prometheus-config` is cluster-wide and singular. If one
-  already exists it holds *your* scrape jobs, and applying ours over it
-  would delete them silently. The lift stops and prints the job to merge
-  into yours. At teardown, a ConfigMap carrying jobs other than this
-  one is left alone.
+- **The cluster-wide scrape ConfigMap is not touched at all.**
+  `ama-metrics-prometheus-config` is cluster-wide and singular, so it
+  holds *your* scrape jobs as well as anyone else's. The plane's job is a
+  `PodMonitor` in the `kaimahi` namespace instead, and the lift neither
+  reads, writes nor deletes that ConfigMap. Your own jobs go in your own
+  `PodMonitor`, in your own namespace — see [the scrape
+  job](#the-scrape-job-is-a-podmonitor-and-yours-can-sit-beside-it).
 - **`AcrPull` is not granted.** The lift checks whether your cluster can
   pull from the registry you named and refuses if it cannot. Granting a
   role assignment on your subscription is a change to your cluster's
@@ -695,14 +697,73 @@ thing it is for is enabled, and not before. kind never applies it, which
 is also what makes "the local path is unchanged" a fact rather than a
 claim.
 
-### The scrape job
+### The scrape job is a PodMonitor, and yours can sit beside it
 
-`k8s/observability/scrape-config.yaml` is the `ama-metrics-prometheus-config`
-ConfigMap the add-on reads. It keeps only pods labelled
-`app: kaimahi-proxy` and only container port 9092 — without the second
-filter, pod discovery would also try the two data ports, the inbound
-port and the **admin** port, which should never be dialled by anything
-but a port-forward.
+`k8s/observability/podmonitor.yaml` is the job. It keeps only pods
+labelled `app: kaimahi-proxy`, and only the container port **named
+`ops`** — without that, pod discovery would also try the two data ports,
+the inbound port and the **admin** port, which should never be dialled
+by anything but a port-forward.
+
+It is a `PodMonitor` in the `kaimahi` namespace rather than a job in the
+`ama-metrics-prometheus-config` ConfigMap, and the difference is the
+whole reason this section changed. That ConfigMap is **cluster-wide and
+singular**: every custom scrape job on the cluster shares one document.
+Anything that writes it either overwrites jobs it did not make or stops
+and asks you to merge by hand, and a teardown that deletes it removes
+jobs it never made. `kmx lift` now **does not read, write or delete that
+ConfigMap at all** — a test asserts it, since the failure mode is
+somebody else's monitoring going quiet.
+
+So adding your own pods takes nothing from this repository. Write your
+own `PodMonitor` in your own namespace:
+
+```yaml
+apiVersion: azmonitoring.coreos.com/v1   # Azure's group, not monitoring.coreos.com
+kind: PodMonitor
+metadata:
+  name: my-agent
+  namespace: my-app
+spec:
+  selector:
+    matchLabels:
+      app: my-agent
+  podMetricsEndpoints:
+    - port: metrics       # a NAMED container port on your pod
+      path: /metrics
+      interval: 30s
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+```
+
+Four things that are easy to get wrong, and each fails silently:
+
+- **The API group is `azmonitoring.coreos.com`, not
+  `monitoring.coreos.com`.** Azure's add-on ships its own copies of the
+  operator CRDs under its own group precisely so a cluster already
+  running the open-source Prometheus operator keeps two separate sets of
+  jobs. Under the wrong group the object is still valid and still
+  applies; it is simply never scraped.
+- **`port` names a port, it does not number one.** Give the container
+  port a `name` in your Deployment.
+- **Keep the three limits.** Azure's collector drops an entire job whose
+  series exceed them, and the symptom is an empty panel rather than an
+  error.
+- **A default-deny NetworkPolicy in your namespace will block the
+  scrape.** The allowance below is scoped to the plane's pods; yours
+  needs its own, admitting `rsName: ama-metrics` from `kube-system` to
+  your metrics port. That is the same trade the plane makes and the
+  reason it is explicit.
+
+Custom resources are read from **every** namespace and are scraped by
+the same `ama-metrics` replica pods the plane's allowance already names,
+so nothing about the boundary changes when you add one.
+
+If your cluster's metrics add-on is old enough to have no PodMonitor
+CRD, the observability phase stops and prints the same job in ConfigMap
+form for you to merge into yours. It does not merge it for you, and that
+is deliberate: it is your document.
 
 ### The dashboard
 
@@ -738,6 +799,32 @@ queryable), and each fails with the specific things to check.
 A panel that is empty because nobody has used the system is otherwise
 indistinguishable from a scrape that is not landing, and that confusion
 is the whole reason this check exists.
+
+### What this view covers, and what it does not
+
+Say it plainly, because the gap is easy to walk into and expensive to
+discover late.
+
+**What you get here is what crossed the governance plane.** Every model
+call and every tool call that went through a seam: what was allowed,
+what was refused and for which reason, what a human approved, and what
+it spent. That is the audit trail, the ledger and the panels above, and
+it is true of an agent this project has never seen — it needs no library,
+no exporter and no line of instrumentation in your code, because the
+plane is in the path.
+
+**What you do not get is what happened inside your agent.** No spans, no
+per-step timings, no prompt-level traces, no view of the reasoning
+between one governed call and the next. Nothing here can see them; the
+plane observes a boundary, not a process.
+
+**OpenTelemetry is the answer to that half, and this does not replace
+it.** If your agent already exports traces to an OTLP endpoint, keep
+doing exactly that — the two do not conflict and do not need to know
+about each other. Container Insights is namespace-agnostic, so your
+pods' logs land in the same Log Analytics workspace as the plane's
+whether or not you add a scrape job, which is often enough to correlate
+the two by timestamp and pod.
 
 ### The `make` path does not do any of this
 

@@ -1,0 +1,64 @@
+# How the plane's metrics reach Azure Monitor — and why this is not a
+# ConfigMap any more.
+#
+# Azure's metrics add-on reads custom scrape jobs from two places. One is a
+# ConfigMap named ama-metrics-prometheus-config in kube-system, which is
+# cluster-wide and singular: every custom job on the cluster shares that one
+# document, so anything that writes it either merges by hand or silently
+# deletes somebody else's jobs. The other is a PodMonitor, which is a namespaced
+# object that belongs to whoever made it. This is the second one.
+#
+# That choice is the whole point rather than a detail. An operator who wants
+# their own pods scraped writes their own PodMonitor in their own namespace and
+# never opens a file this project also writes; nothing they do can remove this
+# job and nothing this project does can remove theirs. The lift no longer
+# touches ama-metrics-prometheus-config at all — it does not read it to decide
+# anything, it does not apply over it, and teardown does not edit it.
+#
+# The group is azmonitoring.coreos.com, NOT monitoring.coreos.com. Azure's
+# add-on ships its own copies of the Prometheus operator CRDs under that group
+# precisely so that a cluster already running the open-source operator keeps
+# two separate sets of scrape jobs. A PodMonitor written for the OSS operator
+# is not picked up here, and this one is not picked up there. The add-on
+# installs both CRDs itself when managed Prometheus is enabled.
+#
+# It discovers PODS, not a Service, and that is what makes it usable here at
+# all. The operations port is on no Service on purpose; a ServiceMonitor would
+# have forced the port to be exposed, trading a security property for a
+# dashboard. Pod discovery reaches the port the way the design intends:
+# directly at the pod's own address, through the NetworkPolicy allowance next
+# to this file. Custom resources are scraped by the add-on's REPLICA pods
+# (rsName=ama-metrics), which is exactly who that allowance admits — the
+# targets a CR produces cannot be moved to the per-node DaemonSet.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kaimahi-plane
+  namespace: kaimahi
+  labels:
+    app.kubernetes.io/part-of: kaimahi
+spec:
+  selector:
+    matchLabels:
+      # The governance plane's pods only. Everything else in the namespace —
+      # the ledger, a fixture server — exposes nothing here.
+      app: kaimahi-proxy
+  podMetricsEndpoints:
+    # By NAME, and the name is the one thing that keeps this pointed at the
+    # operations port. Pod discovery would otherwise yield one target per
+    # declared container port: the two data ports, the inbound port and the
+    # admin port, none of which serve metrics and one of which should never be
+    # dialled by anything but a port-forward. `ops` is 9092 in
+    # k8s/plane/proxy.yaml.
+    - port: ops
+      path: /metrics
+      scheme: http
+      interval: 30s
+  # Azure's collector drops an entire scrape job whose series exceed its
+  # limits, and it drops it silently — the symptom is an empty panel, not an
+  # error. The add-on's own templates carry these three values and its
+  # documentation says to keep them, so they are written out rather than left
+  # to a default that is not ours to assume.
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023

@@ -1,6 +1,9 @@
 package app
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,8 +27,9 @@ func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 	// operator's machine, half way through a lift, with a cluster already
 	// created and billing.
 	for _, name := range []string{
-		"k8s/observability/network-policy.yaml", "k8s/observability/scrape-config.yaml",
-		"k8s/observability/workbook.json", "k8s/egress-copilot.yaml",
+		"k8s/observability/network-policy.yaml", "k8s/observability/podmonitor.yaml",
+		"k8s/observability/scrape-config.yaml", "k8s/observability/workbook.json",
+		"k8s/egress-copilot.yaml",
 		"scripts/aks-up.sh", "scripts/aks-down.sh", "scripts/plane-deploy.sh",
 		"scripts/netpol-probe.sh", "scripts/kube-guard.sh",
 	} {
@@ -49,7 +53,8 @@ func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 // editing a manifest that kind also applies.
 func TestTheLocalPathAppliesNothingFromTheManagedPath(t *testing.T) {
 	for _, name := range []string{
-		"observability/network-policy.yaml", "observability/scrape-config.yaml", "egress-copilot.yaml",
+		"observability/network-policy.yaml", "observability/podmonitor.yaml",
+		"observability/scrape-config.yaml", "egress-copilot.yaml",
 	} {
 		if _, err := manifest(name); err == nil {
 			t.Fatalf("k8s/%s is reachable through the manifest set the local path applies — "+
@@ -104,8 +109,111 @@ func TestTheScraperAllowanceIsExactlyOneNamespaceOnePodOnePort(t *testing.T) {
 
 // The whole point of scraping pods rather than a Service: the operations port
 // is on no Service deliberately, and a scrape job that needed one would force
-// it to be exposed — trading a security property for a dashboard.
-func TestTheScrapeJobDiscoversPodsAndOnlyTheOperationsPort(t *testing.T) {
+// it to be exposed — trading a security property for a dashboard. A
+// ServiceMonitor is exactly that trade, so the job is a PodMonitor.
+func TestTheScrapeJobIsAPodMonitorAimedAtTheOperationsPortByName(t *testing.T) {
+	body, err := kaimahi.Managed.ReadFile("k8s/observability/podmonitor.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		// Azure's add-on ships the operator CRDs under its OWN group so that a
+		// cluster already running the open-source Prometheus operator keeps two
+		// separate sets of jobs. Under monitoring.coreos.com this object is
+		// valid, applies cleanly, and is never scraped by the add-on.
+		"apiVersion: azmonitoring.coreos.com/v1",
+		"kind: PodMonitor",
+		"name: kaimahi-plane",
+		"namespace: kaimahi",
+		"app: kaimahi-proxy",
+		"podMetricsEndpoints:",
+		// Named, not numbered: pod discovery yields one target per declared
+		// container port, and without this the scraper would also try the two
+		// data ports, the inbound port and the admin port.
+		"- port: ops",
+		"path: /metrics",
+		// Azure's collector drops a whole job that exceeds these and says
+		// nothing; the symptom is an empty panel.
+		"labelLimit: 63",
+		"labelNameLengthLimit: 511",
+		"labelValueLengthLimit: 1023",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the plane's scrape job does not say %q", want)
+		}
+	}
+	if strings.Contains(text, "kind: ServiceMonitor") {
+		t.Error("the scrape job discovers Services — the operations port is on none, on purpose")
+	}
+	// The ops port must be a named port on the plane's own pod, or `port: ops`
+	// resolves to nothing and the job scrapes an empty target set.
+	proxy, err := manifest("plane/proxy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(proxy), "- name: ops\n              containerPort: 9092") {
+		t.Error("the plane's container no longer declares 9092 as a port named `ops`, " +
+			"so the PodMonitor's `port: ops` names nothing")
+	}
+}
+
+// The ConfigMap is cluster-wide and singular, so every custom scrape job on
+// the cluster shares it. This project writing it means either overwriting
+// somebody's jobs or stopping to ask them to merge ours — and its teardown
+// deleting it means removing jobs it never made. Now that the plane's job is a
+// PodMonitor, nothing here may touch that document at all: the file is carried
+// only so the refusal on a cluster with no CRD has something to print.
+func TestTheLiftNeverReadsWritesOrDeletesTheClusterWideScrapeConfigMap(t *testing.T) {
+	fset := token.NewFileSet()
+	found := 0
+	for _, file := range []string{"lift_observability.go", "lift_down.go"} {
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			switch sel.Sel.Name {
+			case "kubectlCapture", "kubectlRun", "kubectlQuiet", "applyManaged":
+			default:
+				return true
+			}
+			for _, arg := range call.Args {
+				name := ""
+				switch a := arg.(type) {
+				case *ast.Ident:
+					name = a.Name
+				case *ast.BasicLit:
+					name = a.Value
+				}
+				if strings.Contains(name, "scrapeConfigMap") ||
+					strings.Contains(name, "ama-metrics-prometheus-config") ||
+					strings.Contains(name, "scrape-config.yaml") {
+					t.Errorf("%s: this reaches the cluster-wide scrape ConfigMap through %s — "+
+						"it is somebody else's document and the lift no longer has business in it",
+						fset.Position(call.Pos()), sel.Sel.Name)
+				}
+			}
+			found++
+			return true
+		})
+	}
+	if found < 5 {
+		t.Fatalf("only %d cluster calls were examined — the scan is passing vacuously", found)
+	}
+}
+
+// The fallback text the refusal prints, which is the one place the ConfigMap
+// route survives. It is not applied by anything; a test asserts that above.
+func TestTheFallbackScrapeJobDiscoversPodsAndOnlyTheOperationsPort(t *testing.T) {
 	body, err := kaimahi.Managed.ReadFile("k8s/observability/scrape-config.yaml")
 	if err != nil {
 		t.Fatal(err)

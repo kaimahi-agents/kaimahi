@@ -261,8 +261,9 @@ func (a *App) liftWorkspace() (string, func(), error) {
 		}
 	}
 	for _, manifest := range []string{
-		"k8s/observability/network-policy.yaml", "k8s/observability/scrape-config.yaml",
-		"k8s/observability/workbook.json", "k8s/egress-copilot.yaml",
+		"k8s/observability/network-policy.yaml", "k8s/observability/podmonitor.yaml",
+		"k8s/observability/scrape-config.yaml", "k8s/observability/workbook.json",
+		"k8s/egress-copilot.yaml",
 	} {
 		if err := write(kaimahi.Managed, manifest, 0o600); err != nil {
 			cleanup()

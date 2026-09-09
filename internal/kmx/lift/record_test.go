@@ -104,18 +104,18 @@ func TestOnlyWhatThisRunTurnedOnOrCreatedMayBeUndone(t *testing.T) {
 		if !p.WeEnabledMetrics() || !p.WeEnabledLogs() {
 			t.Fatal("a run that found both add-ons off should be allowed to turn them off again")
 		}
-		if !p.WeCreatedScraperPolicy() || !p.WeCreatedScrapeConfig() {
+		if !p.WeCreatedScraperPolicy() || !p.WeCreatedScrapeMonitor() {
 			t.Fatal("a run that found neither object should be allowed to remove the ones it made")
 		}
 	})
 
 	t.Run("it was already on, so it is not ours to turn off", func(t *testing.T) {
 		p := Pre{Recorded: true, MetricsAddonEnabled: true, LogsAddonEnabled: true,
-			ScraperPolicyExisted: true, ScrapeConfigExisted: true}
+			ScraperPolicyExisted: true, ScrapeMonitorExisted: true}
 		if p.WeEnabledMetrics() || p.WeEnabledLogs() {
 			t.Fatal("teardown would disable monitoring the operator already had")
 		}
-		if p.WeCreatedScraperPolicy() || p.WeCreatedScrapeConfig() {
+		if p.WeCreatedScraperPolicy() || p.WeCreatedScrapeMonitor() {
 			t.Fatal("teardown would delete a cluster object the operator already had")
 		}
 	})
@@ -126,7 +126,7 @@ func TestOnlyWhatThisRunTurnedOnOrCreatedMayBeUndone(t *testing.T) {
 		// that way is what would authorise disabling somebody's add-on.
 		var p Pre
 		if p.WeEnabledMetrics() || p.WeEnabledLogs() ||
-			p.WeCreatedScraperPolicy() || p.WeCreatedScrapeConfig() {
+			p.WeCreatedScraperPolicy() || p.WeCreatedScrapeMonitor() {
 			t.Fatal("unestablished prior state was read as 'we made it'")
 		}
 	})

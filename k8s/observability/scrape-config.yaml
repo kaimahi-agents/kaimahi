@@ -1,9 +1,21 @@
-# The scrape job that makes the plane's metrics arrive in Azure Monitor.
+# The fallback route, and nothing applies this file.
+#
+# The plane's scrape job is a PodMonitor now (podmonitor.yaml next to this
+# one), because that is a namespaced object owned by whoever created it. This
+# file is what `kmx lift` PRINTS when a cluster's metrics add-on is too old to
+# have the PodMonitor CRD: the same job, written the only other way Azure's
+# add-on accepts one.
 #
 # Azure's metrics add-on reads custom scrape jobs from a ConfigMap named
 # ama-metrics-prometheus-config in kube-system, under the key
-# prometheus-config, and runs them from its replica pod. That is the whole
-# integration: no Service, no sidecar, no operator CRD.
+# prometheus-config, and runs them from its replica pod.
+#
+# CAUTION, and it is why this is a fallback rather than the route: that
+# ConfigMap is cluster-wide and singular. If it already exists it holds every
+# other custom scrape job on the cluster, and applying this file over it would
+# delete them without saying so. `kmx lift` neither writes it nor reads it —
+# merging the job below into yours is deliberately left to you, because it is
+# your document.
 #
 # The job discovers PODS, not a Service, and that is the point rather than an
 # implementation detail. The operations port is on no Service on purpose, so a
@@ -11,11 +23,6 @@
 # security property for a dashboard. Pod discovery reaches the port exactly
 # the way the design intends: through the NetworkPolicy allowance next to this
 # file, at the pod's own address.
-#
-# CAUTION on a cluster you did not create: this ConfigMap is cluster-wide and
-# singular. If it already exists it belongs to whoever put it there, and
-# replacing it would silently delete their scrape jobs. `kmx lift` refuses to
-# overwrite an existing one and prints the job below to merge by hand.
 apiVersion: v1
 kind: ConfigMap
 metadata:

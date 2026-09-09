@@ -99,8 +99,8 @@ var Blueprints embed.FS
 // of the directory beside it — so the caller writes them into a temporary
 // tree shaped like this repository rather than into a flat directory.
 //
-//go:embed k8s/observability/network-policy.yaml k8s/observability/scrape-config.yaml
-//go:embed k8s/observability/workbook.json
+//go:embed k8s/observability/network-policy.yaml k8s/observability/podmonitor.yaml
+//go:embed k8s/observability/scrape-config.yaml k8s/observability/workbook.json
 //go:embed k8s/egress-copilot.yaml
 //go:embed scripts/aks-up.sh scripts/aks-down.sh scripts/plane-deploy.sh
 //go:embed scripts/netpol-probe.sh scripts/kube-guard.sh
