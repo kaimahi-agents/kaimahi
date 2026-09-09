@@ -105,9 +105,10 @@ $ … tools/call sundae.submit_order {draft_id: draft-650e12d923, customer_name:
   {"order_id": "sundae-03157899", "status": "submitted", "total_display": "$6.50"}
 ```
 
-A US$6.50 transaction, under a US$0.01 per-transfer cap, a US$1.00 daily
-cap, a counterparty allowlist naming nobody, and `approval: always`. Then
-six calls back to back under `rps: 1, burst: 1` — six `HTTP 200`.
+That is a US$6.50 transaction — **650 times** the US$0.01 per-transfer
+cap and over six times the US$1.00 daily cap — submitted for a customer
+no counterparty allowlist named, with `approval.mode: always` in force.
+Then six calls back to back against `rps: 1, burst: 1`: six `HTTP 200`.
 
 And nothing was written down:
 
@@ -279,12 +280,15 @@ introspection "a Phase 4 add-on"); BYO validation is `contractVersion` in
 `{"v1"}` plus a self-described "deliberately permissive" image-reference
 check (`reconciler/byo_contract.rs:71`).
 
-**Verdict.** The difference is one image rebuild and a CR, against our
-two environment variables. That is a real difference — an adopter who
-cannot rebuild the image, or whose agent is a Deployment they do not own,
-cannot use KARS at all — but it is a narrow one, and the honest framing
-is "no redeploy required" rather than "no adoption required". It is not
-the moat it looked like from the README.
+**Verdict.** Against our two environment variables, KARS costs an image
+rebuild, four CRs and a NetworkPolicy entry — and it replaces their
+Deployment with a pod it builds itself. That is a real difference: an
+adopter who cannot rebuild the image, or whose agent is a Deployment they
+do not own, cannot use KARS at all. But it is narrower than the
+twelve-CRD headline suggests, and the claim it leaves us is the modest
+one — **no source rewrite, and their own Deployment left running** — not
+the grander "no adoption required". It is not the moat it looked like
+from the README.
 
 ---
 
