@@ -148,6 +148,56 @@ func TestAStreamWithNoReadableUsageIsRelayedButLedgeredUnmetered(t *testing.T) {
 	require.Equal(t, 200, f.ledger[0].Status, "the upstream's own status, because that is what the caller got")
 }
 
+// A stream nobody asked for is refused before a byte of it is relayed.
+// This is the half of the metering rule that would otherwise be a hole
+// of the plane's own making: `include_usage` is only ever sent when the
+// REQUEST said stream, so an upstream that streams anyway is answering
+// in a shape the plane did not prepare to meter — and letting it through
+// would land in the one place a refusal is no longer possible.
+func TestAStreamTheRequestDidNotAskForIsRefusedBeforeItIsRelayed(t *testing.T) {
+	f := newFakeStore()
+	f.addToken("tok", store.Credential{Name: "hello"})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"the answer\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
+		"ollama": {BaseURL: srv.URL, Path: "v1/chat/completions",
+			Protocol: config.ProtocolChatCompletions, Classification: config.ClassFree},
+	}))
+	// chatBody carries no "stream": true.
+	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
+	require.Equal(t, 502, w.Code)
+	require.NotContains(t, w.Body.String(), "the answer", "an unmeterable stream must not reach the caller")
+	require.Len(t, f.ledger, 1)
+	require.Equal(t, "unmetered", f.ledger[0].CostSource)
+	require.Equal(t, 502, f.ledger[0].Status)
+}
+
+// And the stream the client DID ask for is unaffected — the refusal
+// above must not become "the plane refuses streaming".
+func TestAStreamTheRequestAskedForIsStillRelayed(t *testing.T) {
+	f := newFakeStore()
+	f.addToken("tok", store.Credential{Name: "hello"})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5}}\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
+		"ollama": {BaseURL: srv.URL, Path: "v1/chat/completions",
+			Protocol: config.ProtocolChatCompletions, Classification: config.ClassFree},
+	}))
+	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions",
+		`{"model": "test-model", "stream": true, "messages": []}`)
+	require.Equal(t, 200, w.Code)
+	require.Len(t, f.ledger, 1)
+	require.Equal(t, int64(3), f.ledger[0].InputTokens)
+	require.Equal(t, "free", f.ledger[0].CostSource)
+}
+
 // An upstream reporting a genuine zero is NOT the same fact as one the
 // plane could not read, and must not be recorded as if it were.
 func TestAnUpstreamReportedZeroIsNotUnmetered(t *testing.T) {

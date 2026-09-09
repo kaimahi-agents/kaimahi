@@ -164,6 +164,42 @@ func TestTheScaffoldedModelManifestIsThreeReviewableDocuments(t *testing.T) {
 	}
 }
 
+// `free` is a claim the plane cannot check, and the one setting here
+// that can make real spend invisible. It has to be named at the point of
+// choosing, not left in a document.
+func TestClassifyingAnUpstreamFreeNamesWhatThatCosts(t *testing.T) {
+	f := newModelFixture(t, vllmService, "notfound", nil)
+	opt := modelOpts(f.dir)
+	opt.NoApply = true
+	if err := f.app.AddModel(opt); err != nil {
+		t.Fatal(err)
+	}
+	said := f.out.String() + f.errOut.String()
+	for _, want := range []string{"classified free", "No cents budget can ever bind it", "holds a paid key"} {
+		if !strings.Contains(said, want) {
+			t.Fatalf("the consequence of --classification free was not named (%q missing):\n%s", want, said)
+		}
+	}
+	// And the claim it must NOT make: the plane cannot see behind the URL.
+	if strings.Contains(said, "no key of yours is behind it") {
+		t.Fatalf("the command claims the endpoint is keyless, which it cannot know:\n%s", said)
+	}
+}
+
+// metered says nothing about $0, so it carries no such warning.
+func TestClassifyingAnUpstreamMeteredCarriesNoFreeWarning(t *testing.T) {
+	f := newModelFixture(t, vllmService, "notfound", nil)
+	opt := modelOpts(f.dir)
+	opt.Classification = "metered"
+	opt.NoApply = true
+	if err := f.app.AddModel(opt); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.out.String()+f.errOut.String(), "classified free") {
+		t.Fatal("a metered upstream was warned about as if it were free")
+	}
+}
+
 // The overlay is emitted WHOLE. A map missing a key somebody else's
 // onboarding put there would be pruned by `kubectl apply`, silently
 // un-onboarding their upstream — and the two seams share one ConfigMap,

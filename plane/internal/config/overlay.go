@@ -20,11 +20,24 @@ package config
 //     adopter's framework needed a path the committed table had no entry
 //     for, and the only route was to edit the committed table, which the
 //     next `kmx plane` re-applies and discards. So it is mergeable now,
-//     under exactly the tool seam's rule rather than a second one: an
-//     overlay model upstream is IN-CLUSTER and KEYLESS, because the
-//     custody fields are refused (below). What that excludes is a hosted
-//     model endpoint, which is the case where a real API key is at
-//     stake — and that one still belongs in the reviewed table.
+//     under exactly the tool seam's rule rather than a second one: the
+//     ENTRY names no credential and no host outside the cluster, because
+//     the custody fields are refused (below). What that excludes is a
+//     hosted model endpoint, which still belongs in the reviewed table.
+//
+//     Be precise about what that does NOT establish, because the obvious
+//     inference is false and was written here before it was caught: an
+//     overlay entry being keyless does not make the ENDPOINT keyless.
+//     The ordinary in-cluster shape for a paid model is a router
+//     (LiteLLM, an OpenAI-compatible gateway) that holds the key itself,
+//     and `classification` is mergeable — so an operator can declare a
+//     paid endpoint `free`, and every call through it is ledgered as
+//     costing nothing with no cents budget able to bind it. That is not
+//     a hole to be closed here: `free` is a CLAIM the operator makes
+//     about their own endpoint, exactly as it is in the committed table,
+//     and the plane has never been able to check it. What was wrong was
+//     leaving it unsaid. `kmx models add` now names the consequence at
+//     the point of choosing, and docs/spend.md states it.
 //   - and within `upstreams` and `tool_upstreams` alike, an overlay entry may not carry the
 //     CUSTODY fields. This is the same rule as the bullet above, applied
 //     one level down, and it was missed once: `credential_file` names a
@@ -278,6 +291,15 @@ func refuseCustodyFields(fragment, upstream string, raw json.RawMessage) error {
 		return refuse("internet")
 	case entry.CAFile != "":
 		return refuse("ca_file")
+	case len(entry.ExtraHeaders) > 0:
+		// Found while reviewing the model seam's copy, and true of this
+		// one since it was written: the paragraph above calls the decoded
+		// entry "the authoritative check", and it was authoritative for
+		// four of the five fields. The key scan does hold — Go's field
+		// folding and strings.EqualFold agree, so no spelling slipped
+		// past — but a denial that rests on one gate while claiming two
+		// is a denial nobody can reason about.
+		return refuse("extra_headers")
 	}
 	return nil
 }
@@ -328,6 +350,13 @@ func refuseModelCustodyFields(fragment, upstream string, raw json.RawMessage) er
 		return refuse("internet")
 	case entry.CAFile != "":
 		return refuse("ca_file")
+	case len(entry.ExtraHeaders) > 0:
+		// The model seam applies ExtraHeaders AFTER injecting the
+		// credential, so a header here can overwrite the Authorization
+		// slot — the opposite of the tool seam's ordering, and load-time
+		// has no check against it on this type. An overlay must not be
+		// able to reach that.
+		return refuse("extra_headers")
 	case len(entry.Prices) > 0:
 		return refuse("prices")
 	}

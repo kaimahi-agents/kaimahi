@@ -73,6 +73,18 @@ func (a *App) AddModel(opt AddModelOptions) error {
 		return fmt.Errorf("--classification %q: want one of %s",
 			opt.Classification, strings.Join(scaffold.Classifications, ", "))
 	}
+	// `free` is a claim about somebody else's endpoint, and the plane
+	// cannot check it. The in-cluster shape for a paid model is a router
+	// that holds the key itself, so this is not a hypothetical: it is the
+	// one setting here that can make real spend invisible. Named at the
+	// point of choosing, the way a verb-level tool binding is.
+	if opt.Classification == "free" {
+		a.notef("WARNING: %q is classified free — an EXPLICIT $0, not an observation.", opt.Name)
+		a.notef("  No cents budget can ever bind it, and every call through it is ledgered as costing")
+		a.notef("  nothing. If the endpoint behind this URL holds a paid key — a router or gateway in")
+		a.notef("  front of a hosted model is the usual shape — that spend is real and this ledger will")
+		a.notef("  not show it. Use --classification metered and a token budget if you are not certain.")
+	}
 	if opt.ServerEgress == "" {
 		opt.ServerEgress = scaffold.EgressNone
 	}
@@ -165,7 +177,8 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	a.notef("NOTE: the model seam has no allowlist. Unlike a tool upstream, %q is reachable by EVERY", opt.Name)
 	a.notef("  credential the plane has issued, the moment it is in the table — there is no per-credential")
 	a.notef("  scope on this seam at all. What still bounds them is the budget each credential carries,")
-	a.notef("  and the fact that an overlay upstream is in-cluster and keyless: no key of yours is behind it.")
+	a.notef("  and the fact that the ENTRY is keyless — the plane holds no credential for it. Whether the")
+	a.notef("  endpoint itself holds one is yours to know; the plane cannot see behind the URL.")
 
 	if opt.Out == "-" {
 		_, err := a.Out.Write([]byte(document))

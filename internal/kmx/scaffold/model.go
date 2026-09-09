@@ -30,8 +30,10 @@ package scaffold
 //     seam has no per-credential allowlist at all. Every credential the
 //     plane has issued can call every upstream in the table, so adding
 //     one WIDENS what existing credentials reach. Budgets still bound
-//     them, and an overlay upstream is in-cluster and keyless — but the
-//     command says this out loud before it applies anything.
+//     them, and the overlay ENTRY is keyless — though that says nothing
+//     about whether the endpoint behind the URL holds a key, which is
+//     why `--classification free` carries a warning of its own. The
+//     command says both out loud before it applies anything.
 
 import (
 	"encoding/json"
@@ -127,12 +129,14 @@ var Classifications = []string{"free", "metered"}
 var Protocols = []string{"chat_completions", "responses"}
 
 // PathProtocol returns the protocol a forwarded path names, or "".
+// Whole SEGMENTS, not a string suffix — see the plane's own copy for
+// why `v1/xresponses` must not read as the Responses API.
 func PathProtocol(path string) string {
 	p := strings.Trim(path, "/")
 	switch {
-	case strings.HasSuffix(p, "chat/completions"):
+	case p == "chat/completions" || strings.HasSuffix(p, "/chat/completions"):
 		return "chat_completions"
-	case strings.HasSuffix(p, "responses"):
+	case p == "responses" || strings.HasSuffix(p, "/responses"):
 		return "responses"
 	}
 	return ""
@@ -150,8 +154,14 @@ func PathProtocol(path string) string {
 func ParseModelURL(raw string) (base, path, service, namespace string, port int, err error) {
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil || u.Scheme != "http" || u.Host == "" {
-		return "", "", "", "", 0, fmt.Errorf("--url %q: want the endpoint's own in-cluster URL including the path "+
-			"its clients POST to, e.g. http://<service>.<namespace>:<port>/v1/responses", raw)
+		// http only, and said rather than implied: an in-cluster endpoint
+		// serving TLS is legal in the committed table but not here,
+		// because the proxy would then need a trust anchor for it and
+		// `ca_file` is one of the fields an overlay may not set.
+		return "", "", "", "", 0, fmt.Errorf("--url %q: want the endpoint's own in-cluster URL over plain http, "+
+			"including the path its clients POST to, e.g. http://<service>.<namespace>:<port>/v1/responses. "+
+			"An in-cluster endpoint serving TLS needs a trust anchor, and `ca_file` is one of the fields an "+
+			"overlay may not set — that one is a reviewed entry in k8s/plane/upstreams.yaml", raw)
 	}
 	if u.User != nil {
 		return "", "", "", "", 0, fmt.Errorf("--url %q: a URL carrying credentials is refused", raw)

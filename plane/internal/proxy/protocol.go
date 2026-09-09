@@ -19,7 +19,12 @@ package proxy
 // that reports zero tokens and a response the plane cannot read are
 // different facts, and the second one is not allowed to look like the
 // first: see forward() in handler.go, which refuses a success it could
-// not meter rather than relaying it.
+// not meter rather than relaying it — with one exception it is worth
+// carrying here rather than only there, because this is the file a
+// reader reaches first. A stream the CLIENT ASKED FOR has already been
+// flushed by the time its usage is missing; that one is relayed, logged
+// at ERROR and ledgered `unmetered`. Every other shape, including a
+// stream nobody asked for, is refused before a byte reaches the caller.
 
 import (
 	"encoding/json"
@@ -77,8 +82,16 @@ func deref(v *int64) int64 {
 }
 
 // readUsage extracts the usage envelope from a whole, non-streamed
-// response body. A body that is not JSON, or carries no usage object,
-// returns found=false — never a plausible zero.
+// response body. A body that is not JSON, carries no usage object, or
+// arrives under a protocol this file has no reader for returns
+// found=false — never a plausible zero.
+//
+// The switch has no permissive default, and that is deliberate. Parse
+// guarantees every upstream carries one of these two, so an unknown
+// protocol here is a programming error rather than an operator one —
+// and the failure mode of a default that fell back to chat-completions
+// would be a third protocol metered as if it were the first, which is
+// precisely the bug this file exists to remove.
 func readUsage(protocol string, raw []byte) usage {
 	switch protocol {
 	case config.ProtocolResponses:
@@ -90,7 +103,7 @@ func readUsage(protocol string, raw []byte) usage {
 		}
 		u, _ := envelope.Usage.counts()
 		return u
-	default:
+	case config.ProtocolChatCompletions:
 		var envelope struct {
 			Usage *chatUsage `json:"usage"`
 		}
@@ -100,6 +113,7 @@ func readUsage(protocol string, raw []byte) usage {
 		u, _ := envelope.Usage.counts()
 		return u
 	}
+	return usage{}
 }
 
 // readStreamUsage extracts usage from ONE SSE `data:` payload, and
@@ -112,7 +126,9 @@ func readUsage(protocol string, raw []byte) usage {
 // terminal ones — response.completed, and response.incomplete or
 // response.failed when a turn ends early — carry a whole `response`
 // object with the usage inside it. A turn that ends early still spent
-// tokens, so all three are read; the last one seen wins.
+// tokens, so no event type is filtered on at all: any payload carrying a
+// usage the shape recognises is read, and the last one seen wins. The
+// non-terminal events carry none, so they cannot overwrite it.
 func readStreamUsage(protocol string, payload []byte) (usage, bool) {
 	switch protocol {
 	case config.ProtocolResponses:
@@ -133,7 +149,7 @@ func readStreamUsage(protocol string, payload []byte) (usage, bool) {
 			return usage{}, false
 		}
 		return u.counts()
-	default:
+	case config.ProtocolChatCompletions:
 		var chunk struct {
 			Usage *chatUsage `json:"usage"`
 		}
@@ -142,6 +158,7 @@ func readStreamUsage(protocol string, payload []byte) (usage, bool) {
 		}
 		return chunk.Usage.counts()
 	}
+	return usage{}, false
 }
 
 // prepareStream returns the request body to forward for a streamed call.

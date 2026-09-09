@@ -456,7 +456,7 @@ func TestDeniesUnknownUpstreamAndWrongPath(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	require.Equal(t, 403, doChat(t, mux, "tok", "/upstream/nope/v1/chat/completions", chatBody).Code)
 	require.Equal(t, 403, doChat(t, mux, "tok", "/upstream/ollama/v1/embeddings", chatBody).Code)
@@ -475,7 +475,7 @@ func TestForwardStripsKaimahiTokenAndInjectsRealCredential(t *testing.T) {
 	credFile := filepath.Join(dir, "cred")
 	require.NoError(t, os.WriteFile(credFile, []byte("real-upstream-key\n"), 0o600))
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"copilot": {BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
 			CredentialFile: credFile, ExtraHeaders: map[string]string{"Copilot-Integration-Id": "vscode-chat"}},
 	}))
 	w := doChat(t, mux, "kmh_opaque", "/upstream/copilot/chat/completions", chatBody)
@@ -498,7 +498,7 @@ func TestFreeUpstreamForwardsBareAndLedgersFree(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, gotReq, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
 	require.Equal(t, 200, w.Code)
@@ -514,7 +514,7 @@ func TestPricedModelCostsAreLedgered(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"copilot": {BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
 			Prices: map[string]pricing.Price{"test-model": {InCentsPer1M: 1_000_000, OutCentsPer1M: 2_000_000}}},
 	}))
 	require.Equal(t, 200, doChat(t, mux, "tok", "/upstream/copilot/chat/completions", chatBody).Code)
@@ -528,7 +528,7 @@ func TestPricedPairGateDeniesUnpricedModelUnderCentsBudget(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello", CapCents: i64(100)})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"copilot": {BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered},
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/copilot/chat/completions", chatBody)
 	require.Equal(t, 403, w.Code)
@@ -542,7 +542,7 @@ func TestBudgetExhaustionFailsClosedWith429(t *testing.T) {
 	f.monthToks = 10
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
 	require.Equal(t, 429, w.Code)
@@ -558,7 +558,7 @@ func TestMeterStoreErrorFailsClosedWith403(t *testing.T) {
 	f.monthErr = errors.New("db down")
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	require.Equal(t, 403, doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody).Code)
 }
@@ -568,7 +568,7 @@ func TestMissingUpstreamCredentialFailsClosed(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"copilot": {BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "chat/completions", Classification: config.ClassMetered,
 			CredentialFile: "/nonexistent/cred"},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/copilot/chat/completions", chatBody)
@@ -580,7 +580,7 @@ func TestUpstreamFailureIsStillLedgered(t *testing.T) {
 	f := newFakeStore()
 	f.addToken("tok", store.Credential{Name: "hello"})
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: "http://127.0.0.1:1", Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: "http://127.0.0.1:1", Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
 	require.Equal(t, 502, w.Code)
@@ -593,7 +593,7 @@ func TestLedgerWriteFailureTripsFailClosedUntilRecovery(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	// First call forwards, but its ledger write fails -> plane trips.
 	f.ledgerErr = errors.New("disk full")
@@ -624,7 +624,7 @@ func TestStreamingInjectsIncludeUsageAndCapturesUsage(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: srv.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: srv.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	body := `{"model": "test-model", "stream": true, "messages": []}`
 	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", body)
@@ -648,7 +648,7 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 	}))
 	t.Cleanup(redirector.Close)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: redirector.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: redirector.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
 	require.Equal(t, http.StatusTemporaryRedirect, w.Code, "3xx must surface, not be followed")
@@ -661,7 +661,7 @@ func TestBudgetDenialFilesApprovalRequestDeduped(t *testing.T) {
 	f.monthToks = 10
 	up, _, _ := newUpstream(t)
 	deps := testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	})
 	deps.Meter = &meter.Meter{Store: f}
 	mux := proxy.NewDataMux(deps)
@@ -691,7 +691,7 @@ func TestBudgetGrantAdmitsOverCapChat(t *testing.T) {
 		Amount: i64(100), MaxUses: i32(1)}}
 	up, _, _ := newUpstream(t)
 	deps := testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	})
 	deps.Meter = &meter.Meter{Store: f}
 	mux := proxy.NewDataMux(deps)
@@ -731,8 +731,8 @@ func TestAdmittedCallHoldsUntilItsLedgerWrite(t *testing.T) {
 	f.addToken("free", store.Credential{Name: "uncapped"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
-		"copilot": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassMetered,
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassMetered,
 			CredentialFile: "/nonexistent/cred"},
 	}))
 	require.Equal(t, 200, doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody).Code)

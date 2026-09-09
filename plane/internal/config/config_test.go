@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -205,5 +206,36 @@ func TestParseTTL(t *testing.T) {
 	for _, in := range []string{"", "m", "5x", "-5m", "0", "31d", "1.5h", "5 m", "9999999999s", "999999999d", "999999999h"} {
 		_, err := config.ParseTTL(in)
 		require.Error(t, err, in)
+	}
+}
+
+// PathProtocol matches whole segments. A suffix match would read
+// `v1/xresponses` as the Responses API — guessing a protocol for a path
+// that names none, which is the one thing it exists to stop. The
+// scaffolder carries a copy of this rule and the same table
+// (internal/kmx/scaffold/model_test.go).
+func TestPathProtocolMatchesSegmentsNotSuffixes(t *testing.T) {
+	for _, tc := range []struct{ path, want string }{
+		{"v1/chat/completions", config.ProtocolChatCompletions},
+		{"/v1/chat/completions/", config.ProtocolChatCompletions},
+		{"openai/deployments/gpt/chat/completions", config.ProtocolChatCompletions},
+		{"chat/completions", config.ProtocolChatCompletions},
+		{"v1/responses", config.ProtocolResponses},
+		{"responses", config.ProtocolResponses},
+		{"api/generate", ""},
+		{"", ""},
+		{"v1/xresponses", ""},
+		{"v1/notchat/completions", ""},
+		{"v1/responsesx", ""},
+	} {
+		if got := config.PathProtocol(tc.path); got != tc.want {
+			t.Fatalf("PathProtocol(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+	// And the consequence at load: a path naming no protocol must demand
+	// a declaration rather than being handed one.
+	_, err := config.Parse([]byte(`{"upstreams": {"a": {"base_url": "http://x", "path": "v1/xresponses", "classification": "free"}}}`))
+	if err == nil || !strings.Contains(err.Error(), "names no protocol") {
+		t.Fatalf("want a demand for an explicit protocol, got: %v", err)
 	}
 }

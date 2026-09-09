@@ -24,8 +24,8 @@ func TestInternetUpstreamNeverFallsBackToThePlainClient(t *testing.T) {
 		// The plain-http test server, marked internet: the hardened client
 		// (had one been injected) would refuse it; with none injected the
 		// call must fail closed, never reach srv.
-		"copilot": {BaseURL: srv.URL, Path: "chat/completions", Classification: config.ClassMetered, Internet: true},
-		"ollama":  {BaseURL: srv.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: srv.URL, Path: "chat/completions", Classification: config.ClassMetered, Internet: true},
+		"ollama":  {Protocol: config.ProtocolChatCompletions, BaseURL: srv.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	})
 	mux := proxy.NewDataMux(deps)
 	w := doChat(t, mux, "kmh_opaque", "/upstream/copilot/chat/completions", `{"model": "gpt-5-mini", "messages": []}`)

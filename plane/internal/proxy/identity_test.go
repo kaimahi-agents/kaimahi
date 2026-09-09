@@ -23,7 +23,8 @@ func freeUpstream(t *testing.T) map[string]config.Upstream {
 	t.Helper()
 	srv, _, _ := newUpstream(t)
 	return map[string]config.Upstream{"ollama": {
-		BaseURL: srv.URL, Path: "v1/chat/completions", Classification: config.ClassFree}}
+		BaseURL: srv.URL, Path: "v1/chat/completions",
+		Protocol: config.ProtocolChatCompletions, Classification: config.ClassFree}}
 }
 
 func TestExpiredCredentialIsRefusedNamedAndLedgered(t *testing.T) {

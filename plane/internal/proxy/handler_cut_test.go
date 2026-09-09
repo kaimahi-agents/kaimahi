@@ -61,7 +61,7 @@ func TestHostedUpstreamCutBodyIsA502AndLedgered(t *testing.T) {
 	f := newFakeStore()
 	f.addToken("kmh_opaque", store.Credential{Name: "hello"})
 	deps := testDeps(f, map[string]config.Upstream{
-		"copilot": {BaseURL: "https://example.com", Path: "chat/completions",
+		"copilot": {Protocol: config.ProtocolChatCompletions, BaseURL: "https://example.com", Path: "chat/completions",
 			Classification: config.ClassMetered, Internet: true, CAFile: caFile},
 	})
 	deps.InternetClient = hardened

@@ -3299,6 +3299,18 @@ jobs:
             if grep -q 'refused rather than resolved' blind.out; then found=1; break; fi
             sleep 2
           done
+          # The refusal can appear on the very first poll, before the new
+          # pod exists at all — so wait for the rollout to have actually
+          # produced an unready replica before reading readyReplicas.
+          # Without this, `ready=2` could pass having observed nothing,
+          # which is weaker than the message it fails with claims.
+          unready=""
+          for _ in $(seq 1 60); do
+            desired=$(kubectl --context kind-kaimahi-p1 -n kaimahi get deploy kaimahi-proxy -o jsonpath='{.spec.replicas}')
+            total=$(kubectl --context kind-kaimahi-p1 -n kaimahi get pods -l app=kaimahi-proxy --no-headers | wc -l)
+            if [ "$total" -gt "$desired" ]; then unready=1; break; fi
+            sleep 2
+          done
           ready=$(kubectl --context kind-kaimahi-p1 -n kaimahi get deploy kaimahi-proxy -o jsonpath='{.status.readyReplicas}')
           # Restore BEFORE asserting, so a failure here never wedges the
           # steps after it.
@@ -3307,6 +3319,7 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
           test -n "$found" || { echo 'a protocol contradicting its own path was NOT refused at load' >&2; exit 1; }
+          test -n "$unready" || { echo 'the rollout never produced a new pod — nothing was actually refused at boot' >&2; exit 1; }
           test "$ready" = 2 || { echo "the refused rollout took a serving replica down (ready=$ready)" >&2; exit 1; }
           echo 'a protocol that disagrees with its path was refused at load; both replicas kept serving'
       - name: "Models: the entry survives the next kmx plane"
@@ -3328,6 +3341,15 @@ jobs:
       - name: "Models: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
+          # Deletes the namespace, and with it the endpoint and the two
+          # NetworkPolicy pairs. It deliberately leaves the overlay keys:
+          # a fragment naming a Service that no longer resolves is
+          # harmless — the boot-time egress vet skips a host it cannot
+          # resolve rather than refusing it (plane/cmd/kaimahi-proxy/wire.go)
+          # — and removing them would test the teardown rather than the
+          # onboarding. The opposite behaviour (a fatal vet) would have
+          # wedged every proxy restart after this step, which is worth
+          # knowing about rather than discovering.
           KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/plain-model.sh down || true
       - name: "Onboarding: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'

@@ -57,12 +57,19 @@ var Protocols = []string{ProtocolChatCompletions, ProtocolResponses}
 // before protocols existed keeps working, unedited), and to REFUSE a
 // declaration that disagrees with its own path — which is the mistake
 // that produced the silent zero, written the other way round.
+//
+// It matches whole SEGMENTS, not a string suffix, and the difference is
+// not pedantry: a plain `HasSuffix` reads `v1/xresponses` as the
+// Responses API. That would guess a protocol for a path that names none
+// — the one thing this function exists to stop — and would then refuse
+// the operator who correctly declared the other one, in a message
+// blaming their declaration.
 func PathProtocol(path string) string {
 	p := strings.Trim(path, "/")
 	switch {
-	case strings.HasSuffix(p, "chat/completions"):
+	case p == "chat/completions" || strings.HasSuffix(p, "/chat/completions"):
 		return ProtocolChatCompletions
-	case strings.HasSuffix(p, "responses"):
+	case p == "responses" || strings.HasSuffix(p, "/responses"):
 		return ProtocolResponses
 	}
 	return ""

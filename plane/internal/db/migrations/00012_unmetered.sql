@@ -30,9 +30,13 @@ ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_cost_source_check
 
 -- +goose Down
 -- Narrowing again would reject rows this version legitimately wrote, so
--- the down migration removes those rows' claim rather than the rows:
--- 'unpriced' is the nearest true statement about a row whose tokens were
--- never read on an upstream whose cost could not be computed.
+-- the down migration rewrites those rows rather than dropping them.
+-- 'unpriced' is the nearest LEGAL value, and not a true one: it asserts
+-- a metered upstream with no price row and tokens that were counted,
+-- and neither may hold — the row may have been a free-classified
+-- upstream, and its tokens were by definition never read. A down
+-- migration cannot preserve a fact the schema it returns to has no word
+-- for; what it can do is say so, which is what this comment is.
 UPDATE ledger_entry SET cost_source = 'unpriced' WHERE cost_source = 'unmetered';
 ALTER TABLE ledger_entry DROP CONSTRAINT ledger_entry_cost_source_check;
 ALTER TABLE ledger_entry ADD CONSTRAINT ledger_entry_cost_source_check

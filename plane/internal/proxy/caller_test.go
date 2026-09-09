@@ -38,7 +38,7 @@ func TestEveryLedgerRowSaysWhoCalled(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 
 	require.Equal(t, 200, chatAs(t, mux, "tok", "curl/8.5.0", "10.244.3.9:52110",
@@ -57,7 +57,7 @@ func TestADeniedLedgerRowSaysWhoCalledToo(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 
 	require.Equal(t, 403, chatAs(t, mux, "tok", "curl/8.5.0", "10.0.0.7:1",
@@ -73,7 +73,7 @@ func TestAHostileCallerNameCannotBreakALedgerRow(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 
 	// Several kilobytes of quotes and a forged-looking ledger line. No
@@ -98,7 +98,7 @@ func TestACallerThatOffersNoNameIsNotACallerNotRecorded(t *testing.T) {
 	f.addToken("tok", store.Credential{Name: "hello"})
 	up, _, _ := newUpstream(t)
 	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
-		"ollama": {BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
+		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
 	}))
 
 	require.Equal(t, 200, chatAs(t, mux, "tok", "", "10.0.0.7:1",

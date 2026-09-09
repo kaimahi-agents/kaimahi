@@ -687,7 +687,7 @@ and refuses every call with "path not allowed".
 
 | Flag | Meaning |
 |---|---|
-| `--url <url>` | the endpoint's OWN in-cluster URL **including the path its clients post to**, e.g. `http://<service>.<namespace>:<port>/v1/responses` |
+| `--url <url>` | the endpoint's OWN in-cluster URL, over plain **http**, **including the path its clients post to** — e.g. `http://<service>.<namespace>:<port>/v1/responses`. An in-cluster endpoint serving TLS needs a trust anchor, and `ca_file` is one of the fields an overlay may not set, so that one is a reviewed entry in the committed table |
 | `--classification free\|metered` | required, no default. `free` is an explicit $0; `metered` counts tokens always and costs only where a price is configured |
 | `--protocol chat_completions\|responses` | where the meter reads token counts. Needed only when the path names neither; a value that disagrees with its own path is refused |
 | `--server-egress none\|dns\|keep` | what the scaffolded policy lets the ENDPOINT reach. Default `none` — a model server that pulls weights at startup needs `keep`, deliberately |

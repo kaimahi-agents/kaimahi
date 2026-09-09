@@ -99,7 +99,8 @@ func reasonFor(status int, msg string) metrics.Reason {
 		return metrics.ReasonBadRequest
 	case strings.HasPrefix(msg, "model has no configured price"):
 		return metrics.ReasonUnpricedModel
-	case strings.HasPrefix(msg, "upstream answered but reported no usage"):
+	case strings.HasPrefix(msg, "upstream answered but reported no usage"),
+		strings.HasPrefix(msg, "upstream answered with a stream the request did not ask for"):
 		return metrics.ReasonUnmetered
 	case strings.HasPrefix(msg, "spend ledger unavailable"):
 		return metrics.ReasonAuditDegraded
@@ -341,6 +342,28 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 
 	var u usage
 	streamed := strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream")
+	// A stream nobody asked for is refused BEFORE a byte of it is
+	// relayed, and this is the narrower half of the metering rule rather
+	// than an extra one.
+	//
+	// `stream_options.include_usage` is only sent when the REQUEST said
+	// stream (the Responses API needs no such ask, and chat-completions
+	// rejects the parameter on a non-streamed call). So an upstream that
+	// answers `text/event-stream` to a request that did not ask for one
+	// is answering in a shape the plane deliberately did not prepare to
+	// meter — and if it were let through, its usage would be missing for
+	// a reason of the plane's own making, in the one place a refusal is
+	// no longer possible. Caught here, the body is still ours.
+	if streamed && !req.Stream {
+		slog.Error("proxy: upstream streamed a response the request did not ask for; refusing rather than relaying it unmeterable",
+			"upstream", name, "protocol", up.Protocol, "model", req.Model)
+		metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
+		metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUnmetered)
+		h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway, true), res.ID)
+		http.Error(w, "upstream answered with a stream the request did not ask for; "+
+			"refused rather than forwarded unmetered", http.StatusBadGateway)
+		return
+	}
 	if streamed {
 		copyResponseHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
@@ -387,9 +410,12 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(raw)
 	}
 	metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
-	// The one case the refusal above cannot reach: a STREAM whose bytes
-	// have already left (the buffered path returned rather than arriving
-	// here, so this condition is reachable only for `streamed`). It is
+	// The one case a refusal cannot reach: a stream the client ASKED for,
+	// whose bytes have already left (the buffered path returned rather
+	// than arriving here, and a stream nobody asked for was refused
+	// above, so this condition is reachable only for `streamed &&
+	// req.Stream`). The plane asked for usage on that call and the
+	// upstream did not send it. It is
 	// recorded as `unmetered` and logged at ERROR — the plane cannot
 	// recall an answer it has flushed, and it will not pretend the call
 	// cost nothing either.

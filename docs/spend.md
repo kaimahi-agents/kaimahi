@@ -235,6 +235,18 @@ plane and not merely by kmx:
   still works under a token budget, and under a cents budget the
   priced-pair gate refuses it, which is the correct outcome.
 
+And one thing it *can* express that deserves saying out loud, because
+the obvious inference from the list above is wrong: **`classification` is
+the operator's claim, and the plane cannot check it.** An overlay entry
+being keyless does not make the *endpoint* keyless — the ordinary
+in-cluster shape for a paid model is a router (LiteLLM, an
+OpenAI-compatible gateway) that holds the key itself. Declaring such an
+endpoint `free` means every call through it is ledgered as costing
+nothing and no cents budget can ever bind it. That is exactly as true of
+the committed table, and it is not something enforcement can fix; what
+`kmx models add` does is refuse to let it pass silently — it prints the
+consequence whenever `free` is chosen.
+
 **There is no allowlist on this seam.** Unlike a tool upstream — which
 nothing can call until a credential allowlists a tool on it — a model
 upstream is reachable by every credential the plane has issued the moment
@@ -314,15 +326,28 @@ All unit-tested and live-verified:
   [The two protocols](#the-two-protocols) below. Denials are fixed
   zero-usage rows.
 - **A success the plane cannot meter is refused, not relayed.** If a
-  non-streamed response carries no usage the declared protocol can read,
-  the answer is discarded, the caller gets a 502, and the row is written
-  with `source=unmetered`. Only one of the two available answers —
-  refuse it, or hand it over with a zero beside it — is consistent with a
-  plane that exists to meter, and the second one was the measured
-  failure that produced this rule. The single case the refusal cannot
-  reach is a STREAM whose bytes have already left; that one is relayed,
-  logged at ERROR, and ledgered `unmetered` so it is visible in the
-  trail. Token counts are never invented.
+  response carries no usage the declared protocol can read, the answer is
+  discarded, the caller gets a 502, and the row is written with
+  `source=unmetered`. Only one of the two available answers — refuse it,
+  or hand it over with a zero beside it — is consistent with a plane that
+  exists to meter, and the second one was the measured failure that
+  produced this rule. Token counts are never invented.
+- **A stream the request did not ask for is refused too**, before a byte
+  of it is relayed. `stream_options.include_usage` is only sent when the
+  request said `stream`, so an upstream that answers `text/event-stream`
+  anyway is answering in a shape the plane deliberately did not prepare
+  to meter — and letting it through would land in the one place a
+  refusal is no longer possible.
+- **That one place is a stream the client DID ask for.** Its bytes have
+  already been flushed by the time the missing usage is known, so it is
+  relayed, logged at ERROR, and ledgered `unmetered` — visible in the
+  trail rather than a plausible zero. Repeated `unmetered` rows do not
+  trip the plane closed the way a failed ledger write does: a ledger that
+  cannot be written is the plane's own fault and affects every credential,
+  while an upstream that will not report usage is one upstream, and
+  taking the whole data plane down for it would refuse traffic that is
+  being metered correctly. Watch the row, and the
+  `reason="unmetered"` decision metric.
 
 What each status code from the plane means, and what to do about it, is
 in the [FAQ](FAQ.md#what-the-planes-status-codes-mean).

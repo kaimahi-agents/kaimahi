@@ -27,9 +27,13 @@ func TestTheScaffoldsProtocolVocabularyMatchesThePlane(t *testing.T) {
 		local []string
 	}{
 		// Protocols: the two ProtocolX constants in the plane's config.
-		{"protocols", regexp.MustCompile(`Protocol(?:ChatCompletions|Responses)\s+=\s+"([a-z_]+)"`), Protocols},
-		// Classifications: the two ClassX constants beside them.
-		{"classifications", regexp.MustCompile(`Class(?:Free|Metered)\s+=\s+"([a-z]+)"`), Classifications},
+		// The patterns enumerate no constant NAMES on purpose. A regex
+		// naming the two it already knows would go on passing the day a
+		// third arrived — it would match nothing new, find the same two,
+		// and call the scaffolder's stale list correct. Matching the
+		// SHAPE of the declaration is what makes an addition a failure.
+		{"protocols", regexp.MustCompile(`\bProtocol[A-Z][A-Za-z]*\s+=\s+"([a-z_]+)"`), Protocols},
+		{"classifications", regexp.MustCompile(`\bClass[A-Z][A-Za-z]*\s+=\s+"([a-z]+)"`), Classifications},
 	} {
 		var found []string
 		for _, m := range tc.re.FindAllStringSubmatch(source, -1) {
@@ -56,20 +60,33 @@ func TestTheScaffoldsProtocolVocabularyMatchesThePlane(t *testing.T) {
 // scaffold a fragment the plane then refuses for contradicting itself.
 func TestPathProtocolAgreesWithThePlanesOwnRule(t *testing.T) {
 	source := planeConfigSource(t)
-	// The plane's PathProtocol matches on these two suffixes. If either
-	// literal moves, this pin has to be read again.
-	for _, suffix := range []string{`"chat/completions"`, `"responses"`} {
-		if !strings.Contains(source, "HasSuffix(p, "+suffix+")") {
-			t.Fatalf("the plane's PathProtocol no longer tests %s — the scaffolder's copy may now disagree", suffix)
+	// The plane matches whole segments, not string suffixes. Pinning the
+	// exact expressions is what makes a change to either side visible
+	// here: a plain HasSuffix would read `v1/xresponses` as the Responses
+	// API in the plane while this copy said otherwise.
+	for _, expr := range []string{
+		`p == "chat/completions" || strings.HasSuffix(p, "/chat/completions")`,
+		`p == "responses" || strings.HasSuffix(p, "/responses")`,
+	} {
+		if !strings.Contains(source, expr) {
+			t.Fatalf("the plane's PathProtocol no longer reads `%s` — the scaffolder's copy may now disagree", expr)
 		}
 	}
 	for _, tc := range []struct{ path, want string }{
 		{"v1/chat/completions", "chat_completions"},
 		{"/v1/chat/completions/", "chat_completions"},
 		{"openai/deployments/gpt/chat/completions", "chat_completions"},
+		{"chat/completions", "chat_completions"},
 		{"v1/responses", "responses"},
+		{"responses", "responses"},
 		{"api/generate", ""},
 		{"", ""},
+		// The boundary cases, and the reason this table is shared rather
+		// than written twice: a suffix match reads both of these as a
+		// protocol they are not, in both copies at once.
+		{"v1/xresponses", ""},
+		{"v1/notchat/completions", ""},
+		{"v1/responsesx", ""},
 	} {
 		if got := PathProtocol(tc.path); got != tc.want {
 			t.Fatalf("PathProtocol(%q) = %q, want %q", tc.path, got, tc.want)
