@@ -3,8 +3,11 @@
 **Subject:** [`orka-agents/orka`](https://github.com/orka-agents/orka) —
 "Cloud and AI-native multi-agent orchestration platform for Kubernetes".
 MIT, Microsoft-governed today and intended for donation to a
-community-governed foundation. Twenty-six CRDs, a controller with an
-embedded React dashboard, a REST API plus OpenAI- and
+community-governed foundation. Seventeen CRDs in the `v0.1.3` release bundle this lane
+installed — twenty-six in the staged chart on `main`, twelve in `main`'s
+own `deploy/orka.yaml`, and "twelve cluster-scoped CRDs" in their
+`v0.1.3` getting-started page; the number depends entirely on which
+artifact you mean. A controller with an embedded React dashboard, a REST API plus OpenAI- and
 Anthropic-compatible endpoints, an authenticated provider proxy, durable
 execution events, RuntimePools that keep real coding-agent CLIs warm
 over ACP, and an approval gate. **It is owned by a teammate.**
@@ -155,14 +158,26 @@ this project has a name for — a passing condition looser than
 the claim — and we have shipped it ourselves
 more than once.
 
-**Their documentation already anticipates it.** The same troubleshooting
-section says that if a bundle lacks the helper roles, apply
-`config/rbac/api_editor_role.yaml` "from a checkout containing the
-authorization update", and names the different, unprefixed role name
-that file creates. That instruction is exactly right and it worked
-first time — but it requires a clone, which is the one thing the
-released path advertises you will not need. **The Helm path does not
-have this problem at all**: the v0.1.3 chart creates `orka-client` and
+**The version mismatch is the interesting part, and it is not confined
+to the old release.** `orka-api-editor-role` appears nowhere at
+`v0.1.3` — not the role, not the instruction. It also appears nowhere in
+`main`'s own `deploy/orka.yaml`. Yet `main`'s README (`:123`) and
+getting-started page (`:93`) both tell you to install *the v0.1.3
+manifest*, and `main`'s troubleshooting page (`:199`) then tells you to
+bind that role. **The documentation as it stands today pairs an install
+of one artifact with a client-setup step for a different one**, and the
+only place the role actually exists is a checkout's
+`config/rbac/api_editor_role.yaml`, under the different, unprefixed name
+`api-editor-role`.
+
+**Their documentation does anticipate exactly this**, in the same
+section: if a bundle lacks the helper roles, apply that file "from a
+checkout containing the authorization update", and use the unprefixed
+name. That instruction is right, it names the right different name, and
+it worked first time — but it requires a clone, which is the one thing
+the released path advertises you will not need.
+
+**The Helm path does not have this problem at all**: the v0.1.3 chart creates `orka-client` and
 its own `…-client` ClusterRole and binding
 (`charts/orka/templates/rbac.yaml:192`, `serviceaccount.yaml:13`). The
 defect is confined to the raw-manifest path, which is the one printed
@@ -215,17 +230,31 @@ Orka serves `/openai/v1/chat/completions` and
 can set `OPENAI_BASE_URL` and `OPENAI_API_KEY` can point at it. Three
 things happen there, and all three are worth this project's attention:
 
-**It authenticates.** Unauthenticated is `401`. The bearer token is a
-Kubernetes ServiceAccount token checked through TokenReview, and the
-caller needs RBAC for the operation
-(`internal/api/external_authorization.go:214` maps
-`POST /openai/v1/chat/completions` to `create` on `chats`). An
-OpenAI client sends its "API key" as `Authorization: Bearer`, so a SA
-token drops straight into the field the app already has. This is the
-thing our own tool seam could *not* do for the same third-party app —
-[the foreign-app report](2026-09-08-foreign-app-sundae-funday.md) had to
-put an nginx shim in the pod because their MCP client could not set a
-header at all.
+**It authenticates — and on the version this lane ran, that is all it
+does.** Unauthenticated is `401`; the bearer token is a Kubernetes
+ServiceAccount token checked through TokenReview. An OpenAI client sends
+its "API key" as `Authorization: Bearer`, so a SA token drops straight
+into the field the app already has. This is the thing our own tool seam
+could *not* do for the same third-party app — [the foreign-app
+report](2026-09-08-foreign-app-sundae-funday.md) had to put an nginx
+shim in the pod because their MCP client could not set a header at all.
+
+**The authorization half is newer than the release, and this report
+nearly got it wrong.** At `v0.1.3` the compat groups take only the
+authentication middleware — `oai.Use(externalAuth)`,
+`internal/api/server.go:395-396` — so **any authenticated ServiceAccount
+token in the cluster could drive the model seam**, with no per-route
+permission check. On `main` the same groups go through
+`s.externalAPIGroup(…)` (`server.go:458`), which wraps every route in
+`authorizeExternalRoute` and runs a real SubjectAccessReview against
+`coreAPIPolicy("create", "chats", "")`
+(`internal/api/external_authorization.go:214`). That file does not exist
+at `v0.1.3`; it arrived in commit `25da6e4`, *"fix(api): enforce caller
+authorization across external routes"*, dated 2026-09-06 — three days
+before this lane ran, and three weeks after the tag it ran against.
+**So the credential-custody praise below is earned on both versions; the
+access-control praise is earned only on `main`.** Anyone repeating this
+report's conclusion should say which.
 
 **It refuses to be told its own upstream.** The caller names a model,
 not a URL. `local/qwen2.5:3b` resolved; a bare model with no matching
@@ -241,17 +270,13 @@ $ POST /openai/v1/chat/completions  {"model":"assistant", …}
 allow. The key stays in the cluster. **This is credential custody for a
 workload Orka did not launch, and it is genuinely good.**
 
-The authorization is real rather than a rubber stamp, and it costs the
-adopter something worth naming. Every compat route is wrapped by
-`authorizeExternalRoute` (`internal/api/external_authorization.go:250`),
-which runs a Kubernetes SubjectAccessReview against
-`coreAPIPolicy("create", "chats", "")` (`:214`). A workload's default
-ServiceAccount has no such grant, so a cluster admin has to add one
-Role and one RoleBinding. **The honest adoption cost for their model
-seam is therefore two configuration values, one RoleBinding, and one
-`Provider` object** — against the two configuration values the
-foreign-app report needed for ours. Close, and in their favour on
-custody.
+On `main`, that authorization costs the adopter something worth naming:
+a workload's default ServiceAccount has no `create` on `chats`, so a
+cluster admin adds one Role and one RoleBinding. **The honest adoption
+cost for their model seam is two configuration values, one `Provider`
+object, and — from `main` onward — one RoleBinding**, against the two
+configuration values the foreign-app report needed for ours. Close, and
+in their favour on custody.
 
 **It is not a proxy by default.** This is the surprise. The handler's
 own comment is exact — "Inject Orka tools and run the server-side
@@ -447,11 +472,14 @@ not a self-reported string.
 ### 3c. Where theirs is stronger than ours
 
 `TargetSpecDigest` has no counterpart in this project.
-`approvalTargetSpecDigest` (`approval_gate.go:443-524`) folds into the
+`approvalTargetSpecDigest` (`approval_gate.go:443-505`) folds into the
 digest the tool's own definition, the *version of the Secret* the tool
-will authenticate with (`:1268` requires an auth secret version, `:1277`
-includes it), and the identity of any `OutboundAccessPolicy` in force
-(`:2416`). So an approval granted before a credential was rotated, or
+will authenticate with — `:606-616` refuses to bind an approval at all
+when that version cannot be read, and `:473`/`:495` fold the auth ref's
+UID and resourceVersion into the digested identity, both only when the
+tool actually declares `spec.http.authSecretRef` — and the identity of
+any `OutboundAccessPolicy` in force (`approvalOutboundPolicyVersion`,
+`:420-450`, folded in at `:468-476`). So an approval granted before a credential was rotated, or
 before the tool's URL changed, cannot be redeemed afterwards — it goes
 stale and asks again (`staleDecisionForTarget`, `:720-733`). Their test
 file carries the adversarial cases by name:
@@ -554,13 +582,13 @@ something run on the cluster above or read at `597a8ab` / `v0.1.3`.
 | **Money-denominated spend ledger + price gate** | **None.** Zero occurrences of price, cost-in-currency, USD or cents in the Go tree. Token counts per model request are recorded in durable events; there is no aggregate, no budget enforced against them, and no cost metric among the 25 `orka_*` metric names — about ten
 underlying metrics once histogram suffixes are folded — that a live
 v0.1.3 controller exposes — despite the README's "at what cost". | Postgres ledger in money, `cost_source`, and a gate that refuses a call whose cost cannot be computed rather than ledgering a zero. | **Gap on their side.** The single clearest thing we have that they do not. |
-| **Model seam for a foreign workload** | Yes — authenticated, Provider-scoped, key never leaves the cluster. Not a proxy unless the client sends `X-Orka-Tools: disabled`. No metering. No `/openai/v1/responses`. | Yes — metering proxy with a ledger; also no Responses support until recently, and it metered zero. | **Overlap.** Theirs has the better auth and custody story; ours has the meter. |
+| **Model seam for a foreign workload** | Yes — authenticated, Provider-scoped, key never leaves the cluster. Per-route authorization (SubjectAccessReview) only from `main`; at `v0.1.3` any authenticated cluster token could use it. Not a proxy unless the client sends `X-Orka-Tools: disabled`. No metering. No `/openai/v1/responses`. | Yes — metering proxy with a ledger; also no Responses support until recently, and it metered zero. | **Overlap.** Theirs has the better custody story, and from `main` the better access-control story; ours has the meter. |
 | **Tool seam for a foreign workload** | No. `Tool` describes what Orka dials, not a gateway a foreign app routes through. | Yes — enforcing MCP gateway, allowlist, argument policy, proven on a third-party app on kind and AKS. | **Complement.** The one architectural thing that composes rather than duplicates. |
 | **Governing a Deployment already running** | No adoption path: no mutating webhook in the bundle, workloads built from CRs. Model traffic only, by repointing a URL. | Two config values, their Deployment untouched. | **Complement**, narrowed to the model seam. |
 | **Durable audit / execution record** | Durable events on a PVC-backed store (`ReadWriteOnce`, `deploy/orka.yaml:11221`) — survives restart. Per-request token counts, tool names, `toolCallID`, `argumentBytes`. **Argument values are never recorded.** | Postgres ledger with `arg_summary`, caller claim and observed address. Tool *responses* recorded nowhere. | **Overlap.** Neither records what the other does — theirs the model-request shape, ours the argument values. |
 | **Credential custody** | Split, and the split is in the code. ACP runtimes never see a key — they reach the provider proxy. A native `type: ai` worker receives it: `job_builder.go:1301` mounts the Provider Secret as `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` via `secretKeyRef`, gated by `directProviderSecretsAllowed`, which is unconditional for `type: ai` because `isUntrustedComputeTask` (`:207-209`) is true only for `type: container`. Observed on a live pod, alongside `ORKA_ALLOW_BASH=true`. The README's "developers get a ServiceAccount token, not an API key" is true of developers, not of the agent process; their narrower `security.md` claims only the RuntimePool path and is accurate. | The key never reaches the agent on either seam. | **Overlap** on the proxy path, **gap on theirs** for native workers. |
 | **Orchestration, sessions, memory, chat** | Coordinator/specialist delegation, autonomous loops, transcript search, memory proposals, SSE chat with an agentic orchestrator, RuntimePools keeping Codex/Claude/Copilot/OpenCode warm over ACP. | Partly built, much smaller. | **Overlap, theirs far ahead.** Nothing here for us to add. |
-| **Runtime and CRDs** | 26 CRDs, its own controller, its own runtimes. | kagent as the runner, plus our plane. | **Overlap at the layer, different choices.** Not ours to reconcile. |
+| **Runtime and CRDs** | 17 CRDs at `v0.1.3` (26 in `main`'s staged chart), its own controller, its own runtimes. | kagent as the runner, plus our plane. | **Overlap at the layer, different choices.** Not ours to reconcile. |
 | **Observability** | 25 `orka_*` metric names exposed by the live v0.1.3 controller; 31 registrations in `internal/metrics/metrics.go` at `main`. Structured logs. OpenTelemetry traces and GenAI-semconv metrics behind `-enable-tracing` (off by default) and the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`internal/tracing/tracing.go:151`) — but the published chart has no value that sets either, so an operator hand-wires it. No token metric and no cost metric in any of them. | Prometheus via a PodMonitor an adopter can extend; OTel is a board candidate, unbuilt. | **Overlap, theirs ahead.** Take theirs; stop the OTel candidate. |
 | **Pod hardening** | Non-root, read-only rootfs, all capabilities dropped, observed on a live worker; four admission policies. | No pod-level isolation attempted. | **Gap on ours, theirs ahead.** |
 | **Egress control** | Split the other way. The base chart ships **zero** NetworkPolicy templates; the six that exist are in the staged harness-v2 chart, and the controller writes deny-all policies only for ACP RuntimePools and repository-monitor validation Tasks. A plain `type: ai` Job has unrestricted egress. | NetworkPolicy egress on the governed path, on by default. | **Overlap, ours ahead** on the default install. |
@@ -737,6 +765,20 @@ Specific, and each one because Orka does it and does it better.
   displayed arguments were `{}`, sitting beside a real one. It
   authorises nothing — its digest is the digest of the empty object —
   but it is an invitation to a wrong click.
+- **This report was adversarially checked before it was opened**, by a
+  reader told to assume every claim false, and that pass changed four
+  things. It caught the report attributing `main`'s route authorization
+  to the `v0.1.3` cluster the lane actually ran (§2b now separates
+  them); three citations in §3c that pointed at line numbers past the
+  end of the file, taken from the test file rather than the source; a
+  CRD count repeated three times that matched no artifact either project
+  ships; and the mechanism of §1c, which is a documentation version
+  mismatch rather than a missing role in one bundle. **Every one of
+  those was in a passage the author had already re-read.** Two further
+  corrections were caught before that pass — a quotation attributed to
+  the KARS report that appears only in this lane's prompt, and an
+  interval of "eight days" for something that happened five hours
+  earlier.
 - **Nobody was contacted and nothing was filed.** No issue, no comment,
   no pull request, no message. This document is the output.
 
