@@ -116,9 +116,10 @@ Clock starts at the first Orka command.
 | `Provider` + `Agent` applied, both `Ready` | 114 s |
 | first `Task` reaches `Succeeded` | **146 s** |
 
-Two pods, 17 CRDs (the release bundle's count; `main` has 26), a
-controller with an embedded dashboard, and a governed first task in
-**two and a half minutes**. That is fast, and the
+Two pods, 17 CRDs (what the `v0.1.3` bundle installs; `main`'s own
+`deploy/orka.yaml` carries 12 and its staged chart 26), a controller
+with an embedded dashboard, and a governed first task in **two and a
+half minutes**. That is fast, and the
 manifest is honest about what it needs: the README's own comment says
 the manifest mounts a Secret it does not create, "so make the namespace
 and that Secret first or the Pods never start" — a defect written down
@@ -615,7 +616,7 @@ something run on the cluster above or read at `597a8ab` / `v0.1.3`.
 | **Observability** | 25 `orka_*` metric names emitted by the live v0.1.3 controller this lane scraped — labelled counters only appear after first use, so the tree defines more. Structured logs. OpenTelemetry traces and GenAI-semconv metrics behind `-enable-tracing` (off by default) and the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`internal/tracing/tracing.go:151`) — but the published chart has no value that sets either, so an operator hand-wires it. No token metric and no cost metric in any of them. | Prometheus via a PodMonitor an adopter can extend; OTel is a board candidate, unbuilt. | **Overlap, theirs ahead.** Take theirs; stop the OTel candidate. |
 | **Pod hardening** | Non-root, read-only rootfs, all capabilities dropped, observed on a live worker; four admission policies. | No pod-level isolation attempted. | **Gap on ours, theirs ahead.** |
 | **Egress control** | Split the other way. The base chart ships **zero** NetworkPolicy templates; the six that exist are in the staged harness-v2 chart, and the controller writes deny-all policies only for ACP RuntimePools and repository-monitor validation Tasks. A plain `type: ai` Job has unrestricted egress. | NetworkPolicy egress on the governed path, on by default. | **Overlap, ours ahead** on the default install. |
-| **Cluster provisioning / front door** | Assumes a cluster. No installer, no published CLI binary — tags but no releases. | `curl \| sh` then one command, cluster included, 1 prerequisite. | **Gap on their side**, and it is the mission stated directly. |
+| **Cluster provisioning / front door** | Assumes a cluster. Four prerequisites at `v0.1.3` (Docker, `kubectl`, a cluster, an LLM key). No installer, no published CLI binary — tags but no GitHub Releases, which their own docs state. | `curl \| sh` then one command, cluster included, 1 prerequisite. | **Gap on their side**, and it is the mission stated directly. |
 | **AKS path** | Not exercised in this lane (§6). | `kmx lift --byo` onto somebody else's AKS cluster in 2 m 34 s. | **Not established.** |
 
 One line of that table needs its evidence stated rather than summarised.
