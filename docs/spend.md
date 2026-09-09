@@ -323,7 +323,7 @@ All unit-tested and live-verified:
   Billed usage is recorded even when the surrounding request fails.
 - Forwarded traffic meters through the `usage` object, and **which
   usage object depends on the upstream's declared protocol** — see
-  [The two protocols](#the-two-protocols) below. Denials are fixed
+  [The two protocols](#the-two-protocols) above. Denials are fixed
   zero-usage rows.
 - **A success the plane cannot meter is refused, not relayed.** If a
   response carries no usage the declared protocol can read, the answer is
