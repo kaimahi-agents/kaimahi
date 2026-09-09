@@ -396,6 +396,52 @@ Not a rule, but worth saying: the pull toward writing it yourself is
 strongest exactly when the fix is obvious and the queue is long, which
 is also when the review would have been cheapest.
 
+## Four projects surveyed in one week, and what is left that is ours
+
+Recorded 2026-09-09. Read from published documentation and READMEs, not
+from code — every claim here is a first reading and one of them is being
+checked properly by a lane.
+
+| project | what it is | overlaps us on |
+|---|---|---|
+| **AgentWeaver** (a teammate's) | .NET/TS platform turning intent into controlled repository operations; own runtime, sandboxed worktrees, human review before merge | approvals, audit, sandboxing. **No spend control published.** Vertical: one domain, gate on the diff |
+| **Solo.io kagent (commercial)** | the paid tier over the runtime this project builds on | agent-on-behalf-of, propose-then-approve, full audit, an Envoy waypoint proxy doing L7 guardrails, mTLS, multi-framework. **Open-source kagent has none of it** |
+| **Azure/kars** | open-source agent runtime for Kubernetes, Microsoft's Azure Cloud Native team | nearly everything, and more: per-tenant token budgets, hash-chained tamper-evident audit, MCP gateway plus a Rust inference router, approval-gate CRDs, OTLP, kind and AKS with identical topology, Microsoft Agent Framework as a supported runtime |
+| **OpenWork Labs** | desktop-first agent app, local files, bring your own keys; cloud and self-hosted team tiers | an MCP gateway with auth, roles and policies. **Not a Kubernetes play**, so not competing on this mission |
+
+**Three of the four ship an MCP gateway with policy attached.** That is
+table stakes now, not a differentiator, and this board should stop
+describing it as one.
+
+**Spend metering was claimed twice as the gap nobody else filled. That
+was wrong** — KARS has per-tenant token budgets and rate limits. The
+claim survived two surveys and died on the third, which is an argument
+for surveying before claiming rather than after.
+
+**What is left, and it is one thing.** An approval welded to the digest
+of a specific call with specific argument values, so approving
+`publish v1.2.3` cannot be spent on `v1.2.4`, and a standing constraint
+that bounds a FIELD rather than a verb. Nothing surveyed appears to do
+this — KARS's own reference says "One `ToolPolicy` = one tool gate" with
+`appliesTo` selecting a tool name. **Appears** is doing real work in that
+sentence: it is a documentation reading, and the KARS lane is settling it
+in code. If it comes back saying they bind calls too, four projects will
+have been surveyed and nothing unique found, and that is worth knowing
+plainly rather than softened.
+
+**A second difference, architectural, and possibly the more durable
+one.** KARS is a runtime you deploy an agent INTO — twelve CRDs, its own
+sandboxes, eight supported runtimes. This project governed a third-party
+application by changing two configuration values, with no source change,
+no chart change, no CRDs and no runtime adopted. Whether that niche is
+real depends on whether KARS can govern an agent it did not deploy,
+which the same lane is asking.
+
+**How to read all of this against the mission.** The goal is for running
+agents on AKS to be easy; this project is a means. A better answer
+arriving from somebody else is a win, not a threat, and the consistent
+response is to ask what we add rather than what we defend.
+
 ## Upstream candidates (kagent) — things we work around and should not
 
 D40 ruled that Kaimahi stays thin over kagent and that contributing
@@ -499,6 +545,43 @@ opening than three of mixed quality. U2 gets verified against the CRD
 before it is written down anywhere public.
 
 ## Under consideration (not GO — do not build yet)
+
+- **OTLP on the plane's seams.** Raised 2026-09-09, after an adopter
+  reached for it unprompted and a survey found everyone else has it.
+
+  **The evidence, in the order it arrived.** The author of the
+  application governed in `docs/reviews/2026-09-08-foreign-app-sundae-funday.md`
+  was told the integration was "two URLs and a credential" and asked
+  which two — guessing **the model endpoint and the OTLP endpoint**. He
+  reached for tracing wiring by instinct, because that is what he had
+  said the pain was. We do not sit there. Separately, `Azure/kars` lists
+  OTLP-compatible observability, and the same week's survey found MCP
+  gateways with policy in three of four products looked at. **Nobody
+  else treats agent observability and OTLP as separate problems.**
+
+  **What we have and what we do not.** `kmx flow` reads the four trails
+  as one timeline — what was allowed, refused, approved, and what it
+  spent — and the lift ships Managed Prometheus, Container Insights and
+  a workbook. That is a real half. What we do not emit is a span: an
+  operator correlating a slow agent turn against their own traces cannot
+  see our seams in the same view, because our seams are not in their
+  view at all.
+
+  **Why it may be small.** Both seams already buffer and time the calls
+  they meter and audit — the proxy records latency per upstream, the
+  gateway records a decision per call. Emitting a span around work
+  already measured is closer to wiring than to instrumentation. The
+  honest unknown is trace context: a span nobody can join to the caller's
+  trace is a lonely span, and W3C `traceparent` propagation through both
+  seams is the part that decides whether this is useful or decorative.
+
+  **The question to rule, and it is not "should we".** It is whether
+  this is a lane now or after the KARS investigation reports. If that
+  lane finds KARS is a better answer to the mission than we are, then
+  spending a week on our observability story is spending it in the wrong
+  place. **Sequenced after it, deliberately.**
+
+
 
 - **D49 (REFRAMED 2026-09-08 by the mission correction above, still open
   for the narrower question): the vendor of our runtime sells our feature
