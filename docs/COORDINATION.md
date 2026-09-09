@@ -156,6 +156,7 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
 | W42: the audit row does not say who called (D47) | W42 worker | PR #149 MERGED | legibility, not a new control; the vocabulary deliberately does not change |
+| W48: a word for a caller the plane cannot speak for (D47) | unassigned | SHAPED 2026-09-08 — prompt below | the vocabulary half only; recording the caller already shipped |
 | W45: the tool seam works for a client we did not write (foreign-app 3, 4, 5) | W45 worker | PR #157 MERGED | the gateway no longer advertises what it refuses; initialize is projected to tools and refused past 1 MiB rather than cut |
 | W46: the model seam speaks what frameworks actually send (foreign-app 1, 2) | W46 worker | PR #156 MERGED | Responses API metered; an unreadable-usage answer is REFUSED, and a flushed stream is ledgered `unmetered` rather than as a plausible zero |
 | W47: observability an adopter can extend (foreign-app 6) | W47 worker | PR #155 MERGED | the verb fixed, and an adopter can add scrape targets without hand-merging ours |
@@ -650,6 +651,35 @@ before it is written down anywhere public.
   contained a wrong analysis of who could capture, corrected only after
   review. The exposure here is larger and the reasoning that made
   plaintext acceptable there is absent.
+
+- **D47 (RULED 2026-09-08 — option A, after the reopening): a third live
+  value, because the plane now has callers it genuinely cannot speak
+  for.**
+
+  **The ruling.** `acted_for` gains a third live value meaning *the plane
+  has no basis to say*, distinct from `unknown` (it had a basis and lost
+  it) and from `none` (it can say there was no person). Option C was
+  accepted on 8 September because no supported configuration reached the
+  imprecision; a foreign application was governed end to end the same
+  afternoon, so that premise is gone and narrowing what counts as
+  supported would be a claim we no longer mean.
+
+  **What it costs, stated so nobody is surprised:** a migration widening
+  the CHECK on `ledger_entry`, `inbound_audit` and `agent_run`; a new
+  word for every reader — `kmx status`, `kmx flow`, the ledger and audit
+  views; and a decision about rows already written, which must NOT be
+  backfilled, because inventing history is the thing the closed `legacy`
+  class exists to prevent repeating.
+
+  **What is already done and must not be redone:** recording the caller
+  shipped with the first ruling and was right. The audit row distinguishes
+  a client the plane did not deploy, and that is what made this
+  occurrence legible rather than silent. W48 below implements the
+  vocabulary half only.
+
+  **The reopening and the original ruling follow, both kept: a decision
+  that discards its reasoning cannot be revisited, and this one was
+  revisited within a day.**
 
 - **D47 (REOPENED 2026-09-08 — its void condition fired, on the same
   day it was ruled): the**
@@ -5397,6 +5427,77 @@ shape and the real run is manual.
 the fix. An adopter's own scrape target added without hand-merging our
 ConfigMap, demonstrated on a real cluster, with teardown proved. And the
 documented statement of what the view does and does not cover.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
+```
+
+### W48 — a word for a caller the plane cannot speak for (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — **D47 above all, including its reopening and the original ruling
+kept beneath it** — then `plane/internal/store/identity.go` and
+`docs/reviews/2026-09-08-foreign-app-sundae-funday.md` section 5.
+
+**D47 is ruled as option A and you are implementing the vocabulary half
+only.** Recording the caller already shipped; do not redo it.
+
+**What is wrong.** `acted_for` has two live non-person values and needs
+three. `none` means *the plane CAN say there is no person* — a positive
+claim, and its own comment calls it "a complete answer, not a gap".
+`unknown` means *the plane CANNOT say* because it had a basis and lost
+it: two runs open, or a failed read. A foreign runtime, triggered by its
+own human through a door the plane never saw, is neither. It gets `none`
+today, which asserts something the plane has no basis for — and since a
+foreign application is now a supported shape, that assertion is made on
+real traffic.
+
+**Add the third value.** Candidate name `unattributable`; choose better
+if you can, but it must not be `unknown` and it must not read as a
+synonym for `none`. The comments on those two constants are unusually
+careful and the new one has to earn the same standard: say what it
+claims and what it refuses to claim.
+
+**Design decisions this lane owns:**
+- **Where the boundary sits.** Which code path yields the new value, and
+  which still yields `none`? An operator-driven turn with no run open is
+  still a real `none`; a call from a client the plane did not deploy is
+  not. The caller identity that shipped is what makes the two
+  distinguishable — use it rather than inventing a second signal.
+- **Rows already written.** They must not be backfilled: inventing
+  history is what the closed `legacy` class exists to prevent repeating.
+  Say what an old row means now and make sure a reader can tell it apart
+  from a new one.
+- **Three tables carry `acted_for`** — `ledger_entry`, `inbound_audit`,
+  `agent_run` — and their CHECK constraints differ today: `agent_run`
+  admits only `none` or `slack:<id>`. Decide whether they converge and
+  say why.
+- **Every reader learns a word.** `kmx status`, `kmx flow`, the ledger
+  and audit views. A value nothing renders is a value nobody benefits
+  from.
+
+**Also required by the ruling, and small:** rename
+`var Unattributed = Attribution{ActedFor: ActedForNone}`. It reads as
+"nobody attributed this" — which is the new value's meaning — while
+holding the one that asserts there is no person. That name is part of
+why this went unnoticed for months.
+
+**Guardrails.** No change to what is metered, allowlisted, argument-bound
+or audited — this lane changes one vocabulary. The gateway still fails
+closed on an audit write failure. A migration is in scope; a data
+rewrite is not. kmx accepts no credential material beyond the ruled
+terminal-only prompt. CI stays keyless. No Azure or Slack identifiers.
+Comments say what the thing does, never a lane or decision number.
+
+**Verification.** A governed call from a non-kagent client — the shell
+client and `scripts/tool-call-probe.sh` both qualify — recorded with the
+new value, shown beside a kagent agent's call recorded with the old one.
+The migration applied forward on a cluster holding rows written under
+the previous meaning, showing what those rows say. Every reader
+rendering the new word. And a test that fails if the boundary moves: an
+operator-driven turn must still be `none`.
 
 Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
