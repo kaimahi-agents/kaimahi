@@ -246,6 +246,33 @@ func TestAPlaneRefusalLeavesNothingWritten(t *testing.T) {
 	}
 }
 
+// The apply precondition, from THIS command. It is one guard shared with
+// `kmx tools add` — the two write the same overlay — and a shared guard
+// still has to be reached from both call sites: deleting the call here
+// left every other test passing.
+func TestAddModelRefusesAStaleOverlay(t *testing.T) {
+	t.Setenv("KMX_TEST_RV", "4711")
+	f := newModelFixture(t, vllmService, `{"other.json":"{}"}`, nil)
+	stdin := filepath.Join(f.dir, "stdin")
+	t.Setenv("KMX_TEST_STDIN", stdin)
+	t.Setenv("KMX_TEST_RV_SECOND", "4712")
+
+	err := f.app.AddModel(modelOpts(f.dir))
+	if err == nil {
+		t.Fatal("an overlay that moved under the scaffold was applied anyway")
+	}
+	if !strings.Contains(err.Error(), "the overlay changed while this was being scaffolded") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The recovery names the command the operator actually ran.
+	if !strings.Contains(err.Error(), "kmx models add house") {
+		t.Fatalf("the refusal names the wrong command: %v", err)
+	}
+	if _, statErr := os.Stat(stdin); statErr == nil {
+		t.Fatal("documents were applied despite the refusal")
+	}
+}
+
 // --- fixture -------------------------------------------------------------
 
 const vllmService = `{"spec":{"selector":{"app":"vllm"},

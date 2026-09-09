@@ -212,15 +212,10 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	// `kubectl apply -f` applies each document independently and does not
 	// roll back, so a ConfigMap refused on a stale resourceVersion would
 	// still leave the two NetworkPolicies behind. Re-read the version
-	// here, where nothing has happened yet.
-	if _, version, err := a.readOverlay(); err != nil {
+	// here, where nothing has happened yet. Shared with `kmx tools add`,
+	// which writes the same overlay under the same precondition.
+	if err := a.refuseOnOverlayDrift(spec.OverlayVersion, path, "kmx models add", opt.Name); err != nil {
 		return err
-	} else if version != spec.OverlayVersion {
-		return fmt.Errorf("the overlay changed while this was being scaffolded "+
-			"(read at version %s, now %s) — nothing has been applied.\n"+
-			"  Somebody else onboarded an upstream or edited a fragment. Run the same command again "+
-			"to build on their change:\n    rm %s && kmx models add %s …",
-			quoteVersion(spec.OverlayVersion), quoteVersion(version), path, opt.Name)
 	}
 	if err := a.kubectlRun("apply", "-f", path); err != nil {
 		return err

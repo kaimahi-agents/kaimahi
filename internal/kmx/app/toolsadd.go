@@ -206,7 +206,7 @@ func (a *App) AddUpstream(opt AddUpstreamOptions) error {
 		if opt.DryRun {
 			return a.applyDocuments(planeDocs, "--dry-run=server")
 		}
-		if err := a.refuseOnOverlayDrift(spec, path, opt.Name); err != nil {
+		if err := a.refuseOnOverlayDrift(spec.OverlayVersion, path, "kmx tools add", opt.Name); err != nil {
 			return err
 		}
 		if err := a.applyDocuments(planeDocs); err != nil {
@@ -217,7 +217,7 @@ func (a *App) AddUpstream(opt AddUpstreamOptions) error {
 	if opt.DryRun {
 		return a.kubectlRun("apply", "--dry-run=server", "-f", path)
 	}
-	if err := a.refuseOnOverlayDrift(spec, path, opt.Name); err != nil {
+	if err := a.refuseOnOverlayDrift(spec.OverlayVersion, path, "kmx tools add", opt.Name); err != nil {
 		return err
 	}
 	if err := a.kubectlRun("apply", "-f", path); err != nil {
@@ -234,17 +234,21 @@ func (a *App) AddUpstream(opt AddUpstreamOptions) error {
 // document independently and does not roll back, so a refused ConfigMap
 // still leaves the two NetworkPolicies behind. For kmx's OWN apply that
 // window is closable, and closing it is better than explaining it.
-func (a *App) refuseOnOverlayDrift(spec scaffold.UpstreamSpec, path, name string) error {
+// Both onboarding commands write the same overlay and need the same
+// guard, so there is one of it. `command` is what the operator should run
+// again — the two differ in nothing else, and a second copy of a
+// precondition is a copy that can stop agreeing with the first.
+func (a *App) refuseOnOverlayDrift(readVersion, path, command, name string) error {
 	_, version, err := a.readOverlay()
 	if err != nil {
 		return err
 	}
-	if version != spec.OverlayVersion {
+	if version != readVersion {
 		return fmt.Errorf("the overlay changed while this was being scaffolded "+
 			"(read at version %s, now %s) — nothing has been applied.\n"+
 			"  Somebody else onboarded an upstream or edited a fragment. Run the same command again "+
-			"to build on their change:\n    rm %s && kmx tools add %s …",
-			quoteVersion(spec.OverlayVersion), quoteVersion(version), path, name)
+			"to build on their change:\n    rm %s && %s %s …",
+			quoteVersion(readVersion), quoteVersion(version), path, command, name)
 	}
 	return nil
 }
