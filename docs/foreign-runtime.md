@@ -27,7 +27,9 @@ the interface this project offers a foreign runtime.
 1. **A credential.** A `kmh_` bearer token the plane issued —
    `kmh_` plus 64 hex characters, shown exactly once at issue, stored by
    the plane only as a sha256. It goes in `Authorization`; the `Bearer `
-   prefix is optional on both seams.
+   prefix is optional on both seams. A client that cannot be told to send
+   a header gets one from the shim `kmx tools sidecar` scaffolds; see
+   below.
 2. **The tool seam's URL.**
    `https://kaimahi-mcp-gateway.kaimahi:8081/upstream/<upstream>/mcp`.
    `POST` carries every JSON-RPC message, `DELETE` ends a session.
@@ -44,10 +46,13 @@ the interface this project offers a foreign runtime.
    under an authority the plane mints for itself, so a client verifying
    against a system trust store is refused. `kmx plane` publishes the
    authority's certificate — and only its certificate — as Secret
-   `kaimahi-plane-ca` in the agent namespace, key `ca.crt`. Read it with
+   `kaimahi-plane-ca` in the agent namespace, key `ca.crt`, and
+   `kmx tools govern` publishes it again into whichever namespace the
+   credential's Secret goes to, which on a cluster with no kagent is the
+   only copy there is. Read it with
 
    ```sh
-   kubectl -n kagent get secret kaimahi-plane-ca \
+   kubectl -n <your namespace> get secret kaimahi-plane-ca \
      -o jsonpath='{.data.ca\.crt}' | base64 -d > plane-ca.crt
    ```
 
@@ -70,18 +75,51 @@ Kaimahi library, no SDK. The client used here is about a hundred lines
 of `sh`, and `kubectl get crds` on the test cluster returned nothing at
 all.
 
-Two smaller facts a client author needs:
+A few smaller facts a client author needs:
 
-- **The protocol scope is tools only.** `initialize`,
-  `notifications/initialized`, `tools/list` and `tools/call` are relayed;
-  `ping` is answered by the gateway itself; every other method is
-  refused. JSON-RPC batches are refused. A duplicated JSON key anywhere
-  in the message is refused rather than collapsed.
+- **The protocol scope is tools only, and the handshake says so.**
+  `initialize`, `notifications/initialized`, `tools/list` and
+  `tools/call` are relayed; `ping` is answered by the gateway itself;
+  every other method is refused. JSON-RPC batches are refused. A
+  duplicated JSON key anywhere in the message is refused rather than
+  collapsed.
+
+  The `initialize` result's `capabilities` is **projected** onto that
+  scope: whatever the upstream advertises, the client is offered
+  `"tools": {}` and nothing else — the value is emptied too, because
+  `tools.listChanged` promises a server-initiated stream this gateway
+  does not offer. This is not cosmetic. A client that guards
+  `prompts/list` on `capabilities.prompts` — which is what the
+  specification tells it to do — used to be handed the upstream's own
+  advertisement, call a method the next line refused, and die at
+  startup. **A client may trust what the handshake offers it.**
+  Everything else in the result — `protocolVersion`, `serverInfo`,
+  `instructions` — is the upstream's and is relayed unchanged.
+- **Both forms of the seam's path work.** `/upstream/<name>/mcp` and
+  `/upstream/<name>/mcp/`, because a client that normalises its base URL
+  by appending a slash should not have to be reconfigured. Nothing
+  deeper is a route: `/upstream/<name>/mcp/prompts` is a 404.
 - **The client must tolerate either framing.** A relayed response comes
-  back as the upstream sent it, plain JSON or SSE; a `tools/list` that
-  was projected always comes back as `application/json`. An upstream
-  error on a listing is relayed unchanged, framing included, because
-  there is nothing to project.
+  back as the upstream sent it, plain JSON or SSE; a `tools/list` or an
+  `initialize` that was projected always comes back as
+  `application/json`. An upstream error on either is relayed unchanged,
+  framing included, because there is nothing to project — up to the same
+  size bound, past which it is refused like any other body too large to
+  read.
+- **The projection runs one way, and the other way is a live gap.** The
+  gateway cuts down what the SERVER advertises; it relays what the CLIENT
+  advertises unchanged. So a client that offers `sampling`, `roots` or
+  `elicitation` tells the upstream it can serve them — and it cannot,
+  through this seam: a JSON-RPC *response* carries no `method`, so the
+  gateway refuses it as an unrelayed method and the upstream's request
+  never gets an answer. Advertise none of those until the seam carries
+  them. This is not introduced by the projection; it is the same defect
+  in the other direction, and it is not closed here.
+- **A handshake the gateway cannot project is refused, not trimmed.**
+  Projecting means buffering, and the bound is 1 MiB — far beyond any
+  real handshake. Past it the client gets `502 tool upstream handshake
+  too large to project (refused)` rather than a handshake with its tail
+  missing, which a client would read as "not offered".
 
 ## What the operator must do on the plane side
 
@@ -188,6 +226,40 @@ nothing tells an adopter that their runtime's namespace goes on that
 line. A foreign runtime elsewhere is refused by the network, and the fix
 is an operator's policy edit, not a product change.
 
+**The edit, in the form to apply.** Additive — Kaimahi's own file is not
+touched, so the next `kmx plane` does not fight it — naming one namespace
+and two ports, and granting ingress to *our* pod rather than egress from
+anything:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-demo-to-kaimahi-seams
+  namespace: kaimahi
+spec:
+  podSelector:
+    matchLabels:
+      app: kaimahi-proxy
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: demo   # ← your namespace
+      ports:
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 8081}
+```
+
+Two traps worth knowing before you measure it. A `namespaceSelector`
+cannot match a pod that is not on the pod network, so a **host-networked**
+runtime needs an `ipBlock` for the node instead — a materially bigger
+ask. And the policy pair `kmx tools add` scaffolds gives the tool
+**server** zero egress under the default `--server-egress none`: a probe
+run from inside the server pod is measuring that rule, not this one, and
+fails on DNS rather than on the seam. Measure from the client.
+
 ### The inbound bridge is, deeply
 
 The path where the plane *invokes* an agent is kagent-shaped end to end:
@@ -203,7 +275,7 @@ are metered normally, against the same budgets, with the same denial.
 What is lost is the plane triggering the turn — and with it, the only
 thing that produces an honest attribution.
 
-### `kmx tools add` scaffolds into `kagent` and cannot be told otherwise
+### One of `kmx tools add`'s four documents is, and it is skipped
 
 Every namespace the scaffolder writes is a compile-time constant except
 one. The `RemoteMCPServer` goes into `kagent`; the overlay fragment and
@@ -211,11 +283,83 @@ the proxy-egress NetworkPolicy go into `kaimahi`; only the tool server's
 own ingress policy takes its namespace from what the operator typed.
 That is the right shape for everything except the CRD — and the CRD is
 the one document a foreign runtime discards, since it exists to tell
-kagent's controller where the seam is. So the pin is a rough edge in the
-onboarding tool, not a hole in the enforcement path: what a foreign
-runtime actually needs out of `kmx tools add` — the upstream entry and
-the policy pair that make the tool server reachable only through the
-proxy — lands in the right places already.
+kagent's controller where the seam is.
+
+**So on a cluster with no kagent, `kmx tools add` does not apply it.** It
+says which document it is skipping and why, applies the three the plane
+needs, restarts the proxy so the new entry is loaded, and exits 0:
+
+```console
+$ kmx tools add warehouse --url http://acme-warehouse.acme:8090/mcp \
+    --tool stock_get:sku --tool stock_adjust:sku,delta
+…
+This cluster has no kagent: the CRD remotemcpservers.kagent.dev is not installed.
+The RemoteMCPServer in upstreams/warehouse.yaml is the one document only kagent reads …
+configmap/kaimahi-upstreams-extra created
+networkpolicy.networking.k8s.io/kaimahi-upstream-warehouse-egress created
+networkpolicy.networking.k8s.io/kaimahi-upstream-warehouse-ingress created
+deployment.apps/kaimahi-proxy restarted
+```
+
+The **file** is still the whole onboarding, all four documents: a cluster
+with no kagent today may have one tomorrow, and `kubectl apply -f` picks
+the seam up then. What is skipped is the apply, not the artifact.
+
+`kmx tools govern` behaves the same way. There is no seam to accept and
+no Agent to repoint, so it mints the credential, sets the allowlist,
+publishes the plane's authority **into the namespace your runtime runs
+in**, prints what to point a client at, and exits 0. Two things it does
+first, in this order: it checks that the CRD is there, and it checks that
+the Secret's namespace exists — because the token is shown once, and a
+namespace that is not there would otherwise leave a live credential
+nobody holds.
+
+A cluster that could not be *asked* is an error, never an absence. An
+unreachable API server or an RBAC denial must not read as "no kagent
+here" and silently half-onboard.
+
+### A client that cannot set a header
+
+The seam authenticates with a token in `Authorization`. Some MCP clients
+cannot be told to send one — their only configuration is a URL — and
+that alone is enough to stop an integration that needs nothing else. It
+is about *addressing*, not enforcement.
+
+`kmx tools sidecar` scaffolds the answer: an in-pod reverse proxy on
+loopback. The client posts to `127.0.0.1`, the shim adds the header from
+the Secret the plane wrote and forwards to the gateway.
+
+```console
+$ kmx tools sidecar warehouse --deployment acme-client --namespace acme
+Wrote upstreams/warehouse-auth-sidecar.yaml — the shim's nginx config, which kmx applies.
+Wrote upstreams/warehouse-auth-sidecar.patch.yaml — the container and volumes to merge into YOUR
+Deployment, which kmx does not apply.
+…
+  kubectl -n acme patch deployment acme-client --patch-file upstreams/warehouse-auth-sidecar.patch.yaml
+  the MCP client's URL becomes http://127.0.0.1:8099/mcp/
+```
+
+Two artifacts because they are applied by different people to different
+things. kmx applies a ConfigMap into a namespace it was named, and
+publishes the plane's authority there so the shim can verify the seam.
+It does **not** patch your Deployment; adding a container to somebody
+else's workload is the operator's call, and the patch is a
+strategic merge whose two lists merge by name, so applying it twice adds
+one container rather than two.
+
+The token is never in a manifest, a values file or an image: the
+ConfigMap holds `Bearer ${KMH}`, `KMH` comes from the Secret through the
+pod's environment, and nginx's own entrypoint substitutes one into the
+other before it starts. The shim listens on loopback, so nothing else in
+the cluster can reach it, and it proxies exactly one path — anything else
+is a 404. It is a credential, not a route.
+
+**Why not a query parameter.** It would need no sidecar at all, and it is
+refused: a URL is not a place a bearer token may live. It reaches the
+ingress and load-balancer access logs, the client library's own request
+log, every proxy in between, `kubectl logs` on anything that logs a
+request line, and shell history. A header is logged by none of those by
+default.
 
 ## What a foreign runtime cannot get today
 

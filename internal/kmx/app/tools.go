@@ -206,9 +206,18 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 			opt.SecretNamespace, opt.Secret)
 		a.notef("verifying against %s/%s (key %s). See docs/foreign-runtime.md.",
 			opt.SecretNamespace, config.PlaneCASecret, config.PlaneCAKey)
+		// Every flag that named a kagent object is called out, not just
+		// the first. A typo in one of these would otherwise report success
+		// while the thing it named was never looked for.
 		if opt.Agent != config.DefaultToolsAgent {
 			a.notef("--agent %q was not honoured: repointing an Agent is kagent's, and there is none here.",
 				opt.Agent)
+		}
+		if opt.Server != config.DefaultToolServer {
+			a.notef("--server %q was not looked for either: a RemoteMCPServer is the object this cluster",
+				opt.Server)
+			a.notef("  cannot hold. The credential is not scoped to it — the allowlist is per-credential,")
+			a.notef("  and the upstream a call reaches is the name in its URL.")
 		}
 		return nil
 	}
@@ -310,7 +319,7 @@ func (a *App) requireNamespace(namespace, flag string) error {
 			return fmt.Errorf("namespace %q does not exist, and it is where the credential's Secret would go.\n"+
 				"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
 				"  Name the namespace your runtime reads its Secret from:\n"+
-				"    %s %s", namespace, flag, "<your namespace>")
+				"    %s <your namespace>", namespace, flag)
 		}
 		return fmt.Errorf("cannot tell whether namespace %q exists (refusing to guess): %w", namespace, err)
 	}
@@ -406,7 +415,12 @@ func (a *App) setToolAllowlist(c *admin.Client, credential string, tools []strin
 	}
 	a.notef("Tool allowlist for %q: [%s] (enforced on tools/call, projected on tools/list).",
 		credential, quotedList(tools))
-	a.notef("kagent re-discovers the projection on its next RemoteMCPServer reconcile; enforcement is immediate.")
+	// Said for both runtimes rather than for kagent alone. On a cluster
+	// with no kagent the old sentence sent an operator looking for a
+	// reconcile that cannot happen, and a client that simply lists again
+	// is the general case anyway.
+	a.notef("A client sees the projection on its next tools/list; where kagent runs, it re-discovers")
+	a.notef("the projection on its next RemoteMCPServer reconcile. Enforcement is immediate either way.")
 	return nil
 }
 

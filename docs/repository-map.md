@@ -76,7 +76,7 @@ still in the tree.
 | `internal/` | `kmx/` (16 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 53 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 54 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -114,10 +114,10 @@ a kubectl and the operator's terminal.
 
 | Package | Non-test source files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 40 | Product | Every kmx command. The shell-out orchestration layer. |
+| `kmx/app` | 41 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
 | `kmx/blueprint` | 5 | Product | The declarative governed-workflow file. |
-| `kmx/scaffold` | 9 | Product | Generates the reviewable Agent YAML, and the two onboarding artifacts: a tool upstream's four documents and a model upstream's three. |
+| `kmx/scaffold` | 10 | Product | Generates the reviewable Agent YAML, and the two onboarding artifacts: a tool upstream's four documents and a model upstream's three. |
 | `kmx/guard` | 1 | Product | The context-safety net. A local kind context proceeds with a banner; any other requires confirmation naming it; no confirmation, unknown context or unreadable kubeconfig refuses. |
 | `kmx/seam` | 1 | Product | What kmx knows about each upstream credential. |
 | `kmx/seamcert` | 1 | Product | Mints the certificate the plane's two data seams serve with, and answers when it expires. The authority outlives what it signs, so renewal is a re-sign rather than a redistribution. |
@@ -201,9 +201,9 @@ exist for a walkthrough; `release-agent.yaml` is also not embedded but is
 not a walkthrough either — it is the one agent this project depends on.
 All six are "an agent manifest in `k8s/`" and look alike.
 
-## `scripts/` — 78 tracked files, three different jobs
+## `scripts/` — 79 tracked files, three different jobs
 
-**None is orphaned**, but "orphaned" needs care: 65 of the 78 are named
+**None is orphaned**, but "orphaned" needs care: 66 of the 79 are named
 by something outside themselves, and the thirteen `scripts/mutations/*.json`
 are named by nothing at all — `check-mutations.py` finds them by globbing
 the directory. That is deliberate (a checker added without mutations is
@@ -212,7 +212,7 @@ forget to update), and it means a grep for references is the wrong test
 for that one directory.
 
 The counts below come from a classification of `git ls-files scripts` in
-which all 78 files land in exactly one bucket — not from reading the
+which all 79 files land in exactly one bucket — not from reading the
 directory and estimating.
 
 | Class | Count | Files |
@@ -221,7 +221,7 @@ directory and estimating.
 | **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
 | **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
 | **Scaffolding** — checkers and their self-tests | 16 | the thirteen `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
-| **Scaffolding** — live-cluster probes | 15 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` — not a probe itself but sourced by ten of them, to fetch the authority the seams are verified against |
+| **Scaffolding** — live-cluster probes | 16 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` — not a probe itself but sourced by ten of them, to fetch the authority the seams are verified against |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 8 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `plain-model.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `plain-model-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
 | **Scaffolding** — mutation specifications | 13 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
 | **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements in the coordination board that `check-board.py` found, plus those found by hand where it could not look, and a record of how each was closed |

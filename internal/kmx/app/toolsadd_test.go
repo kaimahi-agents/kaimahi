@@ -115,9 +115,17 @@ JSON
       *)
         if [ "$KMX_TEST_RV" = "none" ]; then
           printf '{"metadata":{},"data":%s}' "$KMX_TEST_OVERLAY"
-        else
-          printf '{"metadata":{"resourceVersion":"%s"},"data":%s}' "$KMX_TEST_RV" "$KMX_TEST_OVERLAY"
+          exit 0
         fi
+        # KMX_TEST_RV_SECOND answers the SECOND read with a different
+        # version — the overlay moving under the scaffold, which is the
+        # only way to exercise the apply precondition.
+        rv="$KMX_TEST_RV"
+        if [ -n "$KMX_TEST_RV_SECOND" ] && [ -f "$KMX_TEST_ARGS.overlay-read" ]; then
+          rv="$KMX_TEST_RV_SECOND"
+        fi
+        : >> "$KMX_TEST_ARGS.overlay-read"
+        printf '{"metadata":{"resourceVersion":"%s"},"data":%s}' "$rv" "$KMX_TEST_OVERLAY"
         exit 0 ;;
     esac ;;
 esac

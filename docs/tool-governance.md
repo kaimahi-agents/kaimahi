@@ -211,6 +211,32 @@ via subPath, which never live-updates.
   answered locally without upstream contact; **every other method is
   denied, not relayed** (JSON-RPC error, audited). JSON-RPC batches are
   rejected outright, since a batch could smuggle a denied method.
+- **Capability projection.** The `initialize` result's `capabilities` is
+  cut down to `tools`, and to nothing under it, before it reaches the
+  client — the same projection `tools/list` gets, one message earlier.
+  **The gateway does not advertise what it will not relay.** The value is
+  emptied rather than passed through for the same reason the key set is
+  narrowed: `tools.listChanged` promises
+  `notifications/tools/list_changed` on a server-initiated stream, and
+  this gateway offers none (GET on the seam is a 405, by design). It
+  matters in practice — the projection an agent sees changes whenever its
+  allowlist does, and a client told it would be notified never would be.
+  Emptying also fails closed for whatever a later protocol version adds
+  under `tools`. Relaying the upstream's own
+  advertisement made a spec-compliant client — one that guards
+  `prompts/list` on `capabilities.prompts`, which is what the
+  specification tells it to do — call a method the scope rule then
+  refused, fatally, at startup. This narrows what a client is offered; it
+  widens nothing, and every refused method is still refused.
+
+  Projecting means buffering, so this path is bounded at 1 MiB, an
+  eighth of the `tools/list` ceiling. **Past the bound the handshake is
+  refused (502), never truncated**: a client handed the first megabyte of
+  an advertisement would read the missing remainder as "not offered",
+  which is the same lie in the other direction. A 2xx handshake the
+  gateway cannot parse — including an SSE body with no frame answering
+  the request — fails closed for the same reason an unprojectable listing
+  does.
 - **Argument policy.** A `tools/call` is admitted by, in order: a
   standing constraint the call is INSIDE (no approval, no grant burned,
   audited `within standing constraint`); otherwise the allowlist — but

@@ -850,15 +850,7 @@ func (h *handler) forwardInitialize(w http.ResponseWriter, r *http.Request, name
 		http.Error(w, msg, http.StatusBadGateway)
 		return
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// Nothing to project on an upstream error; relay it verbatim,
-		// framing included. The client needs the upstream's own words.
-		copyResponseHeaders(w.Header(), resp.Header)
-		w.Header().Del("Content-Length")
-		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(raw)
-		return
-	}
+	upstreamFailed := resp.StatusCode < 200 || resp.StatusCode > 299
 
 	payload := raw
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
@@ -868,6 +860,17 @@ func (h *handler) forwardInitialize(w http.ResponseWriter, r *http.Request, name
 		// handshake at all.
 		payload = sseDataForID(raw, id)
 	}
+	// The same refusal the request path makes, on the response. Go decodes
+	// a repeated `result` member into the SAME map, so an upstream sending
+	// two of them has its members silently merged — and a projection that
+	// read the first would relay fields from the second. Refused here, not
+	// collapsed, exactly as a duplicated key inbound is.
+	if _, _, err := canonicalize(payload); err != nil && !upstreamFailed {
+		slog.Error("gateway: handshake response is not a single well-formed message; failing closed",
+			"upstream", name, "err", err)
+		http.Error(w, MsgInitializeUnprojectable, http.StatusBadGateway)
+		return
+	}
 	var rpc struct {
 		JSONRPC string                     `json:"jsonrpc"`
 		ID      json.RawMessage            `json:"id"`
@@ -875,7 +878,28 @@ func (h *handler) forwardInitialize(w http.ResponseWriter, r *http.Request, name
 		Result  map[string]json.RawMessage `json:"result,omitempty"`
 	}
 	if err := json.Unmarshal(payload, &rpc); err != nil || rpc.JSONRPC == "" {
+		if upstreamFailed {
+			// Not a handshake and not claimed to be one — a proxy's error
+			// page, a plain-text refusal. There is nothing to project, and
+			// the client needs the upstream's own words: relay it
+			// verbatim, framing and status included.
+			copyResponseHeaders(w.Header(), resp.Header)
+			w.Header().Del("Content-Length")
+			w.WriteHeader(resp.StatusCode)
+			_, _ = w.Write(raw)
+			return
+		}
 		slog.Error("gateway: unparseable handshake response; failing closed", "upstream", name, "err", err)
+		http.Error(w, MsgInitializeUnprojectable, http.StatusBadGateway)
+		return
+	}
+	// A handshake that is neither a result nor an error is not a handshake.
+	// Emitting `"result": null` under a 200 would hand the client a
+	// well-formed success to dereference, which is the failure this path
+	// exists to stop — so it joins every other unreadable one.
+	if rpc.Result == nil && rpc.Error == nil {
+		slog.Error("gateway: handshake carries neither result nor error; failing closed",
+			"upstream", name)
 		http.Error(w, MsgInitializeUnprojectable, http.StatusBadGateway)
 		return
 	}
@@ -903,13 +927,34 @@ func (h *handler) forwardInitialize(w http.ResponseWriter, r *http.Request, name
 	} else {
 		out["result"] = rpc.Result
 	}
-	writeRPC(w, out)
+	// The upstream's STATUS is relayed whatever it was, projected body or
+	// not. A handshake carrying a non-2xx is still a handshake and is
+	// projected like any other — a server answering 503 with a complete
+	// advertisement would otherwise put the unprojected one back on the
+	// wire, which is the whole defect — and the status is the part the
+	// client reads to decide the handshake failed. A 202 must not arrive
+	// as a 200 either.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_ = json.NewEncoder(w).Encode(out)
 }
 
-// projectCapabilities keeps the `tools` member of a capability
-// advertisement and drops every other, leaving the value of `tools`
-// exactly as the upstream sent it — the gateway narrows what is offered,
-// it does not describe the offer itself.
+// projectCapabilities cuts a capability advertisement down to what the
+// gateway will actually relay: the `tools` member, and nothing under it.
+//
+// The value is emptied rather than passed through, and that is the same
+// rule applied one level deeper. `tools.listChanged` promises
+// `notifications/tools/list_changed` on a server-initiated stream, and
+// this gateway offers no such stream — GET on the seam is a 405, by
+// design. Relaying the upstream's `{"listChanged": true}` would advertise
+// a delivery mechanism that does not exist here, which is the defect this
+// whole projection was written to close. It matters in practice: the
+// projection an agent sees changes whenever its allowlist does, and a
+// client told it would be notified would never be.
+//
+// Emptying rather than filtering also fails closed for anything a later
+// protocol version adds under `tools`: an unknown sub-capability is not
+// promised until the gateway can honour it.
 //
 // An advertisement carrying no `tools` projects to `{}`: the gateway
 // relays nothing from that server the client can reach by capability.
@@ -919,20 +964,27 @@ func projectCapabilities(advertised json.RawMessage) (json.RawMessage, error) {
 		return nil, err
 	}
 	kept := map[string]json.RawMessage{}
-	if tools, ok := caps["tools"]; ok {
-		kept["tools"] = tools
+	if _, ok := caps["tools"]; ok {
+		kept["tools"] = json.RawMessage(`{}`)
 	}
 	return json.Marshal(kept)
 }
 
-// sseDataForID returns the data payload of the SSE frame carrying the
-// JSON-RPC response to id, or nil when no frame does.
+// sseDataForID returns the data payload of the FIRST SSE frame carrying
+// the JSON-RPC response to id, or nil when no frame does.
 //
 // lastSSEData answers a different question — the last frame — which is
 // the right one for a listing the gateway asked for on its own. A
 // handshake is answered inside a session that may also carry
 // notifications, so the frame is chosen by what it answers.
 func sseDataForID(raw []byte, id json.RawMessage) []byte {
+	// A request with no id, or a null one, has no answer to find. JSON-RPC
+	// gives `"id": null` to an error about a message the server could not
+	// read, so matching on it would let a parse-error frame be relayed as
+	// the handshake.
+	if len(id) == 0 || bytes.Equal(id, []byte("null")) {
+		return nil
+	}
 	want, err := marshalCanonical(json.RawMessage(id))
 	if err != nil {
 		return nil
@@ -946,7 +998,10 @@ func sseDataForID(raw []byte, id json.RawMessage) []byte {
 		var msg struct {
 			ID json.RawMessage `json:"id"`
 		}
-		if json.Unmarshal(current, &msg) == nil && len(msg.ID) > 0 {
+		// The FIRST frame answering this request wins. A second frame
+		// claiming the same id is a protocol violation, and it must not
+		// be able to overwrite the answer already given.
+		if found == nil && json.Unmarshal(current, &msg) == nil && len(msg.ID) > 0 {
 			if got, err := marshalCanonical(json.RawMessage(msg.ID)); err == nil &&
 				bytes.Equal(got, want) {
 				found = current
@@ -971,6 +1026,14 @@ func sseDataForID(raw []byte, id json.RawMessage) []byte {
 			current = append(current, '\n')
 		}
 		current = append(current, payload...)
+	}
+	// A scanner that stopped early read a body this function cannot claim
+	// to have searched. Today the buffer is the same bound the caller read
+	// under, so it cannot fire — said out loud because the two constants
+	// moving apart would otherwise turn a cut body into "no answering
+	// frame", which is a refusal, but for the wrong stated reason.
+	if sc.Err() != nil {
+		return nil
 	}
 	consider()
 	return found

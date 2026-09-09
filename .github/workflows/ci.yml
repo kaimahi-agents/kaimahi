@@ -4067,6 +4067,425 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
 
+  # ---- the shape with no kagent on the cluster at all -----------------------
+  #
+  # Every other shard runs `make up`, which installs kagent. This one is the
+  # configuration the plane now claims to support: an application this project
+  # did not write, governed by a plane deployed beside it, with no agent
+  # runtime, no CRD and no controller anywhere on the cluster.
+  #
+  # It is a shard rather than a step in another one because its PREMISE is
+  # what it proves — `kubectl get crds` returning nothing — and a cluster that
+  # once had kagent is not that. The two commands an adopter needs here both
+  # used to report failure while succeeding, and the seam refused the
+  # spec-compliant client they had.
+  e2e-foreign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Both variables, deliberately: --context steers kubectl, but the kind
+      # image side-load takes its cluster name from KIND_CLUSTER alone.
+      KIND_CLUSTER: kaimahi-foreign
+      KUBE_CTX: kind-kaimahi-foreign
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Classify the change (docs-only short-circuit, fail closed)
+        id: changes
+        uses: ./.github/actions/classify-change
+      - name: Install kind
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+      - uses: actions/setup-go@v5
+        if: steps.changes.outputs.docs_only != 'true'
+        with:
+          go-version-file: go.mod
+      - name: Build kmx (the Makefile's kind path delegates to it)
+        if: steps.changes.outputs.docs_only != 'true'
+        run: make bin/kmx
+      - name: A cluster, and nothing else
+        if: steps.changes.outputs.docs_only != 'true'
+        run: make cluster
+      - name: "The premise: no kagent, proven rather than assumed"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context "$KUBE_CTX" get crds -o name > crds.out
+          if [ -s crds.out ]; then
+            echo "this cluster has CRDs, so it is not the shape under test:" >&2
+            cat crds.out >&2
+            exit 1
+          fi
+          # Not merely "no kagent.dev CRDs": nothing at all, which is what an
+          # adopter's cluster looks like before anyone installs an agent
+          # runtime on it.
+          echo "kubectl get crds returns nothing"
+          kubectl --context "$KUBE_CTX" get namespace kagent 2>&1 | tee kagent-ns.out || true
+          grep -q 'not found' kagent-ns.out
+      - name: The governance plane, deployed beside nothing
+        if: steps.changes.outputs.docs_only != 'true'
+        run: make plane
+      - name: The application this project did not write
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          KUBECTL="kubectl --context $KUBE_CTX" bash scripts/ci/plain-upstream.sh up
+      # The whole finding: this used to apply three of its four documents,
+      # print "ensure CRDs are installed first", exit 1 — and, because it
+      # stopped, never restart the proxy. So the upstream was applied and
+      # never loaded, and a successful onboarding read as a failure.
+      - name: "Onboarding completes, skips the one document only kagent reads, and rolls the proxy"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx tools add warehouse \
+            --url http://acme-warehouse.acme:8090/mcp \
+            --tool stock_get:sku --tool stock_adjust:sku,delta 2>&1 | tee add.out
+          grep -q 'This cluster has no kagent' add.out
+          grep -q 'remotemcpservers.kagent.dev is not installed' add.out
+          # The ARTIFACT is the whole onboarding. A cluster with no kagent
+          # today may have one tomorrow, and the file is what an operator
+          # reviews and keeps.
+          grep -q 'kind: RemoteMCPServer' upstreams/warehouse.yaml
+          # What is on the CLUSTER is the three the plane needs.
+          kubectl --context "$KUBE_CTX" -n kaimahi get configmap kaimahi-upstreams-extra -o name
+          kubectl --context "$KUBE_CTX" -n kaimahi get networkpolicy kaimahi-upstream-warehouse-egress -o name
+          kubectl --context "$KUBE_CTX" -n acme get networkpolicy kaimahi-upstream-warehouse-ingress -o name
+          # And the upstream is LOADED, not merely applied — which is what
+          # the missing proxy restart used to cost.
+          kubectl --context "$KUBE_CTX" -n kaimahi rollout status deploy/kaimahi-proxy --timeout=180s
+          kubectl --context "$KUBE_CTX" -n kaimahi logs -l app=kaimahi-proxy --tail=200 > proxy-overlay.out
+          grep -q 'operator overlay merged.*warehouse.json' proxy-overlay.out
+      # The token is shown once. A Secret namespace that is not there has to
+      # refuse before it is minted, or the recovery is a hand-written DELETE
+      # against the plane's database.
+      - name: "The credential's namespace is checked before a token is minted"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          if bin/kmx tools govern --credential warehouse-client \
+              --secret kaimahi-warehouse-token --secret-namespace no-such-namespace \
+              --server kaimahi-warehouse --tools stock_get 2>&1 | tee refuse.out; then
+            echo "governing into a namespace that does not exist was accepted" >&2; exit 1
+          fi
+          grep -q -- '--secret-namespace' refuse.out
+          grep -q 'shown once' refuse.out
+          # Nothing was minted, so the name is still free below.
+          bin/kmx credentials 2>&1 | tee creds.out
+          if grep -q 'warehouse-client' creds.out; then
+            echo "a credential was minted before the refusal" >&2; exit 1
+          fi
+      - name: "Governing completes with no seam to accept and no agent to repoint"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx tools govern --credential warehouse-client \
+            --secret kaimahi-warehouse-token --secret-namespace acme \
+            --server kaimahi-warehouse --tools stock_get 2>&1 | tee govern.out
+          grep -q 'This cluster has no kagent' govern.out
+          # The whole interface a foreign runtime gets: a token, and the
+          # authority to verify the seam it dials.
+          kubectl --context "$KUBE_CTX" -n acme get secret kaimahi-warehouse-token -o name
+          kubectl --context "$KUBE_CTX" -n acme get secret kaimahi-plane-ca \
+            -o jsonpath='{.data.ca\.crt}' | base64 -d | head -1 | grep -q 'BEGIN CERTIFICATE'
+      # The adopter's own step, and the report that found this recommends it:
+      # the plane's committed rule admits one namespace, named `kagent`. This
+      # is ADDITIVE — Kaimahi's own file is not edited — and it grants ingress
+      # to our pod rather than egress from theirs.
+      #
+      # Measured from the CLIENT, never from the server: the policy pair
+      # `kmx tools add` scaffolds gives the tool server ZERO egress, so a
+      # probe run there would measure that rule instead of this one — and
+      # would fail on DNS rather than on the seam.
+      - name: "The network position: one additive rule, and the block is real without it"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          KUBECTL="kubectl --context $KUBE_CTX" bash scripts/ci/plain-upstream.sh client
+          # kindnet enforces NetworkPolicy, so the negative is measurable.
+          if kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c client -- python3 -c \
+              "import urllib.request; urllib.request.urlopen('https://kaimahi-mcp-gateway.kaimahi:8081/healthz', timeout=8)" 2>&1 | tee blocked.out; then
+            echo "the acme namespace reached the seam with no rule admitting it" >&2; exit 1
+          fi
+          grep -qiE 'timed out|timeout' blocked.out
+          kubectl --context "$KUBE_CTX" apply -f - <<'YAML'
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: allow-acme-to-kaimahi-seams
+            namespace: kaimahi
+          spec:
+            podSelector:
+              matchLabels:
+                app: kaimahi-proxy
+            policyTypes: [Ingress]
+            ingress:
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: acme
+                ports:
+                  - {protocol: TCP, port: 8080}
+                  - {protocol: TCP, port: 8081}
+          YAML
+          # A TCP connection, which is exactly what the policy governs.
+          for attempt in $(seq 1 30); do
+            if kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c client -- python3 -c \
+                "import socket; s=socket.create_connection(('kaimahi-mcp-gateway.kaimahi', 8081), timeout=8); print('connected'); s.close()"; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "the additive rule did not admit the namespace" >&2; exit 1
+            fi
+            sleep 2
+          done
+      # The case that failed: a client that reads the handshake's
+      # capabilities and calls only what is advertised. Their agent called
+      # load_prompts() because the gateway said the server supported prompts,
+      # and got "method not relayed by the Kaimahi gateway (tools only)" — at
+      # startup, fatally.
+      - name: "A spec-compliant client starts and runs: the handshake advertises tools only"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          KUBECTL="kubectl --context $KUBE_CTX" SECRET_NAMESPACE=acme \
+            GOVERNED_SECRET=kaimahi-warehouse-token UPSTREAM=warehouse \
+            bash scripts/mcp-capability-probe.sh 2>&1 | tee capability.out
+          grep -q 'the upstream itself advertises' capability.out
+          grep -q 'advertised through the gateway: tools (dropped: logging, prompts, resources)' capability.out
+          grep -q 'ran to a real tool call' capability.out
+          grep -q 'still refused' capability.out
+      # The same seam, answering SSE. A streamable-HTTP server normally frames
+      # its answer as an event, and the projection has to read the frame that
+      # answers the request rather than whichever came last.
+      - name: "The projection holds when the upstream answers SSE"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context "$KUBE_CTX" -n acme patch deploy/acme-warehouse --type json -p \
+            '[{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["python3","/src/server.py","--port","9090","--sse"]}]'
+          kubectl --context "$KUBE_CTX" -n acme rollout status deploy/acme-warehouse --timeout=180s
+          # `rollout status` returns while the OLD pod is still draining,
+          # and it stays in Endpoints until it goes — so a request can land
+          # on the previous server and get a plausible answer from it. Wait
+          # for exactly one pod, the way `kmx use` learned to.
+          for _ in $(seq 1 90); do
+            [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+                 --no-headers | wc -l)" = 1 ] && break
+            sleep 2
+          done
+          [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+               --no-headers | wc -l)" = 1 ]
+          KUBECTL="kubectl --context $KUBE_CTX" SECRET_NAMESPACE=acme \
+            GOVERNED_SECRET=kaimahi-warehouse-token UPSTREAM=warehouse \
+            bash scripts/mcp-capability-probe.sh 2>&1 | tee capability-sse.out
+          grep -q 'advertised through the gateway: tools (dropped: logging, prompts, resources)' capability-sse.out
+      # Projecting means buffering, and a bound that is exceeded is a REFUSAL.
+      # A client handed the first megabyte of an advertisement would read the
+      # missing remainder as "not offered", which is the same lie in the other
+      # direction.
+      - name: "An oversized handshake is refused, not cut"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context "$KUBE_CTX" -n acme patch deploy/acme-warehouse --type json -p \
+            '[{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["python3","/src/server.py","--port","9090","--instructions-bytes","1500000"]}]'
+          kubectl --context "$KUBE_CTX" -n acme rollout status deploy/acme-warehouse --timeout=180s
+          # `rollout status` returns while the OLD pod is still draining,
+          # and it stays in Endpoints until it goes — so a request can land
+          # on the previous server and get a plausible answer from it. Wait
+          # for exactly one pod, the way `kmx use` learned to.
+          for _ in $(seq 1 90); do
+            [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+                 --no-headers | wc -l)" = 1 ] && break
+            sleep 2
+          done
+          [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+               --no-headers | wc -l)" = 1 ]
+          SECRET_NAMESPACE=acme GOVERNED_SECRET=kaimahi-warehouse-token UPSTREAM=warehouse \
+            EXPECT=502 EXPECT_BODY='handshake too large to project (refused)' \
+            bash scripts/tool-raw-probe.sh \
+            '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}}' \
+            2>&1 | tee oversized.out
+          # A refusal, and not the head of the handshake the client asked for.
+          if grep -q 'protocolVersion' oversized.out; then
+            echo "the truncated handshake reached the client" >&2; exit 1
+          fi
+          kubectl --context "$KUBE_CTX" -n acme patch deploy/acme-warehouse --type json -p \
+            '[{"op":"replace","path":"/spec/template/spec/containers/0/command","value":["python3","/src/server.py","--port","9090"]}]'
+          kubectl --context "$KUBE_CTX" -n acme rollout status deploy/acme-warehouse --timeout=180s
+          # `rollout status` returns while the OLD pod is still draining,
+          # and it stays in Endpoints until it goes — so a request can land
+          # on the previous server and get a plausible answer from it. Wait
+          # for exactly one pod, the way `kmx use` learned to.
+          for _ in $(seq 1 90); do
+            [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+                 --no-headers | wc -l)" = 1 ] && break
+            sleep 2
+          done
+          [ "$(kubectl --context "$KUBE_CTX" -n acme get pods -l app=acme-warehouse \
+               --no-headers | wc -l)" = 1 ]
+      # A client whose only configuration is a URL cannot present a
+      # credential. That alone stopped a configuration-only integration that
+      # needed nothing else.
+      - name: "A client that cannot set a header presents one anyway"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx tools sidecar warehouse --deployment acme-client --namespace acme 2>&1 | tee sidecar.out
+          grep -q '127.0.0.1:8099/mcp/' sidecar.out
+          # kmx applies its own half and not the operator's.
+          kubectl --context "$KUBE_CTX" -n acme get configmap kaimahi-mcp-auth-warehouse -o name
+          # Captured first, then asserted: an `if` over a PIPELINE would
+          # report "kmx did not patch it" whenever the kubectl half failed,
+          # which is a pass without having looked.
+          kubectl --context "$KUBE_CTX" -n acme get deploy acme-client \
+            -o jsonpath='{.spec.template.spec.containers[*].name}' > containers-before.out
+          grep -q client containers-before.out
+          if grep -q kaimahi-mcp-auth containers-before.out; then
+            echo "kmx patched a workload it does not own" >&2; exit 1
+          fi
+          # The operator's half, which kmx printed the command for.
+          kubectl --context "$KUBE_CTX" -n acme patch deployment acme-client \
+            --patch-file upstreams/warehouse-auth-sidecar.patch.yaml
+          kubectl --context "$KUBE_CTX" -n acme rollout status deploy/acme-client --timeout=300s
+          # The config nginx is actually running, checked by nginx. The
+          # report this closes could not quote one of these.
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c kaimahi-mcp-auth -- \
+            nginx -t 2>&1 | tee nginx-t.out
+          grep -q 'syntax is ok' nginx-t.out
+          grep -q 'test is successful' nginx-t.out
+          # And the token is in the RENDERED config and in nothing else.
+          # Captured then asserted, for the same reason as above.
+          kubectl --context "$KUBE_CTX" -n acme get configmap kaimahi-mcp-auth-warehouse \
+            -o yaml > shim-configmap.out
+          grep -q 'default.conf.template' shim-configmap.out
+          if grep -q 'kmh_' shim-configmap.out; then
+            echo "a token reached the ConfigMap" >&2; exit 1
+          fi
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c kaimahi-mcp-auth -- \
+            grep -c 'Bearer kmh_' /etc/nginx/conf.d/default.conf > rendered-token.out
+          grep -qx 1 rendered-token.out
+          # The boundary: loopback only, and nothing publishes it.
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c kaimahi-mcp-auth -- \
+            grep -c 'listen 127.0.0.1:8099;' /etc/nginx/conf.d/default.conf > listen.out
+          grep -qx 1 listen.out
+          # And the SOCKET, not just the directive that asked for it. A
+          # shim on 0.0.0.0 is reachable from any pod that can reach this
+          # one, and it adds a governed credential to whatever it
+          # forwards. 0x1FA3 is 8099; 0100007F is 127.0.0.1; 0A is LISTEN.
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c client -- \
+            cat /proc/net/tcp > netns-sockets.out
+          if ! awk '$2 == "0100007F:1FA3" && $4 == "0A" { found = 1 } END { exit !found }' netns-sockets.out; then
+            echo "the shim is not listening on 127.0.0.1:8099:" >&2; cat netns-sockets.out >&2; exit 1
+          fi
+          if awk '$2 == "00000000:1FA3" { found = 1 } END { exit !found }' netns-sockets.out; then
+            echo "the shim is bound to every interface — any pod that can reach this one" >&2
+            echo "has a service that adds a governed credential to what it forwards" >&2
+            exit 1
+          fi
+          kubectl --context "$KUBE_CTX" -n acme get deploy acme-client \
+            -o jsonpath='{.spec.template.spec.containers[?(@.name=="kaimahi-mcp-auth")].ports}' > shim-ports.out
+          if [ -s shim-ports.out ]; then
+            echo "the shim's port is published: $(cat shim-ports.out)" >&2; exit 1
+          fi
+          # Without the shim: the same request, from the same pod, refused —
+          # because there is no credential on it. The authority is piped in
+          # rather than mounted: verification is never skipped, and the
+          # CLIENT container deliberately has no CA of its own (it speaks
+          # plain http to loopback; the shim is what dials the seam).
+          kubectl --context "$KUBE_CTX" -n acme get secret kaimahi-plane-ca \
+            -o jsonpath='{.data.ca\.crt}' | base64 -d | \
+          kubectl --context "$KUBE_CTX" -n acme exec -i deploy/acme-client -c client -- python3 -c '
+          import json, ssl, sys, tempfile, urllib.error, urllib.request
+          ca = tempfile.NamedTemporaryFile(suffix=".crt", delete=False, mode="w")
+          ca.write(sys.stdin.read()); ca.close()
+          req = urllib.request.Request("https://kaimahi-mcp-gateway.kaimahi:8081/upstream/warehouse/mcp/",
+              data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"}).encode(),
+              headers={"Content-Type": "application/json"})
+          try:
+              urllib.request.urlopen(req, timeout=15,
+                                     context=ssl.create_default_context(cafile=ca.name))
+          except urllib.error.HTTPError as e:
+              print("unauthorized as expected:", e.code); raise SystemExit(0 if e.code == 401 else 1)
+          raise SystemExit("a request with no credential was admitted")
+          ' 2>&1 | tee headerless-denied.out
+          grep -q 'unauthorized as expected: 401' headerless-denied.out
+          # Through the shim: the same request, no header, governed.
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c client -- python3 -c '
+          import json, urllib.request
+          def call(body):
+              r = urllib.request.urlopen(urllib.request.Request(
+                  "http://127.0.0.1:8099/mcp/", data=json.dumps(body).encode(),
+                  headers={"Content-Type": "application/json",
+                           "Accept": "application/json, text/event-stream"}), timeout=30)
+              return json.loads(r.read().decode())
+          hello = call({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": "2025-03-26"}})
+          caps = sorted(hello["result"]["capabilities"])
+          assert caps == ["tools"], caps
+          print("handshake through the shim advertises:", caps)
+          out = call({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                      "params": {"name": "stock_get", "arguments": {"sku": "SKU-9"}}})
+          assert "error" not in out, out
+          print("governed tool call, no header set by the client:", out["result"]["content"][0]["text"])
+          ' 2>&1 | tee headerless.out
+          grep -q "handshake through the shim advertises: \['tools'\]" headerless.out
+          grep -q 'governed tool call, no header set by the client' headerless.out
+          # Nothing widened. A tool outside the allowlist is refused through
+          # the shim exactly as it is anywhere else, and files a request.
+          kubectl --context "$KUBE_CTX" -n acme exec deploy/acme-client -c client -- python3 -c '
+          import json, urllib.request
+          r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8099/mcp/",
+              data=json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                               "params": {"name": "stock_adjust",
+                                          "arguments": {"sku": "SKU-9", "delta": 5}}}).encode(),
+              headers={"Content-Type": "application/json",
+                       "Accept": "application/json, text/event-stream"}), timeout=30)
+          out = json.loads(r.read().decode())
+          assert "error" in out, "a tool outside the allowlist was admitted: %s" % out
+          print("outside the allowlist:", out["error"]["message"])
+          ' 2>&1 | tee headerless-denied-tool.out
+          grep -q 'tool not permitted by the Kaimahi allowlist' headerless-denied-tool.out
+      # The audit is the proof it was governed rather than merely reachable.
+      - name: "Every one of those calls is on the trail, with no kagent anywhere"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx audit tool warehouse-client 2>&1 | tee audit.out
+          # One grep, not two: `stock_get` somewhere and `allowed` somewhere
+          # would be satisfied by a regression that denied stock_get while
+          # some other row was allowed. The view prints tool before decision.
+          grep -q 'stock_get.*allowed' audit.out
+          # The refused methods are on the trail too, which is how a reader
+          # can see the projection stopped a client asking rather than the
+          # gateway quietly widening.
+          grep -q 'method not relayed by the Kaimahi gateway' audit.out
+          if grep -q 'stock_adjust.*allowed' audit.out; then
+            echo "a tool outside the allowlist was admitted" >&2; exit 1
+          fi
+          kubectl --context "$KUBE_CTX" get crds -o name > crds-after.out
+          if [ -s crds-after.out ]; then
+            echo "something installed a CRD during this shard:" >&2; cat crds-after.out >&2; exit 1
+          fi
+          echo "governed end to end; kubectl get crds still returns nothing"
+      - name: Cluster state on failure
+        if: failure() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          kubectl --context "$KUBE_CTX" get pods -A || true
+          kubectl --context "$KUBE_CTX" -n kaimahi logs -l app=kaimahi-proxy --tail=200 || true
+          kubectl --context "$KUBE_CTX" -n acme logs deploy/acme-warehouse --all-containers --tail=200 || true
+          kubectl --context "$KUBE_CTX" -n acme logs deploy/acme-client --all-containers --tail=200 || true
+      - name: Docs-only change — cluster steps skipped, job reports success
+        if: steps.changes.outputs.docs_only == 'true'
+        run: echo "every changed file is documentation; no cluster booted"
+
   # The REQUIRED check (the protect-main ruleset names `e2e-hello-world`).
   # It owns no cluster of its own: it reports whether every e2e shard
   # above succeeded, so the ruleset keeps gating on one context while the
@@ -4074,7 +4493,7 @@ jobs:
   # reports, and a required check that never reports blocks every merge.
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-ap, e2e-quickstart, e2e-resilience, e2e-runtime, e2e-spend, e2e-tools]
+    needs: [e2e-ap, e2e-foreign, e2e-quickstart, e2e-resilience, e2e-runtime, e2e-spend, e2e-tools]
     if: always()
     steps:
       - name: Every e2e shard succeeded

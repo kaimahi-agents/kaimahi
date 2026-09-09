@@ -41,9 +41,11 @@ const (
 	// starts, which is what puts the token in the config without it ever
 	// being written down.
 	SidecarImage = "nginx:1.27-alpine"
-	// SidecarTokenVar is the one environment variable the template
+	// SidecarTokenVar is the environment variable the template
 	// substitutes. NGINX_ENVSUBST_FILTER is set to it so nginx's own
-	// $variables survive the pass.
+	// $variables survive the pass — the entrypoint uses that value as an
+	// unanchored regex over variable NAMES, so it narrows the pass to
+	// names containing this one rather than to this one exactly.
 	SidecarTokenVar = "KMH"
 	// SidecarCAMount is where the plane's authority is mounted.
 	SidecarCAMount = "/etc/kaimahi"
@@ -102,8 +104,12 @@ func GenerateSidecar(spec SidecarSpec) (configMap, patch string, err error) {
 	if err := ValidateObjectName(spec.Deployment); err != nil {
 		return "", "", fmt.Errorf("credential shim for %q: --deployment %w", spec.Upstream, err)
 	}
+	quotedSecret, err := quote(spec.Secret)
+	if err != nil {
+		return "", "", err
+	}
 	configMap = sidecarConfigMapDocument(spec)
-	patch = sidecarPatchDocument(spec)
+	patch = sidecarPatchDocument(spec, quotedSecret)
 	if err := RefuseKeyShapes(configMap); err != nil {
 		return "", "", err
 	}
@@ -134,7 +140,12 @@ metadata:
 data:
   default.conf.template: |
     server {
-      listen %d;
+      # LOOPBACK ONLY, and this is the whole security boundary of the
+      # shim. A listen directive with a bare port binds every interface,
+      # and a pod IP is routable from the rest of the cluster — anything
+      # that could reach this pod would then have a service that adds a
+      # governed credential to whatever it forwarded.
+      listen 127.0.0.1:%d;
       server_name localhost;
 
       # A client that normalises its base URL appends a slash. Both forms
@@ -142,6 +153,12 @@ data:
       location = /mcp/ { rewrite ^ /mcp last; }
 
       location = /mcp {
+        # nginx resolves this host ONCE, at startup, because it is a
+        # literal rather than a variable. So the shim will not start
+        # until the plane's Service exists — which is loud and
+        # fail-closed, and the right way round: a shim that started and
+        # then answered every call with a 502 would look like the
+        # gateway being down.
         proxy_pass %s;
 
         # The credential, and the only substituted value in this file.
@@ -175,7 +192,7 @@ data:
 	return b.String()
 }
 
-func sidecarPatchDocument(spec SidecarSpec) string {
+func sidecarPatchDocument(spec SidecarSpec, quotedSecret string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `# The credential shim, as a patch on YOUR workload. kmx does not apply
 # this: it changes a Deployment this project does not own.
@@ -188,14 +205,22 @@ func sidecarPatchDocument(spec SidecarSpec) string {
 #
 # Both merge by name, so applying it twice adds one container and two
 # volumes, not two and four.
+#
+# It also PREPENDS: after the patch, this container is containers[0], so
+# "kubectl logs deploy/<name>" and "kubectl exec deploy/<name>" reach the
+# shim rather than your application unless you name yours with -c. Any
+# JSON patch you have against /spec/template/spec/containers/0 now points
+# at this one.
 spec:
   template:
     spec:
       containers:
         - name: %s
           image: %s
-          ports:
-            - containerPort: %d
+          # No ports entry, deliberately. The shim binds 127.0.0.1 only,
+          # so there is nothing for a Service to select and nothing to
+          # publish — and declaring a containerPort for it would invite
+          # exactly the Service that would undo the boundary.
           env:
             # Substitute the token and nothing else, so nginx's own
             # $variables survive the template pass.
@@ -204,6 +229,9 @@ spec:
             - name: %s
               valueFrom:
                 secretKeyRef:
+                  # Quoted: an object name is an RFC 1123 subdomain, so a
+                  # name like 1.5 is a legal one — and unquoted it decodes
+                  # as a float, which the API server then refuses.
                   name: %s
                   key: api-key
           volumeMounts:
@@ -237,8 +265,8 @@ spec:
               - key: %s
                 path: %s
 `, spec.Namespace, spec.Deployment, spec.SidecarURL(),
-		SidecarContainer, SidecarImage, SidecarListenPort,
-		SidecarTokenVar, SidecarTokenVar, spec.Secret,
+		SidecarContainer, SidecarImage,
+		SidecarTokenVar, SidecarTokenVar, quotedSecret,
 		SidecarContainer, PlaneCASecret, SidecarCAMount,
 		SidecarContainer, spec.SidecarConfigMap(),
 		PlaneCASecret, PlaneCASecret, PlaneCAKey, PlaneCAKey)

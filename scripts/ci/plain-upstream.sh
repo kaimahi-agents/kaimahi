@@ -15,6 +15,13 @@
 #
 #   up      create the namespace, the ConfigMap holding the server, the
 #           Deployment and the Service; wait for it to answer
+#   client  a second workload in the same namespace that CALLS the seam.
+#           It is separate from the server on purpose: the scaffolded
+#           policy pair gives the server zero egress, so the server can
+#           reach nothing — including the gateway — and a client hosted
+#           inside it would be measuring that policy rather than the
+#           seam. This one is unpoliced, which is what an adopter's own
+#           application looks like.
 #   calls   print the calls the SERVER actually served (not what the
 #           plane decided — that is `kmx audit tool`)
 #   down    delete the namespace and everything in it
@@ -109,6 +116,39 @@ sys.exit(0 if "stock_adjust" in r.read().decode() else 1)' >/dev/null 2>&1; then
   exit 1
 }
 
+client() {
+  $KUBECTL apply -f - <<YAML >/dev/null
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme-client
+  namespace: $NS
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-client
+  template:
+    metadata:
+      labels:
+        app: acme-client
+    spec:
+      containers:
+        - name: client
+          image: $IMAGE
+          # It does nothing on its own. What it is for is being exec'd
+          # into: an MCP client's pod, with the network position one has.
+          command: ["sleep", "infinity"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+YAML
+  $KUBECTL -n "$NS" rollout status deploy/acme-client --timeout=300s
+}
+
 calls() {
   $KUBECTL -n "$NS" exec deploy/acme-warehouse -- \
     python3 -c 'import urllib.request;print(urllib.request.urlopen("http://127.0.0.1:9090/calls",timeout=5).read().decode())'
@@ -118,7 +158,8 @@ down() { $KUBECTL delete namespace "$NS" --ignore-not-found --wait=true; }
 
 case "${1:-}" in
   up) up ;;
+  client) client ;;
   calls) calls ;;
   down) down ;;
-  *) echo "usage: $(basename "$0") up|calls|down" >&2; exit 2 ;;
+  *) echo "usage: $(basename "$0") up|client|calls|down" >&2; exit 2 ;;
 esac

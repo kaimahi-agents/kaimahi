@@ -78,7 +78,7 @@ func TestTheSidecarNamesTheSecretAndNeverValuesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	printed := f.out.String()
-	if !strings.Contains(printed, "name: kaimahi-warehouse-token") ||
+	if !strings.Contains(printed, `name: "kaimahi-warehouse-token"`) ||
 		!strings.Contains(printed, "key: api-key") {
 		t.Fatalf("the shim does not reference the Secret by name:\n%s", printed)
 	}

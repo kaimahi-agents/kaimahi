@@ -17,7 +17,10 @@ package app
 // container is added to their workload.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -76,6 +79,19 @@ func (a *App) ToolsSidecar(opt SidecarOptions) error {
 	// looked like an object would invite `kubectl apply -f`, which would
 	// replace the Deployment's whole pod spec with the shim's two entries.
 	patchPath := strings.TrimSuffix(path, ".yaml") + ".patch.yaml"
+	// Both or neither. Writing the config and then failing on the patch
+	// would leave a fresh ConfigMap beside a stale patch from an earlier
+	// run — one that may name a different Deployment or a different
+	// Secret — and the two are meant to be read together.
+	for _, p := range []string{path, patchPath} {
+		if _, err := os.Stat(p); err == nil {
+			return fmt.Errorf("%s already exists. The shim is two files that belong together, "+
+				"so neither is written while either is there.\n"+
+				"  Read it, then remove both and run this again:\n    rm %s %s", p, path, patchPath)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("cannot tell whether %s exists (refusing to guess): %w", p, err)
+		}
+	}
 	if err := scaffold.WriteNew(path, configMap); err != nil {
 		return err
 	}
@@ -105,6 +121,14 @@ func (a *App) ToolsSidecar(opt SidecarOptions) error {
 	} else {
 		a.notef("Not applied (--no-apply). Review it, then:")
 		a.notef("  kubectl --context %s apply -f %s", a.Cfg.KubeContext, path)
+		// The shim mounts the authority and will not start without it, so
+		// applying only the config leaves a pod that cannot schedule its
+		// container. `kmx tools govern` publishes it; so does a run of
+		// this command without --no-apply.
+		a.notef("The shim also mounts Secret %s/%s, which it will not start without.",
+			opt.Namespace, config.PlaneCASecret)
+		a.notef("  `kmx tools govern --secret-namespace %s …` publishes it, and so does this", opt.Namespace)
+		a.notef("  command without --no-apply.")
 	}
 
 	a.notef("")

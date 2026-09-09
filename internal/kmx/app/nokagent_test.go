@@ -122,6 +122,40 @@ func TestOnboardingAppliesTheWholeFileWhereKagentIsInstalled(t *testing.T) {
 	}
 }
 
+// The apply precondition holds on BOTH paths. `kubectl apply -f` applies
+// each document independently and does not roll back, so a stale overlay
+// that was refused by the API server would still leave the policy pair
+// behind — the check exists to refuse before anything has happened, and
+// the reduced path must not be the one that skips it.
+func TestBothApplyPathsRefuseAStaleOverlay(t *testing.T) {
+	for name, noKagent := range map[string]string{"with kagent": "", "without kagent": "1"} {
+		t.Run(name, func(t *testing.T) {
+			// An overlay that exists at one version when it is read for
+			// scaffolding and another when it is read again before the apply.
+			t.Setenv("KMX_TEST_RV", "4711")
+			f := newAddFixture(t, warehouseService, `{"other.json":"{}"}`, nil)
+			stdin := filepath.Join(f.dir, "stdin")
+			t.Setenv("KMX_TEST_STDIN", stdin)
+			t.Setenv("KMX_TEST_NO_KAGENT", noKagent)
+			t.Setenv("KMX_TEST_RV_SECOND", "4712")
+
+			err := f.app.AddUpstream(addOpts(f.dir))
+			if err == nil {
+				t.Fatal("an overlay that moved under the scaffold was applied anyway")
+			}
+			if !strings.Contains(err.Error(), "the overlay changed while this was being scaffolded") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(err.Error(), "nothing has been applied") {
+				t.Fatalf("the refusal must say nothing happened: %v", err)
+			}
+			if _, statErr := os.Stat(stdin); statErr == nil {
+				t.Fatal("documents were applied despite the refusal")
+			}
+		})
+	}
+}
+
 // A cluster that could not be asked is not a cluster without kagent.
 // Skipping a document because a read failed would silently half-onboard.
 func TestOnboardingRefusesWhenTheClusterCannotBeAsked(t *testing.T) {

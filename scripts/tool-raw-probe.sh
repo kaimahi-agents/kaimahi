@@ -16,7 +16,10 @@ umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=kaimahi
-AGENT_NAMESPACE=kagent
+# Where the governed token's Secret lives. `kagent` is where kmx writes it
+# on the kagent path; a runtime this project did not deploy holds it in its
+# own namespace, and there is no kagent namespace to read.
+AGENT_NAMESPACE="${SECRET_NAMESPACE:-kagent}"
 GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-tools-token}"
 GATEWAY_PORT="${GATEWAY_PORT:-18086}"
 UPSTREAM="${UPSTREAM:-kagent-tools}"

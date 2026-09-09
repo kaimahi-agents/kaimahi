@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestTheShimNamesTheSecretAndNeverValuesIt(t *testing.T) {
 		t.Fatalf("the config does not put the credential on the request:\n%s", cm)
 	}
 	if !strings.Contains(patch, "secretKeyRef") ||
-		!strings.Contains(patch, "name: kaimahi-warehouse-token") ||
+		!strings.Contains(patch, `name: "kaimahi-warehouse-token"`) ||
 		!strings.Contains(patch, "key: api-key") {
 		t.Fatalf("the patch does not resolve the token from the Secret:\n%s", patch)
 	}
@@ -66,6 +67,51 @@ func TestTheShimVerifiesTheSeamAgainstThePlanesAuthority(t *testing.T) {
 	if !strings.Contains(patch, "secretName: "+PlaneCASecret) ||
 		!strings.Contains(patch, "mountPath: /etc/kaimahi") {
 		t.Fatalf("the authority is not mounted where the config reads it:\n%s", patch)
+	}
+}
+
+// The shim's whole security boundary. A bare `listen 8099;` binds every
+// interface, and a pod IP is routable from the rest of the cluster — so
+// anything that could reach the pod would have a service that adds a
+// governed credential to whatever it forwarded.
+func TestTheShimBindsLoopbackOnly(t *testing.T) {
+	cm, patch, err := GenerateSidecar(shim())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("listen 127.0.0.1:%d;", SidecarListenPort)
+	if !strings.Contains(cm, want) {
+		t.Fatalf("the shim does not bind loopback only (want %q):\n%s", want, cm)
+	}
+	// The bare form is what nginx binds to every interface. It must not
+	// appear even in a comment that could be uncommented.
+	for _, line := range strings.Split(cm, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "listen ") && !strings.Contains(trimmed, "127.0.0.1:") {
+			t.Fatalf("a listen directive binds more than loopback: %q", trimmed)
+		}
+	}
+	// And nothing publishes it. A containerPort would invite a Service,
+	// which is exactly what would undo the boundary. Read as YAML rather
+	// than grepped, so the comment that says why does not satisfy it.
+	var doc struct {
+		Spec struct {
+			Template struct {
+				Spec struct {
+					Containers []struct {
+						Ports []map[string]any `yaml:"ports"`
+					} `yaml:"containers"`
+				} `yaml:"spec"`
+			} `yaml:"template"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(patch), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range doc.Spec.Template.Spec.Containers {
+		if len(c.Ports) > 0 {
+			t.Fatalf("the patch publishes the shim's port: %v", c.Ports)
+		}
 	}
 }
 
@@ -163,12 +209,55 @@ func TestTheShimConfigMapIsAnObject(t *testing.T) {
 	}
 }
 
+// nginx's own entrypoint substitutes ${KMH} and nothing else. Two things
+// have to be true for that to work, and both are properties of this
+// generated text rather than of nginx: the token placeholder must be the
+// only `$`-form the filter names, and every OTHER `$` in the file must be
+// one nginx itself reads, since envsubst without the filter would blank
+// them. Today there are none — checked here so adding one is a decision.
+func TestTheShimConfigCarriesNoUnfilteredVariables(t *testing.T) {
+	cm, _, err := GenerateSidecar(shim())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(cm, "\n") {
+		for _, field := range strings.Split(line, "$")[1:] {
+			if strings.HasPrefix(field, "{"+SidecarTokenVar+"}") {
+				continue
+			}
+			t.Errorf("a $-variable other than ${%s} is in the template, and envsubst "+
+				"would blank it: %q", SidecarTokenVar, line)
+		}
+	}
+}
+
+// A Deployment or Secret name is an RFC 1123 SUBDOMAIN, so dots are legal
+// and a validator that refused them would turn away a workload that works.
+func TestTheShimAcceptsDottedObjectNames(t *testing.T) {
+	spec := shim()
+	spec.Deployment = "acme.client"
+	spec.Secret = "kaimahi.warehouse.token"
+	cm, patch, err := GenerateSidecar(spec)
+	if err != nil {
+		t.Fatalf("a name the API server accepts was refused: %v", err)
+	}
+	if !strings.Contains(patch, `name: "kaimahi.warehouse.token"`) ||
+		!strings.Contains(patch, "patch deployment acme.client") {
+		t.Fatalf("the dotted names did not reach the patch:\n%s", patch)
+	}
+	if cm == "" {
+		t.Fatal("no config was generated")
+	}
+}
+
 func TestTheShimRefusesInputItCannotBuildFrom(t *testing.T) {
 	for name, mutate := range map[string]func(*SidecarSpec){
 		"no upstream":     func(s *SidecarSpec) { s.Upstream = "" },
 		"bad namespace":   func(s *SidecarSpec) { s.Namespace = "Acme Corp" },
 		"no deployment":   func(s *SidecarSpec) { s.Deployment = "" },
 		"bad secret name": func(s *SidecarSpec) { s.Secret = "kaimahi/warehouse" },
+		"upper case":      func(s *SidecarSpec) { s.Deployment = "AcmeClient" },
+		"trailing dot":    func(s *SidecarSpec) { s.Deployment = "acme-client." },
 		"committed name":  func(s *SidecarSpec) { s.Upstream = "slack" },
 		// Underscores are not object names — and a value shaped like a
 		// key is one of the things that reach a --secret flag by mistake.

@@ -176,7 +176,8 @@ swap plus a credential the agent cannot read past.
 | `kmx request <tool\|budget\|inbound> <subject>` | file one explicitly. `--args '<json>'` (tool requests only) names the CALL to pre-approve; omitting it means the **argument-less** call, never "any call" |
 | `kmx tools add <name>` | onboard **your own** MCP server as a governed upstream: scaffold the table entry, the NetworkPolicy pair and the gateway seam as reviewable YAML, validate them against the running plane, apply (`--url`, `--tool`, `--server-egress`, `--pod-port`, `--secret`, `--out`, `--no-apply`, `--dry-run`) |
 | `kmx models add <name>` | onboard **your own** model endpoint as a governed upstream: scaffold the table entry and the NetworkPolicy pair as reviewable YAML, validate them against the running plane, apply (`--url`, `--classification`, `--protocol`, `--server-egress`, `--pod-port`, `--out`, `--no-apply`, `--dry-run`) |
-| `kmx tools govern` | issue the gateway credential, set the allowlist, wire the governed `RemoteMCPServer`, repoint the agent (`--tools`, `--credential`, `--agent`, `--secret`, `--server`). It APPLIES the committed seam (`kaimahi-tools`); a seam scaffolded by `kmx tools add` is the operator's file, so it is not re-applied here — if you used `--no-apply` or `--dry-run`, apply it first, and kmx says so rather than waiting on an object that is not there |
+| `kmx tools govern` | issue the gateway credential, set the allowlist, wire the governed `RemoteMCPServer`, repoint the agent (`--tools`, `--credential`, `--agent`, `--secret`, `--server`). It APPLIES the committed seam (`kaimahi-tools`); a seam scaffolded by `kmx tools add` is the operator's file, so it is not re-applied here — if you used `--no-apply` or `--dry-run`, apply it first, and kmx says so rather than waiting on an object that is not there. On a cluster with no kagent there is no seam to accept and no Agent to repoint, so it writes the credential, the allowlist and the authority and stops there |
+| `kmx tools sidecar <upstream>` | scaffold the credential shim for a client that cannot set a header: an in-pod reverse proxy that presents the token from the Secret the plane wrote (`--deployment`, `--namespace`, `--secret`, `--out`, `--no-apply`). kmx applies the config; the Deployment patch is yours to apply |
 | `kmx tools allow <tool,tool\|->` | replace the allowlist. `-` is the **empty** allowlist: nothing callable without a live grant |
 | `kmx tools allowlist [<credential>]` | read it back, sorted |
 | `kmx tools ungovern` | put the agent back on the ungoverned tool server |
@@ -628,6 +629,15 @@ validates them against the running plane and applies them behind the
 guard. The full walkthrough, including what to choose for `policy_fields`
 and why, is [govern-your-agent.md](govern-your-agent.md).
 
+**On a cluster with no kagent**, the fourth document is the one nothing
+can read — it exists to tell a kagent controller where the seam is — so
+it is not applied. The other three are, the proxy is restarted so the
+new entry is loaded, and the command exits 0, naming what it skipped.
+The file still carries all four: install kagent later and
+`kubectl apply -f upstreams/warehouse.yaml` picks the seam up. A cluster
+that could not be *asked* whether the CRD is there is an error, never an
+absence. See [foreign-runtime.md](foreign-runtime.md).
+
 | Flag | Meaning |
 |---|---|
 | `--url <url>` | the server's OWN in-cluster endpoint, `http://<service>.<namespace>:<port>/mcp` |
@@ -711,6 +721,44 @@ validation by the plane's own parser. What is different:
 | **This seam has NO allowlist, and the command says so** | A tool upstream is unreachable until a credential allowlists a tool on it. A model upstream is reachable by every credential the plane has issued the moment it is in the table. An operator arriving from `kmx tools add` will assume otherwise, so it is stated before anything is applied. |
 | **The plane must be new enough** | The overlay carrying `upstreams` is admin contract 2. An older plane refuses the fragment in its own words, which read like an operator error; kmx asks the plane what it is first and names the version gap instead. |
 | **The seam address is printed, not emitted** | See above: no `ModelConfig`, because the adopter may have no kagent. |
+## `kmx tools sidecar`
+
+```bash
+kmx tools sidecar warehouse --deployment acme-client --namespace acme
+```
+
+Some MCP clients cannot be told to send a header — their only
+configuration is a URL — and so cannot present a credential at all. This
+scaffolds the shim that presents one for them: an in-pod reverse proxy on
+loopback that the client posts to, which adds the token from the Secret
+the plane wrote and forwards to the gateway over TLS, verifying against
+the plane's own authority.
+
+Two files, because they are applied by different people to different
+things. kmx applies the ConfigMap holding the shim's config, and
+publishes the plane's authority into that namespace. The Deployment
+patch it writes and does **not** apply: adding a container to somebody
+else's workload is the operator's call. It is a strategic merge whose
+container and volume lists merge by name, so applying it twice adds one
+container, not two.
+
+| Flag | Meaning |
+|---|---|
+| `--deployment <name>` | required — the workload running the MCP client, so the patch and the command that applies it name the same object |
+| `--namespace <ns>` | where that workload runs (default `kagent`) |
+| `--secret <name>` | Secret **name** holding the `kmh_` token (default `kaimahi-<upstream>-token`) |
+| `--out <path>` | where to write the ConfigMap; the patch goes beside it as `<path>`.patch.yaml. `-` prints **both** documents to stdout and writes and applies nothing |
+| `--no-apply` | write both files and stop |
+
+| Property | Why |
+|---|---|
+| **This command accepts no credential either** | The generated config carries `Bearer ${KMH}`; `KMH` comes from the Secret through the pod's environment, and nginx's own entrypoint substitutes one into the other before it starts. The token is never in a manifest, a values file or an image. Both documents are scanned for key shapes before they are written. |
+| **A query parameter was refused** | It would need no sidecar at all, and a URL is not a place a bearer token may live: it reaches the ingress and load-balancer access logs, the client library's request log, every proxy in between, `kubectl logs` on anything that logs a request line, and shell history. |
+| **It proxies one path and returns 404 for everything else** | The shim is a credential, not a route. It listens on loopback inside the pod, so nothing else in the cluster can reach it. |
+| **It verifies the seam** | `proxy_ssl_verify on` against the mounted authority, with the name the certificate actually carries. Skipping verification would pay for the whole certificate exercise and buy nothing, while looking identical from outside. |
+| **It does not buffer** | The gateway relays SSE; buffering it would hold a streamed tool result until the call had finished, which for a long tool call looks exactly like a hang. |
+| **The patch prepends** | A strategic merge puts the shim at `containers[0]`, so after applying it `kubectl logs deploy/<name>` and `kubectl exec deploy/<name>` reach the shim unless you name your own container with `-c`. The patch says so in its own header, because it is the first thing an operator hits afterwards. |
+| **It will not start before the plane exists** | nginx resolves the seam's host once, at startup. So a shim added to a pod on a cluster with no plane crash-loops with a message naming the host, rather than starting and answering every call with a 502 — which would read as the gateway being down. Deploy the plane and run `kmx tools govern` first; both are steps before this one anyway. |
 
 ## Governing an agent
 
