@@ -154,6 +154,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	// same mistake as deleting their workspace, made quieter by the fact that
 	// nothing disappears, it just stops collecting.
 	if record.Before.WeEnabledMetrics() {
+		a.warnAboutScrapeJobsTheAddonOwns()
 		a.notef("turning off the Managed Prometheus this run enabled")
 		if err := a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
 			"--disable-azure-monitor-metrics", "--output", "none"); err != nil {
@@ -177,6 +178,45 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	}
 	a.forgetLiftRecord(opt)
 	return nil
+}
+
+// warnAboutScrapeJobsTheAddonOwns says the one thing an operator cannot find
+// out afterwards.
+//
+// The PodMonitor KIND belongs to the metrics add-on: it installs the custom
+// resource definition, and disabling it takes that definition away — which
+// takes every object of that kind on the cluster with it, whoever wrote them.
+// Measured on a live cluster, not inferred: after `az aks update
+// --disable-azure-monitor-metrics`, `kubectl get podmonitors…` answers "the
+// server doesn't have a resource type".
+//
+// This is not something this command can avoid. Turning off an add-on this run
+// turned on is exactly what teardown is for, and the collection is Kubernetes
+// doing what it does. What it can do is refuse to be quiet about it, because
+// the alternative is an operator whose own scrape jobs are gone with nothing
+// having said so. Their manifests still exist wherever they keep them; what is
+// lost is the objects, and re-applying them once the add-on is back is the fix.
+func (a *App) warnAboutScrapeJobsTheAddonOwns() {
+	out, err := a.kubectlCapture("get", scrapeMonitorResource, "--all-namespaces",
+		"-o", "jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name} {end}")
+	if err != nil {
+		return // the kind is already gone, or the cluster cannot be read; either way there is nothing to name
+	}
+	var theirs []string
+	for _, name := range strings.Fields(out) {
+		if name != "kaimahi/"+scrapeMonitor {
+			theirs = append(theirs, name)
+		}
+	}
+	if len(theirs) == 0 {
+		return
+	}
+	a.notef(`turning Managed Prometheus off removes the PodMonitor KIND itself, and with it
+  every PodMonitor on this cluster — including %s, which
+  this run did not create and would otherwise leave alone. The add-on owns
+  that custom resource definition; nothing here can disable one without the
+  other. Re-apply your own manifests when the add-on is back.`,
+		strings.Join(theirs, ", "))
 }
 
 // removeInClusterObservability takes back the two cluster-side objects — and

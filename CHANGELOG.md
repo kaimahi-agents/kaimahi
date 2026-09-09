@@ -203,6 +203,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   step — the verb defect below blocked the observability phase in every build
   that shipped it — so there is no ConfigMap of ours on any cluster to clean
   up.
+- **Teardown names the scrape jobs the add-on will take with it.** The
+  `PodMonitor` kind belongs to Azure's metrics add-on, so disabling the
+  add-on removes the custom resource definition and every object of that
+  kind on the cluster, whoever wrote them — measured on a live cluster, not
+  inferred. `kmx lift down --byo` cannot avoid that (turning off an add-on
+  this run turned on is what teardown is for), but it no longer does it
+  quietly: it lists the PodMonitors it did not create, before it acts.
 - **The lift says what its dashboard does not cover.** The view is what
   crossed the governance plane — allowed, refused, approved, spent. It is
   not what happened inside an agent: no spans, no per-step timings. The

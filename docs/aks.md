@@ -766,6 +766,20 @@ Custom resources are read from **every** namespace and are scraped by
 the same `ama-metrics` replica pods the plane's allowance already names,
 so nothing about the boundary changes when you add one.
 
+**One thing to know before you rely on it, measured rather than
+inferred.** The `PodMonitor` *kind* belongs to the metrics add-on: the
+add-on installs the custom resource definition, and disabling the add-on
+takes that definition away — which takes every `PodMonitor` on the
+cluster with it, whoever wrote them. After
+`az aks update --disable-azure-monitor-metrics`, `kubectl get
+podmonitors.azmonitoring.coreos.com` answers *"the server doesn't have a
+resource type"*, and the objects are gone. This is Kubernetes collecting
+custom resources whose definition has been removed; nothing can disable
+the add-on without it. `kmx lift down --byo` therefore **names your
+PodMonitors before it turns the add-on off**, so that "my scrape jobs
+disappeared" is never something you have to work out afterwards. Your
+manifests are untouched — re-apply them once the add-on is back.
+
 If your cluster's metrics add-on is old enough to have no PodMonitor
 CRD, the observability phase does **not** stop — the workbook and the log
 path are unaffected by this, and stopping would cost you both. It prints
