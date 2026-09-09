@@ -243,6 +243,10 @@ ours to publish, and their `SECURITY.md` routes such things to MSRC.
 
 There is no mutating webhook (`MutatingWebhookConfiguration`: zero
 occurrences repo-wide), no injection annotation, and no adoption path.
+To be exact rather than merely narrow: the chart does ship one CEL
+`MutatingAdmissionPolicy`, `admission-seccomp-auto-stamp.yaml`, whose
+entire mutation sets a `seccompProfile`. It is off by default and it
+cannot attach a router to anything.
 The controller *does* watch Deployments
 (`reconciler/mod.rs:3389-3393`) but the mapper (`:3443-3454`) returns
 `None` unless the Deployment already carries KARS's own labels — it is a
@@ -486,6 +490,31 @@ client **verbatim and unread** — zero occurrences of `copilot_usage` in
 the tree. Price data reaches the one component that could ledger it and
 is written straight through. Our `cost_source` and the price gate that
 refuses a call it cannot price have no counterpart.
+
+**And a call they cannot meter is served for free.** Every one of the six
+`record_usage` sites in `routes/chat_completions.rs` (`:610`, `:678`,
+`:789`, `:926` — the streaming path — `:1032`, `:1069`) has the same
+shape:
+
+```rust
+if let Ok(bj) = serde_json::from_slice::<serde_json::Value>(&chat_body)
+    && let Some(total) = bj.get("usage")
+        .and_then(|u| u.get("total_tokens")).and_then(|v| v.as_u64())
+{
+    state.budget.record_usage(sandbox_name, total).await;
+}
+```
+
+If `usage.total_tokens` is absent, or is not a `u64`, `record_usage` is
+never called — and the 2xx is returned to the caller anyway. A successful
+answer whose usage cannot be read costs the budget nothing, silently.
+`anthropic_messages.rs:497,723,879` is the same. **This is the exact
+property W46 made our model seam refuse** — a 2xx with unreadable usage
+is denied rather than ledgered as a plausible zero, and a stream nobody
+asked for is recorded `unmetered` rather than as a zero. It is the
+second of the three things this project has that they do not, and it is
+worth stating precisely because we shipped the bug first and only then
+the fix.
 
 **Their audit vs. ours.** Theirs is tamper-*evident* — SHA-256 chained,
 verifiable by replay, and honestly labelled as detection-not-signing on
