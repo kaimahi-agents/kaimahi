@@ -156,6 +156,9 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
 | W42: the audit row does not say who called (D47) | W42 worker | PR #149 MERGED | legibility, not a new control; the vocabulary deliberately does not change |
+| W45: the tool seam works for a client we did not write (foreign-app 3, 4, 5) | unassigned | SHAPED 2026-09-08 — prompt below; **the highest-impact of the three** | the gateway advertises capabilities it refuses, so half their app went ungoverned |
+| W46: the model seam speaks what frameworks actually send (foreign-app 1, 2) | unassigned | SHAPED 2026-09-08 — prompt below | the meter reads zero for a current framework's default; and an adopter cannot add a model upstream at all |
+| W47: observability an adopter can extend (foreign-app 6) | unassigned | SHAPED 2026-09-08 — prompt below | a broken verb, and a scrape config nobody can add their own pods to |
 | W43: the model seam carries content that exists nowhere else (D48) | unassigned | SHAPED 2026-09-08 — prompt below | feasibility first: if kagent cannot trust a private CA, the finding IS the lane |
 | W41: govern a runtime this repository did not write | W41 worker | PR #139 MERGED — the call seam is generic and proven so; what is kagent-shaped, and the three things a foreign runtime cannot get, are in `docs/foreign-runtime.md` | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
@@ -647,6 +650,31 @@ before it is written down anywhere public.
   contained a wrong analysis of who could capture, corrected only after
   review. The exposure here is larger and the reasoning that made
   plaintext acceptable there is absent.
+
+- **D47 (REOPENED 2026-09-08 — its void condition fired, on the same
+  day it was ruled): the**
+
+  **The ruling below says, in its own words, that if a foreign runtime
+  becomes supported it is void.** A foreign application was governed
+  end to end on kind and on AKS the same day
+  (`docs/reviews/2026-09-08-foreign-app-sundae-funday.md`), and its calls
+  are recorded as having no person behind them — the positive claim the
+  vocabulary reserves for "the plane CAN say there is no person". The
+  condition was not hypothetical and did not take months.
+
+  **What that changes.** Option C was accepted because no supported
+  configuration reached the imprecision. One does now. The choice is
+  between option A as originally framed — a third live value meaning
+  *the plane has no basis to say* — and narrowing what counts as
+  supported, which is an honest answer only if we mean it.
+
+  **What it does not change.** Recording the caller shipped and was
+  right: the audit row now distinguishes a client the plane did not
+  deploy, which is what made this occurrence legible rather than silent.
+  That half of the ruling stands whatever replaces the other.
+
+  **The original ruling follows, kept because a decision that discards
+  its reasoning cannot be revisited.**
 
 - **D47 (RULED 2026-09-08 — option C, PLUS recording the caller): the
   audit trail says "there is no person" in a case where it cannot
@@ -5204,6 +5232,171 @@ over TLS on a kind cluster, the certificate's issuer and expiry shown,
 verification failing closed when the CA is wrong with a message that
 names the certificate, and `kmx up` still working end to end for someone
 who has never heard of any of this.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
+```
+
+### W45 — the tool seam works for a client we did not write (UNASSIGNED — paste into a fresh CLI session; the highest-impact of the three)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first — the Mission above all — then
+`docs/reviews/2026-09-08-foreign-app-sundae-funday.md` sections 4.2, 4.4
+and 3. This lane closes items 3, 4 and 5 of that report's list.
+
+**Why this one first.** A third-party application was pointed at this
+plane and **one of its two agents could not be governed at all.** Its
+tool calls appear in no audit row, and reaching its MCP server cost a
+second hole punched in the network boundary `kmx tools add` had just
+drawn. The enforcement engine worked; the seam would not let a
+spec-compliant client through the door.
+
+**(1) The gateway advertises capabilities it then refuses.** It relays
+the `initialize` result verbatim from the upstream while enforcing a
+tools-only method set. So the result says the server supports prompts,
+the client believes it, calls `load_prompts()`, and gets *"method not
+relayed by the Kaimahi gateway (tools only)"* — at startup, fatally. The
+client is not at fault: it guards the call on the advertised capability.
+**We lied first.**
+
+The fix is the projection the gateway already does on `tools/list`,
+applied one message earlier: strip everything but `tools` from the
+relayed capabilities. **The report is explicit that this is not the
+one-liner it looks like, and you should believe it**: `initialize` takes
+the streaming `forward` path today, and only `tools/list` gets the
+buffered path a projection needs. The real work is deciding how much of
+an `initialize` response the gateway is willing to buffer, and what it
+does when that bound is exceeded. Say what you chose and what happens at
+the limit.
+
+**(2) A client that cannot set a header cannot present a credential.**
+The report worked around it with an nginx shim and calls that the only
+reason a configuration-only integration failed. Either ship that shim
+and document it, or provide a documented alternative. **A query
+parameter is not an alternative** unless you have thought hard about
+where URLs get logged; if you propose one, say where it can appear.
+
+**(3) `kmx tools add` and `kmx tools govern` do not complete on a
+cluster with no kagent.** They reach for a CRD that is not there. Skip
+it, restart the proxy, exit 0 — a plane governing a foreign application
+has no kagent to reconcile, and that is now a supported shape rather
+than a hypothetical.
+
+**Guardrails.** No change to what is allowlisted, argument-bound or
+audited — this lane changes what the seam ACCEPTS, never what it
+permits. The gateway still fails closed on an audit write failure, still
+relays only tools, still refuses batches and duplicated JSON keys. If
+capability projection means buffering, an oversized response is a
+refusal and not a truncation. kmx accepts no credential material beyond
+the ruled terminal-only prompt. CI stays keyless. No Azure or Slack
+identifiers. Comments say what the thing does, never a lane or decision
+number.
+
+**Verification.** A spec-compliant client that reads `initialize`
+capabilities and calls only what is advertised, starting and running
+against the gateway — the case that failed. The header-less path
+demonstrated end to end. `kmx tools add` completing on a cluster with no
+kagent CRDs installed, proven by `kubectl get crds` returning nothing.
+And the oversized-`initialize` case refused rather than silently cut.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
+```
+
+### W46 — the model seam speaks what frameworks actually send (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first, then `docs/reviews/2026-09-08-foreign-app-sundae-funday.md`
+sections 4.3 and 3. This lane closes items 1 and 2 of that report's list.
+
+**(1) The meter reads zero for a framework's default protocol.** One
+current agent framework speaks the Responses API by default — a
+different path and a different token shape (`input_tokens` /
+`output_tokens`) from the chat-completions request the proxy reads.
+Traffic flows and **the ledger records nothing**, which is worse than a
+refusal: a spend control that silently counts zero is a spend control
+that does not exist. The report measured one framework; treat that as
+the floor, not the census.
+
+Support the path and the token shape. Decide and say: what happens to a
+request shape the proxy does not recognise — refuse it, or forward it
+unmetered? **Only one of those is consistent with a plane that exists to
+meter**, and if you choose the other, argue it.
+
+**(2) An adopter cannot add a model upstream at all.** The only route
+edits a ConfigMap that the next `kmx plane` overwrites. That is a design
+decision, not a bug fix, and it is yours: a `kmx models add` mirroring
+`kmx tools add`, or an overlay that accepts `upstreams` the way the tool
+side already accepts fragments. The tool seam solved this problem once
+already — read how before inventing a second shape, and if you diverge,
+say why.
+
+**Guardrails.** The price gate stays: a metered upstream under a cents
+budget refuses a model it has no price for, and this project never
+invents a price. Adding a protocol must not add a way to spend
+unmetered. `credential_file` NAMES a Secret and never carries a value.
+kmx accepts no credential material beyond the ruled terminal-only
+prompt. CI stays keyless — prove the new protocol against a fixture, not
+a paid endpoint. No Azure or Slack identifiers.
+
+**Verification.** A Responses-API call metered correctly, with the
+ledger row shown and its token counts matching what the upstream
+reported. An unrecognised shape doing whatever you decided, deliberately.
+A model upstream added by the new path and surviving `kmx plane`.
+
+Branch from current main; PR targets main; no stacked bases; lane ends at
+PR-open-with-checks-green — do not merge.
+```
+
+### W47 — observability an adopter can extend (UNASSIGNED — paste into a fresh CLI session)
+
+```
+You are a worker session for the Kaimahi project (repo root: this
+checkout, remote kaimahi-agents/kaimahi). Read docs/COORDINATION.md
+first, then `docs/reviews/2026-09-08-foreign-app-sundae-funday.md`
+section 7. This lane closes item 6 of that report's list.
+
+**Two things, one small and one that decides whether the observability
+story is true for anybody but us.**
+
+**(1) A broken verb.** `internal/kmx/app/lift_observability.go` uses a
+`get` where it should not. The report names it. Fix it and add whatever
+would have caught it — a lane found this by running the thing, which is
+the expensive way.
+
+**(2) The scrape configuration is ours alone.** Managed Prometheus
+scrapes the plane's `/metrics`. An adopter who wants their own pods
+scraped must hand-merge a cluster-wide ConfigMap, which is both
+unpleasant and a good way to lose somebody else's scrape jobs. Give them
+a way to add theirs that does not involve editing a document we also
+edit — and remember the constraint the lift already honours: **the ops
+port is on no Service**, and a scraper reaches the pod through an
+explicit NetworkPolicy allowance. Do not trade that for convenience.
+
+**The honest scope, which the report states and this lane must not
+overstate.** We show what crossed the plane: what was allowed, what was
+refused, what a human approved, what it spent. We do not show what
+happened inside an adopter's agent — no spans, no internal timings.
+OpenTelemetry is the answer to that and is not ours to replace. Whatever
+you ship, the documentation says which half it covers, in the place an
+operator will meet it.
+
+**Guardrails.** No change to what is metered or audited. The ops port
+stays off every Service. Teardown rules on a bring-your-own cluster are
+absolute: remove only what we created, by recorded resource id, failing
+closed rather than matching by name. Report a spend figure if you run
+anything on Azure. No Azure identifiers in the PR body or any
+transcript. CI stays keyless and cannot reach Azure, so CI proves the
+shape and the real run is manual.
+
+**Verification.** The broken verb fixed with a test that fails without
+the fix. An adopter's own scrape target added without hand-merging our
+ConfigMap, demonstrated on a real cluster, with teardown proved. And the
+documented statement of what the view does and does not cover.
 
 Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
