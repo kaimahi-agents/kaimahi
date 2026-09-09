@@ -3232,11 +3232,25 @@ jobs:
           if grep -qE '^ +port: 8000' house.yaml; then
             echo 'the NetworkPolicy used the Service port' >&2; exit 1
           fi
-          # Nothing key-shaped, and no credential field: an overlay
-          # upstream is keyless by the plane's own rule.
-          if grep -E 'credential_file|kmh_[0-9a-f]{20,}' house.yaml; then
+          # Nothing key-shaped, and no custody FIELD: an overlay upstream
+          # is keyless by the plane's own rule.
+          #
+          # Matched as JSON KEYS ("credential_file":), not as bare words.
+          # The generated manifest explains in a comment which fields an
+          # overlay may not carry, and it names every one of them — so a
+          # bare-word grep matches the documentation and fails a correct
+          # scaffold. It did, on the first run of this step.
+          if grep -E '"(credential_file|credential_header|ca_file|extra_headers|prices)"' house.yaml; then
             echo 'the scaffold emitted custody where an overlay may not carry it' >&2; exit 1
           fi
+          if grep -E 'kmh_[0-9a-f]{20,}' house.yaml; then
+            echo 'the scaffold emitted something token-shaped' >&2; exit 1
+          fi
+          # And the negative has to be able to fail: the same pattern
+          # against a fragment that DOES carry one must match, or this
+          # step is asserting nothing.
+          printf '{"upstreams": {"x": {"credential_file": "/etc/kaimahi/admin/token"}}}\n' > custody-probe.json
+          grep -qE '"(credential_file|credential_header|ca_file|extra_headers|prices)"' custody-probe.json
       - name: "Models: a Responses-API call is metered from ITS OWN token fields"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
