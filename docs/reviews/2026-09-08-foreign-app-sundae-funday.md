@@ -192,8 +192,37 @@ server {
 }
 ```
 
+`${KMH}` is not a literal in that file, and where it comes from is the
+half that makes the shim honest: the template lives in a ConfigMap, the
+**token** comes from the Secret `kmx tools govern` wrote, and nginx's own
+entrypoint substitutes one into the other before it starts — so the
+credential is in the pod's environment and the rendered config, never in
+a manifest, a values file or an image.
+
+```yaml
+- name: kaimahi-mcp-auth
+  image: nginx:1.27-alpine
+  env:
+    - name: NGINX_ENVSUBST_FILTER      # substitute KMH and nothing else,
+      value: KMH                       # so nginx's own $variables survive
+    - name: KMH
+      valueFrom:
+        secretKeyRef:
+          name: kaimahi-sundae-token   # the Secret kmx tools govern wrote
+          key: api-key
+  volumeMounts:
+    - name: kaimahi-mcp-auth
+      mountPath: /etc/nginx/templates  # *.template → envsubst → /etc/nginx/conf.d
+```
+
 `SUNDAE_MCP_URL: http://127.0.0.1:8099/mcp/`, and their client is
-governed. It is ~15 lines and it belongs in this project, not in an
+governed. The evidence that the substitution worked is the sidecar's own
+access log, which shows their client's requests being answered rather
+than rejected — `POST /mcp/ HTTP/1.1 200 … python-httpx/0.28.1`, against
+`HTTP 401 unauthorized` for the same request without the header (§4.1).
+No `nginx -t` transcript is quoted here because none was captured while
+the clusters were up, and this report does not print output it did not
+see. It is ~15 lines and it belongs in this project, not in an
 adopter's head.
 
 ### 4.3 The model seam speaks a protocol their framework does not
@@ -340,9 +369,18 @@ turns it into "waiting for approval" in a UI.
 concierge pod, with a valid credential:
 
 ```console
-$ kubectl -n demo exec deploy/concierge -- python3 -c "urlopen('http://kaimahi-mcp-gateway.kaimahi:8081/healthz')"
+$ kubectl -n demo exec deploy/concierge -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://kaimahi-mcp-gateway.kaimahi:8081/healthz', timeout=10).status)"
+…
+TimeoutError: timed out
 urllib.error.URLError: <urlopen error timed out>
+command terminated with exit code 1
 ```
+
+The explicit `timeout=10` is what makes that a *finding* rather than a
+hang: the probe has to be able to come back and say "no answer in ten
+seconds", which is exactly what a dropped packet looks like from the
+client side.
 
 The plane's committed rule admits one namespace, named `kagent`. This is
 the change, and it is the whole change:
@@ -408,6 +446,15 @@ verb**, so kubectl treats `networkpolicy` as a plugin name. It is called
 from `recordPreExistingState`, which is not gated on `--byo`, so this
 blocks the observability phase on *every* lift. It fails closed, which
 is the right instinct and no comfort.
+
+`recordPreExistingState` does open with an early return for a resumed
+run — `if record.Before.Recorded { return nil }` — and it is worth
+saying why that is not an escape: `Recorded: true` is assigned only at
+the *end* of the same function, after both `objectExists` calls. The
+call that always fails is upstream of the only line that could set the
+flag, so no run can ever record the state that would let a later one
+skip the check. The early return is unreachable, and "every lift" is
+meant literally.
 
 So the phase was reproduced by hand — `az aks enable-addons monitoring`,
 `az aks update --enable-azure-monitor-metrics`, then this repository's
