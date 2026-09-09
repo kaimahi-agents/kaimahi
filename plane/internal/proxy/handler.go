@@ -388,14 +388,14 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 	}
 	metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
 	// The one case the refusal above cannot reach: a STREAM whose bytes
-	// have already left. It is recorded as `unmetered` and logged at
-	// ERROR — the plane cannot recall an answer it has flushed, and it
-	// will not pretend the call cost nothing either.
-	unmetered := resp.StatusCode < 300 && !u.found
-	if unmetered {
+	// have already left (the buffered path returned rather than arriving
+	// here, so this condition is reachable only for `streamed`). It is
+	// recorded as `unmetered` and logged at ERROR — the plane cannot
+	// recall an answer it has flushed, and it will not pretend the call
+	// cost nothing either.
+	if streamed && resp.StatusCode < 300 && !u.found {
 		slog.Error("proxy: streamed response carried no usage the protocol can read; the call is ledgered unmetered",
 			"upstream", name, "protocol", up.Protocol, "model", req.Model)
-		metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
 		metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUnmetered)
 		h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, u, resp.StatusCode, true), res.ID)
 		return

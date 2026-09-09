@@ -445,6 +445,22 @@ func TestAnOverlayMayAddAModelUpstream(t *testing.T) {
 	}
 }
 
+// The overlay narrows what an entry may SAY; Parse still decides
+// whether it is well formed, and that includes the egress rule. A model
+// upstream pointing outside the cluster is refused there — the marker
+// that would make it legitimate is itself refused above, so there is no
+// spelling of a hosted model upstream that an overlay can carry.
+func TestAnOverlayModelUpstreamMustLookInCluster(t *testing.T) {
+	_, err := mergeParse(t, Fragment{Name: "h.json", Raw: []byte(`{
+	  "upstreams": {
+	    "house": {"base_url": "http://api.example.com", "path": "v1/responses", "classification": "free"}
+	  }
+	}`)})
+	if err == nil || !strings.Contains(err.Error(), "in-cluster") {
+		t.Fatalf("want the egress rule's refusal, got: %v", err)
+	}
+}
+
 // A name already in the committed table is refused rather than resolved
 // by precedence — the same rule the tool seam has, on the seam where a
 // silent redefinition would repoint every governed model call.
