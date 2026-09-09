@@ -208,7 +208,10 @@ func ValidateModelName(name string) error {
 			"starting and ending alphanumeric, at most 40 characters — it becomes a URL path segment, "+
 			"a ConfigMap key and part of two object names", name)
 	}
-	for _, committed := range []string{"ollama", "copilot"} {
+	// Every model upstream k8s/plane/upstreams.yaml carries. An overlay
+	// may not redefine one, so the refusal names the reason here rather
+	// than arriving later as a merge collision.
+	for _, committed := range []string{"ollama", "copilot", "orka", "orka-coordinator"} {
 		if name == committed {
 			return fmt.Errorf("%q is one of this repo's committed model upstreams — an overlay may not redefine it "+
 				"(the plane refuses a redefinition rather than resolving it by precedence). Choose another name", name)

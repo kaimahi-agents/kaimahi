@@ -117,7 +117,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"approvals", "approve", "audit", "backup", "budget", "completion",
 		"credential", "credential capture", "credential renew", "credentials",
 		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
-		"lift", "lift down", "metrics", "models", "models add", "plane", "quickstart", "request",
+		"lift", "lift down", "metrics", "migrate", "models", "models add", "plane", "quickstart", "request",
 		"restore", "status",
 		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
 		"tools sandbox", "tools sandbox status", "tools sidecar", "tools ungovern",

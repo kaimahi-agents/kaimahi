@@ -379,7 +379,12 @@ func TestEveryUpstreamFieldIsClassifiedAsSafeOrDenied(t *testing.T) {
 	// Fields an overlay MAY set: they describe an in-cluster, keyless
 	// model endpoint and say nothing about the proxy's custody, its reach
 	// outside the cluster, or what a cents budget is measured with.
-	safe := map[string]bool{"base_url": true, "path": true, "protocol": true, "classification": true}
+	// client_path is safe: it says which of two wire shapes the seam
+	// accepts from a client and nothing about custody, reach or price.
+	// The pairing it may declare is the one this plane can translate, and
+	// Parse refuses every other — an overlay cannot widen that.
+	safe := map[string]bool{"base_url": true, "path": true, "protocol": true,
+		"client_path": true, "classification": true}
 	denied := map[string]bool{}
 	for _, f := range modelCustodyFields {
 		denied[f] = true

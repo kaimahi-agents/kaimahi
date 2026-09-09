@@ -87,7 +87,30 @@ type Upstream struct {
 	// `chat/completions` or `responses`); otherwise required, because
 	// the alternative is guessing where the token counts are, and a
 	// wrong guess meters zero without saying so.
-	Protocol       string `json:"protocol,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	// ClientPath is the ONE path a CLIENT may post to, when that is not
+	// the one path forwarded upstream. Absent — which is every upstream
+	// that existed before this field — the two are the same path and
+	// nothing is translated.
+	//
+	// It exists because the wire shape a framework sends and the wire
+	// shape an endpoint serves have stopped being the same thing. One
+	// current agent framework speaks the Responses API by default and
+	// offers no switch; several endpoints serve chat completions and no
+	// Responses route at all, and at least one of them answers the
+	// unrouted path with its own dashboard's HTML under a 200. Pointing
+	// that framework at that endpoint cannot be made to work by
+	// configuration on either side.
+	//
+	// So the seam accepts `v1/responses` from the client, forwards
+	// `v1/chat/completions` upstream, and translates in both directions.
+	// The pairing is not general: responses -> chat_completions is the
+	// only one implemented, and Parse refuses every other combination
+	// rather than accepting a declaration nothing can honour. Metering is
+	// untouched by the translation — usage is still read out of the
+	// upstream's own body under the upstream's own protocol, so the
+	// counts on the ledger row are the counts the model reported.
+	ClientPath     string `json:"client_path,omitempty"`
 	Classification string `json:"classification"`
 	// CredentialFile, when set, is a Secret-mounted file holding the real
 	// upstream credential; read per request so rotation needs no restart.
@@ -114,6 +137,23 @@ type Upstream struct {
 	// upstream presents a test certificate. Absent, the system roots apply.
 	CAFile string `json:"ca_file,omitempty"`
 }
+
+// AcceptedPath is the one forwarded remainder a CLIENT may post to this
+// upstream — ClientPath where the two differ, and Path everywhere else.
+// One (method, path) per upstream is still the whole blast radius; this
+// says which of the two paths the door is.
+func (u Upstream) AcceptedPath() string {
+	if u.ClientPath != "" {
+		return u.ClientPath
+	}
+	return u.Path
+}
+
+// Translates reports whether a request to this upstream is rewritten on
+// the way out and its answer rewritten on the way back. Parse guarantees
+// the only pairing this can be true for, so the handler and the
+// translator never have to ask which one it is.
+func (u Upstream) Translates() bool { return u.ClientPath != "" }
 
 // ToolUpstream is one MCP tool server the gateway may relay to. The
 // committed table is the whole egress surface at this layer: the gateway
@@ -372,6 +412,52 @@ func Parse(raw []byte) (Config, error) {
 		default:
 			return Config{}, fmt.Errorf("config: upstream %q: protocol %q is not one this plane can meter (want %s)",
 				name, u.Protocol, strings.Join(quoteEach(Protocols), " or "))
+		}
+		// The client's half of the seam, when it is a different half.
+		// Every refusal here is a declaration nothing could honour: a
+		// path naming no protocol, a path naming the one already
+		// forwarded, or a pairing this plane has no translator for. The
+		// alternative to refusing at load is a seam that accepts a
+		// request and forwards it in a shape the endpoint cannot read.
+		if u.ClientPath != "" {
+			if strings.HasPrefix(u.ClientPath, "/") {
+				return Config{}, fmt.Errorf("config: upstream %q: client_path must have no leading slash", name)
+			}
+			clientProtocol := PathProtocol(u.ClientPath)
+			switch {
+			case clientProtocol == "":
+				return Config{}, fmt.Errorf("config: upstream %q: client_path %q names no protocol this plane knows "+
+					"(want a path ending %s)", name, u.ClientPath,
+					strings.Join(quoteEach([]string{"chat/completions", "responses"}), " or "))
+			case clientProtocol == u.Protocol:
+				return Config{}, fmt.Errorf("config: upstream %q: client_path %q and path %q are both %s, so there is "+
+					"nothing to translate — omit client_path", name, u.ClientPath, u.Path, u.Protocol)
+			case !(clientProtocol == ProtocolResponses && u.Protocol == ProtocolChatCompletions):
+				return Config{}, fmt.Errorf("config: upstream %q: this plane translates %s onto %s and no other pairing; "+
+					"client_path %q is %s and path %q is %s. Refused rather than forwarded in a shape the endpoint "+
+					"cannot read", name, ProtocolResponses, ProtocolChatCompletions,
+					u.ClientPath, clientProtocol, u.Path, u.Protocol)
+			}
+		}
+		// A committed extra header must not displace the credential the
+		// proxy injects from custody. The model seam sets ExtraHeaders
+		// AFTER the credential — the opposite of the gateway's ordering —
+		// so on this type the ordering itself is the exposure, and the
+		// gateway's own copy of this check has guarded the other seam
+		// since it was written. This one is late rather than new: the
+		// committed table has carried a keyed model upstream with headers
+		// (copilot) the whole time, on the strength of review alone.
+		credSlot := u.CredentialHeader
+		if credSlot == "" {
+			credSlot = "authorization"
+		}
+		for k := range u.ExtraHeaders {
+			if k == "" || !validHeaderName(k) {
+				return Config{}, fmt.Errorf("config: upstream %q: invalid extra header name %q", name, k)
+			}
+			if strings.EqualFold(k, credSlot) || strings.EqualFold(k, "authorization") {
+				return Config{}, fmt.Errorf("config: upstream %q: extra header %q would displace the injected credential", name, k)
+			}
 		}
 		c.Upstreams[name] = u
 		switch u.Classification {

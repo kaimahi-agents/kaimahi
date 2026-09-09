@@ -77,7 +77,7 @@ still in the tree.
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
 | `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 54 (checkers, probes, CI fixtures, mutation specs) |
-| `docs/` | 22 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
+| `docs/` | 23 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
 ---
@@ -86,7 +86,7 @@ still in the tree.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (17 files) | **Product** | The CLI. The documented front door is `install.sh`, piped from `curl` to `sh`; `go install .../cmd/kmx@latest` is the stated alternative. |
+| `cmd/kmx` (18 files) | **Product** | The CLI. The documented front door is `install.sh`, piped from `curl` to `sh`; `go install .../cmd/kmx@latest` is the stated alternative. |
 | `cmd/demo/kaimahi-erp` (2 files) | **Demonstration** | A fake accounts-payable ERP. Applied by `k8s/erp-mcp.yaml` via `scripts/erp-deploy.sh`; `docs/ap-demo.md` lists it under "Simulated" — "no vendor, no bank, no payment rail". |
 
 Until this change both sat directly under `cmd/`, as peers, and nothing
@@ -119,10 +119,10 @@ a kubectl and the operator's terminal.
 
 | Package | Non-test source files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 41 | Product | Every kmx command. The shell-out orchestration layer. |
+| `kmx/app` | 42 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
 | `kmx/blueprint` | 5 | Product | The declarative governed-workflow file. |
-| `kmx/scaffold` | 10 | Product | Generates the reviewable Agent YAML, and the two onboarding artifacts: a tool upstream's four documents and a model upstream's three. |
+| `kmx/scaffold` | 11 | Product | Generates the reviewable Agent YAML, and the onboarding artifacts: a tool upstream's four documents, a model upstream's three, and a migration's identity, seam allowance and workload patch. |
 | `kmx/guard` | 1 | Product | The context-safety net. A local kind context proceeds with a banner; any other requires confirmation naming it; no confirmation, unknown context or unreadable kubeconfig refuses. |
 | `kmx/seam` | 1 | Product | What kmx knows about each upstream credential. |
 | `kmx/seamcert` | 1 | Product | Mints the certificate the plane's two data seams serve with, and answers when it expires. The authority outlives what it signs, so renewal is a re-sign rather than a redistribution. |
@@ -282,14 +282,15 @@ mentions — the other five are comments, which is the trap),
 `scripts/release-run.sh`,
 and `docs/tools.md`, which gives it as a step a reader runs by hand.
 
-## `docs/` — 39 tracked files, two audiences and two assets
+## `docs/` — 40 tracked files, two audiences and two assets
 
-**Product documentation (22)** — a user or operator reads it: `README.md`
+**Product documentation (23)** — a user or operator reads it: `README.md`
 (the index), `getting-started.md`, `kmx.md`, `aks.md`, `models.md`,
 `tools.md`, `spend.md`, `tool-governance.md`, `approvals.md`,
 `govern-your-agent.md`, `egress.md`, `inbound.md`, `hosted-upstreams.md`,
 `identity.md`, `operations.md`, `releases.md`, `workflows.md`, `FAQ.md`,
-`isolation.md`, `slack.md`, `foreign-runtime.md`, and `release-agent.md`.
+`isolation.md`, `slack.md`, `foreign-runtime.md`, `migrate.md`, and
+`release-agent.md`.
 
 `release-agent.md` sits here rather than under demonstration on its own
 authority — it documents the one agent this project actually depends on.

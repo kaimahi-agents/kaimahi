@@ -31,3 +31,9 @@ tmp/
 # operator onboarded (docs/govern-your-agent.md). It is theirs, and on a
 # CI runner it is job-local — not this repo's source.
 upstreams/
+
+# `kmx migrate` output: the identity and seam allowance kmx applies, and
+# the patch it leaves for the adopter to apply to their own Deployment
+# (docs/migrate.md). Same reasoning as above — it describes somebody
+# else's workload, not this repository's source.
+migrations/

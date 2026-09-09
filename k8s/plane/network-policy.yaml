@@ -72,9 +72,15 @@ spec:
 # credential anyway; the network's job here is "only from where agents
 # live".
 #
-# Out: the ledger, the four in-cluster upstreams the committed table
-# names (ollama, kagent's tool server, the Slack MCP server, the fixture
-# ERP), the kagent controller on 8083 (the inbound bridge invokes agents
+# A workload in ANY OTHER namespace — an application this project did not
+# write, migrated onto a seam — is not admitted by this rule and must not
+# be: the namespace it runs in is the adopter's, not this repository's.
+# `kmx migrate` writes that allowance as a separate object in the
+# adopter's own namespace, named and reviewable there (docs/migrate.md).
+#
+# Out: the ledger, the five in-cluster upstreams the committed table
+# names (ollama, Orka's OpenAI-compatible endpoint, kagent's tool server,
+# the Slack MCP server, the fixture ERP), the kagent controller on 8083 (the inbound bridge invokes agents
 # through its A2A endpoint), and DNS. Each upstream is pinned to its POD
 # by label, in its namespace, on its port — not to the Service, because
 # policy is evaluated on the post-NAT pod address. A new in-cluster entry in
@@ -127,6 +133,23 @@ spec:
       ports:
         - protocol: TCP
           port: 11434
+    # Orka's OpenAI-compatible endpoint, for the two orka upstreams in the
+    # committed table (docs/migrate.md). The pod selector is the one the
+    # orka-api Service itself uses, and 8080 is the CONTAINER port, which
+    # is what a NetworkPolicy is evaluated against — a Service port would
+    # match nothing. On a cluster with no Orka this rule selects no pod
+    # and permits nothing.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: orka-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: orka
+              control-plane: controller-manager
+      ports:
+        - protocol: TCP
+          port: 8080
     - to:
         - namespaceSelector:
             matchLabels:

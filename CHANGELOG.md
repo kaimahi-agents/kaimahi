@@ -24,6 +24,38 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`kmx migrate` puts an application you did not write onto Orka, with
+  its model traffic governed and without changing the application.** One
+  command reads what the workload reads today (including variables that
+  arrive through `envFrom` a ConfigMap), refuses a model Orka has no
+  ready `Provider` for before it writes anything, creates the identity
+  the seam presents to Orka and the seam's allowance for your namespace,
+  mints both credentials into Secrets through a pipe, and writes the four
+  environment variables and one mounted file as a patch it deliberately
+  **does not apply** — it creates objects it owns in a namespace it was
+  named, and does not mutate a Deployment this project does not own.
+  Afterwards the application's model calls are authenticated (it holds a
+  `kmh_` credential for the plane and no model key at all), Provider-scoped
+  (it names a model, never a URL) and recorded, refusals included. Two new
+  committed model upstreams reach the same Orka endpoint: `orka` sends
+  `X-Orka-Tools: disabled`, which is the only way off Orka's server-side
+  coordinator loop and a header an application configured by environment
+  variables cannot send; `orka-coordinator` does not, so what that default
+  costs can be read off the ledger instead of argued about. See
+  [docs/migrate.md](docs/migrate.md).
+
+- **The model seam accepts the Responses API on an endpoint that serves
+  chat completions.** An upstream may now declare `client_path` — the one
+  path a client may POST — beside `path`, the one forwarded on, and the
+  plane translates the request and the answer in both directions. Only
+  that pairing is implemented and every other combination is refused when
+  the config loads. A field the translation cannot honour is a `400`
+  naming the field rather than a field dropped in transit, a streamed
+  request on such an upstream is refused rather than half-translated, and
+  metering is untouched: token counts are still read out of the
+  endpoint's own body under the endpoint's own protocol, so a translation
+  bug can produce a wrong answer but not a wrong row.
+
 - **The model seam speaks the OpenAI Responses API, and a call it cannot
   meter is refused rather than counted as zero.** An upstream now
   declares a `protocol` — `chat_completions` (`usage.prompt_tokens` /
@@ -136,6 +168,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 
 ### Fixed
+
+- **A committed extra header on the model seam can no longer displace the
+  credential the proxy injects.** The model seam sets `extra_headers`
+  *after* the credential — the opposite of the gateway's ordering — and
+  had no load-time check for a header naming the credential slot, while
+  the gateway's copy of that check has been there since it was written.
+  A table that carried one is now refused at load, as the gateway's
+  already was.
 
 - **`kmx lift`'s observability phase could not run at all.** The check
   for what a cluster already had built a `kubectl` command with no verb

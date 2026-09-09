@@ -193,7 +193,10 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		h.deny(w, r, cred, att, name, "", http.StatusForbidden, "unknown upstream", "")
 		return
 	}
-	if r.PathValue("path") != up.Path {
+	// AcceptedPath, not Path: on a translating upstream the door and the
+	// forwarded remainder are deliberately different paths, and the door
+	// is the one a client is judged against.
+	if r.PathValue("path") != up.AcceptedPath() {
 		h.deny(w, r, cred, att, name, "", http.StatusForbidden, "path not allowed", "")
 		return
 	}
@@ -282,7 +285,27 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 	// unmeterable. The Responses API needs no such ask and refuses the
 	// parameter — prepareStream is where the two differ.
 	outBody := body
-	if req.Stream {
+	// On a translating upstream the client's request is rewritten into
+	// the shape the endpoint serves. A STREAMED one is refused instead:
+	// translating a chat-completions SSE stream into the Responses API's
+	// semantic events is a second translator, and half of one would hand
+	// a client a stream it cannot parse — after the first byte has left,
+	// where no refusal is possible any more.
+	var translation translatedRequest
+	if up.Translates() {
+		if req.Stream {
+			h.deny(w, r, cred, att, name, req.Model, http.StatusBadRequest,
+				"this upstream is reached by translating "+config.ProtocolResponses+" onto "+
+					config.ProtocolChatCompletions+", and that translation does not carry a stream; "+
+					"ask for the whole answer instead", res.ID)
+			return
+		}
+		if translation, err = responsesToChat(body); err != nil {
+			h.deny(w, r, cred, att, name, req.Model, http.StatusBadRequest, err.Error(), res.ID)
+			return
+		}
+		outBody = translation.Body
+	} else if req.Stream {
 		if outBody, err = prepareStream(up.Protocol, body); err != nil {
 			h.deny(w, r, cred, att, name, req.Model, http.StatusBadRequest, "request body is not a JSON object", res.ID)
 			return
@@ -403,6 +426,30 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "upstream answered but reported no usage this protocol can read; "+
 				"refused rather than forwarded unmetered", http.StatusBadGateway)
 			return
+		}
+		// The answer goes back in the shape the client asked in. Only a
+		// success is translated: an error body already carries the
+		// `{"error": {…}}` shape both APIs share, and rewriting it would
+		// risk turning a diagnosis into a parse failure.
+		if up.Translates() && resp.StatusCode < 300 {
+			translated, terr := chatToResponses(raw, translation)
+			if terr != nil {
+				// The call was made and the tokens were spent, so the row
+				// carries the real counts and a 502: what failed is this
+				// plane's rewriting of an answer it did receive. Failing
+				// closed is the only option that does not hand a client a
+				// body its SDK will crash three frames deep on, which is
+				// the exact failure this path exists to remove.
+				slog.Error("proxy: upstream answered but the reply could not be translated back; failing closed",
+					"upstream", name, "model", req.Model, "err", terr)
+				metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
+				metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUpstreamError)
+				h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, u, http.StatusBadGateway, false), res.ID)
+				http.Error(w, "upstream answered in a shape this seam could not translate back: "+terr.Error(),
+					http.StatusBadGateway)
+				return
+			}
+			raw = translated
 		}
 		copyResponseHeaders(w.Header(), resp.Header)
 		w.Header().Del("Content-Length")

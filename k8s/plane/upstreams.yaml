@@ -6,6 +6,9 @@
 # Classifications are explicit (standing guidance: no $0 by inference):
 #   - ollama:  free — the in-cluster demo tier costs nothing by
 #     classification, so only a token budget can exhaust it.
+#   - orka / orka-coordinator: metered, for the same reason as copilot —
+#     what is behind an Orka Provider is whatever key that Provider holds,
+#     and this table never assumes somebody else's endpoint is free.
 #   - copilot: metered — tokens are always counted; a cost applies only
 #     when a real price row is configured under "prices" (none are
 #     bundled: Copilot subscription usage has no per-token public price,
@@ -23,6 +26,41 @@
 # name) or the config is refused at load — so a hosted upstream can
 # never take the plain in-cluster dial by omission. Copilot carries the
 # marker; the LLM proxy and the MCP gateway share the one client.
+#
+# The two orka entries are ONE endpoint, deliberately named twice, and
+# they are the model half of `kmx migrate` (docs/migrate.md).
+#
+# "client_path" is the path a CLIENT posts to, where "path" is the one
+# forwarded on. They differ here because the framework this seam was
+# pointed at speaks the Responses API by default and Orka's compatible
+# endpoint serves chat completions and has no Responses route — an
+# unrouted path there returns the dashboard's HTML under a 200. The plane
+# translates in both directions and meters the answer from the counts the
+# endpoint itself reported.
+#
+# "X-Orka-Tools: disabled" is the difference between the two entries, and
+# it is the whole reason the second exists. Orka's compatible endpoint is
+# not a proxy by default: it injects its own coordinator prompt and its
+# tool definitions and runs a server-side agentic loop, and that header is
+# the only switch — no Helm value, no CRD field. An application configured
+# by environment variables cannot send a header, so the seam sends it.
+#   - orka             sends it. This is what `kmx migrate` points an
+#                      application at.
+#   - orka-coordinator does not, so the same application through the same
+#                      credential can be pointed at Orka's DEFAULT
+#                      behaviour and what it costs read off the ledger
+#                      instead of argued about. It is a measuring
+#                      instrument, not a recommendation.
+#
+# Both are reachable by EVERY credential this plane has issued: the model
+# seam has no per-credential allowlist, so this table is the whole blast
+# radius and a budget is what bounds a credential on it. That is true of
+# every entry here; it is called out at these two because the second one
+# can hold a request for the full upstream timeout.
+#
+# credential_file names (never carries) a ServiceAccount token for the
+# Orka API. Custody is the point: the application holds a kmh_ credential
+# for this plane and never the token that opens Orka.
 #
 # A tool_upstreams entry's optional "tools" block is the argument-policy
 # declaration: which of a tool's argument fields are
@@ -187,6 +225,23 @@ data:
             "Copilot-Integration-Id": "vscode-chat",
             "Editor-Version": "vscode/1.103.0"
           }
+        },
+        "orka": {
+          "base_url": "http://orka-api.orka-system.svc.cluster.local:8080/openai",
+          "path": "v1/chat/completions",
+          "client_path": "v1/responses",
+          "classification": "metered",
+          "credential_file": "/etc/kaimahi/upstream-creds/orka/token",
+          "extra_headers": {
+            "X-Orka-Tools": "disabled"
+          }
+        },
+        "orka-coordinator": {
+          "base_url": "http://orka-api.orka-system.svc.cluster.local:8080/openai",
+          "path": "v1/chat/completions",
+          "client_path": "v1/responses",
+          "classification": "metered",
+          "credential_file": "/etc/kaimahi/upstream-creds/orka/token"
         }
       },
       "tool_upstreams": {

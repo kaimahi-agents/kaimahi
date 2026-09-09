@@ -133,6 +133,9 @@ spec:
             - name: copilot-cred
               mountPath: /etc/kaimahi/upstream-creds/copilot
               readOnly: true
+            - name: orka-cred
+              mountPath: /etc/kaimahi/upstream-creds/orka
+              readOnly: true
             - name: slack-mcp-cred
               mountPath: /etc/kaimahi/upstream-creds/slack
               readOnly: true
@@ -235,6 +238,18 @@ spec:
             # The Copilot upstream is optional: without this Secret the
             # governed ollama path still works and copilot requests fail
             # closed (503 upstream credential unavailable).
+            optional: true
+        # The ServiceAccount token the seam presents to Orka's OpenAI-
+        # compatible endpoint, written by `kmx migrate` (docs/migrate.md).
+        # The application it migrates never holds this: it holds a kmh_
+        # credential for this plane, and custody of what opens Orka stays
+        # here.
+        - name: orka-cred
+          secret:
+            secretName: kaimahi-orka-token
+            # Optional, the same contract the other keyed upstreams have:
+            # with no Secret the orka upstreams fail closed (503 upstream
+            # credential unavailable) and nothing else is affected.
             optional: true
         # The Slack MCP server's OWN bearer credential — the gateway
         # injects it upstream (plane custody, like the Copilot key). The

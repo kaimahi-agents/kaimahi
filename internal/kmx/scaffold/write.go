@@ -34,3 +34,22 @@ func WriteNew(path, content string) error {
 	}
 	return nil
 }
+
+// WriteNewOrIdentical is WriteNew for a command that is meant to be
+// re-runnable: an existing file whose bytes are exactly what would have
+// been written is left alone and reported as unchanged, and anything else
+// keeps WriteNew's refusal.
+//
+// The distinction is the operator's edits, not the write. A file this
+// command would have produced verbatim carries no work to lose, so
+// refusing it would only stand between an operator and a re-run that
+// changes nothing on disk — while a file that differs may be theirs, and
+// is still refused.
+func WriteNewOrIdentical(path, content string) (unchanged bool, err error) {
+	if existing, readErr := os.ReadFile(path); readErr == nil {
+		if string(existing) == content {
+			return true, nil
+		}
+	}
+	return false, WriteNew(path, content)
+}
