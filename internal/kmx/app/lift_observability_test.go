@@ -194,11 +194,28 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 	}
 
 	fset := token.NewFileSet()
-	pkg, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	// Every non-test file in the package, parsed one at a time.
+	// `parser.ParseDir` would say this in a line, and is deprecated because it
+	// ignores build tags when deciding which files belong to a package — which
+	// for a scan whose whole value is that it misses nothing would be the
+	// wrong trade.
+	sources, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	files := map[string]*ast.File{}
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[path] = parsed
+	}
+	if len(files) < 10 {
+		t.Fatalf("only %d source files found in this package — the scan is not seeing them", len(files))
 	}
 
 	checked := 0
@@ -234,8 +251,8 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		}
 	}
 
-	for _, p := range pkg {
-		for path, file := range p.Files {
+	for path, file := range files {
+		{
 			enclosing := ""
 			ast.Inspect(file, func(n ast.Node) bool {
 				if fn, ok := n.(*ast.FuncDecl); ok {
