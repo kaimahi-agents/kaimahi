@@ -322,3 +322,68 @@ func stringLiteral(expr ast.Expr) (string, bool) {
 	}
 	return value, true
 }
+
+// An unreadable cluster is not "you have no scrape jobs".
+//
+// Teardown warns, before it disables the metrics add-on, that doing so removes
+// the PodMonitor KIND and takes every PodMonitor on the cluster with it. If the
+// read behind that warning fails — an unreachable API server, an RBAC denial —
+// treating the failure as an empty inventory produces silence at exactly the
+// moment the sentence matters, and the add-on goes anyway. Only kubectl saying
+// the cluster has no such kind is an answer, because then there is genuinely
+// nothing of anyone's to lose.
+func TestAnUnreadableClusterStillWarnsAboutScrapeJobsTheAddonWouldTake(t *testing.T) {
+	for _, tc := range []struct {
+		name, stderr string
+		wantSilence  bool
+	}{
+		{
+			name:        "the kind is not on this cluster",
+			stderr:      `error: the server doesn't have a resource type "podmonitors"`,
+			wantSilence: true,
+		},
+		{
+			name:   "the API server cannot be reached",
+			stderr: "Unable to connect to the server: dial tcp: i/o timeout",
+		},
+		{
+			name:   "the read is forbidden",
+			stderr: `Error from server (Forbidden): podmonitors.azmonitoring.coreos.com is forbidden`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// A heredoc, because kubectl's own wording contains an
+			// apostrophe ("doesn't have a resource type") and a shell-quoted
+			// echo would mangle the one string this test most needs verbatim.
+			script := "#!/bin/sh\ncat >&2 <<'KUBECTL_STDERR'\n" + tc.stderr + "\nKUBECTL_STDERR\nexit 1\n"
+			if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			var errOut bytes.Buffer
+			a := &App{
+				Cfg: &config.Config{KubeContext: "kind-test"},
+				Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
+				Out: io.Discard, Err: &errOut,
+			}
+			a.warnAboutScrapeJobsTheAddonOwns()
+
+			said := errOut.String()
+			if tc.wantSilence {
+				if said != "" {
+					t.Errorf("a cluster with no such kind has nothing to warn about, but it said:\n%s", said)
+				}
+				return
+			}
+			if said == "" {
+				t.Fatal("the read failed and teardown said nothing — an operator loses their scrape " +
+					"jobs to the next line of this command with no sentence about it")
+			}
+			if !strings.Contains(said, "could not read the PodMonitors") {
+				t.Errorf("the warning does not say the read failed:\n%s", said)
+			}
+		})
+	}
+}

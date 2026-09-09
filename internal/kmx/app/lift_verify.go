@@ -84,15 +84,18 @@ func (a *App) verifyMetricsArrived(opt lift.Options) error {
   Enabled and arriving are different claims, and this is the second one
   failing. The usual causes, in the order worth checking:
 
-    - the scrape job is not there, or this cluster has no PodMonitor CRD and
-      the phase asked you to merge the job into %s
-      in %s by hand:
+    - this cluster has no PodMonitor CRD, so the phase printed the job for you
+      to merge into %s in %s by hand
+      and it has not been merged:
+      kubectl --context %s get crd %s
+    - the CRD is there but the scrape job is not:
       kubectl --context %s -n kaimahi get %s %s
     - the NetworkPolicy allowance is missing, so the scraper cannot reach
       the pod: kubectl --context %s -n %s get networkpolicy kaimahi-proxy-metrics-azure
     - the add-on's replica pod is reporting a config error:
       kubectl --context %s -n kube-system logs -l rsName=ama-metrics -c prometheus-collector --tail=50`,
-				metricsArrivalWait, scrapeConfigMap, scrapeConfigNamespace,
+				metricsArrivalWait,
+				scrapeConfigMap, scrapeConfigNamespace, a.Cfg.KubeContext, scrapeMonitorResource,
 				a.Cfg.KubeContext, scrapeMonitorResource, scrapeMonitor,
 				a.Cfg.KubeContext, "kaimahi", a.Cfg.KubeContext)
 		}

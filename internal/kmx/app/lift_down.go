@@ -199,8 +199,34 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 func (a *App) warnAboutScrapeJobsTheAddonOwns() {
 	out, err := a.kubectlCapture("get", scrapeMonitorResource, "--all-namespaces",
 		"-o", "jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name} {end}")
-	if err != nil {
-		return // the kind is already gone, or the cluster cannot be read; either way there is nothing to name
+	switch {
+	case err == nil:
+	case noSuchResourceType(err):
+		// The kind is not on this cluster, so no PodMonitor of anyone's can be
+		// here to lose. That is an answer, and the only one that justifies
+		// saying nothing.
+		return
+	default:
+		// Anything else — an unreachable API server, an RBAC denial — is not
+		// "there are none". Read that way it would produce silence at exactly
+		// the moment an operator most needs a sentence, and the add-on would
+		// go anyway.
+		//
+		// It warns and continues rather than refusing: this read is advisory,
+		// teardown is what the operator asked for, and stopping here would
+		// leave two workspaces billing because a WARNING could not be
+		// computed. What is at risk is recoverable — their manifests are
+		// untouched — and teardown is re-runnable. The rule this project
+		// applies elsewhere, that an unknown must not authorise a destructive
+		// act, governs deletions; it is not a reason to abandon a teardown.
+		a.notef(`could not read the PodMonitors on this cluster (%v), so this cannot say
+  whether turning Managed Prometheus off will take any of yours with it — it
+  removes the PodMonitor KIND, and Kubernetes collects every object of that
+  kind. Check by hand:
+
+    kubectl --context %s get %s --all-namespaces`,
+			err, a.Cfg.KubeContext, scrapeMonitorResource)
+		return
 	}
 	var theirs []string
 	for _, name := range strings.Fields(out) {
