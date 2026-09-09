@@ -79,7 +79,10 @@ const ExpiryWarning = 7 * 24 * time.Hour
 
 // LedgerEntry is one append-only spend row. CostSource records why the
 // cost is what it is ('free', 'priced', 'unpriced', 'denied') — a zero
-// cost always carries its explanation (no blanket $0).
+// cost always carries its explanation (no blanket $0) — plus one value
+// that is not about cost at all: 'unmetered' says the call HAPPENED and
+// the token counts on this row are not its counts, because the plane
+// could not read them (migration 00012).
 type LedgerEntry struct {
 	CredentialName string `json:"credential"`
 	Upstream       string `json:"upstream"`

@@ -10,13 +10,22 @@ package config
 // merges them, and parses the result with the ONE parser everything else
 // uses (Parse). The merge is deliberately narrow and fail-closed:
 //
-//   - a fragment may carry `tool_upstreams` and `standing_constraints`
-//     and nothing else. The LLM upstreams, the inbound hooks and the
+//   - a fragment may carry `upstreams`, `tool_upstreams` and
+//     `standing_constraints`, and nothing else. The inbound hooks and the
 //     approval notifier are the plane's own seams, each entangled with a
 //     credential mount or a signing secret; a generic onboarding path
 //     that could rewrite them would be a much larger blast radius than
 //     the one this exists for.
-//   - and within `tool_upstreams`, an overlay entry may not carry the
+//   - `upstreams` — the MODEL seam — was in that excluded list until an
+//     adopter's framework needed a path the committed table had no entry
+//     for, and the only route was to edit the committed table, which the
+//     next `kmx plane` re-applies and discards. So it is mergeable now,
+//     under exactly the tool seam's rule rather than a second one: an
+//     overlay model upstream is IN-CLUSTER and KEYLESS, because the
+//     custody fields are refused (below). What that excludes is a hosted
+//     model endpoint, which is the case where a real API key is at
+//     stake — and that one still belongs in the reviewed table.
+//   - and within `upstreams` and `tool_upstreams` alike, an overlay entry may not carry the
 //     CUSTODY fields. This is the same rule as the bullet above, applied
 //     one level down, and it was missed once: `credential_file` names a
 //     path the proxy reads and sends upstream, and `internet` plus
@@ -28,6 +37,13 @@ package config
 //     docs/govern-your-agent.md already says it cannot express (a keyed
 //     server and a hosted one), and both remain available by editing the
 //     committed table, which is a deliberate act on a reviewed file.
+//   - a model upstream additionally may not carry `prices`. A price is
+//     the multiplier a cents budget is measured with, and it is the one
+//     number in the table the plane can never check — so it stays on the
+//     reviewed file. Nothing is lost that the plane will not tell you
+//     about: a metered overlay upstream with no price is refused under a
+//     cents budget by the priced-pair gate, exactly as it should be, and
+//     works normally under a token budget.
 //   - a name defined twice is REFUSED, naming both sources, rather than
 //     resolved by precedence. Silent precedence is how an operator ends
 //     up reviewing one entry and running another.
@@ -56,7 +72,7 @@ import (
 const DefaultConfigDir = "/etc/kaimahi/upstreams.d"
 
 // mergeableBlocks are the top-level keys a fragment may carry.
-var mergeableBlocks = []string{"tool_upstreams", "standing_constraints"}
+var mergeableBlocks = []string{"upstreams", "tool_upstreams", "standing_constraints"}
 
 // custodyFields are the tool_upstreams keys an OVERLAY entry may not set.
 // The list exists so a field added to ToolUpstream must be classified
@@ -73,6 +89,14 @@ var mergeableBlocks = []string{"tool_upstreams", "standing_constraints"}
 // forge whatever header that server trusts. Narrowing a hosted server is
 // an operator decision that belongs in the committed table.
 var custodyFields = []string{"credential_file", "credential_header", "internet", "ca_file", "extra_headers"}
+
+// modelCustodyFields is the same list for the MODEL seam, plus prices.
+// Kept as its own list rather than shared, so that a field added to
+// Upstream must be classified deliberately for THIS seam
+// (TestEveryUpstreamFieldIsClassifiedAsSafeOrDenied) — the two types do
+// not have the same fields and a shared list would silently pass the
+// ones only one of them has.
+var modelCustodyFields = []string{"credential_file", "credential_header", "internet", "ca_file", "extra_headers", "prices"}
 
 // Fragment is one operator-added overlay file: its name (for error
 // messages and ordering) and its bytes.
@@ -177,8 +201,13 @@ func Merge(base []byte, frags []Fragment) ([]byte, error) {
 				return nil, fmt.Errorf("config: %q: %w", block, err)
 			}
 			for name, raw := range add {
-				if block == "tool_upstreams" {
+				switch block {
+				case "tool_upstreams":
 					if err := refuseCustodyFields(f.Name, name, raw); err != nil {
+						return nil, err
+					}
+				case "upstreams":
+					if err := refuseModelCustodyFields(f.Name, name, raw); err != nil {
 						return nil, err
 					}
 				}
@@ -249,6 +278,58 @@ func refuseCustodyFields(fragment, upstream string, raw json.RawMessage) error {
 		return refuse("internet")
 	case entry.CAFile != "":
 		return refuse("ca_file")
+	}
+	return nil
+}
+
+// refuseModelCustodyFields is refuseCustodyFields for the model seam,
+// and the same two gates for the same two reasons: a case-insensitive
+// key scan so the message names the spelling the operator wrote, then
+// the DECODED entry, because Go's decoder matches keys case-insensitively
+// and a name-only denylist is bypassed by "Credential_File".
+//
+// The exposure it closes is the larger of the two. A tool upstream's
+// credential is a bearer for one MCP server; a model upstream's is
+// whatever the plane holds for a paid API, and an entry naming
+// /etc/kaimahi/upstream-creds/copilot/api-key against an attacker's
+// https host would hand it over on the first forwarded call. `prices`
+// joins the list on a different argument — see the header.
+func refuseModelCustodyFields(fragment, upstream string, raw json.RawMessage) error {
+	refuse := func(field string) error {
+		return fmt.Errorf("config: overlay %s: upstream %q sets %q, which an overlay may not set. "+
+			"An overlay describes an in-cluster, keyless model endpoint; %s decide what credential the "+
+			"proxy reads, which host outside the cluster it may be sent to, and what a cents budget is "+
+			"measured with — those belong in the committed table (k8s/plane/upstreams.yaml) where they "+
+			"are reviewed as part of this repository",
+			fragment, upstream, field, strings.Join(modelCustodyFields, ", "))
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return fmt.Errorf("config: overlay %s: upstream %q: want an object, got %s",
+			fragment, upstream, firstBytes(raw))
+	}
+	for key := range keys {
+		for _, field := range modelCustodyFields {
+			if strings.EqualFold(key, field) {
+				return refuse(key)
+			}
+		}
+	}
+	var entry Upstream
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		return fmt.Errorf("config: overlay %s: upstream %q: %w", fragment, upstream, err)
+	}
+	switch {
+	case entry.CredentialFile != "":
+		return refuse("credential_file")
+	case entry.CredentialHeader != "":
+		return refuse("credential_header")
+	case entry.Internet:
+		return refuse("internet")
+	case entry.CAFile != "":
+		return refuse("ca_file")
+	case len(entry.Prices) > 0:
+		return refuse("prices")
 	}
 	return nil
 }

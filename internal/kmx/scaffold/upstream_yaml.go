@@ -74,7 +74,7 @@ func overlayDocument(spec UpstreamSpec) (string, error) {
 	var b strings.Builder
 	b.WriteString(`# 1. The gateway's upstream table, as an OVERLAY.
 #
-# This repo's own four upstreams live in the committed ConfigMap
+# This repo's own upstreams live in the committed ConfigMap
 # kaimahi-upstreams and are not touched by onboarding: the proxy merges
 # every fragment here over that table at boot, refusing any fragment
 # that would redefine an entry rather than resolving it by precedence.

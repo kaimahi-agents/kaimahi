@@ -42,6 +42,32 @@ At kagent 0.9.12 there is no OpenRouter or Copilot-specific provider in
 the CRD. Every OpenAI-compatible endpoint rides `provider: OpenAI` plus
 `openAI.baseUrl`, and that is all any of these presets do.
 
+## "OpenAI-compatible" is two protocols, not one
+
+Every preset above speaks **chat completions** — `POST
+v1/chat/completions`, token counts reported as `prompt_tokens` and
+`completion_tokens`. That is what kagent's client sends and what this
+table has always meant by OpenAI-compatible.
+
+It is not the only shape. The **Responses API** — `POST v1/responses`,
+token counts reported as `input_tokens` and `output_tokens` — is what one
+current agent framework speaks by default: its model client *is* the
+Responses client, and it offers no switch. Both are OpenAI-compatible;
+they disagree about the field names the meter reads.
+
+That matters only on the governed path, and there it matters a lot: a
+governed upstream declares which protocol it speaks, and a call the plane
+cannot meter is refused rather than recorded as costing nothing. The
+declaration, the two shapes and what happens to a third are in
+[spend.md](spend.md#the-two-protocols); adding an upstream that speaks
+either is [`kmx models add`](kmx.md#kmx-models-add).
+
+Your own model endpoint — in-cluster, keyless, either protocol — is
+onboarded rather than committed: it goes into the operator overlay,
+which the next `kmx plane` does not discard. A hosted endpoint holds a
+real API key and stays a reviewed entry in
+[`k8s/plane/upstreams.yaml`](../k8s/plane/upstreams.yaml).
+
 ## Storing an API key
 
 Keys go in Kubernetes Secrets and nowhere else: never in YAML,

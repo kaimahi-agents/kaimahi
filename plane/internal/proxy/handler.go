@@ -99,6 +99,8 @@ func reasonFor(status int, msg string) metrics.Reason {
 		return metrics.ReasonBadRequest
 	case strings.HasPrefix(msg, "model has no configured price"):
 		return metrics.ReasonUnpricedModel
+	case strings.HasPrefix(msg, "upstream answered but reported no usage"):
+		return metrics.ReasonUnmetered
 	case strings.HasPrefix(msg, "spend ledger unavailable"):
 		return metrics.ReasonAuditDegraded
 	case strings.HasPrefix(msg, "monthly"):
@@ -274,11 +276,13 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// On streamed requests ask the upstream to append the usage chunk;
-	// without it a streamed response would be unmeterable.
+	// On a streamed chat-completions request, ask the upstream to append
+	// the usage chunk; without it a streamed response would be
+	// unmeterable. The Responses API needs no such ask and refuses the
+	// parameter — prepareStream is where the two differ.
 	outBody := body
 	if req.Stream {
-		if outBody, err = withIncludeUsage(body); err != nil {
+		if outBody, err = prepareStream(up.Protocol, body); err != nil {
 			h.deny(w, r, cred, att, name, req.Model, http.StatusBadRequest, "request body is not a JSON object", res.ID)
 			return
 		}
@@ -329,17 +333,18 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		// The attempt is ledgered even though it failed — spend is
 		// recorded before failures are honored (standing guidance); a
 		// transport failure has no usage to bill, so tokens are zero.
-		h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway), res.ID)
+		h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway, false), res.ID)
 		http.Error(w, "upstream unreachable", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var u usage
-	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+	streamed := strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream")
+	if streamed {
 		copyResponseHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
-		u = relayStream(w, resp.Body)
+		u = relayStream(w, up.Protocol, resp.Body)
 	} else {
 		// Buffer BEFORE the status goes to the client: a body the
 		// hardened client cuts — too large, or stalled past its lifetime —
@@ -352,45 +357,69 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 			slog.Error("proxy: upstream response cut; failing closed", "upstream", name, "err", err)
 			metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
 			metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUpstreamError)
-			h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway), res.ID)
+			h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway, false), res.ID)
 			http.Error(w, "upstream response cut", http.StatusBadGateway)
+			return
+		}
+		u = readUsage(up.Protocol, raw)
+		// A success the plane could not meter is REFUSED, not relayed.
+		// The body is still ours here — nothing has been written — so
+		// the choice is real, and only one side of it is consistent with
+		// a plane that exists to meter: an answer handed over with its
+		// spend recorded as zero is spend that never happened as far as
+		// every budget, every ledger sum and every report is concerned.
+		// The row is still written (the call DID reach the upstream and
+		// may have cost money there) and it says `unmetered`, so this is
+		// visible in the trail rather than being a plausible zero.
+		if resp.StatusCode < 300 && !u.found {
+			slog.Error("proxy: upstream success carried no usage the protocol can read; refusing rather than ledgering zero",
+				"upstream", name, "protocol", up.Protocol, "model", req.Model, "status", resp.StatusCode)
+			metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
+			metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUnmetered)
+			h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, usage{}, http.StatusBadGateway, true), res.ID)
+			http.Error(w, "upstream answered but reported no usage this protocol can read; "+
+				"refused rather than forwarded unmetered", http.StatusBadGateway)
 			return
 		}
 		copyResponseHeaders(w.Header(), resp.Header)
 		w.Header().Del("Content-Length")
 		w.WriteHeader(resp.StatusCode)
-		u = relayBuffered(w, raw)
+		_, _ = w.Write(raw)
 	}
 	metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
-	if resp.StatusCode < 300 && u == (usage{}) {
-		slog.Warn("proxy: no usage in upstream response; ledgering zero tokens",
-			"upstream", name, "model", req.Model, "stream", req.Stream)
+	// The one case the refusal above cannot reach: a STREAM whose bytes
+	// have already left. It is recorded as `unmetered` and logged at
+	// ERROR — the plane cannot recall an answer it has flushed, and it
+	// will not pretend the call cost nothing either.
+	unmetered := resp.StatusCode < 300 && !u.found
+	if unmetered {
+		slog.Error("proxy: streamed response carried no usage the protocol can read; the call is ledgered unmetered",
+			"upstream", name, "protocol", up.Protocol, "model", req.Model)
+		metrics.ObserveUpstream(metrics.SeamProxy, name, time.Since(started))
+		metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUnmetered)
+		h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, u, resp.StatusCode, true), res.ID)
+		return
 	}
 	if resp.StatusCode < 300 {
 		metrics.Decide(metrics.SeamProxy, admitted, admittedBy)
 	} else {
 		metrics.Decide(metrics.SeamProxy, admitted, metrics.ReasonUpstreamError)
 	}
-	h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, u, resp.StatusCode), res.ID)
-}
-
-type usage struct {
-	PromptTokens     int64 `json:"prompt_tokens"`
-	CompletionTokens int64 `json:"completion_tokens"`
+	h.record(r, ledgerFor(cred, att, name, req.Model, up, priced, price, u, resp.StatusCode, false), res.ID)
 }
 
 // ledgerFor prices one forwarded call. cost_source is explicit: 'free' is
 // a classification, never an inference; 'unpriced' keeps the token counts
 // honest when a metered model has no configured price.
 func ledgerFor(cred store.Credential, att store.Attribution, upstream, model string, up config.Upstream,
-	priced bool, price pricing.Price, u usage, status int) store.LedgerEntry {
+	priced bool, price pricing.Price, u usage, status int, unmetered bool) store.LedgerEntry {
 	// Usage is upstream-reported input, not truth: clamp to the ledger's
 	// valid range so a hostile count can neither wrap the cost math nor
 	// fail the row's CHECK constraints (which would trip the plane).
 	clamp := func(n int64) int64 {
 		return min(max(n, 0), pricing.MaxTokens)
 	}
-	in, out := clamp(u.PromptTokens), clamp(u.CompletionTokens)
+	in, out := clamp(u.InputTokens), clamp(u.OutputTokens)
 	e := store.LedgerEntry{
 		CredentialName: cred.Name,
 		Upstream:       upstream,
@@ -402,6 +431,11 @@ func ledgerFor(cred store.Credential, att store.Attribution, upstream, model str
 		RunID:          att.RunID,
 	}
 	switch {
+	case unmetered:
+		// Not a classification of the cost — a statement that this row's
+		// token counts are NOT this call's. Never priced: pricing a
+		// count the plane could not read would invent the cost.
+		e.CostSource = "unmetered"
 	case up.Classification == config.ClassFree:
 		e.CostSource = "free"
 	case priced:
@@ -428,22 +462,10 @@ func readBounded(body io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-// relayBuffered writes a fully read non-streamed response through while
-// extracting usage from the JSON body. The relay is byte-faithful: parse
-// failures only cost usage extraction, never the response.
-func relayBuffered(w http.ResponseWriter, raw []byte) usage {
-	_, _ = w.Write(raw)
-	var envelope struct {
-		Usage usage `json:"usage"`
-	}
-	_ = json.Unmarshal(raw, &envelope)
-	return envelope.Usage
-}
-
 // relayStream forwards SSE lines as they arrive (flushing each) and scans
-// the data chunks for the final usage payload requested via
-// stream_options.include_usage.
-func relayStream(w http.ResponseWriter, body io.Reader) usage {
+// the data payloads for this protocol's usage — the chunk requested via
+// stream_options.include_usage, or the Responses API's terminal event.
+func relayStream(w http.ResponseWriter, protocol string, body io.Reader) usage {
 	flusher, _ := w.(http.Flusher)
 	var u usage
 	sc := bufio.NewScanner(body)
@@ -458,11 +480,8 @@ func relayStream(w http.ResponseWriter, body io.Reader) usage {
 		if !ok || payload == "[DONE]" {
 			continue
 		}
-		var chunk struct {
-			Usage *usage `json:"usage"`
-		}
-		if err := json.Unmarshal([]byte(payload), &chunk); err == nil && chunk.Usage != nil {
-			u = *chunk.Usage
+		if got, ok := readStreamUsage(protocol, []byte(payload)); ok {
+			u = got
 		}
 	}
 	if err := sc.Err(); err != nil {

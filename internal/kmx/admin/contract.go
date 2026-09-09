@@ -53,9 +53,17 @@ const (
 	// upstream table's policy-relevant fields.
 	ContractTableDeclared = 1
 
+	// ContractModelOverlay is the first contract whose overlay accepts an
+	// `upstreams` block — the MODEL seam — and whose
+	// /admin/config/validate echoes each model upstream with the protocol
+	// the plane resolved for it. An older plane refuses the fragment
+	// outright, which is true of that plane and reads like an operator
+	// error, so `kmx models add` requires this before it sends.
+	ContractModelOverlay = 2
+
 	// Speaks is the highest contract this kmx knows about. A plane reporting
 	// more than this is newer than kmx, which is allowed.
-	Speaks = ContractTableDeclared
+	Speaks = ContractModelOverlay
 )
 
 // PlaneVersion is what the handshake learned.

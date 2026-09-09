@@ -49,11 +49,21 @@ const (
 	// cannot be checked against the plane.
 	AdminContractInitial = 1
 
+	// AdminContractModelOverlay adds the model seam to what an overlay may
+	// carry, and to what /admin/config/validate answers: an `upstreams`
+	// block is merged rather than refused, and the response echoes every
+	// model upstream with the protocol the plane resolved for it. A client
+	// that sends one to an older plane gets the older plane's flat refusal
+	// ("carries \"upstreams\", which an overlay may not set"), which is
+	// true of that plane and reads like a mistake by the operator — so
+	// this is the number `kmx models add` requires before it sends.
+	AdminContractModelOverlay = 2
+
 	// AdminContract is what THIS plane serves. Raise it in the same change
 	// that adds something a client may depend on, and add a constant above
 	// naming what that was — the number is only useful if a reader can see
 	// what each step bought.
-	AdminContract = AdminContractInitial
+	AdminContract = AdminContractModelOverlay
 )
 
 // version reports this plane's identity. It is authenticated like every other

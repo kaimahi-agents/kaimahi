@@ -121,8 +121,9 @@ the onboarding, the same files you would have written by hand:
 
 1. **the overlay fragment.** Your upstream goes into an overlay ConfigMap
    (`kaimahi-upstreams-extra` — one shared map, one `<name>.json` key per
-   onboarded server), which the proxy merges over this repo's committed
-   table at boot. Your entry is never inside our four,
+   onboarded server, and one `model-<name>.json` key per onboarded model
+   endpoint), which the proxy merges over this repo's committed
+   table at boot. Your entry is never inside the committed ones,
    which is what stops the next `kmx plane` — which re-applies the
    committed table — from discarding it. An overlay that would redefine
    a committed entry is refused rather than resolved by precedence.
@@ -372,6 +373,37 @@ than our own demos would be worse than none:
   credential rather than sharing one across upstreams with different tool
   vocabularies.
 
+## The other seam: your own model endpoint
+
+Everything above onboards a TOOL server. The model seam has the same
+problem and, since this page was written, the same answer:
+
+```bash
+kmx models add house \
+  --url http://vllm.demo:8000/v1/responses \
+  --classification free
+```
+
+Three documents rather than four — the overlay fragment, the proxy's
+egress to that endpoint, that endpoint's ingress from the proxy alone —
+into the same overlay ConfigMap, under the same rules. The full
+walkthrough is [spend.md](spend.md#adding-a-model-upstream), and the
+flags are in [kmx.md](kmx.md#kmx-models-add). Three differences are worth
+knowing before you start:
+
+- **You declare the protocol, or the path does.** `chat_completions` and
+  `responses` are both OpenAI-compatible and they report token counts
+  under different names, so "it is OpenAI-compatible" does not say enough
+  for the plane to meter it. A path ending `chat/completions` or
+  `responses` answers the question; anything else needs `--protocol`.
+- **You declare the classification.** `free` or `metered`, with no
+  default, for the same reason nothing else in this project infers a $0.
+- **There is no allowlist on that seam.** A model upstream is reachable
+  by every credential the plane has issued the moment it is in the table;
+  what bounds each one is its budget. This is the one place where the two
+  seams differ in kind rather than in detail, and `kmx models add` says
+  so before it applies anything.
+
 ## Verified how
 
 Asserted keylessly in CI on every PR, against a server that is **not one
@@ -384,3 +416,14 @@ issue, allowlist, call — and asserts the allowed call is audited
 with a request carrying its arguments, the malformed table is refused
 before apply, and the server's own record of what it served agrees with
 the plane's audit.
+
+The model seam is asserted the same way and in the same job, against
+`scripts/ci/plain-model-server.py` — a Responses-API endpoint that is
+also not one of ours, deployed by `scripts/ci/plain-model.sh` with the
+same deliberate Service/container port mismatch. CI onboards it, makes a
+governed call, and asserts the ledger row carries the token counts **the
+endpoint reported** rather than zeros; that an answer carrying no usage
+at all is refused rather than relayed, and its row says `unmetered`; that
+a protocol contradicting its own path is refused at load with both
+replicas still serving; and that the entry survives the next
+`kmx plane`, which is the failure that produced the command.

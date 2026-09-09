@@ -29,13 +29,58 @@ const (
 	ClassMetered = "metered"
 )
 
+// The model seam's wire protocols. An upstream declares which one it
+// speaks, because the two differ in the only thing the plane reads out
+// of a response: where the token counts are and what they are called.
+//
+//	chat_completions  POST v1/chat/completions
+//	                  {"usage": {"prompt_tokens", "completion_tokens"}}
+//	responses         POST v1/responses
+//	                  {"usage": {"input_tokens", "output_tokens"}}
+//
+// Before this, the table had one shape and no name for it, and an
+// operator who added a Responses-API path got a call that was forwarded,
+// answered, and ledgered as `0 in / 0 out` — a budget over it could
+// never be exhausted. A protocol the plane has no reader for is refused
+// at load rather than forwarded: see Parse, and docs/spend.md.
+const (
+	ProtocolChatCompletions = "chat_completions"
+	ProtocolResponses       = "responses"
+)
+
+// Protocols is the vocabulary, in the order messages print it.
+var Protocols = []string{ProtocolChatCompletions, ProtocolResponses}
+
+// PathProtocol names the protocol a forwarded path IS, or "" when the
+// path names none this plane knows. It is used twice and for opposite
+// reasons: to fill in an undeclared protocol (so every table written
+// before protocols existed keeps working, unedited), and to REFUSE a
+// declaration that disagrees with its own path — which is the mistake
+// that produced the silent zero, written the other way round.
+func PathProtocol(path string) string {
+	p := strings.Trim(path, "/")
+	switch {
+	case strings.HasSuffix(p, "chat/completions"):
+		return ProtocolChatCompletions
+	case strings.HasSuffix(p, "responses"):
+		return ProtocolResponses
+	}
+	return ""
+}
+
 type Upstream struct {
 	// BaseURL is the upstream origin plus any path prefix it expects.
 	BaseURL string `json:"base_url"`
 	// Path is the single allowed forwarded remainder (no leading slash) —
 	// exactly what kagent's OpenAI client appends to the governed preset's
 	// baseUrl (e.g. "v1/chat/completions").
-	Path           string `json:"path"`
+	Path string `json:"path"`
+	// Protocol is the wire shape this upstream speaks — one of
+	// Protocols. Optional ONLY when Path names it (a path ending
+	// `chat/completions` or `responses`); otherwise required, because
+	// the alternative is guessing where the token counts are, and a
+	// wrong guess meters zero without saying so.
+	Protocol       string `json:"protocol,omitempty"`
 	Classification string `json:"classification"`
 	// CredentialFile, when set, is a Secret-mounted file holding the real
 	// upstream credential; read per request so rotation needs no restart.
@@ -297,6 +342,31 @@ func Parse(raw []byte) (Config, error) {
 		if u.Path == "" || strings.HasPrefix(u.Path, "/") {
 			return Config{}, fmt.Errorf("config: upstream %q: path must be non-empty with no leading slash", name)
 		}
+		// The protocol decides where the meter reads token counts. An
+		// upstream whose protocol this plane cannot name is refused at
+		// LOAD — the plane will not serve a seam it could only forward
+		// unmetered. The three refusals below are the whole rule.
+		fromPath := PathProtocol(u.Path)
+		switch u.Protocol {
+		case "":
+			if fromPath == "" {
+				return Config{}, fmt.Errorf("config: upstream %q: path %q names no protocol this plane knows, "+
+					"so declare one: \"protocol\": %s. Without it the meter would have to guess where the token "+
+					"counts are, and a wrong guess records zero tokens without saying so",
+					name, u.Path, strings.Join(quoteEach(Protocols), " or "))
+			}
+			u.Protocol = fromPath
+		case ProtocolChatCompletions, ProtocolResponses:
+			if fromPath != "" && fromPath != u.Protocol {
+				return Config{}, fmt.Errorf("config: upstream %q: protocol %q but path %q is %s — "+
+					"refused rather than resolved, because whichever is wrong the meter reads the wrong field",
+					name, u.Protocol, u.Path, fromPath)
+			}
+		default:
+			return Config{}, fmt.Errorf("config: upstream %q: protocol %q is not one this plane can meter (want %s)",
+				name, u.Protocol, strings.Join(quoteEach(Protocols), " or "))
+		}
+		c.Upstreams[name] = u
 		switch u.Classification {
 		case ClassFree:
 			if len(u.Prices) > 0 {
@@ -425,6 +495,15 @@ func Parse(raw []byte) (Config, error) {
 	}
 	c.policy = p
 	return c, nil
+}
+
+// quoteEach renders a vocabulary for a message, one quoted word each.
+func quoteEach(words []string) []string {
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = strconv.Quote(w)
+	}
+	return out
 }
 
 // hostedShape is the load-time half of the egress rule. An

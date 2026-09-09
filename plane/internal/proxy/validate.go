@@ -26,7 +26,8 @@ import (
 )
 
 // maxOverlayBytes bounds the submitted overlay. The committed table is
-// under 6KB; an overlay is one entry per onboarded server.
+// under 6KB; an overlay is one entry per onboarded server — a tool
+// server or, since model upstreams became mergeable, a model endpoint.
 const maxOverlayBytes = 256 << 10
 
 type validateRequest struct {
@@ -44,6 +45,13 @@ type validateResponse struct {
 	// so an operator can see their entry take its place beside the
 	// committed ones rather than in place of one.
 	ToolUpstreams []string `json:"tool_upstreams,omitempty"`
+	// Upstreams is the same for the MODEL seam, as "<name> (<protocol>)".
+	// The protocol is in the answer because it is the field an operator
+	// cannot check by reading their own fragment back: it may have been
+	// taken from the path, and it decides where the meter reads token
+	// counts. Seeing it echoed is how "this will be metered" is checked
+	// before anything is applied.
+	Upstreams []string `json:"upstreams,omitempty"`
 	// Declared echoes back what the plane understood each newly declared
 	// tool's policy-relevant fields to be. An empty list is a real
 	// answer (a verb-level binding); a tool absent from this map binds
@@ -106,6 +114,10 @@ func (h *handler) validateConfig(w http.ResponseWriter, r *http.Request) {
 		resp.ToolUpstreams = append(resp.ToolUpstreams, name)
 	}
 	sort.Strings(resp.ToolUpstreams)
+	for name, up := range cfg.Upstreams {
+		resp.Upstreams = append(resp.Upstreams, name+" ("+up.Protocol+")")
+	}
+	sort.Strings(resp.Upstreams)
 	// Only the tools the submitted overlay declares — the committed
 	// table's declarations are not this answer's business.
 	for _, f := range frags {

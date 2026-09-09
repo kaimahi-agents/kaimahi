@@ -168,8 +168,15 @@ func TestAnOverlayMayNotPutTheProxysOwnCustodyUnderItsControl(t *testing.T) {
 func TestAnOverlayMayNotSetTheSeamsItDoesNotOwn(t *testing.T) {
 	// Each of these is entangled with a credential mount or a signing
 	// secret. An onboarding path that could rewrite them would have a
-	// blast radius far beyond the tool seam it exists for.
-	for _, block := range []string{"upstreams", "inbound_hooks", "approval_notifier"} {
+	// blast radius far beyond the two seams it exists for.
+	//
+	// `upstreams` was on this list and is not any more: an adopter whose
+	// framework speaks a path the committed table has no entry for could
+	// not add one at all. It is mergeable now under the tool seam's own
+	// custody rule rather than a second one — see
+	// TestAnOverlayModelUpstreamMayNotCarryCustodyOrPrices below, which is
+	// what keeps the removal from being a widening.
+	for _, block := range []string{"inbound_hooks", "approval_notifier"} {
 		_, err := mergeParse(t, Fragment{Name: "x.json", Raw: []byte(`{"` + block + `": {}}`)})
 		if err == nil || !strings.Contains(err.Error(), block) {
 			t.Fatalf("overlay set %q and was not refused: %v", block, err)
@@ -361,6 +368,94 @@ func TestEveryToolUpstreamFieldIsClassifiedAsSafeOrDenied(t *testing.T) {
 	// actually refused, which the case above already asserts one by one.
 	if len(denied) == 0 {
 		t.Fatal("custodyFields is empty — the denial has been emptied out")
+	}
+}
+
+// The model seam's twin of the tool seam's classification guard, and the
+// argument is the same one: `Upstream` is a struct in another package's
+// blast radius, so a field added to it must be classified deliberately
+// rather than admitted into a hand-edited ConfigMap by silence.
+func TestEveryUpstreamFieldIsClassifiedAsSafeOrDenied(t *testing.T) {
+	// Fields an overlay MAY set: they describe an in-cluster, keyless
+	// model endpoint and say nothing about the proxy's custody, its reach
+	// outside the cluster, or what a cents budget is measured with.
+	safe := map[string]bool{"base_url": true, "path": true, "protocol": true, "classification": true}
+	denied := map[string]bool{}
+	for _, f := range modelCustodyFields {
+		denied[f] = true
+	}
+	typ := reflect.TypeOf(Upstream{})
+	for i := range typ.NumField() {
+		tag := strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if !safe[tag] && !denied[tag] {
+			t.Fatalf("Upstream gained field %q and nothing classified it.\n"+
+				"  Add it to modelCustodyFields if it decides what credential the proxy reads, which host it\n"+
+				"  may be reached at, or what a cents budget is measured with; add it to `safe` here if an\n"+
+				"  operator may set it in an overlay. Doing neither admits it into a ConfigMap that exists\n"+
+				"  to be hand-edited.", tag)
+		}
+	}
+	if len(denied) == 0 {
+		t.Fatal("modelCustodyFields is empty — the denial has been emptied out")
+	}
+}
+
+// Every denied field, refused one by one, in the spelling an operator
+// would actually write and in a spelling Go's decoder would accept but a
+// name-only denylist would miss.
+func TestAnOverlayModelUpstreamMayNotCarryCustodyOrPrices(t *testing.T) {
+	for _, entry := range []string{
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "free", "credential_file": "/etc/kaimahi/admin/token"}`,
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "free", "Credential_File": "/etc/kaimahi/admin/token"}`,
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "free", "credential_header": "x-api-key"}`,
+		`{"base_url": "https://evil.example", "path": "v1/responses", "classification": "free", "internet": true}`,
+		`{"base_url": "https://evil.example", "path": "v1/responses", "classification": "free", "INTERNET": true}`,
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "free", "ca_file": "/etc/kaimahi/ca.pem"}`,
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "free", "extra_headers": {"x-tenant": "acme"}}`,
+		`{"base_url": "http://m.demo:8000", "path": "v1/responses", "classification": "metered", "prices": {"m": {"in_cents_per_1m": 0, "out_cents_per_1m": 0}}}`,
+	} {
+		_, err := mergeParse(t, Fragment{Name: "m.json", Raw: []byte(`{"upstreams": {"house": ` + entry + `}}`)})
+		if err == nil || !strings.Contains(err.Error(), "which an overlay may not set") {
+			t.Fatalf("overlay entry %s was not refused: %v", entry, err)
+		}
+	}
+}
+
+// The whole point of the widening: an in-cluster, keyless model upstream
+// an adopter adds by hand takes its place beside the committed ones, and
+// the committed ones are untouched.
+func TestAnOverlayMayAddAModelUpstream(t *testing.T) {
+	cfg, err := mergeParse(t, Fragment{Name: "house.json", Raw: []byte(`{
+	  "upstreams": {
+	    "house": {"base_url": "http://vllm.demo:8000", "path": "v1/responses", "classification": "free"}
+	  }
+	}`)})
+	if err != nil {
+		t.Fatalf("an in-cluster keyless model upstream must merge: %v", err)
+	}
+	got := cfg.Upstreams["house"]
+	if got.Path != "v1/responses" || got.Protocol != ProtocolResponses {
+		t.Fatalf("want the responses protocol taken from the path, got %+v", got)
+	}
+	if _, ok := cfg.Upstreams["ollama"]; !ok {
+		t.Fatal("the committed model upstreams were lost")
+	}
+}
+
+// A name already in the committed table is refused rather than resolved
+// by precedence — the same rule the tool seam has, on the seam where a
+// silent redefinition would repoint every governed model call.
+func TestAnOverlayMayNotRedefineACommittedModelUpstream(t *testing.T) {
+	_, err := mergeParse(t, Fragment{Name: "o.json", Raw: []byte(`{
+	  "upstreams": {
+	    "ollama": {"base_url": "http://attacker.demo:8000", "path": "v1/responses", "classification": "free"}
+	  }
+	}`)})
+	if err == nil || !strings.Contains(err.Error(), "redefines upstream \"ollama\"") {
+		t.Fatalf("want a redefinition refusal, got: %v", err)
 	}
 }
 

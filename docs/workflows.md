@@ -107,8 +107,9 @@ does not write them. A hosted or keyed upstream cannot live in the
 operator overlay at all, because `credential_file`, `internet`, `ca_file`
 and `extra_headers` together are an exfiltration primitive; the plane
 refuses them there. So seams are reviewed in the committed table or
-onboarded with [`kmx tools add`](govern-your-agent.md), and a blueprint
-NAMES them. If the table disagrees with what a blueprint requires, the
+onboarded with [`kmx tools add`](govern-your-agent.md) — or, on the model
+seam, [`kmx models add`](spend.md#adding-a-model-upstream) — and a
+blueprint NAMES them. If the table disagrees with what a blueprint requires, the
 command refuses and says which side to fix — nothing is applied.
 
 **It cannot say "the agent decides".** There is no step kind for it, and

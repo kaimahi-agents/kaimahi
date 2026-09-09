@@ -87,7 +87,10 @@ Two smaller facts a client author needs:
 
 Unchanged from the kagent path, because none of it is about the runtime:
 deploy the plane; put the tool server in the upstream table (the
-committed one, or the operator overlay `kmx tools add` writes); declare
+committed one, or the operator overlay `kmx tools add` writes — and, for
+a model endpoint the committed table has no entry for, the one
+[`kmx models add`](spend.md#adding-a-model-upstream) writes, which is
+also where the runtime's own protocol is declared); declare
 each tool's `policy_fields`, which is what an approval's digest and the
 audit summary bind to; issue the credential; set the tool allowlist —
 with none set, nothing is callable except a tool covered by a standing

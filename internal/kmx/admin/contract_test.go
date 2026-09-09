@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -108,7 +109,7 @@ func TestAMatchedPlaneSaysNothing(t *testing.T) {
 // asked of it.
 func TestASessionNamesThePlaneItIsAboutToActOn(t *testing.T) {
 	_, log := openAt(t, Speaks, "v1.2.3", nothing)
-	if !strings.Contains(log.String(), "plane v1.2.3 (admin contract 1)") {
+	if !strings.Contains(log.String(), fmt.Sprintf("plane v1.2.3 (admin contract %d)", Speaks)) {
 		t.Errorf("the session did not name the plane:\n%s", log.String())
 	}
 }

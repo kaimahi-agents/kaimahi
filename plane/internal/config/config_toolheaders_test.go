@@ -16,7 +16,7 @@ import (
 // offer (X-MCP-Toolsets and friends). The rules are load-time, because a
 // header that fails open at the first call is a header nobody notices.
 func TestToolUpstreamExtraHeaders(t *testing.T) {
-	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "p", "classification": "free"}}, "tool_upstreams": `
+	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}}, "tool_upstreams": `
 
 	t.Run("accepted and parsed", func(t *testing.T) {
 		c, err := config.Parse([]byte(base + `{"gh": {"url": "https://api.githubcopilot.com/mcp/", "internet": true,

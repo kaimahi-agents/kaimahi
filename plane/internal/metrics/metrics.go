@@ -86,7 +86,13 @@ const (
 	// and counted separately from an unknown token.
 	ReasonCredentialExpired Reason = "credential_expired"
 	ReasonCommand           Reason = "command"
-	ReasonOther             Reason = "other"
+	// ReasonUnmetered: the upstream answered, and the plane could not
+	// read the token counts out of it. Counted apart from every other
+	// outcome because it is the one that used to be invisible — a
+	// Responses-API call read by a chat-completions reader was ledgered
+	// `0 in / 0 out` and looked like a cheap call.
+	ReasonUnmetered Reason = "unmetered"
+	ReasonOther     Reason = "other"
 )
 
 // Queue names a bounded per-replica queue.
@@ -109,7 +115,8 @@ var Vocabulary = map[string][]string{
 		string(ReasonUpstreamError), string(ReasonUpstreamUnreachable), string(ReasonEgressRefused), string(ReasonMethod), string(ReasonGrantCheck), string(ReasonConstraint),
 		string(ReasonRateLimit), string(ReasonTooLarge), string(ReasonReplay), string(ReasonQueueFull),
 		string(ReasonHookConfig), string(ReasonAdmission), string(ReasonNotApprover), string(ReasonIgnored),
-		string(ReasonChallenge), string(ReasonCommand), string(ReasonCredentialExpired), string(ReasonOther)},
+		string(ReasonChallenge), string(ReasonCommand), string(ReasonCredentialExpired), string(ReasonUnmetered),
+		string(ReasonOther)},
 	"kind":  {"tool", "budget", "inbound"},
 	"queue": {string(QueueInbound), string(QueueNotifier)},
 }

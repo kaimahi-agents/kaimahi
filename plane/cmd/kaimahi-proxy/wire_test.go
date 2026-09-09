@@ -18,7 +18,7 @@ import (
 func TestBothSeamsShareTheOneHardenedClient(t *testing.T) {
 	cfg, err := config.Parse([]byte(`{
 	  "upstreams": {
-	    "ollama": {"base_url": "http://ollama.ollama.svc.cluster.local:11434", "path": "p", "classification": "free"},
+	    "ollama": {"base_url": "http://ollama.ollama.svc.cluster.local:11434", "path": "v1/chat/completions", "classification": "free"},
 	    "copilot": {"base_url": "https://api.githubcopilot.com", "path": "chat/completions", "classification": "metered", "internet": true}
 	  },
 	  "tool_upstreams": {
@@ -44,7 +44,7 @@ func TestBothSeamsShareTheOneHardenedClient(t *testing.T) {
 // client: the config is refused at load, loudly.
 func TestHardenedClientRefusesAPrivateHostAtLoad(t *testing.T) {
 	cfg, err := config.Parse([]byte(`{
-	  "upstreams": {"o": {"base_url": "http://o", "path": "p", "classification": "free"}},
+	  "upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}},
 	  "tool_upstreams": {"inside": {"url": "https://localhost/mcp", "internet": true}}
 	}`))
 	require.NoError(t, err, "the shape check cannot know what a name resolves to; the boot-time vet can")

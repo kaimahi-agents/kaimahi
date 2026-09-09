@@ -24,6 +24,50 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **The model seam speaks the OpenAI Responses API, and a call it cannot
+  meter is refused rather than counted as zero.** An upstream now
+  declares a `protocol` — `chat_completions` (`usage.prompt_tokens` /
+  `usage.completion_tokens`) or `responses` (`usage.input_tokens` /
+  `usage.output_tokens`) — and the meter reads the fields that protocol
+  names. Both are OpenAI-compatible surfaces, which is why "point it at
+  an OpenAI-compatible endpoint" was never sufficient: one current agent
+  framework's model client *is* the Responses client and offers no
+  switch, and against a table that knew only the other shape its calls
+  were first refused on the path and then, once a path was added,
+  **ledgered `0 in / 0 out`** — a token budget over that upstream could
+  never have been exhausted. The field is optional only where the path
+  already names it, so every existing table keeps working unedited; a
+  declaration that disagrees with its own path, or one this plane cannot
+  meter, is refused at load rather than resolved. A **success carrying no
+  usage the declared protocol can read is now refused (502) and the
+  answer is discarded**, with a ledger row whose new `cost_source` is
+  `unmetered` — the one case that cannot be refused is a stream already
+  flushed, which is relayed, logged at ERROR and ledgered `unmetered` all
+  the same. Migration `00012`
+  ([docs/spend.md](docs/spend.md#the-two-protocols)).
+
+- **`kmx models add` — onboard your own model endpoint.** The model seam
+  had no onboarding path at all: the only route edited
+  `k8s/plane/upstreams.yaml`, which the next `kmx plane` re-applies and
+  discards. It now works the way the tool seam already did — the operator
+  overlay ConfigMap accepts an `upstreams` block, under the same custody
+  rule (`credential_file`, `credential_header`, `internet`, `ca_file`,
+  `extra_headers` are refused by the plane, so an overlay entry is
+  in-cluster and keyless) plus one: `prices` is refused too, because a
+  price is what a cents budget is measured with and is the one number in
+  the table the plane cannot check. One `--url` carrying the path a
+  client posts to becomes the entry's base URL, its single forwarded
+  path and its protocol; `--classification` is required and has no
+  default. Three reviewable documents, not the tool seam's four: a model
+  has no `RemoteMCPServer` equivalent that a runtime without kagent could
+  apply, so the seam's base URL is printed instead. The command also
+  states what an operator arriving from `kmx tools add` would otherwise
+  assume — **the model seam has no allowlist**, so a new upstream is
+  reachable by every credential the plane has issued, bounded only by
+  their budgets. Admin contract 2
+  ([docs/kmx.md](docs/kmx.md#kmx-models-add),
+  [docs/spend.md](docs/spend.md#adding-a-model-upstream)).
+
 - **The audit row says who called.** Nothing in a governed row
   distinguished an agent the plane deployed from a shell script holding
   the same token — not the client name in the MCP handshake, which the

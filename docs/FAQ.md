@@ -138,6 +138,14 @@ no. The agent surfaces it as a failed task with the message text.
   the table, a path other than the one allowed route, "metering
   unavailable" (budget exists but the ledger can't be read — fail closed),
   or an unpriced model under a cents budget.
+- **502 bad gateway** — the upstream was reached and something about its
+  answer stopped it being handed over. Either the response was cut, or —
+  "reported no usage this protocol can read" — it succeeded and carried
+  no token counts the upstream's declared `protocol` could read, so the
+  plane refused it rather than recording the call as costing nothing.
+  Check the upstream's `protocol` against what it actually speaks
+  ([spend.md](spend.md#the-two-protocols)); the row is in the ledger with
+  `source=unmetered`.
 - **429 too many requests** — "monthly budget reached" / "monthly token
   budget reached". The cap is monthly (UTC). Raise or clear it with
   `make budget`. In our runs each attempt left three denied rows in the

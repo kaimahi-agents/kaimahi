@@ -114,12 +114,13 @@ spec:
               mountPath: /etc/kaimahi/upstreams.json
               subPath: upstreams.json
               readOnly: true
-            # The operator overlay — one JSON fragment per MCP
-            # server somebody onboarded with `kmx tools add`, merged over
-            # the committed table above at boot. A whole-directory mount,
-            # not subPath: the ConfigMap grows a key per onboarded server
-            # and subPath would pin this pod to the keys that existed
-            # when it started.
+            # The operator overlay — one JSON fragment per upstream
+            # somebody onboarded, tool servers with `kmx tools add` and
+            # model endpoints with `kmx models add`, merged over the
+            # committed table above at boot. A whole-directory mount,
+            # not subPath: the ConfigMap grows a key per onboarded
+            # upstream and subPath would pin this pod to the keys that
+            # existed when it started.
             - name: upstreams-overlay
               mountPath: /etc/kaimahi/upstreams.d
               readOnly: true

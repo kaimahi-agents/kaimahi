@@ -179,6 +179,14 @@ an overlay forge whatever header that server trusts. All five belong in the
 committed table. Keyed and hosted upstreams are therefore committed-table
 only, by enforcement rather than by convention.
 
+The same ConfigMap also carries `upstreams` — the MODEL seam, written by
+[`kmx models add`](spend.md#adding-a-model-upstream) — under the same
+rule plus one: a model entry may not set `prices` either, because a price
+is what a cents budget is measured with and is the one number in the
+table the plane cannot check. The two seams share one overlay and one
+merge; nothing else about them is shared, and a model upstream has no
+allowlist (see [spend.md](spend.md#adding-a-model-upstream)).
+
 `make ungovern-tools` restores the direct, ungoverned wiring by
 re-applying `k8s/tools-agent.yaml`. Re-run `make plane` after editing
 `upstreams.yaml`: the config is read at boot, and the ConfigMap mounts

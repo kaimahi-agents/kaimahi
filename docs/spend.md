@@ -51,13 +51,15 @@ Agent pod (kagent)                         namespace kaimahi
   agent-side token Secret. kagent needs no changes. This is the seam
   working as designed.
 - **Upstreams** ([`k8s/plane/upstreams.yaml`](../k8s/plane/upstreams.yaml)):
-  the only places the proxy will forward to. Two entries: in-cluster
+  where the proxy will forward to. Two committed entries: in-cluster
   ollama (the free demo tier) and the Copilot subscription endpoint. One
-  base URL and **one allowed (method, path)** per upstream is the whole
-  blast radius; any other request is denied before any upstream
-  contact. The same file also carries `tool_upstreams`, which is the MCP
-  gateway's table and belongs to
-  [tool-governance.md](tool-governance.md).
+  base URL, **one allowed (method, path)** and one declared protocol per
+  upstream is the whole blast radius; any other request is denied before
+  any upstream contact. Your own endpoints are added beside these rather
+  than into them, with `kmx models add` — see
+  [Adding a model upstream](#adding-a-model-upstream). The same file also
+  carries `tool_upstreams`, which is the MCP gateway's table and belongs
+  to [tool-governance.md](tool-governance.md).
 - **Admin plane**: a second port (9091) that the Service deliberately
   does not expose. `kmx govern`/`kmx ledger` (and `make govern`,
   `make budget`, `make ledger`) reach
@@ -148,9 +150,97 @@ created (UTC)       credential   upstream  model                in    out  cents
   bundled: subscription usage has no public per-token price and kaimahi
   never invents one.
 - **denied**: the request never went upstream.
+- **unmetered**: the call DID go upstream, and the token counts on this
+  row are not its counts — the plane could not read them. This is the
+  only source that is not a statement about cost, and it exists because
+  the alternative was a row that looked ordinary: a call read by the
+  wrong protocol's reader used to be ledgered `0 in / 0 out, free`,
+  indistinguishable in every sum from a call that genuinely cost nothing.
+  A non-streamed call in this state is **refused** (502) and the answer
+  never reaches the caller; a streamed one has already been flushed and
+  cannot be recalled, so it is relayed and the row says so. Never priced:
+  pricing a count that was never read would invent the cost.
 
 The FAQ has the longer answer to
 [why ollama is free but still budgeted in tokens](FAQ.md#ollama-is-free--why-is-it-budgeted-in-tokens).
+
+## The two protocols
+
+An upstream declares which wire protocol it speaks, because the two
+differ in the only thing the plane reads out of a response:
+
+| `protocol` | path a client posts to | where the meter reads |
+|---|---|---|
+| `chat_completions` | `v1/chat/completions` | `usage.prompt_tokens` / `usage.completion_tokens` |
+| `responses` | `v1/responses` | `usage.input_tokens` / `usage.output_tokens` |
+
+Both are OpenAI-compatible surfaces, which is why "point it at an
+OpenAI-compatible endpoint" was never a sufficient answer: one current
+agent framework speaks the Responses API **by default**, its model client
+is the Responses client, and it offers no switch. Against a table that
+only knew the other shape, every one of its calls was refused on the path
+— and once a path was added, metered as zero.
+
+The field is optional only where the path already names it: a path
+ending `chat/completions` or `responses` IS that protocol and the plane
+fills it in. A path that names neither must declare one, and a
+declaration that disagrees with its own path is **refused at load**
+rather than resolved, because whichever of the two is wrong the meter
+would read the wrong field. An upstream whose protocol the plane cannot
+name never serves a request: the plane will not boot a seam it could
+only forward unmetered.
+
+A client that speaks both protocols against one endpoint needs two
+entries — one path each — which keeps "one allowed path per upstream"
+exactly as it was, and keeps each entry's blast radius readable.
+
+## Adding a model upstream
+
+The committed table is this repository's, and `kmx plane` re-applies it:
+an entry added there is an entry the next deploy discards. Your own
+endpoints go in the operator overlay instead, the same ConfigMap
+`kmx tools add` writes tool servers into:
+
+```bash
+kmx models add house \
+  --url http://vllm.demo:8000/v1/responses \
+  --classification free
+```
+
+That URL is split into the two halves the table stores separately (base
+`http://vllm.demo:8000`, path `v1/responses`), the protocol is resolved
+from the path, and three documents are written for you to read before
+they are applied: the overlay fragment, the proxy's egress to that one
+destination and port, and the endpoint's ingress from the proxy alone.
+The command validates the candidate table against the **running plane's
+own parser** before writing anything.
+
+`--classification` has no default. `free` says the endpoint costs
+nothing, so only a token budget can ever exhaust it; `metered` counts
+tokens always and applies a cost only where a price is configured. A $0
+by inference is a budget nothing can exhaust.
+
+Three things the overlay deliberately cannot express, refused by the
+plane and not merely by kmx:
+
+- **a credential** — `credential_file` and `credential_header`. An
+  overlay entry is keyless.
+- **an endpoint outside the cluster** — `internet`, `ca_file`, and
+  `extra_headers` with them. A hosted model endpoint holds a real API
+  key; that is a reviewed entry in the committed table
+  ([hosted-upstreams.md](hosted-upstreams.md)).
+- **a price** — `prices`. A price is the multiplier a cents budget is
+  measured with and the one number in the table the plane can never
+  check, so it stays on the reviewed file. A metered overlay upstream
+  still works under a token budget, and under a cents budget the
+  priced-pair gate refuses it, which is the correct outcome.
+
+**There is no allowlist on this seam.** Unlike a tool upstream — which
+nothing can call until a credential allowlists a tool on it — a model
+upstream is reachable by every credential the plane has issued the moment
+it is in the table. What bounds them is the budget each one carries, and
+the fact that an overlay upstream is in-cluster and keyless. `kmx models
+add` says this before it applies anything.
 
 ## Budgets
 
@@ -219,12 +309,20 @@ All unit-tested and live-verified:
 - Every attributable outcome is ledgered: success, upstream failure,
   and denial. Unauthenticated requests have no credential to attribute.
   Billed usage is recorded even when the surrounding request fails.
-- Forwarded traffic meters through the OpenAI `usage` object (streamed
-  requests get `stream_options.include_usage` injected); denials are
-  fixed zero-usage rows. If an upstream response carries no usage at
-  all, the row records zero tokens and the proxy logs a warning. Token
-  counts are never invented, so keep upstreams on OpenAI-compatible
-  surfaces that report usage.
+- Forwarded traffic meters through the `usage` object, and **which
+  usage object depends on the upstream's declared protocol** — see
+  [The two protocols](#the-two-protocols) below. Denials are fixed
+  zero-usage rows.
+- **A success the plane cannot meter is refused, not relayed.** If a
+  non-streamed response carries no usage the declared protocol can read,
+  the answer is discarded, the caller gets a 502, and the row is written
+  with `source=unmetered`. Only one of the two available answers —
+  refuse it, or hand it over with a zero beside it — is consistent with a
+  plane that exists to meter, and the second one was the measured
+  failure that produced this rule. The single case the refusal cannot
+  reach is a STREAM whose bytes have already left; that one is relayed,
+  logged at ERROR, and ledgered `unmetered` so it is visible in the
+  trail. Token counts are never invented.
 
 What each status code from the plane means, and what to do about it, is
 in the [FAQ](FAQ.md#what-the-planes-status-codes-mean).

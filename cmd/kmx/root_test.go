@@ -40,7 +40,7 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"agent", "tools", "credential"} {
+	for _, group := range []string{"agent", "tools", "models", "credential"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string) (*config.Config, error) {
@@ -90,7 +90,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"approvals", "approve", "audit", "backup", "budget", "completion",
 		"credential", "credential capture", "credential renew", "credentials",
 		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
-		"lift", "lift down", "metrics", "plane", "quickstart", "request",
+		"lift", "lift down", "metrics", "models", "models add", "plane", "quickstart", "request",
 		"restore", "status",
 		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
 		"tools sandbox", "tools sandbox status", "tools ungovern",

@@ -12,7 +12,7 @@ import (
 // https/443, no userinfo, and marked; an unmarked upstream must look
 // in-cluster, so a public hostname can never take the plain dial.
 func TestParseHostedUpstreamShape(t *testing.T) {
-	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "p", "classification": "free"}}, "tool_upstreams": `
+	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}}, "tool_upstreams": `
 	ok := map[string]string{
 		"hosted https":              `{"gh": {"url": "https://api.githubcopilot.com/mcp/", "internet": true}}`,
 		"hosted explicit 443":       `{"gh": {"url": "https://api.githubcopilot.com:443/mcp/", "internet": true}}`,
@@ -57,7 +57,7 @@ func TestParseHostedUpstreamShape(t *testing.T) {
 func TestInternetHostsCoverBothTables(t *testing.T) {
 	c, err := config.Parse([]byte(`{
 	  "upstreams": {
-	    "ollama": {"base_url": "http://ollama.ollama.svc.cluster.local:11434", "path": "p", "classification": "free"},
+	    "ollama": {"base_url": "http://ollama.ollama.svc.cluster.local:11434", "path": "v1/chat/completions", "classification": "free"},
 	    "copilot": {"base_url": "https://api.githubcopilot.com", "path": "chat/completions", "classification": "metered", "internet": true}
 	  },
 	  "tool_upstreams": {

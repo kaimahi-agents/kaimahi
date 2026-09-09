@@ -3195,6 +3195,141 @@ jobs:
           # policy and not a broken probe. The other direction — the
           # proxy CAN reach the server — is the governed call above.
           KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/upstream-boundary-probe.sh
+      # The MODEL seam's half of generic onboarding. Everything above
+      # this point onboards a TOOL server; a model upstream could not be
+      # onboarded at all until now — the only route edited the committed
+      # table, which the next `kmx plane` re-applies and discards.
+      #
+      # The endpoint speaks the OpenAI Responses API, which no committed
+      # upstream does and the bundled Ollama image has no route for, so
+      # this is the first proof that the protocol the meter reads is a
+      # property of the table rather than of the proxy's source.
+      - name: "Models: a plain Responses-API endpoint that is not one of ours"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/plain-model.sh up
+      - name: "Models: onboarded by kmx, with the protocol resolved and stated"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          bin/kmx models add house \
+            --url http://acme-model.acme-model:8000/v1/responses \
+            --classification free --out house.yaml 2>&1 | tee models-add.out
+          grep -q 'The plane validated the table' models-add.out
+          grep -qF 'house speaks responses: the meter reads input_tokens / output_tokens' models-add.out
+          # The seam address is PRINTED, because a model has no
+          # RemoteMCPServer to put it in — and getting it wrong is the
+          # same silent hazard.
+          grep -qF 'https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/house' models-add.out
+          # And the thing an operator arriving from `kmx tools add` would
+          # otherwise assume: this seam has no allowlist.
+          grep -q 'no allowlist' models-add.out
+          # The protocol is written into the fragment explicitly, never
+          # left to be worked out again from the path.
+          grep -qF '"protocol": "responses"' house.yaml
+          # The policy pair carries the CONTAINER port (9000), not the
+          # Service's (8000).
+          grep -q 'port: 9000' house.yaml
+          if grep -qE '^ +port: 8000' house.yaml; then
+            echo 'the NetworkPolicy used the Service port' >&2; exit 1
+          fi
+          # Nothing key-shaped, and no credential field: an overlay
+          # upstream is keyless by the plane's own rule.
+          if grep -E 'credential_file|kmh_[0-9a-f]{20,}' house.yaml; then
+            echo 'the scaffold emitted custody where an overlay may not carry it' >&2; exit 1
+          fi
+      - name: "Models: a Responses-API call is metered from ITS OWN token fields"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # A credential of its own, so this cannot be confused with — or
+          # exhausted by — the budget cycles above.
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-house-token \
+            bash scripts/plane-admin.sh issue house-agent
+          # Four words in, and the fixture answers a six-word sentence.
+          # Those are the numbers the UPSTREAM reports; the assertion
+          # below is that the ledger carries them and not zeros.
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-house-token \
+            UPSTREAM=house SEAM_PATH=v1/responses \
+            bash scripts/model-seam-probe.sh '{"model": "fixture", "input": "one two three four"}' | tee house-call.out
+          grep -qF '"input_tokens": 4' house-call.out
+          bin/kmx ledger house-agent | tee house-ledger.out
+          # The row, with the counts the upstream reported. Before the
+          # protocol existed this line read `0 in / 0 out` and a token
+          # budget over this upstream could never have been exhausted.
+          grep -E 'house +fixture +4 +6 ' house-ledger.out
+          if grep -E 'house +fixture +0 +0 ' house-ledger.out; then
+            echo 'the ledger recorded zero tokens for a call the upstream priced' >&2; exit 1
+          fi
+      - name: "Models: an answer the plane cannot meter is REFUSED, not relayed"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # The decision this lane had to make, on a real cluster. The
+          # fixture's /v1/silent answers 200 with a real answer in it and
+          # no usage envelope; the plane must not hand that over with a
+          # zero beside it. `--protocol` is required here because the
+          # path names none — which is itself the rule that a protocol is
+          # never guessed.
+          bin/kmx models add silent \
+            --url http://acme-model.acme-model:8000/v1/silent \
+            --protocol responses --classification free --out silent.yaml 2>&1 | tee silent-add.out
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-house-token \
+            UPSTREAM=silent SEAM_PATH=v1/silent EXPECT=502 \
+            bash scripts/model-seam-probe.sh '{"model": "fixture", "input": "one two"}' | tee silent-call.out
+          grep -q 'refused rather than forwarded unmetered' silent-call.out
+          # The answer did not reach the caller...
+          if grep -q 'a governed answer from a fixture' silent-call.out; then
+            echo 'an unmeterable answer was relayed to the caller' >&2; exit 1
+          fi
+          # ...and the row says so, rather than carrying a plausible zero.
+          bin/kmx ledger house-agent | tee silent-ledger.out
+          grep -E 'silent +fixture +0 +0 +0 +unmetered +502' silent-ledger.out
+      - name: "Models: a protocol that disagrees with its own path is refused at load"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # The other half of "an unrecognised shape": whichever of the
+          # two is wrong, the meter would read the wrong field — so the
+          # plane refuses the table rather than resolving it.
+          kubectl --context kind-kaimahi-p1 -n kaimahi patch configmap kaimahi-upstreams-extra \
+            --type merge -p '{"data":{"model-blind.json":"{\"upstreams\": {\"blind\": {\"base_url\": \"http://acme-model.acme-model:8000\", \"path\": \"v1/responses\", \"protocol\": \"chat_completions\", \"classification\": \"free\"}}}"}}' \
+            2>&1 | tee blind-patch.out || true
+          # The plane refuses that entry at LOAD: a declared protocol that
+          # disagrees with its own path is refused rather than resolved.
+          kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
+          found=""
+          for _ in $(seq 1 60); do
+            kubectl --context kind-kaimahi-p1 -n kaimahi logs -l app=kaimahi-proxy --tail=20 > blind.out 2>/dev/null || true
+            if grep -q 'refused rather than resolved' blind.out; then found=1; break; fi
+            sleep 2
+          done
+          ready=$(kubectl --context kind-kaimahi-p1 -n kaimahi get deploy kaimahi-proxy -o jsonpath='{.status.readyReplicas}')
+          # Restore BEFORE asserting, so a failure here never wedges the
+          # steps after it.
+          kubectl --context kind-kaimahi-p1 -n kaimahi patch configmap kaimahi-upstreams-extra \
+            --type json -p '[{"op":"remove","path":"/data/model-blind.json"}]'
+          kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
+          kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
+          test -n "$found" || { echo 'a protocol contradicting its own path was NOT refused at load' >&2; exit 1; }
+          test "$ready" = 2 || { echo "the refused rollout took a serving replica down (ready=$ready)" >&2; exit 1; }
+          echo 'a protocol that disagrees with its path was refused at load; both replicas kept serving'
+      - name: "Models: the entry survives the next kmx plane"
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          # The whole reason the overlay exists. `make plane` re-applies
+          # the committed table, which is a different ConfigMap — so an
+          # entry added here is not discarded by the next deploy, and the
+          # measured failure that started this lane cannot recur.
+          make plane
+          kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams-extra \
+            -o jsonpath='{.data}' | tee overlay-after-plane.out
+          python3 -c "import json; d=json.load(open('overlay-after-plane.out')); assert 'model-house.json' in d, sorted(d); print('the model fragment survived kmx plane')"
+          # And it is not merely present: the seam still answers on it.
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-house-token \
+            UPSTREAM=house SEAM_PATH=v1/responses \
+            bash scripts/model-seam-probe.sh '{"model": "fixture", "input": "still here"}' | tee house-call-2.out
+          grep -qF '"input_tokens": 2' house-call-2.out
+      - name: "Models: teardown"
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/plain-model.sh down || true
       - name: "Onboarding: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |

@@ -215,7 +215,9 @@ done: `make github-down` removes the agent and the seam;
    operator overlay — the plane refuses `internet`, `ca_file`,
    `credential_file`, `credential_header` and `extra_headers` in an
    overlay fragment, so a hosted or keyed upstream is a reviewed change to
-   this repository by design. Add `extra_headers` if the server lets a
+   this repository by design. The same holds for a hosted MODEL endpoint,
+   which `kmx models add` refuses for the same reason: an overlay
+   describes an in-cluster, keyless endpoint. Add `extra_headers` if the server lets a
    caller narrow what it offers — do that before relying on the allowlist
    alone. Add the Secret mount to
    [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) as an optional

@@ -175,6 +175,7 @@ swap plus a credential the agent cannot read past.
 | `kmx deny <id>` | refuse a pending request |
 | `kmx request <tool\|budget\|inbound> <subject>` | file one explicitly. `--args '<json>'` (tool requests only) names the CALL to pre-approve; omitting it means the **argument-less** call, never "any call" |
 | `kmx tools add <name>` | onboard **your own** MCP server as a governed upstream: scaffold the table entry, the NetworkPolicy pair and the gateway seam as reviewable YAML, validate them against the running plane, apply (`--url`, `--tool`, `--server-egress`, `--pod-port`, `--secret`, `--out`, `--no-apply`, `--dry-run`) |
+| `kmx models add <name>` | onboard **your own** model endpoint as a governed upstream: scaffold the table entry and the NetworkPolicy pair as reviewable YAML, validate them against the running plane, apply (`--url`, `--classification`, `--protocol`, `--server-egress`, `--pod-port`, `--out`, `--no-apply`, `--dry-run`) |
 | `kmx tools govern` | issue the gateway credential, set the allowlist, wire the governed `RemoteMCPServer`, repoint the agent (`--tools`, `--credential`, `--agent`, `--secret`, `--server`). It APPLIES the committed seam (`kaimahi-tools`); a seam scaffolded by `kmx tools add` is the operator's file, so it is not re-applied here — if you used `--no-apply` or `--dry-run`, apply it first, and kmx says so rather than waiting on an object that is not there |
 | `kmx tools allow <tool,tool\|->` | replace the allowlist. `-` is the **empty** allowlist: nothing callable without a live grant |
 | `kmx tools allowlist [<credential>]` | read it back, sorted |
@@ -655,6 +656,61 @@ and why, is [govern-your-agent.md](govern-your-agent.md).
 | **The apply is conditional** | The emitted ConfigMap carries the `resourceVersion` it was read at, so a manifest applied later (`--no-apply` invites exactly that) fails with a `Conflict` rather than pruning a fragment somebody added in the meantime — which would leave the upstream that fragment constrained running unbounded. |
 | **A shared Service selector is named, not hidden** | The ingress policy governs every pod the selector matches. kmx lists them, and says plainly when there is more than one. |
 | **Won't overwrite the manifest** | Exclusive create, no `--force`. This is about the FILE: `kubectl apply` will happily update a same-named `NetworkPolicy` or `RemoteMCPServer` in the cluster. That can happen without anyone doing anything odd — `kubectl apply -f` applies each document independently and does not roll back, so an apply that failed on the ConfigMap leaves the other three behind, and the upstream is then absent from the overlay while its objects exist. The apply output names everything it changed; read it. |
+
+## `kmx models add`
+
+```bash
+kmx models add house \
+  --url http://vllm.demo:8000/v1/responses \
+  --classification free
+```
+
+It writes `upstreams/model-house.yaml` — three documents: the proxy's
+table entry (as an overlay fragment), the proxy's egress to that
+endpoint, and that endpoint's ingress from the proxy alone. Then it
+validates them against the running plane and applies them behind the
+guard.
+
+**Three documents, not four.** The tool seam's fourth is a
+`RemoteMCPServer`, a kagent custom resource. A model's equivalent would
+be a `ModelConfig`, also a kagent custom resource — and the adopter this
+command exists for has no kagent at all. So the seam's address is
+PRINTED instead, with the path a client appends and the certificate it
+has to trust, rather than emitted as an object half its users cannot
+apply.
+
+**One URL, split.** The table stores a base URL and exactly one
+forwarded path separately, and cannot infer the second from the first. So
+`--url` takes the whole URL a client posts to, and kmx splits it —
+getting that split wrong by hand produces an upstream that loads cleanly
+and refuses every call with "path not allowed".
+
+| Flag | Meaning |
+|---|---|
+| `--url <url>` | the endpoint's OWN in-cluster URL **including the path its clients post to**, e.g. `http://<service>.<namespace>:<port>/v1/responses` |
+| `--classification free\|metered` | required, no default. `free` is an explicit $0; `metered` counts tokens always and costs only where a price is configured |
+| `--protocol chat_completions\|responses` | where the meter reads token counts. Needed only when the path names neither; a value that disagrees with its own path is refused |
+| `--server-egress none\|dns\|keep` | what the scaffolded policy lets the ENDPOINT reach. Default `none` — a model server that pulls weights at startup needs `keep`, deliberately |
+| `--pod-port <n>` | the container port, for the one case kmx will not guess: a Service targeting a NAMED port |
+| `--out <path>` | where to write it (`-` for stdout) |
+| `--no-apply` | write the manifest and stop |
+| `--dry-run` | server-side dry run |
+
+### Safety properties, and why each exists
+
+Everything in [`kmx tools add`'s table](#safety-properties-and-why-each-exists-1)
+applies here — the same overlay, the same whole-map emit, the same
+`resourceVersion` precondition, the same live-Service read, the same
+validation by the plane's own parser. What is different:
+
+| Property | Why |
+|---|---|
+| **`--classification` has no default** | A $0 by inference is a budget nothing can exhaust. The refusal states what each answer costs. |
+| **A protocol is resolved or refused, never guessed** | A path ending `chat/completions` or `responses` IS that protocol. A path naming neither must declare one, and a declaration contradicting its own path is refused rather than resolved — whichever is wrong, the meter would read the wrong field and record zero tokens without saying so. |
+| **An overlay may not carry custody OR a price** | The five fields `kmx tools add` refuses, plus `prices`. A price is the multiplier a cents budget is measured with and the one number in the table the plane cannot check. A metered overlay upstream works under a token budget; under a cents budget the priced-pair gate refuses it, which is correct. |
+| **This seam has NO allowlist, and the command says so** | A tool upstream is unreachable until a credential allowlists a tool on it. A model upstream is reachable by every credential the plane has issued the moment it is in the table. An operator arriving from `kmx tools add` will assume otherwise, so it is stated before anything is applied. |
+| **The plane must be new enough** | The overlay carrying `upstreams` is admin contract 2. An older plane refuses the fragment in its own words, which read like an operator error; kmx asks the plane what it is first and names the version gap instead. |
+| **The seam address is printed, not emitted** | See above: no `ModelConfig`, because the adopter may have no kagent. |
 
 ## Governing an agent
 
