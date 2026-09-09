@@ -342,7 +342,11 @@ $ helm upgrade --install sundae … \
 ```
 
 Two configuration values and a token in the field their chart already
-has for one. **Three pods healthy in 21 s**, their image and their chart
+has for one. (That `--set-string` is what this lane actually ran and is
+recorded verbatim, but it is not how anyone should do it twice: the
+token lands in the process arguments and the shell history. `--set-file`
+against a mode-600 temporary file, or creating the Secret separately,
+avoids that.) **Three pods healthy in 21 s**, their image and their chart
 untouched, no Orka CRD applied to their namespace, nothing injected into
 their Deployment. That is as far as it gets.
 
@@ -373,7 +377,7 @@ INFO api-server request completed  {"method":"POST",
 Fourteen microseconds is the static file handler. And their Prometheus
 surface files it as a success:
 
-```
+```text
 orka_api_requests_total{endpoint="/openai/v1",method="POST",status="2xx"} 3
 ```
 
