@@ -144,11 +144,14 @@ Repository at `7eb039e`. `@kars-runtime/cli@0.1.26`, published
 ```bash
 git clone https://github.com/Azure/kars && cd kars
 git checkout 7eb039e
-grep -rn "profile\.json" --include='*.rs' --include='*.py' --include='*.ts' . \
-  | grep -v '^\./vendor'
+git grep -n -e 'profile\.json' -- . ':(exclude)vendor/**'
 ```
 
-One writer, no reader:
+Every tracked file, not just source. Outside `CHANGELOG.md` that is six
+hits: one write, one mount comment, two Mermaid arrows in
+`docs/api/lifecycle.md`, one unrelated
+`controller/src/reconciler/tests.rs:826`, and the analogous
+`InferencePolicy` doc comment. No reader:
 
 - **Written** — `controller/src/tool_policy_compile.rs:58-95` compiles
   the three blocks to JSON; `controller/src/tool_policy_reconciler.rs:639`
@@ -286,9 +289,16 @@ of the others you pick.
    is the smallest change that turns the existing plumbing into
    enforcement, and the digest-echo confirmation path would then cover it.
 3. **Put the forwarder on the policy path.** `forwarder.rs:235` already
-   holds the tool name and the argument object at the moment of dispatch;
-   a `Governance::evaluate` call there is what would let `commerce` be
-   evaluated against an actual amount.
+   holds the tool name and the argument object at the moment of dispatch,
+   which is the only place in the request path where an amount is
+   available at all. A `Governance::evaluate` call there is a necessary
+   step but not a sufficient one: the current contract is a single
+   `action` string (`tool:<name>`, `shell:<command>`, …) with no argument
+   values in it, and the audit record's five keys do not carry them
+   either — so `commerce.perTransferCap` cannot be compared against a
+   real amount until the evaluate contract, the `PolicyEngine` matcher
+   and the audit schema are argument-aware. That is a larger piece of
+   work than the other three items here, and worth separating from them.
 4. **Feed `spec.rateLimit` into `McpSlidingRateLimiter`** instead of
    `TOOL_RATE_LIMIT_MAX` / `TOOL_RATE_LIMIT_WINDOW_SECS`, or document
    those two env vars as the real control and mark `spec.rateLimit`
