@@ -311,6 +311,35 @@ func TestAFieldTheTranslationCannotCarryIsRefusedByName(t *testing.T) {
 	}
 }
 
+// A serialiser that writes its unset optionals as `null` is saying
+// nothing about them. Reading that as a value turns silence into a 400
+// for a field the client never set.
+func TestAnExplicitNullIsAFieldTheClientDidNotSet(t *testing.T) {
+	f := newFakeStore()
+	f.addToken("tok", store.Credential{Name: "concierge"})
+	var forwarded map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(body, &forwarded))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, chatAnswer)
+	}))
+	t.Cleanup(srv.Close)
+	mux := proxy.NewDataMux(testDeps(f, translating(srv.URL)))
+	w := doChat(t, mux, "tok", "/upstream/orka/v1/responses",
+		`{"model": "m", "input": "hi", "tool_choice": null, "tools": null,
+		  "metadata": null, "text": null, "instructions": null, "temperature": null}`)
+	require.Equal(t, 200, w.Code)
+	require.NotContains(t, forwarded, "tool_choice")
+	require.NotContains(t, forwarded, "temperature")
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Equal(t, "auto", got["tool_choice"], "a null field takes the default, not the client's null")
+	require.Equal(t, map[string]any{}, got["metadata"])
+	require.Equal(t, map[string]any{"format": map[string]any{"type": "text"}}, got["text"])
+}
+
 // A stream is refused BEFORE the endpoint is called. Half a translation
 // cannot be taken back once the first byte has left, so the refusal has
 // to happen while a refusal is still possible.

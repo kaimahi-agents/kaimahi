@@ -145,8 +145,8 @@ reader counting packages will miscount without being told.
 
 The source counts above exclude every Go test file, including newly added audit,
 session/history, Linux PTY, and typed-binding tests in `app`, `admin`, and
-`blueprint`. Those tests do not increase `app`'s 38, `admin`'s 5, or `blueprint`'s
-5 non-test files; the command count remains 16 including its new test.
+`blueprint`. Those tests do not increase `app`'s 42, `admin`'s 5, or `blueprint`'s
+5 non-test files; `cmd/kmx` is 18 files, tests included.
 Presentation and safety audit coverage is described
 in [cli-ux-plan.md](cli-ux-plan.md); these tests do not constitute live-cluster
 verification.

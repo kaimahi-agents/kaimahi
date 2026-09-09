@@ -173,6 +173,11 @@ $ kubectl create -f sar.yaml     # user: system:serviceaccount:orka-system:probe
 {"allowed":false}
 ```
 
+On `v0.1.3` — the version measured here — the compatible endpoint takes
+authentication without a per-route authorization check, so this Role is
+inert; route authorization arrived after that tag. It is created anyway,
+and §7 says exactly what that means for the evidence.
+
 **Do not check this with `kubectl auth can-i`.** It answers `no` for the
 account that is in fact allowed — `chats` is not a registered resource
 type, so the shorthand does not resolve the group and the review it sends
@@ -283,9 +288,12 @@ themselves are not governed — see §8.
 4. Orka directly, no credential   -> 401 {"error":{"code":401,"message":"missing authorization header"}}
 ```
 
-Two credentials exist and the application holds neither of the ones that
-matter: it holds a `kmh_` token for the plane, and the token that opens
-Orka lives in the plane's namespace with one reader.
+Two credentials exist and the application holds exactly one of them: a
+`kmh_` token for the plane, which buys it a metered, budgeted seam and
+nothing else. What it no longer holds is any credential for a model —
+the ServiceAccount token that opens Orka stays in the plane's namespace
+with one reader, and a copy of the application's own Secret buys an
+attacker a governed, recorded seam rather than an endpoint.
 
 ### Provider-scoped
 
@@ -561,6 +569,18 @@ are the portable part; the wall clock is this cluster's.
 - **`--upstream orka-coordinator` is a measuring instrument**, not a
   recommendation. It points an application at an orchestrator that will
   answer as itself.
+- **The credential is named after the Deployment**, so two Deployments
+  called `concierge` in different namespaces would ask for the same
+  credential name. The second run does not overwrite the first — the
+  plane refuses, because the token is shown once and cannot be
+  recovered — but the refusal is easier to read as a bug than as a
+  collision. Pass `--credential` when migrating same-named workloads.
+- **The hop from the seam to Orka is plain HTTP.** Orka's compatible
+  endpoint serves `http` on 8080 in the release bundle, so the
+  ServiceAccount token crosses one in-cluster hop unencrypted, bounded by
+  the NetworkPolicy on both ends. The seam the APPLICATION talks to is
+  TLS under the plane's own authority; this is the far side, and it is
+  Orka's to change rather than ours.
 - **The model seam has no per-credential allowlist**, so both Orka
   upstreams — like `ollama` and `copilot` before them — are reachable by
   **every** credential this plane has issued, not only the one `kmx

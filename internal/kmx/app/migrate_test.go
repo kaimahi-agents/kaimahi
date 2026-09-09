@@ -201,6 +201,25 @@ func TestTheReportedWiringResolvesTheWayKubernetesDoes(t *testing.T) {
 	}
 }
 
+// An envFrom source may carry a prefix, and the variable the container
+// receives is then prefix + key. Looking up the variable name as if it
+// were the key finds nothing, and a migration that reports "this
+// application does not read a base URL" about one that does is a refusal
+// nobody can act on.
+func TestAPrefixedEnvFromSourceIsResolvedByItsKey(t *testing.T) {
+	f := newMigrateFixture(t)
+	t.Setenv("KMX_TEST_DEPLOYMENT", `{"spec":{"template":{"spec":{"containers":[
+	  {"name":"concierge","envFrom":[{"prefix":"OPENAI_","configMapRef":{"name":"app-config"}}]}]}}}}`)
+	t.Setenv("KMX_TEST_CONFIGMAP", `{"BASE_URL":"http://orka-api.orka-system:8080/openai/v1","CHAT_MODEL":"local/qwen2.5:3b"}`)
+	if err := f.app.Migrate(migrateOpts(f.dir)); err != nil {
+		t.Fatalf("a prefixed source was not resolved: %v", err)
+	}
+	notes := f.errOut.String()
+	if !strings.Contains(notes, "OPENAI_BASE_URL = http://orka-api.orka-system:8080/openai/v1") {
+		t.Fatalf("the prefixed key was not resolved to the variable the container receives:\n%s", notes)
+	}
+}
+
 // Running it twice is the documented way to replace an expiring token, so
 // the second run has to get past its own output rather than refusing to
 // overwrite it.

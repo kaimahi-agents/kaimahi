@@ -36,4 +36,9 @@ upstreams/
 # the patch it leaves for the adopter to apply to their own Deployment
 # (docs/migrate.md). Same reasoning as above — it describes somebody
 # else's workload, not this repository's source.
-migrations/
+#
+# ANCHORED, and that is not style: an unanchored `migrations/` also
+# matches plane/internal/db/migrations/, so a new schema migration would
+# be silently skipped by `git add -A` — tracked files stay tracked, so
+# nothing would fail until the plane booted without it.
+/migrations/

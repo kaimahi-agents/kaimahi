@@ -288,7 +288,8 @@ func (a *App) Migrate(opt MigrateOptions) error {
 	a.notef("")
 	a.notef("After it rolls, the application's model calls are:")
 	a.notef("  authenticated   the seam refuses an unknown credential, and Orka refuses an")
-	a.notef("                  unauthenticated caller — the application holds neither key")
+	a.notef("                  unauthenticated caller. The application holds a kmh_ token for")
+	a.notef("                  the plane and no model credential at all")
 	a.notef("  Provider-scoped the caller names a model, never a URL; Orka resolves it against")
 	a.notef("                  its own Provider objects and refuses a name none allows")
 	a.notef("  recorded        every call is a row: `kmx flow %s`", opt.Credential)
@@ -339,6 +340,12 @@ func (a *App) readModelWiring(opt MigrateOptions) (modelWiring, error) {
 							ValueFrom json.RawMessage `json:"valueFrom"`
 						} `json:"env"`
 						EnvFrom []struct {
+							// Prefix is put in FRONT of every key the source
+							// carries, so a ConfigMap key and the variable the
+							// container actually receives are not the same
+							// string. Ignoring it would look up the wrong key
+							// and report a value the container never sees.
+							Prefix       string `json:"prefix"`
 							ConfigMapRef *struct {
 								Name string `json:"name"`
 							} `json:"configMapRef"`
@@ -402,10 +409,14 @@ func (a *App) readModelWiring(opt MigrateOptions) (modelWiring, error) {
 		if err != nil {
 			return modelWiring{}, err
 		}
-		if v, ok := values[opt.BaseURLVar]; ok {
+		// The variable the container receives is prefix + key, so the key
+		// to look up is the variable with that prefix taken off — and a
+		// variable that does not start with the prefix cannot come from
+		// this source at all.
+		if v, ok := prefixed(values, from.Prefix, opt.BaseURLVar); ok {
 			wiring.BaseURL, wiring.BaseURLFrom = v, "from ConfigMap "+from.ConfigMapRef.Name
 		}
-		if v, ok := values[opt.ModelVar]; ok {
+		if v, ok := prefixed(values, from.Prefix, opt.ModelVar); ok {
 			wiring.Model, wiring.ModelFrom = v, "from ConfigMap "+from.ConfigMapRef.Name
 		}
 	}
@@ -437,6 +448,17 @@ func (a *App) readModelWiring(opt MigrateOptions) (modelWiring, error) {
 		wiring.BaseURL = "(empty)"
 	}
 	return wiring, nil
+}
+
+// prefixed looks up the ConfigMap key behind an environment variable
+// that arrives through an envFrom source carrying a prefix. With no
+// prefix — which is every chart this has met — it is a plain lookup.
+func prefixed(values map[string]string, prefix, variable string) (string, bool) {
+	if prefix != "" && !strings.HasPrefix(variable, prefix) {
+		return "", false
+	}
+	v, ok := values[strings.TrimPrefix(variable, prefix)]
+	return v, ok
 }
 
 func (a *App) configMapValues(namespace, name string) (map[string]string, error) {

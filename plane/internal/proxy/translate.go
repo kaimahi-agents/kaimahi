@@ -132,10 +132,18 @@ type translatedRequest struct {
 // echo returns the client's value for a restated key, or the default that
 // says what the request meant by leaving it out.
 func (t translatedRequest) echo(key string, missing any) any {
-	if raw, ok := t.Echoed[key]; ok && len(raw) > 0 && string(raw) != "null" {
+	if raw, ok := t.Echoed[key]; ok && sent(raw) {
 		return raw
 	}
 	return missing
+}
+
+// sent reports whether a raw field carries a value the client actually
+// set. An explicit `null` does not: it is how a serialiser writes an
+// unset optional, and treating it as a value turns "I said nothing about
+// this" into a refusal.
+func sent(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
 }
 
 // requestFields is every top-level key a Responses request may carry
@@ -250,7 +258,13 @@ func responsesToChat(body []byte) (translatedRequest, error) {
 		}
 		out["tools"] = tools
 	}
-	if len(req.ToolChoice) > 0 {
+	// An explicit `null` is a field the client did NOT set. Most of the
+	// optional fields here decode to a nil pointer either way, but a
+	// json.RawMessage holds the four bytes `null` and would otherwise be
+	// carried into chatToolChoice, which would refuse it as an object with
+	// no type — a 400 for a field nobody set. Plenty of serialisers write
+	// their unset optionals out as null.
+	if sent(req.ToolChoice) {
 		choice, err := chatToolChoice(req.ToolChoice)
 		if err != nil {
 			return translatedRequest{}, err
