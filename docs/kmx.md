@@ -143,7 +143,7 @@ swap plus a credential the agent cannot read past.
 |---|---|
 | `kmx ctx` | print the context kmx will act on, where that came from, and its posture |
 | `kmx ctx <context>` | select that context for later commands (recorded in kmx's config directory — `~/.config/kmx/context` on Linux; set `KMX_HOME` to put it elsewhere) |
-| `kmx quickstart` | the shortest honest path to a working agent: equip the machine, create the cluster, deploy Ollama and pull the model, install kagent **without the components a first question cannot reach**, deploy one agent, ask it a question and print the answer. On an existing full or custom kagent release it preserves that profile rather than disabling components, and an unreadable Helm state is refused rather than guessed absent. A terminal gets a clear six-step view while native command output remains visible; redirected output keeps durable phase lines. `--output json` emits one document on stdout for a machine, and `--task` changes what is asked. Deploys no plane, and says so |
+| `kmx quickstart` | the shortest honest path to a working agent: equip the machine, create the cluster, deploy Ollama and pull the model, install kagent **without the components a first question cannot reach**, deploy one agent, ask it a question and print the answer. It preserves any deployed full or custom kagent release rather than disabling components, installs the minimal profile only after proving the release absent, and refuses unreadable or non-deployed Helm states rather than guessing. A terminal gets a clear six-step view while native command output remains visible; redirected output keeps durable phase lines. `--output json` emits one document on stdout for a machine, and `--task` changes what is asked. Does not enable governance or assess existing governance, and deploys no plane |
 | `kmx up` | check all host dependencies in one pass before the guard or first use, create the kind cluster, deploy Ollama, pull the pinned model, install kagent by helm, apply both agents, wait for each to be Ready, print status |
 | `kmx up --step <step>` | one step only: `cluster`, `ollama`, `model`, `kagent`, `agent`, `tools-agent` |
 | `kmx lift` | the same agent, on AKS: create the resource group, a private registry and a cluster with a policy engine, **prove the boundary is enforced before putting anything behind it**, install the runtime, the plane and the agents, wire Azure-managed monitoring, then check the agent answers and that its metrics and logs actually arrived. Names what it will do and where, and refuses without confirmation naming the cluster. Bills money until `kmx lift down` ([aks.md](aks.md)) |
@@ -155,7 +155,7 @@ swap plus a credential the agent cannot read past.
 | `kmx agent create [<name>]` | scaffold an Agent manifest; without a name, run the guided wizard beginning `Describe this agent:` |
 | `kmx agent edit <name> [--file <path>]` | edit and validate owned local Agent source; never edits the live resource implicitly |
 | `kmx agent chat <name> [message]` | ask an agent one question, through `kagent invoke` |
-| `kmx agent chat <name> --json` | the raw A2A task instead of the readable view (piped output is always raw) |
+| `kmx agent chat <name> --json` | the raw A2A task instead of the readable one-shot view (piped one-shot output is always raw); refused together with `--interactive` |
 | `kmx agent chat --interactive <name>` | live streamed chat in one session; shows active tools, tool calls/results, and supports session history/resume |
 | `kmx plane` | build the proxy image, bootstrap the plane's secrets, deploy the plane, wait for it to serve |
 | `kmx plane --step <step>` | one step only: `image`, `secrets`, `certificate`, `deploy`. `certificate` mints or renews what the two data seams serve with, and restarts the plane onto it ([operations.md](operations.md)) |
@@ -190,6 +190,31 @@ swap plus a credential the agent cannot read past.
 | `kmx completion bash\|zsh\|fish` | print shell completion for commands, flags, fixed values, kube contexts, and live agent names |
 | `kmx version` | the pinned kagent and model versions, the plane's image tag, and the revision `kmx plane` would fetch it at |
 
+Quickstart reports success only for a completed task with a readable answer.
+Its JSON key set is unchanged; `governed: false` describes this invocation, not
+cluster state. A rerun can preserve existing governance. See the
+[result example](getting-started.md#one-command-and-an-agent-that-answers).
+
+Quickstart preserves any deployed kagent application release, not just one with
+recognizable full-profile values. It checks the controller rollout without
+upgrading that release. A valid empty listing alone permits the first-answer
+profile via `helm install`; a concurrent install fails rather than being
+overwritten. Other release states, invalid identities/shapes, and query failures
+are refused. The query explicitly selects `--deployed --failed --pending
+--superseded --uninstalling --uninstalled`, which works with Helm 3 and 4 without
+the removed Helm 4 `--all` flag. This is release preservation, not a read-only
+quickstart: the other setup steps still reconcile, and a new application install
+uses the shared CRD upgrade/install step. `kmx up` explicitly upgrades/installs
+the full application profile. Both new minimal installs and full-profile
+upgrades wait with `--wait --wait-for-jobs --timeout 420s` rather than waiting on
+every pod in the namespace, which may include unrelated agents.
+
+`kmx workflow show` succeeds with parameter help when binding problems are only
+missing values, including a partially supplied valid set. Unknown keys, invalid
+typed values, pattern failures, or invalid computed defaults return an error,
+even when other required values are also missing. The successful human layout
+and embedded JSON remain unchanged; there is still no structured show mode.
+
 Enable completion for the current shell:
 
 ```bash
@@ -214,15 +239,43 @@ network-free slash-command IntelliSense on capable terminals: typing `/` shows
 the available commands, each additional character narrows the list through a
 prefix trie, and Tab completes a unique or common prefix. `NO_COLOR`,
 `TERM=dumb`, redirected input, and pipes retain the ordinary line-input path.
+Unavailable raw mode also falls back to a scanner; `--interactive` is not a
+TTY-only command. Enhanced editing handles wrapped prompts and grapheme-width
+backspace, bounds escape-sequence waits, and restores terminal settings on exit.
 
-`kmx agent chat` prints two different shapes on purpose. A terminal gets the
+### Output contracts
+
+On a capable destination terminal, status, agent list, and admin reports use
+rich headings, fields, and counted tables; tables too wide for the terminal
+become labeled records. Admin reports include ledger, credentials, pending
+approvals, grants, tool/approval audits, and flow; tool allowlists use fields.
+Rich views retain full identifiers and call digests where legacy tables truncate
+them, with exact numeric values and explicit state-column styling.
+
+Redirected admin output keeps its fixed-width columns, truncation, and empty-case
+wording for existing parsers. `TERM=dumb` selects plain presentation. A non-empty
+`NO_COLOR` removes ANSI but retains static rich layout on a capable terminal;
+chat separately disables cursor effects and uses ordinary line input under it.
+JSON/YAML, manifest stdout, metrics, completion, backup SQL, and one-shot raw chat
+bypass human styling. Progress and diagnostics stay on stderr.
+
+Plain compatibility does not freeze incorrect safety claims: unknown status and
+sandbox reads, readiness verdicts, flow refusal totals, setup summaries, and
+recovery commands intentionally change in both modes. Flow counts a model
+refusal from `cost_source: denied`, not an upstream HTTP error alone. Admin
+JSON/YAML and a structured `workflow show` are still unimplemented; the wizard
+and uncommon operator paths have not had a comprehensive rich presentation pass.
+See [cli-ux-plan.md](cli-ux-plan.md) for the audit and remaining scope.
+
+One-shot `kmx agent chat` prints two different shapes on purpose. A terminal gets the
 reply, any tools the agent called, and the token cost. A pipe gets the raw
 A2A task, byte for byte — because things parse it: CI captures this output
 and `scripts/verify-chat.py` asserts on `status.state`, the
 `function_call` and the `function_response` payload. `--json` forces the raw
 form when a terminal wants it. If the output is not a task kmx recognises —
 a transport error, a usage message — it prints what `kagent` printed rather
-than guessing at a shape that is not there.
+than guessing at a shape that is not there. `--interactive --json` is refused
+before application loading rather than silently choosing one format.
 
 Reading, updating and deleting agents are not kmx's job — kubectl and the
 kagent CLI already do them. `kmx agent list` is the one read kmx does
@@ -277,8 +330,18 @@ nothing when they get there.
 One command is guarded differently, and it is named here rather than
 covered by the sentence above: `kmx lift down` deletes Azure resources,
 identified by resource group rather than by a kube context, so it prints its
-own banner listing what it created and takes a confirmation naming the
-cluster. It refuses unattended just as the context guard does.
+own banner listing what it created. Created-cluster teardown confirms the
+**resource group**; `--byo` teardown confirms the **cluster**. Consent precedes
+every deletion, including recorded resources outside the group. Incomplete
+in-cluster cleanup retains the recovery record. It refuses unattended just as
+the context guard does, and does not claim that unrecorded resources or all
+subscription billing were checked. BYO teardown removes recorded monitoring,
+not the agents or governance plane; unknown ownership is left unchanged.
+
+Confirmation/recovery commands preserve the selected target and relevant
+invocation flags with shell-safe argument quoting. Kind-specific creation and
+image loading also require `--context`/`KUBE_CTX` to equal `kind-$KIND_CLUSTER`;
+confirmation cannot waive a mismatch between the container cluster and context.
 
 The banner:
 
@@ -467,17 +530,20 @@ kmx agent chat --interactive hello-tools
 # from make: INTERACTIVE=1 make chat AGENT=hello-tools
 ```
 
-The uncolored `CHAT STATUS` header names the active agent and shows its effective
-selected/discovered tools, descriptions, and whether each model/tool seam is
-direct or Kaimahi-governed. A horizontal rule ends the header before the first
-message, so startup posture cannot be mistaken for chat. A governed label
+On capable terminals, a compact startup view leads with the agent name and a
+subdued context line, followed by model posture and tools. Verified governed
+model routing is green; direct model routing is yellow. These labels describe
+the model seam, not blanket governance of the agent. Startup shows only a short
+input hint; `/help` opens the grouped command reference. Plain output retains
+the `CHAT STATUS` report and command list. Both views show effective
+selected/discovered tools and descriptions. A governed label
 requires current MCP discovery plus ready plane replicas and Service endpoints;
 unknown posture refuses rather than claiming governance. Every user message is
 labelled `You`; each reply carries the active agent name. Text and correlated
 tool call/completion events render as kagent streams them. The returned context
 ID is reused for each turn.
 
-Commands: `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,
+Commands: `/help`, `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,
 `/tools off|summary|verbose`, `/govern`, `/ungovern`, `/exit`.
 `/govern` gives the active agent a dedicated `kmx-model-<agent>` plane
 credential plus an agent-specific Secret and governed Ollama ModelConfig, then
@@ -496,20 +562,52 @@ Credential issuance has the same custody boundary as `kmx govern`: the token is
 shown only once by the plane and immediately written to its Secret. If that
 Secret write fails, the credential can require operator recovery because the
 plane currently exposes no token rotation or deletion API.
-`--session <id>` resumes a known session and displays its history. If a stream
-closes while a task is still working, kmx polls that exact task ID; it never
-resends the tool call. A Kaimahi governance denial still requires a separate
-operator approval, followed by explicit `/retry`.
+`--session <id>` resumes a known session and displays its history. `/sessions`
+reads the controller's `agent_id` field, accepts direct or wrapped session lists,
+and reports empty/null lists as `Sessions: none`; unknown response shapes are
+errors, not empty results. History uses the active renderer and closes existing
+actor/prompt output before replay and before returning to input. Replayed tool
+events with IDs are deduplicated for display; different IDs or changed payloads
+remain visible. This is not execution deduplication or a complete audit export.
+Malformed history events are still skipped and verbose ordinary tool/history
+payloads remain display-limited, unlike native approval inspection.
+
+Received session IDs survive stream failures. A successful `/resume` clears the
+old retry message only after history validates the session's agent. If an
+interactive stream closes while a task is still working, kmx polls that exact
+task ID rather than reinvoking it. A Kaimahi governance denial still requires a
+separate operator approval, followed by explicit `/retry`.
 
 Capable terminals color conversational and operational labels without relying
 on color alone: `YOU` is cyan, `AGENT (<name>)` is green, tool activity is magenta,
-and approval/governance activity is yellow. The status header is never colored.
+and approval/governance activity is yellow. The rich startup view uses the same
+palette; the plain status report remains uncolored.
 Messages use actor labels; non-message interactions use trusted bracketed labels
 such as `[TOOL CALL]`, `[TOOL RESULT]`, `[NATIVE APPROVAL]`, and
 `[KAIMAHI ROUTE]`. Dynamic tool names appear only in their indented fields.
 Every payload line is indented, with arguments and
 results nested one level further, so model/tool text cannot impersonate a
-trusted label. Set `NO_COLOR=1` or use `TERM=dumb` for plain output.
+trusted label. Set `NO_COLOR=1` to disable chat colors/cursor effects and enhanced
+input, or `TERM=dumb` for plain presentation. The actor/operation hierarchy remains.
+
+Rich output announces connection and posture checks before waiting, and reports
+waiting for task completion or continuing after a native decision. The working
+indicator can continue after tool activity, but never clears durable response
+text or runs over an input prompt. If its row has reflowed after a resize,
+animation is disabled instead of erasing uncertain screen coordinates.
+Rich exit notices distinguish explicit exit, closed input, and cancellation;
+plain output retains `[CHAT] Status: ended`.
+
+Native approvals and questions show a static details callout above the trusted
+interaction label and editable prompt. The callout does not consume input or
+truncate approval arguments; the existing decision validation and terminal
+editor remain responsible for consent and submission.
+
+If terminal dimensions change during enhanced input, chat stops without
+submitting the current message or native approval, cancels the input reader,
+and restores terminal settings. It avoids erasing with stale coordinates; it
+does not attempt live reflow. Restart chat to continue, using a known session ID
+if resuming. This does not undo an earlier submitted turn or decision.
 
 Route checks, tool calls, tool results, and possible governance-denial signals
 are actions taken while producing the current assistant turn, so they render as
@@ -543,6 +641,13 @@ tool record in plain output.
 Native kagent `requireApproval` pauses keep their answer prompt inside a
 `[NATIVE APPROVAL]` interaction and resume with a structured approve/reject
 response. `[NATIVE QUESTION]` similarly groups choices and the answer prompt.
+Malformed, incomplete, duplicate-ID, or mixed question/approval requests are
+refused as a whole before a decision is submitted. Approval arguments over the
+16 KiB per-call inspection limit are refused, not silently truncated; accepted
+requests display the call ID and full arguments. A batch requires an explicit
+decision for every call. Free-text answers retain commas; single-choice answers
+must match one offered choice, and multiple-choice answers use comma-separated
+values (quote a choice containing commas). Empty/invalid answers are not sent.
 Kaimahi route information uses a separate `[KAIMAHI ROUTE]` interaction and
 names the affected tool in an indented field when its server route is
 unambiguous. Possible denial signals use `[POSSIBLE KAIMAHI DENIAL]`. They
@@ -559,6 +664,22 @@ an `allowed` or `ledgered` result. Failed agent/model responses or correlated
 unambiguous tool responses matching the plane's denial vocabulary are marked
 `[POSSIBLE KAIMAHI DENIAL]` with unverified provenance; reported approval
 filing must still be verified through `kmx approvals`.
+
+### Retry limits
+
+The interactive fixes do not narrow the existing one-shot retry policy. One-shot
+chat and quickstart still retry matching controller connection-refused, EOF, and
+connection-reset errors up to three times. An EOF/reset can occur after the agent
+acted, so retrying a tool-capable turn can repeat effects or spend. An explicit
+one-shot `--session` does not disable transport retries. Workflow bounded and
+consequential steps use the narrower connection-refused-only policy; read/draft
+turns retain the broader policy.
+
+Separately, one-shot question-only `ask_user` resampling remains at most twice,
+only without an explicit session and with no recorded tool response or other
+pending confirmation. Interactive `/retry` explicitly resends the last message;
+it is not an exactly-once guarantee. These policies were not redesigned by the
+presentation/HITL audit.
 
 ## How the plane gets there without a clone
 
@@ -780,6 +901,18 @@ keeps those, and stores only the hash of the token it issued.
 | **An already-issued credential is reconciled, never overwritten** | The token is shown exactly once and cannot be recovered. If the Secret is bound to a different credential kmx refuses; if it is missing, kmx tells you how to clear the row and re-issue. |
 | **The switch waits for the pods, not the object** | `rollout status` returns while the old pod is still draining, and a question that lands on it gets a plausible answer from the **old** preset. kmx waits until exactly one pod is on the new template. |
 
+Issuance/renewal TTLs must be 60 seconds through 365 days. `kmx govern` supports
+the committed `governed-ollama` and `governed-copilot` presets and their fixed
+`kagent/kaimahi-governed-token` reference; incompatible preset/Secret overrides
+are refused before issuance. For a custom tool server, `tools govern` checks
+that the seam exists and has exactly one matching Authorization Secret reference
+before issuing or changing the allowlist. `tools ungovern` restores only
+`hello-tools`' direct tool selection, preserving model routing and other settings.
+
+Approval bounds are checked before mutation: TTL 1 second through 30 days,
+uses 1 through 1,000,000, and amount 1 through 1,000,000,000,000 when set. At
+least TTL or uses is required; zero remains valid for a budget, not an approval.
+
 Then:
 
 ```bash
@@ -802,9 +935,9 @@ Postgres client is needed.
 
 | Property | Why |
 |---|---|
-| **A dump with no trailer is not a backup** | `pg_dump` writes its trailer last, so its presence is the only well-formed positive. kmx writes to `<file>.partial` and renames only once it is there; a dump that stopped half way leaves nothing behind. `restore` checks the same trailer **before** it touches the plane. |
+| **A dump with no trailer is not a backup** | `pg_dump` writes its trailer last, so its presence is the completion check. kmx exclusively creates a unique 0600 temporary file in the destination directory and renames only after receiving the trailer; failure removes the temporary file and preserves any previous backup. Existing destinations are warned about before replacement. `restore` checks the same trailer **before** it touches the plane. |
 | **The backup is 0600 from the moment it exists** | It holds credential names and token hashes (never a token), the caps, the ledger, the audit trails and the grants. Keep it as you would the database. |
-| **`restore` quiesces the plane** | The proxies are scaled to zero — in-flight calls drain — the tables are replaced, and the proxies are scaled back. A proxy admitting calls during a `--clean` restore could write ledger rows the restore then discards, or decide a budget against a half-loaded ledger. Whatever happens, the proxies come back. |
+| **`restore` quiesces the plane** | The proxies are scaled to zero, in-flight calls drain, the tables are replaced, and the original replica count is restored. Recovery is attempted even after a failed scale-to-zero request, and recovery errors are reported alongside the original failure; success is not guaranteed. An originally zero-replica plane stays stopped and is reported as not serving. |
 | **`restore` is guarded; `backup` is not** | `restore` rewrites the ledger. `backup` is a read, like `ledger`. |
 | **`metrics` reads ONE replica** | Each replica carries its own counters, so a merged view would be arithmetic kmx invented. The ops port is on no Service, so this is a port-forward to a **pod** — and only to one that is Ready and not terminating, because a draining pod stays Running and keeps its IP. |
 

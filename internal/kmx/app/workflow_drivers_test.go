@@ -71,6 +71,7 @@ if [ -f "$KMX_TEST_REPLIES/$n" ]; then
 else
   cat "$KMX_TEST_REPLIES/default"
 fi
+exit "${KMX_TEST_KAGENT_EXIT:-0}"
 `
 
 // fakePlane answers the admin reads a step makes.
@@ -81,12 +82,14 @@ fi
 // call left no row", which is one of the four answers under test and not
 // the others.
 type fakePlane struct {
-	mu         sync.Mutex
-	auditPages [][]map[string]any
-	auditReads int
-	grants     []map[string]any
-	pending    []map[string]any
-	requests   int
+	mu                sync.Mutex
+	auditPages        [][]map[string]any
+	auditReads        int
+	grants            []map[string]any
+	pending           []map[string]any
+	requests          int
+	grantAfterRequest []map[string]any
+	approveOnRead     bool
 	// asked counts every admin call that got past the liveness and
 	// version probes, so a test can say that a step reached the plane
 	// for nothing at all.
@@ -110,9 +113,16 @@ func (p *fakePlane) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		writeFakeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 	case "/admin/grants":
-		writeFakeJSON(w, http.StatusOK, map[string]any{"grants": p.grants})
+		grants := p.grants
+		if p.requests > 0 && p.grantAfterRequest != nil {
+			grants = p.grantAfterRequest
+		}
+		writeFakeJSON(w, http.StatusOK, map[string]any{"grants": grants})
 	case "/admin/approvals":
 		writeFakeJSON(w, http.StatusOK, map[string]any{"pending": p.pending})
+		if p.approveOnRead {
+			p.pending = nil
+		}
 	case "/admin/requests":
 		p.requests++
 		writeFakeJSON(w, http.StatusCreated, map[string]any{"deduped": false})
@@ -714,5 +724,100 @@ func TestAStepKindWithNoDriverIsRefusedByName(t *testing.T) {
 		if kind == "deploy" {
 			t.Fatal(`"deploy" is now a declared step kind; pick another unknown one`)
 		}
+	}
+}
+
+func TestConsequentialStepRequiresMatchingRequestGrantAndAuditDigests(t *testing.T) {
+	for _, tc := range []struct {
+		name, requestDigest, grantDigest, auditDigest, approver, decidedBy string
+		wantOK                                                             bool
+		wantTurns                                                          int
+	}{
+		{"matching", "abc", "abc", "abc", "", "", true, 1},
+		{"missing request", "", "abc", "abc", "", "", false, 0},
+		{"missing grant", "abc", "", "abc", "", "", false, 0},
+		{"wrong grant", "abc", "def", "abc", "", "", false, 0},
+		{"missing audit", "abc", "abc", "", "", "", false, 1},
+		{"wrong audit", "abc", "abc", "def", "", "", false, 1},
+		{"required approver", "abc", "abc", "abc", "U123", "U123", true, 1},
+		{"wrong approver", "abc", "abc", "abc", "U123", "U456", false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := boundedStepSpec()
+			s.Kind = blueprint.KindConsequential
+			row := auditEntry("now", s.Tool, "allowed", "granted")
+			row["arg_digest"] = tc.auditDigest
+			p := &fakePlane{
+				pending:           []map[string]any{{"id": "request-123", "credential": "release-agent", "kind": "tool", "subject": s.Tool, "arg_summary": s.Summary(), "arg_digest": tc.requestDigest}},
+				grantAfterRequest: []map[string]any{{"id": "grant-123", "request_id": "request-123", "kind": "tool", "subject": s.Tool, "live": true, "arg_digest": tc.grantDigest, "decided_by": tc.decidedBy}},
+				approveOnRead:     true,
+				auditPages:        [][]map[string]any{{}, {row}},
+			}
+			f := newDriverFixture(t, p)
+			f.reply(t, 0, "completed", "Done")
+			r := f.runner(t)
+			r.opt.HumanSeconds = 1
+			r.opt.Approver = tc.approver
+			err := r.consequentialStep(s)
+			if (err == nil) != tc.wantOK {
+				t.Fatalf("error=%v, want success=%v\n%s", err, tc.wantOK, f.errOut.String())
+			}
+			if got := f.turnCount(t); got != tc.wantTurns {
+				t.Fatalf("took %d turns, want %d", got, tc.wantTurns)
+			}
+			log := f.errOut.String()
+			if strings.Contains(log, "carry the same digest") != tc.wantOK {
+				t.Fatalf("unjustified or missing digest claim:\n%s", log)
+			}
+			if tc.requestDigest == "" {
+				return
+			}
+			if tc.approver != "" {
+				if !strings.Contains(log, "Required approver: U123") || strings.Contains(log, "Approve it with:") {
+					t.Fatalf("approval advice bypassed the identity constraint:\n%s", log)
+				}
+			} else if !strings.Contains(log, "kmx --context "+f.app.Cfg.KubeContext+" approve request-123 --uses 1 --ttl 10m") {
+				t.Fatalf("approval command lost context:\n%s", log)
+			}
+			if !strings.Contains(log, "From Slack connected to context "+f.app.Cfg.KubeContext) {
+				t.Fatalf("Slack advice lost context:\n%s", log)
+			}
+		})
+	}
+}
+
+func TestConsequentialStepDoesNotSuggestDenyingALiveGrant(t *testing.T) {
+	s := boundedStepSpec()
+	p := &fakePlane{grants: []map[string]any{{"kind": "tool", "subject": s.Tool, "live": true}}}
+	f := newDriverFixture(t, p)
+	err := f.runner(t).consequentialStep(s)
+	if err == nil || strings.Contains(err.Error(), "or deny it") || !strings.Contains(err.Error(), "does not revoke a live grant") {
+		t.Fatalf("unsafe live-grant advice: %v", err)
+	}
+	if p.requests != 0 || f.turnCount(t) != 0 {
+		t.Fatal("acted while a previous grant was live")
+	}
+}
+
+func TestWorkflowTurnRejectsNonzeroExitWithCompletedTask(t *testing.T) {
+	f := newDriverFixture(t, &fakePlane{})
+	f.reply(t, 0, "completed", "Looks successful")
+	t.Setenv("KMX_TEST_KAGENT_EXIT", "7")
+	_, err := f.runner(t).turn(blueprint.RenderedStep{Kind: blueprint.KindRead, Label: "read", Prompt: "Read"})
+	if err == nil || !strings.Contains(err.Error(), "exited 7") {
+		t.Fatalf("nonzero exit was accepted: %v", err)
+	}
+}
+
+func TestWorkflowResumeRetainsFileParametersContextAndApprover(t *testing.T) {
+	f := newDriverFixture(t, &fakePlane{})
+	r := f.runner(t)
+	r.opt.File = "team's workflow.yaml"
+	r.opt.Set = map[string]string{"repo": "org/repo", "branch": "release's $(false)"}
+	r.opt.Approver = "U123"
+	want := "kmx --context " + f.app.Cfg.KubeContext + " workflow run --file " + shellArg(r.opt.File) +
+		" --set " + shellArg("branch="+r.opt.Set["branch"]) + " --set repo=org/repo --step publish --approver U123"
+	if got := r.resumeCommand("publish"); got != want {
+		t.Fatalf("resume lost invocation settings: %s, want %s", got, want)
 	}
 }

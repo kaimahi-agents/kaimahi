@@ -12,6 +12,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
@@ -117,10 +118,13 @@ type podStatus struct {
 func condition(conditions []statusCondition, name string) string {
 	for _, value := range conditions {
 		if value.Type == name {
-			if value.Status == "True" {
+			switch value.Status {
+			case "True":
 				return "yes"
+			case "False":
+				return "no"
 			}
-			return "no"
+			return "unknown"
 		}
 	}
 	return "unknown"
@@ -175,6 +179,15 @@ func table(out io.Writer, headers []string, rows [][]string) {
 		}
 	}
 	fmt.Fprintln(out)
+}
+
+func humanTable(out io.Writer, headers []string, rows [][]string) {
+	ui := cliui.New(out)
+	if !ui.Rich() {
+		table(out, headers, rows)
+		return
+	}
+	fmt.Fprintln(out, ui.Table(headers, rows))
 }
 
 // statusTolerant reads a population that may not exist on this cluster at
@@ -245,7 +258,7 @@ func podSummary(pods []podStatus) (ready, restarts int, rows [][]string) {
 			podRestarts += container.RestartCount
 		}
 		restarts += podRestarts
-		rows = append(rows, []string{pod.Metadata.Name, map[bool]string{true: "yes", false: "no"}[isReady], pod.Status.Phase, fmt.Sprint(podRestarts)})
+		rows = append(rows, []string{pod.Metadata.Name, condition(pod.Status.Conditions, "Ready"), pod.Status.Phase, fmt.Sprint(podRestarts)})
 	}
 	return
 }
@@ -541,8 +554,14 @@ func (a *App) statusTable() error {
 	pReady, pRestarts, _ := podSummary(planePods.Items)
 	overall := statusReady(allAgents, allModels,
 		kReady, len(kagentPods.Items), oReady, len(ollamaPods.Items), pReady, len(planePods.Items))
+	overall = overall && governanceReady(data.governanceOf()) && data.ollamaErr == ""
 
-	fmt.Fprintln(a.Out, "Kaimahi status")
+	ui := cliui.New(a.Out)
+	if ui.Rich() {
+		return a.statusRich(ui, data, overall, agentRows, modelRows, podRows,
+			kReady, kRestarts, oReady, oRestarts, pReady, pRestarts)
+	}
+	fmt.Fprintln(a.Out, ui.Heading("Kaimahi status"))
 	// The source is not decoration. `default` means nothing named this
 	// cluster and kmx picked the name, which is a different fact from an
 	// operator having typed it, and status is where a confused operator
@@ -560,18 +579,18 @@ func (a *App) statusTable() error {
 		fmt.Fprintf(a.Out, "  context: %s (from %s)\n", a.Cfg.KubeContext, a.Cfg.ContextSource)
 	}
 	if overall {
-		fmt.Fprintf(a.Out, "  result:  ready (%d agents available)\n", len(agents.Items))
+		fmt.Fprintf(a.Out, "  result:  %s (%d agents available)\n", ui.Success("ready"), len(agents.Items))
 	} else {
-		fmt.Fprintln(a.Out, "  result:  attention required")
+		fmt.Fprintf(a.Out, "  result:  %s\n", ui.Warning("attention required"))
 	}
-	fmt.Fprintln(a.Out, "\nAgents")
-	table(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows)
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Agents"))
+	humanTable(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows)
 	fmt.Fprintln(a.Out, "  Ready = can serve requests; Accepted = kagent accepted the configuration.")
 	fmt.Fprintln(a.Out, "  Accepted is what kagent decided when it last looked, not a live check: a credential")
 	fmt.Fprintln(a.Out, "  written since then has not been tested, however old that answer is.")
-	fmt.Fprintln(a.Out, "\nModels")
-	table(a.Out, []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows)
-	fmt.Fprintln(a.Out, "\nRuntime")
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Models"))
+	humanTable(a.Out, []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows)
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Runtime"))
 	fmt.Fprintf(a.Out, "  kagent:     %d/%d pods ready, %d restarts\n", kReady, len(kagentPods.Items), kRestarts)
 	switch {
 	case data.ollamaErr != "":
@@ -596,16 +615,86 @@ func (a *App) statusTable() error {
 	default:
 		fmt.Fprintln(a.Out, "  governance: not installed (run `kmx plane` for budgets and audit)")
 	}
-	fmt.Fprintln(a.Out, "\nRuntime pods")
-	table(a.Out, []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows)
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Runtime pods"))
+	humanTable(a.Out, []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows)
 	writeGovernance(a.Out, data.governanceOf())
-	fmt.Fprintln(a.Out, "\nNext")
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Accent("Next"))
 	if overall {
 		fmt.Fprintf(a.Out, "  kmx agent chat %s\n", agentRows[0][0])
 	} else {
 		fmt.Fprintf(a.Out, "  kubectl --context %s -n kagent get agents,pods\n", a.Cfg.KubeContext)
 	}
 	return nil
+}
+
+func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
+	agentRows, modelRows, podRows [][]string, kReady, kRestarts, oReady, oRestarts, pReady, pRestarts int) error {
+	result := ui.Warning("attention required")
+	if overall {
+		result = ui.Success(fmt.Sprintf("ready (%d agents available)", len(agentRows)))
+	}
+	contextValue := fmt.Sprintf("%s (from %s)", a.Cfg.KubeContext, a.Cfg.ContextSource)
+	if a.Cfg.ContextSource == config.SourceDefault {
+		contextValue = a.Cfg.KubeContext + " (nothing chose this — pick one with `kmx ctx <name>`)"
+	}
+	fmt.Fprintln(a.Out, ui.Heading("Kaimahi status"))
+	fmt.Fprintln(a.Out, ui.Fields([]cliui.Field{{Label: "context", Value: contextValue}, {Label: "result", Value: result}}))
+
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Agents", []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState))
+	fmt.Fprintln(a.Out, ui.Muted("Ready = can serve requests; Accepted = kagent's last configuration decision."))
+	fmt.Fprintln(a.Out, ui.Muted("A credential written since that decision has not yet been tested."))
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Models", []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState))
+
+	runtime := []cliui.Field{{Label: "kagent", Value: fmt.Sprintf("%d/%d pods ready, %d restarts", kReady, len(data.kagentPods.Items), kRestarts)}}
+	ollama := "not installed"
+	if data.ollamaErr != "" {
+		ollama = "unknown — " + data.ollamaErr
+	} else if len(data.ollamaPods.Items) > 0 {
+		ollama = fmt.Sprintf("%d/%d pods ready, %d restarts", oReady, len(data.ollamaPods.Items), oRestarts)
+	}
+	plane := "not installed (run `kmx plane` for budgets and audit)"
+	if data.planeErr != "" {
+		plane = "unknown — " + data.planeErr
+	} else if data.planeThere || len(data.planePods.Items) > 0 {
+		plane = fmt.Sprintf("%d/%d pods ready, %d restarts", pReady, len(data.planePods.Items), pRestarts)
+	}
+	runtime = append(runtime, cliui.Field{Label: "ollama", Value: ollama}, cliui.Field{Label: "governance", Value: plane})
+	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Runtime"), ui.Fields(runtime))
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Runtime pods", []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnNumber))
+
+	g := data.governanceOf()
+	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Governance"), ui.Fields(governanceFields(g)))
+	fmt.Fprintln(a.Out, ui.Muted("Governed means the cluster object points at the plane; the plane field says whether enforcement is available."))
+
+	next := cliui.Action{Label: "Inspect the runtime", Command: fmt.Sprintf("kubectl --context %s -n kagent get agents,pods", a.Cfg.KubeContext)}
+	if overall && len(agentRows) > 0 {
+		next = cliui.Action{Label: "Chat with an agent", Command: "kmx agent chat " + agentRows[0][0]}
+	}
+	fmt.Fprintf(a.Out, "\n%s\n", ui.Actions("Next", []cliui.Action{next}))
+	return nil
+}
+
+func governanceFields(g governance) []cliui.Field {
+	plane := "not installed — nothing is enforced in front of these seams (`kmx plane`)"
+	switch g.Plane.State {
+	case stateUnknown:
+		plane = "unknown — " + g.Plane.Reason
+	case stateInstalled:
+		switch {
+		case g.Plane.Desired == 0:
+			plane = "installed but SCALED TO ZERO — nothing behind it is being enforced"
+		case g.Plane.Ready == 0:
+			plane = fmt.Sprintf("installed but DOWN (0/%d replicas ready) — nothing behind it is being enforced", g.Plane.Desired)
+		default:
+			plane = fmt.Sprintf("installed (%d/%d replicas ready)", g.Plane.Ready, g.Plane.Desired)
+		}
+	}
+	return []cliui.Field{
+		{Label: "plane", Value: plane},
+		{Label: "model seams", Value: seamLine(g.ModelSeams, "agents", "agent")},
+		{Label: "tool seams", Value: seamLine(g.ToolSeams, "tool servers", "tool server")},
+		{Label: "credentials", Value: credentialLine(g.Credentials)},
+	}
 }
 
 func valueOr(value, fallback string) string {

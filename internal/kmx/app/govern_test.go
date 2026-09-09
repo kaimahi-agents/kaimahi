@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
@@ -34,6 +34,9 @@ JSON
   *"get secret kaimahi-admin"*) printf '%s' "$KMX_TEST_ADMIN_B64"; exit 0 ;;
   *"get secret kaimahi-governed-token"*) printf '%s' "$KMX_TEST_BOUND"; exit 0 ;;
   *"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_SEAM_TLS"; exit 0 ;;
+  *"get modelconfig custom"*)
+    if [ -n "$KMX_TEST_MODEL_ERR" ]; then printf '%s\n' "$KMX_TEST_MODEL_ERR" >&2; exit 1; fi
+    printf '%s' "$KMX_TEST_MODEL"; exit 0 ;;
   *port-forward*)
     # A real kubectl announces the bind before anything may be sent through
     # it; kmx waits for exactly this line, so the fake has to print it.
@@ -46,6 +49,7 @@ JSON
     fi
     printf 'agent.kagent.dev/hello-world\n'; exit 0 ;;
   *"get remotemcpserver"*)
+    if [ -n "$KMX_TEST_TOOL_SERVER" ]; then printf '%s' "$KMX_TEST_TOOL_SERVER"; exit 0; fi
     [ -z "$KMX_TEST_SEAM" ] && exit 0
     printf '%s' "$KMX_TEST_SEAM"; exit 0 ;;
   *"get crd remotemcpservers.kagent.dev"*)
@@ -143,6 +147,127 @@ func governOptions() GovernOptions {
 		Preset:          config.GovernedModelConfig,
 		Secret:          config.GovernedSecret,
 		SecretNamespace: config.DefaultNamespace,
+	}
+}
+
+func TestGovernRejectsUnsupportedRoutesAndSecretsBeforeClusterAccess(t *testing.T) {
+	for _, change := range []struct {
+		name string
+		edit func(*GovernOptions)
+	}{
+		{"custom secret", func(o *GovernOptions) { o.Secret = "custom" }},
+		{"custom namespace", func(o *GovernOptions) { o.SecretNamespace = "other" }},
+		{"copilot custom secret", func(o *GovernOptions) { o.Preset, o.Secret = "governed-copilot", "custom" }},
+		{"copilot custom namespace", func(o *GovernOptions) { o.Preset, o.SecretNamespace = "governed-copilot", "other" }},
+		{"zero ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(0) }},
+		{"short ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(59) }},
+		{"long ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(31536001) }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			opt := governOptions()
+			change.edit(&opt)
+			// No runner: validation must complete before preflight or the guard.
+			a := &App{}
+			if err := a.Govern("demo", opt); err == nil {
+				t.Fatal("unsupported governance accepted")
+			}
+		})
+	}
+}
+
+func TestGovernValidatesCustomPresetBeforeIssuance(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, base, secret, namespace, key, readError string
+		valid                                                   bool
+	}{
+		{name: "custom ollama", valid: true},
+		{name: "custom copilot", base: "http://kaimahi-proxy.kaimahi:8080/upstream/copilot", valid: true},
+		{name: "service DNS alias", base: "http://kaimahi-proxy.kaimahi.svc:8080/upstream/ollama/v1", valid: true},
+		{name: "direct", base: "http://ollama.ollama:11434/v1"},
+		{name: "wrong provider", provider: "Ollama"},
+		{name: "wrong secret", secret: "other-token"},
+		{name: "wrong namespace", namespace: "other"},
+		{name: "wrong secret namespace"},
+		{name: "wrong key", key: "token"},
+		{name: "missing key"},
+		{name: "wrong port", base: "http://kaimahi-proxy.kaimahi:9091/upstream/ollama/v1"},
+		{name: "wrong scheme", base: "https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1"},
+		{name: "wrong path", base: "http://kaimahi-proxy.kaimahi:8080/v1"},
+		{name: "missing upstream", base: "http://kaimahi-proxy.kaimahi:8080/upstream/"},
+		{name: "path traversal", base: "http://kaimahi-proxy.kaimahi:8080/upstream/../admin"},
+		{name: "lookalike host", base: "http://kaimahi-proxy.kaimahi.evil.com:8080/upstream/ollama/v1"},
+		{name: "missing", readError: `Error from server (NotFound): modelconfigs "custom" not found`},
+		{name: "forbidden", readError: "Error from server (Forbidden): cannot get modelconfigs"},
+		{name: "unreachable", readError: "connection refused"},
+		{name: "invalid JSON"},
+		{name: "invalid URL", base: "://broken"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opt := governOptions()
+			opt.Preset, opt.Secret = "custom", "custom-token"
+			provider, base, secret, namespace, key := "OpenAI", "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", opt.Secret, opt.SecretNamespace, "api-key"
+			if tc.provider != "" {
+				provider = tc.provider
+			}
+			if tc.base != "" {
+				base = tc.base
+			}
+			if tc.secret != "" {
+				secret = tc.secret
+			}
+			if tc.namespace != "" {
+				namespace = tc.namespace
+			}
+			if tc.key != "" {
+				key = tc.key
+			}
+			if tc.name == "missing key" {
+				key = ""
+			}
+			if tc.name == "wrong secret namespace" {
+				opt.SecretNamespace = "other"
+			}
+			raw, err := json.Marshal(map[string]any{
+				"metadata": map[string]string{"name": opt.Preset, "namespace": namespace},
+				"spec":     map[string]any{"provider": provider, "model": "custom-model", "apiKeySecret": secret, "apiKeySecretKey": key, "openAI": map[string]string{"baseUrl": base}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "invalid JSON" {
+				raw = []byte("invalid")
+			}
+			var f *governFixture
+			issuedCount := 0
+			f = newGovernFixture(t, `Error from server (NotFound): agents.kagent.dev "hello-world" not found`, func(w http.ResponseWriter, r *http.Request) {
+				issuedCount++
+				if !strings.Contains(f.args(), "-n kagent get modelconfig custom -o json") {
+					t.Error("credential issued before reading the custom preset")
+				}
+				issued("kmh_"+strings.Repeat("c", 64))(w, r)
+			})
+			t.Setenv("KMX_TEST_MODEL", string(raw))
+			t.Setenv("KMX_TEST_MODEL_ERR", tc.readError)
+			err = f.app.Govern("demo", opt)
+			if tc.valid {
+				if err != nil || issuedCount != 1 {
+					t.Fatalf("valid custom governance failed: issued=%d, error=%v", issuedCount, err)
+				}
+				if !strings.Contains(f.piped(), "name: custom-token") {
+					t.Fatalf("custom token destination not used: %s", f.piped())
+				}
+				if strings.Contains(f.piped(), "custom-model") {
+					t.Fatal("operator-owned ModelConfig was rewritten")
+				}
+			} else {
+				if err == nil || issuedCount != 0 || !strings.Contains(err.Error(), "nothing issued") {
+					t.Fatalf("invalid custom governance: issued=%d, error=%v", issuedCount, err)
+				}
+				if strings.Contains(f.args(), "port-forward") || f.piped() != "" {
+					t.Fatalf("invalid preset reached mutation: %s", f.args())
+				}
+			}
+		})
 	}
 }
 

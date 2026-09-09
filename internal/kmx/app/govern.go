@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
@@ -41,17 +43,61 @@ type GovernOptions struct {
 // that token's hash, and the real keys stay with the proxy. From here every
 // call the agent makes is authenticated, budget-checked and ledgered.
 func (a *App) Govern(credential string, opt GovernOptions) error {
-	if err := a.preflight(depKubectl); err != nil {
-		return err
-	}
 	if err := validCredentialName(credential); err != nil {
 		return err
 	}
 	if opt.Agent == "" || opt.Preset == "" || opt.Secret == "" || opt.SecretNamespace == "" {
 		return fmt.Errorf("kmx govern: agent, preset and secret must all be named")
 	}
+	embedded := opt.Preset == "governed-ollama" || opt.Preset == "governed-copilot"
+	if embedded && (opt.Secret != config.GovernedSecret || opt.SecretNamespace != config.DefaultNamespace) {
+		return fmt.Errorf("kmx govern: the applied presets reference Secret %s/%s; unsupported --secret or --secret-namespace would issue an unusable token", config.DefaultNamespace, config.GovernedSecret)
+	}
+	if err := admin.CheckCredentialTTL(opt.TTLSeconds); err != nil {
+		return err
+	}
+	if err := a.preflight(depKubectl); err != nil {
+		return err
+	}
+	if !embedded {
+		// Custom presets are operator-owned. Verify what the agent will use
+		// before minting a token, rather than rewriting the preset to fit it.
+		raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get", "modelconfig", opt.Preset, "-o", "json")
+		if err != nil {
+			return fmt.Errorf("cannot inspect ModelConfig %q before governance; nothing issued: %w", opt.Preset, err)
+		}
+		var model modelStatus
+		if err := json.Unmarshal([]byte(raw), &model); err != nil {
+			return fmt.Errorf("cannot inspect ModelConfig %q before governance; nothing issued: %w", opt.Preset, err)
+		}
+		base, err := url.Parse(model.Spec.OpenAI.BaseURL)
+		if err != nil || model.Spec.Provider != "OpenAI" || classifySeam(model.Spec.OpenAI.BaseURL, planeProxyService) != seamGoverned ||
+			base.Scheme != "http" || base.Port() != "8080" || base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" ||
+			!strings.HasPrefix(base.Path, "/upstream/") || strings.TrimPrefix(base.Path, "/upstream/") == "" || base.RawPath != "" || path.Clean(base.Path) != strings.TrimSuffix(base.Path, "/") {
+			return fmt.Errorf("ModelConfig %q is not a supported OpenAI route through the Kaimahi proxy; nothing issued", opt.Preset)
+		}
+		// modelStatus carries the route and Secret name; these additional
+		// reference fields matter for issuance, but not the status view.
+		var reference struct {
+			Metadata struct{ Namespace string } `json:"metadata"`
+			Spec     struct {
+				APIKeySecretKey string `json:"apiKeySecretKey"`
+			} `json:"spec"`
+		}
+		if err := json.Unmarshal([]byte(raw), &reference); err != nil {
+			return fmt.Errorf("cannot inspect ModelConfig %q Secret reference; nothing issued: %w", opt.Preset, err)
+		}
+		if reference.Metadata.Namespace != config_kagentNamespace || opt.SecretNamespace != reference.Metadata.Namespace ||
+			model.Spec.APIKeySecret != opt.Secret || reference.Spec.APIKeySecretKey != "api-key" {
+			return fmt.Errorf("ModelConfig %q must reference Secret %s/%s key api-key in the agent's namespace %s; nothing issued", opt.Preset, opt.SecretNamespace, opt.Secret, config_kagentNamespace)
+		}
+	}
+	args := []string{"govern", credential, "--agent", opt.Agent, "--preset", opt.Preset, "--secret", opt.Secret, "--secret-namespace", opt.SecretNamespace}
+	if opt.TTLSeconds != nil {
+		args = append(args, "--ttl", fmt.Sprint(*opt.TTLSeconds))
+	}
 	if err := a.Guard(fmt.Sprintf("govern agent %q through the Kaimahi plane (credential %q)", opt.Agent, credential),
-		"kmx govern "+credential); err != nil {
+		a.operationCommand(args...)); err != nil {
 		return err
 	}
 
@@ -128,7 +174,7 @@ func (a *App) GovernInteractiveModel(agent string) error {
 	preset := governedResourceName("kmx-governed-ollama", agent)
 	credential := governedResourceName("kmx-model", agent)
 	opt := GovernOptions{Agent: agent, Preset: preset, Secret: secret, SecretNamespace: config.DefaultNamespace}
-	if err := a.Guard(fmt.Sprintf("govern agent %q's model seam through the Kaimahi plane (credential %q)", agent, credential), "kmx agent chat --interactive "+agent); err != nil {
+	if err := a.Guard(fmt.Sprintf("govern agent %q's model seam through the Kaimahi plane (credential %q)", agent, credential), a.operationCommand("agent", "chat", "--interactive", agent)); err != nil {
 		return err
 	}
 	model, err := a.activeModelName(agent)
@@ -305,13 +351,14 @@ func command(opt GovernOptions, credential string) string {
 	if opt.Command != "" {
 		return opt.Command
 	}
-	return "kmx govern " + credential
+	return "kmx govern " + shellArg(credential)
 }
 
 func (a *App) wrongCredentialError(bound, credential string, opt GovernOptions) error {
 	return fmt.Errorf("Secret %s holds the token for credential %q, not %q — refusing.\n"+
 		"  That token is the only copy; overwriting it would leave %q live in the plane and unusable.\n"+
-		"  Name a different Secret: %s --secret <name>",
+		"  A different --secret also requires matching model/tool references; %s cannot rewire the committed presets.\n"+
+		"  Keep the existing credential, use a custom preset/server with a matching Secret, or use agent-specific model governance in interactive chat.",
 		opt.Secret, bound, credential, bound, command(opt, credential))
 }
 

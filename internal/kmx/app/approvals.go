@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
@@ -22,8 +23,21 @@ func (a *App) Budget(credential string, capCents, capTokens *int64) error {
 	if err := admin.ValidCredentialName(credential); err != nil {
 		return err
 	}
-	if err := a.Guard(fmt.Sprintf("set monthly caps for credential %q", credential),
-		"kmx budget "+credential); err != nil {
+	if err := admin.CheckCap("cap_cents", capCents); err != nil {
+		return err
+	}
+	if err := admin.CheckCap("cap_tokens", capTokens); err != nil {
+		return err
+	}
+	args := []string{"budget", credential}
+	if capCents != nil {
+		args = append(args, "--cents", fmt.Sprint(*capCents))
+	}
+	if capTokens != nil {
+		args = append(args, "--tokens", fmt.Sprint(*capTokens))
+	}
+	if err := a.Guard(fmt.Sprintf("replace monthly caps for credential %q: cents=%s tokens=%s (null clears the cap)", credential, capOrNone(capCents), capOrNone(capTokens)),
+		a.operationCommand(args...)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {
@@ -64,7 +78,20 @@ func (a *App) Approve(id string, ttlSeconds, maxUses, amount *int64) error {
 	if err := admin.CheckBounds(ttlSeconds, maxUses); err != nil {
 		return err
 	}
-	if err := a.Guard("approve pending request "+id, "kmx approve "+id); err != nil {
+	if err := admin.CheckCap("amount", amount); err != nil {
+		return err
+	}
+	args := []string{"approve", id}
+	if ttlSeconds != nil {
+		args = append(args, "--ttl", fmt.Sprint(*ttlSeconds))
+	}
+	if maxUses != nil {
+		args = append(args, "--uses", fmt.Sprint(*maxUses))
+	}
+	if amount != nil {
+		args = append(args, "--amount", fmt.Sprint(*amount))
+	}
+	if err := a.Guard(fmt.Sprintf("approve pending request %s: ttl_seconds=%s uses=%s amount=%s (null means unset)", id, capOrNone(ttlSeconds), capOrNone(maxUses), capOrNone(amount)), a.operationCommand(args...)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {
@@ -82,7 +109,7 @@ func (a *App) Deny(id string) error {
 	if err := admin.ValidRequestID(id); err != nil {
 		return err
 	}
-	if err := a.Guard("deny pending request "+id, "kmx deny "+id); err != nil {
+	if err := a.Guard("deny pending request "+id, a.operationCommand("deny", id)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {
@@ -103,8 +130,21 @@ func (a *App) Request(credential, kind, subject string, args map[string]any) err
 	if err := admin.ValidRequest(credential, kind, subject, args); err != nil {
 		return err
 	}
-	if err := a.Guard(fmt.Sprintf("file a %s approval request for %q (%s)", kind, credential, subject),
-		fmt.Sprintf("kmx request %s %s", kind, subject)); err != nil {
+	commandArgs := []string{"request", kind, subject, "--credential", credential}
+	action := fmt.Sprintf("file a %s approval request for %q (%s)", kind, credential, subject)
+	if kind == "tool" {
+		if args == nil {
+			action += ": argument-less call (not any call)"
+		} else {
+			body, err := json.Marshal(args)
+			if err != nil {
+				return fmt.Errorf("cannot encode tool call arguments: %w", err)
+			}
+			action += ": arguments=" + string(body)
+			commandArgs = append(commandArgs, "--args", string(body))
+		}
+	}
+	if err := a.Guard(action, a.operationCommand(commandArgs...)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {

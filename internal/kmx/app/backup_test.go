@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,8 +21,10 @@ printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
   *"config view"*)
     cat <<'JSON'
-{"clusters":[{"name":"kind-kaimahi-p1","cluster":{"server":"https://127.0.0.1:6443"}}],
- "contexts":[{"name":"kind-kaimahi-p1","context":{"cluster":"kind-kaimahi-p1"}}]}
+{"clusters":[{"name":"kind-kaimahi-p1","cluster":{"server":"https://127.0.0.1:6443"}},
+ {"name":"remote","cluster":{"server":"https://remote.invalid:6443"}}],
+ "contexts":[{"name":"kind-kaimahi-p1","context":{"cluster":"kind-kaimahi-p1"}},
+ {"name":"remote 'context'","context":{"cluster":"remote"}}]}
 JSON
     exit 0 ;;
   *pg_dump*) printf '%s' "$KMX_TEST_DUMP"; exit "${KMX_TEST_DUMP_STATUS:-0}" ;;
@@ -29,6 +32,10 @@ JSON
   *psql*) cat > /dev/null; exit "${KMX_TEST_PSQL_STATUS:-0}" ;;
   *"get deploy kaimahi-proxy"*) printf '%s' "${KMX_TEST_REPLICAS:-2}"; exit 0 ;;
   *"get pods -l app=kaimahi-proxy"*) printf '%s' "$KMX_TEST_PODS"; exit 0 ;;
+  *"scale deploy/kaimahi-proxy --replicas=0"*)
+    if [ -n "$KMX_TEST_QUIESCE_ERR" ]; then printf '%s\n' "$KMX_TEST_QUIESCE_ERR" >&2; exit 1; fi ;;
+  *"scale deploy/kaimahi-proxy --replicas=2"*)
+    if [ -n "$KMX_TEST_RECOVERY_ERR" ]; then printf '%s\n' "$KMX_TEST_RECOVERY_ERR" >&2; exit 1; fi ;;
 esac
 exit 0
 `
@@ -146,6 +153,106 @@ func TestBackupWritesACompleteDump(t *testing.T) {
 	// could ever have failed this.
 	if strings.Contains(f.errOut.String(), "about to:") || strings.Contains(f.errOut.String(), "kube-guard") {
 		t.Errorf("backup ran the guard: %q", f.errOut.String())
+	}
+}
+
+func TestBackupNeverReusesAPreexistingPartial(t *testing.T) {
+	for _, symlink := range []bool{false, true} {
+		for _, complete := range []bool{false, true} {
+			t.Run(fmt.Sprintf("symlink=%t/complete=%t", symlink, complete), func(t *testing.T) {
+				f := newPgFixture(t)
+				file := filepath.Join(f.dir, "backup.sql")
+				victim := file + ".partial"
+				if symlink {
+					victim = filepath.Join(f.dir, "victim")
+					if err := os.Symlink(victim, file+".partial"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, path := range []string{file, victim} {
+					if err := os.WriteFile(path, []byte("keep me"), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				dump := "incomplete"
+				if complete {
+					dump = completeDump
+				}
+				t.Setenv("KMX_TEST_DUMP", dump)
+				err := f.app.Backup(file)
+				if (err == nil) != complete {
+					t.Fatalf("Backup = %v", err)
+				}
+				if got, err := os.ReadFile(victim); err != nil || string(got) != "keep me" {
+					t.Fatalf("preexisting partial or symlink target changed: %q, %v", got, err)
+				}
+				want := "keep me"
+				if complete {
+					want = completeDump
+					info, err := os.Stat(file)
+					if err != nil || info.Mode().Perm() != 0o600 {
+						t.Fatalf("backup is not private: %v, %v", info, err)
+					}
+				}
+				if got, _ := os.ReadFile(file); string(got) != want {
+					t.Fatalf("destination = %q, want %q", got, want)
+				}
+				if !strings.Contains(f.errOut.String(), "WARNING:") || !strings.Contains(f.errOut.String(), "will be replaced") {
+					t.Fatalf("overwrite policy was not announced: %s", f.errOut)
+				}
+				left, err := filepath.Glob(filepath.Join(f.dir, ".backup.sql.partial-*"))
+				if err != nil || len(left) != 0 {
+					t.Fatalf("temporary backups leaked: %v, %v", left, err)
+				}
+			})
+		}
+	}
+}
+
+func TestRestoreZeroReplicasDoesNotClaimToServe(t *testing.T) {
+	f := newPgFixture(t)
+	t.Setenv("KMX_TEST_REPLICAS", "0")
+	file := filepath.Join(f.dir, "backup.sql")
+	if err := os.WriteFile(file, []byte(completeDump), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.app.Restore(file); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.out.String(), "0 replicas (not serving)") || strings.Contains(f.out.String(), "serving again") || strings.Contains(f.args(), "rollout status") {
+		t.Fatalf("zero-replica restore misreported: %s\n%s", f.out, f.args())
+	}
+}
+
+func TestRestoreReturnsLoadAndScaleRecoveryErrors(t *testing.T) {
+	f := newPgFixture(t)
+	t.Setenv("KMX_TEST_PSQL_STATUS", "1")
+	t.Setenv("KMX_TEST_RECOVERY_ERR", "recovery denied")
+	file := filepath.Join(f.dir, "backup.sql")
+	if err := os.WriteFile(file, []byte(completeDump), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := f.app.Restore(file)
+	if err == nil || !strings.Contains(err.Error(), "psql") || !strings.Contains(err.Error(), "failed to recover") {
+		t.Fatalf("restore lost the load or recovery error: %v", err)
+	}
+	if strings.Contains(f.out.String(), "serving again") {
+		t.Fatalf("failed recovery reported as serving: %s", f.out)
+	}
+}
+
+func TestRestoreRecoversAfterAmbiguousScaleDownFailure(t *testing.T) {
+	f := newPgFixture(t)
+	t.Setenv("KMX_TEST_QUIESCE_ERR", "connection lost after scale")
+	file := filepath.Join(f.dir, "backup.sql")
+	if err := os.WriteFile(file, []byte(completeDump), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.app.Restore(file); err == nil {
+		t.Fatal("failed scale-down reported as restored")
+	}
+	if !strings.Contains(f.args(), "--replicas=2") || strings.Contains(f.args(), "exec -i") {
+		t.Fatalf("failed scale-down did not recover without loading: %s", f.args())
 	}
 }
 

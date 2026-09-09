@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -63,8 +64,8 @@ func ValidRequestID(id string) error {
 }
 
 // ParseCap reads a cap-shaped argument: "-" or "" means "no cap" (JSON
-// null), anything else must be a non-negative integer. The script's
-// check_cap, which also governs `uses` and `amount` on an approval.
+// null), anything else must be a non-negative integer. Approval `uses` and
+// `amount` additionally require positive values within the plane's limits.
 func ParseCap(what, value string) (*int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "-" {
@@ -74,7 +75,29 @@ func ParseCap(what, value string) (*int64, error) {
 	if err != nil || n < 0 || strings.ContainsAny(value, "+-") {
 		return nil, fmt.Errorf("invalid %s %q (want a non-negative integer or -)", what, value)
 	}
+	if err := CheckCap(what, &n); err != nil {
+		return nil, err
+	}
 	return &n, nil
+}
+
+// CheckCap preserves zero budgets, but approval uses and amounts must be
+// positive and within the plane's limits.
+func CheckCap(what string, value *int64) error {
+	if value == nil {
+		return nil
+	}
+	min, max := int64(0), int64(math.MaxInt64)
+	switch what {
+	case "uses":
+		min, max = 1, 1_000_000
+	case "amount":
+		min, max = 1, 1_000_000_000_000
+	}
+	if *value < min || *value > max {
+		return fmt.Errorf("%s must be between %d and %d", what, min, max)
+	}
+	return nil
 }
 
 // ParseTTL reads an approval's TTL with the script's suffixes — a bare
@@ -90,21 +113,34 @@ func ParseTTL(value string) (*int64, error) {
 		digits, unit = value[:len(value)-1], string(last)
 	}
 	n, err := strconv.ParseInt(digits, 10, 64)
-	if err != nil || n < 0 || strings.ContainsAny(digits, "+-") {
+	if err != nil || n <= 0 || strings.ContainsAny(digits, "+-") {
 		return nil, bad
 	}
+	multiplier := int64(1)
 	switch unit {
 	case "", "s":
 	case "m":
-		n *= 60
+		multiplier = 60
 	case "h":
-		n *= 3600
+		multiplier = 3600
 	case "d":
-		n *= 86400
+		multiplier = 86400
 	default:
 		return nil, bad
 	}
+	if n > math.MaxInt64/multiplier {
+		return nil, bad
+	}
+	n *= multiplier
 	return &n, nil
+}
+
+// CheckCredentialTTL matches the issuance and renewal API's lifetime range.
+func CheckCredentialTTL(ttl *int64) error {
+	if ttl != nil && (*ttl < 60 || *ttl > 31536000) {
+		return fmt.Errorf("ttl_seconds must be between 60 and 31536000 (a credential with no expiry cannot be issued)")
+	}
+	return nil
 }
 
 // ParseToolList reads a comma-separated allowlist. "-" is the EMPTY
@@ -130,6 +166,12 @@ func (c *Client) SetBudget(credential string, capCents, capTokens *int64) error 
 	if err := ValidCredentialName(credential); err != nil {
 		return err
 	}
+	if err := CheckCap("cap_cents", capCents); err != nil {
+		return err
+	}
+	if err := CheckCap("cap_tokens", capTokens); err != nil {
+		return err
+	}
 	body := map[string]any{"credential": credential, "cap_cents": capCents, "cap_tokens": capTokens}
 	return c.expect(http.MethodPut, "/admin/budgets", body, http.StatusNoContent, "budget set")
 }
@@ -151,6 +193,9 @@ func (c *Client) SetToolAllowlist(credential string, tools []string) error {
 // credential bytes stay where they are.
 func (c *Client) RenewCredential(credential string, ttlSeconds *int64) (string, error) {
 	if err := ValidCredentialName(credential); err != nil {
+		return "", err
+	}
+	if err := CheckCredentialTTL(ttlSeconds); err != nil {
 		return "", err
 	}
 	body := map[string]any{}
@@ -184,6 +229,9 @@ func (c *Client) Approve(id string, ttlSeconds, maxUses, amount *int64) (map[str
 	if err := CheckBounds(ttlSeconds, maxUses); err != nil {
 		return nil, err
 	}
+	if err := CheckCap("amount", amount); err != nil {
+		return nil, err
+	}
 	// Only the bounds that were SET are sent, as the script builds its body.
 	body := map[string]any{}
 	if ttlSeconds != nil {
@@ -211,7 +259,10 @@ func CheckBounds(ttlSeconds, maxUses *int64) error {
 	if ttlSeconds == nil && maxUses == nil {
 		return fmt.Errorf("an unbounded grant is a config change, not an approval — set --ttl and/or --uses")
 	}
-	return nil
+	if ttlSeconds != nil && (*ttlSeconds < 1 || *ttlSeconds > 30*24*60*60) {
+		return fmt.Errorf("approval ttl_seconds must be between 1 and 2592000")
+	}
+	return CheckCap("uses", maxUses)
 }
 
 // Deny refuses a pending request.

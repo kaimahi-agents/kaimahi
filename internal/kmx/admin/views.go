@@ -8,7 +8,54 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
+
+func renderTable(out io.Writer, headers []string, rows [][]string, format string) {
+	ui := cliui.New(out)
+	if ui.Rich() {
+		title := "Records"
+		roles := make([]cliui.ColumnRole, len(headers))
+		state, number := cliui.ColumnState, cliui.ColumnNumber
+		switch format {
+		case ledgerFmt:
+			title = "Ledger"
+			roles[4], roles[5], roles[6], roles[7], roles[8] = number, number, number, state, state
+		case grantsFmt:
+			title = "Grants"
+			roles[4], roles[6], roles[7] = state, number, number
+		case toolFmt:
+			title = "Tool audit"
+			roles[5], roles[6] = state, state
+		case approvalFmt:
+			title = "Approval audit"
+			roles[4] = state
+		case pendingFmt:
+			title = "Pending approvals"
+		case credentialsFmt:
+			title = "Credentials"
+			roles[1], roles[2], roles[4] = number, number, state
+		case flowFmt:
+			title = "Flow"
+			roles[4], roles[5] = state, number
+		}
+		fmt.Fprintln(out, ui.Report(title, headers, rows, roles...))
+		return
+	}
+	values := make([]any, len(headers))
+	for i := range headers {
+		values[i] = headers[i]
+	}
+	fmt.Fprintf(out, format, values...)
+	for _, row := range rows {
+		values = make([]any, len(row))
+		for i := range row {
+			values[i] = row[i]
+		}
+		fmt.Fprintf(out, format, values...)
+	}
+}
 
 // The read views. Every format string, column width, header and empty-case
 // line below is plane-admin.sh's, verbatim — because these are not decorative.
@@ -38,16 +85,21 @@ func (c *Client) Ledger(out io.Writer, credential string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, ledgerFmt, "created (UTC)", "credential", "upstream", "model",
-		"in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for")
+	var viewRows [][]string
+	rich := cliui.New(out).Rich()
 	for _, row := range rows(doc, "entries") {
-		fmt.Fprintf(out, ledgerFmt,
+		model := str(row["model"])
+		if !rich {
+			model = trunc(model, 16)
+		}
+		viewRows = append(viewRows, []string{
 			trunc(str(row["created_at"]), 19), str(row["credential"]), str(row["upstream"]),
-			trunc(str(row["model"]), 16),
+			model,
 			str(row["input_tokens"]), str(row["output_tokens"]), str(row["cost_cents"]),
 			str(row["cost_source"]), str(row["status"]),
-			callerClaim(row), callerAddr(row), actedFor(row))
+			callerClaim(row, rich), callerAddr(row, rich), actedFor(row)})
 	}
+	renderTable(out, []string{"created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for"}, viewRows, ledgerFmt)
 	if _, ok := doc["month_cents"]; ok {
 		fmt.Fprintf(out, "-- month to date: %s cents, %s tokens\n",
 			str(doc["month_cents"]), str(doc["month_tokens"]))
@@ -62,30 +114,30 @@ func (c *Client) Grants(out io.Writer, credential string) error {
 		return err
 	}
 	list := rows(doc, "grants")
-	if len(list) == 0 {
+	if len(list) == 0 && !cliui.New(out).Rich() {
 		fmt.Fprintln(out, "no grants")
 		return nil
 	}
-	fmt.Fprintf(out, grantsFmt, "id", "credential", "kind", "subject", "live",
-		"expires (UTC)", "uses", "amount", "created (UTC)", "decided by", "binds", "cred expires (UTC)")
+	var viewRows [][]string
 	for _, g := range list {
 		uses := str(g["uses"])
 		if max, ok := g["max_uses"]; ok && max != nil {
 			uses += "/" + str(max)
 		}
-		fmt.Fprintf(out, grantsFmt,
+		viewRows = append(viewRows, []string{
 			str(g["id"]), str(g["credential"]), str(g["kind"]), str(g["subject"]),
 			yesno(g["live"]),
 			// [:19] inside a 22-wide column, exactly as the script slices
 			// it: an expiry is printed to the second, and the extra width
 			// is the gap before the next column.
 			trunc(dash(g["expires_at"]), 19), uses, dash(g["amount"]),
-			trunc(str(g["created_at"]), 19), dash(g["decided_by"]), binds(g),
+			trunc(str(g["created_at"]), 19), dash(g["decided_by"]), binds(g, cliui.New(out).Rich()),
 			// A grant that outlives the credential it was given on is a
 			// promise the plane cannot keep, so the two deadlines are
 			// read side by side.
-			trunc(dash(g["credential_expires_at"]), 19))
+			trunc(dash(g["credential_expires_at"]), 19)})
 	}
+	renderTable(out, []string{"id", "credential", "kind", "subject", "live", "expires (UTC)", "uses", "amount", "created (UTC)", "decided by", "binds", "cred expires (UTC)"}, viewRows, grantsFmt)
 	return nil
 }
 
@@ -104,17 +156,17 @@ func (c *Client) Approvals(out io.Writer) error {
 		return err
 	}
 	list := rows(doc, "pending")
-	if len(list) == 0 {
+	if len(list) == 0 && !cliui.New(out).Rich() {
 		fmt.Fprintln(out, "no pending approval requests")
 		return nil
 	}
-	fmt.Fprintf(out, pendingFmt, "id", "created (UTC)", "credential", "kind", "subject",
-		"detail", "call")
+	var viewRows [][]string
 	for _, r := range list {
-		fmt.Fprintf(out, pendingFmt,
+		viewRows = append(viewRows, []string{
 			str(r["id"]), trunc(str(r["created_at"]), 19), str(r["credential"]),
-			str(r["kind"]), str(r["subject"]), str(r["detail"]), dash(r["arg_summary"]))
+			str(r["kind"]), str(r["subject"]), str(r["detail"]), dash(r["arg_summary"])})
 	}
+	renderTable(out, []string{"id", "created (UTC)", "credential", "kind", "subject", "detail", "call"}, viewRows, pendingFmt)
 	return nil
 }
 
@@ -140,7 +192,13 @@ func (c *Client) ToolAllowlist(out io.Writer, credential string) error {
 	if joined == "" {
 		joined = "(empty — nothing callable)"
 	}
-	fmt.Fprintf(out, "%s: %s\n", str(doc["credential"]), joined)
+	ui := cliui.New(out)
+	if ui.Rich() {
+		fmt.Fprintln(out, ui.Heading("Tool allowlist"))
+		fmt.Fprintln(out, ui.Fields([]cliui.Field{{Label: str(doc["credential"]), Value: joined}}))
+	} else {
+		fmt.Fprintf(out, "%s: %s\n", str(doc["credential"]), joined)
+	}
 	return nil
 }
 
@@ -150,15 +208,15 @@ func (c *Client) ToolAudit(out io.Writer, credential string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, toolFmt, "created (UTC)", "credential", "upstream", "method",
-		"tool", "decision", "status", "detail", "call",
-		"caller (claimed)", "from (observed)", "acted for")
+	var viewRows [][]string
+	rich := cliui.New(out).Rich()
 	for _, e := range rows(doc, "entries") {
-		fmt.Fprintf(out, toolFmt,
+		viewRows = append(viewRows, []string{
 			trunc(str(e["created_at"]), 19), str(e["credential"]), str(e["upstream"]),
 			str(e["method"]), str(e["tool"]), str(e["decision"]), str(e["status"]), str(e["detail"]),
-			call(e), callerClaim(e), callerAddr(e), actedFor(e))
+			call(e, rich), callerClaim(e, rich), callerAddr(e, rich), actedFor(e)})
 	}
+	renderTable(out, []string{"created (UTC)", "credential", "upstream", "method", "tool", "decision", "status", "detail", "call", "caller (claimed)", "from (observed)", "acted for"}, viewRows, toolFmt)
 	return nil
 }
 
@@ -168,14 +226,14 @@ func (c *Client) ApprovalAudit(out io.Writer, credential string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, approvalFmt, "created (UTC)", "credential", "kind", "subject",
-		"action", "decided by", "bounds", "call")
+	var viewRows [][]string
 	for _, e := range rows(doc, "entries") {
-		fmt.Fprintf(out, approvalFmt,
+		viewRows = append(viewRows, []string{
 			trunc(str(e["created_at"]), 19), str(e["credential"]), str(e["kind"]),
 			str(e["subject"]), str(e["action"]), dash(e["decided_by"]), str(e["bounds"]),
-			dash(e["arg_summary"]))
+			dash(e["arg_summary"])})
 	}
+	renderTable(out, []string{"created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"}, viewRows, approvalFmt)
 	return nil
 }
 
@@ -189,18 +247,18 @@ func (c *Client) Credentials(out io.Writer) error {
 		return err
 	}
 	list := rows(doc, "credentials")
-	if len(list) == 0 {
+	if len(list) == 0 && !cliui.New(out).Rich() {
 		fmt.Fprintln(out, "no credentials")
 		return nil
 	}
-	fmt.Fprintf(out, credentialsFmt, "credential", "cap cents", "cap tokens",
-		"expires (UTC)", "state", "created (UTC)")
+	var viewRows [][]string
 	for _, c := range list {
-		fmt.Fprintf(out, credentialsFmt,
+		viewRows = append(viewRows, []string{
 			str(c["credential"]), dash(c["cap_cents"]), dash(c["cap_tokens"]),
 			trunc(dash(c["expires_at"]), 19), expiryState(c),
-			trunc(str(c["created_at"]), 19))
+			trunc(str(c["created_at"]), 19)})
 	}
+	renderTable(out, []string{"credential", "cap cents", "cap tokens", "expires (UTC)", "state", "created (UTC)"}, viewRows, credentialsFmt)
 	return nil
 }
 
@@ -258,15 +316,23 @@ func actedFor(e map[string]any) string {
 // "unrecorded"; a row from this plane that predates the column renders
 // its own word, "legacy". Two different histories, neither collapsed
 // into the other, and both meaning no record of who called.
-func callerClaim(e map[string]any) string {
-	return clipCell(orUnrecorded(str(e["caller_claim"])), 28)
+func callerClaim(e map[string]any, rich ...bool) string {
+	claim := orUnrecorded(str(e["caller_claim"]))
+	if len(rich) > 0 && rich[0] {
+		return claim
+	}
+	return clipCell(claim, 28)
 }
 
 // callerAddr renders the peer address the plane observed. Not a claim by
 // the thing being governed — but still only an address: in a cluster it
 // names a pod, and pod addresses are reused.
-func callerAddr(e map[string]any) string {
-	return clipCell(orUnrecorded(str(e["caller_addr"])), 16)
+func callerAddr(e map[string]any, rich ...bool) string {
+	addr := orUnrecorded(str(e["caller_addr"]))
+	if len(rich) > 0 && rich[0] {
+		return addr
+	}
+	return clipCell(addr, 16)
 }
 
 // clipCell shortens a cell and SAYS it shortened it. The plain trunc is
@@ -295,11 +361,14 @@ func orUnrecorded(v string) string {
 // digest of its policy-relevant arguments. A tool grant with no digest is
 // the closed legacy class — minted before argument binding, so it admits
 // any arguments and says so; other kinds have no arguments at all.
-func binds(g map[string]any) string {
+func binds(g map[string]any, rich ...bool) string {
 	if str(g["kind"]) != "tool" {
 		return "-"
 	}
 	if d := str(g["arg_digest"]); d != "" {
+		if len(rich) > 0 && rich[0] {
+			return "call " + d
+		}
 		return "call " + trunc(d, 12)
 	}
 	return "verb-level (legacy)"
@@ -308,7 +377,7 @@ func binds(g map[string]any) string {
 // call renders the audited call: the human-readable summary built from the
 // tool's declared policy fields, plus the digest prefix that ties a denial,
 // its approval and the admitted call together.
-func call(e map[string]any) string {
+func call(e map[string]any, rich ...bool) string {
 	summary, digest := str(e["arg_summary"]), str(e["arg_digest"])
 	if digest == "" {
 		return dash(summary)
@@ -316,7 +385,10 @@ func call(e map[string]any) string {
 	if summary != "" {
 		summary += " "
 	}
-	return summary + "[" + trunc(digest, 12) + "]"
+	if len(rich) == 0 || !rich[0] {
+		digest = trunc(digest, 12)
+	}
+	return summary + "[" + digest + "]"
 }
 
 // rows returns a document's list of records, tolerating a null or absent

@@ -46,6 +46,7 @@ func (a *App) liftVerify(opt lift.Options) error {
 		return err
 	}
 	if !opt.Observability {
+		a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
 		return nil
 	}
 	if err := a.verifyMetricsArrived(opt); err != nil {
@@ -95,9 +96,9 @@ func (a *App) verifyMetricsArrived(opt lift.Options) error {
     - the add-on's replica pod is reporting a config error:
       kubectl --context %s -n kube-system logs -l rsName=ama-metrics -c prometheus-collector --tail=50`,
 				metricsArrivalWait,
-				scrapeConfigMap, scrapeConfigNamespace, a.Cfg.KubeContext, scrapeMonitorResource,
-				a.Cfg.KubeContext, scrapeMonitorResource, scrapeMonitor,
-				a.Cfg.KubeContext, "kaimahi", a.Cfg.KubeContext)
+				scrapeConfigMap, scrapeConfigNamespace, shellArg(a.Cfg.KubeContext), scrapeMonitorResource,
+				shellArg(a.Cfg.KubeContext), scrapeMonitorResource, scrapeMonitor,
+				shellArg(a.Cfg.KubeContext), "kaimahi", shellArg(a.Cfg.KubeContext))
 		}
 		time.Sleep(arrivalPoll)
 	}
@@ -127,7 +128,7 @@ func (a *App) verifyLogsArrived(opt lift.Options) error {
   failing. Check that the add-on's collector pods are running:
 
     kubectl --context %s -n kube-system get pods -l dsName=ama-logs`,
-				logsArrivalWait, a.Cfg.KubeContext)
+				logsArrivalWait, shellArg(a.Cfg.KubeContext))
 		}
 		time.Sleep(arrivalPoll)
 	}
@@ -178,7 +179,8 @@ func (a *App) recordedWorkspaceName(opt lift.Options, kind string) (string, erro
 			return res.Name, nil
 		}
 	}
-	return "", fmt.Errorf("this run has no recorded %s — run `kmx lift --step observability` first", kind)
+	opt.Step = "observability"
+	return "", fmt.Errorf("this run has no recorded %s — run `%s` first", kind, a.liftCommand(opt, false))
 }
 
 func (a *App) readLiftRecord(group, cluster string) (*lift.Record, error) {
@@ -261,11 +263,14 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
 	fmt.Fprintf(a.Err, `
   The same agent you ran locally is now running on AKS, governed.
 
-    kmx agent chat hello-world "..."      ask it something
-    kmx ledger                            what it spent
-    kmx flow                              the whole audit trail
+    %s      ask it something
+    %s      what it spent
+    %s      the whole audit trail
 
-  The dashboard is the workbook named "Kaimahi governance plane (%s)" in
+`, a.operationCommand("agent", "chat", "hello-world", "..."),
+		a.operationCommand("ledger", a.Cfg.Credential), a.operationCommand("flow"))
+	if opt.Observability {
+		fmt.Fprintf(a.Err, `  The dashboard is the workbook named "Kaimahi governance plane (%s)" in
   the %s resource group, under Monitoring > Workbooks on the cluster.
 
   What it shows is what crossed the plane: what was allowed, what was
@@ -280,25 +285,29 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
   does can disturb scrape jobs you already have. See docs/aks.md.
 
 `, record.RunID, opt.ResourceGroup)
+	} else {
+		fmt.Fprintln(a.Err, "  Observability was disabled for this invocation. Azure metrics and logs were not checked.")
+	}
 
 	if opt.BringYourOwn {
-		fmt.Fprintf(a.Err, `  THIS COSTS MONEY UNTIL YOU REMOVE IT. Your cluster and resource group
-  are not ours to delete and never will be, so what bills on is what this
-  run added: the two monitoring workspaces. Remove exactly those with
+		fmt.Fprintf(a.Err, `  Your existing cluster and registry continue to cost money; they are not
+  ours to delete. Any monitoring resources recorded by this lift can also
+  incur charges until removed. Remove only the recorded monitoring with
 
-    KAIMAHI_CONFIRM=%s kmx lift down --byo %s
+    KAIMAHI_CONFIRM=%s %s
 
   It deletes only resources whose recorded id still names them, and leaves
-  anything it cannot prove is its own, saying which.
+  anything it cannot prove is its own, saying which. It does not remove the
+  agents or governance plane from your cluster.
 
-`, opt.Cluster, liftIdentityFlags(opt))
+`, shellArg(opt.Cluster), a.liftCommand(opt, true))
 		return
 	}
 	fmt.Fprintf(a.Err, `  THIS COSTS MONEY UNTIL YOU REMOVE IT — the node, the load balancer, the
-  registry and the two monitoring workspaces. All of it is inside one
-  resource group and comes out together:
+  registry, and any monitoring resources this lift created. Teardown removes
+  the resource group and separately handles recorded resources outside it:
 
-    KAIMAHI_CONFIRM=%s kmx lift down %s
+    KAIMAHI_CONFIRM=%s %s
 
-`, opt.ResourceGroup, liftIdentityFlags(opt))
+`, shellArg(opt.ResourceGroup), a.liftCommand(opt, true))
 }

@@ -19,14 +19,14 @@
     {
       "name": "the function_call count is dropped from the verdict",
       "breaks": "A response with no call recorded before it counts as a tool invocation, so half the tool path stops being evidence of anything.",
-      "find": "        ok = ok and calls > 0 and responses > 0",
-      "replace": "        ok = ok and responses > 0"
+      "find": "        exchange = calls > 0 and responses > 0",
+      "replace": "        exchange = responses > 0"
     },
     {
       "name": "the successful-response count is dropped from the verdict",
       "breaks": "A call that was made and never answered counts as a completed tool round-trip. With no SUBSTRING given there is nothing else left asserting the tool replied.",
-      "find": "        ok = ok and calls > 0 and responses > 0",
-      "replace": "        ok = ok and calls > 0"
+      "find": "        exchange = calls > 0 and responses > 0",
+      "replace": "        exchange = calls > 0"
     },
     {
       "name": "any call counts, whatever tool it names",

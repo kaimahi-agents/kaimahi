@@ -46,7 +46,7 @@ func (a *App) Use(preset string, opt UseOptions) error {
 		return err
 	}
 	if err := a.Guard(fmt.Sprintf("switch agent %q onto model preset %q", opt.Agent, preset),
-		"kmx use "+preset); err != nil {
+		a.operationCommand("use", preset, "--agent", opt.Agent)); err != nil {
 		return err
 	}
 	return a.UsePreset(opt.Agent, preset, []string{name})
@@ -131,11 +131,14 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 	if err != nil {
 		return err
 	}
+	if opt.Server == config.DefaultToolServer && (opt.SecretNamespace != config.DefaultNamespace || opt.Secret != config.DefaultToolsSecret) {
+		return fmt.Errorf("kmx tools govern: the applied RemoteMCPServer references Secret %s/%s; unsupported --secret or --secret-namespace would issue an unusable token", config.DefaultNamespace, config.DefaultToolsSecret)
+	}
 	if err := a.Guard(fmt.Sprintf("put agent %q behind the Kaimahi MCP gateway (credential %q)",
-		opt.Agent, opt.Credential), "kmx tools govern"); err != nil {
+		opt.Agent, opt.Credential), a.operationCommand("tools", "govern", "--agent", opt.Agent, "--credential", opt.Credential,
+		"--server", opt.Server, "--secret", opt.Secret, "--secret-namespace", opt.SecretNamespace, "--tools", opt.Tools)); err != nil {
 		return err
 	}
-
 	// A plane can govern an application this project did not write, on a
 	// cluster with no kagent at all. Six of the steps below are kagent's —
 	// the seam, its verdict, the agent patch and the rollout waits — and
@@ -150,6 +153,42 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 	// the credential is live and unrecoverable.
 	if err := a.requireNamespace(opt.SecretNamespace, "--secret-namespace"); err != nil {
 		return err
+	}
+	if seamInstalled && opt.Server != config.DefaultToolServer {
+		if err := a.preflightToolServer(opt.Server); err != nil {
+			return err
+		}
+		raw, err := a.kubectlCapture("-n", opt.SecretNamespace, "get", "remotemcpserver", opt.Server, "-o", "json")
+		if err != nil {
+			return err
+		}
+		var server struct {
+			Spec struct {
+				HeadersFrom []struct {
+					Name      string `json:"name"`
+					ValueFrom struct {
+						Type string `json:"type"`
+						Name string `json:"name"`
+						Key  string `json:"key"`
+					} `json:"valueFrom"`
+				} `json:"headersFrom"`
+			} `json:"spec"`
+		}
+		if err := json.Unmarshal([]byte(raw), &server); err != nil {
+			return fmt.Errorf("cannot inspect RemoteMCPServer %s credential reference: %w", opt.Server, err)
+		}
+		matches := 0
+		for _, header := range server.Spec.HeadersFrom {
+			if strings.EqualFold(header.Name, "Authorization") {
+				if header.ValueFrom.Type != "Secret" || header.ValueFrom.Name != opt.Secret || header.ValueFrom.Key != "api-key" {
+					return fmt.Errorf("RemoteMCPServer %s Authorization does not reference Secret %s/%s key api-key; nothing issued", opt.Server, opt.SecretNamespace, opt.Secret)
+				}
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Errorf("RemoteMCPServer %s must have exactly one Authorization reference to Secret %s/%s key api-key; nothing issued", opt.Server, opt.SecretNamespace, opt.Secret)
+		}
 	}
 
 	// What was true before the credential lands, so a verdict kagent reached
@@ -228,15 +267,6 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 		if err := a.apply("kaimahi-tools.yaml"); err != nil {
 			return err
 		}
-	} else if err := a.preflightToolServer(opt.Server); err != nil {
-		// A scaffolded seam kmx did not apply may simply not be there —
-		// `kmx tools add --no-apply` writes the manifest and stops, and
-		// `--dry-run` writes nothing to the cluster at all. Without this
-		// check the next line waits five minutes on an object that does
-		// not exist and then reports a timeout, which says nothing about
-		// the cause. The credential and allowlist above are already
-		// written and are correct; only the wiring is missing.
-		return err
 	}
 	// Accepted, not Ready: a RemoteMCPServer reports that it reached the
 	// upstream and discovered its tools. Patching the agent before that
@@ -341,14 +371,15 @@ func (a *App) preflightToolServer(server string) error {
 		return err
 	}
 	return fmt.Errorf("no RemoteMCPServer %q in namespace %s.\n"+
-		"  The credential and its allowlist are set; what is missing is the seam an agent is pointed at.\n"+
+		"  Apply the seam before governing; no credential or allowlist was changed.\n"+
 		"  If you scaffolded with --no-apply or --dry-run, apply the manifest first:\n"+
 		"    kubectl --context %s apply -f upstreams/<name>.yaml",
 		server, config_kagentNamespace, a.Cfg.KubeContext)
 }
 
 // UngovernTools restores the original wiring — direct to the chart-managed
-// tool server, ungoverned — by re-applying the committed Agent YAML.
+// tool server, ungoverned. Only tool wiring changes; model governance,
+// instructions, deployment settings and other agent customizations survive.
 //
 // It ends at `wait_switched`, with no Ready wait, exactly as
 // `make ungovern-tools` does: the committed agent is the one `kmx up`
@@ -358,12 +389,7 @@ func (a *App) preflightToolServer(server string) error {
 // the gateway.
 func (a *App) UngovernTools(opt ToolsOptions) error {
 	opt = a.toolsDefaults(opt)
-	// The undo is a RE-APPLY of one committed manifest, and that manifest
-	// names one agent. Ungoverning a different agent would mean un-patching
-	// something kmx has no committed form of — so it is refused rather than
-	// half-done: applying k8s/tools-agent.yaml and then waiting for another
-	// agent's rollout would report success while the agent the operator
-	// named was still riding the gateway.
+	// Only this agent has a known committed direct tool selection.
 	if opt.Agent != config.DefaultToolsAgent {
 		return fmt.Errorf("kmx tools ungovern restores the committed agent %q, not %q.\n"+
 			"  There is no committed ungoverned form of %q to restore; repoint it yourself:\n"+
@@ -371,10 +397,10 @@ func (a *App) UngovernTools(opt ToolsOptions) error {
 			config.DefaultToolsAgent, opt.Agent, opt.Agent, config.DefaultNamespace, opt.Agent)
 	}
 	if err := a.Guard(fmt.Sprintf("return agent %q to the ungoverned tool server", opt.Agent),
-		"kmx tools ungovern"); err != nil {
+		a.operationCommand("tools", "ungovern")); err != nil {
 		return err
 	}
-	if err := a.apply("tools-agent.yaml"); err != nil {
+	if err := a.patchAgentTools("kagent-tool-server", opt.Agent, []string{"k8s_get_resources"}); err != nil {
 		return err
 	}
 	return a.waitSwitched(opt.Agent)
@@ -389,8 +415,8 @@ func (a *App) AllowTools(credential, list string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.Guard(fmt.Sprintf("replace the tool allowlist for credential %q", credential),
-		"kmx tools allow "+list); err != nil {
+	if err := a.Guard(fmt.Sprintf("replace the tool allowlist for credential %q with [%s]", credential, quotedList(tools)),
+		a.operationCommand("tools", "allow", list, "--credential", credential)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {

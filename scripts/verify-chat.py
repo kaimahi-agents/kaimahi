@@ -25,6 +25,11 @@ must: a pending decision is not a completed answer either way. The report
 names which of the two it was, because a red build should not need the raw
 JSON to say what the agent was waiting for.
 
+`--tool-path FILE TOOL [SUBSTRING]` is the narrower smoke-test form. It
+requires the same named successful tool exchange, but also accepts a task that
+then stops only for `ask_user`. It never accepts a pending approval on a real
+tool.
+
   verify-chat.py --selftest
 Runs the built-in fixtures (the PR #24 shape, plus synthetic variations
 of it) and exits non-zero if the verifier's verdicts drift; the hygiene
@@ -61,7 +66,7 @@ def pending_requests(d):
     return names
 
 
-def verify(d, tool=None, needle=None):
+def verify(d, tool=None, needle=None, tool_path=False):
     """Return (ok, report_lines) for one A2A task object."""
     lines = []
     state = d.get("status", {}).get("state")
@@ -95,7 +100,13 @@ def verify(d, tool=None, needle=None):
                         payload_hits += 1
         lines.append(f"tool={tool} function_calls={calls} "
                      f"ok_responses={responses}")
-        ok = ok and calls > 0 and responses > 0
+        exchange = calls > 0 and responses > 0
+        if tool_path:
+            waiting = [n for n in pending_requests(d) if n]
+            task_ok = state == "completed" or (state == "input-required" and waiting == ["ask_user"])
+            ok = task_ok and exchange
+        else:
+            ok = ok and exchange
         if needle:
             lines.append(f"expect={needle!r} in_function_response="
                          f"{payload_hits > 0} in_reply={needle in reply} "
@@ -323,6 +334,15 @@ def selftest():
         mark = "ok " if got == want else "BAD"
         print(f"{mark} {name}: verdict={'PASS' if got else 'FAIL'}")
         failed |= got != want
+    ask_after_tool = copy.deepcopy(_FIXTURE)
+    ask_after_tool["status"] = copy.deepcopy(_ASK_USER_FIXTURE["status"])
+    for name, task, want, tool in (
+        ("tool-path accepts ask_user after a proven exchange", ask_after_tool, True, "k8s_get_resources"),
+        ("tool-path refuses a pending real-tool approval", _APPROVAL_FIXTURE, False, "delete_pod"),
+    ):
+        got, _ = verify(task, tool, _PROBE if want else None, tool_path=True)
+        print(f"{'ok ' if got == want else 'BAD'} {name}: verdict={'PASS' if got else 'FAIL'}")
+        failed |= got != want
     # The report has to distinguish the two input-required cases, or a red
     # build cannot tell "the model asked a question" from "a human owes a
     # decision" without reading the raw task.
@@ -346,12 +366,15 @@ def selftest():
 
 def check_file(argv):
     """The FILE [TOOL [SUBSTRING]] form, as an exit code."""
+    tool_path = bool(argv and argv[0] == "--tool-path")
+    if tool_path:
+        argv = argv[1:]
     # Called with nothing at all, say so rather than raising IndexError at
     # the reader: a traceback is not a verdict, and a CI step that reads
     # this script's exit code deserves the usage line instead.
     if not argv:
         print(__doc__.strip().splitlines()[0], file=sys.stderr)
-        print("usage: verify-chat.py FILE [TOOL [SUBSTRING]] | --selftest", file=sys.stderr)
+        print("usage: verify-chat.py [--tool-path] FILE [TOOL [SUBSTRING]] | --selftest", file=sys.stderr)
         return 2
     raw = open(argv[0]).read()
     tool = argv[1] if len(argv) > 1 else None
@@ -362,11 +385,14 @@ def check_file(argv):
         print("empty TOOL/SUBSTRING argument — refusing to skip a check",
               file=sys.stderr)
         return 1
+    if tool_path and not tool:
+        print("--tool-path requires TOOL", file=sys.stderr)
+        return 2
     m = re.search(r"^\{.*\}$", raw, re.M | re.S)
     if not m:
         print("no JSON task object found in chat output", file=sys.stderr)
         return 1
-    ok, lines = verify(json.loads(m.group(0)), tool, needle)
+    ok, lines = verify(json.loads(m.group(0)), tool, needle, tool_path)
     print("\n".join(lines))
     return 0 if ok else 1
 

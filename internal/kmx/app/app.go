@@ -23,22 +23,35 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
 
+type progressPresenter interface {
+	Phase(string) string
+	Success(string) string
+	Failure(string) string
+	Heading(string) string
+	Warning(string) string
+	Accent(string) string
+	Muted(string) string
+	Info(string) string
+}
+
 // App carries the resolved configuration and the streams every command
 // writes to.
 type App struct {
 	Cfg *config.Config
 	Run *run.Runner
 	Out io.Writer
+	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
+	// advice. Interactive sub-operations leave it empty and supply their own.
+	InvocationCommand string
 	// chatJSON forces raw A2A JSON from `agent chat` on a terminal.
 	chatJSON bool
 	Err      io.Writer
 	Stdin    *os.File
 	// now is injectable so progress timing can be tested without sleeping.
 	now func() time.Time
-	// enhancedProgress is enabled only by quickstart on an interactive stderr.
-	// Other commands and redirected output retain the durable plain transcript.
-	enhancedProgress bool
-	progressColor    bool
+	// progressUI replaces destination detection in tests only. Production uses
+	// cliui.New against Err so styling follows the actual output stream.
+	progressUI progressPresenter
 
 	// provisioned records the cluster tools this run had to fetch, so a
 	// command that reports structured output can say what it put on the
@@ -134,6 +147,9 @@ func (a *App) GuardKnown(action, command string) error {
 func (a *App) guardWith(action, command string, mustBeKnown bool) error {
 	if a.guarded {
 		return nil
+	}
+	if a.InvocationCommand != "" {
+		command = a.InvocationCommand
 	}
 	cfg, err := a.kubeconfig()
 	if err != nil {

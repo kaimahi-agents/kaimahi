@@ -48,3 +48,16 @@ func TestTableAlignment(t *testing.T) {
 		t.Fatalf("unexpected table:\n%q", got)
 	}
 }
+
+func TestUnknownConditionsAreNotNegativeConditions(t *testing.T) {
+	conditions := []statusCondition{{Type: "Ready", Status: "Unknown"}}
+	if got := condition(conditions, "Ready"); got != "unknown" {
+		t.Fatalf("unknown condition became %q", got)
+	}
+	pod := podStatus{}
+	pod.Status.Conditions = conditions
+	ready, _, rows := podSummary([]podStatus{pod})
+	if ready != 0 || rows[0][1] != "unknown" {
+		t.Fatalf("unknown pod counted or rendered as negative: %d %v", ready, rows)
+	}
+}

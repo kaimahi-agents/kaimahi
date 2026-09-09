@@ -1,11 +1,12 @@
 package app
 
 import (
-	"bytes"
 	"os"
 	"reflect"
 	"regexp"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 )
 
 func commandNames(commands []slashCommand) []string {
@@ -16,24 +17,13 @@ func commandNames(commands []slashCommand) []string {
 	return names
 }
 
-func TestDiscardEscapeSequenceConsumesNavigationKeys(t *testing.T) {
-	for _, sequence := range []string{"[A", "[1~", "[3~", "OH"} {
-		reader := bytes.NewBufferString(sequence + "x")
-		if err := discardEscapeSequence(reader); err != nil {
-			t.Fatalf("sequence %q: %v", sequence, err)
-		}
-		if got := reader.String(); got != "x" {
-			t.Fatalf("sequence %q left %q", sequence, got)
-		}
-	}
-}
-
 func TestSlashTrieMatchesPrefixes(t *testing.T) {
 	for _, tc := range []struct {
 		prefix string
 		want   []string
 	}{
-		{"/", []string{"/exit", "/govern", "/history", "/new", "/resume", "/retry", "/session", "/sessions", "/tools", "/ungovern"}},
+		{"/", []string{"/exit", "/govern", "/help", "/history", "/new", "/resume", "/retry", "/session", "/sessions", "/tools", "/ungovern"}},
+		{"/h", []string{"/help", "/history"}},
 		{"/s", []string{"/session", "/sessions"}},
 		{"/sess", []string{"/session", "/sessions"}},
 		{"/hist", []string{"/history"}},
@@ -48,6 +38,7 @@ func TestSlashTrieMatchesPrefixes(t *testing.T) {
 func TestSlashCompletionUsesLongestCommonPrefix(t *testing.T) {
 	for _, tc := range []struct{ line, want string }{
 		{"/hi", "/history"},
+		{"/he", "/help"},
 		{"/s", "/session"},
 		{"/session", "/session"},
 		{"/res", "/resume"},
@@ -72,11 +63,16 @@ func TestSlashHintsStopAtArguments(t *testing.T) {
 
 func TestSlashHintFitsTerminalWidth(t *testing.T) {
 	hint := fitSlashHint(slashHint(slashMatches("/")), 40)
-	if len([]rune(hint)) > 38 || hint[len(hint)-3:] != "..." {
+	if lipgloss.Width(hint) > 38 || hint[len(hint)-3:] != "..." {
 		t.Fatalf("hint was not bounded to terminal width: %q", hint)
 	}
 	if got := fitSlashHint("/history", 40); got != "/history" {
 		t.Fatalf("short hint changed: %q", got)
+	}
+	for _, input := range []string{"/界界界界界界", "/e\u0301e\u0301e\u0301e\u0301e\u0301"} {
+		if got := fitSlashHint(input, 10); lipgloss.Width(got) > 8 {
+			t.Errorf("display-width hint overflowed: %q (%d cells)", got, lipgloss.Width(got))
+		}
 	}
 }
 

@@ -8,6 +8,8 @@ package app
 // credential of any kind.
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,36 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
+
+func TestWorkflowShowOnlyTreatsMissingBindingsAsExploratory(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		set           map[string]string
+		invalid, help bool
+	}{
+		{"no parameters", nil, false, true},
+		{"valid partial", map[string]string{"version": "v1.2.3"}, false, true},
+		{"missing dependency", map[string]string{"repo": "org/repo", "ado_pipelines": "41"}, false, true},
+		{"unknown", map[string]string{"typo": "value"}, true, false},
+		{"invalid repo", map[string]string{"repo": "invalid"}, true, false},
+		{"invalid list and missing", map[string]string{"ado_pipelines": "bad"}, true, false},
+		{"valid review", map[string]string{"repo": "org/repo"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			a := &App{Out: &out}
+			err := a.ShowWorkflow("release", WorkflowOptions{Set: tc.set})
+			if tc.invalid {
+				var binding *blueprint.BindingError
+				if !errors.As(err, &binding) || !binding.Invalid || out.Len() != 0 {
+					t.Fatalf("invalid review returned %v and output %s", err, out.String())
+				}
+			} else if err != nil || !strings.Contains(out.String(), "PARAMETERS") || (tc.help && strings.Contains(out.String(), "STEPS\n")) {
+				t.Fatalf("valid/exploratory review returned %v and output %s", err, out.String())
+			}
+		})
+	}
+}
 
 // TestTheDriverWaitsForTheRequestItFiledAndNotAnotherOne pins, at the
 // selector, the property the accounts-payable demo paid for.

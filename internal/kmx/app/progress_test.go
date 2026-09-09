@@ -8,6 +8,17 @@ import (
 	"time"
 )
 
+type styledProgress struct{}
+
+func (styledProgress) Phase(text string) string   { return "\x1b[36m" + text + "\x1b[0m" }
+func (styledProgress) Success(text string) string { return "\x1b[32m" + text + "\x1b[0m" }
+func (styledProgress) Failure(text string) string { return "\x1b[31m" + text + "\x1b[0m" }
+func (styledProgress) Heading(text string) string { return "\x1b[36m" + text + "\x1b[0m" }
+func (styledProgress) Warning(text string) string { return "\x1b[33m" + text + "\x1b[0m" }
+func (styledProgress) Accent(text string) string  { return "\x1b[35m" + text + "\x1b[0m" }
+func (styledProgress) Muted(text string) string   { return "\x1b[90m" + text + "\x1b[0m" }
+func (styledProgress) Info(text string) string    { return "\x1b[34m" + text + "\x1b[0m" }
+
 func TestRunPhaseDelimitsNativeOutputAndReportsElapsedTime(t *testing.T) {
 	var out bytes.Buffer
 	times := []time.Time{
@@ -32,6 +43,35 @@ func TestRunPhaseDelimitsNativeOutputAndReportsElapsedTime(t *testing.T) {
 		"DONE   [2/6] Deploy Ollama (1.3s)\n"
 	if out.String() != want {
 		t.Fatalf("unexpected phase transcript:\n%q", out.String())
+	}
+	if strings.Contains(out.String(), "\x1b[") {
+		t.Fatalf("redirected phase transcript contains ANSI: %q", out.String())
+	}
+}
+
+func TestStyledProgressPreservesOutputOrderAndStdout(t *testing.T) {
+	var out, errOut bytes.Buffer
+	times := []time.Time{time.Unix(0, 0), time.Unix(2, 0)}
+	a := &App{Out: &out, Err: &errOut, progressUI: styledProgress{}, now: func() time.Time {
+		value := times[0]
+		times = times[1:]
+		return value
+	}}
+	if err := a.runPhase(phase{current: 2, total: 6, name: "Deploy Ollama"}, func() error {
+		errOut.WriteString("native output\n")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text := errOut.String()
+	if !strings.Contains(text, "PHASE") || !strings.Contains(text, "DONE") || !strings.Contains(text, "\x1b[") {
+		t.Fatalf("styled transcript lacks semantic labels or ANSI: %q", text)
+	}
+	if phase, native, done := strings.Index(text, "PHASE"), strings.Index(text, "native output"), strings.Index(text, "DONE"); !(phase < native && native < done) {
+		t.Fatalf("native output moved outside phase boundaries: %q", text)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("progress contaminated stdout: %q", out.String())
 	}
 }
 
@@ -58,7 +98,7 @@ func TestRunPhaseReportsFailureWithoutHidingTheError(t *testing.T) {
 func TestEnhancedProgressKeepsNativeOutputVisible(t *testing.T) {
 	var out bytes.Buffer
 	times := []time.Time{time.Unix(0, 0), time.Unix(2, 0)}
-	a := &App{Err: &out, enhancedProgress: true, now: func() time.Time {
+	a := &App{Err: &out, progressUI: styledProgress{}, now: func() time.Time {
 		value := times[0]
 		times = times[1:]
 		return value
@@ -69,8 +109,7 @@ func TestEnhancedProgressKeepsNativeOutputVisible(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	want := "\n==> QUICKSTART 4/6  Install or verify kagent\nhelm output\n[done 4/6]   Install or verify kagent (2s)\n"
-	if out.String() != want {
+	if !strings.Contains(out.String(), "\x1b[") || !strings.Contains(out.String(), "PHASE") || !strings.Contains(out.String(), "DONE") || !strings.Contains(out.String(), "helm output") {
 		t.Fatalf("unexpected enhanced transcript:\n%q", out.String())
 	}
 }
@@ -78,7 +117,7 @@ func TestEnhancedProgressKeepsNativeOutputVisible(t *testing.T) {
 func TestEnhancedProgressUsesColorOnlyWhenEnabled(t *testing.T) {
 	var out bytes.Buffer
 	times := []time.Time{time.Unix(0, 0), time.Unix(0, 0)}
-	a := &App{Err: &out, enhancedProgress: true, progressColor: true, now: func() time.Time {
+	a := &App{Err: &out, progressUI: styledProgress{}, now: func() time.Time {
 		value := times[0]
 		times = times[1:]
 		return value
@@ -86,7 +125,7 @@ func TestEnhancedProgressUsesColorOnlyWhenEnabled(t *testing.T) {
 	if err := a.runPhase(phase{current: 1, total: 1, name: "Test"}, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "\033[1;36m") || !strings.Contains(out.String(), "\033[1;32m") {
+	if !strings.Contains(out.String(), "\033[36m") || !strings.Contains(out.String(), "\033[32m") {
 		t.Fatalf("colored progress lacks ANSI styling: %q", out.String())
 	}
 }

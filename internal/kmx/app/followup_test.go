@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -262,16 +263,19 @@ func TestColorRendererColorsOnlyTheLabel(t *testing.T) {
 	var out bytes.Buffer
 	renderer := &chatRenderer{out: &out, color: true}
 	renderer.block("YOU", colorCyan, "hello")
-	want := "\033[36;1mYOU\033[0m\n  hello\n\n"
-	if out.String() != want {
+	want := "YOU\n  hello\n\n"
+	if ansi.Strip(out.String()) != want || !strings.Contains(out.String(), "\x1b[") {
 		t.Fatalf("unexpected colored block:\n%q", out.String())
+	}
+	if strings.Contains(strings.Split(out.String(), "\n")[1], "\x1b[") {
+		t.Fatalf("payload was styled with the trusted label: %q", out.String())
 	}
 }
 
 func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 	var out bytes.Buffer
 	renderer := &chatRenderer{out: &out, color: true}
-	renderer.statusStart("hello-tools")
+	renderer.statusStart("hello-tools", "")
 	renderer.statusSection("Model", "Name: hello-world-model\nPosture: direct")
 	renderer.statusSection("Tools", "Server: kagent-tool-server\nAllowed:\n  - get_resources")
 	renderer.statusEnd()
@@ -279,7 +283,7 @@ func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 
 	wantHeader := "CHAT STATUS\n------------\n" +
 		"  Agent: hello-tools\n" +
-		"  Commands: /exit /govern /history /new /resume <id> /retry /session /sessions /tools off|summary|verbose /ungovern\n" +
+		"  Commands: /exit /govern /help /history /new /resume <id> /retry /session /sessions /tools off|summary|verbose /ungovern\n" +
 		"  Model\n" +
 		"    Name: hello-world-model\n" +
 		"    Posture: direct\n" +
@@ -291,7 +295,8 @@ func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 	if !strings.HasPrefix(out.String(), wantHeader) {
 		t.Fatalf("status header was colored or malformed:\n%q", out.String())
 	}
-	if !strings.Contains(out.String(), "\033[36;1mYOU\033[0m") {
+	conversation := strings.TrimPrefix(out.String(), wantHeader)
+	if !strings.Contains(conversation, "\x1b[") || ansi.Strip(conversation) != "YOU\n  hello\n\n" {
 		t.Fatalf("conversation did not begin after the uncolored header:\n%q", out.String())
 	}
 }

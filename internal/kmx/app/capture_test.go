@@ -39,7 +39,10 @@ case "$*" in
   *"apply -f -"*)
     cat >> "$KMX_TEST_STDIN"; exit 0 ;;
   *"get deploy/kaimahi-proxy"*)
-    [ -n "$KMX_TEST_NO_PROXY" ] && exit 1
+    if [ -n "$KMX_TEST_NO_PROXY" ]; then
+      echo 'Error from server (NotFound): deployments.apps "kaimahi-proxy" not found' >&2; exit 1
+    fi
+    if [ -n "$KMX_TEST_PROXY_ERR" ]; then printf '%s\n' "$KMX_TEST_PROXY_ERR" >&2; exit 1; fi
     echo 'deployment.apps/kaimahi-proxy'; exit 0 ;;
 esac
 exit 0
@@ -429,6 +432,29 @@ func TestACaptureBeforeThePlaneIsDeployedSaysSo(t *testing.T) {
 	}
 	if strings.Contains(f.read(t, f.args), "rollout restart") {
 		t.Error("a Deployment that does not exist was restarted")
+	}
+}
+
+func TestCaptureDoesNotReportAnUnreadableDeploymentAsAbsent(t *testing.T) {
+	for _, failure := range []string{
+		"Error from server (Forbidden): deployments.apps is forbidden",
+		"error: You must be logged in to the server (Unauthorized)",
+		"Unable to connect to the server: connection refused",
+		"error: context was not found",
+		`error: context "remote" not found`,
+		"exec credential plugin failed: NotFound",
+	} {
+		t.Run(failure, func(t *testing.T) {
+			f := newCaptureFixture(t, nil)
+			t.Setenv("KMX_TEST_PROXY_ERR", failure)
+			err := f.app.CaptureCredential(CaptureOptions{Seam: "github", Subject: "owner/name"})
+			if err == nil || !strings.Contains(err.Error(), "credential is stored") || !strings.Contains(err.Error(), failure) {
+				t.Fatalf("unexpected capture result: %v", err)
+			}
+			if strings.Contains(f.errOut.String(), "not deployed here yet") || strings.Contains(f.read(t, f.args), "rollout restart") {
+				t.Fatalf("failed deployment read was treated as absence: %s", f.errOut)
+			}
+		})
 	}
 }
 

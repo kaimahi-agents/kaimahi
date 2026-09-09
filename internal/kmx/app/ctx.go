@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 )
@@ -59,7 +60,18 @@ func (a *App) showCtx() error {
 	if host == "" {
 		host = "<not created yet>"
 	}
-	fmt.Fprintf(a.Out, "context: %s\nsource:  %s\nserver:  %s\nposture: %s\n",
-		posture.Context, a.Cfg.ContextSource, host, posture.Label)
+	ui := cliui.New(a.Out)
+	if ui.Rich() {
+		fmt.Fprintln(a.Out, ui.Heading("Kubernetes context"))
+		fmt.Fprintln(a.Out, ui.Fields([]cliui.Field{
+			{Label: "context", Value: posture.Context},
+			{Label: "source", Value: a.Cfg.ContextSource},
+			{Label: "server", Value: host},
+			{Label: "posture", Value: posture.Label},
+		}))
+	} else {
+		fmt.Fprintf(a.Out, "context: %s\nsource:  %s\nserver:  %s\nposture: %s\n",
+			posture.Context, a.Cfg.ContextSource, host, posture.Label)
+	}
 	return nil
 }

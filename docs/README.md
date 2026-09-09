@@ -118,6 +118,9 @@ runbook, that is a bug in the restructure, not a decision. File it.
 - [development.md](development.md): for engineers changing the code — the
   mental model, the build, how the plane is put together, the invariants,
   and the traps.
+- [cli-ux-plan.md](cli-ux-plan.md): implemented terminal reports and chat
+  presentation, redirected compatibility, intentional audit safety fixes, and
+  the remaining presentation/structured-output gaps.
 - [entry-point-principles.md](entry-point-principles.md): why the
   developer entry point exists, what it must never become, and what is
   deliberately not built yet — the reasoning behind the entry point, as

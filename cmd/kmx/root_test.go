@@ -39,6 +39,33 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 	}
 }
 
+func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	deps.loadConfig = func(string) (*config.Config, error) {
+		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance", ToolsCredential: "finance-tools"}, nil
+	}
+	state := &commandState{deps: deps, argv: []string{"request", "tool", "example", "--credential", "billing", "--args", `{"text":"a'b; $(bad)"}`}}
+	root := newRootCommand(state)
+	cmd, _, err := root.Find([]string{"request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invocation string
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		invocation = a.InvocationCommand
+		return nil
+	})
+	root.SetArgs(state.argv)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance CRED_TOOLS=finance-tools kmx --context kind-other request tool example --credential billing --args '{\"text\":\"a'\"'\"'b; $(bad)\"}'"
+	if invocation != want {
+		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
+	}
+}
+
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
 	for _, group := range []string{"agent", "tools", "models", "credential"} {
 		var out, errOut bytes.Buffer

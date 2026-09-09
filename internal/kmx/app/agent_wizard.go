@@ -151,7 +151,7 @@ func (a *App) EditAgent(name, path string) error {
 	originalInfo, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("no local agent source at %s; `kmx agent edit` edits source, not the live cluster\n  live edit: kubectl --context %s -n kagent edit agent %s", path, a.Cfg.KubeContext, name)
+			return fmt.Errorf("no local agent source at %s; `kmx agent edit` edits source, not the live cluster\n  live edit: kubectl --context %s -n kagent edit agent %s", path, shellArg(a.Cfg.KubeContext), shellArg(name))
 		}
 		return err
 	}
@@ -256,7 +256,7 @@ func (a *App) EditAgent(name, path string) error {
 	}
 	removeCandidate = false
 	fmt.Fprintf(a.Out, "updated %s\n", path)
-	a.notef("Not applied. Review the diff, then:\n  kubectl --context %s apply -f %s", a.Cfg.KubeContext, path)
+	a.notef("Not applied. Review the diff, then:\n  kubectl --context %s apply -f %s", shellArg(a.Cfg.KubeContext), shellArg(path))
 	return nil
 }
 

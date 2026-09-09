@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/planebuild"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
@@ -92,6 +93,11 @@ func (a *App) Plane(opt PlaneOptions) error {
 			return fmt.Errorf("unknown step %q — one of: %s", opt.Step, strings.Join(PlaneSteps, ", "))
 		}
 	}
+	if opt.Step == "" || opt.Step == "image" {
+		if err := a.validateKindTarget(); err != nil {
+			return err
+		}
+	}
 	dependencies := []dependency{depKubectl}
 	for _, step := range steps {
 		if step != "image" {
@@ -152,25 +158,26 @@ func (a *App) Plane(opt PlaneOptions) error {
 
 	if opt.Step == "" {
 		a.complete("Governance plane ready", started)
-		// Said on every run, not only the first, because the case it warns
-		// about looks like success from here. The seams serve TLS now; a
-		// seam object written before they did still names `http://` and
-		// carries no authority to verify against, and calls across it fail
-		// CLOSED from the moment this command finishes until the seam is
-		// re-applied. That is the right direction — nothing quietly keeps
-		// talking in the clear — but an operator upgrading an existing
-		// cluster deserves to be told which command closes the gap rather
-		// than to find out from an agent that stopped answering.
-		a.notef("\nNEXT  Nothing is governed by the plane yet:\n"+
-			"  kmx govern %s      # issue the credential and put the agent behind the plane\n"+
-			"  kmx ledger            # what it has spent\n"+
-			"\nUPGRADING an existing cluster? The two data seams now serve TLS. Any seam\n"+
+		a.notef("This command does not enable governance for an agent; existing routing is not assessed here.")
+		ui := cliui.New(a.Err)
+		if ui.Rich() {
+			a.notef("\n%s", ui.Actions("Next", []cliui.Action{
+				{Label: "Govern the agent", Command: a.operationCommand("govern", a.Cfg.Credential), Detail: "issue a credential and route through the plane"},
+				{Label: "Inspect spend", Command: a.operationCommand("ledger", a.Cfg.Credential)},
+			}))
+		} else {
+			a.notef("\nNEXT\n"+
+				"  %s  # issue the credential and put the agent behind the plane\n"+
+				"  %s  # what it has spent", a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("ledger", a.Cfg.Credential))
+		}
+		// Existing pre-TLS seams fail closed until re-applied with the authority.
+		a.notef("\nUPGRADING an existing cluster? The two data seams now serve TLS. Any seam\n"+
 			"  applied before this release still points at `http://` and names no\n"+
 			"  certificate authority, so its calls fail closed until it is re-applied:\n"+
-			"  kmx govern %s      # the model seam\n"+
-			"  kmx tools govern         # the tool seam\n"+
-			"  kmx status               # the certificate, and which seams are governed",
-			a.Cfg.Credential, a.Cfg.Credential)
+			"  %s  # the model seam\n"+
+			"  %s  # the tool seam\n"+
+			"  %s  # the certificate, and which seams are governed",
+			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("tools", "govern"), a.operationCommand("status"))
 	}
 	return nil
 }
@@ -179,6 +186,9 @@ func (a *App) Plane(opt PlaneOptions) error {
 
 // planeImage builds the proxy image and side-loads it into the kind cluster.
 func (a *App) planeImage(opt PlaneOptions) error {
+	if err := a.validateKindTarget(); err != nil {
+		return err
+	}
 	if err := a.refuseForeignImageTag(); err != nil {
 		return err
 	}
@@ -379,6 +389,9 @@ func (a *App) moduleProxyBuildContext() (string, func(), error) {
 // engine-agnostic path kind documents for non-docker providers. Docker keeps
 // the direct load: it works, and it skips writing a ~19MB tarball.
 func (a *App) loadImage() error {
+	if err := a.validateKindTarget(); err != nil {
+		return err
+	}
 	if a.Cfg.ContainerEngine != "podman" {
 		return a.Run.Run("kind", "load", "docker-image", PlaneImage, "--name", a.Cfg.KindCluster)
 	}
@@ -538,9 +551,12 @@ var planeNotOnProxyYet = regexp.MustCompile(
 // makes the second possible, and repeating the install alone would have
 // waited out a clock that was never going to help.
 func (a *App) goInstallPlane(installer *run.Runner, plan planebuild.Install, rev string) error {
-	out, _, err := installer.CaptureCombined("go", plan.Args...)
-	if err == nil {
+	out, status, err := installer.CaptureCombined("go", plan.Args...)
+	if err == nil && status == 0 {
 		return nil
+	}
+	if err == nil {
+		err = fmt.Errorf("go install exited %d", status)
 	}
 	if !planeNotOnProxyYet.MatchString(out) {
 		return planeInstallErr(rev, err, out)
@@ -551,7 +567,11 @@ func (a *App) goInstallPlane(installer *run.Runner, plan planebuild.Install, rev
 	if _, rerr := resolver.Capture("go", "list", "-m", planebuild.NestedModule+"@"+rev); rerr != nil {
 		return planeInstallErr(rev, err, out)
 	}
-	if out, _, err = installer.CaptureCombined("go", plan.Args...); err != nil {
+	out, status, err = installer.CaptureCombined("go", plan.Args...)
+	if err == nil && status != 0 {
+		err = fmt.Errorf("go install exited %d", status)
+	}
+	if err != nil {
 		return planeInstallErr(rev, err, out)
 	}
 	return nil

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,45 +18,56 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"golang.org/x/term"
 )
 
 const maxControllerResponse = 10 << 20
+const maxNativeApprovalArgs = 16 << 10
 
 var controllerClient = &http.Client{Timeout: 30 * time.Second}
 var agentNameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-type actorColor string
+type actorColor int
 
 const (
-	colorBlue    actorColor = "\033[34;1m"
-	colorCyan    actorColor = "\033[36;1m"
-	colorGreen   actorColor = "\033[32;1m"
-	colorMagenta actorColor = "\033[35;1m"
-	colorYellow  actorColor = "\033[33;1m"
-	colorRed     actorColor = "\033[31;1m"
-	colorReset              = "\033[0m"
+	colorBlue actorColor = iota
+	colorCyan
+	colorGreen
+	colorMagenta
+	colorYellow
+	colorRed
 )
 
 type chatRenderer struct {
-	out        io.Writer
-	mu         sync.Mutex
-	color      bool
-	cursor     bool
-	openActor  string
-	actorLine  bool
-	promptOpen bool
+	out             io.Writer
+	mu              sync.Mutex
+	color           bool
+	ui              cliui.Output
+	cursor          bool
+	openActor       string
+	actorLine       bool
+	promptOpen      bool
+	promptText      string
+	promptIndent    int
+	transient       bool
+	transientWidth  int
+	spinnerDisabled bool
+	spinnerPaused   bool
+	pendingGap      bool
 }
 
 func newChatRenderer(out io.Writer) *chatRenderer {
 	terminal := isInteractiveTerminal(out) && os.Getenv("TERM") != "dumb"
 	plain := os.Getenv("NO_COLOR") != ""
-	return &chatRenderer{out: out, color: terminal && !plain, cursor: terminal && !plain}
+	return &chatRenderer{out: out, ui: cliui.New(out), color: terminal && !plain, cursor: terminal && !plain}
 }
 
 func (r *chatRenderer) label(text string, color actorColor) string {
@@ -62,7 +75,25 @@ func (r *chatRenderer) label(text string, color actorColor) string {
 	if !r.color {
 		return text
 	}
-	return string(color) + text + colorReset
+	ui := r.ui
+	if !ui.Rich() {
+		ui = cliui.WithCapabilities(cliui.Capabilities{Rich: true, Color: true})
+	}
+	switch color {
+	case colorBlue:
+		return ui.Info(text)
+	case colorCyan:
+		return ui.Heading(text)
+	case colorGreen:
+		return ui.Success(text)
+	case colorMagenta:
+		return ui.Accent(text)
+	case colorYellow:
+		return ui.Warning(text)
+	case colorRed:
+		return ui.Failure(text)
+	}
+	return text
 }
 
 func indentPayload(value string) string {
@@ -80,8 +111,18 @@ func assistantPayload(value string) string {
 }
 
 func (r *chatRenderer) clearLocked() {
-	if r.cursor {
+	if r.cursor && r.transient {
+		if file, ok := r.out.(*os.File); ok {
+			if width, _, err := term.GetSize(int(file.Fd())); err == nil && width != r.transientWidth {
+				// Reflow makes the old row unsafe to erase. Leave it durable.
+				fmt.Fprintln(r.out)
+				r.transient = false
+				r.spinnerDisabled = true
+				return
+			}
+		}
 		fmt.Fprint(r.out, "\r\033[2K")
+		r.transient = false
 	}
 }
 
@@ -89,12 +130,19 @@ func (r *chatRenderer) closeLocked() {
 	if r.promptOpen {
 		fmt.Fprintln(r.out)
 		r.promptOpen = false
+		r.pendingGap = r.ui.Rich()
+	}
+	if r.pendingGap {
+		fmt.Fprintln(r.out)
+		r.pendingGap = false
 	}
 	if r.openActor != "" {
 		if r.actorLine {
 			fmt.Fprintln(r.out)
 		}
-		fmt.Fprintln(r.out)
+		if r.actorLine || !r.ui.Rich() {
+			fmt.Fprintln(r.out)
+		}
 		r.openActor = ""
 		r.actorLine = false
 	}
@@ -108,12 +156,57 @@ func (r *chatRenderer) block(label string, color actorColor, payload string) {
 	fmt.Fprintf(r.out, "%s\n%s\n\n", r.label(label, color), indentPayload(payload))
 }
 
-func (r *chatRenderer) statusStart(agent string) {
+func (r *chatRenderer) statusStart(agent, kubeContext string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.clearLocked()
 	r.closeLocked()
-	fmt.Fprintf(r.out, "CHAT STATUS\n------------\n  Agent: %s\n  Commands: %s\n", safeTerminal(agent), slashCommandSummary())
+	if r.ui.Rich() {
+		title := strings.Join(strings.Fields(safeTerminal(agent)), " ")
+		title = r.wrap(title, 0)
+		if r.color {
+			title = lipgloss.NewStyle().Bold(true).Render(title)
+		}
+		fmt.Fprintln(r.out, title)
+		if kubeContext != "" {
+			context := "Context: " + strings.Join(strings.Fields(safeTerminal(kubeContext)), " ")
+			fmt.Fprintln(r.out, r.ui.Muted(r.wrap(context, 0)))
+		}
+		return
+	}
+	fmt.Fprintf(r.out, "CHAT STATUS\n------------\n  Agent: %s\n", safeTerminal(agent))
+	if kubeContext != "" {
+		fmt.Fprintf(r.out, "  Context: %s\n", strings.Join(strings.Fields(safeTerminal(kubeContext)), " "))
+	}
+	fmt.Fprintf(r.out, "  Commands: %s\n", slashCommandSummary())
+}
+
+func (r *chatRenderer) wrap(text string, indent int) string {
+	if r.ui.Width() <= 0 {
+		return text
+	}
+	return ansi.Hardwrap(text, max(1, r.ui.Width()-indent), true)
+}
+
+// governed is computed only after the serving route and plane readiness checks.
+func (r *chatRenderer) statusModel(model string, governed bool) {
+	posture := "direct, not Kaimahi-governed"
+	if governed {
+		posture = "governed by Kaimahi; plane Ready"
+	}
+	if !r.ui.Rich() {
+		r.statusSection("Model", "Name: "+safeTerminal(model)+"\nPosture: "+posture)
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	model = strings.Join(strings.Fields(safeTerminal(model)), " ")
+	if governed {
+		posture = r.ui.Success(posture)
+	} else {
+		posture = r.ui.Warning(posture) + "; model plane not used"
+	}
+	fmt.Fprintln(r.out, r.ui.Fields([]cliui.Field{{Label: "Model", Value: model + " | " + posture}}))
 }
 
 func (r *chatRenderer) statusSection(label, payload string) {
@@ -121,6 +214,10 @@ func (r *chatRenderer) statusSection(label, payload string) {
 	defer r.mu.Unlock()
 	label = strings.Join(strings.Fields(safeTerminal(label)), " ")
 	payload = strings.TrimSuffix(safeTerminal(payload), "\n")
+	if r.ui.Rich() {
+		fmt.Fprintln(r.out, r.ui.Fields([]cliui.Field{{Label: label, Value: payload}}))
+		return
+	}
 	fmt.Fprintf(r.out, "  %s\n", label)
 	if payload != "" {
 		fmt.Fprintf(r.out, "    %s\n", strings.ReplaceAll(payload, "\n", "\n    "))
@@ -130,8 +227,40 @@ func (r *chatRenderer) statusSection(label, payload string) {
 func (r *chatRenderer) statusEnd() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	fmt.Fprintln(r.out, "------------------------------------------------------------")
+	if r.ui.Rich() {
+		fmt.Fprintln(r.out, r.wrap("Type a message. /help for commands; /exit to leave", 0))
+	} else {
+		fmt.Fprintln(r.out, "------------------------------------------------------------")
+	}
 	fmt.Fprintln(r.out)
+}
+
+func (r *chatRenderer) help() {
+	payload := slashCommandReference()
+	if r.ui.Rich() {
+		payload = r.wrap(payload, 2)
+	}
+	r.operation("CHAT HELP", "", colorBlue, payload)
+}
+
+func (r *chatRenderer) exit(reason string) {
+	if !r.ui.Rich() {
+		r.operation("CHAT", "", colorBlue, "Status: ended")
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clearLocked()
+	r.closeLocked()
+	fmt.Fprintln(r.out, r.ui.Muted("Chat ended ("+reason+")."))
+}
+
+// Durable feedback is safe while commands or resumed streams may also write.
+func (r *chatRenderer) working(message string) {
+	if r == nil || !r.ui.Rich() {
+		return
+	}
+	r.operation("WORKING", "", colorBlue, message)
 }
 
 func (r *chatRenderer) operation(kind, subject string, color actorColor, payload string) {
@@ -146,8 +275,17 @@ func (r *chatRenderer) operationPrompt(kind string, color actorColor, payload, p
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.clearLocked()
+	r.spinnerPaused = true
 	r.closeLocked()
-	fmt.Fprintf(r.out, "%s\n%s\n  %s ", r.label("["+kind+"]", color), indentPayload(payload), safeTerminal(prompt))
+	r.promptText = strings.Join(strings.Fields(safeTerminal(prompt)), " ") + " "
+	r.promptIndent = 2
+	if r.ui.Rich() {
+		// Only the static request is boxed. The native editor owns the rows below it.
+		fmt.Fprintln(r.out, r.ui.Callout(cliui.CalloutWarning, "Request details", []cliui.Field{{Value: safeTerminal(payload)}}))
+		fmt.Fprintf(r.out, "%s\n  %s", r.label("["+kind+"]", color), r.promptText)
+	} else {
+		fmt.Fprintf(r.out, "%s\n%s\n  %s", r.label("["+kind+"]", color), indentPayload(payload), r.promptText)
+	}
 	r.promptOpen = true
 }
 
@@ -174,6 +312,9 @@ func (r *chatRenderer) assistantOperation(agent, kind, subject string, color act
 	}
 	if r.actorLine {
 		fmt.Fprintln(r.out)
+		if r.ui.Rich() {
+			fmt.Fprintln(r.out)
+		}
 		r.actorLine = false
 	}
 	if subject != "" {
@@ -209,20 +350,33 @@ func (r *chatRenderer) clearTransient() {
 	r.clearLocked()
 }
 
+func (r *chatRenderer) pauseSpinner(paused bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.spinnerPaused = paused
+	if paused {
+		r.clearLocked()
+	}
+}
+
 func (r *chatRenderer) prompt() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.clearLocked()
 	r.closeLocked()
-	fmt.Fprintf(r.out, "%s ", r.label("YOU >", colorCyan))
+	r.promptText, r.promptIndent = r.label("YOU >", colorCyan)+" ", 0
+	fmt.Fprint(r.out, r.promptText)
 	r.promptOpen = true
 }
 
 func (r *chatRenderer) submitted(inputWasTerminal bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.promptOpen && !inputWasTerminal {
+	if r.promptOpen && (!inputWasTerminal || !isTerminal(r.out)) {
 		fmt.Fprintln(r.out)
+	}
+	if r.promptOpen && r.ui.Rich() {
+		r.pendingGap = true
 	}
 	r.promptOpen = false
 }
@@ -233,11 +387,27 @@ func (r *chatRenderer) spinner(agent, frame string, elapsed time.Duration) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.actorLine {
+	if r.actorLine || r.promptOpen || r.spinnerDisabled || r.spinnerPaused {
 		return
 	}
 	r.clearLocked()
-	fmt.Fprintf(r.out, "%s %s %ds", r.label("WORKING", colorBlue), safeTerminal(agent)+" "+frame, int(elapsed.Seconds()))
+	if r.spinnerDisabled {
+		return
+	}
+	text := fmt.Sprintf("%s %s %ds", r.label("WORKING", colorBlue), strings.Join(strings.Fields(safeTerminal(agent)+" "+safeTerminal(frame)), " "), int(elapsed.Seconds()))
+	// Keep the transient on one physical row so clearing it cannot erase history.
+	width := r.ui.Width()
+	if file, ok := r.out.(*os.File); ok {
+		if current, _, err := term.GetSize(int(file.Fd())); err == nil {
+			width = current
+		}
+	}
+	if width <= 0 {
+		width = 80
+	}
+	fmt.Fprint(r.out, ansi.Truncate(text, max(0, width-1), ""))
+	r.transient = true
+	r.transientWidth = width
 }
 
 func (r *chatRenderer) finish() {
@@ -370,7 +540,6 @@ type streamView struct {
 	approval                             *hitlRequest
 	partials                             string
 	approvalErr                          error
-	visible                              atomic.Bool
 	renderer                             *chatRenderer
 	modelGoverned                        bool
 	governedTools                        map[string]bool
@@ -378,6 +547,7 @@ type streamView struct {
 	seenToolCalls                        map[string]bool
 	seenToolResponses                    map[string]bool
 	ambiguousToolCalls                   map[string]bool
+	toolEvents                           map[string]bool
 }
 
 type chatGovernancePosture struct {
@@ -400,6 +570,36 @@ type hitlCall struct {
 type askUserQuestion struct {
 	Question string   `json:"question"`
 	Choices  []string `json:"choices"`
+	Multiple bool     `json:"multiple"`
+}
+
+func (r *hitlRequest) validate() error {
+	if r == nil || r.TaskID == "" || r.ContextID == "" {
+		return fmt.Errorf("HITL request is missing its task or context ID")
+	}
+	if len(r.Calls) == 0 {
+		return fmt.Errorf("HITL request contains no tool calls; refusing an empty decision")
+	}
+	seen := map[string]bool{}
+	for index, call := range r.Calls {
+		if strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.Name) == "" {
+			return fmt.Errorf("HITL entry %d is missing its tool-call ID or name; refusing the entire request", index+1)
+		}
+		if seen[call.ID] {
+			return fmt.Errorf("HITL request repeated tool-call ID %q; refusing the entire request", safeTerminal(call.ID))
+		}
+		seen[call.ID] = true
+		if len(call.Args) > maxNativeApprovalArgs {
+			return fmt.Errorf("HITL call %q (%s) has %d bytes of arguments, exceeding the %d-byte inspection limit; refusing the entire request without submitting a decision", safeTerminal(call.ID), safeTerminal(call.Name), len(call.Args), maxNativeApprovalArgs)
+		}
+		if len(call.Args) > 0 && !json.Valid(call.Args) {
+			return fmt.Errorf("HITL call %q has invalid arguments", safeTerminal(call.ID))
+		}
+		if call.Name == "ask_user" && len(r.Calls) != 1 {
+			return fmt.Errorf("ask_user arrived with other pending approvals; refusing a decision that could approve an unseen tool")
+		}
+	}
+	return nil
 }
 
 type streamEvent struct {
@@ -422,6 +622,14 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	renderer := newChatRenderer(a.Out)
+	// Scanner-mode chat retains its established transcript, even with a TTY output.
+	if !newChatInput(nil, a.Stdin, a.Out, renderer).enhanced {
+		renderer.ui = cliui.WithCapabilities(cliui.Capabilities{})
+		renderer.cursor = false
+	}
+	defer renderer.finish()
+	renderer.working("Connecting to " + agent)
 	if err := a.waitServable(agent); err != nil {
 		return err
 	}
@@ -431,14 +639,13 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 	}
 	defer stop()
 	base := "http://127.0.0.1:" + port
-	renderer := newChatRenderer(a.Out)
 	toolMode := "summary"
 	posture, err := a.refreshChatPosture(agent, renderer)
 	if err != nil {
 		return err
 	}
 	if session != "" {
-		if err := a.showSessionHistory(base, session, agent, toolMode); err != nil {
+		if err := a.showSessionHistory(base, session, agent, toolMode, renderer); err != nil {
 			return err
 		}
 	}
@@ -448,7 +655,7 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 	last := ""
 	for {
 		if err := ctx.Err(); err != nil {
-			renderer.operation("CHAT", "", colorBlue, "Status: ended")
+			renderer.exit("cancelled")
 			return nil
 		}
 		message := ""
@@ -459,8 +666,12 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 			renderer.prompt()
 			line, err := input.readLine(ctx, true)
 			if err != nil {
-				if err == io.EOF || ctx.Err() != nil {
-					renderer.operation("CHAT", "", colorBlue, "Status: ended")
+				if err == io.EOF || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					reason := "end of input"
+					if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+						reason = "cancelled"
+					}
+					renderer.exit(reason)
 					return nil
 				}
 				return err
@@ -470,8 +681,11 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 		}
 		switch {
 		case message == "/exit" || message == "/quit" || message == "\x1b":
-			renderer.operation("CHAT", "", colorBlue, "Status: ended")
+			renderer.exit("exit requested")
 			return nil
+		case message == "/help":
+			renderer.help()
+			continue
 		case message == "/session":
 			renderer.operation("CHAT", "", colorBlue, map[bool]string{true: "Session: " + session, false: "Session: none"}[session != ""])
 			continue
@@ -480,21 +694,25 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 			renderer.operation("CHAT", "", colorBlue, "Session: new")
 			continue
 		case message == "/sessions":
-			if err := a.showSessions(base); err != nil {
+			if err := a.showSessions(base, renderer); err != nil {
 				fmt.Fprintf(a.Err, "sessions: %v\n", err)
 			}
 			continue
 		case message == "/history":
 			if session == "" {
 				renderer.operation("CHAT", "", colorBlue, "Session: none")
-			} else if err := a.showSessionHistory(base, session, agent, toolMode); err != nil {
+			} else if err := a.showSessionHistory(base, session, agent, toolMode, renderer); err != nil {
 				fmt.Fprintf(a.Err, "history: %s\n", safeTerminal(err.Error()))
 			}
 			continue
 		case strings.HasPrefix(message, "/tools "):
 			mode := strings.TrimSpace(strings.TrimPrefix(message, "/tools "))
 			if mode != "off" && mode != "summary" && mode != "verbose" {
-				fmt.Fprintln(a.Out, "Usage: /tools off|summary|verbose")
+				if renderer.ui.Rich() {
+					renderer.operation("CHAT", "", colorBlue, "Usage: /tools off|summary|verbose")
+				} else {
+					fmt.Fprintln(a.Out, "Usage: /tools off|summary|verbose")
+				}
 			} else {
 				toolMode = mode
 				renderer.operation("CHAT", "", colorBlue, "Tool display: "+mode)
@@ -549,11 +767,11 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 			continue
 		case strings.HasPrefix(message, "/resume "):
 			candidate := strings.TrimSpace(strings.TrimPrefix(message, "/resume "))
-			if err := a.showSessionHistory(base, candidate, agent, toolMode); err != nil {
+			if err := a.showSessionHistory(base, candidate, agent, toolMode, renderer); err != nil {
 				fmt.Fprintf(a.Err, "cannot resume: %v\n", err)
 				continue
 			}
-			session = candidate
+			session, last = candidate, ""
 			continue
 		case message == "/retry":
 			if last == "" {
@@ -564,7 +782,11 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 		case message == "":
 			continue
 		case strings.HasPrefix(message, "/"):
-			renderer.operation("CHAT", "", colorBlue, "Commands: "+slashCommandSummary())
+			if renderer.ui.Rich() {
+				renderer.operation("CHAT", "", colorBlue, "Unknown command. Use /help for commands.")
+			} else {
+				renderer.operation("CHAT", "", colorBlue, "Commands: "+slashCommandSummary())
+			}
 			continue
 		default:
 			last = message
@@ -574,40 +796,47 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 			renderer.assistantOperation(agent, "KAIMAHI ROUTE", "", colorYellow, "Seam: model proxy\nConfiguration: verified through ready plane at chat start\nPer-call decision: not exposed by kagent stream")
 		}
 		view, err := a.invokeStream(ctx, kagent, base, agent, message, session, toolMode, renderer, posture)
+		if view != nil && view.context != "" {
+			session = view.context
+		}
 		if err != nil {
+			if renderer.ui.Rich() && ctx.Err() != nil {
+				renderer.exit("cancelled")
+				return nil
+			}
 			if !isInteractiveTerminal(a.Stdin) {
 				return err
 			}
-			fmt.Fprintf(a.Err, "chat: %v\n", err)
+			renderer.finish()
+			fmt.Fprintf(a.Err, "chat: %s\n", safeTerminal(err.Error()))
 			continue
-		}
-		if view.context != "" {
-			session = view.context
 		}
 		for view.approval != nil {
 			if view.approvalErr != nil {
 				return view.approvalErr
 			}
-			if view.approval.TaskID == "" || view.approval.ContextID == "" {
-				return fmt.Errorf("HITL request is missing its task or context ID")
-			}
-			if len(view.approval.Calls) > 1 {
-				for _, call := range view.approval.Calls {
-					if call.Name == "ask_user" {
-						return fmt.Errorf("ask_user arrived with other pending approvals — refusing a decision that could approve an unseen tool")
-					}
-				}
-			}
 			decision, err := a.promptHITL(ctx, input, view.approval, renderer)
 			if err != nil {
+				if renderer.ui.Rich() && (errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)) {
+					reason := "end of input; no decision submitted"
+					if errors.Is(err, context.Canceled) {
+						reason = "cancelled; no decision submitted"
+					}
+					renderer.exit(reason)
+					return nil
+				}
 				return err
 			}
 			view, err = a.sendHITL(ctx, base, agent, view, decision, toolMode, renderer, posture)
-			if err != nil {
-				return err
-			}
-			if view.context != "" {
+			if view != nil && view.context != "" {
 				session = view.context
+			}
+			if err != nil {
+				if renderer.ui.Rich() && ctx.Err() != nil {
+					renderer.exit("cancelled")
+					return nil
+				}
+				return err
 			}
 		}
 		renderer.finish()
@@ -616,7 +845,8 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 
 func (a *App) refreshChatPosture(agent string, renderer *chatRenderer) (*chatGovernancePosture, error) {
 	posture := &chatGovernancePosture{governedTools: map[string]bool{}, toolRoutes: map[string]uint8{}}
-	renderer.statusStart(agent)
+	renderer.working("Checking model and tool posture")
+	renderer.statusStart(agent, a.Cfg.KubeContext)
 	if err := a.showChatPosture(agent, renderer, posture); err != nil {
 		renderer.statusSection("Status", "Incomplete: "+err.Error())
 		renderer.statusEnd()
@@ -686,11 +916,13 @@ func (a *App) invokeStream(ctx context.Context, kagent, base, agent, task, sessi
 		return nil, err
 	}
 	view := newStreamView(agent, toolMode, renderer, posture)
+	view.context = session
 	done := make(chan struct{})
 	spinnerDone := make(chan struct{})
 	started := time.Now()
-	spinner := isInteractiveTerminal(a.Err)
+	spinner := renderer != nil && renderer.cursor
 	if spinner {
+		renderer.pauseSpinner(false)
 		go func() {
 			defer close(spinnerDone)
 			frames := []string{"|", "/", "-", "\\"}
@@ -699,9 +931,7 @@ func (a *App) invokeStream(ctx context.Context, kagent, base, agent, task, sessi
 				case <-done:
 					return
 				case <-time.After(250 * time.Millisecond):
-					if !view.visible.Load() {
-						renderer.spinner(agent, frames[i%len(frames)], time.Since(started))
-					}
+					renderer.spinner(agent, frames[i%len(frames)], time.Since(started))
 				}
 			}
 		}()
@@ -721,27 +951,27 @@ func (a *App) invokeStream(ctx context.Context, kagent, base, agent, task, sessi
 	_, _ = stderr.Seek(0, io.SeekStart)
 	errText, _ := io.ReadAll(io.LimitReader(stderr, 64<<10))
 	if decodeErr != nil {
-		return nil, decodeErr
+		return view, decodeErr
 	}
 	if waitErr != nil {
-		return nil, fmt.Errorf("kagent invoke: %v: %s", waitErr, safeTerminal(strings.TrimSpace(string(errText))))
+		return view, fmt.Errorf("kagent invoke: %v: %s", waitErr, safeTerminal(strings.TrimSpace(string(errText))))
 	}
 	if view.state == "working" || view.state == "submitted" {
 		if err := a.waitExistingTask(ctx, base, view); err != nil {
-			return nil, err
+			return view, err
 		}
 	}
 	if view.state == "input-required" && view.approval != nil {
 		if view.approvalErr != nil {
-			return nil, view.approvalErr
+			return view, view.approvalErr
 		}
 		return view, nil
 	}
 	if view.state == "input-required" {
-		return nil, fmt.Errorf("task %s requires input, but its HITL request could not be decoded", view.taskID)
+		return view, fmt.Errorf("task %s requires input, but its HITL request could not be decoded", view.taskID)
 	}
 	if view.state != "completed" || view.reply == "" {
-		return nil, fmt.Errorf("task did not complete with a reply (state %q)", view.state)
+		return view, fmt.Errorf("task did not complete with a reply (state %q)", view.state)
 	}
 	return view, nil
 }
@@ -759,12 +989,7 @@ func newStreamView(agent, toolMode string, renderer *chatRenderer, posture *chat
 }
 
 func isInteractiveTerminal(writer io.Writer) bool {
-	file, ok := writer.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return isTerminal(writer)
 }
 
 func (a *App) consumeStream(r io.Reader, view *streamView) error {
@@ -832,9 +1057,6 @@ func (v *streamView) consume(event streamEvent, out io.Writer) {
 					if strings.HasPrefix(part.Text, previous) {
 						addition = strings.TrimPrefix(part.Text, previous)
 					}
-					if previous == "" {
-						v.visible.Store(true)
-					}
 					if v.partials != "" && strings.HasPrefix(part.Text, v.partials) {
 						addition = strings.TrimPrefix(part.Text, v.partials)
 					}
@@ -879,7 +1101,6 @@ func (v *streamView) consume(event streamEvent, out io.Writer) {
 		addition = ""
 	}
 	if addition != "" {
-		v.visible.Store(true)
 		if v.renderer != nil {
 			v.renderer.assistant(v.agent, addition, v.reply == "")
 		} else {
@@ -896,6 +1117,16 @@ func (v *streamView) consume(event streamEvent, out io.Writer) {
 	if event.Final && v.reply != "" {
 		if v.renderer == nil {
 			fmt.Fprintln(out)
+		}
+	}
+	if v.renderer != nil {
+		switch v.state {
+		case "completed", "failed", "canceled", "cancelled", "rejected", "input-required":
+			v.renderer.pauseSpinner(true)
+		default:
+			if event.Final || v.approval != nil || v.approvalErr != nil {
+				v.renderer.pauseSpinner(true)
+			}
 		}
 	}
 }
@@ -923,6 +1154,9 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 		} `json:"response"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
+		if kind == "function_call" && longRunning {
+			v.approvalErr = fmt.Errorf("invalid long-running tool call; refusing a potentially incomplete HITL request")
+		}
 		return
 	}
 	if kind == "function_call" && longRunning && data.Name == "adk_request_confirmation" {
@@ -931,39 +1165,51 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			Confirmation struct {
 				Hint    string `json:"hint"`
 				Payload struct {
-					Parts []struct {
-						Original hitlCall `json:"originalFunctionCall"`
-					} `json:"hitl_parts"`
+					Parts json.RawMessage `json:"hitl_parts"`
 				} `json:"payload"`
 			} `json:"toolConfirmation"`
 		}
-		if json.Unmarshal(data.Args, &args) == nil {
-			if v.approval == nil {
-				v.approval = &hitlRequest{TaskID: v.taskID, ContextID: v.context, Hint: args.Confirmation.Hint}
+		if err := json.Unmarshal(data.Args, &args); err != nil {
+			v.approvalErr = fmt.Errorf("invalid HITL confirmation: %w", err)
+			return
+		}
+		if v.approval == nil {
+			v.approval = &hitlRequest{TaskID: v.taskID, ContextID: v.context, Hint: args.Confirmation.Hint}
+		}
+		if len(args.Confirmation.Payload.Parts) > 0 {
+			var parts []struct {
+				Original hitlCall `json:"originalFunctionCall"`
 			}
-			if len(args.Confirmation.Payload.Parts) > 0 {
-				for _, part := range args.Confirmation.Payload.Parts {
-					if part.Original.ID != "" {
-						v.approval.Calls = append(v.approval.Calls, part.Original)
-					}
-				}
-			} else if args.Original.ID != "" {
-				v.approval.Calls = append(v.approval.Calls, args.Original)
-			} else {
-				v.approvalErr = fmt.Errorf("HITL request contained a confirmation without a tool-call ID")
+			if err := json.Unmarshal(args.Confirmation.Payload.Parts, &parts); err != nil || len(parts) == 0 {
+				v.approvalErr = fmt.Errorf("HITL confirmation contains an empty or invalid batch; refusing the entire request")
+				return
 			}
-			seen := map[string]bool{}
-			for _, call := range v.approval.Calls {
-				if seen[call.ID] {
-					v.approvalErr = fmt.Errorf("HITL request repeated tool-call ID %q", call.ID)
-				}
-				seen[call.ID] = true
+			for _, part := range parts {
+				// Preserve every entry, including invalid ones, for fail-closed validation.
+				v.approval.Calls = append(v.approval.Calls, part.Original)
 			}
+		} else {
+			v.approval.Calls = append(v.approval.Calls, args.Original)
+		}
+		if err := v.approval.validate(); err != nil {
+			v.approvalErr = err
 		}
 		return
 	}
 	if data.Name == "adk_request_confirmation" {
 		return
+	}
+	if data.ID != "" && (kind == "function_call" || kind == "function_response") {
+		if v.toolEvents == nil {
+			v.toolEvents = map[string]bool{}
+		}
+		var compact bytes.Buffer
+		_ = json.Compact(&compact, raw)
+		key := kind + "\x00" + compact.String()
+		if v.toolEvents[key] {
+			return
+		}
+		v.toolEvents[key] = true
 	}
 	switch kind {
 	case "function_call":
@@ -982,7 +1228,6 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			v.seenToolCalls[data.ID] = true
 		}
 		if v.toolMode != "off" {
-			v.visible.Store(true)
 			payload := "Status: running"
 			if v.toolMode == "verbose" {
 				payload += "\nArguments:\n" + indentPayload(truncatePayload(strings.TrimSpace(string(data.Args)), 16<<10))
@@ -992,6 +1237,8 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			} else {
 				fmt.Fprintf(out, "Tool: %s %s\n", safeTerminal(data.Name), safeTerminal(truncatePayload(strings.TrimSpace(string(data.Args)), 16<<10)))
 			}
+		} else if v.renderer != nil && v.renderer.ui.Rich() {
+			v.renderer.assistantOperation(v.agent, "WORKING", "", colorBlue, "Waiting for tool activity")
 		}
 	case "function_response":
 		name, correlated := v.toolCalls[data.ID]
@@ -1021,7 +1268,6 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			v.seenToolResponses[data.ID] = true
 		}
 		if v.toolMode != "off" {
-			v.visible.Store(true)
 			payload := "Status: " + state
 			if v.toolMode == "verbose" {
 				payload += "\nResult:\n" + indentPayload(truncatePayload(body, 16<<10))
@@ -1073,6 +1319,7 @@ func truncatePayload(value string, limit int) string {
 }
 
 func (a *App) waitExistingTask(ctx context.Context, base string, view *streamView) error {
+	view.renderer.working("Waiting for the task to finish")
 	for i := 0; i < 300; i++ {
 		task, err := getTask(ctx, base, view.agent, view.taskID)
 		if err != nil {
@@ -1161,6 +1408,9 @@ func getTask(ctx context.Context, base, agent, id string) (*interactiveTask, err
 }
 
 func (a *App) promptHITL(ctx context.Context, input *chatInput, request *hitlRequest, renderer *chatRenderer) (map[string]any, error) {
+	if err := request.validate(); err != nil {
+		return nil, err
+	}
 	decisions := map[string]string{}
 	reasons := map[string]string{}
 	if request.Hint != "" {
@@ -1174,29 +1424,69 @@ func (a *App) promptHITL(ctx context.Context, input *chatInput, request *hitlReq
 			if err := json.Unmarshal(call.Args, &request); err != nil || len(request.Questions) == 0 {
 				return nil, fmt.Errorf("ask_user request has no valid questions")
 			}
+			for _, question := range request.Questions {
+				if strings.TrimSpace(safeTerminal(question.Question)) == "" {
+					return nil, fmt.Errorf("ask_user request has an empty question")
+				}
+				seen := map[string]bool{}
+				for _, choice := range question.Choices {
+					key := strings.TrimSpace(choice)
+					if key == "" || seen[key] || safeTerminal(choice) != choice || strings.ContainsAny(choice, "\n\t") {
+						return nil, fmt.Errorf("ask_user request has empty, duplicate, or unprintable choices")
+					}
+					seen[key] = true
+				}
+			}
 			answers := make([]map[string][]string, 0, len(request.Questions))
 			for _, question := range request.Questions {
 				payload := "Question: " + question.Question
 				if len(question.Choices) > 0 {
 					payload += "\nChoices: " + strings.Join(question.Choices, " | ")
-				}
-				renderer.operationPrompt("NATIVE QUESTION", colorYellow, payload, "Answer:")
-				answer, err := input.readLine(ctx, false)
-				if err != nil {
-					return nil, err
-				}
-				renderer.submitted(isInteractiveTerminal(a.Stdin))
-				var values []string
-				for _, value := range strings.Split(answer, ",") {
-					if value = strings.TrimSpace(value); value != "" {
-						values = append(values, value)
+					if question.Multiple {
+						payload += "\nSelect one or more choices, comma-separated; quote choices containing commas."
+					} else {
+						payload += "\nSelect exactly one choice."
 					}
 				}
-				answers = append(answers, map[string][]string{"answer": values})
+				for {
+					renderer.operationPrompt("NATIVE QUESTION", colorYellow, payload, "Answer:")
+					answer, err := input.readLine(ctx, false)
+					if err != nil {
+						return nil, err
+					}
+					renderer.submitted(isInteractiveTerminal(a.Stdin))
+					values := []string{answer}
+					valid := strings.TrimSpace(answer) != ""
+					if question.Multiple && len(question.Choices) > 0 {
+						reader := csv.NewReader(strings.NewReader(answer))
+						reader.TrimLeadingSpace = true
+						values, err = reader.Read()
+						valid = err == nil && len(values) > 0
+					}
+					if len(question.Choices) > 0 {
+						selected := map[string]bool{}
+						for index, value := range values {
+							matched := false
+							for _, choice := range question.Choices {
+								if strings.TrimSpace(value) == strings.TrimSpace(choice) && !selected[choice] {
+									values[index], selected[choice], matched = choice, true, true
+									break
+								}
+							}
+							valid = valid && matched
+						}
+					}
+					if !valid {
+						renderer.operation("NATIVE QUESTION", "", colorYellow, "Invalid answer: enter nonempty text or select only the offered choices without duplicates.")
+						continue
+					}
+					answers = append(answers, map[string][]string{"answer": values})
+					break
+				}
 			}
 			return map[string]any{"decision_type": "approve", "ask_user_answers": answers}, nil
 		}
-		payload := "Tool: " + safeTerminal(call.Name) + "\nArguments:\n" + indentPayload(truncatePayload(string(call.Args), 16<<10))
+		payload := "Call ID: " + safeTerminal(call.ID) + "\nTool: " + safeTerminal(call.Name) + "\nArguments:\n" + indentPayload(string(call.Args))
 		renderer.operationPrompt("NATIVE APPROVAL", colorYellow, payload, "Approve? [y/N]:")
 		answerLine, err := input.readLine(ctx, false)
 		if err != nil {
@@ -1232,9 +1522,23 @@ func (a *App) promptHITL(ctx context.Context, input *chatInput, request *hitlReq
 }
 
 func (a *App) sendHITL(ctx context.Context, base, agent string, previous *streamView, decision map[string]any, toolMode string, renderer *chatRenderer, posture *chatGovernancePosture) (*streamView, error) {
+	if previous.approvalErr != nil {
+		return nil, previous.approvalErr
+	}
 	approval := previous.approval
-	if approval == nil || approval.TaskID == "" || approval.ContextID == "" {
-		return nil, fmt.Errorf("HITL request is missing its task or context ID")
+	if err := approval.validate(); err != nil {
+		return nil, err
+	}
+	if len(approval.Calls) > 1 {
+		decisions, ok := decision["decisions"].(map[string]string)
+		if decision["decision_type"] != "batch" || !ok || len(decisions) != len(approval.Calls) {
+			return nil, fmt.Errorf("HITL batch requires an explicit decision for every call")
+		}
+		for _, call := range approval.Calls {
+			if decisions[call.ID] != "approve" && decisions[call.ID] != "reject" {
+				return nil, fmt.Errorf("HITL batch is missing a valid decision for call %q", safeTerminal(call.ID))
+			}
+		}
 	}
 	messageID := fmt.Sprintf("kmx-%d", time.Now().UnixNano())
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": messageID, "method": "message/stream", "params": map[string]any{"message": map[string]any{
@@ -1249,6 +1553,7 @@ func (a *App) sendHITL(ctx context.Context, base, agent string, previous *stream
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("x-user-id", "admin@kagent.dev")
 	client := &http.Client{Timeout: 5 * time.Minute}
+	renderer.working("Submitting decision; waiting for agent")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1258,10 +1563,12 @@ func (a *App) sendHITL(ctx context.Context, base, agent string, previous *stream
 		return nil, fmt.Errorf("HITL decision answered HTTP %d", resp.StatusCode)
 	}
 	view := newStreamView(agent, toolMode, renderer, posture)
+	view.context, view.taskID = approval.ContextID, approval.TaskID
 	view.toolCalls = previous.toolCalls
 	view.seenToolCalls = previous.seenToolCalls
 	view.seenToolResponses = previous.seenToolResponses
 	view.ambiguousToolCalls = previous.ambiguousToolCalls
+	view.toolEvents = previous.toolEvents
 	view.modelDenialShown = previous.modelDenialShown
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
@@ -1279,10 +1586,10 @@ func (a *App) sendHITL(ctx context.Context, base, agent string, previous *stream
 			Error  map[string]any `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
-			return nil, fmt.Errorf("invalid HITL stream: %w", err)
+			return view, fmt.Errorf("invalid HITL stream: %w", err)
 		}
 		if envelope.Error != nil {
-			return nil, fmt.Errorf("HITL decision: %v", envelope.Error)
+			return view, fmt.Errorf("HITL decision: %s", safeTerminal(fmt.Sprint(envelope.Error)))
 		}
 		if envelope.Result != nil {
 			view.consume(*envelope.Result, a.Out)
@@ -1290,25 +1597,29 @@ func (a *App) sendHITL(ctx context.Context, base, agent string, previous *stream
 		}
 		var event streamEvent
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
-			return nil, fmt.Errorf("invalid HITL event: %w", err)
+			return view, fmt.Errorf("invalid HITL event: %w", err)
 		}
 		view.consume(event, a.Out)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return view, err
 	}
 	if view.state == "working" || view.state == "submitted" {
 		if err := a.waitExistingTask(ctx, base, view); err != nil {
-			return nil, err
+			return view, err
 		}
 	}
 	if view.state != "completed" && view.approval == nil {
-		return nil, fmt.Errorf("HITL task ended in state %q", view.state)
+		return view, fmt.Errorf("HITL task ended in state %q", view.state)
+	}
+	if view.approvalErr != nil {
+		return view, view.approvalErr
 	}
 	return view, nil
 }
 
-func (a *App) showSessions(base string) error {
+func (a *App) showSessions(base string, renderer *chatRenderer) error {
+	renderer.finish()
 	resp, err := controllerRequest(context.Background(), http.MethodGet, base+"/api/sessions", nil)
 	if err != nil {
 		return err
@@ -1317,7 +1628,11 @@ func (a *App) showSessions(base string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("sessions answered HTTP %d", resp.StatusCode)
 	}
-	type sessionItem struct{ ID, Name, AgentID string }
+	type sessionItem struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		AgentID string `json:"agent_id"`
+	}
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
@@ -1327,14 +1642,19 @@ func (a *App) showSessions(base string) error {
 	var items []sessionItem
 	if err := json.Unmarshal(envelope.Data, &items); err != nil {
 		var wrapped struct {
-			Sessions []sessionItem `json:"sessions"`
+			Sessions json.RawMessage `json:"sessions"`
 		}
-		if err := json.Unmarshal(envelope.Data, &wrapped); err != nil {
+		if err := json.Unmarshal(envelope.Data, &wrapped); err != nil || len(wrapped.Sessions) == 0 {
 			return fmt.Errorf("sessions returned an unknown shape")
 		}
-		items = wrapped.Sessions
+		if err := json.Unmarshal(wrapped.Sessions, &items); err != nil {
+			return fmt.Errorf("sessions returned an invalid list: %w", err)
+		}
 	}
-	renderer := newChatRenderer(a.Out)
+	if len(items) == 0 {
+		renderer.operation("CHAT", "", colorBlue, "Sessions: none")
+		return nil
+	}
 	for _, item := range items {
 		agent := strings.ReplaceAll(strings.TrimPrefix(item.AgentID, "kagent__NS__"), "_", "-")
 		renderer.block("SESSION "+safeTerminal(item.ID), colorBlue, "Agent: "+safeTerminal(agent)+"\nName: "+safeTerminal(item.Name))
@@ -1342,7 +1662,8 @@ func (a *App) showSessions(base string) error {
 	return nil
 }
 
-func (a *App) showSessionHistory(base, id, agent, toolMode string) error {
+func (a *App) showSessionHistory(base, id, agent, toolMode string, renderer *chatRenderer) error {
+	renderer.finish()
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("session ID is empty")
 	}
@@ -1373,8 +1694,9 @@ func (a *App) showSessionHistory(base, id, agent, toolMode string) error {
 		return fmt.Errorf("session belongs to %s, not %s", safeTerminal(envelope.Data.Session.AgentID), safeTerminal(agent))
 	}
 	sort.SliceStable(envelope.Data.Events, func(i, j int) bool { return envelope.Data.Events[i].CreatedAt < envelope.Data.Events[j].CreatedAt })
-	renderer := newChatRenderer(a.Out)
+	defer renderer.finish()
 	renderer.block("HISTORY", colorBlue, "Agent: "+safeTerminal(agent)+"\nSession: "+safeTerminal(id))
+	seenTools := map[string]bool{}
 	for _, wrapper := range envelope.Data.Events {
 		var event struct {
 			Author  string `json:"author"`
@@ -1383,10 +1705,12 @@ func (a *App) showSessionHistory(base, id, agent, toolMode string) error {
 				Parts []struct {
 					Text         string `json:"text"`
 					FunctionCall *struct {
+						ID   string
 						Name string
 						Args json.RawMessage
 					} `json:"function_call"`
 					FunctionResponse *struct {
+						ID       string
 						Name     string
 						Response json.RawMessage
 					} `json:"function_response"`
@@ -1411,14 +1735,25 @@ func (a *App) showSessionHistory(base, id, agent, toolMode string) error {
 					renderer.assistant(sender, part.Text, true)
 				}
 			}
-			if part.FunctionCall != nil {
+			callReplay, responseReplay := false, false
+			if part.FunctionCall != nil && part.FunctionCall.ID != "" {
+				encoded, _ := json.Marshal(part.FunctionCall)
+				key := sender + "\x00call\x00" + string(encoded)
+				callReplay, seenTools[key] = seenTools[key], true
+			}
+			if part.FunctionResponse != nil && part.FunctionResponse.ID != "" {
+				encoded, _ := json.Marshal(part.FunctionResponse)
+				key := sender + "\x00response\x00" + string(encoded)
+				responseReplay, seenTools[key] = seenTools[key], true
+			}
+			if part.FunctionCall != nil && !callReplay {
 				if toolMode == "verbose" {
 					renderer.assistantOperation(agent, "TOOL CALL", part.FunctionCall.Name, colorMagenta, "Status: called\nArguments:\n"+indentPayload(truncatePayload(string(part.FunctionCall.Args), 16<<10)))
 				} else if toolMode == "summary" {
 					renderer.assistantOperation(agent, "TOOL CALL", part.FunctionCall.Name, colorMagenta, "Status: called")
 				}
 			}
-			if part.FunctionResponse != nil {
+			if part.FunctionResponse != nil && !responseReplay {
 				if toolMode == "verbose" {
 					renderer.assistantOperation(agent, "TOOL RESULT", part.FunctionResponse.Name, colorMagenta, "Status: result\nPayload:\n"+indentPayload(truncatePayload(string(part.FunctionResponse.Response), 16<<10)))
 				} else if toolMode == "summary" {
@@ -1494,19 +1829,21 @@ func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *cha
 	if modelResource.Status.ObservedGeneration != modelResource.Metadata.Generation || !accepted {
 		return fmt.Errorf("ModelConfig %q is not currently Accepted", model)
 	}
-	modelPosture := "direct, not Kaimahi-governed"
 	direct := true
 	if usesKaimahiModelProxy(modelResource.Spec) {
 		if !a.planeReady("kaimahi-proxy") {
 			return fmt.Errorf("agent uses %q but the Kaimahi plane is not Ready", model)
 		}
-		modelPosture = "governed by Kaimahi; plane Ready"
 		posture.modelGoverned = true
 		direct = false
 	}
-	renderer.statusSection("Model", "Name: "+safeTerminal(model)+"\nPosture: "+modelPosture)
+	renderer.statusModel(model, posture.modelGoverned)
 	if len(resource.Spec.Declarative.Tools) == 0 {
-		renderer.statusSection("Tools", "None")
+		if renderer.ui.Rich() {
+			renderer.statusSection("Tools", "none")
+		} else {
+			renderer.statusSection("Tools", "None")
+		}
 		if direct {
 			renderer.statusSection("Warning", "Model is direct. Kaimahi budgets and spend ledger do not apply.")
 		}

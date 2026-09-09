@@ -76,7 +76,19 @@ func (a *App) Credentials() error {
 // goes through the guard like every other mutation: the operator sees which
 // cluster's credential they are extending before it is extended.
 func (a *App) RenewCredential(name string, ttl *int64) error {
-	if err := a.Guard(fmt.Sprintf("EXTEND the expiry of credential %q", name), "kmx credential renew "+name); err != nil {
+	if err := admin.ValidCredentialName(name); err != nil {
+		return err
+	}
+	if err := admin.CheckCredentialTTL(ttl); err != nil {
+		return err
+	}
+	args := []string{"credential", "renew", name}
+	lifetime := "the plane's default lifetime"
+	if ttl != nil {
+		lifetime = fmt.Sprintf("%d seconds", *ttl)
+		args = append(args, "--ttl", fmt.Sprint(*ttl))
+	}
+	if err := a.Guard(fmt.Sprintf("EXTEND the expiry of credential %q by renewing for %s", name, lifetime), a.operationCommand(args...)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {

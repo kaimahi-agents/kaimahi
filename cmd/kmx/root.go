@@ -34,6 +34,7 @@ type commandState struct {
 	deps        dependencies
 	contextFlag string
 	app         *app.App
+	argv        []string
 }
 
 func (s *commandState) application() (*app.App, error) {
@@ -60,7 +61,7 @@ func execute(argv []string, deps dependencies) error {
 			return err
 		}
 	}
-	state := &commandState{deps: deps, contextFlag: contextFlag}
+	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...)}
 	root := newRootCommand(state)
 	root.SetArgs(argv)
 	return root.Execute()
@@ -100,8 +101,28 @@ func appRun(state *commandState, fn func(*app.App) error) func(*cobra.Command, [
 		if err != nil {
 			return err
 		}
+		// Chat slash commands are separate operations; replaying the outer chat
+		// command would not repeat the mutation they are asking to confirm.
+		if cmd.Name() != "chat" && len(state.argv) > 0 {
+			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
+				"CRED=" + quoteShell(a.Cfg.Credential), "CRED_TOOLS=" + quoteShell(a.Cfg.ToolsCredential),
+				"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
+			for _, arg := range state.argv {
+				parts = append(parts, quoteShell(arg))
+			}
+			a.InvocationCommand = strings.Join(parts, " ")
+		}
 		return fn(a)
 	}
+}
+
+func quoteShell(value string) string {
+	if value != "" && strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_@%+=:,./-", r))
+	}) < 0 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func usageArgs(min, max int, usage string) cobra.PositionalArgs {

@@ -67,7 +67,11 @@ func (a *App) Lift(opt lift.Options) error {
 	// Say what will happen and where BEFORE it happens. The target is a cloud
 	// subscription; this is not optional and it is not conditional on the
 	// operator having asked for it.
-	fmt.Fprint(a.Err, opt.Banner(acct.User.Name, acct.Name))
+	banner := opt.Banner(acct.User.Name, acct.Name)
+	if !opt.Observability {
+		banner = strings.ReplaceAll(banner, lift.StepPurpose["verify"], "the agent answers through the plane, and its ledger can be read (Azure telemetry not checked)")
+	}
+	fmt.Fprint(a.Err, banner)
 	if opt.Plan {
 		// The only thing contacted was the CLI's own account, to fill in the
 		// two lines above that say WHERE this would land. Nothing was
@@ -114,11 +118,16 @@ func (a *App) Lift(opt lift.Options) error {
 	started := a.timeNow()
 	for i, step := range steps {
 		p := phase{current: i + 1, total: len(steps), name: lift.StepPurpose[step]}
+		if step == "verify" && !opt.Observability {
+			p.name = "the agent answers through the plane, and its ledger can be read"
+		}
 		err := a.runPhase(p, func() error { return a.liftStep(step, opt, record, save, work) })
 		if err != nil {
+			resume := opt
+			resume.Step = step
 			fmt.Fprintf(a.Err, "\nkmx lift: stopped at %q. Nothing before it is undone, and every\n"+
-				"  phase is re-runnable, so fix the cause and resume with:\n\n    kmx lift --step %s %s\n\n",
-				step, step, liftIdentityFlags(opt))
+				"  phase is re-runnable, so fix the cause and resume with:\n\n    %s\n\n",
+				step, a.liftCommand(resume, false))
 			return err
 		}
 	}
@@ -129,8 +138,11 @@ func (a *App) Lift(opt lift.Options) error {
 	// paper over.
 	if opt.Step != "" {
 		a.complete("Phase "+opt.Step+" finished", started)
-		fmt.Fprintf(a.Err, "\n  That was one phase. The rest, in order: %s\n\n    kmx lift %s\n\n",
-			strings.Join(remainingSteps(opt), ", "), liftIdentityFlags(opt))
+		full := opt
+		full.Step = ""
+		fmt.Fprintf(a.Err, "\n  That was one phase. The later phases, in order: %s\n"+
+			"  Other phases were not checked by this invocation. To re-run the full lift:\n\n    %s\n\n",
+			strings.Join(remainingSteps(opt), ", "), a.liftCommand(full, false))
 		return nil
 	}
 	a.complete("The agent is running on a managed cluster", started)
@@ -195,7 +207,7 @@ func (a *App) liftDependencies(opt lift.Options) []dependency {
 // the session, and it fails closed with no TTY — a cloud subscription is not
 // somewhere to act unattended on an unanswered question.
 func (a *App) confirmLift(opt lift.Options) error {
-	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s kmx lift %s", opt.Cluster, liftIdentityFlags(opt))
+	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", shellArg(opt.Cluster), a.liftCommand(opt, false))
 	if c := strings.TrimSpace(a.Cfg.Confirm); c != "" {
 		if c == opt.Cluster {
 			fmt.Fprintln(a.Err, "kmx lift: confirmed via KAIMAHI_CONFIRM.")
@@ -216,11 +228,42 @@ func (a *App) confirmLift(opt lift.Options) error {
 // liftIdentityFlags rebuilds the flags that say WHICH lift this is, so every
 // message that suggests a command suggests a complete one.
 func liftIdentityFlags(opt lift.Options) string {
-	flags := []string{"--resource-group " + opt.ResourceGroup, "--cluster " + opt.Cluster, "--registry " + opt.Registry}
+	flags := []string{"--resource-group " + shellArg(opt.ResourceGroup), "--cluster " + shellArg(opt.Cluster), "--registry " + shellArg(opt.Registry)}
 	if opt.BringYourOwn {
 		flags = append([]string{"--byo"}, flags...)
 	}
 	return strings.Join(flags, " ")
+}
+
+// liftCommand preserves the effective options without carrying provisioning
+// flags onto the separate down command. Lift always targets the named cluster,
+// including when confirmation fails before aimAtTheCluster has run.
+func (a *App) liftCommand(opt lift.Options, down bool) string {
+	target := *a
+	cfg := *a.Cfg
+	target.Cfg = &cfg
+	target.aimAtTheCluster(opt)
+	args := []string{"lift"}
+	if down {
+		args = append(args, "down")
+	} else {
+		opt = withLiftDefaults(opt)
+		if opt.Step != "" {
+			args = append(args, "--step", opt.Step)
+		}
+		args = append(args, fmt.Sprintf("--observability=%t", opt.Observability))
+		for _, flag := range []struct{ name, value string }{
+			{"--location", opt.Location}, {"--node-size", opt.NodeSize}, {"--network-policy", opt.NetworkPolicy},
+		} {
+			if flag.value != "" || flag.name == "--network-policy" && opt.NetworkPolicySet {
+				args = append(args, flag.name, flag.value)
+			}
+		}
+		if opt.NodeCount != 0 {
+			args = append(args, "--node-count", fmt.Sprint(opt.NodeCount))
+		}
+	}
+	return target.operationCommand(args...) + " " + liftIdentityFlags(opt)
 }
 
 // liftWorkspace writes the scripts and manifests the managed path needs into

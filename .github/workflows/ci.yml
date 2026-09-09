@@ -3848,7 +3848,7 @@ jobs:
         run: |
           make chat AGENT=ap-agent \
             TASK='Call invoice_get for invoice INV-88134 and report its total.' | tee ap-chat.out
-          python3 scripts/verify-chat.py ap-chat.out invoice_get 'Expedited handling'
+          python3 scripts/verify-chat.py --tool-path ap-chat.out invoice_get 'Expedited handling'
           make ap-audit | tee ap-audit-3.out
           grep -E 'ap-agent +erp +tools/call +invoice_get +allowed +200' ap-audit-3.out
       - name: Cluster state on failure
@@ -3953,7 +3953,7 @@ jobs:
           grep -q 'COMPLETE  An agent answered' quickstart.out
           # The ungoverned state must be stated, not left to be inferred
           # from an empty ledger.
-          grep -q 'UNGOVERNED' quickstart.out
+          grep -q 'This command does not enable governance' quickstart.out
           # The three tools were fetched by kmx, not installed by the job.
           for t in kind kubectl helm; do
             grep -q "fetching $t v" quickstart.out
@@ -3976,7 +3976,7 @@ jobs:
           # a parser, not a person.
           head -c 1 quickstart.json | grep -q '{'
           python3 - <<'EOF'
-          import json, sys
+          import json, shlex, sys
           r = json.load(open("quickstart.json"))
           assert r["ok"] is True, r
           assert r["governed"] is False, "the fast path must not claim governance"
@@ -3984,7 +3984,11 @@ jobs:
           assert r["agent"] == "hello-world", r
           assert r["context"] == "kind-kmx-quickstart", r
           assert r["elapsed_seconds"] > 0, r
-          assert any(n.startswith("kmx plane") for n in r["next"]), r["next"]
+          commands = [shlex.split(n) for n in r["next"]]
+          plane = next((argv for argv in commands if argv[-1:] == ["plane"]), None)
+          assert plane is not None, r["next"]
+          assert plane[:2] == ["KIND_CLUSTER=kmx-quickstart", "CONTAINER_ENGINE=docker"], plane
+          assert plane[2:] == ["kmx", "--context", r["context"], "plane"], plane
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
       # The docs promise that `kmx up` afterwards brings back what quickstart

@@ -76,7 +76,9 @@ func (a *App) liftBoundary(opt lift.Options, work string) error {
 	}
 	a.notef("policy engine %q reported by the control plane — present, which is not yet enforced", engine)
 
-	if err := a.Guard("deploy the network boundary and the ledger", "kmx lift --step boundary "+liftIdentityFlags(opt)); err != nil {
+	resume := opt
+	resume.Step = "boundary"
+	if err := a.Guard("deploy the network boundary and the ledger", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
 
@@ -120,7 +122,7 @@ func (a *App) liftBoundary(opt lift.Options, work string) error {
   Remove what was created with:
     kubectl --context %s delete namespace %s
 
-  underlying failure: %w`, a.Cfg.KubeContext, admin.Namespace, err)
+  underlying failure: %w`, shellArg(a.Cfg.KubeContext), admin.Namespace, err)
 	}
 	return nil
 }
@@ -159,6 +161,7 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 		// may already have, and presence lets the plane start correctly.
 		return fmt.Errorf("cannot tell whether the model credential %s exists (refusing to guess): %w", copilotSecret, err)
 	}
+	opt.Step = "credential"
 	return fmt.Errorf(`the managed path needs a model credential, and kmx does not capture one.
 
   A managed cluster runs a hosted model — there is no local model server on
@@ -166,7 +169,7 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
   the upstream credentials kmx can check a value against, so kmx will not
   store one and this step is yours:
 
-    make plane-copilot-secret        # from a checkout of this repository
+    TARGET=aks KUBE_CTX=%s make plane-copilot-secret        # from a checkout of this repository
 
   It reads the token on the terminal and writes it straight into the Secret
   %s in the %s namespace. Nothing else about the lift needs a
@@ -174,7 +177,7 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 
   Then resume where this stopped — nothing before it is undone:
 
-    kmx lift --step plane %s`, copilotSecret, admin.Namespace, liftIdentityFlags(opt))
+    %s`, shellArg(a.Cfg.KubeContext), copilotSecret, admin.Namespace, a.liftCommand(opt, false))
 }
 
 // liftPlane builds the plane's image IN Azure and deploys it from the private
@@ -187,7 +190,9 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 // one, and otherwise the same fetched-and-packaged context the local path
 // builds, produced by the same code.
 func (a *App) liftPlane(opt lift.Options, work string) error {
-	if err := a.Guard("deploy the governance plane", "kmx lift --step plane "+liftIdentityFlags(opt)); err != nil {
+	resume := opt
+	resume.Step = "plane"
+	if err := a.Guard("deploy the governance plane", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
 	image := planeRegistryImage(opt.Registry)
@@ -282,7 +287,9 @@ func planeRegistryImage(registry string) string {
 // no model at all. Governing immediately after applying is what makes the
 // managed cluster's first chat a governed one.
 func (a *App) liftAgents(opt lift.Options) error {
-	if err := a.Guard("create the agents", "kmx lift --step agents "+liftIdentityFlags(opt)); err != nil {
+	resume := opt
+	resume.Step = "agents"
+	if err := a.Guard("create the agents", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
 	for _, name := range []string{"hello-world.yaml", "tools-agent.yaml", "kaimahi-tools.yaml"} {
@@ -326,7 +333,7 @@ func (a *App) applyManaged(work, name string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (embedded %s)\n", a.Cfg.KubeContext, name)
+	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (embedded %s)\n", shellArg(a.Cfg.KubeContext), name)
 	quiet := *a.Run
 	quiet.Echo = false
 	return quiet.RunStdin(body, "kubectl", a.kubectl("apply", "-f", "-")...)

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -65,6 +67,12 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print raw A2A task")
 	cmd.Flags().BoolVar(&interactive, "interactive", false, "keep one streamed session open")
 	cmd.Flags().StringVar(&session, "session", "", "resume this kagent session")
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		if interactive && asJSON {
+			return fmt.Errorf("--interactive and --json cannot be used together")
+		}
+		return nil
+	}
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()

@@ -3,6 +3,8 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,6 +31,8 @@ func TestParseCap(t *testing.T) {
 		{in: "1.5", bad: true},
 		{in: "1e6", bad: true},
 		{in: "abc", bad: true},
+		{in: "9223372036854775807", want: ptr(math.MaxInt64)},
+		{in: "9223372036854775808", bad: true},
 		// A cap is interpolated into a JSON body; a value that smuggles
 		// structure must not reach it.
 		{in: "1, \"cap_tokens\": 9", bad: true},
@@ -69,6 +73,14 @@ func TestParseTTL(t *testing.T) {
 		{in: "-5m", bad: true},
 		{in: "5w", bad: true},
 		{in: "5 m", bad: true},
+		{in: "0", bad: true},
+		{in: "0d", bad: true},
+		{in: "+1", bad: true},
+		{in: "9223372036854775807", want: ptr(math.MaxInt64)},
+		{in: "153722867280912930m", want: ptr(9223372036854775800)},
+		{in: "153722867280912931m", bad: true},
+		{in: "9223372036854775807d", bad: true},
+		{in: "9223372036854775808", bad: true},
 	} {
 		got, err := ParseTTL(tc.in)
 		if tc.bad {
@@ -160,6 +172,39 @@ func TestApproveRefusesAnUnboundedGrant(t *testing.T) {
 	}
 	if called {
 		t.Error("the unbounded approval reached the admin API")
+	}
+}
+
+func TestApprovalAndCredentialNumericBounds(t *testing.T) {
+	for _, tc := range []struct {
+		what string
+		max  int64
+	}{{"uses", 1_000_000}, {"amount", 1_000_000_000_000}} {
+		for _, n := range []int64{-1, 0, tc.max + 1, math.MaxInt64} {
+			if _, err := ParseCap(tc.what, fmt.Sprint(n)); err == nil {
+				t.Errorf("%s=%d accepted", tc.what, n)
+			}
+		}
+		for _, n := range []int64{1, tc.max} {
+			if _, err := ParseCap(tc.what, fmt.Sprint(n)); err != nil {
+				t.Errorf("%s=%d refused: %v", tc.what, n, err)
+			}
+		}
+	}
+	for _, ttl := range []int64{-1, 0, 2592001, math.MaxInt64} {
+		if err := CheckBounds(ptr(ttl), ptr(1)); err == nil {
+			t.Errorf("approval ttl=%d accepted", ttl)
+		}
+	}
+	for _, ttl := range []int64{-1, 0, 59, 31536001, math.MaxInt64} {
+		if err := CheckCredentialTTL(ptr(ttl)); err == nil {
+			t.Errorf("credential ttl=%d accepted", ttl)
+		}
+	}
+	for _, ttl := range []int64{60, 31536000} {
+		if err := CheckCredentialTTL(ptr(ttl)); err != nil {
+			t.Errorf("credential ttl=%d refused: %v", ttl, err)
+		}
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
 // ListAgents prints the Agent resources kmx can chat with. Structured modes
@@ -32,12 +34,17 @@ func (a *App) ListAgents(output string) error {
 		return fmt.Errorf("agents returned invalid JSON: %w", err)
 	}
 	rows := agentListRows(agents.Items)
-	fmt.Fprintln(a.Out, "Agents")
+	ui := cliui.New(a.Out)
+	if ui.Rich() {
+		fmt.Fprintln(a.Out, ui.Report("Agents", []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState))
+		return nil
+	}
+	fmt.Fprintln(a.Out, ui.Heading("Agents"))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
 		return nil
 	}
-	table(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows)
+	humanTable(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows)
 	return nil
 }
 

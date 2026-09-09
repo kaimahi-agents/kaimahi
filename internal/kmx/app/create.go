@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -152,21 +153,21 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 			a.noteBYO(opt.Image, governance, placement, identity)
 		}
 		if !governed {
-			a.notef("WARNING: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
-				"         `kmx plane` then `kmx govern` puts the plane in front of an agent.", modelConfig)
+			a.notef("%s: %q is ungoverned — no budget, no ledger, no audit in front of it.\n"+
+				"         `kmx plane` then `kmx govern` puts the plane in front of an agent.", a.presenter().Warning("WARNING"), modelConfig)
 		}
 		if opt.Image != "" {
 			// NOT the declarative report. A BYO manifest carries no
 			// toolNames, so "agent allowlist only" would name an allowlist
 			// that is not in the document — a governance claim about a
 			// control that does not exist.
-			a.notef("CAPABILITIES\n  Tools: whatever the image reaches for; kmx cannot enumerate them.\n" +
-				"  Governance: the gateway is the only control, and only for calls the\n" +
-				"  image actually sends through KAIMAHI_MCP_URL. `kmx audit tool` is the evidence.")
+			a.notef("%s\n  Tools: whatever the image reaches for; kmx cannot enumerate them.\n"+
+				"  Governance: the gateway is the only control, and only for calls the\n"+
+				"  image actually sends through KAIMAHI_MCP_URL. `kmx audit tool` is the evidence.", a.presenter().Heading("CAPABILITIES"))
 		} else if tools == nil {
-			a.notef("CAPABILITIES\n  Tools: none\n  Add later: kmx agent create <name> --tools <server>:<tool>[,<tool>...]")
+			a.notef("%s\n  Tools: none\n  Add later: kmx agent create <name> --tools <server>:<tool>[,<tool>...]", a.presenter().Heading("CAPABILITIES"))
 		} else {
-			a.notef("CAPABILITIES\n  Tools: %s via %s\n  Governance: agent allowlist only; no gateway audit until `kmx tools govern`", strings.Join(tools.Tools, ", "), tools.Server)
+			a.notef("%s\n  Tools: %s via %s\n  Governance: agent allowlist only; no gateway audit until `kmx tools govern`", a.presenter().Heading("CAPABILITIES"), strings.Join(tools.Tools, ", "), tools.Server)
 		}
 		return nil
 	}); err != nil {
@@ -180,7 +181,12 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		}
 		a.complete(label, started)
 		if path != "-" {
-			a.notef("\nNEXT  Review it, then:\n  kubectl --context %s apply -f %s", a.Cfg.KubeContext, path)
+			ui := cliui.New(a.Err)
+			if ui.Rich() {
+				a.notef("\n%s", ui.Actions("Next", []cliui.Action{{Label: "Review and apply", Command: fmt.Sprintf("kubectl --context %s apply -f %s", shellArg(a.Cfg.KubeContext), shellArg(path))}}))
+			} else {
+				a.notef("\nNEXT  Review it, then:\n  kubectl --context %s apply -f %s", shellArg(a.Cfg.KubeContext), shellArg(path))
+			}
 		}
 		return nil
 	}
@@ -221,7 +227,12 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		return err
 	}
 	a.complete(fmt.Sprintf("Agent %q ready", opt.Name), started)
-	a.notef("\nNEXT  kmx agent chat --interactive %s", opt.Name)
+	ui := cliui.New(a.Err)
+	if ui.Rich() {
+		a.notef("\n%s", ui.Actions("Next", []cliui.Action{{Label: "Start an interactive chat", Command: a.operationCommand("agent", "chat", "--interactive", opt.Name)}}))
+	} else {
+		a.notef("\nNEXT  %s", a.operationCommand("agent", "chat", "--interactive", opt.Name))
+	}
 	return nil
 }
 
@@ -369,7 +380,7 @@ func (a *App) preflightModelConfig(name, namespace string) error {
 	return fmt.Errorf("ModelConfig %q does not exist in namespace %s.\n"+
 		"  The API server would accept the Agent and then never reconcile it, silently.\n"+
 		"  Existing presets:  kubectl --context %s -n %s get modelconfigs%s",
-		name, namespace, a.Cfg.KubeContext, namespace, extra)
+		name, namespace, shellArg(a.Cfg.KubeContext), shellArg(namespace), extra)
 }
 
 // noteBYO says what a bring-your-own agent got and — the part that matters —

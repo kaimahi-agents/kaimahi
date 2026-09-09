@@ -27,11 +27,14 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
@@ -75,6 +78,17 @@ func (a *App) ListWorkflows() error {
 	if err != nil {
 		return err
 	}
+	ui := cliui.New(a.Out)
+	if ui.Rich() {
+		rows := make([][]string, 0, len(bundles))
+		for _, b := range bundles {
+			rows = append(rows, []string{b.Name, b.Summary})
+		}
+		fmt.Fprintln(a.Out, ui.Heading("Workflows"))
+		fmt.Fprintln(a.Out, ui.Table([]string{"NAME", "SUMMARY"}, rows))
+		fmt.Fprintf(a.Out, "\n%s\n", ui.Actions("Your workflow", []cliui.Action{{Label: "Review a blueprint file", Command: "kmx workflow show --file ./my-workflow.yaml"}}))
+		return nil
+	}
 	for _, b := range bundles {
 		fmt.Fprintf(a.Out, "%-12s %s\n", b.Name, b.Summary)
 	}
@@ -98,8 +112,12 @@ func (a *App) ShowWorkflow(name string, opt WorkflowOptions) error {
 	// only get by running it would be a poor way in.
 	values, err := b.Bind(opt.Set, nil)
 	if err != nil {
-		// A `show` with no parameters at all is a legitimate thing to
-		// want: it is how an operator finds out what the parameters ARE.
+		var binding *blueprint.BindingError
+		if !errors.As(err, &binding) || binding.Invalid {
+			return err
+		}
+		// Missing parameters alone are an exploratory review, even when
+		// some valid values were supplied. Invalid input is never success.
 		fmt.Fprintf(a.Out, "%s\n\n%s\n\n%v\n\n", b.Name, b.Summary, err)
 		return a.describeParameters(b)
 	}
@@ -379,7 +397,7 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 			"deploy/kaimahi-proxy", "--timeout=60s"); err != nil {
 			a.notef("WARNING: the bounds on the cluster match this blueprint, but the proxy's rollout is not")
 			a.notef("  complete (%v). If an earlier run failed while rolling, the plane may still be enforcing", err)
-			a.notef("  the PREVIOUS table. Force one with: kmx workflow govern … --replace")
+			a.notef("  the PREVIOUS table. Force one with: %s --replace", a.workflowCommand("govern", b.Name, opt))
 		}
 	}
 
@@ -404,15 +422,22 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 		strings.Join(seams, " and "), verb, pronoun)
 	a.notef("  - the credential %q and its Secret. That is `kmx tools govern`.", b.Credential)
 	a.notef("  - any credential material at all.")
-	// Named the way the operator named it: a `--file` blueprint has no
-	// name kmx can resolve, and telling them to type one that will not
-	// work is worse than saying nothing.
-	how := b.Name
-	if opt.File != "" {
-		how = "--file " + opt.File
-	}
-	a.notef("Run it with: kmx workflow run %s --dry-run …", how)
+	a.notef("Run it with: %s --dry-run", a.workflowCommand("run", b.Name, opt))
+	a.notef("Supply any additional step parameters reported as missing before running live.")
 	return nil
+}
+
+func (a *App) workflowCommand(verb, name string, opt WorkflowOptions) string {
+	args := []string{"workflow", verb}
+	if opt.File != "" {
+		args = append(args, "--file", opt.File)
+	} else {
+		args = append(args, name)
+	}
+	for _, key := range sortedKeys(opt.Set) {
+		args = append(args, "--set", key+"="+opt.Set[key])
+	}
+	return a.operationCommand(args...)
 }
 
 // checkCredential is the assertion a blueprint makes about the plane's

@@ -187,7 +187,7 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 	defer os.RemoveAll(dir)
 	run.dir = dir
 
-	a.notef("workflow %s — %s", b.Name, b.Summary)
+	a.notef("%s", a.presenter().Heading(fmt.Sprintf("workflow %s — %s", b.Name, b.Summary)))
 	a.notef("source: %s", b.Source)
 	if opt.DryRun {
 		a.notef("--dry-run: the agent will read and draft, and stop before the first call with consequences.")
@@ -327,7 +327,7 @@ func (r *workflowRun) do(s blueprint.RenderedStep) error {
 
 func (r *workflowRun) turnStep(s blueprint.RenderedStep) error {
 	r.app.notef("")
-	r.app.notef("== %s (%s)", s.Label, s.Kind)
+	r.app.notef("%s", r.app.presenter().Heading(fmt.Sprintf("== %s (%s)", s.Label, s.Kind)))
 	reply, err := r.turn(s)
 	if err != nil {
 		return err
@@ -382,6 +382,9 @@ func (r *workflowRun) turn(s blueprint.RenderedStep) (string, error) {
 	if !renderChat(r.app.Out, out) {
 		fmt.Fprintln(r.app.Out, out)
 	}
+	if status != 0 {
+		return "", fmt.Errorf("step %q: kagent invoke exited %d", s.Label, status)
+	}
 	line := lastJSONLine(out)
 	if line == "" {
 		return "", fmt.Errorf("step %q: the agent's turn did not complete with a task (exit %d)", s.Label, status)
@@ -400,7 +403,7 @@ func (r *workflowRun) turn(s blueprint.RenderedStep) (string, error) {
 
 func (r *workflowRun) pollStep(s blueprint.RenderedStep) error {
 	r.app.notef("")
-	r.app.notef("== %s — watching, up to %ds, every %ds", s.Label, s.Poll.TimeoutSeconds, s.Poll.IntervalSeconds)
+	r.app.notef("%s", r.app.presenter().Heading(fmt.Sprintf("== %s — watching, up to %ds, every %ds", s.Label, s.Poll.TimeoutSeconds, s.Poll.IntervalSeconds)))
 	deadline := time.Now().Add(time.Duration(s.Poll.TimeoutSeconds) * time.Second)
 	for time.Now().Before(deadline) {
 		if err := r.refreshFor(s); err != nil {
@@ -431,7 +434,7 @@ func (r *workflowRun) pollStep(s blueprint.RenderedStep) error {
 		time.Sleep(time.Duration(s.Poll.IntervalSeconds) * time.Second)
 	}
 	return fmt.Errorf("step %q: still running after %ds. Not claiming a result the tools did not report; "+
-		"resume with --step %s to keep waiting", s.Label, s.Poll.TimeoutSeconds, s.Name)
+		"resume with --step %s to keep waiting:\n  %s", s.Label, s.Poll.TimeoutSeconds, s.Name, r.resumeCommand(s.Name))
 }
 
 // hasMarker looks for the terminal marker on a line of its own, which is
@@ -455,7 +458,7 @@ func hasMarker(reply, marker string) bool {
 // not the posture the blueprint declared.
 func (r *workflowRun) boundedStep(s blueprint.RenderedStep) error {
 	r.app.notef("")
-	r.app.notef("== %s — bounded: %s", s.Label, s.Summary())
+	r.app.notef("%s", r.app.presenter().Heading(fmt.Sprintf("== %s — bounded: %s", s.Label, s.Summary())))
 	if r.opt.DryRun {
 		r.app.notef("--dry-run: stopping before the first call with consequences.")
 		return errDryRunStop
@@ -486,7 +489,7 @@ func (r *workflowRun) boundedStep(s blueprint.RenderedStep) error {
 // consequentialStep is the governed shape.
 func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	r.app.notef("")
-	r.app.notef("== Proposing: %s", s.Summary())
+	r.app.notef("%s", r.app.presenter().Warning(fmt.Sprintf("== Proposing: %s", s.Summary())))
 	if r.opt.DryRun {
 		r.app.notef("--dry-run: stopping before the first call with consequences. Nothing was created.")
 		return errDryRunStop
@@ -500,7 +503,7 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	}
 	if live {
 		return fmt.Errorf("%s already carries a LIVE grant on %q. This run would spend an approval somebody "+
-			"gave earlier, for a call this run did not describe. Let it lapse, or deny it, and start again",
+			"gave earlier, for a call this run did not describe. Wait for it to expire or be exhausted before starting again; denying a pending request does not revoke a live grant",
 			s.Tool, r.bundle.Credential)
 	}
 
@@ -530,11 +533,11 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	// the one whose summary names every policy-relevant field of the
 	// call the operator asked for. A selector less specific than that
 	// could match a request a human then approves by mistake.
-	id, err := r.pendingRequest(s)
+	id, digest, err := r.pendingRequest(s)
 	if err != nil {
 		return err
 	}
-	r.app.notef("Filed as request %s. What a human is asked is the CALL:", id)
+	r.app.notef("%s", r.app.presenter().Warning(fmt.Sprintf("Filed as request %s. What a human is asked is the CALL:", id)))
 	r.app.notef("  %s", s.Summary())
 	// The run's one banner is minutes and several steps back by now. The
 	// cluster is half of what a person is being asked to approve, so it
@@ -542,25 +545,32 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	r.app.notef("  on cluster:  %s", r.app.Cfg.KubeContext)
 	if s.Ungoverned != "" {
 		r.app.notef("")
-		r.app.notef("NOTE: this step's ACTION is not governed by the plane.")
+		r.app.notef("%s this step's ACTION is not governed by the plane.", r.app.presenter().Warning("NOTE:"))
 		for _, line := range strings.Split(strings.TrimRight(wrap(s.Ungoverned, 76), "\n"), "\n") {
 			r.app.notef("  %s", line)
 		}
 	}
 	r.app.notef("")
-	r.app.notef("Approve it with:  kmx approve %s --uses 1 --ttl 10m", id)
-	r.app.notef("or from Slack:    @kaimahi approve %s uses=1 ttl=10m", shortID(id))
+	if r.opt.Approver == "" {
+		r.app.notef("%s  %s", r.app.presenter().Accent("Approve it with:"), r.app.operationCommand("approve", id, "--uses", "1", "--ttl", "10m"))
+	} else {
+		r.app.notef("Required approver: %s. Approve from that Slack account; CLI approval does not record this identity.", r.opt.Approver)
+	}
+	r.app.notef("From Slack connected to context %s: @kaimahi approve %s uses=1 ttl=10m", r.app.Cfg.KubeContext, id)
 
 	permit, err := r.awaitApproval(id, s.Tool)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w\n  To retry this step (only when no earlier grant is live): %s", err, r.resumeCommand(s.Name))
+	}
+	if permit.digest == "" || permit.digest != digest {
+		return fmt.Errorf("request %s and grant %s do not carry the same nonempty arg_digest; refusing to perform the call", id, permit.id)
 	}
 
 	before, err := r.newestFor(s.Tool)
 	if err != nil {
 		return err
 	}
-	r.app.notef("Approved — performing the call")
+	r.app.notef("%s", r.app.presenter().Success("Approved — performing the call"))
 	if s.Exec != nil {
 		// The DECISION was governed; the TRANSFER is this, and the plane
 		// will record nothing further — no metering, no tool-audit row.
@@ -583,8 +593,11 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 		return fmt.Errorf("%s was approved but the call was not admitted under the grant (%s %s). Nothing is "+
 			"being reported as done that the plane did not record", s.Tool, row.Decision, row.Detail)
 	}
-	r.app.notef("Admitted under the grant. The filed request and this row carry the same digest: the call a")
-	r.app.notef("human approved is provably the call that ran.")
+	if row.Digest == "" || row.Digest != digest {
+		return fmt.Errorf("%s has a granted audit row, but its arg_digest does not match the filed request and grant. The approved call is not verified", s.Tool)
+	}
+	r.app.notef("Admitted under a grant. The filed request, its grant and this audit row carry the same digest.")
+	r.app.notef("The approved policy-relevant arguments match the admitted call; downstream completion is not proven by admission.")
 	return nil
 }
 
@@ -604,6 +617,7 @@ type auditRow struct {
 	Decision string
 	Detail   string
 	Summary  string
+	Digest   string
 }
 
 // id is a row's identity, for telling "the call produced a new row" from
@@ -613,7 +627,7 @@ type auditRow struct {
 // would then report that a call which did happen produced no audit row
 // at all, failing a release for a paging artefact.
 func (a auditRow) id() string {
-	return a.Created + "|" + a.Decision + "|" + a.Detail + "|" + a.Summary
+	return a.Created + "|" + a.Decision + "|" + a.Detail + "|" + a.Summary + "|" + a.Digest
 }
 
 func (r *workflowRun) auditRows() ([]auditRow, error) {
@@ -635,6 +649,7 @@ func (r *workflowRun) auditRows() ([]auditRow, error) {
 			// It is the column `kmx audit tool` prints and CI greps.
 			Detail:  text(e["detail"]),
 			Summary: text(e["arg_summary"]),
+			Digest:  text(e["arg_digest"]),
 		})
 	}
 	return out, nil
@@ -692,10 +707,10 @@ func (r *workflowRun) liveGrant(tool string) (bool, error) {
 }
 
 // pendingRequest finds the request for THIS call, by its summary.
-func (r *workflowRun) pendingRequest(s blueprint.RenderedStep) (string, error) {
+func (r *workflowRun) pendingRequest(s blueprint.RenderedStep) (string, string, error) {
 	doc, err := r.client.Get("approvals", "/admin/approvals")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	raw, _ := json.Marshal(doc["pending"])
 	var requests []map[string]any
@@ -706,10 +721,17 @@ func (r *workflowRun) pendingRequest(s blueprint.RenderedStep) (string, error) {
 		if others := candidateSummaries(requests, r.bundle.Credential, s.Tool); len(others) > 0 {
 			found = "  What IS pending for that tool:\n    " + strings.Join(others, "\n    ")
 		}
-		return "", fmt.Errorf("the request for this call was not filed:\n    %s\n%s\n"+
+		return "", "", fmt.Errorf("the request for this call was not filed:\n    %s\n%s\n"+
 			"  Nothing has been approved and nothing was done.", s.Summary(), found)
 	}
-	return id, nil
+	for _, req := range requests {
+		if text(req["id"]) == id {
+			if digest, ok := req["arg_digest"].(string); ok && strings.TrimSpace(digest) != "" {
+				return id, digest, nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("request %s carries no arg_digest; refusing to proceed without an exact-call binding", id)
 }
 
 // selectRequest picks the pending request for one exact call.
@@ -777,8 +799,16 @@ func (r *workflowRun) awaitApproval(id, tool string) (grant, error) {
 		}
 		time.Sleep(5 * time.Second)
 	}
-	return grant{}, fmt.Errorf("nobody decided request %s within %ds. Nothing was done; resume with --step",
+	return grant{}, fmt.Errorf("nobody decided request %s within %ds. This step's action was not performed",
 		id, r.opt.HumanSeconds)
+}
+
+func (r *workflowRun) resumeCommand(step string) string {
+	command := r.app.workflowCommand("run", r.bundle.Name, r.opt.WorkflowOptions) + " --step " + shellArg(step)
+	if r.opt.Approver != "" {
+		command += " --approver " + shellArg(r.opt.Approver)
+	}
+	return command
 }
 
 func (r *workflowRun) stillPending(id string) (bool, error) {
@@ -1126,13 +1156,6 @@ func truthy(v any) bool {
 	default:
 		return false
 	}
-}
-
-func shortID(id string) string {
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
 }
 
 func containsString(list []string, want string) bool {

@@ -180,8 +180,8 @@ func TestFlowSaysItIsNotACausalTrace(t *testing.T) {
 func TestFlowTotalsCountRefusalsAndCents(t *testing.T) {
 	var out bytes.Buffer
 	renderFlow(&out, []flowEvent{
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m","status":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","model":"m","status":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m","status":200,"cost_source":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","model":"m","status":403,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","tool":"t","decision":"denied"}}`)["e"].(map[string]any), "tool"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","hook":"h","decision":"failed"}}`)["e"].(map[string]any), "inbound"),
 	}, nil)

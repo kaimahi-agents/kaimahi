@@ -71,7 +71,11 @@ func (a *App) CaptureCredential(opt CaptureOptions) error {
 	if err := a.requireTerminalForCredential(); err != nil {
 		return err
 	}
-	command := fmt.Sprintf("kmx credential capture %s %s", s.Name, opt.Subject)
+	args := []string{"credential", "capture", s.Name, opt.Subject}
+	if opt.Replace {
+		args = append(args, "--replace")
+	}
+	command := a.operationCommand(args...)
 	if err := a.Guard(fmt.Sprintf("store the %s credential as Secret %s/%s", s.Name, admin.Namespace, s.Secret),
 		command); err != nil {
 		return err
@@ -270,7 +274,11 @@ func (a *App) enableHostedUpstream(s *seam.Seam) error {
 	if err := a.apply("egress-hosted.yaml"); err != nil {
 		return err
 	}
-	if !a.kubectlQuiet("-n", admin.Namespace, "get", "deploy/kaimahi-proxy") {
+	_, err := a.kubectlCapture("-n", admin.Namespace, "get", "deploy/kaimahi-proxy", "-o", "name")
+	if err != nil {
+		if !strings.Contains(err.Error(), "Error from server (NotFound):") {
+			return fmt.Errorf("credential is stored, but cannot tell whether the proxy is deployed; restart was not performed: %w", err)
+		}
 		a.notef("The plane is not deployed here yet, so there is nothing to restart.\n" +
 			"The credential is stored and `kmx plane` will start with it:\n" +
 			"  kmx plane")

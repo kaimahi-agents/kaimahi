@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,45 @@ import (
 type sliceScanner struct {
 	values []string
 	index  int
+}
+
+func TestOperationCommandsRoundTripShellArguments(t *testing.T) {
+	a := &App{Cfg: &config.Config{KubeContext: "kind-team's $(false); test"}}
+	args := []string{"agent", "chat", "my-agent", "a 'quote' and $(false); $HOME", ""}
+	command := a.operationCommand(args...)
+	// Replace only the executable with a shell function, so the printed
+	// command is parsed exactly as a pasted next action would be.
+	out, err := exec.Command("sh", "-c", "kmx() { printf '%s\\000' \"$@\"; }; "+command).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join(append([]string{"--context", a.Cfg.KubeContext}, args...), "\x00") + "\x00"
+	if string(out) != want {
+		t.Fatalf("command %s produced %q, want %q", command, out, want)
+	}
+}
+
+func TestLocalOperationCommandsRetainClusterAndEngine(t *testing.T) {
+	a := &App{Cfg: &config.Config{KubeContext: "kind-custom", KindCluster: "custom", ContainerEngine: "podman"}}
+	for _, verb := range []string{"up", "plane", "down"} {
+		want := "KIND_CLUSTER=custom CONTAINER_ENGINE=podman kmx --context kind-custom " + verb
+		if got := a.operationCommand(verb); got != want {
+			t.Fatalf("%s action lost its target: %s", verb, got)
+		}
+	}
+}
+
+func TestCreateNoApplyQuotesContextAndManifestPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent's $(false).yaml")
+	var out, errOut bytes.Buffer
+	a := &App{Cfg: &config.Config{KubeContext: "kind-team's test"}, Out: &out, Err: &errOut}
+	if err := a.CreateAgent(CreateOptions{Name: "demo", ModelConfig: "hello-world-model", Out: path, NoApply: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := "kubectl --context " + shellArg(a.Cfg.KubeContext) + " apply -f " + shellArg(path)
+	if !strings.Contains(errOut.String(), want) {
+		t.Fatalf("unsafe apply hint: %s", errOut.String())
+	}
 }
 
 func (s *sliceScanner) Scan() bool {

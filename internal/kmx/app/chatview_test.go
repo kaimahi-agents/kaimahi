@@ -42,6 +42,22 @@ func TestRenderShowsTheReply(t *testing.T) {
 	}
 }
 
+func TestRenderSanitizesTerminalControlSequences(t *testing.T) {
+	task := `{"artifacts":[{"parts":[{"kind":"text","text":"safe\u001b]52;c;secret\u0007\u001b[2Jtext"}]}],"status":{"state":"working\u001b[2J"}}`
+	out, ok := render(t, task)
+	if !ok {
+		t.Fatal("task with a readable reply must render")
+	}
+	if strings.Contains(out, "\x1b") || strings.Contains(out, "secret") {
+		t.Fatalf("terminal control sequence survived human rendering: %q", out)
+	}
+	for _, want := range []string{"safetext", "state: working"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("sanitized output lacks %q: %q", want, out)
+		}
+	}
+}
+
 func TestRenderNamesToolsAndTokens(t *testing.T) {
 	out, ok := render(t, toolTask)
 	if !ok {

@@ -182,6 +182,15 @@ func (v Values) Ints(name string) []int64 { return v.ints[name] }
 // Strings returns a string_list parameter's values, or nil.
 func (v Values) Strings(name string) []string { return v.strs[name] }
 
+// BindingError keeps the complete diagnostic while distinguishing missing
+// parameters (useful for exploratory help) from invalid values or unknown keys.
+type BindingError struct {
+	Invalid bool
+	message string
+}
+
+func (e *BindingError) Error() string { return e.message }
+
 // Bind type-checks and resolves the operator's --set values against the
 // blueprint's declarations. `steps` is the steps that will actually run,
 // so a parameter `required_for` a step nobody asked for is not demanded.
@@ -197,9 +206,11 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 		supplied: map[string]bool{},
 	}
 	var problems []string
+	invalid := false
 
 	for _, name := range sortedKeys(set) {
 		if _, ok := b.Parameters[name]; !ok {
+			invalid = true
 			problems = append(problems, fmt.Sprintf("%q is not a parameter of blueprint %q (it declares: %s)",
 				name, b.Name, strings.Join(b.ParameterNames(), ", ")))
 		}
@@ -231,6 +242,7 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 		}
 		v.supplied[name] = true
 		if err := v.bindOne(name, p, raw); err != nil {
+			invalid = true
 			problems = append(problems, err.Error())
 		}
 	}
@@ -247,6 +259,7 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 		}
 		v.supplied[name] = true
 		if err := v.bindOne(name, p, raw); err != nil {
+			invalid = true
 			problems = append(problems, err.Error())
 		}
 	}
@@ -267,8 +280,8 @@ func (b *Blueprint) Bind(set map[string]string, steps []string) (Values, error) 
 
 	if len(problems) > 0 {
 		sort.Strings(problems)
-		return Values{}, fmt.Errorf("blueprint %q: %d parameter problem(s):\n  - %s",
-			b.Name, len(problems), strings.Join(problems, "\n  - "))
+		return Values{}, &BindingError{Invalid: invalid, message: fmt.Sprintf("blueprint %q: %d parameter problem(s):\n  - %s",
+			b.Name, len(problems), strings.Join(problems, "\n  - "))}
 	}
 	return v, nil
 }

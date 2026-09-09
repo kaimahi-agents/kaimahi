@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
 // The flow view: one credential's four audit trails merged into a single
@@ -58,15 +60,16 @@ type cutoff struct {
 // flowEvent is one thing that happened, flattened out of whichever trail
 // recorded it so the four can be sorted together.
 type flowEvent struct {
-	at      time.Time // parsed for ordering
-	raw     string    // as the plane sent it, for printing
-	cred    string    // which identity did this; every trail records it
-	kind    string    // inbound | model | tool | approval
-	what    string
-	outcome string
-	cents   string
-	detail  string
-	denied  bool
+	at          time.Time // parsed for ordering
+	raw         string    // as the plane sent it, for printing
+	cred        string    // which identity did this; every trail records it
+	kind        string    // inbound | model | tool | approval
+	what        string
+	outcome     string
+	cents       string
+	detail      string
+	plainDetail string
+	denied      bool
 }
 
 // Flow prints one credential's merged trail, oldest first.
@@ -197,30 +200,34 @@ func flowEventFrom(r map[string]any, kind string) flowEvent {
 
 	switch kind {
 	case "model":
-		e.what = trunc(str(r["model"]), 28)
+		e.what = str(r["model"])
 		e.outcome = str(r["status"])
 		e.cents = str(r["cost_cents"])
-		e.detail = joinDetail(fmt.Sprintf("%s in / %s out via %s",
+		base := joinDetail(fmt.Sprintf("%s in / %s out via %s",
 			str(r["input_tokens"]), str(r["output_tokens"]), str(r["upstream"])), calledBy(r))
 		// 'denied' in the ledger means the call was never forwarded.
-		e.denied = str(r["status"]) == "denied"
+		e.denied = str(r["cost_source"]) == "denied"
+		e.plainDetail = base
+		e.detail = joinDetail(base, str(r["cost_source"]))
 
 	case "tool":
 		name := str(r["tool"])
 		if name == "" {
 			name = str(r["method"]) // tools/list and friends name no tool
 		}
-		e.what = trunc(name, 28)
+		e.what = name
 		e.outcome = str(r["decision"])
-		e.detail = joinDetail("upstream "+str(r["status"]), call(r))
-		if str(r["status"]) == "" || str(r["status"]) == "0" {
-			e.detail = call(r)
+		status := ""
+		if value := str(r["status"]); value != "" && value != "0" {
+			status = "upstream " + value
 		}
-		e.detail = joinDetail(e.detail, calledBy(r))
+		attribution := calledBy(r)
+		e.plainDetail = joinDetail(status, call(r), attribution)
+		e.detail = joinDetail(status, call(r, true), attribution)
 		e.denied = str(r["decision"]) == "denied"
 
 	case "approval":
-		e.what = trunc(str(r["kind"])+":"+str(r["subject"]), 28)
+		e.what = str(r["kind"]) + ":" + str(r["subject"])
 		e.outcome = str(r["action"])
 		e.detail = str(r["bounds"])
 		if by := str(r["decided_by"]); by != "" {
@@ -233,9 +240,10 @@ func flowEventFrom(r map[string]any, kind string) flowEvent {
 		if agent := str(r["agent"]); agent != "" {
 			what += " -> " + agent
 		}
-		e.what = trunc(what, 28)
+		e.what = what
 		e.outcome = str(r["decision"])
-		e.detail = joinDetail(trunc(str(r["delivery_id"]), 24), str(r["detail"]))
+		e.plainDetail = joinDetail(trunc(str(r["delivery_id"]), 24), str(r["detail"]))
+		e.detail = joinDetail(str(r["delivery_id"]), str(r["detail"]))
 		e.denied = str(r["decision"]) == "denied" || str(r["decision"]) == "failed"
 	}
 
@@ -251,6 +259,9 @@ func flowEventFrom(r map[string]any, kind string) flowEvent {
 // renderFlow prints the merged reading, and its own limits underneath it.
 func renderFlow(out io.Writer, events []flowEvent, notes []string) {
 	if len(events) == 0 {
+		if ui := cliui.New(out); ui.Rich() {
+			fmt.Fprintln(out, ui.Heading("Flow (0)"))
+		}
 		// A window that was trimmed to nothing is not a quiet agent. Saying
 		// "no recorded activity" here would turn omitted evidence into
 		// absent evidence, which is the exact reading the watermark exists
@@ -267,15 +278,22 @@ func renderFlow(out io.Writer, events []flowEvent, notes []string) {
 		fmt.Fprintln(out, "whose traffic never went through the plane. `kmx status` says which.")
 		return
 	}
-	fmt.Fprintf(out, flowFmt, "created (UTC)", "credential", "kind", "what", "outcome", "cents", "detail")
 	var cents, denials int64
+	var viewRows [][]string
 	for _, e := range events {
-		fmt.Fprintf(out, flowFmt, e.raw, dash(e.cred), e.kind, e.what, e.outcome, e.cents, e.detail)
+		if !cliui.New(out).Rich() {
+			e.what = trunc(e.what, 28)
+			if e.plainDetail != "" {
+				e.detail = e.plainDetail
+			}
+		}
+		viewRows = append(viewRows, []string{e.raw, dash(e.cred), e.kind, e.what, e.outcome, e.cents, e.detail})
 		if e.denied {
 			denials++
 		}
 		cents += centsOf(e.cents)
 	}
+	renderTable(out, []string{"created (UTC)", "credential", "kind", "what", "outcome", "cents", "detail"}, viewRows, flowFmt)
 	fmt.Fprintf(out, "-- %d events, %d cents, %d refused\n", len(events), cents, denials)
 	for _, n := range notes {
 		fmt.Fprintf(out, "-- %s\n", n)

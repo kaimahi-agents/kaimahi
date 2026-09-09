@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,17 +44,19 @@ func (a *App) Backup(file string) error {
 		file = filepath.Join("backups", "kaimahi-"+time.Now().UTC().Format("20060102T150405Z")+".sql")
 	}
 
-	// Fail closed: the dump is written to a temp name and renamed only once
-	// its trailer proves it finished. The shell used a `.partial` file and a
-	// trap for the same reason.
-	tmp := file + ".partial"
-	// 0600 from the moment it exists — the shell's `umask 077`. A backup
-	// carries the ledger and the audit trails; it is not world-readable for
-	// even the instant between create and chmod.
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// Keep the overwrite contract, but say so before replacing an old backup.
+	if _, err := os.Lstat(file); err == nil {
+		a.notef("WARNING: plane-backup: %s already exists and will be replaced only after a complete dump is received.", file)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	// Exclusive, unique creation gives us 0600 even if an old .partial is
+	// world-readable or a symlink. Use the destination directory for rename.
+	out, err := os.CreateTemp(filepath.Dir(file), "."+filepath.Base(file)+".partial-*")
 	if err != nil {
 		return err
 	}
+	tmp := out.Name()
 	removeTmp := true
 	defer func() {
 		out.Close()
@@ -135,7 +138,7 @@ func inspectDump(path string) (complete bool, tables int, size int64, err error)
 // scaled back. A proxy admitting calls during a --clean restore could write
 // ledger rows the restore then discards, or decide a budget against a
 // half-loaded ledger. A restore is a short outage, never a concurrent write.
-func (a *App) Restore(file string) error {
+func (a *App) Restore(file string) (result error) {
 	if file == "" {
 		return fmt.Errorf("usage: kmx restore <backup.sql>")
 	}
@@ -157,7 +160,7 @@ func (a *App) Restore(file string) error {
 	}
 
 	if err := a.Guard("REPLACE the plane's database from "+file+" (every table is dropped and recreated)",
-		"kmx restore "+file); err != nil {
+		a.operationCommand("restore", file)); err != nil {
 		return err
 	}
 
@@ -166,19 +169,20 @@ func (a *App) Restore(file string) error {
 		return err
 	}
 
+	// Even a failed scale request may have reached the API server. Attempt
+	// recovery on every failure, and retain both errors if recovery fails.
+	restored := false
+	defer func() {
+		if !restored {
+			if err := a.scaleProxy(replicas); err != nil {
+				result = errors.Join(result, fmt.Errorf("plane-restore: failed to recover kaimahi-proxy to %d replicas: %w", replicas, err))
+			}
+		}
+	}()
 	a.notef("plane-restore: quiescing the plane (scaling kaimahi-proxy %d -> 0; in-flight calls drain)", replicas)
 	if err := a.scaleProxy(0); err != nil {
 		return err
 	}
-	// Whatever happens below, the proxies come back — the shell's EXIT
-	// trap. A failed restore that left the plane at zero replicas would
-	// turn a recoverable error into an outage.
-	restored := false
-	defer func() {
-		if !restored {
-			_ = a.scaleProxy(replicas)
-		}
-	}()
 	if err := a.kubectlRun("-n", admin.Namespace, "wait", "--for=delete", "pod",
 		"-l", "app=kaimahi-proxy", "--timeout=120s"); err != nil {
 		return err
@@ -216,6 +220,10 @@ func (a *App) Restore(file string) error {
 		return err
 	}
 	restored = true
+	if replicas == 0 {
+		fmt.Fprintf(a.Out, "plane-restore: restored %s; ledger_entry has %d rows; plane remains scaled to 0 replicas (not serving)\n", file, rows)
+		return nil
+	}
 	if err := a.kubectlRun("-n", admin.Namespace, "rollout", "status", "deploy/kaimahi-proxy",
 		"--timeout=300s"); err != nil {
 		return err

@@ -16,6 +16,21 @@ func agentOn(name, modelConfig string) agentStatus {
 	return a
 }
 
+func TestRequiredGovernanceCannotBeReadyWhenUnknown(t *testing.T) {
+	for _, d := range []*statusData{
+		{planeErr: "Forbidden"},
+		{planeThere: true, planeDesired: 1, planeReady: 1, secretErr: "Forbidden"},
+		{planeThere: true, planeDesired: 1, planeReady: 1, serverErr: "Forbidden"},
+	} {
+		d.agents.Items = []agentStatus{agentOn("agent", "model")}
+		d.models.Items = []modelStatus{modelAt("model", governedModelURL, "token")}
+		d.secrets = []string{"token"}
+		if g := d.governanceOf(); governanceReady(g) {
+			t.Fatalf("required but unreadable governance reported ready: %+v", g)
+		}
+	}
+}
+
 func modelAt(name, baseURL, secret string) modelStatus {
 	var m modelStatus
 	m.Metadata.Name = name

@@ -269,6 +269,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   the manifests `kmx tools add` and `kmx agent create --image` generate. A BYO
   agent (`--image`) also gets the authority mounted and `SSL_CERT_FILE` set,
   because kagent's controller mounts nothing for a BYO pod.
+- Interactive chat now opens with a compact agent/context/model/tools view on
+  capable terminals. `/help` provides grouped commands on demand; turn spacing,
+  exit reasons, connection/wait feedback, and static native decision callouts
+  make conversation state distinct from operational state. Plain transcripts
+  retain the status report, and raw one-shot chat remains unchanged.
+- `kmx` now renders destination-aware rich status, agent, and admin reports,
+  actions, and guard callouts. Redirected admin columns/truncation and structured
+  artifacts remain compatible. `NO_COLOR` removes ANSI while retaining static
+  rich layout; `TERM=dumb` selects plain presentation.
+
 - **The prerequisite list is one item: a container engine.** It was five (Go,
   Docker or Podman, kind, kubectl, Helm) plus make and curl. Go is now needed
   only by the two commands that build the plane's image: `kmx plane`, and
@@ -304,10 +314,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   reconciles only the reduced first-answer profile it owns, and preserves every
   unmarked, full, or custom installation. A
   failed or malformed Helm read is an error rather than permission to replace
-  unknown state. Helm now waits for the resources in its own release instead
-  of `kubectl wait pods --all` snapshotting unrelated or deliberately deleted
-  pods in the namespace. Interactive quickstart output also shows its six-step
-  plan and clearer phase boundaries; redirected and JSON output are unchanged.
+  unknown state. A valid empty release list is the only state that permits a
+  minimal `helm install`; failed, pending, non-deployed, and concurrently
+  created releases are not overwritten. Explicit status flags support Helm 3
+  and 4. New quickstart installs and full-profile `up` now wait for the
+  workloads and jobs in their own Helm release instead of `kubectl wait pods
+  --all` snapshotting unrelated or deliberately deleted pods in the namespace.
+  Interactive quickstart output also shows its six-step plan and clearer phase
+  boundaries; redirected and JSON output are unchanged.
 
 - **The board checker's self-test only worked while the board was broken.**
   Three of its cases needed a finding standing open in
@@ -354,6 +368,33 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   that merged as #139 the same day, says so.
   `scripts/board-open-drift.json` carries no open findings and records how
   each was closed.
+- Chat aborts enhanced input on resize without submitting the current message or
+  approval. Session list shapes/empty states, active-renderer history boundaries,
+  and duplicate tool-event display are corrected. Broad one-shot transport
+  retries remain unchanged and can repeat effects after ambiguous disconnects.
+- `workflow show` returns typed binding errors for invalid values or unknown
+  keys, including mixed missing/invalid input; missing-only exploratory help
+  still succeeds. Successful show formatting is unchanged.
+
+- **CLI audit safety semantics:** unknown conditions/read failures no longer
+  imply absence or readiness; flow counts model refusals from `cost_source`.
+  Quickstart requires a completed answer and retains its JSON key set:
+  `governed: false` means this invocation did not enable governance, not that
+  existing cluster governance is absent. Plain reports intentionally reflect
+  these corrections too.
+- **Mutation and recovery safety:** target/option-preserving, shell-quoted
+  remediation; kind/context mismatch refusals; bounds and Secret wiring checks
+  before issuance; tool-only ungovern patches; matching workflow request/grant/
+  audit digests without claiming downstream completion. Backup uses unique 0600
+  temporary files; restore reports recovery failures; lift confirms before any
+  deletion and retains records for incomplete cleanup without blanket billing
+  or telemetry claims.
+- **Chat format and decision safety:** `--interactive --json` is refused before
+  application loading. Wrapped/native prompts, grapheme editing, transient
+  clearing, terminal restoration, and session retention on stream failure are
+  corrected. Native HITL fails closed on incomplete/oversized requests and
+  incomplete batch decisions; question answers preserve free text and validate
+  offered choices. Scanner fallback remains supported.
 
 - **Eight claims in `docs/repository-map.md` were wrong on the day it merged**,
   found by writing the checker above. `scripts/` holds 67 tracked files and
@@ -509,9 +550,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - **`kmx agent chat --interactive`** keeps one streamed session open
   instead of one question per process, `--session` resumes a kagent session
-  by id, and `--json` forces the raw A2A task at a terminal. At a terminal
-  chat prints the reply, the tools the agent called and the token cost; a
-  pipe still gets the raw task, byte for byte, because things parse it.
+  by id. Separately, one-shot `--json` forces the raw A2A task at a terminal.
+  One-shot terminal chat prints the reply, tools and token cost; piped one-shot
+  output remains the raw task byte for byte. Interactive chat is a human
+  transcript, including when its input uses the scanner fallback.
 
 - **`kmx status` counts how much of the system is actually governed** —
   model seams, tool seams and credentials, as "1 of 2 governed, 1 direct",
@@ -530,12 +572,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - **`kmx quickstart`** — one command from a machine that has a container
   engine to an agent that has answered a question. It runs `kmx up`'s steps in
-  `kmx up`'s order, with the same waits and fail-closed checks, but defers
-  everything a first question cannot reach: kagent's console, its bundled tool
-  server, the MCP controller, the second agent and the whole governance plane.
-  `--output json` makes the result machine-readable (`ok`, `answer`,
-  `governed`, `elapsed_seconds`, `next`) for an agent driving kmx from inside
-  a harness; the command is safe to run twice.
+  `kmx up`'s order, but preserves existing deployed kagent releases. On a fresh
+  install it defers everything a first question cannot reach: kagent's console,
+  bundled tool server, MCP controller, second agent and governance plane.
+  `--output json` retains the keys `ok`, `context`, `cluster`, `agent`, `manifest`,
+  `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, and `next` for
+  automation; `governed: false` is invocation-scoped, not a cluster assertion.
 - **`install.sh`** — `curl -fsSL .../install.sh | sh` downloads the release
   binary for the platform, verifies its published sha256 before installing it,
   and puts it in `~/.local/bin` without sudo. `--quickstart` carries on into

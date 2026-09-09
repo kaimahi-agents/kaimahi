@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // Rendering the A2A task for a human.
@@ -29,22 +31,16 @@ import (
 // function_response payload. Pretty-printing by default would break every
 // one of them, and `--json` forces the raw form when a terminal wants it.
 
-// isTerminal reports whether w is a character device.
-//
-// Stdlib only: the module has no dependencies and this does not need one.
+// isTerminal reports whether w is a terminal, not merely a character device.
 // Anything that is not an *os.File — a test buffer, a pipe wrapper — is
 // treated as not a terminal, which is the safe default: it means "print the
 // machine-readable form".
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
-	if !ok {
+	if !ok || f == nil {
 		return false
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // a2aTask is the part of kagent's A2A task this renderer reads. Everything
@@ -107,17 +103,20 @@ func renderChat(out io.Writer, combined string) bool {
 	}
 
 	if len(tools) > 0 {
+		for i := range tools {
+			tools[i] = safeTerminal(tools[i])
+		}
 		fmt.Fprintf(out, "\ntools called: %s\n", strings.Join(tools, ", "))
 	}
 	if reply != "" {
-		fmt.Fprintf(out, "\n%s\n", strings.TrimSpace(reply))
+		fmt.Fprintf(out, "\n%s\n", strings.TrimSpace(safeTerminal(reply)))
 	}
 
 	var trailer []string
 	if state := task.Status.State; state != "" && state != "completed" {
 		// "completed" is the expected case and saying so adds nothing;
 		// anything else is the most important word on the screen.
-		trailer = append(trailer, "state: "+state)
+		trailer = append(trailer, "state: "+safeTerminal(state))
 	}
 	if in, outTok := totalUsage(task); in+outTok > 0 {
 		trailer = append(trailer, fmt.Sprintf("tokens: %d in, %d out", in, outTok))

@@ -44,6 +44,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"golang.org/x/term"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
@@ -248,15 +251,24 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 			"  Nothing was applied. This is a bug in kmx, not something you can set.", req.Context)
 	}
 	source := req.Source
-	fmt.Fprintf(out, "----------------------------------------------------------------\n"+
-		"  about to: %s\n"+
-		"  context:  %s\n"+
-		"  chosen by: %s\n"+
-		"  server:   %s\n"+
-		"  namespace(s): %s\n"+
-		"  posture:  %s\n"+
-		"----------------------------------------------------------------\n",
-		req.Action, posture.Context, source, hostShown, namespaces, posture.Label)
+	ui := cliui.New(out)
+	if ui.Rich() {
+		fmt.Fprintln(out, ui.Callout(cliui.CalloutWarning, "Target confirmation", []cliui.Field{
+			{Label: "about to", Value: req.Action}, {Label: "context", Value: posture.Context},
+			{Label: "chosen by", Value: source}, {Label: "server", Value: hostShown},
+			{Label: "namespace(s)", Value: namespaces}, {Label: "posture", Value: posture.Label},
+		}))
+	} else {
+		fmt.Fprintf(out, "----------------------------------------------------------------\n"+
+			"  about to: %s\n"+
+			"  context:  %s\n"+
+			"  chosen by: %s\n"+
+			"  server:   %s\n"+
+			"  namespace(s): %s\n"+
+			"  posture:  %s\n"+
+			"----------------------------------------------------------------\n",
+			req.Action, posture.Context, source, hostShown, namespaces, posture.Label)
+	}
 
 	// Nobody chose this cluster. Two cases are not the failure, and the rule
 	// has to let them through or it is friction rather than a safety net:
@@ -290,7 +302,13 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 		return nil
 	}
 
-	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", req.Context, req.Command)
+	confirm := req.Context
+	if confirm == "" || strings.IndexFunc(confirm, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_@%+=:,./-", r))
+	}) >= 0 {
+		confirm = "'" + strings.ReplaceAll(confirm, "'", "'\"'\"'") + "'"
+	}
+	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", confirm, req.Command)
 
 	// Remote: explicit confirmation naming the context, or nothing happens.
 	if req.Confirm != "" {
@@ -308,7 +326,7 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 			unvouched(req, posture), proceed)
 	}
 
-	fmt.Fprint(out, "Type the context name to continue (anything else aborts): ")
+	fmt.Fprint(out, ui.Warning("Type the context name to continue (anything else aborts): "))
 	answer := readLine(in)
 	if answer != req.Context {
 		return fmt.Errorf("kube-guard: not confirmed — nothing was applied")
@@ -345,11 +363,7 @@ func isTerminal(f *os.File) bool {
 	if f == nil {
 		return false
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // readLine reads one line without pulling in bufio's buffering, which would

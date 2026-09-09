@@ -94,30 +94,62 @@ to pin a version, or `KMX_BIN_DIR=/somewhere/else` to install elsewhere.
 and reconciles that reduced profile; after `kmx up`, or against an unmarked custom kagent
 installation, it preserves the existing Helm release rather than turning the
 UI, tool server or MCP controller off. It reads that release state before any
-Helm mutation and refuses if it cannot establish what is installed. The second
-run finds the cluster and asks another question, and `--output json` makes it
-drivable by something other than a person:
+Helm mutation. Any deployed kagent application release is kept unchanged,
+including custom values and versions, while quickstart checks controller
+readiness. Only a successful, valid empty release list permits a minimal `helm
+install`, not an upgrade, so a concurrently created release is not overwritten.
+Failed, pending, other non-deployed, unreadable, and unexpected states fail
+closed and require deliberate repair. Other setup steps still reconcile their
+resources. The second run finds the cluster and asks another question.
+
+The release query uses explicit status flags supported by Helm 3 and 4, not
+`helm list --all`. A new install waits for Helm-managed workloads and jobs.
+`--output json` makes the result drivable by something other than a person:
 
 ```bash
-kmx quickstart --output json
+kmx quickstart --output json --task 'Who are you?'
 ```
 
 ```json
 {
   "ok": true,
   "context": "kind-kaimahi-p1",
+  "cluster": "kaimahi-p1",
   "agent": "hello-world",
+  "manifest": "k8s/hello-world.yaml (embedded in kmx; `kmx agent create` writes your own)",
+  "question": "Who are you?",
   "answer": "I am a declarative kagent agent defined entirely in YAML...",
   "governed": false,
+  "tools": null,
   "elapsed_seconds": 42.1,
-  "next": ["kmx agent chat ...", "kmx agent create <name> ...", "kmx up", "kmx plane", "kmx govern hello-world"]
+  "next": [
+    "kmx --context kind-kaimahi-p1 agent chat hello-world 'ask it something else'",
+    "kmx --context kind-kaimahi-p1 agent create my-agent --description 'Describe your agent'",
+    "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 up",
+    "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 plane",
+    "kmx --context kind-kaimahi-p1 govern hello-world"
+  ]
 }
 ```
 
-`"governed": false` is not an oversight. **Nothing on the quickstart path is
-metered, budgeted, approved or audited** — the plane is the next command, not
-a gate you pass through first. See [governing that agent](#governing-that-agent)
-below.
+This illustrative result uses `--task 'Who are you?'` and tools already on PATH;
+answers, timing, and tool provenance vary. `tools` is null when this invocation
+provisioned none. It shows the complete, unchanged top-level key set. Actual
+`next` commands pin the selected context and relevant cluster/engine settings.
+
+`"governed": false` means **this invocation did not enable governance**. It is
+not an assertion that the cluster or agent has none: reruns can preserve
+existing governance, which quickstart does not assess. On a fresh cluster the
+path is ungoverned; see [governing that agent](#governing-that-agent) below.
+Success requires a completed task with a readable answer, not merely a response
+containing text. Progress and subprocess chatter stay off JSON stdout.
+
+Human output uses rich grouping on capable terminals and plain formatting when
+redirected or under `TERM=dumb`. `NO_COLOR=1` removes ANSI while retaining static
+rich layout. Status, agent list, and admin reports have responsive terminal
+tables; their redirected compatibility formats remain, with intentional safety
+corrections to unknown states, readiness, and flow refusal counts. See
+[output contracts](kmx.md#output-contracts).
 
 ### With a Go toolchain instead
 
@@ -134,7 +166,10 @@ have. Releases also carry checksum-verified binaries you can download by hand
 `kmx quickstart` deliberately deploys only what a first question touches on a
 new installation. When you want the rest — kagent's console and bundled tool
 server, the second (tool-using) agent — that is `kmx up`, which reconciles the
-same cluster. A later quickstart does not reverse that reconciliation:
+same cluster. Unlike quickstart's preserve-or-install policy, `up`
+upgrades/installs the full kagent application chart and waits for its workloads
+and jobs; it is the explicit way to restore the full profile. A later
+quickstart does not reverse that reconciliation:
 
 ```bash
 kmx up      # kind cluster + Ollama + model pull + kagent + two agents (first run ~5-10 min)
@@ -155,8 +190,9 @@ accounts-payable demo and the hosted-GitHub agent (`make govern-release`,
 
 ### Governing that agent
 
-Nothing above is metered. The plane is a second command, and on kind it is
-keyless too:
+On a fresh cluster the runtime above is not metered. Neither `quickstart` nor
+`up` enables governance; rerunning them is not evidence that existing governance
+is absent. The plane is a separate command, and on kind it is keyless too:
 
 ```bash
 kmx plane               # metering proxy + Postgres ledger, in the cluster
@@ -217,6 +253,15 @@ tool calls and completion state appear inline. Use `/tools verbose` for full
 tool results, `/sessions`, `/history`, and `/resume <id>` for prior
 conversations, `/new` for a fresh session, and `/exit` to leave. See
 [kmx.md](kmx.md#interactive-chat).
+
+`--interactive` selects a human transcript and supports scanner input when a
+capable terminal/raw mode is unavailable. `NO_COLOR` also disables enhanced chat
+input and cursor effects, without removing trusted actor/operation labels.
+`--interactive --json` is refused; use one-shot `--json` for raw A2A output.
+Resizing during enhanced input stops chat without submitting the current message
+or approval; restart to continue. This is a safe abort, not live input reflow.
+The broader one-shot transport retry policy remains unchanged and can repeat a
+turn after an ambiguous disconnect; see [retry limits](kmx.md#retry-limits).
 
 The tools agent is covered in [tools.md](tools.md), including why its
 prose summary is less reliable than the tool call underneath it.
@@ -280,6 +325,13 @@ no network. Nothing there is a fault: the fast path is ungoverned by design,
 and the counts are how you see how much of your system is still on it. A
 population kmx could not read says `unknown` and why; it never reports a zero
 it did not count.
+
+Unknown Kubernetes conditions remain `unknown`, not `no`. An installed plane
+with zero or insufficient ready replicas, missing required credentials, or
+unreadable required governance prevents a human `ready` verdict even if cached
+agent conditions still say Accepted. These are intentional safety corrections
+in both rich and plain reports; they do not make the supported direct path a
+fault or change the structured envelope.
 
 For the machine-readable form use `kmx status -o json`, `kmx status -o yaml`,
 or from Make: `make status STATUS_OUTPUT=yaml`. That document carries
@@ -351,8 +403,8 @@ helm upgrade --install kagent-crds \
   --version 0.9.12 --namespace kagent --create-namespace
 helm upgrade --install kagent \
   oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-  --version 0.9.12 --namespace kagent -f k8s/kagent-values.yaml
-kubectl -n kagent wait --for=condition=Ready pods --all --timeout=420s
+  --version 0.9.12 --namespace kagent -f k8s/kagent-values.yaml \
+  --wait --wait-for-jobs --timeout 420s
 
 # 5. The agents: hello-world, then hello-tools once kagent's tool server
 #    is Accepted

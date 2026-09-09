@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
 // The WASM tool sandbox.
@@ -78,6 +80,21 @@ func (a *App) ToolSandbox() error {
 // are not, and "it looked installed" is how a workload ends up Pending with
 // no obvious cause.
 func (a *App) ToolSandboxStatus() error {
+	ui := cliui.New(a.Out)
+	var fields []cliui.Field
+	// Redirected reports stream each completed read. Rich reports retain the
+	// same partial evidence if a later read fails.
+	if ui.Rich() {
+		fmt.Fprintln(a.Out, ui.Heading("WASM tool sandbox"))
+		defer func() { fmt.Fprintln(a.Out, ui.Fields(fields)) }()
+	}
+	report := func(label, value string) {
+		if ui.Rich() {
+			fields = append(fields, cliui.Field{Label: label, Value: value})
+		} else {
+			fmt.Fprintf(a.Out, "%-22s %s\n", label, value)
+		}
+	}
 	class, classErr := a.Run.Capture("kubectl", a.kubectl("get", "runtimeclass",
 		sandboxRuntimeClass, "-o", "jsonpath={.handler}")...)
 	// A cluster we cannot reach is not a cluster without a sandbox. Both
@@ -89,25 +106,34 @@ func (a *App) ToolSandboxStatus() error {
 	if unreachable(classErr) {
 		return fmt.Errorf("%s\n  %w", sandboxUnknownWording, classErr)
 	}
+	report("runtimeClass", statusOf(strings.TrimSpace(class), classErr))
+	if classErr != nil && !isNotFound(classErr) {
+		return fmt.Errorf("cannot read the sandbox: %w", classErr)
+	}
 	ready, readyErr := a.Run.Capture("kubectl", a.kubectl("-n", sandboxNamespace, "get", "ds",
 		"spin-node-installer", "-o", "jsonpath={.status.numberReady}/{.status.desiredNumberScheduled}")...)
 	if unreachable(readyErr) {
 		return fmt.Errorf("cannot read the node installer: the cluster did not answer.\n  %w", readyErr)
 	}
-
-	fmt.Fprintf(a.Out, "%-22s %s\n", "runtimeClass", statusOf(strings.TrimSpace(class), classErr))
-	fmt.Fprintf(a.Out, "%-22s %s\n", "node installer", statusOf(strings.TrimSpace(ready), readyErr))
+	report("node installer", statusOf(strings.TrimSpace(ready), readyErr))
+	if readyErr != nil && !isNotFound(readyErr) {
+		return fmt.Errorf("cannot read the node installer: %w", readyErr)
+	}
 
 	sandboxed, err := a.Run.Capture("kubectl", a.kubectl("get", "pods", "-A",
 		"-o", "jsonpath={range .items[?(@.spec.runtimeClassName=='"+sandboxRuntimeClass+"')]}{.metadata.namespace}/{.metadata.name} {end}")...)
 	if unreachable(err) {
 		return fmt.Errorf("cannot list sandboxed workloads: the cluster did not answer.\n  %w", err)
 	}
-	if err == nil && strings.TrimSpace(sandboxed) != "" {
-		fmt.Fprintf(a.Out, "%-22s %s\n", "sandboxed workloads", strings.TrimSpace(sandboxed))
-	} else {
-		fmt.Fprintf(a.Out, "%-22s %s\n", "sandboxed workloads", "none")
+	if err != nil {
+		report("sandboxed workloads", "unknown - "+firstLine(err.Error()))
+		return fmt.Errorf("cannot list sandboxed workloads: %w", err)
 	}
+	workloads := "none"
+	if err == nil && strings.TrimSpace(sandboxed) != "" {
+		workloads = strings.TrimSpace(sandboxed)
+	}
+	report("sandboxed workloads", workloads)
 	return nil
 }
 
@@ -152,8 +178,14 @@ func unreachable(err error) bool {
 }
 
 func statusOf(value string, err error) string {
-	if err != nil || value == "" {
+	if err != nil && !isNotFound(err) {
+		return "unknown - " + firstLine(err.Error())
+	}
+	if isNotFound(err) {
 		return "not installed"
+	}
+	if value == "" {
+		return "unknown - no status returned"
 	}
 	return value
 }

@@ -68,6 +68,11 @@ func (a *App) LiftDown(opt lift.Options) error {
 // delete rather than reporting the request, and re-checks that the group is
 // gone before saying so.
 func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
+	fmt.Fprintf(a.Err, "\nkmx lift down: this will irreversibly delete resource group %q and its contents,\n"+
+		"  plus any outside resources listed in this run's record.\n", opt.ResourceGroup)
+	if err := a.confirmLiftDown(opt); err != nil {
+		return err
+	}
 	work, cleanup, err := a.liftWorkspace()
 	if err != nil {
 		return err
@@ -91,7 +96,9 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 	if err := a.runScript(work, "scripts/aks-down.sh", map[string]string{
 		"AKS_RESOURCE_GROUP": opt.ResourceGroup,
 		"AKS_CLUSTER":        opt.Cluster,
-		"KAIMAHI_CONFIRM":    a.Cfg.Confirm,
+		// Go already verified consent for this group before ANY deletion.
+		// Runner does not forward stdin; the script must not prompt again.
+		"KAIMAHI_CONFIRM": opt.ResourceGroup,
 	}); err != nil {
 		return err
 	}
@@ -102,12 +109,13 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 	state, err := a.groupExists(opt.ResourceGroup)
 	switch {
 	case err != nil, state == lift.Unusable:
-		return fmt.Errorf("kmx lift down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", opt.ResourceGroup)
+		return fmt.Errorf("kmx lift down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", shellArg(opt.ResourceGroup))
 	case state == lift.Present:
 		return fmt.Errorf("kmx lift down: resource group %s still exists after the delete returned", opt.ResourceGroup)
 	}
 	a.forgetLiftRecord(opt)
-	fmt.Fprintf(a.Err, "\nkmx lift down: resource group %s is gone (az group exists says false). Nothing is billing.\n", opt.ResourceGroup)
+	fmt.Fprintf(a.Err, "\nkmx lift down: resource group %s is gone (az group exists says false).\n"+
+		"  Cleanup covers that group and the outside resources in this run's record; other resources and billing were not checked.\n", opt.ResourceGroup)
 	return nil
 }
 
@@ -117,7 +125,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	fmt.Fprintf(a.Err, `----------------------------------------------------------------
   kmx lift down — on a cluster YOU created
 
-  cluster %q and resource group %q are NOT touched. They were
+  cluster %q and resource group %q are NOT deleted. They were
   not created here and they are not deleted here.
 
   What comes out is only what this run put in, by the id it recorded:
@@ -143,7 +151,9 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	// longer has: it would either fail, or succeed only because something else
 	// had already done the work. Neither is this command doing what it says.
 	// Removed first, the deletion is ours and is observable.
-	a.removeInClusterObservability(record)
+	if err := a.removeInClusterObservability(record); err != nil {
+		return fmt.Errorf("kmx lift down: in-cluster cleanup is incomplete; the run record has been kept.\n  Retry: %s\n%w", a.liftCommand(opt, true), err)
+	}
 
 	// Then the add-ons. They hold references to the workspaces, and a
 	// workspace deleted while something still routes to it leaves the cluster
@@ -161,7 +171,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 			return fmt.Errorf("could not disable Managed Prometheus on your cluster — stopping before deleting anything it still points at: %w", err)
 		}
 	} else {
-		a.notef("Managed Prometheus was already on before this run; leaving it on.")
+		a.notef("Managed Prometheus was already on before this run, or its prior state was not established; leaving it unchanged.")
 	}
 	if record.Before.WeEnabledLogs() {
 		a.notef("turning off the Container Insights this run enabled")
@@ -170,11 +180,15 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 			return fmt.Errorf("could not disable Container Insights on your cluster — stopping before deleting anything it still points at: %w", err)
 		}
 	} else {
-		a.notef("Container Insights was already on before this run; leaving it on.")
+		a.notef("Container Insights was already on before this run, or its prior state was not established; leaving it unchanged.")
 	}
 
 	if err := a.removeRecorded(record.Created); err != nil {
 		return err
+	}
+	if !record.Before.Recorded {
+		a.notef("in-cluster monitoring ownership was not established; cleanup was not checked. The run record has been kept.")
+		return nil
 	}
 	a.forgetLiftRecord(opt)
 	return nil
@@ -259,11 +273,12 @@ func (a *App) warnAboutScrapeJobsTheAddonOwns() {
 // ConfigMap, does not edit it and does not delete it, because the lift does not
 // write it — an adopter's other scrape jobs are not something this command
 // should ever have been in a position to remove.
-func (a *App) removeInClusterObservability(record *lift.Record) {
+func (a *App) removeInClusterObservability(record *lift.Record) error {
+	var cleanupErr error
 	if record.Before.WeCreatedScraperPolicy() {
-		if !a.kubectlQuiet("-n", "kaimahi", "delete", "networkpolicy", scraperPolicy, "--ignore-not-found") {
-			a.notef("could not remove the scraper's NetworkPolicy allowance — remove it by hand:\n"+
-				"    kubectl --context %s -n kaimahi delete networkpolicy %s", a.Cfg.KubeContext, scraperPolicy)
+		if err := a.kubectlRun("-n", "kaimahi", "delete", "networkpolicy", scraperPolicy, "--ignore-not-found"); err != nil {
+			cleanupErr = fmt.Errorf("could not remove the scraper's NetworkPolicy allowance: %w\n"+
+				"    kubectl --context %s -n kaimahi delete networkpolicy %s", err, shellArg(a.Cfg.KubeContext), scraperPolicy)
 		}
 	} else {
 		a.notef("the NetworkPolicy %s was there before this run, or its origin was never established; leaving it.", scraperPolicy)
@@ -272,17 +287,22 @@ func (a *App) removeInClusterObservability(record *lift.Record) {
 	if !record.MayRemoveScrapeMonitor() {
 		a.notef("the PodMonitor %s in kaimahi was there before this run, was never applied by it, "+
 			"or its origin was never established; leaving it.", scrapeMonitor)
-		return
+		return cleanupErr
 	}
-	if !a.kubectlQuiet("-n", "kaimahi", "delete", scrapeMonitorResource, scrapeMonitor, "--ignore-not-found") {
-		a.notef("could not remove the scrape job — remove it by hand:\n"+
-			"    kubectl --context %s -n kaimahi delete %s %s", a.Cfg.KubeContext, scrapeMonitorResource, scrapeMonitor)
+	if err := a.kubectlRun("-n", "kaimahi", "delete", scrapeMonitorResource, scrapeMonitor, "--ignore-not-found"); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("could not remove the scrape job: %w\n"+
+			"    kubectl --context %s -n kaimahi delete %s %s", err, shellArg(a.Cfg.KubeContext), scrapeMonitorResource, scrapeMonitor))
 	}
+	return cleanupErr
 }
 
 // removeRecorded deletes recorded resources by their recorded id, confirming
 // each one first, and reports everything it did not remove.
 func (a *App) removeRecorded(resources []lift.Resource) error {
+	if len(resources) == 0 {
+		fmt.Fprintln(a.Err, "\nkmx lift down: no Azure resource ids were recorded; no Azure resources were checked or removed.")
+		return nil
+	}
 	var removals []lift.Removal
 	deleted, alreadyGone := 0, 0
 	for _, res := range resources {
@@ -311,13 +331,15 @@ func (a *App) removeRecorded(resources []lift.Resource) error {
 
 	left := lift.LeftBehind(removals)
 	if len(left) == 0 {
-		fmt.Fprintf(a.Err, "\nkmx lift down: nothing this run created is left. %d removed by recorded id, %d already gone.\n",
+		fmt.Fprintf(a.Err, "\nkmx lift down: recorded Azure resources: %d delete operations completed, %d already gone. Unrecorded resources were not checked.\n",
 			deleted, alreadyGone)
 		return nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "kmx lift down: %d resource(s) were NOT removed, and they may still be billing.\n\n", len(left))
 	for _, rm := range left {
+		// PlanRemoval's diagnostic contains a raw command; quote its id here.
+		rm.Reason = strings.ReplaceAll(rm.Reason, "az resource show --ids "+rm.Resource.ID, "az resource show --ids "+shellArg(rm.Resource.ID))
 		fmt.Fprintf(&b, "  %s %q\n    %s\n", rm.Resource.Kind, rm.Resource.Name, rm.Reason)
 		if rm.Resource.Billing != "" {
 			fmt.Fprintf(&b, "    cost while it exists: %s\n", rm.Resource.Billing)
@@ -330,18 +352,22 @@ func (a *App) removeRecorded(resources []lift.Resource) error {
 }
 
 func (a *App) confirmLiftDown(opt lift.Options) error {
-	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s kmx lift down --byo %s", opt.Cluster, liftIdentityFlags(opt))
+	name, kind := opt.Cluster, "cluster"
+	if !opt.BringYourOwn {
+		name, kind = opt.ResourceGroup, "resource group"
+	}
+	proceed := fmt.Sprintf("  to proceed:  KAIMAHI_CONFIRM=%s %s", shellArg(name), a.liftCommand(opt, true))
 	if c := strings.TrimSpace(a.Cfg.Confirm); c != "" {
-		if c == opt.Cluster {
+		if c == name {
 			return nil
 		}
-		return fmt.Errorf("kmx lift down: KAIMAHI_CONFIRM does not name this cluster — refusing.\n%s", proceed)
+		return fmt.Errorf("kmx lift down: KAIMAHI_CONFIRM does not name this %s — refusing.\n%s", kind, proceed)
 	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) {
 		return fmt.Errorf("kmx lift down: no TTY and no KAIMAHI_CONFIRM — refusing to act unattended on a cloud subscription.\n%s", proceed)
 	}
-	fmt.Fprint(a.Err, "Type the cluster name to remove this run's monitoring (anything else aborts): ")
-	if readTrimmedLine(a.Stdin) != opt.Cluster {
+	fmt.Fprintf(a.Err, "Type the %s name to confirm teardown (anything else aborts): ", kind)
+	if readTrimmedLine(a.Stdin) != name {
 		return errors.New("kmx lift down: not confirmed — nothing was deleted")
 	}
 	return nil

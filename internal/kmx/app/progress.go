@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
 // phase identifies one durable unit in a longer command. Native command
@@ -23,38 +25,28 @@ func (a *App) timeNow() time.Time {
 
 func (a *App) runPhase(p phase, fn func() error) error {
 	started := a.timeNow()
-	if a.enhancedProgress {
-		fmt.Fprintf(a.Err, "\n%s==> QUICKSTART %d/%d%s  %s\n", a.progressANSI("\033[1;36m"), p.current, p.total, a.progressANSI("\033[0m"), p.name)
-	} else {
-		fmt.Fprintf(a.Err, "\nPHASE  [%d/%d] %s\n", p.current, p.total, p.name)
-	}
+	ui := a.presenter()
+	fmt.Fprintf(a.Err, "\n%s  [%d/%d] %s\n", ui.Phase("PHASE"), p.current, p.total, p.name)
 	err := fn()
 	elapsed := a.timeNow().Sub(started)
 	if err != nil {
-		if a.enhancedProgress {
-			fmt.Fprintf(a.Err, "%s[failed %d/%d]%s %s (%s)\n", a.progressANSI("\033[1;31m"), p.current, p.total, a.progressANSI("\033[0m"), p.name, formatElapsed(elapsed))
-		} else {
-			fmt.Fprintf(a.Err, "FAILED [%d/%d] %s (%s)\n", p.current, p.total, p.name, formatElapsed(elapsed))
-		}
+		fmt.Fprintf(a.Err, "%s [%d/%d] %s (%s)\n", ui.Failure("FAILED"), p.current, p.total, p.name, formatElapsed(elapsed))
 		return err
 	}
-	if a.enhancedProgress {
-		fmt.Fprintf(a.Err, "%s[done %d/%d]%s   %s (%s)\n", a.progressANSI("\033[1;32m"), p.current, p.total, a.progressANSI("\033[0m"), p.name, formatElapsed(elapsed))
-	} else {
-		fmt.Fprintf(a.Err, "DONE   [%d/%d] %s (%s)\n", p.current, p.total, p.name, formatElapsed(elapsed))
-	}
+	fmt.Fprintf(a.Err, "%s   [%d/%d] %s (%s)\n", ui.Success("DONE"), p.current, p.total, p.name, formatElapsed(elapsed))
 	return nil
 }
 
-func (a *App) progressANSI(code string) string {
-	if a.progressColor {
-		return code
-	}
-	return ""
+func (a *App) complete(label string, started time.Time) {
+	ui := a.presenter()
+	fmt.Fprintf(a.Err, "\n%s  %s (%s total)\n", ui.Success("COMPLETE"), label, formatElapsed(a.timeNow().Sub(started)))
 }
 
-func (a *App) complete(label string, started time.Time) {
-	fmt.Fprintf(a.Err, "\nCOMPLETE  %s (%s total)\n", label, formatElapsed(a.timeNow().Sub(started)))
+func (a *App) presenter() progressPresenter {
+	if a.progressUI != nil {
+		return a.progressUI
+	}
+	return cliui.New(a.Err)
 }
 
 func formatElapsed(elapsed time.Duration) string {

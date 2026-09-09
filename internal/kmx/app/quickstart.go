@@ -3,12 +3,11 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
-	"golang.org/x/term"
 )
 
 // QuickstartOptions configure the shortest path to a first answer.
@@ -29,20 +28,25 @@ type QuickstartTool struct {
 // QuickstartResult is what `--output json` prints: enough for an agent in a
 // harness to decide what to do next without parsing prose.
 type QuickstartResult struct {
-	OK             bool             `json:"ok"`
-	Context        string           `json:"context"`
-	Cluster        string           `json:"cluster"`
-	Agent          string           `json:"agent"`
-	Manifest       string           `json:"manifest"`
-	Question       string           `json:"question"`
-	Answer         string           `json:"answer"`
+	OK       bool   `json:"ok"`
+	Context  string `json:"context"`
+	Cluster  string `json:"cluster"`
+	Agent    string `json:"agent"`
+	Manifest string `json:"manifest"`
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+	// Governed retains the original boolean wire contract: governance enabled
+	// by this invocation, not an observation of existing cluster governance.
+	// It is always false: quickstart does not enable governance. A rerun may
+	// preserve existing governance; callers must not infer its absence here.
 	Governed       bool             `json:"governed"`
 	Tools          []QuickstartTool `json:"tools"`
 	ElapsedSeconds float64          `json:"elapsed_seconds"`
 	Next           []string         `json:"next"`
 }
 
-// quickstartValues turns off everything a first question cannot reach.
+// quickstartValues turns off everything a first question cannot reach, only
+// when creating a release. Existing releases are never reduced to this profile.
 //
 // Measured on the images the chart pulls at kagent 0.9.12 (linux/amd64,
 // compressed): the console is 115MB, the bundled tool server 215MB and the
@@ -68,10 +72,9 @@ var quickstartValues = []string{
 // with the same waits and the same fail-closed checks — what it does is
 // DEFER: the tool server, the second agent and the governance plane are not
 // on the path to a first answer, so they are not on this path either. What
-// is left is the shortest thing that can honestly be called a working agent,
-// and the honest thing to say afterwards is that nothing about it is
-// governed yet (governance is what you turn on next, not a gate you
-// pass through first).
+// is left is the shortest thing that can honestly be called a working agent.
+// This command does not enable governance; existing governance may survive
+// a rerun and is not assessed here.
 func (a *App) Quickstart(opt QuickstartOptions) error {
 	started := a.timeNow()
 	agent, task := opt.Agent, opt.Task
@@ -101,11 +104,8 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	if asJSON {
 		a.Run.Stdout = a.Err
 	}
-	if !asJSON {
-		if errFile, ok := a.Err.(*os.File); ok && term.IsTerminal(int(errFile.Fd())) && os.Getenv("TERM") != "dumb" {
-			a.enhancedProgress = true
-			a.progressColor = os.Getenv("NO_COLOR") == ""
-		}
+	if err := a.validateKindTarget(); err != nil {
+		return err
 	}
 
 	// Equip the machine first. Everything after this point assumes kind,
@@ -134,39 +134,25 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		{"Deploy the " + agent + " agent", a.stepAgent},
 	}
 	total := len(steps) + 1
-	if a.enhancedProgress {
-		fmt.Fprintln(a.Err, "\nQUICKSTART PLAN")
-		for i, step := range steps {
-			fmt.Fprintf(a.Err, "  [ ] %d/%d %s\n", i+1, total, step.name)
-		}
-		fmt.Fprintf(a.Err, "  [ ] %d/%d Ask %s a question\n", total, total, agent)
-	}
 	for i, step := range steps {
 		if err := a.runPhase(phase{current: i + 1, total: total, name: step.name}, step.fn); err != nil {
 			return err
 		}
 	}
 
-	var raw string
-	var status int
+	var answer string
 	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + agent + " a question"}, func() error {
-		var err error
-		raw, status, err = a.askAgent(agent, task, "", false, ChatRetryable)
+		raw, status, err := a.askAgent(agent, task, "", false, ChatRetryable)
+		if err != nil {
+			return err
+		}
+		answer, err = quickstartAnswer(raw, status)
+		if err != nil {
+			fmt.Fprint(a.Err, safeTerminal(raw))
+		}
 		return err
 	}); err != nil {
 		return err
-	}
-	if status != 0 {
-		fmt.Fprint(a.Err, raw)
-		return fmt.Errorf("the agent was deployed but did not answer: kagent invoke exited %d", status)
-	}
-	answer := strings.TrimSpace(firstText(parseTask(raw)))
-	if answer == "" {
-		// The agent replied with something this build does not recognise.
-		// Print what kagent printed rather than claim an answer we cannot
-		// see: "it answered" is the one thing this command asserts.
-		fmt.Fprint(a.Err, raw)
-		return fmt.Errorf("the agent was deployed but no reply could be read from its response")
 	}
 
 	result := QuickstartResult{
@@ -179,11 +165,11 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		Answer:   answer,
 		Governed: false,
 		Next: []string{
-			"kmx agent chat " + agent + " \"ask it something else\"",
-			"kmx agent create <name> --description '...'",
-			"kmx up",
-			"kmx plane",
-			"kmx govern " + a.Cfg.Credential,
+			a.operationCommand("agent", "chat", agent, "ask it something else"),
+			a.operationCommand("agent", "create", "my-agent", "--description", "Describe your agent"),
+			a.operationCommand("up"),
+			a.operationCommand("plane"),
+			a.operationCommand("govern", a.Cfg.Credential),
 		},
 		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
 	}
@@ -197,21 +183,73 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		return encoder.Encode(result)
 	}
 
-	fmt.Fprintf(a.Out, "\n%s\n", answer)
+	fmt.Fprintf(a.Out, "\n%s\n", safeTerminal(answer))
 	a.complete("An agent answered", started)
-	// The ungoverned state is stated, in the same words `kmx up` uses, and
-	// it is stated as a fact about this cluster rather than as a warning
-	// nobody reads. Governance is the next command, not a missing step.
-	a.notef("\nUNGOVERNED  The Kaimahi governance plane is NOT deployed.\n"+
-		"Nothing that agent does is metered, budgeted, approved or audited.\n"+
-		"  kmx plane          # the metering proxy and its ledger\n"+
-		"  kmx govern %s  # put %s behind it (docs/spend.md)",
-		a.Cfg.Credential, agent)
-	a.notef("\nNEXT  kmx agent chat %s \"...\"   ask it something else\n"+
-		"      kmx agent create <name>       your own agent, as reviewable YAML\n"+
-		"      kmx up                        the rest of the runtime (tool server, second agent)\n"+
-		"      kmx down                      delete the cluster and everything in it", agent)
+	a.notef("\n%s  This command does not enable governance.\n"+
+		"Existing governance is not assessed by quickstart. To configure it:\n"+
+		"  %s  # the metering proxy and its ledger\n"+
+		"  %s  # configure agent routing (docs/spend.md)",
+		a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
+	a.quickstartNext(cliui.New(a.Err), result)
 	return nil
+}
+
+func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
+	down := a.operationCommand("down")
+	if ui.Rich() {
+		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
+			{Label: "Ask another question", Command: result.Next[0]},
+			{Label: "Create your own agent", Command: result.Next[1], Detail: "reviewable YAML; replace the example name and description"},
+			{Label: "Install the full runtime", Command: result.Next[2], Detail: "tool server and second agent"},
+			{Label: "Delete this cluster", Command: down, Detail: "delete the cluster and everything in it"},
+		}))
+	} else {
+		a.notef("\nNEXT  %s  # ask it something else\n"+
+			"      %s  # reviewable YAML; replace the example name and description\n"+
+			"      %s  # the rest of the runtime (tool server, second agent)\n"+
+			"      %s  # delete the cluster and everything in it", result.Next[0], result.Next[1], result.Next[2], down)
+	}
+}
+
+// quickstartKagent keeps the former internal call site on the canonical
+// monotonic implementation; there is intentionally no second Helm flow.
+func (a *App) quickstartKagent() error { return a.stepQuickstartKagent() }
+
+func quickstartAnswer(raw string, status int) (string, error) {
+	if status != 0 {
+		return "", fmt.Errorf("the agent was deployed but did not answer: kagent invoke exited %d", status)
+	}
+	task := parseTask(raw)
+	if task.Status.State != "completed" {
+		return "", fmt.Errorf("the agent was deployed but its task did not complete (state %q)", task.Status.State)
+	}
+	answer := strings.TrimSpace(firstText(task))
+	if strings.TrimSpace(safeTerminal(answer)) == "" {
+		return "", fmt.Errorf("the agent was deployed but no reply could be read from its response")
+	}
+	return answer, nil
+}
+
+// shellArg quotes a POSIX shell argument, not a Go string literal.
+func shellArg(value string) string {
+	if value != "" && strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_@%+=:,./-", r))
+	}) < 0 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+// operationCommand pins follow-up actions to the context this operation used.
+func (a *App) operationCommand(args ...string) string {
+	parts := []string{"kmx", "--context", shellArg(a.Cfg.KubeContext)}
+	if len(args) > 0 && (args[0] == "up" || args[0] == "plane" || args[0] == "down") {
+		parts = append([]string{"KIND_CLUSTER=" + shellArg(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + shellArg(a.Cfg.ContainerEngine)}, parts...)
+	}
+	for _, arg := range args {
+		parts = append(parts, shellArg(arg))
+	}
+	return strings.Join(parts, " ")
 }
 
 // parseTask decodes the A2A task out of kagent's combined output, returning

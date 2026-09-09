@@ -419,11 +419,25 @@ func credentialSeams(models []modelStatus, servers []toolServerStatus, present [
 	return population
 }
 
-// writeGovernance prints the section. Every line is a count or a stated
-// "cannot say"; none of it changes the readiness verdict above it, because
-// the ungoverned fast path is a supported one — an ungoverned
-// cluster is not a broken cluster, it is an ungoverned one, and status says
-// which without calling it a fault.
+// governanceReady does not require governance on the supported direct path.
+// Installed or required enforcement must work, and known missing credentials
+// cannot be overridden by a cached Accepted condition.
+func governanceReady(g governance) bool {
+	if len(g.Credentials.Missing) > 0 {
+		return false
+	}
+	required := g.ModelSeams.Governed > 0 || g.ToolSeams.Governed > 0 || g.Credentials.Required > 0
+	if g.Plane.State == stateInstalled {
+		if g.Plane.Desired == 0 || g.Plane.Ready < g.Plane.Desired {
+			return false
+		}
+	} else if required {
+		return false
+	}
+	return !required || (g.Credentials.State != stateUnknown && !g.Credentials.Partial)
+}
+
+// writeGovernance prints the same counts and unknown states as the rich view.
 func writeGovernance(out io.Writer, g governance) {
 	fmt.Fprintln(out, "\nGovernance")
 	switch g.Plane.State {

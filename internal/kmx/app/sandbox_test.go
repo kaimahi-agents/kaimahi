@@ -58,11 +58,9 @@ func TestUnreachableTreatsUnknownErrorsAsRealAnswers(t *testing.T) {
 	}
 }
 
-// statusOf still collapses absent-or-errored into "not installed", which is
-// correct ONLY because the unreachable case is now intercepted before it.
-// This test pins that contract so a later edit cannot quietly widen it.
+// Only NotFound proves absence. Empty status and refusals are unknown.
 func TestStatusOfReportsAbsence(t *testing.T) {
-	if got := statusOf("", nil); got != "not installed" {
+	if got := statusOf("", nil); !strings.Contains(got, "unknown") {
 		t.Errorf("empty value: got %q", got)
 	}
 	if got := statusOf("", errors.New("Error from server (NotFound)")); got != "not installed" {
@@ -70,6 +68,11 @@ func TestStatusOfReportsAbsence(t *testing.T) {
 	}
 	if got := statusOf("spin", nil); got != "spin" {
 		t.Errorf("present: got %q, want the handler name", got)
+	}
+	for _, message := range []string{"Forbidden", "unexpected failure", "connection refused"} {
+		if got := statusOf("", errors.New(message)); !strings.Contains(got, "unknown") || !strings.Contains(got, message) {
+			t.Errorf("%s: %q", message, got)
+		}
 	}
 }
 
