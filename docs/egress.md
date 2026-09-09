@@ -37,6 +37,13 @@ section below says exactly what that does and does not constrain.
 | a Prometheus in a namespace called `monitoring` | proxy's ops port | 9092 | **opt-in only**: the rule matches nothing until an operator creates that namespace and runs a pod labelled as Prometheus. There is no auth on the port, so the allowance *is* the access control |
 | Azure Managed Prometheus's replica pod (`rsName: ama-metrics` in `kube-system`) | proxy's ops port | 9092 | **opt-in only**, AKS: applied by `kmx lift`'s observability phase from `k8s/observability/network-policy.yaml`, never on kind. The add-on's per-node DaemonSet is deliberately **not** allowed |
 
+The table is this project's own boundary. Pods you deploy yourself are
+governed by whatever policies you write for them: if you add a `PodMonitor`
+for your own metrics (see [aks.md](aks.md#the-scrape-job-is-a-podmonitor-and-yours-can-sit-beside-it))
+and your namespace defaults to deny, the same allowance shape is yours to
+write — `rsName: ama-metrics` in `kube-system`, to your metrics port. The
+plane's allowance is scoped to the plane's pods and grants yours nothing.
+
 Everything not in the table is denied. In particular:
 
 - Postgres has zero egress, not even DNS. It has nobody to look up.

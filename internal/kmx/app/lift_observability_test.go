@@ -196,7 +196,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 
 	checked := 0
 	for _, p := range pkg {
-		for _, file := range p.Files {
+		for path, file := range p.Files {
 			enclosing := ""
 			ast.Inspect(file, func(n ast.Node) bool {
 				if fn, ok := n.(*ast.FuncDecl); ok {
@@ -217,7 +217,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 					return true
 				}
 				if call.Ellipsis.IsValid() {
-					if enclosing == "Capture" {
+					if enclosing == "Capture" && filepath.Base(path) == "app.go" {
 						return true // the admin.Kube adapter; see above
 					}
 					t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
@@ -234,8 +234,20 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 						return true // a variable here; this scan cannot judge the call
 					}
 					if strings.HasPrefix(word, "-") {
-						if takesValue[word] {
+						switch {
+						case takesValue[word]:
 							i++ // the value, whatever it is
+						case strings.Contains(word, "="):
+							// --timeout=300s and friends carry their own value
+						default:
+							// Not known to take a value, and not self-contained.
+							// Guessing either way is how a scan starts answering
+							// a weaker question than it advertises, so it says so
+							// instead.
+							t.Errorf("%s: %q is not in this test's flag table, so where the verb "+
+								"begins in this call is a guess — add it, saying whether it takes a value",
+								fset.Position(call.Pos()), word)
+							return true
 						}
 						continue
 					}

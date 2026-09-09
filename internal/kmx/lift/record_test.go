@@ -132,6 +132,33 @@ func TestOnlyWhatThisRunTurnedOnOrCreatedMayBeUndone(t *testing.T) {
 	})
 }
 
+// The gap that a prior-state read alone leaves open, and it is not
+// theoretical: the read runs before the metrics add-on is enabled, and the
+// add-on is what installs the PodMonitor CRD. On a cluster whose add-on has
+// none, the read answers "absent" — correctly, the kind does not exist — and
+// the phase then creates nothing. An operator who afterwards writes that
+// PodMonitor by hand, following this project's own documentation, must not
+// have it deleted by a teardown that never made it.
+func TestThePodMonitorIsDeletedOnlyIfThisRunActuallyAppliedIt(t *testing.T) {
+	applied := &Record{ScrapeMonitorApplied: true, Before: Pre{Recorded: true}}
+	if !applied.MayRemoveScrapeMonitor() {
+		t.Error("a run that applied the PodMonitor onto a cluster that had none may not remove it")
+	}
+	neverApplied := &Record{Before: Pre{Recorded: true}}
+	if neverApplied.MayRemoveScrapeMonitor() {
+		t.Error("a run that created no PodMonitor would delete one somebody else wrote")
+	}
+	wasAlreadyThere := &Record{ScrapeMonitorApplied: true,
+		Before: Pre{Recorded: true, ScrapeMonitorExisted: true}}
+	if wasAlreadyThere.MayRemoveScrapeMonitor() {
+		t.Error("a PodMonitor that was there before the run would be deleted by it")
+	}
+	var nothingEstablished Record
+	if nothingEstablished.MayRemoveScrapeMonitor() {
+		t.Error("unestablished prior state was read as 'we made it'")
+	}
+}
+
 // A resource-group deletion accounts for what was INSIDE it. The monitoring
 // add-ons put some of what they create in the cluster's managed node group, so
 // assuming otherwise would report a resource as covered by a check that never

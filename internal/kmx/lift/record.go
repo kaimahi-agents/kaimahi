@@ -76,6 +76,28 @@ type Record struct {
 	// Before is what the cluster looked like when this run arrived. Teardown
 	// consults it so it undoes only what this run did.
 	Before Pre `json:"before"`
+	// ScrapeMonitorApplied records that this run actually applied the plane's
+	// PodMonitor, as opposed to having found the cluster in a state where it
+	// could not.
+	//
+	// Before.ScrapeMonitorExisted alone is not enough to authorise deleting
+	// it, and the gap is not theoretical. The prior-state read happens before
+	// the metrics add-on is enabled, and the add-on is what installs the
+	// PodMonitor CRD — so on a cluster whose add-on has no CRD, the read
+	// answers "absent" (correctly: the kind does not exist) and the phase then
+	// creates nothing, printing the ConfigMap fallback instead. Ownership
+	// inferred from that would have teardown delete a PodMonitor somebody
+	// wrote afterwards, by hand, following our own documentation. So the
+	// deletion is authorised by an act this run performed, not by a state it
+	// observed twenty minutes earlier.
+	ScrapeMonitorApplied bool `json:"scrape_monitor_applied"`
+}
+
+// MayRemoveScrapeMonitor reports whether teardown may delete the plane's
+// PodMonitor: this run applied it, AND it was not already there when the run
+// arrived.
+func (r *Record) MayRemoveScrapeMonitor() bool {
+	return r.ScrapeMonitorApplied && r.Before.WeCreatedScrapeMonitor()
 }
 
 // Pre is the state a run found and must not mistake for its own work.

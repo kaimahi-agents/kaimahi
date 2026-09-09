@@ -181,7 +181,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		return err
 	}
 
-	if err := a.wireScrape(work); err != nil {
+	if err := a.wireScrape(record, save, work); err != nil {
 		return err
 	}
 	return a.deployWorkbook(opt, record, save, work, clusterID, logsID, metricsID)
@@ -420,9 +420,12 @@ func noSuchResourceType(err error) bool {
 	if err == nil {
 		return false
 	}
-	message := err.Error()
-	return strings.Contains(message, "doesn't have a resource type") ||
-		strings.Contains(message, "the server could not find the requested resource")
+	// One string, and deliberately only one. kubectl's other 404 wording,
+	// "the server could not find the requested resource", is also what it says
+	// for a request to a namespace that does not exist — and this classifier
+	// is consulted for the NetworkPolicy read too, where widening absence
+	// would eventually authorise deleting an allowance this run did not make.
+	return strings.Contains(err.Error(), "doesn't have a resource type")
 }
 
 // clusterObjectExists is objectExists for an object that is not in a
@@ -456,7 +459,7 @@ func (a *App) clusterObjectExists(kind, name string) (bool, error) {
 // the thing that stopped and asked them to merge ours by hand. A namespaced
 // object owned by whoever created it removes both, and it is what an adopter
 // copies to get their own pods scraped.
-func (a *App) wireScrape(work string) error {
+func (a *App) wireScrape(record *lift.Record, save func() error, work string) error {
 	if err := a.applyManaged(work, "k8s/observability/network-policy.yaml"); err != nil {
 		return err
 	}
@@ -492,7 +495,13 @@ func (a *App) wireScrape(work string) error {
 			scrapeConfigNamespace, scrapeConfigMap, indentBlock(scrapeJobOnly(body)))
 		return nil
 	}
-	return a.applyManaged(work, "k8s/observability/podmonitor.yaml")
+	if err := a.applyManaged(work, "k8s/observability/podmonitor.yaml"); err != nil {
+		return err
+	}
+	// Recorded the moment it exists, and before anything else can fail. What
+	// teardown may delete is what this run did, never what it inferred.
+	record.ScrapeMonitorApplied = true
+	return save()
 }
 
 // deployWorkbook puts the operator-facing view in the same resource group as

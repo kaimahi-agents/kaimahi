@@ -750,6 +750,12 @@ Four things that are easy to get wrong, and each fails silently:
 - **Keep the three limits.** Azure's collector drops an entire job whose
   series exceed them, and the symptom is an empty panel rather than an
   error.
+- **A `PodMonitor` sees only its own namespace unless you say
+  otherwise.** With no `spec.namespaceSelector` the generated discovery
+  is scoped to the namespace the CR is in, so one written in a shared
+  `monitoring` namespace and pointed at pods in `my-app` applies cleanly
+  and scrapes nothing. Put it beside the pods, or set
+  `namespaceSelector.matchNames`.
 - **A default-deny NetworkPolicy in your namespace will block the
   scrape.** The allowance below is scoped to the plane's pods; yours
   needs its own, admitting `rsName: ama-metrics` from `kube-system` to
@@ -761,9 +767,12 @@ the same `ama-metrics` replica pods the plane's allowance already names,
 so nothing about the boundary changes when you add one.
 
 If your cluster's metrics add-on is old enough to have no PodMonitor
-CRD, the observability phase stops and prints the same job in ConfigMap
-form for you to merge into yours. It does not merge it for you, and that
-is deliberate: it is your document.
+CRD, the observability phase does **not** stop — the workbook and the log
+path are unaffected by this, and stopping would cost you both. It prints
+the same job in ConfigMap form and carries on, and the `verify` step then
+reports that the metrics half is not arriving. Merging that job is left
+to you on purpose: the ConfigMap is your document and holds everyone
+else's jobs.
 
 ### The dashboard
 
@@ -898,6 +907,13 @@ socket, not at kubectl.
 ## What was verified, and what was not
 
 ### The lift, verified live on 2026-09-06 (two clusters, both torn down)
+
+This section is the record of that run and is not re-edited to match later
+changes. It predates two of them: the scrape job was still a job inside the
+`ama-metrics-prometheus-config` ConfigMap rather than a `PodMonitor`, and the
+observability phase had a defect — a `kubectl` call with no verb — that was
+introduced in a review follow-up on the same pull request, after this run,
+and that blocked the phase in every build that shipped it until it was fixed.
 
 On a cluster **`kmx lift` created** (1 × `Standard_B4ms`, westus3, Cilium):
 

@@ -194,10 +194,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   the boundary changed**: the ops port is still on no Service, custom
   resources are still scraped by the same `ama-metrics` replica pods, and
   the one NetworkPolicy allowance is unchanged. On a cluster whose metrics
-  add-on has no `PodMonitor` CRD the phase stops and prints the job in
-  ConfigMap form to merge by hand. **Upgrading:** a lift run by an earlier
-  build never reached this step, so there is no ConfigMap of ours on any
-  cluster to clean up.
+  add-on has no `PodMonitor` CRD the phase carries on and prints the job in
+  ConfigMap form for you to merge by hand; `verify` then reports that the
+  metrics half is not arriving. Teardown deletes the `PodMonitor` only if
+  this run actually applied it — not because the prior-state read, which
+  happens before the add-on installs the CRD, once said none was there.
+  **Upgrading:** nothing. A lift run by an earlier build never reached this
+  step — the verb defect below blocked the observability phase in every build
+  that shipped it — so there is no ConfigMap of ours on any cluster to clean
+  up.
 - **The lift says what its dashboard does not cover.** The view is what
   crossed the governance plane — allowed, refused, approved, spent. It is
   not what happened inside an agent: no spans, no per-step timings. The

@@ -204,9 +204,9 @@ func (a *App) removeInClusterObservability(record *lift.Record) {
 		a.notef("this cluster has no PodMonitor CRD, so this run created no scrape job on it.")
 		return
 	}
-	if !record.Before.WeCreatedScrapeMonitor() {
-		a.notef("the PodMonitor %s in kaimahi was there before this run, or its origin was never established; leaving it.",
-			scrapeMonitor)
+	if !record.MayRemoveScrapeMonitor() {
+		a.notef("the PodMonitor %s in kaimahi was there before this run, was never applied by it, "+
+			"or its origin was never established; leaving it.", scrapeMonitor)
 		return
 	}
 	if !a.kubectlQuiet("-n", "kaimahi", "delete", scrapeMonitorResource, scrapeMonitor, "--ignore-not-found") {
