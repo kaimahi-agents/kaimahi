@@ -156,10 +156,10 @@ prefix.
 | W29: govern your own agent — the generic onboarding path (D35) | **HALF SHIPPED — do NOT paste the prompt below** | the MCP-server half is `kmx tools add`, merged 2026-09-03. The govern-an-agent-you-did-not-write half is unverified. The prompt still asks for both | a worker pasting it would rebuild `kmx tools add`; re-cut before relaunching |
 | W38: the e2e chat flake — a model that asks instead of answers | W38 worker | PR #122 MERGED | coordinator verification owed |
 | W42: the audit row does not say who called (D47) | W42 worker | PR #149 MERGED | legibility, not a new control; the vocabulary deliberately does not change |
-| W45: the tool seam works for a client we did not write (foreign-app 3, 4, 5) | unassigned | SHAPED 2026-09-08 — prompt below; **the highest-impact of the three** | the gateway advertises capabilities it refuses, so half their app went ungoverned |
-| W46: the model seam speaks what frameworks actually send (foreign-app 1, 2) | unassigned | SHAPED 2026-09-08 — prompt below | the meter reads zero for a current framework's default; and an adopter cannot add a model upstream at all |
-| W47: observability an adopter can extend (foreign-app 6) | unassigned | SHAPED 2026-09-08 — prompt below | a broken verb, and a scrape config nobody can add their own pods to |
-| W43: the model seam carries content that exists nowhere else (D48) | unassigned | SHAPED 2026-09-08 — prompt below | feasibility first: if kagent cannot trust a private CA, the finding IS the lane |
+| W45: the tool seam works for a client we did not write (foreign-app 3, 4, 5) | W45 worker | PR #157 MERGED | the gateway no longer advertises what it refuses; initialize is projected to tools and refused past 1 MiB rather than cut |
+| W46: the model seam speaks what frameworks actually send (foreign-app 1, 2) | W46 worker | PR #156 MERGED | Responses API metered; an unreadable-usage answer is REFUSED, and a flushed stream is ledgered `unmetered` rather than as a plausible zero |
+| W47: observability an adopter can extend (foreign-app 6) | W47 worker | PR #155 MERGED | the verb fixed, and an adopter can add scrape targets without hand-merging ours |
+| W43: the model seam carries content that exists nowhere else (D48) | W43 worker | PR #150 MERGED | TLS on both data seams — the content they carry is recorded nowhere else |
 | W41: govern a runtime this repository did not write | W41 worker | PR #139 MERGED — the call seam is generic and proven so; what is kagent-shaped, and the three things a foreign runtime cannot get, are in `docs/foreign-runtime.md` | tests the horizontal claim the positioning rests on; a refutation is as valuable as a confirmation |
 | W40: three places we say we protect something and do not (drift review A3, A9, A15) | W40 worker | PR #134 MERGED — coordinator VERIFIED by execution: `kmx down` refuses against a kubeconfig that does not describe the cluster and the cluster survives, legitimate teardown still works, and `check-agent-uid.py` fails on a wrong id and on no manifests at all | the only lane this session whose absence could have destroyed something |
 | W39: kmx captures the credential itself, at a prompt (D43) | W39 worker | PR #123 MERGED — ran from the prompt handed over in conversation; it never reached the board | partially verified below; the clone-free path now closes |
@@ -5121,7 +5121,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
 ```
 
-### W43 — the model seam carries content that exists nowhere else (UNASSIGNED — paste into a fresh CLI session)
+### W43 — the model seam carries content that exists nowhere else (RUN — merged as #150; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -5237,7 +5237,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
 ```
 
-### W45 — the tool seam works for a client we did not write (UNASSIGNED — paste into a fresh CLI session; the highest-impact of the three)
+### W45 — the tool seam works for a client we did not write (RUN — merged as #157; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -5305,7 +5305,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
 ```
 
-### W46 — the model seam speaks what frameworks actually send (UNASSIGNED — paste into a fresh CLI session)
+### W46 — the model seam speaks what frameworks actually send (RUN — merged as #156; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
@@ -5352,7 +5352,7 @@ Branch from current main; PR targets main; no stacked bases; lane ends at
 PR-open-with-checks-green — do not merge.
 ```
 
-### W47 — observability an adopter can extend (UNASSIGNED — paste into a fresh CLI session)
+### W47 — observability an adopter can extend (RUN — merged as #155; kept as the record of what the lane was asked for; do not paste it)
 
 ```
 You are a worker session for the Kaimahi project (repo root: this
