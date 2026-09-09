@@ -56,9 +56,10 @@ message — into every request, and the only way off that path is a
 per-request HTTP header. It authenticates every caller, refuses model
 names it has no Provider for, and never lets a client name its own
 upstream. That is real credential custody at the edge. What it does not
-do is meter: there is no money anywhere in their tree, no cost metric on
-their Prometheus surface, and a foreign caller's tokens are recorded
-nowhere this lane could find.
+do is meter: no money concept anywhere in their tree — their roadmap
+names "Cost tracking" but defines it as token aggregation — no cost
+metric on their Prometheus surface, and a foreign caller's tokens
+recorded nowhere this lane could find.
 
 **Governing a workload Orka did not launch: partly, on the model seam
 only, and the same third-party application both prior lanes used could
@@ -91,9 +92,11 @@ and an LLM API key (Anthropic, OpenAI, or Azure OpenAI). (`main`'s page
 lists three and swaps Docker for OpenSSL; this lane installed the
 `v0.1.3` bundle, so the four above are the ones that applied.) **Orka does not create the cluster.** There is
 no `curl | sh`, no installer, and no published binary of their CLI —
-they publish tags but no GitHub Release entries, which their own docs
-say, so `orka` the CLI exists only behind `make build-cli` in a checkout
-with a Go toolchain. The comparison worth making is therefore not
+they publish tags but no GitHub Release entries — their own docs say so
+twice (`website/docs/getting-started.md:113`, and
+`reference/release-status.md:107`, "There are currently no GitHub
+Release entries and no written release notes") — so `orka` the CLI
+exists only behind `make build-cli` in a checkout with a Go toolchain. The comparison worth making is therefore not
 "whose install is faster"; it is that our front door provisions the
 cluster and theirs assumes one.
 
@@ -124,8 +127,10 @@ next to its workaround, which is the right place for it.
 **Against us:** `create-kaimahi-agent` measured **1 prerequisite and
 178 s** on a clean machine, and that figure includes creating the
 cluster and provisioning a toolchain. Orka's 146 s excludes both. On
-like-for-like work — control plane up, first answer out — the two are
-within seconds of each other, and saying so is the point. There is no
+like-for-like work the two are within half a minute of each other: 146 s
+against 178 s, or 158 s once this run's 11.9 s of cluster creation is
+added to Orka's side to make the comparison fairer to us. Saying so is
+the point. There is no
 speed argument here for either project.
 
 ### 1c. The one step that is broken, and how it fails
@@ -181,7 +186,7 @@ the released path advertises you will not need.
 
 **The Helm path does not have this problem at all**: the v0.1.3 chart creates `orka-client` and
 its own `…-client` ClusterRole and binding
-(`charts/orka/templates/rbac.yaml:192`, `serviceaccount.yaml:13`). The
+(`charts/orka/templates/rbac.yaml:192`, `serviceaccount.yaml:14-19`). The
 defect is confined to the raw-manifest path, which is the one printed
 first in both the README and the getting-started page.
 
@@ -289,8 +294,9 @@ in their favour on custody.
 **It is not a proxy by default.** This is the surprise. The handler's
 own comment is exact — "Inject Orka tools and run the server-side
 agentic loop by default. Set `X-Orka-Tools: disabled` to use as a
-transparent proxy instead" (`internal/api/openai_compat.go:287-289`,
-gated at `internal/api/compat_coordinator.go:30`). Asking for one word
+transparent proxy instead" (`internal/api/openai_compat.go:289-290` on `main`, `:278-279` at
+`v0.1.3`; gated at `compat_coordinator.go:30` on `main`, `:35` at the
+tag). Asking for one word
 back:
 
 ```console
@@ -318,7 +324,8 @@ header and nothing else. So an application whose model client cannot
 send a custom header (which is most of them, configured by environment
 variable) cannot reach the transparent path, and instead silently gets
 an orchestrator wearing its agent's name. The behaviour is documented
-in three places; the absence of a server-side default is the gap.
+on at least four of their pages and in the source comments themselves;
+the absence of a server-side default is the gap.
 
 ### 2c. Running it: the same third-party app, live
 
@@ -411,7 +418,7 @@ conclusion deserves more of it than one that confirms.
 
 ### 3a. What their type says
 
-`internal/approvals/approvals.go:26-43` — an `Approval` carries
+`internal/approvals/approvals.go:24-44` — an `Approval` carries
 `TargetTool`, `TargetArgsDigest`, `TargetSpecDigest`,
 `TargetArgsPreview`, `ToolCallID`, `DecisionActor`. The identity of an
 approval *is* the call:
@@ -597,17 +604,15 @@ something run on the cluster above or read at `597a8ab` / `v0.1.3`.
 | capability | Orka | Kaimahi | verdict |
 |---|---|---|---|
 | **Approval bound to a specific call** | Yes. Digest over canonical arguments **plus tool spec version plus credential version** (`key.go:73`, `approval_gate.go:711`); parks before execution; single-use idempotency key; approver identity recorded. Scoped to autonomous coordinator Tasks calling `Tool` CRDs (`agent_types.go:284`). | Yes. Digest over argument values; in a gateway, so it covers any caller including workloads we did not launch; standing constraints and a monetary threshold. | **Overlap**, and theirs is the deeper binding. Ours reaches further. Built twice. |
-| **Money-denominated spend ledger + price gate** | **None.** Zero occurrences of price, cost-in-currency, USD or cents in the Go tree. Token counts per model request are recorded in durable events; there is no aggregate, no budget enforced against them, and no cost metric among the 25 `orka_*` metric names — about ten
-underlying metrics once histogram suffixes are folded — that a live
-v0.1.3 controller exposes — despite the README's "at what cost". | Postgres ledger in money, `cost_source`, and a gate that refuses a call whose cost cannot be computed rather than ledgering a zero. | **Gap on their side.** The single clearest thing we have that they do not. |
+| **Money-denominated spend ledger + price gate** | **None built, and none planned in money.** No price, currency, USD or cents anywhere in the Go tree (the only grep hits are incidental, e.g. `internal/security/secretscan.go:13`). Token counts per model request are recorded in durable events; there is no aggregate, no budget enforced against them, and no cost metric among the `orka_*` metrics — despite the README's "at what cost". Their roadmap does name it — `multi-agent-coordination.md:1011`, "**Cost tracking** — Per-task/child token usage aggregation" — but that is *token* aggregation, so the money gap stands even against the plan. | Postgres ledger in money, `cost_source`, and a gate that refuses a call whose cost cannot be computed rather than ledgering a zero. | **Gap on their side.** The single clearest thing we have that they do not. |
 | **Model seam for a foreign workload** | Yes — authenticated, Provider-scoped, key never leaves the cluster. Per-route authorization (SubjectAccessReview) only from `main`; at `v0.1.3` any authenticated cluster token could use it. Not a proxy unless the client sends `X-Orka-Tools: disabled`. No metering. No `/openai/v1/responses`. | Yes — metering proxy with a ledger; also no Responses support until recently, and it metered zero. | **Overlap.** Theirs has the better custody story, and from `main` the better access-control story; ours has the meter. |
 | **Tool seam for a foreign workload** | No. `Tool` describes what Orka dials, not a gateway a foreign app routes through. | Yes — enforcing MCP gateway, allowlist, argument policy, proven on a third-party app on kind and AKS. | **Complement.** The one architectural thing that composes rather than duplicates. |
 | **Governing a Deployment already running** | No adoption path: no mutating webhook in the bundle, workloads built from CRs. Model traffic only, by repointing a URL. | Two config values, their Deployment untouched. | **Complement**, narrowed to the model seam. |
-| **Durable audit / execution record** | Durable events on a PVC-backed store (`ReadWriteOnce`, `deploy/orka.yaml:11221`) — survives restart. Per-request token counts, tool names, `toolCallID`, `argumentBytes`. **Argument values are never recorded** on this path — `argumentBytes` only (`workers/ai/main.go:1373`). The harness-v2/ACP path is different: tool content is projected into the event's `ContentText`, redacted rather than omitted (`internal/harness/v2/eventjournal/mapper.go:686-705`). That path was read, not run. | Postgres ledger with `arg_summary`, caller claim and observed address. Tool *responses* recorded nowhere. | **Overlap.** Neither records what the other does — theirs the model-request shape, ours the argument values. |
+| **Durable audit / execution record** | Durable events on a PVC-backed store (`ReadWriteOnce`, `deploy/orka.yaml:11225` at `v0.1.3`; `:8118` on `main`) — survives restart. Per-request token counts, tool names, `toolCallID`, `argumentBytes`. **Argument values are never recorded** on this path — `argumentBytes` only (`workers/ai/main.go:1373`). The harness-v2/ACP path is different: tool content is projected into the event's `ContentText`, redacted rather than omitted (`internal/harness/v2/eventjournal/mapper.go:686-705`). That path was read, not run. | Postgres ledger with `arg_summary`, caller claim and observed address. Tool *responses* recorded nowhere. | **Overlap.** Neither records what the other does — theirs the model-request shape, ours the argument values. |
 | **Credential custody** | Split, and the split is in the code. ACP runtimes never see a key — they reach the provider proxy. A native `type: ai` worker receives it: `job_builder.go:1301` mounts the Provider Secret as `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` via `secretKeyRef`, gated by `directProviderSecretsAllowed`, which is unconditional for `type: ai` because `isUntrustedComputeTask` (`:207-209`) is true only for `type: container`. Observed on a live pod, alongside `ORKA_ALLOW_BASH=true`. The README's "developers get a ServiceAccount token, not an API key" is true of developers, not of the agent process; their narrower `security.md` claims only the RuntimePool path and is accurate. | The key never reaches the agent on either seam. | **Overlap** on the proxy path, **gap on theirs** for native workers. |
 | **Orchestration, sessions, memory, chat** | Coordinator/specialist delegation, autonomous loops, transcript search, memory proposals, SSE chat with an agentic orchestrator, RuntimePools keeping Codex/Claude/Copilot/OpenCode warm over ACP. | Partly built, much smaller. | **Overlap, theirs far ahead.** Nothing here for us to add. |
 | **Runtime and CRDs** | 17 CRDs at `v0.1.3` (26 in `main`'s staged chart), its own controller, its own runtimes. | kagent as the runner, plus our plane. | **Overlap at the layer, different choices.** Not ours to reconcile. |
-| **Observability** | 25 `orka_*` metric names exposed by the live v0.1.3 controller; 31 registrations in `internal/metrics/metrics.go` at `main`. Structured logs. OpenTelemetry traces and GenAI-semconv metrics behind `-enable-tracing` (off by default) and the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`internal/tracing/tracing.go:151`) — but the published chart has no value that sets either, so an operator hand-wires it. No token metric and no cost metric in any of them. | Prometheus via a PodMonitor an adopter can extend; OTel is a board candidate, unbuilt. | **Overlap, theirs ahead.** Take theirs; stop the OTel candidate. |
+| **Observability** | 25 `orka_*` metric names emitted by the live v0.1.3 controller this lane scraped — labelled counters only appear after first use, so the tree defines more. Structured logs. OpenTelemetry traces and GenAI-semconv metrics behind `-enable-tracing` (off by default) and the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`internal/tracing/tracing.go:151`) — but the published chart has no value that sets either, so an operator hand-wires it. No token metric and no cost metric in any of them. | Prometheus via a PodMonitor an adopter can extend; OTel is a board candidate, unbuilt. | **Overlap, theirs ahead.** Take theirs; stop the OTel candidate. |
 | **Pod hardening** | Non-root, read-only rootfs, all capabilities dropped, observed on a live worker; four admission policies. | No pod-level isolation attempted. | **Gap on ours, theirs ahead.** |
 | **Egress control** | Split the other way. The base chart ships **zero** NetworkPolicy templates; the six that exist are in the staged harness-v2 chart, and the controller writes deny-all policies only for ACP RuntimePools and repository-monitor validation Tasks. A plain `type: ai` Job has unrestricted egress. | NetworkPolicy egress on the governed path, on by default. | **Overlap, ours ahead** on the default install. |
 | **Cluster provisioning / front door** | Assumes a cluster. No installer, no published CLI binary — tags but no releases. | `curl \| sh` then one command, cluster included, 1 prerequisite. | **Gap on their side**, and it is the mission stated directly. |
@@ -643,7 +648,11 @@ bringing them a bug and a diagnosis, not a design — the easiest kind of
 contribution to accept, and the one that helps people who never hear of
 either project.
 
-**2. A money-denominated ledger and a price gate.** Their durable events
+**2. A money-denominated ledger and a price gate.** (Their roadmap
+already wants the neighbouring thing — `multi-agent-coordination.md:1011`
+lists "Cost tracking" as per-task token aggregation — so this is an
+extension of a direction they have chosen, not a new one imposed on
+them.) Their durable events
 already carry `inputTokens`, `outputTokens`, `model` and `provider` per
 request, on a PVC-backed store. What is missing is a price table, a cost
 folded onto those events, an `orka_model_cost_total` metric beside the
@@ -677,9 +686,15 @@ there is no code path that could try.
 pending approval's preview and vanish once decided. They have already
 written the hard part — `events.SanitizeExecutionEventJSON` and
 `boundApprovalTargetArgsPreview` bound and sanitise exactly this data for
-the approval preview. **Size: reuse those two functions at the
-`ToolCallStarted` emission site.** Small. This is the one place our
-ledger sees something theirs cannot.
+the approval preview. **Size: small but not trivial.** `SanitizeExecutionEventJSON` is already
+exported (`internal/events/redaction.go:155`), but
+`boundApprovalTargetArgsPreview` is unexported in `internal/approvals`
+(`key.go:168`) while the emission sites live in `workers/ai`
+(`main.go:1366`, `approval_gate.go:1143`), so it needs exporting or
+moving — and the two harness emitters (`internal/harness/mapper.go:105`,
+`internal/harness/v2/eventjournal/mapper.go:1328`) would be left
+inconsistent unless they are done at the same time. This is the one
+place our ledger sees something theirs cannot.
 
 **4. A server-side default for the transparent-proxy mode.** A Provider
 field or Helm value that sets the `X-Orka-Tools: disabled` behaviour for
@@ -816,6 +831,19 @@ Specific, and each one because Orka does it and does it better.
   either pass — a quotation attributed to the KARS report that appears
   only in this lane's prompt, and an interval of "eight days" for
   something that happened five hours earlier.
+
+  A third pass added six more — a roadmap entry that names the
+  neighbouring capability (§4, §5.2), a contribution sized "small" that
+  needs an unexported function moved first (§5.3), four citations that
+  were `main` line numbers attached to `v0.1.3` observations, and an
+  arithmetic claim ("within seconds") that the numbers did not support.
+  **One of its findings was itself wrong** and was checked rather than
+  accepted: it reported that Orka's docs never say they publish no
+  GitHub Releases, having grepped only the tag and one page; the
+  statement is at `website/docs/getting-started.md:113` and
+  `reference/release-status.md:107`. A reviewer told to assume
+  everything is false will produce some false positives, and taking
+  those on trust would have been the same error in the other direction.
 
   **The pattern is worth more than the individual fixes.** Every defect
   was a claim about a *version*: main's code credited to a v0.1.3 run,
