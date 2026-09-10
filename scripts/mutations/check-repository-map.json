@@ -1,6 +1,6 @@
 {
   "checker": "check-repository-map.py",
-  "why": "This checker's whole value is that it fails when the map and the tree disagree, and every way it can stop doing that looks like a clean run: a comparison that stops comparing, an anchor failure swallowed, a glob that reaches too far, an empty tree accepted, a registry nothing registers into, a verdict computed and dropped. Each edit below is one of those, and the self-test — which breaks the MAP and the TREE rather than this file — is what has to notice.",
+  "why": "This checker must fail when the map and the tree disagree without freezing product classifications or historical prose. Each mutation breaks a mechanical guarantee; the self-test uses an independent miniature map and tree, so live documentation may evolve without breaking test setup. The real repository is checked separately.",
   "verify": [
     "python3",
     "scripts/check-repository-map.py",
@@ -93,10 +93,16 @@
       "replace": "    return scope"
     },
     {
-      "name": "the standing question may empty itself",
-      "breaks": "The three genuinely-unclear cases. The section could lose its items — resolved by nobody, just deleted — and this would report the map in agreement with the tree.",
-      "find": "    items = re.findall(r\"^\\d+\\. \\*\\*(.+?)\\*\\*\", body, re.M)\n    if not items:",
-      "replace": "    items = re.findall(r\"^\\d+\\. \\*\\*(.+?)\\*\\*\", body, re.M)\n    if items and False:"
+      "name": "only the first demo caller is checked",
+      "breaks": "The retained approval helper must still be called by both AP demos. Checking only ap-demo.sh lets ap-injection.sh silently stop using it while the map still claims both callers.",
+      "find": "    missing = [path for path in (\"scripts/ap-demo.sh\", \"scripts/ap-injection.sh\")",
+      "replace": "    missing = [path for path in (\"scripts/ap-demo.sh\",)"
+    },
+    {
+      "name": "the open-question count stops checking its list",
+      "breaks": "Questions may be resolved by declaring zero, but a nonzero count must still match its items. Silently deleting the list without updating the count is drift, not resolution.",
+      "find": "    return compare_count(number(m.group(1)), len(items), \"open questions\")",
+      "replace": "    return []"
     },
     {
       "name": "a section's short names are read against the repository root",

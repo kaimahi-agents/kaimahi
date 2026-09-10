@@ -39,10 +39,10 @@
       "replace": "        if False:\n            raise Anchor(f\"the {TABLE} table parsed to no rows"
     },
     {
-      "name": "a board with no worker prompts is accepted",
-      "breaks": "Three claims read the prompts. If none is found — a heading level changed, a section renamed — all three pass having examined nothing, and the paste-and-rebuild hazard they exist for stops being looked at.",
-      "find": "        if not self.prompts:\n            raise Anchor(\"no prompt headings",
-      "replace": "        if False:\n            raise Anchor(\"no prompt headings"
+      "name": "an explicitly retained prompt section with no readable prompts is accepted",
+      "breaks": "Absent retired sections are valid, but a present section whose headings cannot be read must not silently pass.",
+      "find": "            if not any(first <= p.line < first + len(body.splitlines()) for p in self.prompts):",
+      "replace": "            if False:"
     },
     {
       "name": "a heading in a state this file was never taught is filed under nothing",
@@ -129,16 +129,70 @@
       "replace": "            elif False:\n                raise Anchor("
     },
     {
-      "name": "the two findings the ledger cases run on are the same finding twice",
-      "breaks": "The weakening those cases exist to prevent. With one finding standing in for both, 'the recorded one is gone and an unrecorded one remains' collapses into 'something remains' — which an unearned ledger entry satisfies even when every finding has been forgiven.",
-      "find": "    return tuple(next((f for f in found if f.claim == name), None) for name in LEDGER_CASES)",
-      "replace": "    return tuple(found[0] for name in LEDGER_CASES)"
+      "name": "duplicate lane rows are ignored",
+      "breaks": "Two rows for one worker give conflicting assignments; the synthetic compact board must catch this even without archived prompts.",
+      "find": "        if len(rows) > 1:\n            where =",
+      "replace": "        if False:\n            where ="
     },
     {
       "name": "a lane's title keeps the board's cross-references in it",
       "breaks": "A row's title ends in the decisions that authorised it, which appear in this document and nowhere else. Left in, they are words no merge subject can ever share, and a stale row's title stops resembling the merge that closed it.",
       "find": "        title = re.sub(r\"\\s*\\([^()]*\\)\\s*$\", \"\", title.strip())",
       "replace": "        title = title.strip()"
+    },
+    {
+      "name": "a compact board is forced to retain retired prompts",
+      "breaks": "Retirement must be supported, not just another fixture with the archive still present.",
+      "find": "        if PROMPTS in sections:",
+      "replace": "        if True:"
+    },
+    {
+      "name": "malformed lane rows are accepted among valid rows",
+      "breaks": "A malformed row must not escape lane and status checks while another valid row makes the table look nonempty.",
+      "find": "            if len(cells) < 4 or not all(cells[:3]) or cells[0].lower() == \"lane\":",
+      "replace": "            if False:"
+    },
+    {
+      "name": "a pipe-free lane row is skipped",
+      "breaks": "Losing every delimiter must not make a lane invisible while other rows still pass.",
+      "find": "                if header and stripped:",
+      "replace": "                if False:"
+    },
+    {
+      "name": "the lane table header is not validated",
+      "breaks": "A missing or changed header cannot be treated as a data row or silently skipped.",
+      "find": "                if [c.lower() for c in cells] != [\"lane\", \"owner\", \"status\", \"notes\"]:",
+      "replace": "                if False:"
+    },
+    {
+      "name": "the lane table separator is not validated",
+      "breaks": "Without a separator this is not a Markdown table; silently consuming the first lane would also drop its checks.",
+      "find": "                if len(cells) != 4 or not all(re.fullmatch(r\":?-{3,}:?\", c) for c in cells):",
+      "replace": "                if False:"
+    },
+    {
+      "name": "an explicitly retained empty delta-sheet section is accepted",
+      "breaks": "Retirement permits an absent section, not a present but unreadable one.",
+      "find": "            if not any(first <= line < first + len(body.splitlines()) for _, _, line in self.sheets):",
+      "replace": "            if False:"
+    },
+    {
+      "name": "a prompt elsewhere masks an empty retained prompt section",
+      "breaks": "A readable prompt under another heading cannot satisfy the named section's nonempty requirement.",
+      "find": "            if not any(first <= p.line < first + len(body.splitlines()) for p in self.prompts):",
+      "replace": "            if not self.prompts:"
+    },
+    {
+      "name": "a sheet elsewhere masks an empty retained delta-sheet section",
+      "breaks": "A readable delta sheet under another heading cannot satisfy the named section's nonempty requirement.",
+      "find": "            if not any(first <= line < first + len(body.splitlines()) for _, _, line in self.sheets):",
+      "replace": "            if not self.sheets:"
+    },
+    {
+      "name": "a repeated separator counts as a lane",
+      "breaks": "An empty table with a duplicated separator must not satisfy the nonempty-lane requirement just because another section cites a merge.",
+      "find": "            if all(re.fullmatch(r\":?-+:?\", c) for c in cells):",
+      "replace": "            if False:"
     }
   ]
 }

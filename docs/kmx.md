@@ -1,612 +1,270 @@
-# `kmx` — one command for creating and running agents
+# `kmx` — tooling for getting agents onto Orka
 
-`kmx` is the developer journey as a single Go binary: a cluster, a local
-model, kagent, an agent, a conversation — and then the governance plane, a
-governed credential, and the ledger that shows what it spent. It needs no
-clone and no Makefile.
+[Orka](orka.md) is the platform. Kaimahi's current front door is `kmx orka`
+for installation/status, `kmx agent create` for native Provider + Agent authoring,
+and `kmx migrate` for an existing application's **model traffic**. The Deployment
+remains owner-managed. Installing Orka alone is not this migration; none of these
+operations silently governs application tools.
 
-It is also the only user command interface for that journey. From a checkout,
-Make builds the binary and orchestrates repository demos that have no binary
-equivalent. Those remaining demos are the Slack and inbound connector families;
-the agents this repository wires from committed manifests — the release
-agent, the accounts-payable demo and the hosted-GitHub agent, whose
-`Agent` and `RemoteMCPServer` documents `kmx` does not carry
-([workflows.md](workflows.md) has the checkout table); the model-key
-capture; and the network probes. The managed-cluster path is `kmx lift`.
-
-**Status.** v0.1.0 is released ([releases.md](releases.md)); no
-package-manager namespace is claimed. `kmx` is a provisional name,
-like `kaimahi` itself, and is not claimed anywhere
-([NAMING.md](NAMING.md)).
-
-**Local unless you say otherwise.** Everything below assumes a local kind
-cluster, except `kmx lift`, which puts the same agent on AKS: it builds the
-image in a private registry, renders the manifest for it, and wires
-Azure-managed monitoring ([aks.md](aks.md)).
-
-The managed path's model credential is also direct. `kmx lift` checks for the
-plane-side Copilot Secret and, when it is absent, performs the GitHub device
-flow through `kmx models credential copilot`. It needs no checkout or Make.
+The CLI also contains the existing **legacy kagent/plane implementation** pending
+the code transition. Its commands remain documented below because they run
+today, not because agent authoring has been settled. Native-Orka-only versus
+kagent YAML over Orka remains open; `orka.harness.v2` is outside the direction.
+A shrinking compatibility/governance bridge is success, not a reason to rebuild
+Orka's platform in Kaimahi.
 
 ## Install
+
+The current Orka commands require a development build, with Go 1.26+:
+
+```bash
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+kmx version
+kmx orka --help
+```
+
+Ensure Go's binary directory is on PATH. `@main` is a moving development
+revision, not a tagged release. From a checkout, `make` builds `bin/kmx` and
+prints its path without changing a cluster; use that binary to exercise edits.
+
+The published `v0.1.0` release predates the Orka commands. `go install ...@latest`
+and the release installer are **not substitutes** for the development build
+above when following the Orka path:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 ```
 
-The script works out your platform, downloads that release binary, **checks it
-against the release's published sha256 before installing it**, and puts it in
-`~/.local/bin` — no sudo, and nothing outside your home directory.
-`--quickstart` carries straight on into `kmx quickstart`; `--version=v0.1.0`
-pins a version; `--bin-dir=DIR` installs elsewhere.
+That installer puts the selected release in `~/.local/bin`, without sudo;
+`--version=v0.1.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--quickstart` continues into the legacy quickstart. It checks the binary against
+a checksum from the **same** GitHub release over TLS: corruption detection, not
+an independent signature. See [releases](releases.md) for platforms and upgrades.
 
-Stated rather than implied: the binary and its checksum come from the same
-GitHub release over TLS, so this proves the download was not corrupted or
-truncated. It is not an independent signature. `go install` is the other
-route, and it goes through the Go module proxy and the Go checksum database
-instead:
-
-```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
-```
-
-`@latest` is the newest tagged release; `@v0.1.0` pins one. No Homebrew tap,
-no npm, crates or PyPI package — the Go module proxy and its checksum
-database are the whole distribution, and no namespace of ours is claimed
-(see [NAMING.md](NAMING.md)).
-
-Without a Go toolchain, each release also carries checksum-verified binaries
-for linux and macOS on amd64 and arm64. The download, the version scheme and
-the upgrade path — including what happens when a migration fails — are in
-[releases.md](releases.md).
-
-From a clone, `make bin/kmx` is the contributor build command.
-
-Plain `make` is build-only and prints the resulting binary path. It never
-creates or changes a cluster; provisioning requires the explicit command:
-
-```bash
-make       # build bin/kmx
-bin/kmx up # create/update the local runtime with the checkout build
-```
-
-| Prerequisite | Why |
-|---|---|
-| Docker **or** Podman | kind runs Kubernetes in containers. **The only thing you must install.** |
-| kind, kubectl, Helm | kmx downloads them if the machine has none, pinned and checksum-verified; a copy already on PATH is preferred and never shadowed |
-| Go 1.26+ | only for the two commands that build the plane's image — `kmx plane` (and then only outside a checkout, where it fetches the source from the Go module proxy) and `kmx lift` (whenever its plane phase runs) — and for `go install` |
-
-kmx has always fetched the pinned kagent CLI itself, checksum-verified, the
-first time you chat. The cluster tools now work the same way: pinned
-versions, the publisher's own sha256 file, the digest re-checked on every
-later use rather than only at download — because "checksum-verified" has to
-mean the bytes about to run with your kubeconfig, not the bytes that arrived
-some other day. They land in `~/.config/kmx/bin`, and `~/.config/kmx/path`
-holds the plain-named symlinks kmx puts on PATH for the length of one
-command.
-
-`KMX_TOOLCHAIN=off` turns the fetching off entirely: a missing tool goes back
-to being an error that names its install page. A clone uses the same verified
-kmx cache unless `KAGENT=<path>` is explicitly supplied; the Makefile's
-`bin/kagent` remains for legacy action-oriented helpers such as `slack-post`.
-
-## The journey
-
-```bash
-kmx up                                   # kind + Ollama + the model + kagent + two agents
-kmx agent chat hello-world "Who are you?"
-
-kmx plane                                # the governance plane: proxy + Postgres ledger
-kmx govern hello-world                   # issue the credential, put the agent behind it
-kmx agent chat hello-world "Who are you?"  # the same question, now metered
-kmx ledger                               # what it cost
-
-kmx status
-kmx down
-```
-
-Once the plane is up, the verbs an operator reaches for:
-
-```bash
-kmx budget hello-world --tokens 200000   # the cap it spends under
-kmx tools govern --tools k8s_get_resources   # the tools agent, behind the gateway
-kmx approvals                            # what is waiting for a human, and the CALL each is about
-kmx approve <id> --ttl 10m --uses 1      # bounded, or it is a config change
-kmx backup                               # the ledger and the audit trails, to a local file
-kmx metrics                              # one replica's Prometheus exposition
-```
-
-Between the two chats nothing about the agent changed except which model
-preset it thinks through. That is the whole point: governance is a preset
-swap plus a credential the agent cannot read past.
+Local kind commands need Docker or Podman. kmx uses kind, kubectl and Helm from
+PATH first, otherwise fetches pinned, checksum-verified tools; the pinned kagent
+CLI is cached too. Cached digests are rechecked before reuse. Set
+`KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
+CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
+its source; the lift plane phase preflights Go even from a checkout.
 
 ## Commands
 
-| Command | What it does |
+Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tree
+also generates completion; this guide describes contracts rather than duplicating
+every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
+
+### Current Orka path
+
+| Command | Contract / reference |
 |---|---|
-| `kmx ctx` | print the context kmx will act on, where that came from, and its posture |
-| `kmx ctx <context>` | select that context for later commands (recorded in kmx's config directory — `~/.config/kmx/context` on Linux; set `KMX_HOME` to put it elsewhere) |
-| `kmx quickstart` | the shortest honest path to a working agent: equip the machine, create the cluster, deploy Ollama and pull the model, install kagent **without the components a first question cannot reach**, deploy one agent, ask it a question and print the answer. It preserves any deployed full or custom kagent release rather than disabling components, installs the minimal profile only after proving the release absent, and refuses unreadable or non-deployed Helm states rather than guessing. A terminal gets a clear six-step view while native command output remains visible; redirected output keeps durable phase lines. `--output json` emits one document on stdout for a machine, and `--task` changes what is asked. Does not enable governance or assess existing governance, and deploys no plane |
-| `kmx up` | check all host dependencies in one pass before the guard or first use, create the kind cluster, deploy Ollama, pull the pinned model, install kagent by helm, apply both agents, wait for each to be Ready, print status |
-| `kmx up --step <step>` | one step only: `cluster`, `ollama`, `model`, `kagent`, `agent`, `tools-agent` |
-| `kmx lift` | the same agent, on AKS: create the resource group, a private registry and a cluster with a policy engine, **prove the boundary is enforced before putting anything behind it**, install the runtime, the plane and the agents, wire Azure-managed monitoring, then check the agent answers and that its metrics and logs actually arrived. Names what it will do and where, and refuses without confirmation naming the cluster. Bills money until `kmx lift down` ([aks.md](aks.md)) |
-| `kmx lift --byo` | the same, onto a cluster you already have. **Your cluster and resource group are never created, deleted or adopted**; it refuses to install if the cluster has no NetworkPolicy engine, never touches the cluster-wide scrape ConfigMap, and refuses to grant itself `AcrPull` |
-| `kmx lift --plan` | print what would be created, where, and stop |
-| `kmx lift --step <step>` | one phase only — every phase is re-runnable, so a failure is resumed rather than unpicked: `cluster`, `boundary`, `kagent`, `credential`, `plane`, `agents`, `observability`, `verify` |
-| `kmx lift down` | remove what the lift created. On a cluster it created, the whole resource group, proven gone. On yours, only the resources it recorded the id of, deleted by that id and never by name — anything it cannot prove is its own is left alone and named |
-| `kmx agent list [-o table\|json\|yaml]` | list agents with readiness, acceptance, active ModelConfig, and tool-server wiring |
-| `kmx agent create [<name>]` | create an Orka Provider and Agent, optionally run a Task; explicit namespace, Provider type, model ID and Secret required (wizard prompts when omitted) |
-| `kmx agent edit <name> [--file <path>]` | edit and validate owned local Agent source; never edits the live resource implicitly |
-| `kmx agent chat <name> [message]` | ask an agent one question, through `kagent invoke` |
-| `kmx agent chat <name> --json` | the raw A2A task instead of the readable one-shot view (piped one-shot output is always raw); refused together with `--interactive` |
-| `kmx agent chat --interactive <name>` | live streamed chat in one session; shows active tools, tool calls/results, and supports session history/resume |
-| `kmx plane` | build the proxy image, bootstrap the plane's secrets, deploy the plane, wait for it to serve |
-| `kmx plane --step <step>` | one step only: `image`, `secrets`, `certificate`, `deploy`. `certificate` mints or renews what the two data seams serve with, and restarts the plane onto it ([operations.md](operations.md)) |
-| `kmx plane --source <path>` | build the plane from a checkout instead of fetching it (`-` forces the fetch) |
-| `kmx govern [<credential>]` | issue the governed credential (default `$CRED`), apply the governed presets, switch the agent onto one. `--ttl` sets the credential's lifetime; the plane defaults one, and there is no way to ask for "never" |
-| `kmx credentials` | the governed credentials and when each one expires, soonest first, with the state an operator scans: `EXPIRED`, `EXPIRING`, `ok`, or `no expiry` (the legacy class) ([identity.md](identity.md)) |
-| `kmx credential issue <name> (--discard \| --secret <name>) [--namespace kagent] [--ttl duration]` | issue a credential to exactly one destination. `--discard` creates an identity for a signed inbound hook and validates then discards its one-time bearer. `--secret` stores the bearer directly in the named Kubernetes Secret through kubectl stdin, after verifying that an existing Secret is not bound to another credential. It never prints the token; an already-issued credential is kept only when the Secret proves it is bound to that same identity |
-| `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel. Rotating the token is still `kmx govern` |
-| `kmx credential capture <upstream> <repository\|organization>` | store the credential an upstream needs, in plane custody. `github` and `github-release` take `owner/name`, `ado` takes an organization. The value is **typed at a prompt with the echo off**: there is no flag, environment variable or file that takes it, and a pipe or a redirect is refused — a credential that can arrive through a pipe can arrive from a shell history or a CI log. It is checked against the upstream first (nothing is stored if that fails) and written straight into the Secret the gateway reads; it never reaches argv, a file or a log. An upstream that already has one is refused unless `--replace` |
-| `kmx ledger [<credential>]` | the spend ledger, newest first, plus month-to-date totals. The last column is `acted for`: who the call was made for. The two before it say who *called* — `caller (claimed)`, the client's own unverified word for itself, and `from (observed)`, the address the plane saw |
-| `kmx grants [<credential>]` | grants, with liveness — an expired grant is not a grant |
-| `kmx audit tool\|approval [<cred>]` | the enforcement points' audit trails. The tool trail carries the same two caller columns the ledger does |
-| `kmx audit inbound [<hook>]` | the signed inbound event trail for every hook, or one named hook |
-| `kmx flow [<credential>]` | the ledger, the tool audit, the approval audit and the inbound audit as one chronological reading, oldest first — what triggered a run, what it spent, what it called, what it was refused and what a human let through. Defaults to every credential. It is a **timeline, not a trace**: the four trails share only the credential and the timestamp, so rows are ordered by time and never linked causally, and it says so under every rendering |
-| `kmx workflow govern\|refresh\|run <blueprint>` | apply a blueprint's allowlist and standing bounds, refresh its declared short-lived seam credentials without running an agent turn, or run its steps. `workflow run --step` may be repeated to select several concrete steps |
-| `kmx use <preset>` | switch an agent onto a preset from `k8s/models/` (`--agent`, default `hello-world`); waits until exactly one pod is on the new template |
-| `kmx budget [<credential>] [--cents n\|-] [--tokens n\|-]` | replace the monthly caps. No flags **clears** both |
-| `kmx approvals` | the requests waiting for a decision, each with the CALL it is about |
-| `kmx approve <id> [--ttl 10m] [--uses 1] [--amount n]` | mint the bounded grant. At least one of `--ttl`/`--uses` is required — an unbounded grant is a config change, not an approval |
-| `kmx deny <id>` | refuse a pending request |
-| `kmx request <tool\|budget\|inbound> <subject>` | file one explicitly. `--args '<json>'` (tool requests only) names the CALL to pre-approve; omitting it means the **argument-less** call, never "any call" |
-| `kmx tools add <name>` | onboard **your own** MCP server as a governed upstream: scaffold the table entry, the NetworkPolicy pair and the gateway seam as reviewable YAML, validate them against the running plane, apply (`--url`, `--tool`, `--server-egress`, `--pod-port`, `--secret`, `--out`, `--no-apply`, `--dry-run`) |
-| `kmx models add <name>` | onboard **your own** model endpoint as a governed upstream: scaffold the table entry and the NetworkPolicy pair as reviewable YAML, validate them against the running plane, apply (`--url`, `--classification`, `--protocol`, `--server-egress`, `--pod-port`, `--out`, `--no-apply`, `--dry-run`) |
-| `kmx orka install` | install [Orka](https://github.com/orka-agents/orka) on the cluster kmx is pointed at: fetch their `deploy/orka.yaml` at the pinned tag and **refuse bytes that do not hash to the digest kmx pins**, create the `harness-wrapper-auth` Secret their own instructions ask an operator to make by hand — before the manifest, because the wrapper mounts it at start — apply their installer unmodified, wait for both Deployments, and create a keyless `Provider` at the in-cluster model server so their fourth prerequisite (an API key) is not one (`--provider`, `--model`, `--model-url`, `--no-apply`, `--dry-run`; [orka.md](orka.md)). Installing governs nothing: `kmx migrate` does |
-| `kmx orka status` | what is installed and what it can resolve — the version **running** (read off the controller's image, and named as a skew when it disagrees with the pin), both Deployments, the CRD count, and the `Provider` list, with "none — a model call would be refused" said rather than left as an empty column. An unreadable cluster is reported as unread, never as absent |
-| `kmx migrate <deployment>` | put an application **you did not write** onto Orka with its model traffic authenticated, Provider-scoped and recorded, and without changing the application: read what the workload reads today, refuse a model Orka has no ready `Provider` for, create the identity the seam presents to Orka and the seam's allowance for your namespace, mint both credentials into Secrets through a pipe, and write the four environment variables and one mounted file as a patch **kmx does not apply** — it does not mutate a Deployment this project does not own (`--namespace`, `--model`, `--container`, `--upstream`, `--credential`, `--secret`, `--orka-namespace`, `--service-account`, `--token-duration`, `--base-url-var`, `--key-var`, `--model-var`, `--out`, `--no-apply`, `--dry-run`; [migrate.md](migrate.md)) |
-| `kmx models credential copilot` | perform GitHub device login (or reuse its `0600` OAuth cache), exchange it for a short-lived Copilot token, and write only that token to `kaimahi/kaimahi-copilot-token` through kubectl stdin. It applies the Copilot egress policy and restarts an existing plane; stdin, flags and environment variables never accept credential bytes |
-| `kmx tools govern` | issue the gateway credential, set the allowlist, wire the governed `RemoteMCPServer`, repoint the agent (`--tools`, `--credential`, `--agent`, `--secret`, `--server`). It APPLIES the committed seam (`kaimahi-tools`); a seam scaffolded by `kmx tools add` is the operator's file, so it is not re-applied here — if you used `--no-apply` or `--dry-run`, apply it first, and kmx says so rather than waiting on an object that is not there. On a cluster with no kagent there is no seam to accept and no Agent to repoint, so it writes the credential, the allowlist and the authority and stops there |
-| `kmx tools sidecar <upstream>` | scaffold the credential shim for a client that cannot set a header: an in-pod reverse proxy that presents the token from the Secret the plane wrote (`--deployment`, `--namespace`, `--secret`, `--out`, `--no-apply`). kmx applies the config; the Deployment patch is yours to apply |
-| `kmx tools allow <tool,tool\|->` | replace the allowlist. `-` is the **empty** allowlist: nothing callable without a live grant |
-| `kmx tools allowlist [<credential>]` | read it back, sorted |
-| `kmx tools ungovern` | put the agent back on the ungoverned tool server |
-| `kmx backup [<file>]` | `pg_dump` the plane's database to a local file (default `backups/kaimahi-<UTC>.sql`, mode 0600) |
-| `kmx restore <file>` | **replace** the plane's database from a backup — every table dropped and recreated |
-| `kmx metrics [--pod <name>]` | one proxy replica's Prometheus exposition; the replica's name goes to stderr so stdout stays machine-readable |
-| `kmx status` | grouped context, agent/model wiring, runtime health, restarts, how much of the system is governed, and next actions |
-| `kmx status -o json\|yaml` | the same document for automation: `context`, `contextSource`, a `governance` block, and the kubectl objects verbatim under `items`. **Changed:** the top-level kubectl `apiVersion`/`kind` are gone, so this can no longer be piped into `kubectl apply`; `jq '.items[]'` is unchanged |
-| `kmx down` | delete the kind cluster kmx created |
-| `kmx completion bash\|zsh\|fish` | print shell completion for commands, flags, fixed values, kube contexts, and live agent names |
-| `kmx version` | the pinned kagent and model versions, the plane's image tag, and the revision `kmx plane` would fetch it at |
+| `kmx orka install` | verify pinned Orka installer bytes; create wrapper-auth Secret before apply; wait for both Deployments; optionally create a keyless Provider. Uses upstream manifests unmodified. [Orka](orka.md) |
+| `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
+| `kmx agent create [name]` | author native Provider + Agent and optional Task; retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
+| `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
+| `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 
-Quickstart reports success only for a completed task with a readable answer.
-Its JSON key set is unchanged; `governed: false` describes this invocation, not
-cluster state. A rerun can preserve existing governance. See the
-[result example](getting-started.md#one-command-and-an-agent-that-answers).
+### Existing plane and operator commands
 
-Quickstart preserves any deployed kagent application release, not just one with
-recognizable full-profile values. It checks the controller rollout without
-upgrading that release. A valid empty listing alone permits the first-answer
-profile via `helm install`; a concurrent install fails rather than being
-overwritten. Other release states, invalid identities/shapes, and query failures
-are refused. The query explicitly selects `--deployed --failed --pending
---superseded --uninstalling --uninstalled`, which works with Helm 3 and 4 without
-the removed Helm 4 `--all` flag. This is release preservation, not a read-only
-quickstart: the other setup steps still reconcile, and a new application install
-uses the shared CRD upgrade/install step. `kmx up` explicitly upgrades/installs
-the full application profile. Both new minimal installs and full-profile
-upgrades wait with `--wait --wait-for-jobs --timeout 420s` rather than waiting on
-every pod in the namespace, which may include unrelated agents.
+These are the present seam implementation, including the bridge used by migrate.
 
-`kmx workflow show` succeeds with parameter help when binding problems are only
-missing values, including a partially supplied valid set. Unknown keys, invalid
-typed values, pattern failures, or invalid computed defaults return an error,
-even when other required values are also missing. The successful human layout
-and embedded JSON remain unchanged; there is still no structured show mode.
+| Command | Contract / reference |
+|---|---|
+| `kmx plane` | image, secrets, certificate, deployment; `--step` runs one of those steps; `--source` selects checkout or fetch |
+| `kmx credentials` / `kmx credential renew <name>` | list expiries / extend deadline without changing token material. [Identity](identity.md) |
+| `kmx credential capture <upstream> <repository\|organization>` | terminal-only verified tool credential capture; see custody below |
+| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` for signed-hook identity; never print the bearer |
+| `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
+| `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
+| `kmx flow [credential]` | model/tool/approval/inbound trails, oldest first; all credentials by default; **timeline, not causal trace** |
+| `kmx audit tool\|approval [credential]` / `kmx grants [credential]` | trails / grant liveness; all credentials by default |
+| `kmx audit inbound [hook]` | inbound audit, optionally filtered by hook rather than credential |
+| `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |
+| `kmx approvals` / `kmx approve <id>` / `kmx deny <id>` | inspect exact calls; grant bounded authority or refuse. [Approvals](approvals.md) |
+| `kmx request <tool\|budget\|inbound> <subject>` | file a request; omitted tool `--args` means the argument-less call, not any call |
+| `kmx tools add <name>` / `kmx models add <name>` | reviewable upstream/NetworkPolicy onboarding; contracts below |
+| `kmx tools sidecar <upstream>` | credential-presenting loopback shim; owner applies the Deployment patch |
+| `kmx tools allow <tool,tool\|->` / `kmx tools allowlist [credential]` | replace/read allowlist; `-` allows nothing without a live grant |
+| `kmx backup [file]` / `kmx restore <file>` / `kmx metrics` | database backup/replacement / one replica's counters; contracts below |
+| `kmx workflow list\|show\|govern\|refresh\|run` | discover/govern/run blueprints or refresh declared seam credentials; [workflows](workflows.md) |
+| `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary and dependency versions |
 
-Enable completion for the current shell:
+Approval TTL is 1 second–30 days, uses 1–1,000,000, amount
+1–1,000,000,000,000 when set; at least TTL or uses is required. Credential
+issuance/renewal TTL is 60 seconds–365 days. An unbounded approval is not allowed.
+`workflow show` treats only missing bindings as exploratory success; unknown keys,
+invalid typed/pattern values or computed defaults fail even with other values
+missing. It has no structured show mode. `workflow run --step <name>` is
+repeatable to select multiple steps.
 
-```bash
-# Bash
-source <(kmx completion bash)
+### Existing legacy kagent commands
 
-# Zsh
-source <(kmx completion zsh)
+| Command | Current behavior |
+|---|---|
+| `kmx quickstart` | kind + keyless Ollama + minimal kagent + hello-world + completed answer; no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
+| `kmx lift` / `kmx lift down` | AKS legacy kagent/Copilot journey and owned cleanup; selected infrastructure phases support migration. [AKS](aks.md) |
+| `kmx agent list` | readiness, acceptance, ModelConfig, tool wiring; table/JSON/YAML |
+| `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
+| `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` for sessions, `--json` for raw one-shot task |
+| `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |
+| `kmx tools govern` / `kmx tools ungovern` | credential, allowlist and kagent tool routing / restore hello-tools' direct tools |
+| `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
+| `kmx down` | delete named kind cluster, **including its ledger** |
 
-# Fish
-kmx completion fish | source
-```
-
-Completion queries are read-only and side-effect-free: they never run guards,
-downloads, port-forwards, or mutations. Static command/flag completion works
-offline. Kube-context and agent-name completion use bounded read-only `kubectl`
-queries and quietly fall back when kubectl or the selected cluster is unavailable.
-Commands, nested help pages, flag definitions, and generated shell completion
-come from the same Cobra command tree, so those surfaces cannot drift apart.
-This is shell completion for `kmx ...`. Interactive chat also provides local,
-network-free slash-command IntelliSense on capable terminals: typing `/` shows
-the available commands, each additional character narrows the list through a
-prefix trie, and Tab completes a unique or common prefix. `NO_COLOR`,
-`TERM=dumb`, redirected input, and pipes retain the ordinary line-input path.
-Unavailable raw mode also falls back to a scanner; `--interactive` is not a
-TTY-only command. Enhanced editing handles wrapped prompts and grapheme-width
-backspace, bounds escape-sequence waits, and restores terminal settings on exit.
-
-### Output contracts
-
-On a capable destination terminal, status, agent list, and admin reports use
-rich headings, fields, and counted tables; tables too wide for the terminal
-become labeled records. Admin reports include ledger, credentials, pending
-approvals, grants, tool/approval audits, and flow; tool allowlists use fields.
-Rich views retain full identifiers and call digests where legacy tables truncate
-them, with exact numeric values and explicit state-column styling.
-
-Redirected admin output keeps its fixed-width columns, truncation, and empty-case
-wording for existing parsers. `TERM=dumb` selects plain presentation. A non-empty
-`NO_COLOR` removes ANSI but retains static rich layout on a capable terminal;
-chat separately disables cursor effects and uses ordinary line input under it.
-JSON/YAML, manifest stdout, metrics, completion, backup SQL, and one-shot raw chat
-bypass human styling. Progress and diagnostics stay on stderr.
-
-Plain compatibility does not freeze incorrect safety claims: unknown status and
-sandbox reads, readiness verdicts, flow refusal totals, setup summaries, and
-recovery commands intentionally change in both modes. Flow counts a model
-refusal from `cost_source: denied`, not an upstream HTTP error alone. Admin
-JSON/YAML and a structured `workflow show` are still unimplemented; the wizard
-and uncommon operator paths have not had a comprehensive rich presentation pass.
-See [cli-ux-plan.md](cli-ux-plan.md) for the audit and remaining scope.
-
-One-shot `kmx agent chat` prints two different shapes on purpose. A terminal gets the
-reply, any tools the agent called, and the token cost. A pipe gets the raw
-A2A task, byte for byte — because things parse it: CI captures this output
-and `scripts/verify-chat.py` asserts on `status.state`, the
-`function_call` and the `function_response` payload. `--json` forces the raw
-form when a terminal wants it. If the output is not a task kmx recognises —
-a transport error, a usage message — it prints what `kagent` printed rather
-than guessing at a shape that is not there. `--interactive --json` is refused
-before application loading rather than silently choosing one format.
-
-Reading, updating and deleting agents are not kmx's job — kubectl and the
-kagent CLI already do them. `kmx agent list` is the one read kmx does
-carry, because it joins readiness, acceptance, the active ModelConfig and
-the tool wiring into one table; it prints that table and nothing else, so
-the kubectl commands for update and delete are here rather than in its
-output:
-
-```bash
-kubectl --context <context> -n kagent get agents.kagent.dev <name> -o yaml  # read
-kubectl --context <context> -n kagent edit agents.kagent.dev <name>         # update
-kubectl --context <context> -n kagent delete agents.kagent.dev <name>       # delete
-```
-
-Scaffolding is the only letter of CRUD with a real gap
-([CLI-PROPOSAL.md](CLI-PROPOSAL.md) is the survey that established that).
+`quickstart` creates the minimal application release only after proving absence,
+using install so a concurrent release is not overwritten. It reconciles its
+recognized first-answer profile; deployed full/custom profiles are preserved and
+the controller checked. Unreadable/malformed or non-deployed state refuses. `up` explicitly
+upgrades/installs the full profile. Helm waits cover release workloads/jobs, not
+all pods in a namespace. These are not read-only operations: other setup steps
+still reconcile. Existing non-default model and governed tool routing are
+preserved by agent reconciliation; direct routing requires an explicit switch.
 
 ## Settings
 
-kmx reads environment settings such as `KIND_CLUSTER` and `ADMIN_PORT`.
+| Setting | Meaning / default |
+|---|---|
+| `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
+| `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
+| `CONTAINER_ENGINE` | `docker` or `podman`; keep consistent for every operation on a cluster |
+| `KAGENT_VERSION`, `MODEL` | defaults `0.9.12`, `qwen2.5:3b` for legacy setup |
+| `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
+| `CRED`, `CRED_TOOLS` | default model/operator credential `hello-world`, tool credential `hello-tools` |
+| `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
+| `KMX_HOME` | kmx state/cache location; otherwise user config directory (`~/.config/kmx` on Linux) |
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `KIND_CLUSTER` | `kaimahi-p1` | the cluster `up` creates and `down` deletes |
-| `KUBE_CTX` | `kind-$KIND_CLUSTER` | the context to act on. With nothing set anywhere the name still falls back to `kind-kaimahi-p1`, but that is a name nobody chose and mutating commands refuse it — see [Where the command will land](#where-the-command-will-land) |
-| `CONTAINER_ENGINE` | `docker` | `docker` or `podman` (sets `KIND_EXPERIMENTAL_PROVIDER`) |
-| `KAGENT_VERSION` | `0.9.12` | pinned kagent chart **and** CLI |
-| `MODEL` | `qwen2.5:3b` | model pulled into Ollama |
-| `CHAT_PORT` | automatic | local port for the controller forward; set a number for deterministic automation |
-| `ADMIN_PORT` | `19091` | local port for the plane's admin forward |
-| `OPS_PORT` | `19092` | local port for a replica's metrics forward |
-| `CRED` | `hello-world` | the credential `govern` issues, and the one `ledger` and `budget` read/write by default (`grants` and `audit` default to **all** credentials) |
-| `CRED_TOOLS` | `hello-tools` | the credential the MCP gateway admits — what `kmx tools` acts on, and what a `tool` request is filed against |
-| `KAIMAHI_CONFIRM` | unset | confirm a context the guard will not proceed on by itself, by name. That is a non-kind context, and — for `kmx down` only — a `kind-*` cluster the container engine lists but the kubeconfig does not describe, which is how a half-created cluster is removed |
-| `KMX_HOME` | `~/.config/kmx` | where the selected context and the cached kagent binary live |
+### Where the command will land
 
-`--context <name>` overrides `KUBE_CTX` for one command.
+Mutations print context, who chose it, server and namespaces on stderr. Local
+kind requires both a kind-shaped name and loopback server; remote mutations
+require typed confirmation or `KAIMAHI_CONFIRM=<context>`. Non-interactive runs
+without consent refuse. Read-only reports do not prompt.
 
-## Where the command will land
+The implicit `kind-kaimahi-p1` fallback refuses when kubeconfig contains other
+possible targets and nobody chose this one. An empty machine, or corroboration
+that the fallback is already current, permits first setup. Current-context is
+never substituted as kmx's target. Kind creation/image loading also require
+context `kind-$KIND_CLUSTER`; confirmation cannot override that mismatch.
 
-Every command that changes a cluster or the plane prints where it is about
-to act, and refuses anything that is not a local kind cluster without an
-explicit confirmation naming the context. That includes `kmx workflow run`,
-which files approval requests and performs the calls a human approves, and
-`kmx credential renew`, which moves an expiry. The read-only views —
-`ledger`, `grants`, `flow`, `audit`, `credentials`, `status` — do not print
-a banner: they land wherever the invocation was already going and change
-nothing when they get there.
+`kmx down` checks the container engine because kind deletes by container name,
+not kubeconfig. A listed kind cluster missing from kubeconfig requires explicit
+named confirmation; no matching container cluster is a no-op. An absent context
+is not proof there is nothing to delete.
 
-One command is guarded differently, and it is named here rather than
-covered by the sentence above: `kmx lift down` deletes Azure resources,
-identified by resource group rather than by a kube context, so it prints its
-own banner listing what it created. Created-cluster teardown confirms the
-**resource group**; `--byo` teardown confirms the **cluster**. Consent precedes
-every deletion, including recorded resources outside the group. Incomplete
-in-cluster cleanup retains the recovery record. It refuses unattended just as
-the context guard does, and does not claim that unrecorded resources or all
-subscription billing were checked. BYO teardown removes recorded monitoring,
-not the agents or governance plane; unknown ownership is left unchanged.
+Lift has cloud-specific consent: creation/BYO lift confirms cluster; created
+teardown confirms **resource group**, BYO teardown confirms **cluster**. Consent
+precedes deletion, including recorded resources outside the group. BYO removes
+recorded monitoring, not agents/plane; unknown ownership is left alone. Read
+[AKS ownership and teardown](aks.md#teardown), not just the exit status.
 
-Confirmation/recovery commands preserve the selected target and relevant
-invocation flags with shell-safe argument quoting. Kind-specific creation and
-image loading also require `--context`/`KUBE_CTX` to equal `kind-$KIND_CLUSTER`;
-confirmation cannot waive a mismatch between the container cluster and context.
+## Output contracts
 
-The banner:
+- On capable terminals, reports use rich headings and responsive tables. Wide
+  tables become labelled records. Full identifiers/digests and exact numbers
+  remain available. `TERM=dumb` chooses plain; non-empty `NO_COLOR` removes ANSI
+  but keeps static rich report layout. Chat additionally disables cursor effects
+  and enhanced input under `NO_COLOR`.
+- Redirected admin reports retain fixed-width/truncated compatibility output.
+  Progress/diagnostics go to stderr. JSON/YAML, manifests, metrics, completion,
+  SQL and raw chat bypass styling. Admin JSON/YAML is not implemented.
+- One-shot chat at a terminal shows answer/tools/usage; a pipe gets raw A2A task
+  bytes, as does `--json`. Unrecognized kagent output is not guessed into a task.
+  `--interactive --json` is refused.
+- Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
+  `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
+  null when none were provisioned. `governed: false` means **this invocation did
+  not enable governance**, not that existing governance is absent. Success
+  requires a completed task with a readable answer; stdout is one JSON document.
+- `status -o json|yaml` carries `context`, `contextSource`, `governance`, and raw
+  kubectl objects under `items`, **not** a Kubernetes List you can apply. Read
+  population `state` before counts: unknown reads publish no invented zeroes.
+  Model seams count agents; tool seams count RemoteMCPServers; credentials count
+  Secret references, not Secret values. Unready installed planes or missing/
+  unreadable required governance prevent a human ready verdict.
+- Ledger/audit caller claims are unverified client assertions; observed source
+  addresses and `acted for` are separate fields. Flow counts model refusals from
+  `cost_source: denied`, not from any upstream HTTP error. Configuration posture
+  is not proof a specific request crossed a seam.
 
-```
-----------------------------------------------------------------
-  about to: bring up the kmx runtime (kind, Ollama, kagent, agents)
-  context:  kind-kaimahi-p1
-  chosen by: KIND_CLUSTER
-  server:   127.0.0.1
-  namespace(s): kagent, kaimahi, ollama
-  posture:  local kind
-----------------------------------------------------------------
-```
-
-The banner goes to **stderr**, so redirecting or piping a command's output
-does not take it with them, and it is printed whether or not anything is
-asked.
-
-`chosen by` is the load-bearing line. Every source above is somebody's
-decision except one: with nothing set anywhere, the name falls back to
-`kind-kaimahi-p1`, which nobody picked. **kmx refuses to act on that** when
-your kubeconfig holds contexts it could have meant instead:
-
-```console
-$ kmx up
-kube-guard: nothing chose a cluster, so kmx will not act on one.
-  It would have used "kind-kaimahi-p1", which is a name kmx made up, and your kubeconfig
-  holds 3 context(s) it could have meant instead.
-  Your current context is "aks-prod"; kmx does not follow it, because a tool that
-  rewrites it (`az aks get-credentials` does) would silently re-aim kmx.
-  Nothing was applied. Choose one, and it is remembered:
-    kmx ctx <name>            # kubectl config get-contexts lists them
-    kmx --context <name> ...  # or just this once
-```
-
-Two cases are not that failure, and the default stands in both:
-
-- **A machine with no clusters at all** — there is nothing to confuse the
-  made-up name with, so one-command bring-up works. Creating that cluster
-  records it, so later bare commands resolve through a real choice.
-- **The made-up name is already the context you are pointed at** — kmx would
-  act on the same cluster your own `kubectl` would, so nobody is being
-  surprised.
-
-**kmx does not follow your current context, deliberately.** A bare `kubectl`
-does, and `az aks get-credentials` rewrites it without asking, so a command
-meant for kind could quietly aim at a managed cluster. kmx pins an explicit
-context on every call instead. The refusal names your current context so the
-most likely intended answer is in front of you; choosing it is still yours.
-
-The second exception above is not a hole in that. kmx still acts only on the
-name it resolved; where that name and your current context **differ**, the
-current one is never substituted for it. A match is corroboration that nobody
-is being surprised, not a source kmx reads a target from.
-
-"Local kind" is two independent checks, because a context **name** is
-cosmetic — anyone can name a production context `kind-prod`. The substantive
-check is the API-server address: kind publishes its API server on loopback.
-Both must agree. Anything else needs `KAIMAHI_CONFIRM=<context>` or a typed
-confirmation, and a non-interactive shell with neither refuses rather than
-guessing. An absent `kind-*` context is admitted as "about to be created" —
-that is `kmx up` on an empty machine; an absent context by any other name is
-a typo, and typos are what this exists to catch.
-
-### `kmx down` does not take that allowance
-
-`kind delete cluster` deletes by **container** name and never opens the
-kubeconfig, so "this context is not in my kubeconfig" is not evidence that
-there is nothing to delete — it is a stale or re-pointed `KUBECONFIG`, and
-taking the bring-up allowance there deletes a real cluster under a banner
-saying it was never created. So `kmx down` asks the container engine first
-and refuses what the kubeconfig cannot vouch for:
-
-```console
-$ kmx down
-kind get clusters
-----------------------------------------------------------------
-  about to: DELETE the kind cluster "kaimahi-p1"
-  context:  kind-kaimahi-p1
-  chosen by: KUBE_CTX
-  server:   <none yet>
-  namespace(s): kagent, kaimahi, ollama
-  posture:  kind-named, but this kubeconfig does not describe it
-----------------------------------------------------------------
-kube-guard: nothing in this kubeconfig describes "kind-kaimahi-p1", so kmx cannot tell whether it is
-  the local cluster you mean or another one with the same name, and there is no TTY to ask.
-  to proceed:  KAIMAHI_CONFIRM=kind-kaimahi-p1 kmx down
-```
-
-Three outcomes, and only the first is new:
-
-- The kubeconfig does not describe the cluster, but the container engine
-  has one by that name. Confirm it by name — `KAIMAHI_CONFIRM=<context>`,
-  or type the context at the prompt. **This is the half-created case**: a
-  `kmx up` that died before the kubeconfig entry was written leaves node
-  containers behind, and one confirmation removes them.
-- No kind cluster by that name at all: `no kind cluster named "…" — nothing
-  to delete`, and nothing is deleted or asked.
-- An ordinary local cluster the kubeconfig knows: the banner, no question,
-  as before. This is what CI's teardown does, and it stays
-  non-interactive.
-
-Long `kmx up` and `kmx plane` runs delimit each logical phase with its position,
-outcome, and elapsed time. Native Docker, Helm, kind, kubectl, and Ollama output
-continues to stream between those boundaries, so progress remains visible and
-failures retain their original diagnostics. Concurrent agent output remains
-tagged by lane and is summarized as one parallel phase. Phase markers are
-written to stderr and do not add content to stdout; native tools retain their
-existing stdout and stderr behavior.
-
-This is [`scripts/kube-guard.sh`](../scripts/kube-guard.sh) ported to Go,
-case for case; the script stays for the scripts that still use it, and both
-are tested against the same cases.
+Completion (`source <(kmx completion bash)`, similarly zsh; fish uses
+`kmx completion fish | source`) performs bounded read-only lookups for contexts
+and agents, no guard/download/forward/mutation. Static completion works offline.
 
 ## `kmx agent create`
 
-**This command now authors Orka, not kagent.** It emits a value-free Secret
-skeleton, a same-name Provider and referencing Agent in `core.orka.ai/v1alpha1`,
-and optionally a fresh-name Task. Existing `agent chat`, `agent edit` and
-`agent list` remain kagent-specific; they are not follow-ups for this bundle.
-`quickstart`, `up` and the kagent governance walkthroughs are unchanged.
+**This command authors native Orka, not kagent.** Every bundle contains a new,
+same-name Provider and referencing Agent in `core.orka.ai/v1alpha1`, a metadata-only
+Secret skeleton, and optionally a fresh Task. It does not install Orka or adopt
+the installer's shared Provider. Start with the [first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
+for a context-pinned local run, separately provisioned result account, and the
+release/main authorization and connection limits.
 
-For a local model, first [install Orka](orka.md#the-command) in the same context
-as Ollama. The separate [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer)
-creates a fresh Agent named `orka-hello`.
-The installer separately provisions `local-provider-key`; create references
-that Secret but creates its **own** Provider named `my-agent`, not `local`:
-
-```bash
-kmx --context kind-kaimahi-p1 agent create my-agent \
-  --namespace orka-system --provider-type openai --model qwen2.5:3b \
-  --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-  --description "Answers short questions."
-```
-
-This writes `agents/my-agent.yaml` exclusively and creates Provider → Agent
-behind the context guard. **No `--task` means no model response was tested.**
-
-### Inputs and modes
-
-| Flag | Meaning |
-|---|---|
-| `--namespace <ns>` | required, explicitly choose a namespace the Orka controller watches; never inferred |
-| `--provider-type openai\|anthropic` | required; `openai` also covers OpenAI-compatible custom endpoints. Azure OpenAI's separate deployment/version fields are not scaffolded |
-| `--model <id>` | required actual Provider model ID, not a kagent ModelConfig or a `provider/model` routing alias |
-| `--secret <name>` / `--secret-key <key>` | required existing Secret name in that namespace; key defaults to `api-key`. Neither is a credential value |
-| `--base-url <url>` | optional HTTP(S) endpoint; no userinfo, query or fragment. Plain HTTP is useful for local models |
-| `--description <text>` | one-line `kaimahi.dev/description` annotation |
-| `--instructions <file>` | file whose contents become the Agent system prompt; never put credentials in it |
-| `--tools <name,...>` / `--skills <name,...>` | explicit Orka references; not `server:tool`, not an MCP allowlist or translation |
-| `--agent-requests-per-minute` / `--provider-requests-per-minute` | optional positive int32 limits; omitted when unset |
-| `--agent-tokens-per-minute` / `--provider-tokens-per-minute` | optional positive int64 limits; omitted when unset |
-| `--task <prompt>` | optional first AI Task; applying authorizes a model call |
-| `--result-service-account <name>` | existing account in the selected namespace, required when applying a Task; kmx creates no account or RBAC |
-| `--orka-api-service <name>` / `--result-port <port>` | result API Service (default `orka-api`, port 8080) and free loopback forwarding port (default `19180`) |
-| `--out <path>` | exclusive output file (default `agents/<name>.yaml`); `-` writes YAML only to stdout and implies offline |
-| `--no-apply` | offline artifact only; no tools, kubeconfig reads or cluster calls |
-| `--schema-target v0.1.3\|main` | offline only; defaults to `v0.1.3`, `main` is an immutable fixture snapshot, not a fetch |
-| `--dry-run` | installed-schema and strict server admission checks; writes the local artifact, but no cluster writes, token or forward. Tests neither result access nor execution; incompatible with offline modes |
-
-Without a name on an interactive terminal, the inline Bubbles wizard asks for
-description, name, and any missing namespace/Provider/model/Secret references.
-Supplied native flags are preserved; there is no namespace or model preset
-default. When applying `--task`, it also asks for the existing result account.
-Enter at the final Apply/Cancel selection creates resources; arrows or Tab
-select Cancel, and Escape/Ctrl-C cancel without writing. `TERM=dumb` retains
-linear prompts with a Y/n confirmation. Non-interactive use requires a name.
-Custom/local endpoints use `--base-url` (also explained in the wizard), never a
-model-name inference. Other customization stays in flags.
-
-### Offline is schema validation, not a runtime proof
+For offline preview, without tools, kubeconfig reads or cluster calls:
 
 ```bash
 kmx agent create preview --namespace orka-system \
   --provider-type openai --model qwen2.5:3b --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-  --schema-target main --out -
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
 ```
 
-All emitted custom-resource fields are checked against the served v1alpha1
-OpenAPI schemas; unknown fields are refused rather than silently pruned.
-The same validator reads installed CRDs online, with **no fixture fallback**.
-Offline fixtures are byte-exact upstream files, with [digests and attribution](../internal/kmx/orkaschema/README.md):
+Namespace, Provider type (`openai|anthropic`), actual model ID and existing Secret
+name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
+not credential values. `--instructions` reads a system-prompt file; `--tools` and
+`--skills` name Orka references, not kagent `server:tool` selections or translated
+MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
-- `v0.1.3`: release commit `b07d42c0b9e52fe511b434827a342b4720f5d422`.
-- `main`: snapshot `7c4753c2c68a510112ea2bb25b60a406d9c45686`.
+- `--out -` prints YAML only and implies offline; `--no-apply` writes an exclusive
+  local artifact only. Default file: `agents/<name>.yaml`. Existing files are
+  never overwritten; input and final YAML reject known credential shapes.
+- Offline `--schema-target v0.1.3|main` selects [pinned CRD fixtures](../internal/kmx/orkaschema/README.md),
+  not a network fetch. Unknown fields refuse; the pinned main snapshot lacks
+  Agent/Provider rate limits and refuses those flags rather than dropping fields.
+  Offline schema validation is not CEL/admission, readiness or execution proof.
+- Online uses installed CRDs with **no fixture fallback**, checks Secret/key
+  presence and collisions, and strictly server-dry-runs each custom resource.
+  `--dry-run` writes the local artifact but no cluster resources, token or forward;
+  it tests neither result access nor execution and cannot be combined with offline modes.
+- **Never write the Secret skeleton or bulk-apply the bundle.** Provision the
+  referenced key separately through your secret-management path. kmx never creates,
+  replaces or merges that Secret. Online writes use create, not apply/patch/update:
+  Provider → current-generation Ready → Agent → current-generation Ready → optional
+  Task. For manual creation split out only those custom resources and preserve
+  that order and the UID/generation readiness checks, using an explicit context
+  and namespace. Failures leave partial state; reruns do not adopt or overwrite it.
+- `--task` authorizes a model call and requires an existing
+  `--result-service-account` in the selected namespace; kmx creates no account or
+  RBAC. It creates the Task once and waits for Succeeded plus an actual nonblank
+  answer. **Without `--task`, no model response was tested.**
+- kmx requests a ten-minute token; **the API server determines its actual TTL**.
+  It carries the account's full effective authority, not result-only scope;
+  discarding it is not revocation. Release `v0.1.3` does not enforce Task-read RBAC;
+  pinned main requires namespaced Task-get. Result bytes are not bound to a UID.
+  The context-pinned loopback HTTP forward uses one TCP connection and stops on
+  connection/forward loss, never redialing or resubmitting. This trades reconnect
+  availability for protection against later local-port reuse; initial connection
+  trust is still local. See the [full limits](orka.md#author-an-orka-agent-and-get-an-answer).
 
-Both accept the ordinary Provider/Agent/Task bundle. Release supports Agent and
-Provider `spec.rateLimit`; this main snapshot lacks both, so each of the four
-rate flags is refused with the resource and `spec.rateLimit` path. Fields are
-never dropped to make output pass. Offline does not evaluate CEL, admission,
-controller defaulting, readiness, rate enforcement or model execution.
+No-name terminal use offers a wizard for missing required inputs and explicit
+Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
+prompts. Non-interactive use requires a name. `hello-world` and `hello-tools`
+remain reserved for embedded kagent examples.
 
-### Ordered creation, not bulk apply
+`--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
+scaffold, ModelConfig/MCP conversion, injected governance or copied kagent pod
+hardening. Keep application image/placement/identity in the owner's Deployment;
+[migration](migrate.md) routes its model traffic, not a BYO definition. This
+native implementation does not settle the open authoring-format decision or
+promote the isolated conversion spike to a supported interface.
 
-The Secret document is **metadata-only**, naming an external prerequisite.
-It contains no `data`, `stringData`, credential placeholder or embedded prompt.
-**Never write that skeleton to the cluster.** Provision its key separately
-through your normal secret-management path, without putting values in argv,
-source files or this bundle. Online kmx checks key presence without printing it;
-it never creates, replaces or merges a Provider Secret.
+### Existing kagent editor
 
-Online preflight reads installed schemas, refuses local-file and live-resource
-collisions, checks the Secret/key, and server-dry-runs each custom document with
-strict validation before emitting or creating anything. Task mode also proves
-API access first. Writes use **create**, never apply/patch/update:
-
-1. Create the new Provider and wait for Ready for the created UID and current
-   generation.
-2. Create the referencing Agent and wait for the same identity/generation
-   readiness checks.
-3. If requested, create its fresh Task once; wait for Succeeded and an available,
-   nonblank answer. Check Task UID, spec and generation around result retrieval.
-
-Failure stops the sequence; already-created resources are not rolled back.
-A rerun does not adopt or overwrite them. Review partial state before choosing
-new names or explicitly deleting resources you own.
-
-For manual use, review and split out **only** the Provider, Agent and optional
-Task into separate files. For the local example, run
-`kubectl --context kind-kaimahi-p1 -n orka-system create -f provider.yaml`,
-check that Provider's UID/generation and current-generation Ready, then
-`kubectl --context kind-kaimahi-p1 -n orka-system create -f agent.yaml` and
-check likewise, then
-`kubectl --context kind-kaimahi-p1 -n orka-system create -f task.yaml`.
-Substitute your explicitly chosen context and namespace together. Do not run
-`kubectl apply -f agents/<name>.yaml`: the bundle includes a Secret skeleton and
-its document order does not express waits. A plain Ready condition without
-checking its observed generation is not the same guarantee.
-
-### Task result authority and limits
-
-The [local example](orka.md#author-an-orka-agent-and-get-an-answer) provisions a
-dedicated result-reader ServiceAccount separately. Pinned main requires
-namespaced `get` on `tasks.core.orka.ai`. **v0.1.3 authenticates result reads but
-does not enforce ordinary Task-read RBAC**; that Role does not narrow release
-result access. The caller also needs permission to request a token for the
-chosen account and establish the port-forward.
-
-kmx requests a temporary ten-minute token and keeps it in memory, using a
-context-pinned loopback HTTP forward, not a public endpoint. This is the
-account's **full effective authority**, not a result-only token. Discarding it
-or closing the forward is not revocation. There is no token flag/env/file input.
-The operation is bounded by a five-minute deadline; it does not retry Task
-creation after an ambiguous failure. Fresh Task names and UID/spec/generation
-checks reduce stale-result risk, but **the API does not bind returned result
-bytes to a Kubernetes UID**. Dry-run proves neither authorization nor execution.
-
-### Retired create behavior
-
-`--image`, `--isolation` and `--run-as-user` are removed. This command does not
-build or deploy application images, translate ModelConfigs or MCP wiring,
-inject governance environment variables, or copy kagent pod hardening.
-Creating an Orka Agent is not a governance claim. Keep an application's own
-Deployment/chart for image, identity and placement; there is no replacement
-application-scaffold command. [Migrate](migrate.md) handles an owned
-application Deployment's model seam, not a kagent BYO definition, and does not
-create Tasks. Native authoring avoids pretending that an API-group change
-translates model, tool and workload dependencies; it is not a permanent ban on
-other authoring formats. The [isolation survey](isolation.md) retains the
-historical BYO design, not current create instructions.
-
-Input and final YAML still reject known credential shapes; values are safely
-encoded and existing files are never overwritten. `hello-world` and
-`hello-tools` remain reserved names for the embedded kagent examples.
-
-### Existing kagent editor (not an Orka bundle editor)
-
-`kmx agent edit <name>` treats `agents/<name>.yaml` as the source of truth and
-opens a secure temporary copy with `$VISUAL` or `$EDITOR`. It refuses symlinks
-and concurrent source changes, rejects key-shaped content, validates the Agent
-identity and explicit tool allowlists, and checks referenced ModelConfigs and
-RemoteMCPServers before atomically replacing the source. It does not apply the
-edit automatically; review the diff and run the printed `kubectl apply` command.
-Invalid non-secret candidates are retained at the reported temporary path so
-editor work is not lost. For a direct live-resource edit, use `kubectl edit`.
+`agent chat/edit/list` remain kagent-specific, not follow-ups for an Orka bundle.
+`agent edit` edits a secure temporary copy of owned local YAML via `$VISUAL`/
+`$EDITOR`; it rejects symlinks, concurrent edits, secrets, invalid identity or
+tool wiring, then atomically replaces source. It never implicitly applies.
+Invalid non-secret candidates are retained at the reported path. For direct
+live-resource operations use kubectl with explicit context/namespace.
 
 ## Interactive chat
 
@@ -614,430 +272,175 @@ editor work is not lost. For a direct live-resource edit, use `kubectl edit`.
 kmx agent chat --interactive hello-tools
 ```
 
-On capable terminals, a compact startup view leads with the agent name and a
-subdued context line, followed by model posture and tools. Verified governed
-model routing is green; direct model routing is yellow. These labels describe
-the model seam, not blanket governance of the agent. Startup shows only a short
-input hint; `/help` opens the grouped command reference. Plain output retains
-the `CHAT STATUS` report and command list. Both views show effective
-selected/discovered tools and descriptions. A governed label
-requires current MCP discovery plus ready plane replicas and Service endpoints;
-unknown posture refuses rather than claiming governance. Every user message is
-labelled `You`; each reply carries the active agent name. Text and correlated
-tool call/completion events render as kagent streams them. The returned context
-ID is reused for each turn.
+`/help`, `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,
+`/tools off|summary|verbose`, `/govern`, `/ungovern`, `/exit` are local controls.
+`--session <id>` resumes history. Scanner input remains supported when raw mode
+is unavailable; terminal slash completion is local. History validates the agent,
+retains received session IDs after stream failure and deduplicates display events
+by ID/payload, not execution. Malformed history can be skipped and ordinary
+verbose payloads are display-limited; this is not an audit export.
 
-Commands: `/help`, `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,
-`/tools off|summary|verbose`, `/govern`, `/ungovern`, `/exit`.
-`/govern` gives the active agent a dedicated `kmx-model-<agent>` plane
-credential plus an agent-specific Secret and governed Ollama ModelConfig, then
-puts only its **model seam** behind the kind plane. This avoids combining model
-spend with another agent or with the separate tool-governance credential.
-`/ungovern` switches that model seam to an agent-specific direct Ollama
-ModelConfig while preserving the active model name. Neither command changes
-tool routing, deletes credentials, or erases ledger/grant/audit history.
-Both wait for the serving pod switch, print a fresh status header, and clear
-`/retry` history so an old message is not silently replayed across a trust
-boundary. On a non-kind context, set `KAIMAHI_CONFIRM=<context>` before starting
-chat; the slash command will not start a second input reader for confirmation.
-They currently support Ollama and an existing Kaimahi Ollama route; other model
-providers are refused rather than silently redirected to a different model.
-Credential issuance has the same custody boundary as `kmx govern`: the token is
-shown only once by the plane and immediately written to its Secret. If that
-Secret write fails, the credential can require operator recovery because the
-plane currently exposes no token rotation or deletion API.
-`--session <id>` resumes a known session and displays its history. `/sessions`
-reads the controller's `agent_id` field, accepts direct or wrapped session lists,
-and reports empty/null lists as `Sessions: none`; unknown response shapes are
-errors, not empty results. History uses the active renderer and closes existing
-actor/prompt output before replay and before returning to input. Replayed tool
-events with IDs are deduplicated for display; different IDs or changed payloads
-remain visible. This is not execution deduplication or a complete audit export.
-Malformed history events are still skipped and verbose ordinary tool/history
-payloads remain display-limited, unlike native approval inspection.
+`/govern` creates an agent-specific model credential/Secret/ModelConfig;
+`/ungovern` selects direct Ollama while preserving the model name. Both affect
+**only model routing**, support the existing kind/Ollama routes, preserve audit
+history, wait for pod switch and clear retry history. Other providers refuse.
+Remote contexts require confirmation set before chat, not a second prompt reader.
+A failed Secret write after one-time token issuance needs operator recovery.
 
-Received session IDs survive stream failures. A successful `/resume` clears the
-old retry message only after history validates the session's agent. If an
-interactive stream closes while a task is still working, kmx polls that exact
-task ID rather than reinvoking it. A Kaimahi governance denial still requires a
-separate operator approval, followed by explicit `/retry`.
+Trusted actor/action labels and indented payloads prevent tool/model prose from
+impersonating controls. `[KAIMAHI ROUTE]` shows verified startup configuration,
+not an allowed/ledgered receipt: kagent streams do not carry those receipts.
+Possible denial text has unverified provenance; confirm with `kmx approvals`.
+These records remain visible with `/tools off`.
 
-Capable terminals color conversational and operational labels without relying
-on color alone: `YOU` is cyan, `AGENT (<name>)` is green, tool activity is magenta,
-and approval/governance activity is yellow. The rich startup view uses the same
-palette; the plain status report remains uncolored.
-Messages use actor labels; non-message interactions use trusted bracketed labels
-such as `[TOOL CALL]`, `[TOOL RESULT]`, `[NATIVE APPROVAL]`, and
-`[KAIMAHI ROUTE]`. Dynamic tool names appear only in their indented fields.
-Every payload line is indented, with arguments and
-results nested one level further, so model/tool text cannot impersonate a
-trusted label. Set `NO_COLOR=1` to disable chat colors/cursor effects and enhanced
-input, or `TERM=dumb` for plain presentation. The actor/operation hierarchy remains.
+Native kagent approvals/questions are a **different boundary**: chat may submit
+a structured native decision but cannot approve its own Kaimahi request. It
+refuses malformed, duplicate-ID, mixed or incomplete batches before submission;
+every call needs explicit consent. Arguments above the 16 KiB inspection limit
+are refused, not truncated. Choices are validated; free text preserves commas.
 
-Rich output announces connection and posture checks before waiting, and reports
-waiting for task completion or continuing after a native decision. The working
-indicator can continue after tool activity, but never clears durable response
-text or runs over an input prompt. If its row has reflowed after a resize,
-animation is disabled instead of erasing uncertain screen coordinates.
-Rich exit notices distinguish explicit exit, closed input, and cancellation;
-plain output retains `[CHAT] Status: ended`.
-
-Native approvals and questions show a static details callout above the trusted
-interaction label and editable prompt. The callout does not consume input or
-truncate approval arguments; the existing decision validation and terminal
-editor remain responsible for consent and submission.
-
-If terminal dimensions change during enhanced input, chat stops without
-submitting the current message or native approval, cancels the input reader,
-and restores terminal settings. It avoids erasing with stale coordinates; it
-does not attempt live reflow. Restart chat to continue, using a known session ID
-if resuming. This does not undo an earlier submitted turn or decision.
-
-Route checks, tool calls, tool results, and possible governance-denial signals
-are actions taken while producing the current assistant turn, so they render as
-children of one assistant heading rather than as peer messages:
-
-```text
-AGENT (hello-tools)
-    [KAIMAHI ROUTE]
-      Seam: model proxy
-      Configuration: verified through ready plane at chat start
-
-    [TOOL CALL]
-      Tool: k8s_get_resources
-      Status: running
-
-    [TOOL RESULT]
-      Tool: k8s_get_resources
-      Status: completed
-
-  | pod-a
-  | pod-b
-```
-
-Native approval/questions and local `[CHAT]` controls remain top-level because
-they interrupt the agent turn and require user or client action.
-Trusted child action labels use four spaces and their fields use six. Agent
-response text uses the shallower `  | ` rail, preserving authored whitespace
-while preventing model text quoting `[TOOL RESULT]` from impersonating a real
-tool record in plain output.
-
-Native kagent `requireApproval` pauses keep their answer prompt inside a
-`[NATIVE APPROVAL]` interaction and resume with a structured approve/reject
-response. `[NATIVE QUESTION]` similarly groups choices and the answer prompt.
-Malformed, incomplete, duplicate-ID, or mixed question/approval requests are
-refused as a whole before a decision is submitted. Approval arguments over the
-16 KiB per-call inspection limit are refused, not silently truncated; accepted
-requests display the call ID and full arguments. A batch requires an explicit
-decision for every call. Free-text answers retain commas; single-choice answers
-must match one offered choice, and multiple-choice answers use comma-separated
-values (quote a choice containing commas). Empty/invalid answers are not sent.
-Kaimahi route information uses a separate `[KAIMAHI ROUTE]` interaction and
-names the affected tool in an indented field when its server route is
-unambiguous. Possible denial signals use `[POSSIBLE KAIMAHI DENIAL]`. They
-remain a separate security boundary: chat cannot approve its own Kaimahi
-request.
-
-When the live serving configuration proves that a model or unambiguous tool
-route uses a ready Kaimahi plane, interactive chat emits `[KAIMAHI ROUTE]`
-records. These remain visible with `/tools off`. They describe verified startup
-configuration, not proof that a particular request reached an enforcement
-point. Current kagent streams do not propagate positive decision, grant,
-ledger, or audit receipts, so the UI says that explicitly rather than inventing
-an `allowed` or `ledgered` result. Failed agent/model responses or correlated
-unambiguous tool responses matching the plane's denial vocabulary are marked
-`[POSSIBLE KAIMAHI DENIAL]` with unverified provenance; reported approval
-filing must still be verified through `kmx approvals`.
+A working-stream disconnect polls the exact task rather than reinvoking it.
+Enhanced-input resize stops chat without submitting the current message/decision
+and restores terminal state; restart/resume to continue. This is safe abort,
+not live reflow or undo of earlier actions. Renderers keep durable response text
+and stop uncertain animation after resize.
 
 ### Retry limits
 
-The interactive fixes do not narrow the existing one-shot retry policy. One-shot
-chat and quickstart still retry matching controller connection-refused, EOF, and
-connection-reset errors up to three times. An EOF/reset can occur after the agent
-acted, so retrying a tool-capable turn can repeat effects or spend. An explicit
-one-shot `--session` does not disable transport retries. Workflow bounded and
-consequential steps use the narrower connection-refused-only policy; read/draft
-turns retain the broader policy.
-
-Separately, one-shot question-only `ask_user` resampling remains at most twice,
-only without an explicit session and with no recorded tool response or other
-pending confirmation. Interactive `/retry` explicitly resends the last message;
-it is not an exactly-once guarantee. These policies were not redesigned by the
-presentation/HITL audit.
+One-shot chat/quickstart still retry matching connection-refused, EOF and reset
+errors up to three times, **even with an explicit session**. Ambiguous disconnects
+can follow an effect: retries may duplicate tools/spend. Bounded/consequential
+workflow turns retry only connection-refused; read/draft turns use the broader
+policy. Question-only `ask_user` resampling is at most twice without an explicit
+session, recorded tool response or another pending confirmation. Interactive
+`/retry` explicitly resends; none of this promises exactly-once execution.
 
 ## How the plane gets there without a clone
 
-`kmx plane` has to produce a container image of a Go program whose source is
-**not** in the binary. It cannot be: the plane is a separate Go module under
-`plane/`, and `go:embed` refuses to cross a module boundary — "cannot embed
-directory: in different module". The same nested module is what makes the
-answer work.
+The plane is a nested Go module, so root `go:embed` cannot carry its source.
+Outside a checkout, kmx fetches/builds `plane/cmd/kaimahi-proxy` via the Go proxy
+at its own revision, packages it on the distroless base and side-loads into kind.
+Embedded manifests are applied as committed; no plane image is published.
+A checkout wins, `--source <path>` selects one, and `--source -` forces fetch.
+Ask `kmx metrics` for `kaimahi_build_info` rather than infer revision from a tag.
 
-1. kmx reads **its own revision** out of its build info — the pseudo-version
-   a `go install` binary carries, or the VCS revision a checkout build does.
-2. It runs `go install
-   github.com/kaimahi-agents/kaimahi/plane/cmd/kaimahi-proxy@<that revision>`.
-   The module resolves through the public Go proxy at any commit on `main`,
-   and Go's checksum database verifies what comes back.
-3. It packages that binary onto the same distroless base `plane/Dockerfile`
-   uses, and side-loads the image into the kind cluster with `kind load`.
-4. The manifests come out of the kmx binary and are applied **as committed**.
-
-Nothing is published to do this: no registry, no release, no tap. The plane
-image never leaves your machine.
-
-A checkout always wins. Inside a clone — or with `--source <path>` — kmx
-builds `plane/Dockerfile` from the working tree instead, which is what the
-Makefile passes (`--source .`) and what keeps CI proving the code a pull
-request changes rather than whatever the proxy last published. `--source -`
-forces the fetch even inside a checkout.
-
-Which revision is actually running is not inferred from the image tag (the
-tag is fixed, because the manifest is applied unrendered). Ask the plane:
-
-```bash
-kmx metrics | grep kaimahi_build_info
-```
-
-### If `go install` says it cannot cross-compile
-
-```
-go: cannot install cross-compiled binaries when GOBIN is set
-```
-
-The plane's binary is built for **Linux** (that is what the kind node runs),
-so on macOS every plane build is a cross-compile — and mise, asdf and
-`go env -w GOBIN=…` all set `GOBIN`. kmx removes `GOBIN` from the
-environment it hands the toolchain, which covers the shell-set case. A
-`GOBIN` in Go's own environment file survives that, and kmx says so and
-names the fix:
-
-```bash
-go env -u GOBIN         # clear it, or
-kmx plane --source .    # build the plane from a checkout instead
-```
+The fetched plane build targets Linux. kmx removes shell `GOBIN` for cross-builds;
+if Go's environment file still sets it, use `go env -u GOBIN` or a checkout build.
+AKS uses ACR instead; see [managed-cluster limitations](aks.md).
 
 ## `kmx tools add`
 
 ```bash
-kmx tools add warehouse \
-  --url http://acme-warehouse.acme:8090/mcp \
-  --tool stock_get:sku \
-  --tool stock_adjust:sku,delta
+kmx tools add warehouse --url http://warehouse.demo:8090/mcp \
+  --tool stock_get:sku --tool stock_adjust:sku,delta
 ```
 
-It writes `upstreams/warehouse.yaml` — four documents that *are* the
-onboarding: the gateway's table entry (as an overlay fragment), the
-proxy's egress to that server, that server's ingress from the proxy
-alone, and the `RemoteMCPServer` whose URL is the gateway. Then it
-validates them against the running plane and applies them behind the
-guard. The full walkthrough, including what to choose for `policy_fields`
-and why, is [govern-your-agent.md](govern-your-agent.md).
+Writes an overlay ConfigMap, proxy egress, server ingress and kagent
+RemoteMCPServer, validates the table with the running plane, then applies.
+Without kagent, it skips only that fourth document (the file retains it), restarts
+the proxy and reports the skip. An unreadable CRD query is not absence.
+See [govern your agent](govern-your-agent.md) and `kmx tools add --help`.
 
-**On a cluster with no kagent**, the fourth document is the one nothing
-can read — it exists to tell a kagent controller where the seam is — so
-it is not applied. The other three are, the proxy is restarted so the
-new entry is loaded, and the command exits 0, naming what it skipped.
-The file still carries all four: install kagent later and
-`kubectl apply -f upstreams/warehouse.yaml` picks the seam up. A cluster
-that could not be *asked* whether the CRD is there is an error, never an
-absence. See [foreign-runtime.md](foreign-runtime.md).
+Each `--tool` must declare policy fields: `tool:a,b` binds those fields,
+`tool:` is the weakest verb-only binding (warned in the artifact), `tool:*`
+binds the whole argument object. Service selectors and post-NAT pod ports come
+from the live Service; selector-less Services refuse and named target ports need
+`--pod-port`. Shared selectors affect every matching pod, which kmx names.
+`--server-egress none|dns|keep` defaults to none; choose deliberately.
 
-| Flag | Meaning |
-|---|---|
-| `--url <url>` | the server's OWN in-cluster endpoint, `http://<service>.<namespace>:<port>/mcp` |
-| `--tool <tool>:<fields>` | one per tool. `tool:a,b` declares those fields policy-relevant; `tool:` declares that none are (a verb-level binding — the weakest); `tool:*` declares nothing (the whole-argument-object binding) |
-| `--server-egress none\|dns\|keep` | what the scaffolded policy lets the SERVER reach. Default `none` |
-| `--pod-port <n>` | the container port, for the one case kmx will not guess: a Service targeting a NAMED port |
-| `--secret <name>` | agent-side Secret **name** the seam resolves its credential from (default `kaimahi-<name>-token`) |
-| `--out <path>` | where to write it (`-` for stdout) |
-| `--no-apply` | write the manifest and stop |
-| `--dry-run` | server-side dry run against the live CRDs |
+Overlay safety: generated credentials are references, key shapes refuse,
+files use exclusive create. The whole existing overlay is emitted with its
+`resourceVersion` so stale apply conflicts instead of pruning concurrent work.
+Only genuine NotFound means no overlay. Committed entries cannot be overridden;
+`credential_file`, `credential_header`, `internet`, `ca_file`, and `extra_headers`
+are forbidden in overlays. These custody-affecting entries remain reviewed code.
 
-### Safety properties, and why each exists
-
-| Property | Why |
-|---|---|
-| **This command accepts no credential** — no flag, no environment variable, no file | The same rule as `agent create`. `--secret` names a Secret RESOURCE; `kmx tools govern` is what mints a token into it. The generated document is scanned for key shapes before it is written. |
-| **A tool named without a declaration is REFUSED** | `policy_fields` decides what an approval binds to and what the audit says. kmx will not choose it, and prints what each of the three answers costs at the point of choosing. |
-| **The weakest setting announces itself in the file** | `policy_fields: []` is a verb-level binding and the shortest thing to type. The manifest carries a `WEAKEST SETTING IN USE` banner naming the tools, so a reviewer sees it too. |
-| **The policy pair is read from the live Service** | Its selector is the labels that actually route to those pods, and its resolved `targetPort` is the port they listen on. A policy written against a Service's PUBLISHED port blocks every call while reading as correct — policy is evaluated on the post-NAT pod address. A selector-less Service is refused: a policy pinned to no labels selects the whole namespace. |
-| **The committed table is never edited** | Onboarded upstreams live in `kaimahi-upstreams-extra`, merged over `k8s/plane/upstreams.yaml` at boot. `kmx plane` re-applies the committed table and so cannot discard your entry; an overlay that would redefine a committed entry is refused rather than resolved by precedence. |
-| **The overlay is emitted WHOLE** | A ConfigMap apply replaces `data`, so a map missing an existing key would silently un-onboard somebody else's server. An overlay read that is anything but a genuine `NotFound` aborts rather than reading as "nothing is onboarded". |
-| **Validated by the plane, not by a copy of it** | The candidate table goes to `POST /admin/config/validate`, which merges it over the committed one and calls the same `config.Parse` the proxy booted with. Nothing is written or applied until it says yes, and its refusal is the plane's own message. |
-| **What that validation does and does not cover** | It is the TABLE: the URL shape, the `policy_fields` declarations, the constraint rules, the custody exclusions. The `NetworkPolicy` and `RemoteMCPServer` documents are checked only by the Kubernetes API at apply (`--dry-run` does that early). Their content is derived from the live Service, so the thing to read before applying is the pod selector — kmx prints the pods it will govern, and a shared selector governs all of them. |
-| **`--out -` mutates nothing** | Generate-don't-mutate, as `agent create` has it. Validation still runs: it is a read. |
-| **An overlay may not carry custody** | `credential_file`, `credential_header`, `internet`, `ca_file` and `extra_headers` — five fields — are refused in an overlay fragment, by the plane, not just by kmx. The first four name any path the proxy can read and any host it may be sent to: a ConfigMap that could set them would hand the plane's admin token to an attacker on the first relayed call. `extra_headers` decides what the proxy SENDS under a credential it holds, which on a keyless in-cluster server would let an overlay forge whatever header that server trusts. Keyed and hosted upstreams stay in the committed table. |
-| **The apply is conditional** | The emitted ConfigMap carries the `resourceVersion` it was read at, so a manifest applied later (`--no-apply` invites exactly that) fails with a `Conflict` rather than pruning a fragment somebody added in the meantime — which would leave the upstream that fragment constrained running unbounded. |
-| **A shared Service selector is named, not hidden** | The ingress policy governs every pod the selector matches. kmx lists them, and says plainly when there is more than one. |
-| **Won't overwrite the manifest** | Exclusive create, no `--force`. This is about the FILE: `kubectl apply` will happily update a same-named `NetworkPolicy` or `RemoteMCPServer` in the cluster. That can happen without anyone doing anything odd — `kubectl apply -f` applies each document independently and does not roll back, so an apply that failed on the ConfigMap leaves the other three behind, and the upstream is then absent from the overlay while its objects exist. The apply output names everything it changed; read it. |
+The plane validates the **table**, not the generated policies/seam; Kubernetes
+checks those at apply/server dry-run. `--out -` mutates nothing but still validates.
+`--no-apply` writes only. Multi-document apply is not transactional: a failure
+can leave some objects changed. Review output and selectors before trusting it.
 
 ## `kmx models add`
 
 ```bash
-kmx models add house \
-  --url http://vllm.demo:8000/v1/responses \
-  --classification free
+kmx models add house --url http://vllm.demo:8000/v1/responses --classification free
 ```
 
-It writes `upstreams/model-house.yaml` — three documents: the proxy's
-table entry (as an overlay fragment), the proxy's egress to that
-endpoint, and that endpoint's ingress from the proxy alone. Then it
-validates them against the running plane and applies them behind the
-guard.
+The same overlay/live-Service safety applies, but there are three documents and
+no kagent ModelConfig: kmx prints the seam address/CA requirements. Supply the
+**whole POST URL**, including path, over in-cluster HTTP. TLS/keyed endpoints
+need reviewed committed custody configuration. Explicit `free|metered` is
+required; protocol is inferred only from recognized paths, otherwise declared,
+and conflicting declarations refuse. Models pulling weights may need deliberate
+server egress rather than default none.
 
-**Three documents, not four.** The tool seam's fourth is a
-`RemoteMCPServer`, a kagent custom resource. A model's equivalent would
-be a `ModelConfig`, also a kagent custom resource — and the adopter this
-command exists for has no kagent at all. So the seam's address is
-PRINTED instead, with the path a client appends and the certificate it
-has to trust, rather than emitted as an object half its users cannot
-apply.
+Model overlays cannot carry `prices`; cents budgets refuse unpriced pairs while
+token budgets can meter them. Admin contract 2 is required. **Every plane
+credential can access a configured model upstream**: there is no per-credential
+model allowlist. Tool allowlist intuition does not apply here.
 
-**One URL, split.** The table stores a base URL and exactly one
-forwarded path separately, and cannot infer the second from the first. So
-`--url` takes the whole URL a client posts to, and kmx splits it —
-getting that split wrong by hand produces an upstream that loads cleanly
-and refuses every call with "path not allowed".
-
-| Flag | Meaning |
-|---|---|
-| `--url <url>` | the endpoint's OWN in-cluster URL, over plain **http**, **including the path its clients post to** — e.g. `http://<service>.<namespace>:<port>/v1/responses`. An in-cluster endpoint serving TLS needs a trust anchor, and `ca_file` is one of the fields an overlay may not set, so that one is a reviewed entry in the committed table |
-| `--classification free\|metered` | required, no default. `free` is an explicit $0; `metered` counts tokens always and costs only where a price is configured |
-| `--protocol chat_completions\|responses` | where the meter reads token counts. Needed only when the path names neither; a value that disagrees with its own path is refused |
-| `--server-egress none\|dns\|keep` | what the scaffolded policy lets the ENDPOINT reach. Default `none` — a model server that pulls weights at startup needs `keep`, deliberately |
-| `--pod-port <n>` | the container port, for the one case kmx will not guess: a Service targeting a NAMED port |
-| `--out <path>` | where to write it (`-` for stdout) |
-| `--no-apply` | write the manifest and stop |
-| `--dry-run` | server-side dry run |
-
-### Safety properties, and why each exists
-
-Everything in [`kmx tools add`'s table](#safety-properties-and-why-each-exists-1)
-applies here — the same overlay, the same whole-map emit, the same
-`resourceVersion` precondition, the same live-Service read, the same
-validation by the plane's own parser. What is different:
-
-| Property | Why |
-|---|---|
-| **`--classification` has no default** | A $0 by inference is a budget nothing can exhaust. The refusal states what each answer costs. |
-| **A protocol is resolved or refused, never guessed** | A path ending `chat/completions` or `responses` IS that protocol. A path naming neither must declare one, and a declaration contradicting its own path is refused rather than resolved — whichever is wrong, the meter would read the wrong field and record zero tokens without saying so. |
-| **An overlay may not carry custody OR a price** | The five fields `kmx tools add` refuses, plus `prices`. A price is the multiplier a cents budget is measured with and the one number in the table the plane cannot check. A metered overlay upstream works under a token budget; under a cents budget the priced-pair gate refuses it, which is correct. |
-| **This seam has NO allowlist, and the command says so** | A tool upstream is unreachable until a credential allowlists a tool on it. A model upstream is reachable by every credential the plane has issued the moment it is in the table. An operator arriving from `kmx tools add` will assume otherwise, so it is stated before anything is applied. |
-| **The plane must be new enough** | The overlay carrying `upstreams` is admin contract 2. An older plane refuses the fragment in its own words, which read like an operator error; kmx asks the plane what it is first and names the version gap instead. |
-| **The seam address is printed, not emitted** | See above: no `ModelConfig`, because the adopter may have no kagent. |
 ## `kmx tools sidecar`
 
 ```bash
-kmx tools sidecar warehouse --deployment acme-client --namespace acme
+kmx tools sidecar warehouse --deployment client --namespace demo
 ```
 
-Some MCP clients cannot be told to send a header — their only
-configuration is a URL — and so cannot present a credential at all. This
-scaffolds the shim that presents one for them: an in-pod reverse proxy on
-loopback that the client posts to, which adds the token from the Secret
-the plane wrote and forwards to the gateway over TLS, verifying against
-the plane's own authority.
-
-Two files, because they are applied by different people to different
-things. kmx applies the ConfigMap holding the shim's config, and
-publishes the plane's authority into that namespace. The Deployment
-patch it writes and does **not** apply: adding a container to somebody
-else's workload is the operator's call. It is a strategic merge whose
-container and volume lists merge by name, so applying it twice adds one
-container, not two.
-
-| Flag | Meaning |
-|---|---|
-| `--deployment <name>` | required — the workload running the MCP client, so the patch and the command that applies it name the same object |
-| `--namespace <ns>` | where that workload runs (default `kagent`) |
-| `--secret <name>` | Secret **name** holding the `kmh_` token (default `kaimahi-<upstream>-token`) |
-| `--out <path>` | where to write the ConfigMap; the patch goes beside it as `<path>`.patch.yaml. `-` prints **both** documents to stdout and writes and applies nothing |
-| `--no-apply` | write both files and stop |
-
-| Property | Why |
-|---|---|
-| **This command accepts no credential either** | The generated config carries `Bearer ${KMH}`; `KMH` comes from the Secret through the pod's environment, and nginx's own entrypoint substitutes one into the other before it starts. The token is never in a manifest, a values file or an image. Both documents are scanned for key shapes before they are written. |
-| **A query parameter was refused** | It would need no sidecar at all, and a URL is not a place a bearer token may live: it reaches the ingress and load-balancer access logs, the client library's request log, every proxy in between, `kubectl logs` on anything that logs a request line, and shell history. |
-| **It proxies one path and returns 404 for everything else** | The shim is a credential, not a route. It listens on loopback inside the pod, so nothing else in the cluster can reach it. |
-| **It verifies the seam** | `proxy_ssl_verify on` against the mounted authority, with the name the certificate actually carries. Skipping verification would pay for the whole certificate exercise and buy nothing, while looking identical from outside. |
-| **It does not buffer** | The gateway relays SSE; buffering it would hold a streamed tool result until the call had finished, which for a long tool call looks exactly like a hang. |
-| **The patch prepends** | A strategic merge puts the shim at `containers[0]`, so after applying it `kubectl logs deploy/<name>` and `kubectl exec deploy/<name>` reach the shim unless you name your own container with `-c`. The patch says so in its own header, because it is the first thing an operator hits afterwards. |
-| **It will not start before the plane exists** | nginx resolves the seam's host once, at startup. So a shim added to a pod on a cluster with no plane crash-loops with a message naming the host, rather than starting and answering every call with a 502 — which would read as the gateway being down. Deploy the plane and run `kmx tools govern` first; both are steps before this one anyway. |
+For URL-only MCP clients, generates a loopback reverse proxy that presents the
+Secret token over TLS to one gateway path, verifies the plane CA, does not buffer
+SSE and returns 404 elsewhere. No token is embedded in YAML or a query string.
+kmx applies config/CA; **the owner applies the strategic-merge Deployment patch**.
+`--out -` prints both documents without mutation; `--no-apply` writes only.
+The patch prepends its container: use `-c` for application logs/exec afterwards.
+Deploy plane and tool credential first; nginx resolves its upstream at startup.
 
 ## Governing an agent
 
-```bash
-kmx plane
-kmx govern hello-world
-```
+`kmx govern` remains the legacy kagent model-preset switch. It supports the
+committed governed Ollama/Copilot presets and their fixed Secret reference,
+refusing incompatible overrides before issuance. `tools govern` separately
+changes tool authority/routing; without kagent it creates credential/allowlist/CA
+and stops. A custom kagent seam must already exist with one matching
+Authorization Secret reference; kmx does not reapply the operator's scaffold.
+`tools ungovern` restores only hello-tools' direct tool selection.
 
-`govern` mints an opaque Kaimahi token, stores it as the agent-side Secret
-`kaimahi-governed-token`, applies the governed model presets, and switches
-the agent onto one. The agent never sees a real upstream key — the plane
-keeps those, and stores only the hash of the token it issued.
+Both use cluster access plus the admin bearer on a pod port-forward, not a
+public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued
+credentials are reconciled, not overwritten; wrong/missing bindings refuse.
+An existing Secret with no credential-binding annotation also refuses before issuance.
+Only genuine Agent NotFound skips a switch, and switches wait for exactly one
+pod on the new template rather than allowing old pods to answer unnoticed.
 
-| Property | Why |
-|---|---|
-| **Cluster credentials gate it before the admin token does** | The plane's admin port is on no Service. Reaching it takes a `kubectl port-forward` to the pod, so you must already be able to reach the cluster; the admin bearer is the second lock, not the first. |
-| **Tokens travel only through pipes** | The admin bearer and the issued token exist in kmx's memory and in the cluster. Neither reaches a file, an argument list, an environment listing or a log — the Secret is rendered in memory and piped into `kubectl apply -f -`. |
-| **Only a genuine `NotFound` skips the switch** | An unreachable API server, an expired credential, an RBAC denial and a wrong context all look like "the agent isn't there" if you do not look. Treating them as absence prints a reassuring note, exits 0, and leaves an agent spending **outside** the plane. Anything but a real NotFound aborts. |
-| **An already-issued credential is reconciled, never overwritten** | The token is shown exactly once and cannot be recovered. If the Secret is bound to a different credential kmx refuses; if it is missing, kmx tells you how to clear the row and re-issue. |
-| **The switch waits for the pods, not the object** | `rollout status` returns while the old pod is still draining, and a question that lands on it gets a plausible answer from the **old** preset. kmx waits until exactly one pod is on the new template. |
-
-Issuance/renewal TTLs must be 60 seconds through 365 days. `kmx govern` supports
-the committed `governed-ollama` and `governed-copilot` presets and their fixed
-`kagent/kaimahi-governed-token` reference; incompatible preset/Secret overrides
-are refused before issuance. For a custom tool server, `tools govern` checks
-that the seam exists and has exactly one matching Authorization Secret reference
-before issuing or changing the allowlist. `tools ungovern` restores only
-`hello-tools`' direct tool selection, preserving model routing and other settings.
-
-Approval bounds are checked before mutation: TTL 1 second through 30 days,
-uses 1 through 1,000,000, and amount 1 through 1,000,000,000,000 when set. At
-least TTL or uses is required; zero remains valid for a budget, not an approval.
-
-Then:
-
-```bash
-kmx agent chat hello-world "Who are you?"
-kmx ledger
-```
+`credential capture` accepts `github`, `github-release` (owner/repository), and
+`ado` (organization): terminal input with echo off, no argv/env/file/pipe input,
+upstream validation before storage, and `--replace` required over an existing
+Secret. Plane-side Copilot capture instead uses `kmx models credential copilot`:
+GitHub device login, a private 0600 OAuth cache, and short-lived token exchange
+without reading credential material from stdin. It applies egress and restarts
+an existing proxy. [AKS](aks.md#the-credential-handoff) gives the explicit-context
+command. Other model-key capture and the separate direct-kagent Copilot capture
+remain `make model-secret` and `make copilot-secret`; Slack/inbound keys retain
+their checkout helpers.
 
 ## Backup, restore, and metrics
 
-```bash
-kmx backup                       # backups/kaimahi-<UTC>.sql, mode 0600
-kmx restore backups/kaimahi-....sql
-kmx metrics | grep '^kaimahi_'
-```
+`backup` runs pg_dump inside Postgres, no local database client/password exposure.
+It writes a unique 0600 temporary file, verifies the dump trailer, then renames;
+failure preserves an existing destination. Default: `backups/kaimahi-<UTC>.sql`.
+Treat token hashes, budgets and audit history as sensitive database material.
 
-`pg_dump` and `psql` run **inside** the Postgres pod, over its unix socket,
-and the bytes travel through `kubectl exec`. The database password never
-leaves the pod, nothing is written to disk in the cluster, and no local
-Postgres client is needed.
-
-| Property | Why |
-|---|---|
-| **A dump with no trailer is not a backup** | `pg_dump` writes its trailer last, so its presence is the completion check. kmx exclusively creates a unique 0600 temporary file in the destination directory and renames only after receiving the trailer; failure removes the temporary file and preserves any previous backup. Existing destinations are warned about before replacement. `restore` checks the same trailer **before** it touches the plane. |
-| **The backup is 0600 from the moment it exists** | It holds credential names and token hashes (never a token), the caps, the ledger, the audit trails and the grants. Keep it as you would the database. |
-| **`restore` quiesces the plane** | The proxies are scaled to zero, in-flight calls drain, the tables are replaced, and the original replica count is restored. Recovery is attempted even after a failed scale-to-zero request, and recovery errors are reported alongside the original failure; success is not guaranteed. An originally zero-replica plane stays stopped and is reported as not serving. |
-| **`restore` is guarded; `backup` is not** | `restore` rewrites the ledger. `backup` is a read, like `ledger`. |
-| **`metrics` reads ONE replica** | Each replica carries its own counters, so a merged view would be arithmetic kmx invented. The ops port is on no Service, so this is a port-forward to a **pod** — and only to one that is Ready and not terminating, because a draining pod stays Running and keeps its IP. |
+`restore` **replaces all tables**, guarded. It rejects missing trailers before
+mutation, scales proxies to zero, loads the dump, and attempts original replica
+recovery even after failure. Recovery errors are reported; success is not
+promised. An originally stopped plane stays stopped. `metrics` port-forwards
+one Ready, non-terminating replica; its name goes to stderr, exposition to stdout.
+It does not invent a sum across replicas. See [operations](operations.md).
 
 ## What is NOT in `kmx`
 
-Deliberately, these stay in repository Make orchestration and scripts. Most are
-entangled with capturing a credential of a kind `kmx credential capture`
-cannot vet, and a capture that stores an unchecked value would be worse than
-the script it replaced: faster at getting a broken credential into a cluster.
-
-| Not here | Where it is |
-|---|---|
-| The Slack, GitHub and inbound connector families — everything but the credential capture | [slack.md](slack.md), [hosted-upstreams.md](hosted-upstreams.md), [inbound.md](inbound.md) |
-| Other model keys, Slack tokens or inbound signing keys | Checkout-only repository demo setup: `make model-secret`, `make slack-secret`, `make inbound-secret`. Copilot is the focused exception: `kmx models credential copilot` can obtain and exchange it through GitHub's device flow, and `kmx lift` uses that operation directly |
-| The network and tool probes | `scripts/*-probe.sh` |
-| Publishing — a tap, a package manager namespace | nowhere. Settling the name lifted the freeze on publishing, and the first tagged release shipped checksummed binaries; `install.sh` and `go install` are the two install paths, and no npm/crates/PyPI/Homebrew namespace is claimed ([NAMING.md](NAMING.md)) |
-
-`kmx up` says the plane is not deployed, in one line, at the end of a run,
-and names the two commands that change that.
+Non-native model-key capture, direct-kagent Copilot capture, Slack/inbound keys,
+connector-specific helpers, committed demo/first-user agents and network probes
+retain checkout paths in [models](models.md), [workflows](workflows.md),
+[Slack](slack.md), [inbound](inbound.md), and [hosted upstreams](hosted-upstreams.md).
+Plane-side Copilot capture and the full lift no longer need a checkout handoff.
+Superseded runtime/admin make shims and shell wrappers have been removed;
+use native kmx, with the Makefile only for retained repository helpers.

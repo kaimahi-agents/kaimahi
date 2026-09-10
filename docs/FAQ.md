@@ -1,214 +1,108 @@
 # FAQ and troubleshooting
 
-Honest answers, mined from what actually went wrong while building this —
-each entry comes from a phase's recorded verification or from something
-hit while writing these docs, not from speculation. Commands assume the
-[getting started](getting-started.md) setup.
+Start with [getting started](getting-started.md). Orka installation, native
+Agent creation and model-traffic migration are the current paths; the final
+section below is for the legacy kagent/plane implementation that still exists.
 
-## The agent errors with `'str' object has no attribute 'get'`
+## Why is `kmx orka` missing?
 
-You swapped in a smaller model. kagent's python runtime gives every agent
-a built-in `ask_user` tool, and small Llamas (`llama3.2:1b`/`3b`) call it
-with malformed arguments — the invocation fails with exactly that error,
-and telling the model not to use the tool in the system message doesn't
-stop it. That's why the pin is `qwen2.5:3b`, which answers plainly.
+The latest tagged release, `v0.1.0`, predates the Orka helpers. `@latest`
+and the release installer do not mean the tip of `main`. Follow the current
+build instructions in [getting started](getting-started.md), then inspect
+`kmx version` and `kmx orka --help`.
 
-If you want a different model, invocation-test it before trusting it:
-`make model MODEL=<tag>`, edit `model:` in the YAML, and run several fresh
-chats. "It's a known model" is not a test.
+## Does installing Orka govern my application?
 
-## The chat came back empty and says `input-required`
+No. Installation creates platform resources and, by default, a local
+Provider. [Migration](migrate.md) is separate. The application must already
+have a Deployment managed by its owner, who reviews and applies the
+printed patch. This routes model traffic; it does not register an Orka
+Agent or put all tool and inbound traffic under governance.
 
-The agent asked *you* a question instead of answering. kagent's python
-runtime gives every agent a built-in `ask_user` tool — nothing in
-`k8s/hello-world.yaml` declares it, and the system message forbidding
-questions does not reliably stop a 3B model — and when it is called the A2A
-task ends in `input-required` with no artifacts, so the reply is empty. In a
-script or in CI nobody is there to answer, so the task simply stops.
+## Why does status show a version different from the pin?
 
-`kmx agent chat` re-asks a question like that up to twice, saying so on
-stderr each time (`chat re-sample 1 of 2`); a model that asked a question is
-being non-deterministic, and a second sample is a fair one. It re-asks only
-when the agent did nothing else — no tool call had already run — and never
-when you passed `--session`, because the question is pending in that session.
-If it still asks, answer it: `kmx agent chat --interactive hello-world` opens
-the chat that can.
+`kmx orka status` reads the running controller image. The pin is what kmx
+would install, not proof of what someone else installed. An unreadable
+cluster is not an empty cluster. See [Orka installation](orka.md) for
+inspection, no-write planning, dry-run and upgrade limits.
 
-The same `input-required` also carries a human approval on a real tool call.
-That one is never re-asked and never treated as an answer — it is a decision
-waiting for a person, and `kmx agent chat --interactive` is where you make it.
+## Can kagent YAML create an Orka agent?
 
-## The tool call worked but the answer is wrong
+There is no supported translation in the current CLI. `kmx agent create`
+authors a native Orka Provider + Agent and optional Task, not kagent resources
+or BYO images. Existing `agent chat/edit/list` remain kagent-specific. See the
+[create contract](kmx.md#kmx-agent-create) and [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer).
+Whether kagent YAML will become an authoring surface over Orka remains open;
+native Orka resources are the recommendation in [orka.md](orka.md), not a ruling
+that rules out future integration. The isolated conversion spike does not add
+a supported CLI translation.
 
-The second small-model failure mode, and the sneakier one: `hello-tools`
-calls the tool correctly, gets correct data back, and then garbles or
-contradicts it in the summary. While verifying the MCP tool path the model
-occasionally received a ConfigMap list and still answered "there are no
-configmaps". While writing this FAQ it read the ollama pod list correctly
-and replied `olla-854b55bc55-9vk6d` — the real pod is
-`ollama-854b55bc55-9vk6d`. Two characters silently gone.
+## A migrated application's turn still fails
 
-The agent's system message orders it to copy tool output verbatim, which
-got the CI probe to 10/10 trials, but a 3B model relaying data is still a
-3B model. Treat the A2A task history (which records the actual
-`function_call` and `function_response`) as the truth and the prose as a
-paraphrase. If you swap models, re-measure *both* failure modes — the
-calling side and the relaying side.
+Check the actual model route and the application's model identifier,
+then the bridge credential, Orka ServiceAccount token, Provider and ledger.
+A successful HTTP response alone is not a completed application turn.
+The [migration limits](migrate.md#8-limits-stated) cover Responses translation,
+continuation incompatibilities, token renewal and owner-applied patches.
+A Helm upgrade can overwrite a one-off patch: retain the change in the
+application owner's deployment source rather than assuming kmx owns it.
 
-## The Copilot preset worked yesterday and fails today
+## Existing kagent and plane troubleshooting
 
-The Copilot token expires, typically within hours. There's no long-lived
-key: `kmx models credential copilot` exchanges your GitHub device login for a
-short-lived API token, and that's what lives in the cluster. When auth
-starts failing:
+The following describes retained legacy code, not Orka's contracts.
 
-```bash
-kmx models credential copilot       # re-mint (the device login is cached — usually no browser step)
-make use PRESET=github-copilot      # restart the pod so it picks up the new Secret
-```
+### Empty replies and `input-required`
 
-On the governed path use `kmx models credential copilot`, and no
-restart — the proxy reads the Secret-mounted file per request. An
-in-cluster auto-refresher was deliberately not built with the model path;
-token lifecycle is governance-plane territory.
+The kagent runtime can ask a human a question or request a tool approval.
+That is not an answer. `kmx agent chat --interactive <agent>` handles the
+pending human step. The small-model path may re-sample a question-only
+response up to twice, but not after a tool call or with an explicit session;
+there is no guarantee that a system instruction suppresses questions.
+Malformed `ask_user` arguments from smaller models can also fail invocation.
+The committed keyless model is `qwen2.5:3b`; test any replacement by invoking it.
 
-## Why the browser login? I'm already logged into `gh`
+### The tool worked but the answer is wrong
 
-The gh CLI's own OAuth token is not Copilot-entitled — GitHub's token
-exchange returns 403 for it (verified). The device flow authenticates as
-the same OAuth client Copilot's own tooling uses, which is entitled. One
-extra browser approval on first run, cached after that.
+A model may misquote valid tool results. Compare the task's actual tool
+call/result with the prose summary. CI asserting a tool path is not proof
+that a model reasons correctly or copies identifiers faithfully.
 
-Also worth knowing: `api.githubcopilot.com` is not part of GitHub's
-documented public API surface. It's what GitHub's own clients use, but it
-can change without notice, and usage counts against your plan's
-premium-request accounting.
+### Hosted model authentication fails
 
-## I have a cluster and paths from the tomte era
+Create the required Secret before selecting a model preset. Copilot uses
+its own device flow, not the `gh` CLI's token, and its short-lived token
+needs renewal. The endpoint is not a stable public GitHub API contract.
+See [models.md](models.md) for current capture and switching commands.
+Never put token values in command arguments or committed YAML.
 
-The project renamed tomte → kaimahi. Two things moved:
+### What do plane error codes mean?
 
-- **The kind cluster** is now `kaimahi-p1`. An existing `tomte-p1` keeps
-  working if you override every make call (`make up KIND_CLUSTER=tomte-p1`,
-  same for `chat`, `down`, …), or start fresh:
-  `kind delete cluster --name tomte-p1 && make up`.
-- **The Copilot login cache** moved from `~/.config/tomte/` to
-  `~/.config/kaimahi/` (override: `KAIMAHI_COPILOT_TOKEN_FILE`). Migrate it
-  once — `mkdir -p ~/.config/kaimahi && mv ~/.config/tomte/copilot-oauth-token
-  ~/.config/kaimahi/` — or log in again and let the old file rot.
+| Code | Check |
+|---|---|
+| 401 | Missing or unknown plane credential. Inspect the response's stated cause. |
+| 403 | A known credential has expired, the request is outside permitted routing or policy, or its cost cannot be admitted under the configured budget. |
+| 429 | The monthly token or money budget is exhausted. Runtime retries may create multiple denied rows. |
+| 502 | Upstream transport/protocol failure, including a response with no readable usage. An admitted attempt is not proof of downstream success. |
+| 503 | A dependency needed for custody, authentication or accounting is unavailable; restore that dependency rather than bypassing enforcement. |
 
-## What "schema-valid only" means
+[Spend](spend.md) explains the actual model protocols and refusal boundaries.
+An unpriced subscription model is not a free model; use token budgets where
+no defensible money price exists.
 
-Five presets (`anthropic`, `openai`, `openrouter`, `azure-foundry`,
-`openai-compatible`) are marked schema-valid only. That's literal: CI
-server-side dry-runs each one against the live kagent CRDs on every PR, so
-the YAML is well-formed and the fields exist — but no real completion has
-ever been bought through them. A preset graduates only when an actual
-`make chat` completes through the endpoint, and nobody has paid to do that
-yet for those five. They should work. "Should" is the honest word.
+### A governed kagent agent vanished from the ledger
 
-## Ollama is free — why is it budgeted in tokens?
+Inspect its live `spec.declarative.modelConfig`. Reapplying an ungoverned
+manifest outside the preserving command path can change routing without
+preventing chat. Use `kmx govern <agent>` only if legacy plane governance
+is the intended route. It is not the Orka migration command.
 
-Because $0 is a *classification*, not a fact of nature, and because "free"
-still isn't "unlimited". The upstream table marks in-cluster ollama
-`free` explicitly, so its ledger rows cost 0 cents — but tokens are still
-counted, and a token cap (`make budget CAP_TOKENS=…`) is the only lever
-that can exhaust it. That's deliberate: the free tier is where you rehearse
-governance before pointing it at money, and a runaway agent burning tokens
-is worth noticing even when nobody is billed.
+### I lost a plane token or ledger
 
-The flip side: Copilot is `metered` with no bundled price, since
-subscription usage has no public per-token price and kaimahi never invents
-one. Its tokens are still counted, at 0 cents (`source=unpriced`) — so
-govern it with a token budget. Under a *cents* budget an unpriced model is denied
-outright, because spend that can't be charged against the budget can't be
-admitted.
+The plane stores a token hash, not a recoverable token. Follow the refusal
+and recovery instructions printed by the owning command; reissuing a
+credential may require restoring its budget. See [identity.md](identity.md).
 
-## What the plane's status codes mean
-
-When a governed chat fails, the proxy's status tells you which layer said
-no. The agent surfaces it as a failed task with the message text.
-
-- **401 unauthorized** — the request carried no kaimahi token, or one the
-  plane doesn't recognize. Usually the agent-side `kaimahi-governed-token`
-  Secret is missing or holds a stale token. Re-running `make govern` alone
-  won't mint a new one (it sees the existing credential and keeps it);
-  recovery is the lost-token procedure below.
-- **403 forbidden** — authenticated, but not allowed: an upstream not in
-  the table, a path other than the one allowed route, "metering
-  unavailable" (budget exists but the ledger can't be read — fail closed),
-  or an unpriced model under a cents budget.
-- **502 bad gateway** — the upstream was reached and something about its
-  answer stopped it being handed over. Either the response was cut, or —
-  "reported no usage this protocol can read" — it succeeded and carried
-  no token counts the upstream's declared `protocol` could read, so the
-  plane refused it rather than recording the call as costing nothing.
-  Check the upstream's `protocol` against what it actually speaks
-  ([spend.md](spend.md#the-two-protocols)); the row is in the ledger with
-  `source=unmetered`.
-- **429 too many requests** — "monthly budget reached" / "monthly token
-  budget reached". The cap is monthly (UTC). Raise or clear it with
-  `make budget`. In our runs each attempt left three denied rows in the
-  ledger, because the agent runtime retried the call. The decision is
-  exact across the plane's two replicas: calls that arrive together
-  against a cap with room for one get one 200 and the rest 429, never
-  two 200s ([spend.md](spend.md#enforcement-properties)).
-- **503 service unavailable** — the plane protecting its own guarantees:
-  the credential store or spend ledger is unreachable (nothing is admitted
-  while spend can't be recorded), or "upstream credential unavailable" —
-  e.g. the governed Copilot preset before `kmx models credential copilot` has
-  given the proxy a real token. Fix the stated dependency; the proxy
-  recovers on its own.
-
-A **502** means the proxy admitted the call but couldn't reach the
-upstream; the attempt is still ledgered (zero tokens).
-
-## My governed agent stopped showing up in the ledger
-
-Did something re-apply `k8s/hello-world.yaml`? That file points at the
-ungoverned `hello-world-model`, so a plain `kubectl apply -f` of it moves
-the agent off its governed preset. The chats still work; they're only no
-longer metered (an early draft of this FAQ was nearly published with that
-mistake in it).
-
-`make up` used to do exactly this. It no longer does: its `agent` step now
-reads the live modelConfig first, re-applies, and restores whatever the
-agent was on, printing a `NOTE:` line naming the preserved preset. If it
-cannot read the live value it refuses rather than risk un-governing you.
-So if you're off the governed preset, something other than `make up` put
-you there. Check with
-`kubectl --context <context> -n kagent get agents.kagent.dev hello-world -o
-jsonpath='{.spec.declarative.modelConfig}'` and re-run `make govern`
-(or `make use PRESET=governed-ollama`).
-
-## I lost the governed token
-
-It's shown exactly once at issue time; the plane stores only its hash, so
-it cannot be recovered. If the `kaimahi-governed-token` Secret is gone,
-`make govern` will refuse with instructions — delete the credential row
-with the exact `psql` command it prints, then re-run `make govern` to
-issue a fresh one. (Budgets are keyed to the credential, so re-set them.)
-
-## Where did my ledger go?
-
-`make down` deletes the kind cluster, and the plane's Postgres — PVC and
-all — goes with it. The ledger survives pod restarts, not cluster
-deletion. It's demo-durable, not backup-managed.
-
-## `make use` hangs at "waiting for Ready"
-
-Almost always a missing key Secret: an agent pointed at a ModelConfig
-whose Secret doesn't exist never becomes Ready. Create it first, then
-switch. Which command depends on the preset: `make model-secret
-NAME=<preset>-api-key` for the five key-based presets (`anthropic`,
-`openai`, `openrouter`, `azure-foundry`, `openai-compatible`),
-`make copilot-secret` for `github-copilot` (its Secret is
-`github-copilot-token`), and `make govern` for the governed presets
-(their Secret is the issued `kaimahi-governed-token`). Check with
-`kubectl --context <context> -n kagent describe agents.kagent.dev hello-world` if it's something else.
-
-## The model I pulled disappeared after a pod restart
-
-The Ollama pod stores models in an `emptyDir`, so a restart re-pulls.
-`make model` (or `make model MODEL=<tag>`) puts it back. Deliberate — no
-PVC to babysit in a demo.
+Pod restarts are not cluster deletion. Deleting kind removes its Postgres
+volume and ledger; take a backup first when data matters. See
+[operations.md](operations.md). The local Ollama model cache is an
+`emptyDir`, so a pod restart may require pulling models again.

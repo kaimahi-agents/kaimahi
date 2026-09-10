@@ -1,0 +1,36 @@
+# SPIKE ONLY: keyless local model; no external model endpoint or billing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shim-model
+  namespace: orka-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: shim-model}
+  template:
+    metadata:
+      labels: {app: shim-model}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: model
+          image: ollama/ollama:0.11.8
+          ports: [{containerPort: 11434}]
+          resources:
+            requests: {cpu: "1", memory: 3Gi}
+            limits: {memory: 5Gi}
+          volumeMounts:
+            - {name: models, mountPath: /root/.ollama}
+      volumes:
+        - name: models
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shim-model
+  namespace: orka-system
+spec:
+  selector: {app: shim-model}
+  ports: [{port: 11434, targetPort: 11434}]

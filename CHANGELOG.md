@@ -99,7 +99,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `unmetered` — the one case that cannot be refused is a stream already
   flushed, which is relayed, logged at ERROR and ledgered `unmetered` all
   the same. Migration `00012`
-  ([docs/spend.md](docs/spend.md#the-two-protocols)).
+  ([docs/spend.md](docs/spend.md#protocols-and-missing-usage)).
 
 - **`kmx models add` — onboard your own model endpoint.** The model seam
   had no onboarding path at all: the only route edited
@@ -149,7 +149,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   accepted rather than fixed, on the grounds that no supported
   configuration reaches it: kagent and the inbound bridge are the only
   doors. It is bounded and reversible, and
-  [docs/identity.md](docs/identity.md#where-none-is-stretched-and-why-that-is-accepted)
+  [docs/identity.md](docs/identity.md#correlation-is-a-window-not-caller-identity)
   says plainly that if a foreign runtime becomes supported the position
   is void.
 - **The plane's two data seams serve TLS.** The model seam (8080) carries the

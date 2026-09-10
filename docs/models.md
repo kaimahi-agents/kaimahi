@@ -1,4 +1,10 @@
-# Models and endpoints
+# Legacy reference: kagent models and endpoints
+
+This page describes the kagent presets still shipped by the current CLI,
+not Orka Provider configuration. For Orka installation and model-traffic
+migration, use [orka.md](orka.md) and [migrate.md](migrate.md). The future
+authoring boundary remains open; these presets do not translate kagent
+resources into Orka resources.
 
 The hello-world agent thinks with an in-cluster Ollama model by default.
 This doc is how to make the same agent think with a hosted endpoint
@@ -20,7 +26,7 @@ chat`.
 | Preset (`k8s/models/`) | Endpoint | Key Secret expected | Live-verified? |
 |---|---|---|---|
 | `ollama` | in-cluster Ollama (keyless, free) | none | **yes**, keyless end to end in CI on every PR |
-| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via `kmx models credential copilot`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
+| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via checkout-only `make copilot-secret`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
 | `anthropic` | Anthropic first-party API | `anthropic-api-key` | not live-verified |
 | `openai` | OpenAI first-party API | `openai-api-key` | not live-verified |
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | not live-verified |
@@ -35,8 +41,8 @@ dry-run on every PR, so the YAML is well-formed and the fields exist. But
 no real completion has been bought through it yet. A preset graduates to
 live-verified only when an actual `kmx agent chat` completes through the
 endpoint, and nobody has paid to do that for those five. They should
-work. "Should" is the honest word. (More in the
-[FAQ](FAQ.md#what-schema-valid-only-means).)
+work. "Should" is the honest word; schema validation does not prove provider
+availability or successful inference.
 
 At kagent 0.9.12 there is no OpenRouter or Copilot-specific provider in
 the CRD. Every OpenAI-compatible endpoint rides `provider: OpenAI` plus
@@ -59,7 +65,7 @@ That matters only on the governed path, and there it matters a lot: a
 governed upstream declares which protocol it speaks, and a call the plane
 cannot meter is refused rather than recorded as costing nothing. The
 declaration, the two shapes and what happens to a third are in
-[spend.md](spend.md#the-two-protocols); adding an upstream that speaks
+[spend.md](spend.md#protocols-and-missing-usage); adding an upstream that speaks
 either is [`kmx models add`](kmx.md#kmx-models-add).
 
 Your own model endpoint — in-cluster, keyless, either protocol — is
@@ -105,7 +111,7 @@ Two things bite people here:
 - **Create the preset's Secret before switching.** An agent pointed at a
   ModelConfig whose Secret is missing never becomes Ready, and `kmx use`
   hangs waiting for it
-  ([FAQ](FAQ.md#make-use-hangs-at-waiting-for-ready)).
+  ([FAQ](FAQ.md#hosted-model-authentication-fails)).
 - **`kmx use` defaults to `hello-world`.** Use `--agent hello-tools` to
   switch the tools agent; otherwise it keeps its
   own `modelConfig`; point it at a preset by patching that field
@@ -146,19 +152,19 @@ include API access to OpenAI and other models** at
 `github-copilot` preset targets it:
 
 ```bash
-kmx models credential copilot      # GitHub device login -> Copilot token -> K8s Secret
+make copilot-secret               # checkout helper: kagent/github-copilot-token
 kmx use github-copilot
 kmx agent chat hello-world
 ```
 
-`kmx models credential copilot` logs you in once via GitHub's device flow
-(open the printed URL, enter
+The retained checkout helper, `make copilot-secret`, logs you in once via
+GitHub's device flow (open the printed URL, enter
 the code), caches that OAuth token 0600 under `~/.config/kaimahi/`
 (override with `KAIMAHI_COPILOT_TOKEN_FILE`), exchanges it at GitHub's
 Copilot token endpoint, and stores **only the short-lived Copilot token**
-in-cluster. If you logged in under the old tomte name, the
-[FAQ](FAQ.md#i-have-a-cluster-and-paths-from-the-tomte-era) has the
-one-line cache migration.
+in-cluster. If you have only a cache under the former project name, log in
+again or explicitly select that cache with `KAIMAHI_COPILOT_TOKEN_FILE`;
+there is no automatic migration of that old path.
 
 Custody properties worth knowing:
 
@@ -172,13 +178,15 @@ Custody properties worth knowing:
   temp files and pipes; nothing touches argv, env listings, YAML, or
   logs, and no keyed call follows redirects. Fail-closed: a failed or
   empty exchange stores nothing.
-- **The exchanged token expires**, typically within hours. When the agent
-  starts failing auth, re-run `kmx models credential copilot` and then
-  `kmx use github-copilot` (the pod must restart to pick up the rotated
-  Secret). The credential command restarts an existing governance plane too.
-  An in-cluster auto-refresher was deliberately not built; token
-  lifecycle is governance-plane territory
-  ([FAQ](FAQ.md#the-copilot-preset-worked-yesterday-and-fails-today)).
+- **The exchanged token expires**, typically within hours. For the direct
+  preset, re-run `make copilot-secret` and then `kmx use github-copilot`
+  so the agent picks up the rotated `kagent/github-copilot-token` Secret.
+  For the plane-side route, use `kmx models credential copilot`: it writes
+  **only** `kaimahi/kaimahi-copilot-token` and restarts an existing plane.
+  That native command does not populate the direct preset's Secret and uses
+  the standard OAuth cache path without the script's environment override.
+  Neither path has an in-cluster auto-refresher
+  ([FAQ](FAQ.md#hosted-model-authentication-fails)).
 - **`api.githubcopilot.com` is not part of GitHub's documented public API
   surface.** GitHub's documented programmatic paths are the Copilot
   CLI/SDK and BYOK. It is the endpoint GitHub's own clients and
@@ -197,6 +205,6 @@ and re-apply. Test it with several fresh chats before trusting it:
 small models misfire kagent's built-in `ask_user` tool, and small models
 that call a tool correctly can still garble its output in the summary
 ([getting-started.md](getting-started.md#choices-and-caveats),
-[FAQ](FAQ.md#the-tool-call-worked-but-the-answer-is-wrong)). The Ollama
-pod stores models in an `emptyDir`, so a restart re-pulls
-([FAQ](FAQ.md#the-model-i-pulled-disappeared-after-a-pod-restart)).
+[FAQ](FAQ.md#the-tool-worked-but-the-answer-is-wrong)). The Ollama
+pod stores models in an `emptyDir`, so a restart loses the cached model;
+repeat the pull when needed.

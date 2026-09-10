@@ -1,8 +1,9 @@
-# CLI presentation plan
+# CLI presentation contracts
 
-Status: static TTY hierarchy, responsive status/agent/admin reports, and chat
-presentation fixes are implemented in the current working tree. This is not a
-claim of complete CLI coverage or a new live-cluster verification run.
+Static TTY hierarchy, responsive status/agent/admin reports, and chat
+presentation are implemented. This reference describes the existing CLI,
+including legacy commands; it does not decide the Orka authoring surface or
+claim complete CLI coverage or a new live-cluster verification run.
 
 ## Goal
 
@@ -249,9 +250,8 @@ Implemented:
 
 - context-guard action and confirmation emphasis.
 
-Remaining candidate:
-
-- the `agent create` wizard's labels, defaults, and validation notes.
+The `agent create` wizard now uses Bubble Tea for eligible terminals; its
+input and cancellation boundaries are in [charm-ux-followup-plan.md](charm-ux-followup-plan.md).
 
 Keep refusal wording and copyable remediation commands plain and atomic.
 Guard vocabulary is safety behavior and remains asserted without ANSI.
@@ -344,8 +344,8 @@ These are safety-semantic and format fixes, not merely color changes:
   IDs remain visible. The uncolored startup header includes the selected context
   and groups commands on capable terminals.
 
-Still unimplemented: a rich agent wizard, a comprehensive presentation pass over
-credential capture and uncommon operator paths, structured admin/workflow-show
+Still unimplemented: a comprehensive presentation pass over credential
+capture and uncommon operator paths, structured admin/workflow-show
 formats, side-by-side status panels, and positive per-call governance receipts in
 chat. Existing chat route labels attest startup configuration, not enforcement
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not

@@ -1,249 +1,139 @@
-# Operating the plane
+# Legacy reference: operating the Kaimahi plane
 
-What it takes to run the governance plane for real: how many of what
-runs, what each probe means, how to back up and restore the one
-stateful piece, what the metrics say, and what is still not highly
-available. Everything here is proven on kind in CI on every PR; nothing
-here has been run on a managed cluster since the AKS demonstrations in
-[aks.md](aks.md).
+> **Legacy Kaimahi plane, not an Orka guarantee.** Orka is the platform;
+> Kaimahi helps people get agents onto it. This runbook remains for the
+> still-running proxy and database, not as a proposal to operate another
+> platform indefinitely. Start at the [documentation index](README.md)
+> for the current direction; retire state only through a separate,
+> deliberate operational change.
 
-Assumes the plane from [spend.md](spend.md) is deployed with `kmx plane`.
+## Shape and state
 
-Everything on this page is available through installed `kmx`: standing the
-plane up, governing an agent, read-only views, backup, restore, metrics,
-budgets and approvals.
+[proxy.yaml](../k8s/plane/proxy.yaml) runs two proxy replicas, containing
+model, MCP, inbound, admin and ops listeners.
+[postgres.yaml](../k8s/plane/postgres.yaml) runs one Postgres instance on
+a PVC. Credentials, budgets, grants, replay/request deduplication and audit
+history live in Postgres; it is **not highly available**.
 
-The managed-cluster path is `kmx lift`, which creates the cluster, builds
-the plane's image in a private registry, renders the manifest for it and
-wires Azure-managed monitoring ([aks.md](aks.md)). Its credential phase uses
-`kmx models credential copilot`: GitHub device login, exchange for a
-short-lived Copilot token, then a direct write to the plane-side Secret and
-its egress policy. The whole lift therefore works from an installed binary,
-without a checkout or Make.
+Rollouts use `maxUnavailable: 0`, `maxSurge: 1`; pod anti-affinity is a
+preference, so two replicas can still share a single node. Migrations run
+under a database advisory lock at startup. A new replica with invalid
+configuration cannot replace the healthy old replica automatically.
 
-## Shape
+Per-replica state still matters:
 
-| Component | Replicas | State |
-|---|---|---|
-| `kaimahi-proxy` (LLM proxy, MCP gateway, inbound bridge, admin, ops) | **2** | none that matters — every governance decision is taken in Postgres |
-| `kaimahi-postgres` | **1** | the ledger, credentials (hashes), grants, audit trails — on a PVC |
+- Inbound's pre-auth rate limiter is a flood guard, not a shared budget:
+  effective ceiling is replicas × configured rate.
+- Inbound holds at most 16 outstanding invocations by default; notifier
+  holds 32 queued posts. Neither queue is durable.
+- Ledger/audit-write breakers trip and recover independently on each
+  replica. Inspect individual replica metrics, not just a Service average.
 
-The proxy is stateless in the sense that counts: budgets, grant uses,
-replay dedupe, request dedupe and approval immutability are each
-decided in one Postgres transaction under a lock on the credential's
-row, so two replicas admit exactly what one replica admitting one call
-at a time would. That is proven, not argued: the store's concurrency
-tests race the real SQL 10–20 ways against a real Postgres in CI, and
-the e2e job fires concurrent calls at *both* replicas and counts.
-
-What IS per replica, deliberately:
-
-- **The inbound pre-auth token bucket.** It is a flood guard, not a
-  governance decision, and it runs before authentication so that an
-  unauthenticated flood cannot become a database flood — a bucket in
-  the database would be the amplification it exists to bound. The
-  effective ceiling is therefore **replicas × `rate_per_minute`**
-  (2 × 60/min by default). Everything after the bucket that decides
-  anything is exact in Postgres.
-- **The inbound job queue and the notifier queue**, bounded (16 and 32
-  by default). An admitted event waits in the replica that admitted it;
-  a graceful stop drains them, a crash loses them, and the audit trail
-  shows an `admitted` row with no outcome row when that happens. The
-  queue depths are metrics.
-- **The fail-closed breakers** (a seam refusing everything after its
-  ledger or audit write failed). Each replica trips and heals on its
-  own; `kaimahi_seam_degraded` shows which.
-
-`kmx plane` rolls the replicas one at a time (`maxUnavailable: 0`,
-`maxSurge: 1`); a PodDisruptionBudget keeps one up through a node
-drain. On a one-node kind cluster both replicas share the node (the
-anti-affinity is a preference); on a real cluster they spread.
-
-Nothing on the agent side changed for this: kagent reaches the proxy
-through its Services, which now have two endpoints.
+Shutdown drops readiness first and waits within a **20-second process
+budget**; it is not a guarantee to drain every admitted job. Inbound workers
+stop on cancellation and queued events can be lost, even on a graceful
+restart. Crashes can lose queued/in-flight work or a post-response audit.
+An inbound `admitted` row without `completed`/`failed` is a recovery clue,
+not an instruction to replay blindly. Source:
+[main.go](../plane/cmd/kaimahi-proxy/main.go) and
+[inbound.go](../plane/internal/inbound/inbound.go).
 
 ## Probes
 
-Two probes, on the ops port (9092), and they mean different things:
+On ops port 9092:
 
-- **Readiness** (`/readyz`) — "route traffic to me". It pings
-  Postgres. A plane that cannot read credentials or write the ledger
-  fails every call closed anyway, so a Postgres outage takes every
-  replica out of the Services, and nothing else happens: when Postgres
-  is back, they are back. CI restarts Postgres and asserts exactly
-  that — readiness dips, the proxies' restart count stays at zero.
-- **Liveness** (`/livez`) — "restart me". It reports only a **local,
-  unrecoverable** fault: a data listener that no longer answers on
-  loopback, or a connection pool fully checked out with no acquire
-  completing for a minute (a leak or a deadlock — every query in the
-  plane is bounded, so a slow database returns connections and cannot
-  look like this). It never consults Postgres or an upstream. A
-  database outage, a slow model, an unreachable tool server: none of
-  them restart the proxy.
+- `/readyz` checks Postgres and the draining flag. A database outage removes
+  replicas from Service routing; recovery restores readiness.
+- `/livez` checks local data listeners and a pool saturated without progress
+  for a minute. It does not query an external database/upstream for health.
+- `/healthz` on data listeners only says that listener answers; it is not
+  proof that authenticated traffic, the ledger or an upstream works.
 
-`/healthz` on the data listeners stays what it was — an unconditional
-"ok" the port-forward scripts wait on.
-
-## Startup
-
-Migrations run at every replica's start, under a Postgres session-level
-advisory lock (goose's session locker). Two replicas booting together
-against an empty database — the first `kmx plane` on a fresh cluster —
-take the lock in turn: one applies, the other waits and then finds
-nothing to do. Both say which in their logs (`migrations: applied` /
-`migrations: nothing to apply`). CI deletes both pods at once and
-asserts they come back clean with one version row per migration.
+[ops.go](../plane/internal/ops/ops.go) defines the checks. TLS listener
+probes verify the seam certificate too, so certificate failures can affect
+local liveness; “database outage does not trigger restart” is not a promise
+that every externally visible failure leaves the process running.
 
 ## The seam certificate
 
-The two data seams — the model seam on 8080 and the tool seam on 8081 —
-serve TLS. What crosses them is why: the model seam carries the full text
-of what an agent was asked and what it answered, and the tool seam
-carries the body a tool returned. Neither is written to any artifact the
-plane keeps. The ledger records identifiers, token counts, cost and
-status; the tool audit records the decision and a capped summary of
-DECLARED argument fields. So that content exists in no other record, and
-capture would be the only way to obtain it.
+Model 8080 and MCP 8081 serve TLS. Existing custody is split:
 
-`kmx plane` mints the material and there is no other component:
+| Secret | Namespace | Material |
+|---|---|---|
+| `kaimahi-plane-authority` | `kaimahi` | CA certificate and private key; mounted nowhere |
+| `kaimahi-plane-seam-tls` | `kaimahi` | serving certificate/key and CA; proxy mount |
+| `kaimahi-plane-ca` | client namespace | CA certificate only; client trust |
 
-| Secret | Namespace | Holds | Mounted |
-|---|---|---|---|
-| `kaimahi-plane-authority` | `kaimahi` | the certificate authority **and its private key** | nowhere at all |
-| `kaimahi-plane-seam-tls` | `kaimahi` | the serving certificate, its key, the authority's certificate | the proxy |
-| `kaimahi-plane-ca` | `kagent` | the authority's certificate **only** | the agent pods, by kagent |
+The serving certificate lasts 398 days. `kmx plane` renews within its
+last 30 days under the existing CA; clients need no new trust distribution
+for that re-sign. Readiness of a workload does not prove its client verifies
+TLS. Never work around expiry by disabling verification.
 
-The authority's private key is the one piece that never leaves the
-`kaimahi` namespace and is projected into no pod, including the proxy's.
-The proxy holds a key that signs handshakes and can issue nothing.
-
-**Rotation is a re-sign, not a redistribution.** The authority is minted
-once and outlives what it signs by years; the serving certificate lasts
-398 days. `kmx plane` renews it whenever it is inside its last 30 days,
-so a cluster that gets deployed to now and then never reaches the
-expiry. What changes is only the Secret the proxy mounts — the authority
-every agent was told to trust is untouched, so there is no window where
-one side has rolled over and the other has not.
-
-A cluster nobody has deployed to in a year is the case worth naming, and
-it is why the expiry is reported in three places rather than left to be
-discovered:
-
-```bash
-kmx status          # a certificate line: subject, issuer, days remaining
-kmx metrics  # kaimahi_seam_certificate_expires_in_seconds
-```
-
-and the proxy logs the subject, issuer and expiry at startup. Renewal on
-its own, without a full redeploy:
-
-```bash
+```sh
+kmx status
 kmx plane --step certificate
 ```
 
-That signs a new certificate under the unchanged authority and restarts
-the proxy, because the process reads the mounted material once at start.
-
-**When it does expire, both seams stop answering and every agent fails
-closed.** Nothing degrades to plaintext. Be aware of how that presents:
-kagent's agent runtime reports a failed handshake as a generic connection
-error — the certificate-naming diagnostic in its own source is not called
-on that path — so the agent's own message will not say "certificate".
-`kmx status` and the `kmx tools govern` refusal both name it.
+The certificate step renews as needed, republishes trust and restarts the
+proxy to load material read at startup. An expired certificate makes
+verifying clients fail; kagent may report only a generic connection error.
+CA/private-key loss is not fixed by a normal serving-certificate re-sign.
+See [certificate.go](../internal/kmx/app/certificate.go) before replacing
+trust material across a running installation.
 
 ## Backup and restore
 
-Postgres is one replica on one PVC. `kmx down` destroys it. Between
-those two facts sits the backup:
-
-```bash
-kmx backup                           # backups/kaimahi-<UTC timestamp>.sql
-kmx backup /somewhere/safe.sql
-kmx restore backups/kaimahi-20260902T120000Z.sql          # guarded
+```sh
+kmx backup
+kmx backup /safe/location/plane.sql
+kmx restore /safe/location/plane.sql
 ```
 
-`pg_dump` runs inside the Postgres pod over its unix socket and streams
-through `kubectl exec` into the local file: no password leaves the pod,
-nothing is written to disk in the cluster, no local Postgres client is
-needed. The dump is `--clean --if-exists`, so restoring **replaces**
-the database — every table dropped and recreated — which is what makes
-it work on a fresh cluster whose `kmx plane` already ran the
-migrations. A restore is a short outage by design: `kmx restore` scales
-the proxies to zero first (in-flight calls drain), replaces the tables,
-and scales them back — a proxy admitting calls during the reload could
-write ledger rows the restore then discards, or decide a budget against
-a half-loaded ledger. Nothing is re-migrated. Because credential hashes
-come back, the agent-side Secrets issued against the backed-up database
-work again.
+**Restore replaces the database and causes an outage.** It validates a
+complete dump, scales proxies to zero, restores transactionally, then
+returns them to their prior replica count. It is not a merge of old and
+new audit history. Inspect the context and preserve a current backup before
+running it. If recovery fails, inspect both the restore and scale errors.
 
-What the file holds: credential names and token hashes (never a token
-or an upstream key), caps, the ledger, the tool, inbound and approval
-audit trails — including whatever ids those trails record, such as the
-Slack user id on a decision — grants and open spend holds. Keep it as
-you would the database. `backups/` is git-ignored.
-
-CI proves the round trip: it backs up a cluster with ledger rows, wipes
-the database (deletes the PVC and the Postgres pod), restores, and
-asserts the rows are back and a governed call still works.
+[backup.go](../internal/kmx/app/backup.go) streams `pg_dump` through
+`kubectl exec` without exporting the database password. A completed backup
+replaces the requested local file; an incomplete dump is refused. Dumps
+contain credential hashes, caps, grants, ledger/audit rows, actor IDs,
+caller observations and spend holds—not usable opaque tokens or provider
+keys. Protect them as database material. Kubernetes Secrets and CA private
+keys are **not** backed up by this command; retain an independent custody
+recovery plan. Existing client tokens work only against matching restored
+hashes. Cluster/PVC deletion destroys state unless backed up elsewhere.
 
 ## Metrics
 
-Prometheus text format on **`:9092/metrics`** — its own listener, no
-auth, on no Service. Kubelet reaches the port for the probes; nothing
-in the agent namespace and nothing behind the inbound edge can (the
-proxy's NetworkPolicy opens only 8080 and 8081 to agents). A scraper
-gets in through one explicit allowance, `kaimahi-proxy-metrics` in
-`k8s/plane/network-policy.yaml`: pods labelled
-`app.kubernetes.io/name: prometheus` in a namespace named `monitoring`,
-on 9092. Neither exists on kind and nothing scrapes in CI, so the rule
-matches nothing until you create them; a different scraper means
-editing those two selectors. Because the port has no auth, that
-allowance *is* the access control.
-
-```bash
-kmx metrics                     # one replica's exposition (port-forward to a pod)
-kmx metrics --pod <name>        # a specific replica
+```sh
+kmx metrics
+kmx metrics --pod <proxy-pod>
 ```
 
-| Metric | Labels | What |
-|---|---|---|
-| `kaimahi_decisions_total` | `seam` (proxy, gateway, inbound), `decision` (allowed, granted, denied), `reason` | every governance decision, by why |
-| `kaimahi_ledger_month_cents`, `kaimahi_ledger_month_tokens` | `credential` | month-to-date ledger per credential **name**, read from Postgres at scrape time |
-| `kaimahi_live_grants` | `kind` (tool, budget, inbound) | grants live right now |
-| `kaimahi_credential_expires_in_seconds` | `credential` | seconds until a credential stops authenticating, negative once it already has — how an expiry is seen coming rather than diagnosed at 3am ([identity.md](identity.md)) |
-| `kaimahi_seam_certificate_expires_in_seconds` | — | seconds until the certificate the two data seams serve with expires, negative once it has. Both seams stop answering when it does, and every agent fails closed — so this is the gauge to alert on. `kmx plane` renews it inside its last 30 days ([the seam certificate](#the-seam-certificate)) |
-| `kaimahi_credentials_without_expiry` | — | credentials issued before expiry existed, which therefore never expire. A closed class: this gauge can only fall |
-| `kaimahi_open_reservations` | — | calls admitted under a cap whose ledger row has not landed yet, across all replicas |
-| `kaimahi_upstream_latency_seconds` | `seam`, `upstream` | histogram of time spent at the upstream |
-| `kaimahi_queue_depth`, `kaimahi_queue_capacity` | `queue` (inbound_jobs, notifier) | the per-replica queues |
-| `kaimahi_seam_degraded` | `seam` | 1 while the replica's seam is failing closed on a write failure |
-| `kaimahi_store_up` | — | 0 when this scrape's Postgres reads failed (the store-derived series are then absent, never stale) |
-| `kaimahi_build_info` | `version`, `go_version` | the binary's VCS revision |
+`:9092/metrics` is Prometheus text, without auth or a Service. Access is
+limited by [network policy](egress.md), including selected monitoring pods;
+port-forward uses Kubernetes permissions instead. Managed monitoring is a
+separate opt-in configuration, not absence of an observability path.
 
-plus the standard `go_*` and `process_*` collectors.
+Key series in [metrics.go](../plane/internal/metrics/metrics.go):
 
-**No identifier is ever a label value.** Label values come from fixed
-vocabularies (the seams, decisions, reasons, kinds, queues) or from two
-operator-chosen names that are already public in the repo and printed
-by every audit command: a credential's name (`hello-world`,
-`kaimahi-plane` — never its token) and an upstream's name. A channel
-id, a user id, a request id, a delivery id, a model string or any free
-text never becomes a label; a test in the `metrics` package walks the
-live registry and fails on any label outside the set or any value
-outside its shape.
+- `kaimahi_decisions_total`, `kaimahi_upstream_latency_seconds`;
+- `kaimahi_ledger_month_cents`, `kaimahi_ledger_month_tokens`,
+  `kaimahi_live_grants`, `kaimahi_open_reservations`;
+- `kaimahi_credential_expires_in_seconds`,
+  `kaimahi_credentials_without_expiry`,
+  `kaimahi_seam_certificate_expires_in_seconds`;
+- `kaimahi_queue_depth`, `kaimahi_queue_capacity`,
+  `kaimahi_seam_degraded`, `kaimahi_store_up`, `kaimahi_build_info`.
 
-## What is still not highly available
+A failed store scrape omits store-derived series rather than returning stale
+values. Labels include credential/upstream **names**, not bearer tokens,
+Slack IDs, delivery IDs or arbitrary request text. Names may still disclose
+operator context. Alert on expiring credentials/certificates, degraded seams,
+missing usage and queue loss; this page does not install alerting rules.
 
-- **Postgres.** One replica, one PVC. While it restarts, every proxy
-  replica drops readiness and nothing is admitted (fail closed — no
-  ledger, no egress); when it is back, so is the plane, with no proxy
-  restart. Backup and restore are the durability story; a managed
-  database or Postgres HA is a later lane.
-- **A single kind node.** Both replicas share it in CI and on a laptop.
-  Real spreading needs real nodes.
-- **In-flight inbound work** on a crashed replica (above).
-
-Not in scope, and not built: tracing, dashboards, alerting rules, a
-shared rate limiter, horizontal autoscaling. AKS was demonstrated
-before this shape existed ([aks.md](aks.md)); running two replicas
-there is the same manifest and has not been re-run.
+Tests and resilience probes remain in [scripts](../scripts/) and
+[plane/internal](../plane/internal/). Historical demo runs are not a current
+availability certification for kind, AKS or Orka.

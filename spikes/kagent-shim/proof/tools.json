@@ -1,0 +1,39 @@
+{
+  "shim-tools": {
+    "tools": [
+      {
+        "description": "Get Kubernetes resources using kubectl",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "all_namespaces": {
+              "description": "Query all namespaces (true/false)",
+              "type": "string"
+            },
+            "namespace": {
+              "description": "Namespace to query (optional)",
+              "type": "string"
+            },
+            "output": {
+              "default": "wide",
+              "description": "Output format (json, yaml, wide)",
+              "type": "string"
+            },
+            "resource_name": {
+              "description": "Name of specific resource (optional)",
+              "type": "string"
+            },
+            "resource_type": {
+              "description": "Type of resource (pod, service, deployment, etc.)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "resource_type"
+          ]
+        },
+        "name": "k8s_get_resources"
+      }
+    ]
+  }
+}

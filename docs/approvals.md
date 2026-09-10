@@ -1,361 +1,121 @@
-# Approvals and bounded grants
+# Legacy reference: approvals and bounded grants
 
-Budgets govern what an agent spends and the gateway governs what it
-does. Approvals add the human to the loop: **a denied action files a
-pending approval request, and a CLI approval mints a bounded grant**
-that widens enforcement exactly as far as the human said, for exactly
-as long. The bound can be an expiry, a use count, or both.
+> **Legacy Kaimahi plane, not an Orka guarantee.** Orka is the platform;
+> Kaimahi helps people get agents onto it. This reference remains because
+> the approval code still runs and its messages point here. It describes
+> that code, not the target architecture or an Orka approval contract.
+> Current onboarding starts at the [documentation index](README.md).
 
-Assumes: the plane from [spend.md](spend.md), and for the tool demo the
-gateway wiring from [tool-governance.md](tool-governance.md).
+## Existing procedure
 
-The model is **deny-and-retry**: no held-open calls, no approval flow
-inside MCP itself. The agent's denial says a request was filed; the
-operator decides; the agent (or the operator) tries again.
+The model is **deny-and-retry**: no held-open MCP call or durable workflow
+is created by an approval. A denial can file a pending request; a human
+decides it; the client must attempt the action again.
 
-An approval is about a **call**, not a verb: "may pay invoice
-INV-88134, 32,550 cents, to MER-4471" rather than "may call
-pay_invoice for the next ten minutes". And a credential can carry
-**standing constraints** so routine calls need no approval at all. Both
-are below.
-
-## The cycle
-
-```text
-  agent / probe                    plane                        operator
-       │  tools/call k8s_get_events  │                              │
-       │ ───────────────────────────▶│ denied (allowlist)           │
-       │ ◀─── JSON-RPC -32001 ────── │ + approval request FILED     │
-       │      "request filed"        │   (deduped while pending)    │
-       │                             │                              │ kmx approvals
-       │                             │ ◀──── kmx approve <id> ───── │ --ttl 60s --uses 1
-       │  tools/call k8s_get_events  │       (bounded grant)        │
-       │ ───────────────────────────▶│ ALLOWED via grant            │
-       │ ◀────── tool result ─────── │ (use consumed, audited)      │
-       │  …bound expires/exhausts…   │                              │
-       │  tools/call k8s_get_events  │                              │
-       │ ───────────────────────────▶│ denied again — an expired    │
-       │                             │ grant is not a grant         │
+```sh
+kmx approvals
+kmx approve <id> --ttl 10m --uses 1
+kmx deny <id>
+kmx grants
+kmx audit approval
+kmx audit tool <credential>
 ```
+
+Choose approve **or** deny, not both. Administrative commands use the
+cluster context and admin bearer, recording `decided_by=admin`, not a
+human identity. The [CLI definitions](../cmd/kmx/commands.go) are the
+reference for flags. To pre-file a specific call:
+
+```sh
+kmx request tool k8s_get_events --credential hello-tools \
+  --args '{"namespace":"default"}'
+```
+
+Omitted arguments mean the argument-less call, not permission for all
+arguments. Budget requests instead name `tokens` or `cents`; approving
+one requires `--amount` in those units as well as a time/use bound.
 
 ## The approval binds the call
 
-A denied `tools/call` files a request carrying two things derived from
-the call's canonical arguments (the gateway parses each message once,
-into one normalized form that feeds the policy decision, the digest, the
-audit and the bytes forwarded upstream alike):
+The gateway computes a SHA-256 digest from the tool name, binding mode
+and [policy-relevant arguments](tool-governance.md#declaring-what-arguments-mean).
+The request, grant and tool audit carry that digest. A mismatch does not
+consume an exact-call grant and files a separate pending request.
 
-- a **digest** — the sha256 of the tool name and its *policy-relevant*
-  argument fields, which the tool declares in the upstream table
-  ([tool-governance.md](tool-governance.md#declaring-what-arguments-mean));
-- a **summary** — the line a human reads:
-  `pay_invoice: invoice_id INV-88134, amount_cents 3255000, payee_id MER-4471`.
+Pending requests deduplicate by credential, kind, subject and digest.
+A filing failure does not reverse a denial. Approval/denial, grant creation
+and their audit row commit together; a decision that cannot be recorded
+is not committed. Decided requests are immutable; later denials can file
+new ones. Source: [store/approvals.go](../plane/internal/store/approvals.go).
 
-Approving mints a grant **welded to that digest**. The gateway admits a
-call only when the digest of its declared policy fields matches a live
-grant for that credential and tool. A mismatch is a denial that files
-its **own** request — never a silent pass, never a re-use of the earlier
-grant, and the earlier grant's uses are untouched.
-
-```text
-  agent ──▶ pay_invoice 48,000 to MER-4471   ▶ DENIED, request A filed
-  human ──▶ kmx approve A --ttl 60s --uses 1 ▶ grant welded to call A
-  agent ──▶ pay_invoice 48,000 to EVIL-1     ▶ DENIED (grant A is not this call),
-                                               request B filed, A untouched
-  agent ──▶ pay_invoice 48,000 to MER-4471   ▶ ADMITTED under grant A
-```
-
-Consequences worth stating plainly:
-
-- **Two attempts with different policy-relevant arguments file two
-  requests.** They once deduped into one, and one approval covered both.
-  Genuine repeats of the *same* call still collapse into a single pending
-  request.
-- **`kmx approvals`, `kmx grants`, `kmx audit tool` and `kmx audit
-  approval` all show the call**, and the audit records the digest
-  and summary on the denial *and* on the admitted call — so the call a
-  human approved and the call that ran are provably the same one.
-- **The audit never carries undeclared arguments.** The summary is built
-  from declared fields only, scalars only, one bounded printable line:
-  these tables are in every `kmx backup`. (`internal/redact` scrubs
-  known secret *values* from logs; it is not a business-data redactor and
-  is not used here.)
-- **A tool request that names no call cannot be approved.** `kmx request
-  tool <subject> --args '{"…"}'` names one; without `--args` it
-  files the *argument-less* call, never "any call" — with one exception,
-  and it comes from the declaration rather than the request: a tool that
-  declares `policy_fields: []` has said no argument is policy-relevant,
-  so every call to it has the same digest and a grant for one admits any
-  arguments. Grants minted before approvals bound arguments (the
-  migration's closed legacy class) stay verb-level and keep working;
-  nothing can create another, and `kmx grants` labels them
-  `verb-level (legacy)`.
+**Exact means the declared fields, not every consequence.** With explicit
+`policy_fields: []`, every argument set has the same digest. With no tool
+declaration, the digest binds the whole canonical object but the summary
+does not disclose arbitrary undeclared arguments. Old NULL-digest grants
+remain bounded verb-level permissions; new ones cannot be minted and exact
+matches are consumed first. Summaries contain only declared scalar values,
+clipped and sanitized, not a full request or business-data redaction.
 
 ## Standing constraints: the calls that need no approval
 
-An approval per routine call would be theatre. A credential may instead
-carry declarative **bounds** on a tool's declared fields — the accounts-
-payable case is *"may call `payment_schedule` when `amount_cents` is at
-most 1,000,000 and the payee is one we know, and never otherwise"*
-(the shipped one carries both clauses; the demo it drives is
-[ap-demo.md](ap-demo.md)):
+A credential can carry rules over a tool's declared top-level fields in
+[the table](../k8s/plane/upstreams.yaml) or an allowed overlay fragment.
+`eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`, `not_in` are supported; all
+clauses are ANDed. Unknown operators, empty rules, invalid numeric bounds
+and undeclared fields are refused at configuration load. Missing or
+wrong-typed values fail the call's constraint check.
 
-```json
-"standing_constraints": {
-  "ap-agent": {
-    "payment_schedule": [
-      {"field": "amount_cents", "op": "lte", "value": 1000000},
-      {"field": "payee_id", "op": "in", "values": ["MER-4471"]}
-    ]
-  }
-}
-```
+A call inside a constraint needs no grant. Outside it, a matching live
+grant is required: **the static allowlist cannot bypass an existing
+constraint**. A bound on amount does not bound a payee or establish a
+relationship to an invoice. Include every relevant field; nested paths
+and cross-system relationships are not evaluated by this vocabulary.
 
-- A call **inside** the bounds proceeds with **no approval and no
-  grant**, audited as allowed with `within standing constraint` and the
-  call's own summary.
-- A call **outside** them is denied and files a request, exactly as an
-  unlisted tool does — and that request is welded to the call, so the
-  human approves *that* transaction.
-- Where a constraint exists it **binds**: the static allowlist no longer
-  admits that tool for that credential, because "and never otherwise" is
-  the point. A grant is still the way through, one call at a time.
-- The vocabulary is small on purpose — `eq`, `ne`, `lt`, `lte`, `gt`,
-  `gte`, `in`, `not_in` over a tool's declared fields, all rules ANDed.
-  There is no expression language, and there will not be one.
-- Everything is refused at **load**: an unknown op, a non-integer numeric
-  bound, an empty rule list, or a constraint on a field the tool does not
-  declare. A rule the plane cannot enforce is never quietly ignored.
-- Evaluation **fails closed**: a missing field, a wrong-typed value, or a
-  non-integer where an integer bound applies all count as outside.
+## Grant lifetime and consumption
 
-## Grants are bounded, or they are not grants
+At least one positive time or use bound is required. Expiry and exhaustion
+are checked in SQL at admission, across replicas; expired/exhausted rows
+remain as history. A grant does not extend its credential's lifetime.
 
-- **At least one bound is required**: expiry (`TTL=`) and/or use count
-  (`USES=`). An unbounded grant is a config change (edit the allowlist
-  or the budget), not an approval, and the plane refuses to mint one.
-- **Expiry and exhaustion are enforced at decision time, in SQL.** The
-  gateway and meter never act on a cached grant, and no cleanup job is
-  needed for correctness: an expired grant stops matching the liveness
-  predicate.
-- **Budget grants carry an `AMOUNT`** (tokens or cents, matching the
-  exceeded cap). The effective cap is `cap + Σ(live grant amounts)`. A
-  use is consumed only by a request that needed the grant; under-cap
-  traffic never burns one.
-- **Tool-grant uses are consumed per admitted `tools/call`, before the
-  forward.** An upstream failure therefore burns the use. That is the
-  conservative direction, and it has a visible consequence on the Slack
-  path ([slack.md](slack.md)).
-
-## Demo 1: widening a tool allowlist
-
-The tool server stays read-only throughout. Grants widen *which* read
-tools a credential may call, never the server's posture.
-
-```sh
-kmx tools govern --tools k8s_get_resources          # gateway wiring in place
-bash scripts/tool-denial-probe.sh k8s_get_events    # denied; request filed
-kmx approvals                                       # copy the ID
-kmx approve <uuid> --ttl 60s --uses 1
-bash scripts/tool-call-probe.sh k8s_get_events '{"namespace": "default"}'   # succeeds
-bash scripts/tool-denial-probe.sh k8s_get_events    # denied again (use consumed)
-kmx audit tool hello-tools                          # allowed row says: granted <grant-id>
-```
-
-`tool-call-probe.sh` does the full MCP handshake (initialize,
-initialized, tools/call) through the gateway with the `hello-tools`
-credential. The `tools/list` projection includes live-granted tools, so
-visible means callable right now. The agent's own `toolNames` selection
-is untouched by grants, which is why a granted tool is exercised via the
-probe here: the static allowlist plus `kmx tools govern --tools …`
-remains the way to widen what the *agent* wields.
-
-## Demo 2: budget overage
-
-```sh
-kmx budget hello-world --tokens 1
-kmx agent chat hello-world      # denied; approval request filed
-kmx approvals                   # copy the ID (kind=budget, subject=tokens)
-kmx approve <uuid> --ttl 5m --uses 1 --amount 100000
-kmx agent chat hello-world      # completes; kmx ledger shows the overage rows
-kmx agent chat hello-world      # denied again; the single use is consumed
-kmx budget hello-world --tokens 100
-```
-
-## Queue mechanics
-
-- **Auto-filed**: a gateway tool denial files `(credential, tool, call)`;
-  a budget-cap denial files `(credential, tokens|cents)`. Deduped per
-  `(credential, kind, subject, call digest)` while pending, so retry
-  loops cannot spam the queue — but two different calls are two
-  requests. A filing failure never un-denies (denial is the safe
-  state), and the enforcement audit row still writes.
-- **Explicit**: `kmx request tool k8s_get_events --args '{"namespace":
-  "default"}'`. Tool requests default to the
-  `hello-tools` credential, budget requests to `hello-world`; override
-  with `CRED=`. `ARGS` names the call to pre-approve (the plane computes
-  the digest with the gateway's own code, so this request and the
-  agent's retry are the same call); omitted, it files the argument-less
-  call. A tool declaring `policy_fields: []` is verb-level by
-  declaration, so its grants admit any arguments.
-- **Decide**: `kmx approvals`, then `kmx approve <id> [--ttl …] [--uses …]
-  [--amount …]` or `kmx deny <id>`; or, from Slack, `@kaimahi approve <id>`
-  ([below](#deciding-from-slack)). A decided request is immutable; fresh
-  denials file fresh requests.
-- **Inspect**: `kmx grants` (liveness computed by the same predicate
-  enforcement uses) and `kmx audit approval` (requested / approved /
-  denied, with bounds and **who decided**: `admin` for the CLI, `slack:<user
-  id>` for a Slack command; the approvals' own append-only trail). Approve
-  and deny commit the grant, the status change and the audit row in one
-  transaction, so a decision that cannot be recorded does not happen.
+Budget headroom is the cap plus live grant amounts. Only calls that need
+the overage consume budget-grant uses. Tool-grant uses are consumed before
+forwarding, so an upstream failure can spend the grant without delivering
+a result. Inbound grants admit events, not their later tool actions.
+See [spend](spend.md), [inbound](inbound.md) and [identity](identity.md).
 
 ## Deciding from Slack
 
-The queue is no longer CLI-only. When a request is filed, by any of the
-sites that file one (a gateway tool denial, a budget-cap denial, the
-inbound door, `kmx request`), the plane posts into the pinned Slack
-channel that a decision is waiting, and an approver decides it from
-Slack, as themselves:
+The retained [inbound command parser](../plane/internal/inbound/command.go)
+accepts `@kaimahi approve <id> [uses=N] [ttl=D] [amount=N]` or
+`@kaimahi deny <id>`. IDs can be an unambiguous prefix of at least eight
+characters. Commands run after signature/channel checks but before the
+inbound grant gate, invoke no agent, and require membership in the hook's
+Secret-mounted `slack_approvers_file`. Channel membership is not authority.
+Missing, empty or invalid approver data fails commands closed; ordinary
+questions retain their own gates. Bot-authored events are ignored.
 
-```text
-  hello-slack ──▶ gateway: conversations_add_message DENIED, request filed
-                     │
-                     ▼  (the plane's OWN credential, through its own gateway)
-  #channel  ◀── "Kaimahi approval request `3f1c…`: credential hello-slack was
-                 denied tool conversations_add_message. To decide, mention
-                 the bot: @kaimahi approve 3f1c… [uses=N] [ttl=15m] …"
-  approver  ──▶ "@kaimahi approve 3f1c9a2e uses=1 ttl=15m"
-                     │ signature ✓, channel ✓, approver list ✓
-                     ▼
-  #channel  ◀── (in the thread) "approved request 3f1c…: grant 7b0d… uses=1
-                 expires=…"          kmx grants → decided by slack:U…
-```
+The hook defaults are one use and fifteen minutes when not overridden;
+a budget approval still needs an amount. The decision records
+`slack:<user id>` on request, grant and audit, without resolving a display
+name. Synthetic signed mentions prove parser/authorization behavior, not
+that a human approved. Never impersonate a real approver for a demo.
 
-**The notification** goes through the governed posting path. The plane
-holds a credential of its own, `kaimahi-plane`, issued by the checkout-only
-repository demo target `make notify-slack`, and
-allowlisted to the posting tool only. That is configuration rather than
-a grant, because the plane is the trust root; what it buys is that the
-plane's own message is authenticated, allowlisted, pinned to the one
-channel (the same Secret key that restricts the MCP server and bounds
-the inbound hook) and **audited** like any agent's: `kmx audit tool
-kaimahi-plane` shows a row per attempt. The message carries
-the request id, the credential, the kind and subject, and the command to
-type. It is asynchronous and a convenience: a post that fails never
-un-files the request. A refusal the plane can see (the gateway refused
-before forwarding, the gateway could not be dialled, Slack said no) is
-retried, three attempts in all; anything that may have happened after
-the post went out (a timeout, a reset, the gateway's own 502, which it
-answers for a dial failure and for a reset after delivery alike) is
-recorded and **not** retried, because a notification posted twice is
-the double-post the rest of this repo is careful to avoid, and `kmx
-approvals` is always there.
+[slack-approvers.sh](../scripts/slack-approvers.sh) retains list capture;
+the notifier uses its own credential and the [Slack posting path](slack.md).
+Notifications are best-effort and asynchronous: known refusals may be
+retried up to three attempts; ambiguous post failures are not retried to
+avoid duplicates. A lost announcement never removes a filed request.
+**`kmx approvals` is the queue of record**, not the Slack channel.
 
-**The command.** `@kaimahi approve <id> [uses=N] [ttl=D] [amount=N]` or
-`@kaimahi deny <id>`, as an `app_mention` on the existing `slack-events`
-hook ([inbound.md](inbound.md#slack-events-the-loop)). `<id>` is the
-request id or its first block (8 characters; a longer prefix if that is
-ambiguous). The command is recognised after Slack's signature and the
-channel allowlist have been checked and *before* the grant gate: deciding
-a request needs no inbound grant (or approving would need an approval),
-runs no agent, and spends nothing. Bounds omitted get the hook's defaults,
-**one use and fifteen minutes** (`slack_default_uses` /
-`slack_default_ttl` in the hook table): an approval typed into a chat is
-the least deliberate form an approval takes, so its default is the
-tightest grant that still lets the retried action through. `uses=` or
-`ttl=` on the command wins; a budget request needs `amount=`; the store
-still refuses a grant with no bound at all. A decided request is
-immutable: the same command again answers "already approved by
-slack:U… at …". The outcome is posted back in the mention's thread
-through the same governed path.
+## Remaining limits and evidence
 
-**Who may decide** is a Secret-mounted file of Slack user ids,
-`make slack-approvers` (stdin only: a user id is a workspace identifier
-and never lands in this repo), named in the hook table as
-`slack_approvers_file` next to the channel file and read per command.
-Channel membership is not authority: anyone in the room can ask the
-agent a question; only a listed user can decide. A command from anyone
-else is refused (403) and audited with their id; a list that is missing,
-empty or malformed fails every command closed (503) and changes nothing
-about questions. A bot-authored command, including the plane's own
-notification arriving back as an event, is ignored by the loop guard
-before it is ever parsed.
+Discovery may lag grants, and a grant does not expand an agent's selected
+`toolNames`. An invisible tool may never be attempted and thus never file
+a request. Per-call gateway checks remain authoritative.
 
-**Identity.** `decided_by` is on the request, the grant and the audit
-row: `admin` for the CLI (the admin bearer, the only writer that port
-admits) and `slack:<user id>` for Slack. `kmx grants` and `kmx audit
-approval` show it.
-
-```sh
-make slack-approvers          # paste the approver ids on stdin
-make notify-slack             # the plane's own credential, posting tool only
-# then, in the channel, after a denial has been announced:
-#   @kaimahi approve 3f1c9a2e uses=1 ttl=15m
-kmx grants                    # decided by slack:U…
-kmx audit approval
-kmx audit inbound slack-events   # the command row, and any refused ones
-```
-
-On a kind cluster there is no Slack to type into; `make slack-mention
-SLACK_USER=U0EXAMPLE COMMAND='approve 3f1c9a2e'` fires a correctly signed
-synthetic mention at the hook the way `make inbound-fire` does, which is
-how CI asserts the whole path keyless. The notification's post then
-answers 502 (the Slack upstream does not exist there), once, and its
-audit row under `kaimahi-plane` is the proof it went through the
-governed path.
-
-## Operational notes
-
-- Approvals live in the same process, Postgres and admin port as the
-  rest of the plane. Nothing new to deploy; re-run `kmx plane` to roll
-  a new image, and migrations run idempotently at startup.
-- Grant rows are never deleted. Exhausted and expired grants stay
-  visible in `kmx grants` as `live=no` history. Demo-durable via the
-  PVC, like the ledger.
-- `kmx up` preserves a governed agent's modelConfig and gateway wiring
-  across re-runs, so a grant demo survives a re-provision.
-  `kmx use ollama` and `kmx tools ungovern` are the explicit
-  ways back.
-
-## What this promises, and what it does not
-
-The plane does **not** stop an agent being manipulated. A prompt-injected
-agent can and will attempt whatever it was talked into. What the plane
-stops is a manipulated agent **acting outside the call a human
-approved**: the attempt is denied, it files a request whose summary shows
-the changed amount or the changed payee, and it is audited. It cannot
-ride an earlier approval, because that grant is welded to a different
-call.
-
-Two more honest edges. Argument policy governs *inputs*, not outputs —
-there is no filtering or redaction of tool RESULTS in this project, and
-none is implied. And a tool that declares nothing binds its whole
-canonical argument object: exact, but brittle, since an LLM re-emitting a
-semantically identical call is not byte-stable. Declaring the fields that
-matter is what makes "approve, then it proceeds" deterministic.
-
-## Limitations
-
-- **Routing is Slack only.** No email or ticket routing; a request is
-  announced in one pinned channel, and only when `make notify-slack` has
-  issued the plane's credential. The notification is best-effort by
-  design (a known refusal retried three times, an ambiguous failure
-  recorded and left); `kmx approvals` is the queue of record.
-- **Identity is a Slack user id, not a name.** `decided_by` records
-  `slack:<user id>`; display names are not resolved, and the CLI path
-  records `admin`, since the admin bearer is not a person.
-- **A grant does not widen the agent's own `toolNames`.** For a kagent
-  agent, a granted tool becomes usable through discovery, and what the
-  agent *sees* lags: enforcement is immediate, but the agent's
-  discovered tool list updates on kagent's next RemoteMCPServer
-  reconcile. [slack.md](slack.md) explains this in full, because it is
-  where the lag shows up on the demo path.
-- **A burned use does not guarantee a delivered result**, since the use
-  is consumed before the forward. The audit row says what happened.
-- **Constraints and declarations are config, not inference.** They live
-  in the committed table, are refused at load when malformed, and the
-  plane never guesses which arguments matter. Fields are top-level
-  argument names; a value nested inside an object is not addressable.
-
-The single table of what is and is not governed across the whole plane
-is in [README.md](README.md#what-is-governed-today-and-what-is-not).
+These controls govern inputs, not tool results, model reasoning or every
+network route. They do not prevent prompt injection. An allowed call, an
+in-bound call or a human-approved bad call can still have harmful effects.
+Store tests, [gateway constraint tests](../plane/internal/gateway/constraint_test.go)
+and [Slack command tests](../plane/internal/inbound/command_test.go) preserve
+implementation evidence without the retired demo transcripts.

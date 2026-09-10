@@ -1,496 +1,167 @@
 # Getting started
 
-From an empty machine to a conversation with an agent that is defined
-entirely in YAML. Everything runs on [kagent](https://kagent.dev):
-kagent's controller provisions the agent, kagent's CLI talks to it.
-Kaimahi adds no runtime code at this point, only the YAML, a values file,
-and `kmx` — one command that glues `kind`, `helm`, `kubectl` and the kagent
-CLI together. Nothing runs in your cluster that is not kagent's or
-Kubernetes' own.
+**Orka is the platform.** Kaimahi provides tooling to install it, author native
+Agents and get an existing application's model traffic onto it. Start with the
+[Orka guide](orka.md), including [native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer),
+or [migration](migrate.md); a migrated application's Deployment stays owner-managed.
+Tool governance is separate.
 
-Every command here was run against a live cluster before it was written
-down. Model replies vary run to run; where one is quoted, expect the same
-substance and different wording.
+The local kagent quickstart below is the **existing legacy implementation**,
+pending the code transition, not an Orka-native authoring tutorial. Native Orka
+only versus kagent YAML over Orka remains open. Keeping this runnable path does
+not settle that choice, and `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
 
-**One**: a container engine.
+| Tool | Needed for |
+|---|---|
+| Go 1.26+ | current development `kmx` with Orka commands; also fetched plane builds |
+| Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
+| kind, kubectl, Helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
+| git, make | checkout-based development and remaining scripts/helpers |
+| authenticated Azure CLI | AKS only; never installed by kmx |
 
-| Tool | Needed for | Install |
-|------|-----|---------|
-| Docker **or** Podman | everything — kind runs Kubernetes in containers | <https://docs.docker.com/get-docker/> · <https://podman.io/docs/installation> |
-| kind, kubectl, Helm | **fetched by `kmx`** when they are absent, pinned and checksum-verified into `~/.config/kmx`. A copy you already have on PATH is used instead, always | — |
-| curl | the install script (already present on macOS and every mainstream Linux) | your package manager |
-| Go 1.26+ | **only** the two commands that build the plane's image. `kmx plane` needs it just when it is run from outside a checkout, where it fetches the plane's source from the Go module proxy; `kmx lift` demands it whenever its plane phase runs, checkout or not. Also `go install`, as an alternative way to get `kmx` | <https://go.dev/dl/> |
-| make, git | **only** the clone path at the bottom of this page | your package manager |
+Set `KMX_TOOLCHAIN=off` if missing tools should fail rather than download.
+[kmx installation](kmx.md#install) describes cache verification and release trust.
 
-`kmx` acquiring its own tools is not new behaviour invented here: it has
-always downloaded the pinned kagent CLI the same way, verifying the published
-digest before executing it and re-verifying it on every later use. kind,
-kubectl and Helm now follow the same rule. If you would rather your machine
-only ran binaries your own package manager put there, set
-`KMX_TOOLCHAIN=off` and a missing tool goes back to being an error that names
-its install page.
+## Current Orka path
 
-### Using Podman instead of Docker
-
-Pass `CONTAINER_ENGINE=podman` to `kmx`. It is explicit rather than
-auto-detected, so the engine that built an image is always visible in the
-command:
+The published `v0.1.0` release predates these commands. Build current main rather
+than assuming `@latest` or the release installer contains them:
 
 ```bash
-KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx up
-KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx plane
-KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx down
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+kmx version
+kmx ctx <context>
+kmx orka --help
+kmx orka install
+kmx orka status
 ```
 
-Set it once per shell with `export CONTAINER_ENGINE=podman` if you never use
-Docker. **Pass it to every command for a given cluster** — kind reaches a
-podman cluster only with `KIND_EXPERIMENTAL_PROVIDER=podman`, which `kmx`
-sets from this variable, so a cluster created with one engine is
-invisible to the other and looks like "kind lost my cluster".
-
-On macOS the podman machine must be able to read your checkout. Machines
-created with the defaults mount `/Users`, `/private` and `/var/folders`; a
-machine created without them fails the build with
-`faccessat <path>: connection refused`. Check with:
+Put Go's binary directory on PATH. `@main` is a development revision, not a
+release pin. From a checkout, `make` builds `bin/kmx` without provisioning.
+The selected cluster must already exist; for a fresh local cluster the current
+component commands are:
 
 ```bash
-podman machine inspect --format '{{.Name}}'
-podman run --rm -v "$HOME":/h:ro alpine ls /h   # must list your home directory
+export KIND_CLUSTER=orka-local
+export KUBE_CTX=kind-orka-local
+kmx up --step cluster
+kmx up --step ollama
+kmx up --step model
 ```
 
-Volumes can only be set when the machine is created, so a machine missing
-them has to be recreated:
+These prepare kind and the keyless model server without installing kagent.
+Then install Orka on that selected cluster. Its default Provider points at this
+Ollama server; for an existing cluster use your own model/Provider configuration
+as described in [Orka](orka.md). Installation alone does not govern model traffic.
+For a new native Agent, use [agent create](#an-agent-of-your-own); the kagent
+quickstart/chat/governance sections below are a separate legacy path.
+
+For an existing application on kind, deploy the plane and follow the owner-reviewed
+[migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
 
 ```bash
-podman machine rm <name>
-podman machine init --volume "$HOME:$HOME"
-podman machine start
+kmx plane
+kmx migrate <deployment> --namespace <namespace> --model <provider>/<model>
 ```
 
-No API key is needed anywhere: the default model is an in-cluster
-[Ollama](https://ollama.com) server running `qwen2.5:3b` (free, local,
-keyless). Hosted models are in [models.md](models.md).
+kmx writes the Deployment patch; **you apply it** and carry its configuration into
+the application's Helm/GitOps release. Review API/continuation compatibility and
+both credential deadlines before adopting it. A fresh answer plus model ledger
+rows is evidence of that route, not blanket governance of the application.
 
 ## One command, and an agent that answers
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart
-```
-
-That downloads `kmx` for your platform, checks it against the release's
-published sha256, installs it into `~/.local/bin` (no sudo, ever), and runs
-`kmx quickstart`: a kind cluster, an in-cluster model, kagent, one agent, and
-the agent's answer to a question. Measured end to end on a clean machine with
-nothing but Docker installed: **178s**, just under three minutes. That is the
-one recorded measurement of this path; the [CHANGELOG](../CHANGELOG.md) has
-it against what the same journey cost before (246s).
-
-Drop `--quickstart` to install `kmx` and stop there. Set `KMX_VERSION=v0.1.0`
-to pin a version, or `KMX_BIN_DIR=/somewhere/else` to install elsewhere.
-
-`kmx quickstart` is safe to run again. It marks its own first-answer installation
-and reconciles that reduced profile; after `kmx up`, or against an unmarked custom kagent
-installation, it preserves the existing Helm release rather than turning the
-UI, tool server or MCP controller off. It reads that release state before any
-Helm mutation. Any deployed kagent application release is kept unchanged,
-including custom values and versions, while quickstart checks controller
-readiness. Only a successful, valid empty release list permits a minimal `helm
-install`, not an upgrade, so a concurrently created release is not overwritten.
-Failed, pending, other non-deployed, unreadable, and unexpected states fail
-closed and require deliberate repair. Other setup steps still reconcile their
-resources. The second run finds the cluster and asks another question.
-
-The release query uses explicit status flags supported by Helm 3 and 4, not
-`helm list --all`. A new install waits for Helm-managed workloads and jobs.
-`--output json` makes the result drivable by something other than a person:
+This section is the **legacy kagent first-answer path**. With a current kmx:
 
 ```bash
+export KIND_CLUSTER=kagent-local
+export KUBE_CTX=kind-kagent-local
+kmx quickstart
 kmx quickstart --output json --task 'Who are you?'
 ```
 
-```json
-{
-  "ok": true,
-  "context": "kind-kaimahi-p1",
-  "cluster": "kaimahi-p1",
-  "agent": "hello-world",
-  "manifest": "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
-  "question": "Who are you?",
-  "answer": "I am a declarative kagent agent defined entirely in YAML...",
-  "governed": false,
-  "tools": null,
-  "elapsed_seconds": 42.1,
-  "next": [
-    "kmx --context kind-kaimahi-p1 agent chat hello-world 'ask it something else'",
-    "kmx --context kind-kaimahi-p1 orka install",
-    "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 up",
-    "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 plane",
-    "kmx --context kind-kaimahi-p1 govern hello-world"
-  ]
-}
-```
+On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, a reduced kagent
+profile and hello-world, then requires a completed task with a readable answer.
+It deploys no plane. It reconciles its recognized minimal profile, preserves
+deployed full/custom kagent releases and refuses unreadable/malformed release
+state. Other setup steps still reconcile: this is not a read-only probe.
 
-This illustrative result uses `--task 'Who are you?'` and tools already on PATH;
-answers, timing, and tool provenance vary. `tools` is null when this invocation
-provisioned none. It shows the complete, unchanged top-level key set. Actual
-`next` commands pin the selected context and relevant cluster/engine settings.
-
-`"governed": false` means **this invocation did not enable governance**. It is
-not an assertion that the cluster or agent has none: reruns can preserve
-existing governance, which quickstart does not assess. On a fresh cluster the
-path is ungoverned; see [governing that agent](#governing-that-agent) below.
-Success requires a completed task with a readable answer, not merely a response
-containing text. Progress and subprocess chatter stay off JSON stdout.
-
-Human output uses rich grouping on capable terminals and plain formatting when
-redirected or under `TERM=dumb`. `NO_COLOR=1` removes ANSI while retaining static
-rich layout. Status, agent list, and admin reports have responsive terminal
-tables; their redirected compatibility formats remain, with intentional safety
-corrections to unknown states, readiness, and flow refusal counts. See
-[output contracts](kmx.md#output-contracts).
-
-### With a Go toolchain instead
-
-```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
-```
-
-`@latest` is the newest tagged release, and `kmx version` says which one you
-have. Releases also carry checksum-verified binaries you can download by hand
-— see [releases.md](releases.md).
+JSON stdout is one document; subprocess/progress output goes to stderr.
+`governed: false` means **this invocation did not enable governance**; reruns may
+preserve existing governance, which quickstart does not assess. The key set and
+human/raw output contracts are in [kmx](kmx.md#output-contracts).
 
 ### The whole runtime
 
-`kmx quickstart` deliberately deploys only what a first question touches on a
-new installation. When you want the rest — kagent's console and bundled tool
-server, the second (tool-using) agent — that is `kmx up`, which reconciles the
-same cluster. Unlike quickstart's preserve-or-install policy, `up`
-upgrades/installs the full kagent application chart and waits for its workloads
-and jobs; it is the explicit way to restore the full profile. A later
-quickstart does not reverse that reconciliation:
-
 ```bash
-kmx up      # kind cluster + Ollama + model pull + kagent + two agents (first run ~5-10 min)
-kmx agent chat hello-world "Who are you and where are you running?"
-kmx status  # grouped agents, models, runtime health, next actions
-kmx down    # delete the kind cluster (and everything in it, ledger included)
+kmx up
+kmx agent chat hello-world 'Who are you?'
+kmx agent chat --interactive hello-tools
+kmx status
 ```
 
-`kmx` is the whole journey in one command; [kmx.md](kmx.md) is its
-reference, including what it deliberately does *not* do. Budgets,
-approvals, tool governance, backup/restore, metrics, workflows and the
-managed-cluster path (`kmx lift`) are all `kmx`'s. A checkout still uses Make
-for contributor builds and repository demos with no binary equivalent: Slack
-and inbound connectors, the accounts-payable fixture, the hosted-GitHub demo
-agent, provider keys that `kmx` cannot validate, and network probes.
+`up` explicitly upgrades/installs the full kagent application profile, including
+the tool server and second agent. Both setup paths preserve existing non-default
+model/governed tool routing rather than making setup an implicit ungovern action.
+Interactive `/help` lists local controls; [retry limits](kmx.md#retry-limits)
+explain why an ambiguous one-shot disconnect can repeat effects or spend.
 
 ### Governing that agent
 
-On a fresh cluster the runtime above is not metered. Neither `quickstart` nor
-`up` enables governance; rerunning them is not evidence that existing governance
-is absent. The plane is a separate command, and on kind it is keyless too:
-
 ```bash
-kmx plane               # metering proxy + Postgres ledger, in the cluster
-kmx govern hello-world  # issue the credential, switch the agent onto it
-kmx agent chat hello-world "Who are you and where are you running?"
-kmx ledger              # what that answer cost, attributed to a credential
+kmx plane
+kmx govern hello-world
+kmx agent chat hello-world 'Who are you?'
+kmx ledger hello-world
 ```
 
-`kmx plane` needs no clone and no registry: it fetches the plane's source
-from the public Go proxy **at kmx's own revision**, builds it, and
-side-loads the image into kind. The agent is handed an opaque Kaimahi token,
-never an upstream key. [spend.md](spend.md) is what the plane does;
-[kmx.md](kmx.md#how-the-plane-gets-there-without-a-clone) is how it gets
-there.
-
-### Developing the same journey from a clone
-
-Make builds `kmx` from the checkout; use that binary directly so the command
-shape remains the same as an installation:
-
-```bash
-make        # build bin/kmx and print its path; no cluster changes
-bin/kmx up  # kind cluster + Ollama + model pull + kagent + two agents (first run ~5-10 min)
-bin/kmx agent chat hello-world "Who are you?"
-```
-
-At a terminal `kmx agent chat` prints a readable view of the reply. Piped into
-a file or a script — and with `--json` — it prints the raw A2A task JSON
-instead, which is what CI asserts on. Buried in that JSON is the reply,
-from a real run:
-
-```text
-"I am the hello_world agent, designed to greet users and provide
-information about myself. I am running on Kubernetes via kagent."
-```
-
-The underscore in `hello_world` is real: kagent normalizes the agent name
-internally, and that is the name the model sees and repeats.
-
-Ask your own question, or talk to the second agent, which has a tool:
-
-```bash
-bin/kmx agent chat hello-world "What are you defined in?"
-bin/kmx agent chat hello-tools "What pods are running in the ollama namespace?"
-```
-
-Keep a back-and-forth session with streamed replies and visible tool activity:
-
-```bash
-bin/kmx agent chat --interactive hello-tools
-```
-
-The header names the active agent, model/tool governance posture, and effective
-selected tools. Messages are labelled `You` and replies with the active agent;
-tool calls and completion state appear inline. Use `/tools verbose` for full
-tool results, `/sessions`, `/history`, and `/resume <id>` for prior
-conversations, `/new` for a fresh session, and `/exit` to leave. See
-[kmx.md](kmx.md#interactive-chat).
-
-`--interactive` selects a human transcript and supports scanner input when a
-capable terminal/raw mode is unavailable. `NO_COLOR` also disables enhanced chat
-input and cursor effects, without removing trusted actor/operation labels.
-`--interactive --json` is refused; use one-shot `--json` for raw A2A output.
-Resizing during enhanced input stops chat without submitting the current message
-or approval; restart to continue. This is a safe abort, not live input reflow.
-The broader one-shot transport retry policy remains unchanged and can repeat a
-turn after an ambiguous disconnect; see [retry limits](kmx.md#retry-limits).
-
-The tools agent is covered in [tools.md](tools.md), including why its
-prose summary is less reliable than the tool call underneath it.
+This existing model-seam path switches the kagent Agent's preset and gives it an
+opaque plane token, never the real upstream key. Tool routing is separate;
+[kmx](kmx.md#governing-an-agent) and [tool governance](tool-governance.md) describe it.
 
 ## An agent of your own
 
-The quickstart above and the manifests below use **kagent**. New
-`kmx agent create` output uses **Orka**; it is not a replacement file for the
-kagent walkthrough, and `agent chat/edit/list` do not operate on it.
-Quickstart's second next-action slot installs Orka as an authoring prerequisite,
-not as a migration of the existing agent.
+This is the **native Orka path**, not a new kagent agent for the legacy commands
+above. Preview a Provider + Agent bundle offline:
 
 ```bash
-kmx --context kind-kaimahi-p1 orka install
-kmx --context kind-kaimahi-p1 agent create my-agent \
-  --namespace orka-system --provider-type openai --model qwen2.5:3b \
-  --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+kmx agent create my-agent --namespace orka-system \
+  --provider-type openai --model qwen2.5:3b --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --no-apply
 ```
 
-The installer separately provisions the named Secret for local Ollama. Create
-writes `agents/my-agent.yaml` with a value-free Secret skeleton (never written
-to the cluster), a new Provider and its Agent; it waits in dependency order.
-This example tests readiness, not a model response. For a first Task and a
-separately provisioned result account, follow [the local Orka example](orka.md#author-an-orka-agent-and-get-an-answer).
-[kmx.md](kmx.md#kmx-agent-create) is the canonical input, offline-schema,
-result-authority and safety contract. Create accepts references, not credentials,
-and refuses known key shapes before emission.
+Namespace, Provider type, model ID and existing Secret name are required.
+The metadata-only Secret skeleton is a reference: **never write it or bulk-apply
+the bundle**. Online creation uses installed schemas and ordered readiness waits;
+`--dry-run` checks admission but not execution. Only optional `--task` plus an
+existing result ServiceAccount tests a real model answer. Follow the
+[context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
+and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
+No-name terminal invocation offers a wizard. `agent chat/edit/list` remain
+kagent-specific; BYO images, ModelConfig and MCP conversion are not provided.
 
-`kmx credential capture <upstream> <repository|organization>` handles the
-tool upstreams whose tokens it can validate. The value is **typed at
-a prompt with the echo off**: no flag, no environment variable, no file,
-and a pipe or a redirect is refused rather than read, because a credential
-that can arrive through a pipe can arrive from a shell history or a CI log.
-Copilot has its own device flow in `kmx models credential copilot`. Other
-model keys, the Slack bot token and inbound signing keys are checkout-only
-repository demo setup (`make model-secret`, `make slack-secret`,
-`make inbound-secret`), whose scripts read from stdin.
+## Using Podman instead of Docker
 
-```bash
-kmx status   # grouped agents, models, runtime health, next actions
-kmx down     # delete the kind cluster (and everything in it, ledger included)
-```
-
-`kmx status` groups the selected context, agent-to-model/tool wiring, runtime
-health across kagent/Ollama/the optional plane, pod restarts, next actions, and
-a **Governance** section that counts how much of the system is actually behind
-the plane:
-
-```text
-Governance
-  plane:        not installed — nothing is enforced in front of these seams (`kmx plane`)
-  model seams:  0 of 2 agents governed, 2 direct
-  tool seams:   0 of 3 tool servers governed, 3 direct
-  credentials:  none — no governed seam names one
-```
-
-The three lines count three different populations, and the difference is
-deliberate: **model seams** counts AGENTS by where their model calls go,
-**tool seams** counts the RemoteMCPServers on the cluster, and
-**credentials** counts the Secrets the governed seam objects NAME — so a
-governed preset no agent is using still requires its token, and a token
-that has gone missing is reported before the next call fails on it. Only
-Secret names are read; `kmx status` never reads a Secret's value.
-
-The counts are read from the cluster objects — a seam is governed when it
-points at the plane's Service — so they work with no plane, no credential and
-no network. Nothing there is a fault: the fast path is ungoverned by design,
-and the counts are how you see how much of your system is still on it. A
-population kmx could not read says `unknown` and why; it never reports a zero
-it did not count.
-
-Unknown Kubernetes conditions remain `unknown`, not `no`. An installed plane
-with zero or insufficient ready replicas, missing required credentials, or
-unreadable required governance prevents a human `ready` verdict even if cached
-agent conditions still say Accepted. These are intentional safety corrections
-in both rich and plain reports; they do not make the supported direct path a
-fault or change the structured envelope.
-
-For the machine-readable form use `kmx status -o json` or `kmx status -o
-yaml`. That document carries
-`context`, the `governance` block, and the kubectl objects verbatim under
-`items` — so `jq '.items[]'` reads exactly what it always did. **What
-changed:** the top level is no longer a Kubernetes `List`, so the
-`apiVersion` and `kind` fields are gone and the output can no longer be
-piped back into `kubectl apply`. Each population's `state` is the field to
-read first: an `unknown` population publishes no counts at all, so a script
-that reads `governed` without checking `state` gets a missing key rather
-than a zero nobody counted.
-
-On the clone path use `bin/kmx plane --source .` so a change you make to
-`plane/` is what gets deployed, then `bin/kmx govern hello-world`.
-
-Coming from the project's old name? The cluster is now `kaimahi-p1` and
-the Copilot login cache moved. See
-[the FAQ](FAQ.md#i-have-a-cluster-and-paths-from-the-tomte-era).
-
-## The agent is a YAML file
-
-There is no kaimahi runtime to install. The whole agent,
-[`k8s/hello-world.yaml`](../k8s/hello-world.yaml), is a kagent `Agent`
-plus the `ModelConfig` it thinks with, in one document you can read, diff,
-and review:
-
-```yaml
-apiVersion: kagent.dev/v1alpha2
-kind: Agent
-metadata:
-  name: hello-world
-  namespace: kagent
-spec:
-  type: Declarative
-  declarative:
-    modelConfig: hello-world-model
-    systemMessage: |
-      You are Kaimahi's hello-world agent, ...
-```
-
-`kubectl apply -f` it and kagent's controller provisions a pod for it.
-The topology grows the same way:
-[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml) is the same shape plus
-a `tools:` block. No make target ever mutates the committed file.
-Switching models patches the live Agent resource, not the YAML.
-
-## What `kmx up` does, step by step
-
-`kmx up` runs `cluster`, `ollama`, `model`, `kagent`,
-`agent`, `tools-agent`, then `status`. In plain commands:
-
-```bash
-# 1. Local Kubernetes cluster (skipped if it already exists)
-kind create cluster --name kaimahi-p1
-
-# 2. In-cluster Ollama model server (namespace, deployment, service)
-kubectl apply -f k8s/ollama.yaml
-kubectl -n ollama rollout status deploy/ollama
-
-# 3. Pull the model into the Ollama pod
-kubectl -n ollama exec deploy/ollama -- ollama pull qwen2.5:3b
-
-# 4. Install kagent (CRDs chart, then the app chart), pinned to v0.9.12,
-#    with Ollama as the default provider and its bundled tool server
-#    switched on in locked-down form
-helm upgrade --install kagent-crds \
-  oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
-  --version 0.9.12 --namespace kagent --create-namespace
-helm upgrade --install kagent \
-  oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-  --version 0.9.12 --namespace kagent -f k8s/kagent-values.yaml \
-  --wait --wait-for-jobs --timeout 420s
-
-# 5. The agents: hello-world, then hello-tools once kagent's tool server
-#    is Accepted
-kubectl apply -f k8s/hello-world.yaml
-kubectl apply -f k8s/tools-agent.yaml
-```
-
-Every step that writes to a cluster runs a guard first. On a local kind
-cluster it prints a banner and proceeds; on anything else it demands a
-confirmation naming the context. See [aks.md](aks.md) for why.
-
-Re-running `kmx up` is safe for a governed agent. The `agent` and
-`tools-agent` steps read the live agent first and, if it is on a
-non-default ModelConfig or wired through the governed tool gateway, they
-re-apply the committed YAML and then restore that state, with a `NOTE:`
-line saying so. `kmx use ollama` and `kmx tools ungovern` are
-the explicit ways back. An earlier version of `kmx up` silently reset
-the agent; if you see that symptom, the
-[FAQ entry](FAQ.md#my-governed-agent-stopped-showing-up-in-the-ledger)
-covers it.
-
-Overridable: `KIND_CLUSTER`, `KAGENT_VERSION`, `MODEL`, `AGENT`, `TASK`,
-and `TARGET` (`kind` by default, or `aks`).
-
-## Talking to the agent
-
-`kmx agent chat` fetches/caches the pinned kagent CLI (checksum-verified),
-checks that the agent answers through its Service, asks kubectl for a free
-loopback port, and port-forwards the kagent controller there. Set `CHAT_PORT`
-only when a fixed port is required.
-
-```bash
-kmx agent chat hello-world "Hello! Who are you and where are you running?"
-```
-
-An explicit occupied `CHAT_PORT` still fails rather than falling back: an
-explicit value is a deterministic contract. With the default automatic port,
-stale forwards and concurrent chats do not collide.
-
-Other ways in, all shipped by kagent:
-
-```bash
-kubectl --context kind-kaimahi-p1 -n kagent get agents.kagent.dev  # CRD status (Ready / Accepted)
-bin/kagent get agent                    # via the CLI (needs the port-forward)
-bin/kagent dashboard                    # kagent's web UI
-```
+Set `CONTAINER_ENGINE=podman` consistently for **every** operation on the cluster;
+Docker's kind inventory cannot see Podman's nodes. On macOS, ensure the Podman
+machine mounts the checkout before building; absent mounts require deliberate
+machine recreation, not an implicit destructive repair. Restarted machines may
+leave nodes stopped; the cluster step starts the named nodes and checks API/DNS.
 
 ## Choices and caveats
 
-- **Model**: `qwen2.5:3b` (~2 GB). kagent's runtime gives every agent a
-  built-in `ask_user` tool; smaller models (`llama3.2:1b`/`3b`) misfire it
-  with malformed arguments and the invocation fails with
-  `'str' object has no attribute 'get'`. Telling the model not to use the
-  tool in the system message does not stop it. Qwen 2.5 answers plainly.
-  Any tool-capable Ollama model works via `MODEL=<tag> kmx up --step model` plus
-  the `model:` field in the two agent YAML files, but invocation-test it
-  with several fresh chats before trusting it. "It's a known model" is
-  not a test. Both small-model failure modes are in the
-  [FAQ](FAQ.md#the-agent-errors-with-str-object-has-no-attribute-get).
-- **Models are pod-local**: the Ollama pod stores models in an
-  `emptyDir`, so a pod restart requires `MODEL=<tag> kmx up --step model`.
-  Deliberate: no
-  PVC to manage in a demo.
-- **Version pin**: kagent v0.9.12 (`KAGENT_VERSION`), the latest stable
-  at the time; 0.10 was still in RC. The Agent CRD's `runtime: go`
-  variant does not work out of the box at this version: the chart's
-  default registry (`cr.kagent.dev`) does not carry `golang-adk:0.9.12`
-  (ImagePullBackOff), though the image does exist on `ghcr.io`. If you
-  need the go runtime, set `controller.agentImage.registry=ghcr.io` in
-  [`k8s/kagent-values.yaml`](../k8s/kagent-values.yaml). The agents here
-  stay on the default python runtime. (Verified at 0.9.12 when the pin
-  was chosen; not re-verified in this restructure.)
-- **`kmx down` deletes everything**, including the governance plane's
-  Postgres and its ledger, if you have deployed them. Demo-durable, not
-  backup-managed.
+- Target selection and confirmation are explicit: [where commands land](kmx.md#where-the-command-will-land).
+  Use your own cluster name; do not share the default across development lanes.
+- The legacy model is small and tool-capable, not a guarantee of reliable prose.
+  Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
+- Ollama models are in `emptyDir`; a pod restart requires another model pull.
+- The legacy pin is kagent 0.9.12. Its default Python runtime is used. The
+  recorded Go-runtime image gap required `controller.agentImage.registry=ghcr.io`
+  in `k8s/kagent-values.yaml`; this is version-scoped, not a current upstream survey.
+- `kmx down` deletes the whole local cluster, **including Postgres/ledger**.
+  Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
 
-## Where next
-
-- A hosted model instead of the local one: [models.md](models.md).
-- What the tools agent can do and how a real tool call is proven:
-  [tools.md](tools.md).
-- Budgets, a ledger, and keeping real API keys away from the agent:
-  [spend.md](spend.md).
-- Running the plane for real — two replicas, probes, metrics, backup and
-  restore, and what is still not highly available:
-  [operations.md](operations.md).
+Next: [CLI reference](kmx.md), [migration](migrate.md), [operations](operations.md),
+and the [legacy demo checklist](demo.md).
