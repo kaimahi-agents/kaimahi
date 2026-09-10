@@ -44,7 +44,13 @@ case "$*" in
       absent) printf 'Error from server (NotFound): services "ollama" not found\n' >&2; exit 1 ;;
       *) printf 'service/ollama\n'; exit 0 ;;
     esac ;;
+  *"apply --dry-run=server -f -"*)
+    case "$KMX_TEST_DRYRUN" in
+      refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
+      *) cat >/dev/null; printf 'namespace/orka-system created (server dry run)\n'; exit 0 ;;
+    esac ;;
   *"rollout status"*) printf 'deployment "x" successfully rolled out\n'; exit 0 ;;
+  *"get deploy orka-controller-manager"*) printf '%s' "$KMX_TEST_IMAGE"; exit 0 ;;
   *"get deploy"*) printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
   *"get crd"*) printf 'tasks.core.orka.ai agents.core.orka.ai '; exit 0 ;;
   *"get providers.core.orka.ai"*) printf '%s' "$KMX_TEST_PROVIDERS"; exit 0 ;;
@@ -305,5 +311,103 @@ func TestOrkaStatusNamesTheConsequenceOfNoProvider(t *testing.T) {
 	}
 	if !strings.Contains(f.out.String(), "a model call would be refused") {
 		t.Errorf("status does not say what no Provider costs:\n%s", f.out.String())
+	}
+}
+
+// The pin is what kmx WOULD install. Restating it as the version present
+// would report a version nobody installed — on a cluster somebody set up
+// with their Helm chart, or with an older kmx.
+func TestOrkaStatusReadsTheRunningVersionRatherThanThePin(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
+	t.Setenv("KMX_TEST_IMAGE", "ghcr.io/orka-agents/orka:0.1.2")
+
+	if err := f.app.OrkaStatus(); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	out := f.out.String()
+	if !strings.Contains(out, "0.1.2") {
+		t.Errorf("status does not report the version that is running:\n%s", out)
+	}
+	if !strings.Contains(out, "installed another way") {
+		t.Errorf("status does not name the disagreement with the pin:\n%s", out)
+	}
+}
+
+// Their manifest tags the image `0.1.3` and the repository tags the release
+// `v0.1.3`. A match must not be reported as a difference.
+func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
+	t.Setenv("KMX_TEST_IMAGE", "ghcr.io/orka-agents/orka:"+strings.TrimPrefix(OrkaVersion, "v"))
+
+	if err := f.app.OrkaStatus(); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(f.out.String(), "installed another way") {
+		t.Errorf("a matching version was reported as a skew:\n%s", f.out.String())
+	}
+}
+
+// --no-apply reaches the network and stops. Nothing is written, and the
+// guard is never asked, because there is nothing to guard.
+func TestOrkaInstallNoApplyWritesNothing(t *testing.T) {
+	installer := []byte("kind: Namespace\n---\nkind: Service\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+
+	if err := f.app.OrkaInstall(OrkaOptions{NoApply: true}); err != nil {
+		t.Fatalf("install --no-apply: %v", err)
+	}
+	if applied := f.applied(t); applied != "" {
+		t.Errorf("--no-apply wrote to the cluster:\n%s", applied)
+	}
+	if !strings.Contains(f.errOut.String(), "nothing was written") {
+		t.Errorf("--no-apply does not say it wrote nothing:\n%s", f.errOut.String())
+	}
+}
+
+// A server dry run is how a cluster that would REFUSE the installer says so
+// before it is half-applied. It writes nothing, so it skips the Secret.
+func TestOrkaInstallDryRunValidatesAndWritesNothing(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+
+	if err := f.app.OrkaInstall(OrkaOptions{DryRun: true}); err != nil {
+		t.Fatalf("install --dry-run: %v", err)
+	}
+	if strings.Contains(f.applied(t), "harness-wrapper-auth") {
+		t.Error("--dry-run created the wrapper Secret")
+	}
+	if !strings.Contains(f.calls(t), "apply --dry-run=server") {
+		t.Errorf("--dry-run never asked the API server:\n%s", f.calls(t))
+	}
+	if !strings.Contains(f.errOut.String(), "cannot show") {
+		t.Error("--dry-run does not say what it could not prove")
+	}
+}
+
+// A cluster that refuses the installer must fail here rather than halfway
+// through applying it.
+func TestOrkaInstallDryRunReportsAClusterThatWouldRefuse(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+	t.Setenv("KMX_TEST_DRYRUN", "refused")
+
+	err := f.app.OrkaInstall(OrkaOptions{DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "would refuse") {
+		t.Fatalf("a refusing cluster was not reported: %v", err)
+	}
+}
+
+// The two are contradictory: one writes nothing at all, the other asks the
+// cluster. Accepting both would have to silently pick one.
+func TestOrkaInstallRefusesNoApplyWithDryRun(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	err := f.app.OrkaInstall(OrkaOptions{NoApply: true, DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("the contradictory pair was accepted: %v", err)
 	}
 }

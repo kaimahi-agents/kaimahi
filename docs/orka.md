@@ -33,11 +33,41 @@ Then:
 
 ```console
 $ kmx orka status
+version running        0.1.3
 version pinned by kmx  v0.1.3
-deployments            orka-controller-manager=1/1 orka-agent-harness-wrapper=1/1
-crds                   9 in core.orka.ai
+deployments            orka-agent-harness-wrapper=1/1 orka-controller-manager=1/1
+crds                   10 in core.orka.ai
 providers              local=true
 ```
+
+**`version running` is read off the controller's image, not restated from the
+pin.** The pin is what kmx *would* install; an Orka put there by their Helm
+chart, by `kubectl apply` from a checkout, or by an older kmx is a different
+version, and status says so:
+
+```text
+version running        0.1.2 (kmx pins v0.1.3 — this cluster was installed another way)
+```
+
+## Seeing it before doing it
+
+Both flags the other writing commands carry, for the same reasons:
+
+```console
+$ kmx orka install --no-apply     # fetch, verify the digest, write nothing
+--no-apply: nothing was written. 78 documents would be applied to namespace orka-system,
+  after the harness-wrapper-auth Secret, which is created first because the wrapper mounts it at start.
+
+$ kmx orka install --dry-run      # ask the API server whether it would take it
+COMPLETE  Validated; nothing was written (2.1s total)
+```
+
+`--dry-run` is the only way to learn that *this* cluster would refuse the
+installer — a Pod Security policy on the namespace, an API server without
+`ValidatingAdmissionPolicy` — without finding out halfway through applying it.
+It writes nothing, so it does not create the wrapper Secret, and it says so:
+a dry run cannot show whether the wrapper would become **ready**, only whether
+the objects would be **accepted**.
 
 ## The three things worth knowing
 

@@ -40,6 +40,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   never vendored, and nothing in Orka is modified. **Installing governs
   nothing, and the command says so** — `kmx migrate` is what puts an
   application's model traffic on the seam ([docs/orka.md](docs/orka.md)).
+  `kmx orka status` reports the version **running**, read off the controller's
+  own image rather than restated from the pin, and names the disagreement when
+  a cluster was installed another way. `--no-apply` fetches and verifies the
+  installer without writing anything; `--dry-run` asks the API server whether
+  it would accept it, which is the only way to find a Pod Security policy or a
+  missing admission-policy API before the installer is half-applied.
 
 - **`kmx migrate` puts an application you did not write onto Orka, with
   its model traffic governed and without changing the application.** One

@@ -45,6 +45,8 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Model, "model", "", "default model that Provider resolves (default: qwen2.5:3b)")
 	cmd.Flags().StringVar(&opt.ModelURL, "model-url", "",
 		"OpenAI-compatible endpoint the Provider points at (default: the in-cluster Ollama)")
+	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "fetch and verify the installer, write nothing")
+	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.OrkaInstall(opt) })
 	return cmd
 }

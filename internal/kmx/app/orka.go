@@ -90,6 +90,35 @@ func (a *App) installerDigest() string {
 	return OrkaInstallerDigest
 }
 
+// orkaRunningVersion reads the tag off the controller's own image.
+//
+// The pin is what kmx WOULD install; it is not evidence about what is
+// running. An Orka installed by their Helm chart, by `kubectl apply` from a
+// checkout, or by an older kmx is a different version, and a status command
+// that restated the pin would report a version nobody had installed — which
+// is the precise failure this command exists to avoid making.
+//
+// An image kmx cannot parse is reported as unread rather than guessed at.
+func (a *App) orkaRunningVersion() string {
+	image, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy", orkaController,
+		"-o", "jsonpath={.spec.template.spec.containers[0].image}")
+	if err != nil {
+		return "unknown (the controller's image could not be read)"
+	}
+	image = strings.TrimSpace(image)
+	_, tag, found := strings.Cut(image, ":")
+	if !found || tag == "" {
+		return "unknown (" + image + " names no tag)"
+	}
+	// Their manifest tags the image `0.1.3`; the repository tags the release
+	// `v0.1.3`. Compare the numbers rather than the spelling, so a match is
+	// not reported as a difference.
+	if strings.TrimPrefix(tag, "v") == strings.TrimPrefix(OrkaVersion, "v") {
+		return tag
+	}
+	return tag + " (kmx pins " + OrkaVersion + " — this cluster was installed another way)"
+}
+
 // OrkaOptions are `kmx orka install`'s knobs.
 //
 // There is deliberately no flag that could carry a credential. The wrapper
@@ -104,6 +133,14 @@ type OrkaOptions struct {
 	Model string
 	// ModelURL is the OpenAI-compatible endpoint the Provider points at.
 	ModelURL string
+	// NoApply writes nothing to the cluster: fetch, verify, and print what
+	// would be applied. The one flag that reaches the network and no
+	// further.
+	NoApply bool
+	// DryRun sends the installer to the API server for validation and
+	// discards the result, which is the only way to learn that a cluster
+	// would refuse it without having it half-applied.
+	DryRun bool
 }
 
 // orkaDefaults fills the flags the operator left alone.
@@ -128,16 +165,34 @@ func orkaDefaults(opt OrkaOptions) OrkaOptions {
 func (a *App) OrkaInstall(opt OrkaOptions) error {
 	started := a.timeNow()
 	opt = orkaDefaults(opt)
+	if opt.NoApply && opt.DryRun {
+		return fmt.Errorf("--no-apply and --dry-run cannot be used together")
+	}
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}
+	if opt.NoApply {
+		installer, err := a.fetchOrkaInstaller()
+		if err != nil {
+			return err
+		}
+		a.notef("--no-apply: nothing was written. %d documents would be applied to namespace %s,\n"+
+			"  after the %s Secret, which is created first because the wrapper mounts it at start.",
+			orkaDocuments(installer), OrkaNamespace, orkaWrapperSecret)
+		a.notef("  See them:  curl -fsSL %s", a.installerSource())
+		return nil
+	}
+
 	if err := a.Guard(fmt.Sprintf("install Orka %s (17 CRDs, 2 Deployments) into namespace %s",
 		OrkaVersion, OrkaNamespace), "kmx orka install"); err != nil {
 		return err
 	}
 
 	total := 4
-	if opt.Provider == "-" {
+	switch {
+	case opt.DryRun:
+		total = 2
+	case opt.Provider == "-":
 		total = 3
 	}
 
@@ -148,6 +203,28 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		return err
 	}); err != nil {
 		return err
+	}
+
+	// A server-side dry run is the only way to learn that this cluster would
+	// refuse the installer — a Pod Security policy on the namespace, an API
+	// server without ValidatingAdmissionPolicy — without finding out halfway
+	// through applying it. It writes nothing, so it skips the Secret too.
+	if opt.DryRun {
+		if err := a.runPhase(phase{current: 2, total: total, name: "Validate against the API server"}, func() error {
+			quiet := *a.Run
+			quiet.Echo = false
+			fmt.Fprintf(a.Err, "kubectl --context %s apply --dry-run=server -f - # (Orka %s)\n",
+				a.Cfg.KubeContext, OrkaVersion)
+			return quiet.RunStdin(installer, "kubectl",
+				a.kubectl("apply", "--dry-run=server", "-f", "-")...)
+		}); err != nil {
+			return fmt.Errorf("this cluster would refuse Orka's installer: %w", err)
+		}
+		a.complete("Validated; nothing was written", started)
+		a.notef("\nNOTE  A server dry run does not create the %s Secret, so it cannot show\n"+
+			"      whether the wrapper would become ready. Only a real install does that.",
+			orkaWrapperSecret)
+		return nil
 	}
 
 	if err := a.runPhase(phase{current: 2, total: total, name: "Reconcile the wrapper credential"}, func() error {
@@ -271,11 +348,17 @@ func (a *App) orkaWrapperCredential() error {
 
 // applyOrkaInstaller applies their manifest unmodified and then waits for
 // both Deployments, because "applied" is not "running".
+// orkaDocuments counts the YAML documents in their installer, so a note can
+// say how much is about to arrive.
+func orkaDocuments(installer []byte) int {
+	return strings.Count(string(installer), "\n---\n") + 1
+}
+
 func (a *App) applyOrkaInstaller(installer []byte) error {
 	quiet := *a.Run
 	quiet.Echo = false
 	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Orka %s, %d documents)\n",
-		a.Cfg.KubeContext, OrkaVersion, strings.Count(string(installer), "\n---\n")+1)
+		a.Cfg.KubeContext, OrkaVersion, orkaDocuments(installer))
 	if err := quiet.RunStdin(installer, "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
 		return fmt.Errorf("applying Orka's installer: %w", err)
 	}
@@ -365,6 +448,7 @@ func (a *App) OrkaStatus() error {
 		return nil
 	}
 
+	fmt.Fprintf(a.Out, "%-22s %s\n", "version running", a.orkaRunningVersion())
 	fmt.Fprintf(a.Out, "%-22s %s\n", "version pinned by kmx", OrkaVersion)
 	fmt.Fprintf(a.Out, "%-22s %s\n", "deployments", strings.TrimSpace(deployments))
 
