@@ -202,6 +202,33 @@ class BoardTests(unittest.TestCase):
         self.assert_refused(COMPACT + "\n## Ready-to-paste worker prompts\n", "no prompt headings")
         self.assert_refused(COMPACT + "\n## Delta sheets from finished lanes\n", "no delta sheets")
 
+    def test_prompt_elsewhere_cannot_mask_empty_named_section(self):
+        other = "\n## Other records\n\n### W4 — write example recipes (UNASSIGNED — ready)\n"
+        empty = "\n## Ready-to-paste worker prompts\n"
+        for sections in (other + empty, empty + other):
+            with self.subTest(sections=sections):
+                self.assert_refused(COMPACT + sections, "no prompt headings")
+
+    def test_sheet_elsewhere_cannot_mask_empty_named_section(self):
+        other = "\n## Other records\n\n### W2 — budget implementation (PR #12 merged)\n"
+        empty = "\n## Delta sheets from finished lanes\n"
+        for sections in (other + empty, empty + other):
+            with self.subTest(sections=sections):
+                self.assert_refused(COMPACT + sections, "no delta sheets")
+
+    def test_duplicate_retained_sections_fail(self):
+        for heading in ("Ready-to-paste worker prompts", "Delta sheets from finished lanes"):
+            with self.subTest(heading=heading):
+                self.assert_refused(LEGACY + f"\n## {heading}\n", "not one")
+
+    def test_interleaved_legacy_entries_still_pass(self):
+        self.assert_clean(LEGACY.replace("\n### W4 —", "\n## Other records\n\n### W4 —"))
+
+    def test_sheets_outside_named_section_are_still_checked(self):
+        self.assert_claim(COMPACT + "\n## Other records\n"
+                          "\n### W4 — example recipes (PR #12 merged)\n",
+                          "a_lane_with_a_delta_sheet_is_not_waiting", "W4")
+
     def test_prompts_outside_named_section_are_still_checked(self):
         self.assert_claim(COMPACT + "\n## Another section\n"
                           "\n### W2 — budgets (UNASSIGNED — ready)\n",

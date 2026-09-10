@@ -143,7 +143,7 @@ not inferred assignments. Unknown remaining work is marked UNKNOWN.
 | Substrate evaluation boundary | branch `docs/substrate-posture` | PR #175 MERGED | Research, 2026-09-10 |
 | Current authoring-contract draft | branch `w56/authoring-boundary` | PR #176 CLOSED, unmerged | Research, 2026-09-10 |
 | Native Orka recommendation | branch `docs/kagent-on-orka-boundary` | PR #177 MERGED | Recommendation, not a ruling |
-| Superseded shell and Make shims | branch `cleanup/remove-superseded-shims` | PR #173 MERGED | Merged after local base; awaiting parent rebase |
+| Superseded shell and Make shims | branch `cleanup/remove-superseded-shims` | PR #173 MERGED | Included in base `572f3a6` |
 | Bubbles agent creation wizard | branch `feat/charm-cli-ux-followup` | PR #167 MERGED | — |
 | Orka agent creation | branch `feat/orka-agent-create` | LOCAL BRANCH EXISTS; disposition UNKNOWN | Branch `2267081`; no numbered lane or current assignment inferred |
 | Documentation retirement | coordinator; branch `docs/orka-documentation-retirement` | ACTIVE | Documentation and authorized documentation-checker changes only |

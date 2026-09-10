@@ -75,8 +75,8 @@ Never put token values in command arguments or committed YAML.
 
 | Code | Check |
 |---|---|
-| 401 | Missing, expired or invalid plane credential. Inspect the response's stated cause. |
-| 403 | An authenticated request is outside permitted routing or policy, or its cost cannot be admitted under the configured budget. |
+| 401 | Missing or unknown plane credential. Inspect the response's stated cause. |
+| 403 | A known credential has expired, the request is outside permitted routing or policy, or its cost cannot be admitted under the configured budget. |
 | 429 | The monthly token or money budget is exhausted. Runtime retries may create multiple denied rows. |
 | 502 | Upstream transport/protocol failure, including a response with no readable usage. An admitted attempt is not proof of downstream success. |
 | 503 | A dependency needed for custody, authentication or accounting is unavailable; restore that dependency rather than bypassing enforcement. |

@@ -39,7 +39,7 @@ kmx budget hello-world --tokens 100000
 kmx tools govern --tools k8s_get_resources
 kmx agent chat hello-tools 'List the configmaps in the default namespace.'
 kmx audit tool hello-tools
-bash scripts/tool-denial-probe.sh k8s_get_events
+KUBECTL="kubectl --context $KUBE_CTX" bash scripts/tool-denial-probe.sh k8s_get_events
 make netpol-verify
 ```
 

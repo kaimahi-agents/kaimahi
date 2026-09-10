@@ -41,8 +41,8 @@
     {
       "name": "an explicitly retained prompt section with no readable prompts is accepted",
       "breaks": "Absent retired sections are valid, but a present section whose headings cannot be read must not silently pass.",
-      "find": "        if PROMPTS in sections and not self.prompts:\n            raise Anchor(\"no prompt headings",
-      "replace": "        if False:\n            raise Anchor(\"no prompt headings"
+      "find": "            if not any(first <= p.line < first + len(body.splitlines()) for p in self.prompts):",
+      "replace": "            if False:"
     },
     {
       "name": "a heading in a state this file was never taught is filed under nothing",
@@ -143,8 +143,8 @@
     {
       "name": "a compact board is forced to retain retired prompts",
       "breaks": "Retirement must be supported, not just another fixture with the archive still present.",
-      "find": "        if PROMPTS in sections and not self.prompts:",
-      "replace": "        if not self.prompts:"
+      "find": "        if PROMPTS in sections:",
+      "replace": "        if True:"
     },
     {
       "name": "malformed lane rows are accepted among valid rows",
@@ -167,8 +167,20 @@
     {
       "name": "an explicitly retained empty delta-sheet section is accepted",
       "breaks": "Retirement permits an absent section, not a present but unreadable one.",
-      "find": "        if SHEETS in sections and not self.sheets:",
-      "replace": "        if False:"
+      "find": "            if not any(first <= line < first + len(body.splitlines()) for _, _, line in self.sheets):",
+      "replace": "            if False:"
+    },
+    {
+      "name": "a prompt elsewhere masks an empty retained prompt section",
+      "breaks": "A readable prompt under another heading cannot satisfy the named section's nonempty requirement.",
+      "find": "            if not any(first <= p.line < first + len(body.splitlines()) for p in self.prompts):",
+      "replace": "            if not self.prompts:"
+    },
+    {
+      "name": "a sheet elsewhere masks an empty retained delta-sheet section",
+      "breaks": "A readable delta sheet under another heading cannot satisfy the named section's nonempty requirement.",
+      "find": "            if not any(first <= line < first + len(body.splitlines()) for _, _, line in self.sheets):",
+      "replace": "            if not self.sheets:"
     },
     {
       "name": "a repeated separator counts as a lane",

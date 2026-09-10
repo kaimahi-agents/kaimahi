@@ -26,7 +26,7 @@ chat`.
 | Preset (`k8s/models/`) | Endpoint | Key Secret expected | Live-verified? |
 |---|---|---|---|
 | `ollama` | in-cluster Ollama (keyless, free) | none | **yes**, keyless end to end in CI on every PR |
-| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via `kmx models credential copilot`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
+| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via checkout-only `make copilot-secret`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
 | `anthropic` | Anthropic first-party API | `anthropic-api-key` | not live-verified |
 | `openai` | OpenAI first-party API | `openai-api-key` | not live-verified |
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | not live-verified |
@@ -152,13 +152,13 @@ include API access to OpenAI and other models** at
 `github-copilot` preset targets it:
 
 ```bash
-kmx models credential copilot      # GitHub device login -> Copilot token -> K8s Secret
+make copilot-secret               # checkout helper: kagent/github-copilot-token
 kmx use github-copilot
 kmx agent chat hello-world
 ```
 
-`kmx models credential copilot` logs you in once via GitHub's device flow
-(open the printed URL, enter
+The retained checkout helper, `make copilot-secret`, logs you in once via
+GitHub's device flow (open the printed URL, enter
 the code), caches that OAuth token 0600 under `~/.config/kaimahi/`
 (override with `KAIMAHI_COPILOT_TOKEN_FILE`), exchanges it at GitHub's
 Copilot token endpoint, and stores **only the short-lived Copilot token**
@@ -178,12 +178,14 @@ Custody properties worth knowing:
   temp files and pipes; nothing touches argv, env listings, YAML, or
   logs, and no keyed call follows redirects. Fail-closed: a failed or
   empty exchange stores nothing.
-- **The exchanged token expires**, typically within hours. When the agent
-  starts failing auth, re-run `kmx models credential copilot` and then
-  `kmx use github-copilot` (the pod must restart to pick up the rotated
-  Secret). The credential command restarts an existing governance plane too.
-  An in-cluster auto-refresher was deliberately not built; token
-  lifecycle is governance-plane territory
+- **The exchanged token expires**, typically within hours. For the direct
+  preset, re-run `make copilot-secret` and then `kmx use github-copilot`
+  so the agent picks up the rotated `kagent/github-copilot-token` Secret.
+  For the plane-side route, use `kmx models credential copilot`: it writes
+  **only** `kaimahi/kaimahi-copilot-token` and restarts an existing plane.
+  That native command does not populate the direct preset's Secret and uses
+  the standard OAuth cache path without the script's environment override.
+  Neither path has an in-cluster auto-refresher
   ([FAQ](FAQ.md#hosted-model-authentication-fails)).
 - **`api.githubcopilot.com` is not part of GitHub's documented public API
   surface.** GitHub's documented programmatic paths are the Copilot

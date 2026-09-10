@@ -35,6 +35,12 @@
       "replace": "    (\"documentation heading\", r\"\"),"
     },
     {
+      "name": "the install revision check is dropped",
+      "breaks": "An obsolete tagged CLI or an empty revision can satisfy the Orka setup prerequisite.",
+      "find": "@(?:main|[0-9a-f]{7,40})(?=[ \\t]*(?:#.*)?$)",
+      "replace": "@"
+    },
+    {
       "name": "the Orka install marker matches anything",
       "breaks": "The setup can install only the legacy runtime instead of Orka.",
       "find": "    (\"kmx orka install\", r\"^kmx orka install\\b\"),",

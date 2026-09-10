@@ -21,8 +21,10 @@ ORDER = [
 ]
 # Orka helpers postdate the latest tagged release. The current-main build
 # prerequisite is explicit rather than promising these commands in an old tag.
+# Accept main or a commit ID; this verifies syntax, not the contents of a commit.
+# Revisit the prerequisite when an Orka-capable tagged CLI is published.
 QUICKSTART_COMMANDS = [
-    ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@"),
+    ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@(?:main|[0-9a-f]{7,40})(?=[ \t]*(?:#.*)?$)"),
     ("kmx up", r"^kmx up\b"),
     ("kmx orka install", r"^kmx orka install\b"),
     ("kmx orka status", r"^kmx orka status\b"),

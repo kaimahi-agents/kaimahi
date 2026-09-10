@@ -185,10 +185,14 @@ class Board:
                 raise Anchor(f"the heading at line {offset + 1} opens with a lane and says neither "
                              f"that it is pasteable nor that it is a record of a lane that "
                              f"finished: {line.strip()!r}")
-        if PROMPTS in sections and not self.prompts:
-            raise Anchor("no prompt headings in the retained worker prompts section")
-        if SHEETS in sections and not self.sheets:
-            raise Anchor("no delta sheets in the retained delta sheets section")
+        if PROMPTS in sections:
+            body, first = self.section(PROMPTS)
+            if not any(first <= p.line < first + len(body.splitlines()) for p in self.prompts):
+                raise Anchor("no prompt headings in the retained worker prompts section")
+        if SHEETS in sections:
+            body, first = self.section(SHEETS)
+            if not any(first <= line < first + len(body.splitlines()) for _, _, line in self.sheets):
+                raise Anchor("no delta sheets in the retained delta sheets section")
 
     def rows_for(self, ident: str) -> list[Row]:
         return [r for r in self.rows if ident in r.ids]

@@ -104,7 +104,7 @@ an existing token is still valid. See [models](models.md).
 | Region | `westus3`; `--location` |
 | Node | one `Standard_B4ms` (4 vCPU / 16 GiB); `--node-count`, `--node-size` |
 | OS disk | lift: 64 GiB; standalone `aks-up.sh`: 32 GiB, configurable with `AKS_NODE_OSDISK_SIZE` |
-| Network | Azure CNI Overlay + Cilium; `--network-policy azure` or `calico` accepted but not live-verified here |
+| Network | Azure CNI Overlay + Cilium (`--network-policy cilium`); `azure` or `calico` accepted but not live-verified here |
 | Control plane | Free tier, no SLA; not exposed as a lift flag |
 | Registry | private ACR Basic, admin user disabled; `--registry` |
 | Monitoring | enabled; `--observability=false` skips it and Azure telemetry verification |

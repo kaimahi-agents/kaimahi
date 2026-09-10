@@ -52,6 +52,15 @@ for label, literal in [
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
 CASES += [
+    ("reviewed commit build", GOOD.replace("cmd/kmx@main", "cmd/kmx@572f3a6"), None),
+    ("release without Orka helpers", GOOD.replace("cmd/kmx@main", "cmd/kmx@v0.1.0"),
+     "go install .../cmd/kmx is missing"),
+    ("latest tag still predates Orka", GOOD.replace("cmd/kmx@main", "cmd/kmx@latest"),
+     "go install .../cmd/kmx is missing"),
+    ("missing install revision", GOOD.replace("cmd/kmx@main", "cmd/kmx@"),
+     "go install .../cmd/kmx is missing"),
+    ("revision prefix is not a revision", GOOD.replace("cmd/kmx@main", "cmd/kmx@main-obsolete"),
+     "go install .../cmd/kmx is missing"),
     ("empty document", "", "hero image is missing"),
     ("commands only in prose", GOOD.replace("```bash\n" + COMMANDS + "```", COMMANDS),
      "Quickstart has no fenced command block"),
