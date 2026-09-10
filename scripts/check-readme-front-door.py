@@ -25,9 +25,9 @@ ORDER = [
 # Revisit the prerequisite when an Orka-capable tagged CLI is published.
 QUICKSTART_COMMANDS = [
     ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@(?:main|[0-9a-f]{7,40})(?=[ \t]*(?:#.*)?$)"),
-    ("kmx up", r"^kmx up\b"),
-    ("kmx orka install", r"^kmx orka install\b"),
-    ("kmx orka status", r"^kmx orka status\b"),
+    ("kmx up", r"^kmx up(?=[ \t]|$)"),
+    ("kmx orka install", r"^kmx orka install(?=[ \t]|$)"),
+    ("kmx orka status", r"^kmx orka status(?=[ \t]|$)"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)

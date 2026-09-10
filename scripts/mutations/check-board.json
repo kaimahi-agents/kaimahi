@@ -153,6 +153,12 @@
       "replace": "            if False:"
     },
     {
+      "name": "a pipe-free lane row is skipped",
+      "breaks": "Losing every delimiter must not make a lane invisible while other rows still pass.",
+      "find": "                if header and stripped:",
+      "replace": "                if False:"
+    },
+    {
       "name": "the lane table header is not validated",
       "breaks": "A missing or changed header cannot be treated as a data row or silently skipped.",
       "find": "                if [c.lower() for c in cells] != [\"lane\", \"owner\", \"status\", \"notes\"]:",

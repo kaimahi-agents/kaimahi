@@ -116,6 +116,15 @@ class BoardTests(unittest.TestCase):
                 self.assert_refused(LEGACY.replace("\n## Ready-to-paste", row + "\n## Ready-to-paste"),
                                     "malformed")
 
+    def test_pipe_free_row_cannot_disappear(self):
+        row = "| W4: write example recipes | unassigned | SHAPED | implementation pending |"
+        self.assert_refused(COMPACT.replace(row, row.replace("|", "")), "column delimiters")
+
+    def test_prose_before_table_and_blank_lines_are_supported(self):
+        self.assert_clean(COMPACT.replace("| Lane |", "Current lane register.\n\n| Lane |"))
+        self.assert_clean(COMPACT.replace("| W4:", "\n| W4:"))
+        self.assert_clean(COMPACT + "\n### Notes\nPost-table prose.\n")
+
     def test_header_is_required_and_not_silently_read_as_a_row(self):
         self.assert_refused(COMPACT.replace("| Lane | Owner | Status | Notes |\n", ""),
                             "header")

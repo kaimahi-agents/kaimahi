@@ -131,7 +131,14 @@ class Board:
         header, separator = False, False
         for offset, line in enumerate(body.splitlines()):
             stripped = line.strip()
+            # A Markdown subheading explicitly ends the table; an unmarked
+            # pipe-free line could instead be a damaged lane and must fail.
+            if separator and re.match(r"#{3,6}\s", stripped):
+                break
             if "|" not in stripped:
+                if header and stripped:
+                    raise Anchor(f"malformed lane table row at line {first + offset}: "
+                                 "missing column delimiters")
                 continue
             if not (stripped.startswith("|") and stripped.endswith("|")):
                 raise Anchor(f"malformed lane table row at line {first + offset}: missing edge pipe")

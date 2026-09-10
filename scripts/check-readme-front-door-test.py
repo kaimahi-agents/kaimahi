@@ -51,6 +51,10 @@ for label, literal in [
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
+for command in ("kmx up", "kmx orka install", "kmx orka status"):
+    CASES.append((f"hyphen-suffixed {command}", GOOD.replace(command + "\n", command + "-old\n"),
+                  f"{command} is missing"))
+
 CASES += [
     ("reviewed commit build", GOOD.replace("cmd/kmx@main", "cmd/kmx@572f3a6"), None),
     ("release without Orka helpers", GOOD.replace("cmd/kmx@main", "cmd/kmx@v0.1.0"),

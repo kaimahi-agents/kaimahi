@@ -43,14 +43,20 @@
     {
       "name": "the Orka install marker matches anything",
       "breaks": "The setup can install only the legacy runtime instead of Orka.",
-      "find": "    (\"kmx orka install\", r\"^kmx orka install\\b\"),",
+      "find": "    (\"kmx orka install\", r\"^kmx orka install(?=[ \\t]|$)\"),",
       "replace": "    (\"kmx orka install\", r\"\"),"
     },
     {
       "name": "the Orka status marker matches anything",
       "breaks": "Setup can omit checking the running Orka.",
-      "find": "    (\"kmx orka status\", r\"^kmx orka status\\b\"),",
+      "find": "    (\"kmx orka status\", r\"^kmx orka status(?=[ \\t]|$)\"),",
       "replace": "    (\"kmx orka status\", r\"\"),"
+    },
+    {
+      "name": "a word boundary accepts obsolete install command names",
+      "breaks": "A hyphenated non-command can satisfy the runnable Orka installer step.",
+      "find": "^kmx orka install(?=[ \\t]|$)",
+      "replace": "^kmx orka install\\b"
     },
     {
       "name": "the quickstart command list is emptied",
