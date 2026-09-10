@@ -672,10 +672,12 @@ being written up.
 `kmx migrate` is 4.5x slower on AKS — 40.6 s against 9.1 s — doing exactly
 the same work: the same seven steps, the same two files, the same objects.
 It was not broken down further, so this document does not say which step
-carries the difference. What can be said is where it is *not*: the second
-run, which skips issuing a credential and creating objects, took **18.4 s on
-AKS against 20.6 s on kind** — no slower at all. So essentially the whole
-31.5 s gap sits in the parts a repeat run skips, not in the parts it shares.
+carries the difference, and the repeat-run figures cannot be used to work it
+out either: 18.4 s on AKS against 20.6 s on kind, where kind's repeat run
+was **slower than kind's own first run** (20.6 s against 9.1 s). Two numbers
+that disagree in that direction are measuring conditions rather than work,
+and decomposing a 31.5 s gap with them would be arithmetic dressed up as a
+finding. The gap is stated and left unattributed.
 
 ### 9b. What the application had to be told
 
@@ -922,18 +924,21 @@ command to the application answering through the governed seam:
 §9a's rows add up to, because several of them overlap — the model was still
 downloading while the application's chart was going on.
 
-Of those 15 minutes, **5 m 54 s is Azure before anything of ours or Orka's
-runs**: 4m40s creating the cluster and 1m14s building the plane's image in
-ACR. Wiring Azure-managed observability afterwards cost a further **6m5s**,
-also entirely Azure's — and it ran after the governed answer, so it is time
-an adopter spends on monitoring, not on getting an answer.
+Of those 15 minutes, **4m40s is AKS creating the cluster** before any of
+this project's code runs at all, and a further **1m14s is Azure compiling
+our image** — `az acr build` uploads a context and builds it in the
+registry, so the Dockerfile and the trigger are ours and only the builder is
+Azure's; it sits inside `kmx lift --step plane`, not before it. Wiring
+Azure-managed observability afterwards cost **6m5s** more, and that one is
+Azure's throughout — it ran after the governed answer, so it is time an
+adopter spends on monitoring rather than on getting an answer.
 
 ### 9g. Which differences are whose
 
 | difference | whose |
 |---|---|
 | 4m40s to have a cluster at all | **AKS** |
-| 1m14s of the plane phase, building the image | **AKS** — `az acr build` runs in the registry |
+| 1m14s of the plane phase, building the image | **shared** — our Dockerfile and our trigger, Azure's builder (`az acr build`), inside our step |
 | 6m5s for the monitoring add-ons | **AKS** |
 | seam token 24 h instead of 30 days | **AKS** — the API server caps the `TokenRequest`; kmx asked for 720 h on both |
 | `kmx migrate` 40.6 s instead of 9.1 s | **ours** — same work; the whole gap is in what a repeat run skips (§9a), not broken down further |

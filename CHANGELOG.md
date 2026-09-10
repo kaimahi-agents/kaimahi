@@ -175,14 +175,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   are ours and which are just AKS, and a proved teardown (≈ US$0.35,
   computed from published rates). The first live run of the observability
   phase on any cluster: it works, and Managed Prometheus is shown scraping
-  the plane rather than merely configured to. Three claims that were true
-  only of kind are corrected: the seam token's lifetime is the cluster's
-  decision (AKS granted **24 hours** against the same 720 h request kind
-  granted in full), a tool-calling turn through the translating seam
-  **fails part of the time** on `previous_response_id` — measured at 5
-  failures in 11 identical turns, with the mechanism traced line by line and
-  the refusal shown to be correct — and four defects in `kmx lift` are
-  recorded with what the unit tests were not catching.
+  the plane rather than merely configured to.
+
+  **Corrected**, because it was true only of kind: the seam token's lifetime
+  is the cluster's decision, not ours — AKS granted **24 hours** against the
+  same 720 h request kind granted in full, so a migration stops working
+  after a day there unless re-run.
+
+  **Newly found and recorded**, not previously known on either cluster: a
+  tool-calling turn through the translating seam **fails part of the time**
+  on `previous_response_id`, measured at 5 failures in 11 identical turns,
+  with the mechanism traced line by line and the refusal shown to be
+  correct — whether kind was also affected is left open rather than assumed.
+  And four defects in `kmx lift`, all confirmed on the cluster and none
+  fixed here, including a plane image that reports `version="unknown"`
+  because the lift's `az acr build` passes no `--build-arg VERSION`, which
+  no test asserts.
 
 
 ### Fixed
