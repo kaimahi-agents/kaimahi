@@ -150,14 +150,21 @@ front door.
 
 ## Authoring an agent for Orka
 
-Installing Orka and authoring an agent are separate steps. `kmx agent create`
-continues to emit `kagent.dev/v1alpha2` resources for kagent; installing Orka
+Installing Orka and authoring an agent are separate steps. Today, `kmx agent
+create` emits `kagent.dev/v1alpha2` resources for kagent; installing Orka
 neither converts those files nor changes that command's output.
 
 For a new Orka-native agent, author Orka's `core.orka.ai/v1alpha1` `Agent`
-and `Provider` resources and invoke it with an Orka `Task`. Use the schemas
-and examples from the Orka version you install, rather than assuming that
-its `main` branch describes the release pinned here.
+and `Provider` resources and invoke it with an Orka `Task`. The native
+resources make the provider, tools and execution settings explicit in the
+artifact you review: kagent's `ModelConfig` and `RemoteMCPServer` references
+are not Orka references, and a kagent BYO image is not an Orka Agent runtime.
+Changing the API version is not a translation of those contracts. Use the
+schemas and examples from the Orka version you install, rather than assuming
+that its `main` branch describes the release pinned here.
+
+This describes the supported authoring paths today, not a commitment about
+future import support.
 
 For an application image you already operate, keep its Deployment under your
 own management. [`kmx migrate`](migrate.md) describes the model-traffic path
