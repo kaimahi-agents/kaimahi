@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"golang.org/x/term"
 )
@@ -47,6 +46,12 @@ func (a *App) CreateAgentInteractive(opt CreateOptions) error {
 }
 
 func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions) (CreateOptions, error) {
+	if opt.Out == "-" {
+		opt.NoApply = true
+	}
+	if opt.NoApply && opt.DryRun {
+		return opt, fmt.Errorf("--no-apply (including --out -) and --dry-run cannot be used together")
+	}
 	var err error
 	if opt.Description == "" {
 		opt.Description, err = promptValue(scanner, out, "Describe this agent", "", true)
@@ -55,6 +60,11 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		}
 	}
 
+	for _, value := range []string{opt.Description, opt.Name} {
+		if err := scaffold.RefuseKeyShapes(value); err != nil {
+			return opt, fmt.Errorf("refusing credential-shaped wizard input; supply references, never credentials")
+		}
+	}
 	defaultName := opt.Name
 	if defaultName == "" {
 		defaultName = slugAgentName(opt.Description)
@@ -64,6 +74,9 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		if err != nil {
 			return opt, err
 		}
+		if err := scaffold.RefuseKeyShapes(opt.Name); err != nil {
+			return opt, fmt.Errorf("refusing credential-shaped wizard input; supply references, never credentials")
+		}
 		if err := scaffold.ValidateName(opt.Name); err != nil {
 			fmt.Fprintf(out, "  %v\n", err)
 			defaultName = ""
@@ -71,14 +84,36 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		}
 		break
 	}
-	if _, err := scaffold.ParseTools(opt.Tools); err != nil {
+	for _, field := range []struct {
+		label string
+		value *string
+	}{
+		{"Namespace the Orka controller watches", &opt.Namespace},
+		{"Provider type (openai or anthropic)", &opt.ProviderType},
+		{"Provider model identifier", &opt.Model},
+		{"Existing Provider Secret name (not its value)", &opt.Secret},
+	} {
+		if *field.value == "" {
+			*field.value, err = promptValue(scanner, out, field.label, "", true)
+			if err != nil {
+				return opt, err
+			}
+		}
+	}
+	if opt.Instructions == "" && opt.InstructionText == "" {
+		opt.InstructionText = "You are " + opt.Name + ", a declarative Orka agent. Your purpose is: " + opt.Description + "\nAnswer briefly and say plainly when you do not know something."
+	}
+	if opt.Task != "" && !opt.NoApply && opt.Out != "-" && !opt.DryRun && opt.ResultServiceAccount == "" {
+		opt.ResultServiceAccount, err = promptValue(scanner, out, "Existing result-reader ServiceAccount", "", true)
+		if err != nil {
+			return opt, err
+		}
+	}
+	if err := validateOrkaResultOptions(&opt); err != nil {
 		return opt, err
 	}
-	if opt.Instructions == "" && opt.Image == "" {
-		opt.InstructionText = "You are " + opt.Name + ". Your purpose is: " + opt.Description + "\nAnswer briefly and say plainly when you do not know something."
-	}
-	if opt.Namespace == "" {
-		opt.Namespace = config.DefaultNamespace
+	if _, err := createOrkaBundle(opt); err != nil {
+		return opt, err
 	}
 	if opt.Out == "" {
 		opt.Out = filepath.Join("agents", opt.Name+".yaml")
@@ -90,8 +125,11 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 	if opt.DryRun {
 		return opt, nil
 	}
+	if opt.Task != "" {
+		fmt.Fprintln(out, "Applying authorizes Task execution. The temporary token has the account's full authority; v0.1.3 does not enforce Task-read RBAC.")
+	}
 	for {
-		apply, err := promptValue(scanner, out, "Create and apply to "+opt.Namespace+"? (Y/n)", "y", true)
+		apply, err := promptValue(scanner, out, "Create Orka resources in "+opt.Namespace+"? (Y/n)", "y", true)
 		if err != nil {
 			return opt, err
 		}
@@ -288,7 +326,7 @@ type editedAgent struct {
 }
 
 func (a *App) validateAgentEdit(path, name string) (*editedAgent, error) {
-	raw, err := a.Run.Capture("kubectl", "create", "--dry-run=client", "-f", path, "-o", "json")
+	raw, err := a.kubectlCapture("create", "--dry-run=client", "-f", path, "-o", "json")
 	if err != nil {
 		return nil, fmt.Errorf("edited agent is not valid Kubernetes YAML: %w", err)
 	}

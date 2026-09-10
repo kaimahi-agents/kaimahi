@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -49,15 +48,14 @@ func TestLocalOperationCommandsRetainClusterAndEngine(t *testing.T) {
 	}
 }
 
-func TestCreateNoApplyQuotesContextAndManifestPath(t *testing.T) {
+func TestCreateNoApplyDoesNotSuggestBulkApply(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent's $(false).yaml")
 	var out, errOut bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-team's test"}, Out: &out, Err: &errOut}
-	if err := a.CreateAgent(CreateOptions{Name: "demo", ModelConfig: "hello-world-model", Out: path, NoApply: true}); err != nil {
+	if err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Out: path, NoApply: true}); err != nil {
 		t.Fatal(err)
 	}
-	want := "kubectl --context " + shellArg(a.Cfg.KubeContext) + " apply -f " + shellArg(path)
-	if !strings.Contains(errOut.String(), want) {
+	if strings.Contains(errOut.String(), " apply -f ") || !strings.Contains(errOut.String(), "Create Provider only") {
 		t.Fatalf("unsafe apply hint: %s", errOut.String())
 	}
 }
@@ -73,13 +71,13 @@ func (s *sliceScanner) Text() string { return s.values[s.index-1] }
 func (s *sliceScanner) Err() error   { return nil }
 
 func TestCreateWizardCollectsSafeDefaultsAndAppliesByDefault(t *testing.T) {
-	scanner := &sliceScanner{values: []string{"Reports unhealthy workloads", "", ""}}
+	scanner := &sliceScanner{values: []string{"Reports unhealthy workloads", "", "orka-system", "openai", "local", "model-key", ""}}
 	var out bytes.Buffer
 	opt, err := collectCreateOptions(scanner, &out, CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opt.Description != "Reports unhealthy workloads" || opt.Name != "reports-unhealthy-workloads" || opt.Namespace != "kagent" {
+	if opt.Description != "Reports unhealthy workloads" || opt.Name != "reports-unhealthy-workloads" || opt.Namespace != "orka-system" || opt.ProviderType != "openai" || opt.Model != "local" || opt.Secret != "model-key" {
 		t.Fatalf("unexpected wizard options: %+v", opt)
 	}
 	if opt.Out != filepath.Join("agents", opt.Name+".yaml") || opt.NoApply {
@@ -94,7 +92,7 @@ func TestCreateWizardCollectsSafeDefaultsAndAppliesByDefault(t *testing.T) {
 }
 
 func TestCreateWizardExplicitNoApplySkipsConfirmation(t *testing.T) {
-	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter"}}
+	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter", "orka-system", "openai", "local", "model-key"}}
 	opt, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{NoApply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +103,7 @@ func TestCreateWizardExplicitNoApplySkipsConfirmation(t *testing.T) {
 }
 
 func TestCreateWizardDeclineCancels(t *testing.T) {
-	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter", "no"}}
+	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter", "orka-system", "openai", "local", "model-key", "no"}}
 	_, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{})
 	if !errors.Is(err, errCreateCancelled) {
 		t.Fatalf("decline did not cancel creation: %v", err)
@@ -113,7 +111,7 @@ func TestCreateWizardDeclineCancels(t *testing.T) {
 }
 
 func TestCreateWizardRepromptsInvalidConfirmation(t *testing.T) {
-	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter", "maybe", "yes"}}
+	scanner := &sliceScanner{values: []string{"Cluster reporter", "cluster-reporter", "orka-system", "openai", "local", "model-key", "maybe", "yes"}}
 	var out bytes.Buffer
 	opt, err := collectCreateOptions(scanner, &out, CreateOptions{})
 	if err != nil {
@@ -361,23 +359,17 @@ func TestCreateNoApplyGroupsArtifactCapabilitiesAndNextStep(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.yaml")
 	var out, errOut bytes.Buffer
-	times := []time.Time{time.Unix(0, 0), time.Unix(0, 0), time.Unix(0, 250_000_000), time.Unix(0, 250_000_000)}
 	a := &App{
 		Cfg: &config.Config{KubeContext: "kind-test"},
 		Run: &run.Runner{Stdout: &out, Stderr: &errOut}, Out: &out, Err: &errOut,
-		now: func() time.Time { value := times[0]; times = times[1:]; return value },
 	}
-	err := a.CreateAgent(CreateOptions{Name: "demo", Description: "Demo agent", ModelConfig: "hello-world-model", Out: path, NoApply: true})
+	err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Description: "Demo agent", Out: path, NoApply: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := errOut.String()
 	for _, want := range []string{
-		"PHASE  [1/1] Generate agent manifest",
-		"CAPABILITIES\n  Tools: none",
-		"DONE   [1/1] Generate agent manifest (250ms)",
-		"COMPLETE  Agent manifest written; not applied (250ms total)",
-		"NEXT  Review it, then:",
+		"Orka bundle not applied", "Schema:", "Create Provider only", "never write the skeleton", "does not test admission",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("create transcript lacks %q:\n%s", want, text)
@@ -388,44 +380,45 @@ func TestCreateNoApplyGroupsArtifactCapabilitiesAndNextStep(t *testing.T) {
 	}
 }
 
-// A flag a BYO manifest silently drops is worse than no flag — and --tools was
-// worse still, because the capabilities report printed the allowlist back for a
-// document that had none.
-func TestCreateRefusesFlagsABYOManifestWouldDrop(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		opt  CreateOptions
-		want string
-	}{
-		{"tools", CreateOptions{Name: "demo", Image: "acme/a:1", Tools: "srv:t1"}, "--tools"},
-		{"instructions", CreateOptions{Name: "demo", Image: "acme/a:1", Instructions: "x.md"}, "--instructions"},
-		{"instruction text", CreateOptions{Name: "demo", Image: "acme/a:1", InstructionText: "be brief"}, "--instructions"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a := &App{}
-			err := a.CreateAgent(tc.opt)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("a flag a BYO agent cannot carry was accepted: %v", err)
-			}
-		})
+func TestCreateWizardTaskRequestsExistingResultAccount(t *testing.T) {
+	scanner := &sliceScanner{values: []string{"demo", "demo", "orka-system", "openai", "local", "model-key", "reader", "yes"}}
+	opt, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{Task: "Say hello"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// --model still reaches a real decision — whether the governed seams are
-	// injected — so it is not swept up in the refusal.
-	if err := refuseFlagsBYODrops(CreateOptions{Image: "acme/a:1", ModelConfig: "governed-ollama"}); err != nil {
-		t.Errorf("--model was refused, but it decides whether governance is injected: %v", err)
+	if opt.ResultServiceAccount != "reader" {
+		t.Fatalf("missing explicit account: %+v", opt)
 	}
 }
 
-// `--isolation` is refused without `--image` for every spelling, including the
-// one that resolves to no placement. Accepting `none` there was the flag doing
-// nothing quietly, which is the thing the refusal exists to prevent.
-func TestCreateRefusesIsolationWithoutAnImage(t *testing.T) {
-	for _, profile := range []string{"none", "virtual-node", "kata"} {
-		t.Run(profile, func(t *testing.T) {
-			if err := (&App{}).CreateAgent(CreateOptions{Name: "demo", Isolation: profile, NoApply: true}); err == nil ||
-				!strings.Contains(err.Error(), "needs --image") {
-				t.Fatalf("--isolation %s was accepted without --image: %v", profile, err)
-			}
-		})
+func TestCreateWizardStdoutTaskDoesNotRequireResultAccount(t *testing.T) {
+	scanner := &sliceScanner{values: []string{"demo", "demo", "orka-system", "openai", "local", "model-key"}}
+	opt, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{Out: "-", Task: "Say hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opt.NoApply || opt.ResultServiceAccount != "" {
+		t.Fatal("stdout wizard required executable result options")
+	}
+}
+
+func TestCreateWizardRefusesKeyShapedDescriptionBeforePromptEcho(t *testing.T) {
+	secret := "sk-" + "proj-" + strings.Repeat("B", 32)
+	scanner := &sliceScanner{values: []string{secret, "demo"}}
+	var out bytes.Buffer
+	_, err := collectCreateOptions(scanner, &out, CreateOptions{NoApply: true})
+	if err == nil || strings.Contains(out.String()+err.Error(), strings.ToLower(secret)) {
+		t.Fatal("wizard echoed key-shaped input")
+	}
+}
+
+func TestEditorParsingPinsContext(t *testing.T) {
+	dir := t.TempDir()
+	fakeTool(t, dir, "kubectl", `[ "$1" = "--context" ] && [ "$2" = "kind-test" ] || exit 1
+ printf '%s' '{"apiVersion":"kagent.dev/v1alpha2","kind":"Agent","metadata":{"name":"demo","namespace":"kagent"},"spec":{"type":"Declarative","declarative":{"modelConfig":"local"}}}'`)
+	t.Setenv("PATH", dir)
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}}
+	if _, err := a.validateAgentEdit("demo.yaml", "demo"); err != nil {
+		t.Fatal(err)
 	}
 }

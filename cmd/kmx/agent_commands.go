@@ -25,22 +25,49 @@ func newAgentListCommand(state *commandState) *cobra.Command {
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
-	cmd := &cobra.Command{Use: "create [name]", Short: "Scaffold and optionally apply an Agent", Args: usageArgs(0, 1, "kmx agent create [<name>] [flags]")}
-	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Agent namespace (default kagent)")
+	cmd := &cobra.Command{Use: "create [name]", Short: "Create an Orka Agent and Provider, optionally run a Task", Args: usageArgs(0, 1, "kmx agent create [<name>] [flags]"), Long: `Create a declarative Orka Agent and its Provider as reviewable Kubernetes YAML.
+Select explicitly the namespace the Orka controller watches. Provider type, model
+identifier (not a ModelConfig), and a separately provisioned Secret are required.
+This command does not build or deploy application images. Keep your Deployment
+or chart; use kmx migrate for an existing application's model seam.
+Existing agent chat/edit/list commands remain kagent-specific.
+
+Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
+cluster admission. Never bulk-apply the bundle or write its value-free Secret
+skeleton: create Provider and wait for current-generation Ready, then Agent and
+wait, then optionally Task. No Task means no model response was tested.
+
+Applying --task authorizes a model call and needs an explicitly named existing
+ServiceAccount. kmx creates no account or permissions. A temporary 10-minute token
+has that account's full effective authority, not result-only scope; discarding
+it is not revocation. v0.1.3 authenticates result reads but does not enforce Task
+read RBAC; pinned main requires namespaced get on tasks.core.orka.ai. Results use
+loopback HTTP through a context-pinned port-forward. Fresh names and UID checks
+do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.`}
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit namespace the Orka controller watches (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
-	cmd.Flags().StringVar(&opt.ModelConfig, "model", "", "ModelConfig to think with")
+	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai or anthropic (required)")
+	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier, not a kagent ModelConfig (required)")
+	cmd.Flags().StringVar(&opt.Secret, "secret", "", "existing Provider Secret name (required)")
+	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "api-key", "key name within the existing Secret; never a value")
+	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "optional HTTP(S) Provider endpoint, no credentials/query/fragment")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
-	cmd.Flags().StringVar(&opt.Tools, "tools", "", "MCP wiring: <server>:<tool>[,<tool>...]")
+	cmd.Flags().StringVar(&opt.Tools, "tools", "", "comma-separated explicit Orka tool names (not server:tool)")
+	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
+	cmd.Flags().StringVar(&opt.Task, "task", "", "first AI Task prompt; applying authorizes execution")
+	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
+	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
+	cmd.Flags().StringVar(&opt.ProviderRequestsPerMinute, "provider-requests-per-minute", "", "explicit positive Provider request limit (int32)")
+	cmd.Flags().StringVar(&opt.ProviderTokensPerMinute, "provider-tokens-per-minute", "", "explicit positive Provider token limit (int64)")
+	cmd.Flags().StringVar(&opt.SchemaTarget, "schema-target", "", "offline only: v0.1.3 (default) or pinned main")
+	cmd.Flags().StringVar(&opt.ResultServiceAccount, "result-service-account", "", "existing ServiceAccount in the selected namespace for Task result access")
+	cmd.Flags().StringVar(&opt.OrkaAPIService, "orka-api-service", "orka-api", "Orka API Service name exposing port 8080")
+	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation without applying")
-	cmd.Flags().StringVar(&opt.Image, "image", "", "run this image, serving A2A on :8080, instead of a declarative agent")
-	cmd.Flags().StringVar(&opt.Isolation, "isolation", "", "placement profile for a bring-your-own agent: virtual-node | none")
-	// Asked for rather than probed: kmx cannot see inside a bring-your-own
-	// image, and a guessed UID fails the pod at CreateContainer with a
-	// message that never names the image. Absent is allowed and says so.
-	cmd.Flags().StringVar(&opt.RunAsUser, "run-as-user", "", "UID the --image runs as, or \"root\" to say it needs root")
-	_ = cmd.RegisterFlagCompletionFunc("isolation", staticCompletion([]string{"virtual-node", "none"}))
+	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
+	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.1.3", "main"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		if len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)

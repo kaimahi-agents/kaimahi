@@ -9,6 +9,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -79,6 +80,9 @@ type App struct {
 	// no flag, environment variable or file can move it.
 	orkaInstaller       string
 	orkaInstallerDigest string
+	// Set only while preparing the Orka result forward, so cancellation and
+	// signals kill a forward even before its bound-port announcement.
+	orkaForwardContext context.Context
 }
 
 // New builds an App around the process's own streams.
@@ -116,7 +120,13 @@ func (a *App) kubectlQuiet(args ...string) bool {
 func (a *App) Capture(args ...string) (string, error) { return a.kubectlCapture(args...) }
 
 func (a *App) Command(args ...string) *exec.Cmd {
-	return a.Run.Command("kubectl", a.kubectl(args...)...)
+	prepared := a.Run.Command("kubectl", a.kubectl(args...)...)
+	if a.orkaForwardContext == nil {
+		return prepared
+	}
+	cmd := exec.CommandContext(a.orkaForwardContext, prepared.Path, prepared.Args[1:]...)
+	cmd.Env = prepared.Env
+	return cmd
 }
 
 // kubeconfig reads the merged kubeconfig, saying plainly when the reason it
