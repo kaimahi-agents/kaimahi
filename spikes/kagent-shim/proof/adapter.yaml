@@ -1,0 +1,48 @@
+# SPIKE ONLY: fixed deployment for the proof's generated routing ConfigMap.
+# This keyless remote server needs no mounts under /secrets.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagent-shim-adapter
+  namespace: orka-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kagent-shim-adapter}
+  template:
+    metadata:
+      labels: {app: kagent-shim-adapter}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: adapter
+          image: kagent-shim-spike:dev
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: kagent-shim-adapter}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagent-shim-adapter
+  namespace: orka-system
+spec:
+  selector: {app: kagent-shim-adapter}
+  ports: [{port: 8080, targetPort: 8080}]

@@ -1,0 +1,52 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: cluster-helper
+  namespace: demo
+spec:
+  type: Declarative
+  declarative:
+    modelConfig: selected-model
+    systemMessageFrom:
+      type: ConfigMap
+      name: instructions
+      key: prompt
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: cluster-tools
+          namespace: demo
+          kind: RemoteMCPServer
+          apiGroup: kagent.dev
+          toolNames: [k8s_get_resources]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: selected-model
+  namespace: demo
+spec:
+  provider: Anthropic
+  model: claude-sonnet-4-5
+  apiKeySecret: llm-key
+  apiKeySecretKey: api-key
+  anthropic:
+    baseUrl: https://api.anthropic.com
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: cluster-tools
+  namespace: demo
+spec:
+  description: Cluster MCP endpoint
+  protocol: STREAMABLE_HTTP
+  url: http://mcp.demo.svc:8080/mcp
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: instructions
+  namespace: demo
+data:
+  prompt: Inspect Kubernetes resources using the selected tools.

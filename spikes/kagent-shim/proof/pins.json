@@ -1,0 +1,12 @@
+{
+  "kagent": "v0.10.1",
+  "kagentCommit": "a3d26eaf2eda002d9c9104d2a8f6f27a2ff23ec3",
+  "orka": "v0.1.3",
+  "orkaCommit": "b07d42c0b9e52fe511b434827a342b4720f5d422",
+  "schemas": {
+    "agents.core.orka.ai": "7adf26f6d9cf21b9489258f402885d399f2327f18185eee2b6527f17713b5e03",
+    "providers.core.orka.ai": "f16f41e576db3e6c3ad4c2fe821ab7d35ce2d25a580768e01fa9fc14f54721a5",
+    "tasks.core.orka.ai": "f7eea2e64b1c21364b0d64b4267e9226a12d70bf9b6132f3e605579fa5738f63",
+    "tools.core.orka.ai": "b1f13117aaaddec5c80ef3d451cc8d1e01e5ea5ed3058de1e052c1fdbbb84a72"
+  }
+}

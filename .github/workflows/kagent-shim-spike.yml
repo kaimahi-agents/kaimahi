@@ -1,0 +1,32 @@
+name: kagent shim spike
+on:
+  pull_request:
+    paths:
+      - 'spikes/kagent-shim/**'
+      - '.github/workflows/kagent-shim-spike.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'spikes/kagent-shim/**'
+      - '.github/workflows/kagent-shim-spike.yml'
+permissions:
+  contents: read
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: spikes/kagent-shim/go.mod
+          cache-dependency-path: spikes/kagent-shim/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Converter fixtures and in-process MCP servers only
+        working-directory: spikes/kagent-shim
+        run: go test -race ./...
+      - name: Native Task and installed-schema preflight fixtures
+        working-directory: spikes/kagent-shim/proof
+        run: python -m unittest test_check.py

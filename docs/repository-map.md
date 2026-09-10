@@ -90,6 +90,12 @@ side. Source counts exclude Go test files.
 CLI presentation and safety audit coverage is described in
 [cli-ux-plan.md](cli-ux-plan.md); these tests are not live-cluster verification.
 
+## `spikes/` — throwaway experiments
+
+`spikes/kagent-shim/` is **Scaffolding**: an isolated converter/adapter
+experiment, fixture tests and a manual cluster proof. It is a separate Go
+module, is not embedded in `kmx`, and ships no supported authoring interface.
+
 ## `plane/` — legacy governance module
 
 A separate Go module remains in the tree: the former custom governance proxy.
@@ -223,6 +229,7 @@ The latter is not a brand asset or the current architecture diagram.
 | `embed_test.go` | **Scaffolding** | Verifies that every embedded asset can be read, independently of Make. |
 | `Makefile` | **Scaffolding** | Checkout interface, including legacy and demonstration targets. |
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | CI gates and tag-driven releases. |
+| `.github/workflows/kagent-shim-spike.yml` | **Scaffolding** | Keyless converter fixtures and in-process MCP adapter tests for the throwaway spike. |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
 | `staticcheck.conf` | **Scaffolding** | Lint configuration for both modules. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
