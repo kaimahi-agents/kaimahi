@@ -34,6 +34,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -275,6 +276,24 @@ func (a *App) Migrate(opt MigrateOptions) error {
 			Secret: opt.Secret, SecretNamespace: opt.Namespace, Command: "kmx migrate",
 		}, false, false)
 	}); err != nil {
+		// The credential is named after the Deployment unless --credential
+		// says otherwise, so a plane that already holds this name may be
+		// holding it for a DIFFERENT namespace's workload of the same name.
+		// The generic recovery — delete the row and re-run — is right when
+		// the Secret was lost and is destructive when it is a collision:
+		// the row it deletes belongs to somebody else. Only this command
+		// knows the name was defaulted, so only this command can say so.
+		if errors.Is(err, errCredentialNotBound) && opt.Credential == opt.Deployment {
+			return fmt.Errorf("%w\n"+
+				"  If %s/%s is not the workload that credential was issued for, this is a name\n"+
+				"  collision rather than a lost Secret — the default credential name is the\n"+
+				"  Deployment's, and two Deployments called %q in different namespaces ask for\n"+
+				"  the same one. Give this migration its own identity instead of deleting a row\n"+
+				"  that may be another workload's:\n"+
+				"    kmx migrate %s --namespace %s --model %s --credential %s-%s",
+				err, opt.Namespace, opt.Deployment, opt.Deployment,
+				opt.Deployment, opt.Namespace, opt.Model, opt.Namespace, opt.Deployment)
+		}
 		return err
 	}
 	if err := a.publishPlaneAuthority(opt.Namespace); err != nil {

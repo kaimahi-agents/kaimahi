@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +14,14 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
+
+// errCredentialNotBound marks the case where the plane already holds a
+// credential of this name and the Secret that should carry its token is
+// absent. The token is shown once and cannot be recovered, so the
+// situation is unrecoverable either way — but WHY it happened decides
+// what to do about it, and only the caller knows whether the name could
+// belong to something else.
+var errCredentialNotBound = errors.New("credential exists and its Secret is not bound")
 
 // GovernOptions are `kmx govern`'s knobs, defaulted to what `make govern`
 // uses on kind so the delegating recipe passes nothing surprising.
@@ -377,12 +386,16 @@ func (a *App) reconcileExistingCredential(credential string, opt GovernOptions, 
 		if interactive {
 			return fmt.Errorf("credential %q already exists, but the agent-specific Secret %s is not safely bound to it; refusing to delete or replace either resource", credential, opt.Secret)
 		}
-		return fmt.Errorf("credential %q exists in the plane but Secret %s is missing (or unlabeled).\n"+
+		// Wrapped so a caller that knows a SECOND reason this can happen
+		// can say so. The recovery below is right when the Secret was
+		// lost; it is dangerous when the name simply belongs to somebody
+		// else's workload, because the row it deletes is theirs.
+		return fmt.Errorf("%w: credential %q exists in the plane but Secret %s is missing (or unlabeled).\n"+
 			"  The token is shown exactly once at issue time and cannot be recovered;\n"+
 			"  delete the row and re-run:\n"+
 			"    kubectl --context %s -n %s exec deploy/kaimahi-postgres -- \\\n"+
 			"      psql -U kaimahi -c \"DELETE FROM credential WHERE name='%s'\"",
-			credential, opt.Secret, a.Cfg.KubeContext, admin.Namespace, credential)
+			errCredentialNotBound, credential, opt.Secret, a.Cfg.KubeContext, admin.Namespace, credential)
 	default:
 		return a.wrongCredentialError(bound, credential, opt)
 	}

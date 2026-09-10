@@ -572,9 +572,11 @@ are the portable part; the wall clock is this cluster's.
 - **The credential is named after the Deployment**, so two Deployments
   called `concierge` in different namespaces would ask for the same
   credential name. The second run does not overwrite the first — the
-  plane refuses, because the token is shown once and cannot be
-  recovered — but the refusal is easier to read as a bug than as a
-  collision. Pass `--credential` when migrating same-named workloads.
+  plane refuses, because the token is shown once and cannot be recovered
+  — and the refusal names the collision and offers `--credential`,
+  because the generic recovery for a missing Secret is "delete the row
+  and re-run", which here would delete another workload's live
+  credential.
 - **The hop from the seam to Orka is plain HTTP.** Orka's compatible
   endpoint serves `http` on 8080 in the release bundle, so the
   ServiceAccount token crosses one in-cluster hop unencrypted, bounded by

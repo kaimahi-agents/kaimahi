@@ -86,6 +86,13 @@ func newMigrateFixture(t *testing.T) *migrateFixture {
 	}
 	srv := httptest.NewServer(planePreamble(admin.Speaks, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// A plane that already holds this credential answers 409, which is
+		// what a name collision looks like from here.
+		if os.Getenv("KMX_TEST_CREDENTIAL_STATUS") == "409" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"credential exists"}`))
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"name":"concierge","token":"kmh_fake","expires_at":"2026-10-09T00:00:00Z"}`))
 	}))
@@ -217,6 +224,31 @@ func TestAPrefixedEnvFromSourceIsResolvedByItsKey(t *testing.T) {
 	notes := f.errOut.String()
 	if !strings.Contains(notes, "OPENAI_BASE_URL = http://orka-api.orka-system:8080/openai/v1") {
 		t.Fatalf("the prefixed key was not resolved to the variable the container receives:\n%s", notes)
+	}
+}
+
+// The credential is named after the Deployment unless --credential says
+// otherwise, so a plane that already holds the name may be holding it for
+// a different namespace's workload. The generic recovery is "delete the
+// row and re-run", which in that case deletes somebody else's live
+// credential — so this command has to say what else it could be.
+func TestANameCollisionIsNotReportedAsALostSecret(t *testing.T) {
+	f := newMigrateFixture(t)
+	// The plane already has this credential (409), and no Secret in this
+	// namespace is bound to it (the fake's `get secret` is a NotFound).
+	t.Setenv("KMX_TEST_CREDENTIAL_STATUS", "409")
+	err := f.app.Migrate(migrateOpts(f.dir))
+	if err == nil {
+		t.Fatal("issuing over an unbound credential was accepted")
+	}
+	// Anchored on a fragment that cannot wrap: the sentence itself is
+	// broken across lines by the message's own formatting, so a longer
+	// match would fail for a message that is in fact correct.
+	if !strings.Contains(err.Error(), "collision rather than a lost Secret") {
+		t.Fatalf("the refusal does not name the collision:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), "--credential demo-concierge") {
+		t.Fatalf("the refusal does not offer a distinct identity:\n%v", err)
 	}
 }
 
