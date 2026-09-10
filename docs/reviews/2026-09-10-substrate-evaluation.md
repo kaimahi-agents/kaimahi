@@ -1,8 +1,9 @@
 # Agent Substrate evaluation boundary
 
-Kaimahi keeps Agent Substrate as an **evaluation path**, not a production
-installation or support commitment. This lane adds no installer, runtime,
-provider patches, or new orchestration layer.
+For Kaimahi's adoption decisions, treat Orka's Agent Substrate integration as
+an **evaluation path**, not a production installation or support commitment.
+This lane adds no installer, runtime, provider patches, or new orchestration
+layer.
 
 ## Source baseline
 
