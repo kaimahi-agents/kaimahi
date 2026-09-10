@@ -188,12 +188,17 @@ Without `--task`, only Provider/Agent readiness is tested. Use `--out -` or
 `--no-apply` for fully offline generation; [the canonical create guide](kmx.md#kmx-agent-create)
 covers explicit inputs, pinned schemas, ordered manual creation and collisions.
 
-**Authority is broader than the name "result reader" suggests.** The temporary
-ten-minute token has this account's full effective authority, and discarding
-it is not revocation. Pinned main requires the namespaced Task-get permission
+**Authority is broader than the name "result reader" suggests.** kmx requests a
+ten-minute token; the API server determines the actual granted lifetime. The
+token has this account's full effective authority, and discarding it is not
+revocation. Pinned main requires the namespaced Task-get permission
 above, but release `v0.1.3` authenticates result reads without enforcing that
 Task-read RBAC. Results travel via a loopback HTTP port-forward; UID checks do
-not bind the returned bytes to a UID. Dry-run does not test access or execution.
+not bind the returned bytes to a UID. kmx pins one TCP connection and stops if it
+or the forward is lost, rather than reconnecting or resubmitting the Task. This
+trades reconnect availability for protection against later local-port reuse;
+the initial bind and connection are still local trust, not cryptographic process
+authentication. Dry-run does not test access or execution.
 
 `agent chat/edit/list` still operate on kagent, not this Orka Agent. No automatic
 MCP translation, application image deployment or governance is added here.

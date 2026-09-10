@@ -156,6 +156,9 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 			return err
 		}
 		defer session.close()
+		// Stop dependency waits and later writes if the forward or its sole
+		// result connection is lost. Never recover by resubmitting the Task.
+		ctx = session.ctx
 		if err := session.probe(ctx, opt.Namespace, orkaObjectName(bundle.Task)); err != nil {
 			return err
 		}
@@ -225,10 +228,11 @@ type orkaIdentity struct {
 type orkaObject struct {
 	Kind     string `json:"kind"`
 	Metadata struct {
-		Name       string `json:"name"`
-		Namespace  string `json:"namespace"`
-		UID        string `json:"uid"`
-		Generation int64  `json:"generation"`
+		Name              string     `json:"name"`
+		Namespace         string     `json:"namespace"`
+		UID               string     `json:"uid"`
+		Generation        int64      `json:"generation"`
+		DeletionTimestamp *time.Time `json:"deletionTimestamp"`
 	} `json:"metadata"`
 	Status struct {
 		Ready      bool              `json:"ready"`
@@ -269,6 +273,9 @@ func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdent
 	}
 	if object.Kind != id.Kind || object.Metadata.Name != id.Name || object.Metadata.Namespace != namespace || object.Metadata.UID != id.UID || object.Metadata.Generation != id.Generation {
 		return nil, fmt.Errorf("%s/%s UID %s was replaced or its spec generation changed; refusing stale state", id.Kind, id.Name, id.UID)
+	}
+	if object.Metadata.DeletionTimestamp != nil {
+		return nil, fmt.Errorf("%s/%s UID %s is terminating; refusing stale state", id.Kind, id.Name, id.UID)
 	}
 	return &object, nil
 }

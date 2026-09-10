@@ -153,6 +153,11 @@ func (f *Forward) Detail() string {
 	return strings.ReplaceAll(out, "\n", "\n  ")
 }
 
+// Done closes when the owned forward process has exited. Callers that retain
+// authenticated connections can use it to cancel work after losing the tunnel.
+// It is not an authentication proof for a later connection to the same port.
+func (f *Forward) Done() <-chan struct{} { return f.done }
+
 // Close tears the forward down.
 func (f *Forward) Close() {
 	if f == nil || f.pf == nil || f.pf.Process == nil {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -23,7 +24,37 @@ type orkaResultSession struct {
 	token, base string
 	client      *http.Client
 	forward     *admin.Forward
+	conn        net.Conn
+	ctx         context.Context
 	cancel      context.CancelFunc
+}
+
+// Losing this connection ends the session, including idle EOF and transport
+// closes. Reconnecting would trust a new listener that may not be our forward.
+type orkaResultConn struct {
+	net.Conn
+	cancel context.CancelFunc
+}
+
+func (c *orkaResultConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.cancel()
+	}
+	return n, err
+}
+
+func (c *orkaResultConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if err != nil {
+		c.cancel()
+	}
+	return n, err
+}
+
+func (c *orkaResultConn) Close() error {
+	c.cancel()
+	return c.Conn.Close()
 }
 
 func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*orkaResultSession, error) {
@@ -90,13 +121,51 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 		cancel()
 		return nil, fmt.Errorf("Orka result port-forward did not prove a 127.0.0.1 bind; use a free result port and check Service access")
 	}
+	go func() {
+		select {
+		case <-fwd.Done():
+			cancel()
+		case <-forwardCtx.Done():
+		}
+	}()
+	// Establish once, before exposing any authenticated request. Startup still
+	// trusts kubectl's bind announcement and the initial local connection; this
+	// is not TLS or cryptographic process identity. After this point a reused
+	// port cannot receive the bearer: no transport dial opens another socket.
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(forwardCtx, "tcp", "127.0.0.1:"+opt.ResultPort)
+	if err != nil {
+		cancel()
+		fwd.Close()
+		return nil, fmt.Errorf("cannot establish the Orka result connection; no resources created")
+	}
+	bound := &orkaResultConn{Conn: conn, cancel: cancel}
+	context.AfterFunc(forwardCtx, func() { _ = bound.Close() })
+	select {
+	case <-fwd.Done():
+		cancel()
+	default:
+	}
+	if forwardCtx.Err() != nil {
+		_ = bound.Close()
+		fwd.Close()
+		return nil, fmt.Errorf("Orka result forward ended before the session opened")
+	}
+	var take sync.Once
 	transport := &http.Transport{
-		Proxy:                 nil,
-		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		Proxy: nil,
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			var conn net.Conn
+			take.Do(func() { conn = bound })
+			if conn == nil {
+				return nil, fmt.Errorf("Orka result connection lost; refusing to reconnect")
+			}
+			return conn, nil
+		},
+		MaxConnsPerHost:       1,
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 	return &orkaResultSession{
-		token: request.Status.Token, base: "http://127.0.0.1:" + opt.ResultPort, forward: fwd, cancel: cancel,
+		token: request.Status.Token, base: "http://127.0.0.1:" + opt.ResultPort, forward: fwd, conn: bound, ctx: forwardCtx, cancel: cancel,
 		client: &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}, nil
 }
@@ -106,14 +175,29 @@ func (s *orkaResultSession) close() {
 		return
 	}
 	s.cancel()
+	_ = s.conn.Close()
 	s.forward.Close()
 	s.client.CloseIdleConnections()
 	s.token = ""
 }
 
 func (s *orkaResultSession) get(ctx context.Context, namespace, name string) (int, map[string]json.RawMessage, error) {
-	// Names were validated before generation; no caller-controlled host or URL
-	// can receive the bearer, even via redirects or HTTP_PROXY.
+	// Bind each caller's request to both its own deadline and the session's
+	// lifetime. The pinned connection, not this liveness check, prevents redial.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(s.ctx, cancel)
+	defer stop()
+	select {
+	case <-s.forward.Done():
+		return 0, nil, fmt.Errorf("Orka result forward ended; refusing request")
+	default:
+	}
+	if s.ctx.Err() != nil {
+		return 0, nil, fmt.Errorf("Orka result session ended; refusing request")
+	}
+	// Names were validated before generation; redirects and HTTP_PROXY are
+	// disabled, and the transport can only use the session's existing socket.
 	endpoint := s.base + "/api/v1/tasks/" + url.PathEscape(name) + "/result?namespace=" + url.QueryEscape(namespace)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

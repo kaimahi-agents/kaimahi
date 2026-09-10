@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,6 +200,94 @@ func TestCreateWizardModelCollectsMissingFieldsAndAppliesByDefault(t *testing.T)
 	m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
 	if m.cancelled || m.opt.NoApply || m.opt.Name != "reports-unhealthy-workloads" || m.opt.Namespace != "team" || m.opt.ProviderType != "openai" || m.opt.Model != "custom-model" || m.opt.Secret != "model-key" || m.opt.Task != "" {
 		t.Fatalf("unexpected completed options: %+v cancelled=%v", m.opt, m.cancelled)
+	}
+}
+
+func TestCreateWizardInstructionsAreReadOnceBeforeCompletion(t *testing.T) {
+	for _, mode := range []string{"bubbles", "plain"} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "instructions.md")
+			if err := os.WriteFile(path, []byte("Use these original instructions"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			opt := nativeWizardOptions()
+			opt.Name, opt.Instructions, opt.Out = "", path, "-"
+			var completed CreateOptions
+			if mode == "bubbles" {
+				m, err := newCreateWizardModel(opt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// The model update must use bytes resolved before raw mode, not
+				// open the pathname again when the final missing field arrives.
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				m.input.SetValue("demo")
+				m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
+				if m.err != nil || m.step != createDone {
+					t.Fatalf("completion reread the instructions path: %v", m.err)
+				}
+				completed = m.opt
+			} else {
+				var err error
+				completed, err = collectCreateOptions(&sliceScanner{values: []string{"demo"}}, &bytes.Buffer{}, opt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if completed.Instructions != path || completed.InstructionText != "" {
+				t.Fatal("resolution replaced supplied flags")
+			}
+			var out bytes.Buffer
+			a := &App{Out: &out, Err: &bytes.Buffer{}}
+			if err := a.CreateAgent(completed); err != nil {
+				t.Fatalf("creation reread resolved instructions: %v", err)
+			}
+			if !strings.Contains(out.String(), "Use these original instructions") {
+				t.Fatal("artifact lost original instructions")
+			}
+		})
+	}
+}
+
+func TestCreateWizardInstructionReadFailuresNeverStartMutation(t *testing.T) {
+	for _, mode := range []string{"named", "bubbles", "plain"} {
+		for _, conflict := range []bool{false, true} {
+			t.Run(mode+fmt.Sprint(conflict), func(t *testing.T) {
+				a, opt, out, _, dir := orkaCreateFixture(t, "")
+				opt.Instructions = filepath.Join(dir, "missing.md")
+				if conflict {
+					opt.InstructionText = "inline conflicts with file"
+				}
+				var err error
+				switch mode {
+				case "named":
+					err = a.CreateAgent(opt)
+				case "bubbles":
+					opt.Name = ""
+					_, err = newCreateWizardModel(opt)
+				case "plain":
+					_, err = collectCreateOptions(&sliceScanner{}, out, opt)
+				}
+				want := "cannot read the instructions file"
+				if conflict {
+					want = "supply only one instructions source"
+				}
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("instruction error lost: %v", err)
+				}
+				if out.Len() != 0 || len(orkaCalls(t, dir)) != 0 {
+					t.Fatal("failed read started prompting, emission or cluster operations")
+				}
+				if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
+					t.Fatal("failed read created an artifact")
+				}
+			})
+		}
 	}
 }
 
@@ -438,8 +527,26 @@ func TestCreateWizardRefusesKeyShapedDescriptionBeforePromptEcho(t *testing.T) {
 	scanner := &sliceScanner{values: []string{secret, "demo"}}
 	var out bytes.Buffer
 	_, err := collectCreateOptions(scanner, &out, CreateOptions{NoApply: true})
-	if err == nil || strings.Contains(out.String()+err.Error(), strings.ToLower(secret)) {
-		t.Fatal("wizard echoed key-shaped input")
+	if err == nil {
+		t.Fatal("wizard accepted key-shaped input")
+	}
+	// Exercise the very same assertion with positive controls, not only the
+	// production refusal. An echoed original or case-changed sentinel must be
+	// detected even though this test does not imply production echoes secrets.
+	for _, tc := range []struct {
+		name, output string
+		echoed       bool
+	}{
+		{"real refusal", out.String() + err.Error(), false},
+		{"original echo", "prompt: " + secret, true},
+		{"changed-case echo", "error: " + strings.ToUpper(secret), true},
+		{"lowercase echo", "error: " + strings.ToLower(secret), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.Contains(strings.ToLower(tc.output), strings.ToLower(secret)); got != tc.echoed {
+				t.Fatal("credential echo assertion missed an echo or rejected safe output")
+			}
+		})
 	}
 }
 

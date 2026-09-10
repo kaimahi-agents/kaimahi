@@ -38,9 +38,10 @@ skeleton: create Provider and wait for current-generation Ready, then Agent and
 wait, then optionally Task. No Task means no model response was tested.
 
 Applying --task authorizes a model call and needs an explicitly named existing
-ServiceAccount. kmx creates no account or permissions. A temporary 10-minute token
-has that account's full effective authority, not result-only scope; discarding
-it is not revocation. v0.1.3 authenticates result reads but does not enforce Task
+ServiceAccount. kmx creates no account or permissions. It requests a ten-minute
+token; the API server determines the actual granted lifetime. The token has that
+account's full effective authority, not result-only scope; discarding it is not
+revocation. v0.1.3 authenticates result reads but does not enforce Task
 read RBAC; pinned main requires namespaced get on tasks.core.orka.ai. Results use
 loopback HTTP through a context-pinned port-forward. Fresh names and UID checks
 do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.`}

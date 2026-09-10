@@ -67,6 +67,12 @@ func newCreateWizardModel(opt CreateOptions) (createWizardModel, error) {
 		}
 	}
 
+	// Construction happens before Bubble Tea installs signal handlers or raw
+	// mode. Update must never reopen a user-supplied path.
+	if err := resolveOrkaInstructions(&opt); err != nil {
+		return createWizardModel{}, err
+	}
+
 	input := textinput.New()
 	input.Prompt = "> "
 	input.CharLimit = 0

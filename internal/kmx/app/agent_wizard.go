@@ -85,6 +85,9 @@ func (a *App) CreateAgentInteractive(opt CreateOptions) error {
 }
 
 func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions) (CreateOptions, error) {
+	if err := resolveOrkaInstructions(&opt); err != nil {
+		return opt, err
+	}
 	if opt.Out == "-" {
 		opt.NoApply = true
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -71,6 +73,19 @@ func TestOrkaKubectlHelper(t *testing.T) {
 			fail()
 		}
 		port, _, _ := strings.Cut(args[len(args)-1], ":")
+		if scenario == "owned-forward" {
+			listener, err := net.Listen("tcp", "127.0.0.1:"+port)
+			if err != nil {
+				fail()
+			}
+			fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
+			_ = http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+			}))
+			os.Exit(0)
+		}
 		fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
 		time.Sleep(time.Hour)
 		os.Exit(0)
@@ -137,6 +152,10 @@ func TestOrkaKubectlHelper(t *testing.T) {
 				var obj map[string]any
 				_ = json.Unmarshal(raw, &obj)
 				meta := obj["metadata"].(map[string]any)
+				if scenario == "terminating-"+strings.ToLower(obj["kind"].(string)) {
+					meta["deletionTimestamp"] = "2026-01-01T00:00:00Z"
+					meta["finalizers"] = []string{"orka.ai/cleanup"}
+				}
 				if scenario == "replacement" {
 					meta["uid"] = "replacement"
 				}

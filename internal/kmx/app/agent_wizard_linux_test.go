@@ -5,10 +5,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -136,6 +138,114 @@ func TestCreateWizardPTYNativeCompletionRestoresTerminal(t *testing.T) {
 			}
 			if strings.Contains(captured.String(), "ServiceAccount") {
 				t.Fatal("offline Task asked for result account")
+			}
+		})
+	}
+}
+
+func TestCreateWizardFIFOHelper(t *testing.T) {
+	path := os.Getenv("KMX_WIZARD_FIFO")
+	if path == "" {
+		return
+	}
+	// Observe an actual blocked os.ReadFile rather than inferring one from a
+	// prompt and a sleep. The observer is bounded by the child test context.
+	go func() {
+		for {
+			stack := make([]byte, 1<<20)
+			stack = stack[:runtime.Stack(stack, true)]
+			if bytes.Contains(stack, []byte("os.ReadFile(")) {
+				fmt.Fprintln(os.Stderr, "instructions-reading")
+				return
+			}
+			select {
+			case <-t.Context().Done():
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+	opt := nativeWizardOptions()
+	opt.Name, opt.Instructions = "", path
+	opt.Out = filepath.Join(filepath.Dir(path), "never.yaml")
+	a := &App{Stdin: os.Stdin, Out: os.Stdout, Err: os.Stderr}
+	if err := a.CreateAgentInteractive(opt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateWizardPTYBlockedInstructionsStayCookedAndInterruptible(t *testing.T) {
+	for _, signal := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		t.Run(signal.String(), func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "instructions.fifo")
+			if err := unix.Mkfifo(path, 0600); err != nil {
+				t.Fatal(err)
+			}
+			master, slave := chatPTY(t, 120)
+			before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestCreateWizardFIFOHelper$")
+			cmd.Env = append(os.Environ(), "TERM=xterm-256color", "KMX_WIZARD_FIFO="+path, "PATH="+dir)
+			cmd.Stdin, cmd.Stderr = slave, slave
+			var stdout bytes.Buffer
+			cmd.Stdout = &stdout
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			waited := false
+			defer func() {
+				_ = cmd.Process.Kill()
+				if !waited {
+					<-done
+				}
+			}()
+			var captured strings.Builder
+			chatPTYReadUntil(t, master, &captured, func(s string) bool {
+				return strings.Contains(s, "instructions-reading") || strings.Contains(s, "Agent name")
+			})
+			if !strings.Contains(captured.String(), "instructions-reading") {
+				if _, err := io.WriteString(master, "\r"); err != nil {
+					t.Fatal(err)
+				}
+				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "instructions-reading") })
+			}
+			during, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+			if err != nil || *before != *during {
+				t.Error("instruction FIFO read entered raw mode before it could complete")
+			}
+			if err := cmd.Process.Signal(signal); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+				waited = true
+				status := cmd.ProcessState.Sys().(syscall.WaitStatus)
+				if !status.Signaled() || status.Signal() != signal {
+					t.Errorf("blocked preread did not retain default interrupt behavior: %s", cmd.ProcessState)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("blocked FIFO read swallowed cancellation; child requires forced cleanup")
+			}
+			after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+			if err != nil || *before != *after {
+				t.Fatal("blocked-read cancellation left terminal settings changed")
+			}
+			if stdout.Len() != 0 {
+				t.Fatal("blocked read emitted artifact bytes")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "never.yaml")); !os.IsNotExist(err) {
+				t.Fatal("blocked read emitted an artifact")
 			}
 		})
 	}

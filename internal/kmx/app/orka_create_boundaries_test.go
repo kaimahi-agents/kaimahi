@@ -17,6 +17,56 @@ import (
 	"time"
 )
 
+func TestOrkaServiceNameValidationDoesNotReserveAgentNames(t *testing.T) {
+	for _, name := range []string{"hello-world", "hello-tools", "orka-api", "a", strings.Repeat("a", 63)} {
+		opt := CreateOptions{OrkaAPIService: name}
+		if err := validateOrkaResultOptions(&opt); err != nil {
+			t.Errorf("valid Service name %q refused: %v", name, err)
+		}
+	}
+	for _, name := range []string{"Upper", "a.b", "a_b", "-a", "a-", "a b", "a/b", "1service", strings.Repeat("a", 64)} {
+		opt := CreateOptions{OrkaAPIService: name}
+		if err := validateOrkaResultOptions(&opt); err == nil {
+			t.Errorf("invalid Service name %q accepted", name)
+		}
+	}
+}
+
+func TestOrkaTerminatingResourcesBlockLaterSteps(t *testing.T) {
+	for _, tc := range []struct {
+		kind   string
+		writes int
+	}{{"Provider", 1}, {"Agent", 2}, {"Task", 3}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			a, opt, out, _, dir := orkaCreateFixture(t, "terminating-"+strings.ToLower(tc.kind))
+			var requests atomic.Int32
+			orkaResultServer(t, &opt, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if requests.Add(1) == 1 {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+					return
+				}
+				fmt.Fprint(w, `{"result":"answer from terminating Task"}`)
+			})
+			err := a.CreateAgent(opt)
+			if err == nil || !strings.Contains(err.Error(), tc.kind+"/") || !strings.Contains(err.Error(), "terminating") {
+				t.Errorf("terminating %s not refused: %v", tc.kind, err)
+			}
+			writes := 0
+			for _, call := range orkaCalls(t, dir) {
+				if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") {
+					writes++
+				}
+			}
+			if writes != tc.writes || requests.Load() != 1 || out.Len() != 0 {
+				t.Fatalf("terminating %s unlocked later steps: writes=%d requests=%d stdout=%q", tc.kind, writes, requests.Load(), out.String())
+			}
+			assertOrkaForwardExited(t, dir)
+		})
+	}
+}
+
 func TestOrkaOfflineRequiredInputsAndRateDriftNeverEmit(t *testing.T) {
 	for _, change := range []struct {
 		name  string
@@ -212,7 +262,9 @@ func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 			a, opt, _, _, dir := orkaCreateFixture(t, scenario)
 			opt.ResultServiceAccount = "reader"
 			opt.OrkaAPIService = "orka-api"
-			opt.ResultPort = "19180"
+			orkaResultServer(t, &opt, func(http.ResponseWriter, *http.Request) {
+				t.Error("opening a session sent HTTP before its explicit access probe")
+			})
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			started := time.Now()
@@ -232,6 +284,84 @@ func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 			}
 			if time.Since(started) > 2*time.Second {
 				t.Fatal("cancelled forward waited for full bind timeout")
+			}
+			assertOrkaForwardExited(t, dir)
+		})
+	}
+}
+
+func TestOrkaResultLossStopsDependencyWait(t *testing.T) {
+	for _, loss := range []string{"forward", "connection"} {
+		t.Run(loss, func(t *testing.T) {
+			a, opt, out, _, dir := orkaCreateFixture(t, "stale-ready")
+			server := orkaResultServer(t, &opt, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+			})
+			if err := validateOrkaResultOptions(&opt); err != nil {
+				t.Fatal(err)
+			}
+			bundle, err := createOrkaBundle(opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			done := make(chan error, 1)
+			go func() { done <- a.createOrkaOnline(ctx, opt, bundle) }()
+			finished := false
+			defer func() {
+				cancel()
+				if !finished {
+					<-done
+				}
+			}()
+			// Provider creation proves the access probe succeeded. Its stale
+			// Ready condition leaves the real pipeline waiting at this boundary.
+			for {
+				if _, err := os.Stat(filepath.Join(dir, "sample-providers.core.orka.ai.json")); err == nil {
+					break
+				}
+				select {
+				case err := <-done:
+					finished = true
+					t.Fatalf("never reached Provider wait: %v", err)
+				case <-ctx.Done():
+					t.Fatal("never reached Provider wait")
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			if loss == "forward" {
+				body, err := os.ReadFile(filepath.Join(dir, "forward-pid"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				pid, err := strconv.Atoi(string(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				server.CloseClientConnections()
+			}
+			select {
+			case err := <-done:
+				finished = true
+				if err == nil {
+					t.Fatal("result-session loss allowed creation to succeed")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("result-session loss did not cancel the dependency wait")
+			}
+			if out.Len() != 0 {
+				t.Fatal("result-session loss printed an answer")
+			}
+			for _, call := range orkaCalls(t, dir) {
+				if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") && call.Document["kind"] != "Provider" {
+					t.Fatal("later resource created after result-session loss")
+				}
 			}
 			assertOrkaForwardExited(t, dir)
 		})
@@ -337,7 +467,7 @@ func TestOrkaUnreadyAgentAndUnavailableResultBlockLaterSteps(t *testing.T) {
 }
 
 func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
-	for _, scenario := range []string{"auth-lost", "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read", "echo-token"} {
+	for _, scenario := range []string{"auth-lost", "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read", "terminating-after-read", "echo-token"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, opt, out, diagnostics, dir := orkaCreateFixture(t, "")
 			reads := 0
@@ -353,7 +483,7 @@ func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
 				case "auth-lost":
 					w.WriteHeader(403)
 					fmt.Fprintf(w, `{"error":{"code":403,"message":%q}}`, orkaTestToken())
-				case "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read":
+				case "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read", "terminating-after-read":
 					name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/"), "/result")
 					path := filepath.Join(dir, name+"-tasks.core.orka.ai.json")
 					body, err := os.ReadFile(path)
@@ -368,6 +498,9 @@ func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
 					}
 					if scenario == "changed-prompt-after-read" {
 						body = bytes.ReplaceAll(body, []byte(`"prompt":"Say hello"`), []byte(`"prompt":"Run a different request"`))
+					}
+					if scenario == "terminating-after-read" {
+						body = bytes.ReplaceAll(body, []byte(`"generation":1`), []byte(`"generation":1,"deletionTimestamp":"2026-01-01T00:00:00Z","finalizers":["orka.ai/cleanup"]`))
 					}
 					if scenario == "disappear-after-read" {
 						err = os.Remove(path)

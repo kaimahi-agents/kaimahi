@@ -31,6 +31,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := validateOrkaResultOptions(&opt); err != nil {
 		return err
 	}
+	if err := resolveOrkaInstructions(&opt); err != nil {
+		return err
+	}
 	bundle, err := createOrkaBundle(opt)
 	if err != nil {
 		return err
@@ -77,7 +80,9 @@ func validateOrkaResultOptions(opt *CreateOptions) error {
 	if opt.ResultPort == "" {
 		opt.ResultPort = "19180"
 	}
-	if err := scaffold.ValidateName(opt.OrkaAPIService); err != nil {
+	// Services use DNS labels with an alphabetic first character (RFC 1035),
+	// not the embedded kagent Agent reservations in scaffold.ValidateName.
+	if err := scaffold.ValidateNamespace(opt.OrkaAPIService); err != nil || opt.OrkaAPIService[0] < 'a' || opt.OrkaAPIService[0] > 'z' {
 		return fmt.Errorf("--orka-api-service must be a valid Service name")
 	}
 	if opt.ResultServiceAccount != "" {
@@ -99,6 +104,34 @@ func validateOrkaResultOptions(opt *CreateOptions) error {
 	return nil
 }
 
+// Resolve user file I/O only before terminal collection or named creation.
+// No signal handler is installed here: a stalled read remains interruptible by
+// the process's default signal behavior, without a blocked reader goroutine or
+// touching borrowed stdin. Wizard validation and final generation reuse bytes.
+func resolveOrkaInstructions(opt *CreateOptions) error {
+	if opt.Instructions == "" {
+		return nil
+	}
+	if opt.InstructionText != "" {
+		return fmt.Errorf("supply only one instructions source")
+	}
+	if err := scaffold.RefuseKeyShapes(opt.Instructions); err != nil {
+		return fmt.Errorf("refusing credential-shaped create input; supply references, never credentials")
+	}
+	if opt.instructionFileText != nil {
+		return nil
+	}
+	body, err := os.ReadFile(opt.Instructions)
+	if err != nil {
+		return fmt.Errorf("cannot read the instructions file")
+	}
+	text := string(body)
+	opt.instructionFileText = &text
+	return nil
+}
+
+// Bundle construction is memory-only, including when called from Bubble Tea's
+// synchronous Update. Callers resolve file inputs before entering that loop.
 func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	agentLimits, err := parseOrkaLimits(opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, "agent")
 	if err != nil {
@@ -113,11 +146,10 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 		if instructions != "" {
 			return nil, fmt.Errorf("supply only one instructions source")
 		}
-		body, err := os.ReadFile(opt.Instructions)
-		if err != nil {
-			return nil, fmt.Errorf("cannot read the instructions file")
+		if opt.instructionFileText == nil {
+			return nil, fmt.Errorf("instructions file must be resolved before validation")
 		}
-		instructions = string(body)
+		instructions = *opt.instructionFileText
 	}
 	names := func(value string) []string {
 		if value == "" {

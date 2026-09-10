@@ -373,8 +373,8 @@ expensive way.
 ```bash
 kubectl --context <context> -n kagent get agents.kagent.dev             # Accepted / Ready
 kubectl --context <context> -n kagent describe agents.kagent.dev <name>  # the real error
-kubectl -n kagent logs deploy/<agent> --tail=50     # what it called
-kubectl -n kaimahi logs -l app=kaimahi-proxy --prefix   # governance decisions, both replicas
+kubectl --context <context> -n kagent logs deploy/<agent> --tail=50     # what it called
+kubectl --context <context> -n kaimahi logs -l app=kaimahi-proxy --prefix   # governance decisions, both replicas
 make ledger    CRED=<name>                          # was the call metered?
 make tool-audit CRED_TOOLS=<name>                   # was the tool allowed?
 make plane-metrics                                  # one replica's counters, queue depths, breakers

@@ -20,6 +20,9 @@ type CreateOptions struct {
 	ResultServiceAccount, OrkaAPIService, ResultPort, SchemaTarget                string
 	Out                                                                           string
 	NoApply, DryRun                                                               bool
+	// Resolved before entering raw terminal mode. Keep the original flags and
+	// distinguish an empty file from an instruction source not yet read.
+	instructionFileText *string
 }
 
 // These kagent readiness/editor helpers retain their existing callers. Orka
