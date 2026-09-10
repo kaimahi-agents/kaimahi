@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Hold docs/repository-map.md to the tree it describes.
 
-The map asserts several dozen facts about this repository: how many files
-are in each area, which manifests ride inside the binary, which script
-calls which, which package has no source at all. Every one of them was
-true when it was written and none of them was checked. The ERP relocation
-that happened the day before it was written would have invalidated four of
-its rows.
+The map describes the installed tree, not the current product direction:
+file counts, embedded manifests, callers, and packages without source.
+Legacy plane code can remain present without being current guidance.
 
 WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 
@@ -23,16 +20,14 @@ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 
   What IS enforced about a classification is that one exists: every
   tracked file in the areas the map enumerates lands in exactly one of
-its lists, and the lists' own counts add up. Add a script and this
+  its lists, and the lists' own counts add up. Add a script and this
   fails until somebody has said what it is — without this file ever
   saying which answer is right.
 
-  The two GENUINELY UNCLEAR cases are a standing question, not a gap to
-  close. They need a product decision, and the risk is not that they stay
-  unresolved — it is that the ambiguity quietly disappears. So the section
-  is required to survive, to say how many cases it holds, to hold that
-  many, and to name paths that still exist. The number is read FROM the
-  map, so resolving one is an edit to the map and not to this file.
+  Open questions are counted, not frozen. The map may resolve them all
+  by declaring zero; a nonzero count without the corresponding list is
+  drift. Historical quotations and index omissions are not obligations
+  for future documentation to preserve.
 
 DERIVED, NOT COPIED. The map is the claim and the tree is the truth, and
 no assertion here holds a third copy: the embedded manifest list comes out
@@ -73,7 +68,8 @@ MAP = "docs/repository-map.md"
 # checker, which has to quote the map's paths to anchor to them, would
 # then read as a caller of every script the map mentions.
 NOT_EVIDENCE = {MAP, "scripts/check-repository-map.py",
-                "scripts/mutations/check-repository-map.json"}
+                "scripts/mutations/check-repository-map.json",
+                "docs/COORDINATION.md"}
 
 NUMBER_WORDS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -319,14 +315,6 @@ def resolve(token: str, base: str, tree: Tree) -> set[str]:
     return hit
 
 
-# Names in backticks that are not, and are not meant to be, paths in this
-# tree. Each is exempt for a stated reason; an entry with no reason is a
-# way to make a broken claim pass.
-NOT_A_PATH = {
-    "k8s/demo/": "hypothetical — the map is explaining why this split was NOT made",
-}
-
-
 def section_base(heading: str) -> str:
     """The directory a section's short names are relative to.
 
@@ -436,7 +424,7 @@ def every_path_the_map_names_is_in_the_tree(doc: Doc, tree: Tree) -> list[str]:
     for heading, body in [("", doc.preamble)] + doc.sections:
         base = section_base(heading)
         for token in ticks(heading + "\n" + body):
-            if token in NOT_A_PATH or not is_path_candidate(token):
+            if not is_path_candidate(token):
                 continue
             examined += 1
             if not resolve(token, base, tree):
@@ -558,7 +546,7 @@ def the_root_module_does_not_import_the_plane(doc: Doc, tree: Tree) -> list[str]
 
 @claim
 def the_embedded_manifests_are_the_ones_embed_go_names(doc: Doc, tree: Tree) -> list[str]:
-    """The map's list of 25, against embed.go's own patterns.
+    """The map's embedded list, against embed.go's own patterns.
 
     Derived rather than copied: this expands the `go:embed` directives the
     same way the compiler does — a directory pattern takes the directory —
@@ -566,7 +554,7 @@ def the_embedded_manifests_are_the_ones_embed_go_names(doc: Doc, tree: Tree) -> 
     so is the reverse.
     """
     _, body = doc.section("`k8s/`")
-    m = once(r"\*\*Product — embedded in `kmx`.*?\(" + NUM + r"\):\*\*(.*?)\n\n",
+    m = once(r"\*\*Embedded in `kmx`.*?\(" + NUM + r"\):\*\*(.*?)\n\n",
              body, "the embedded list", re.S)
     named, unresolved = listed(m.group(2), "k8s", tree)
     if unresolved:
@@ -602,7 +590,7 @@ def embedded(tree: Tree) -> set[str]:
 
 @claim
 def the_manifests_not_embedded_are_the_ones_the_go_test_names(doc: Doc, tree: Tree) -> list[str]:
-    """The map's three non-embedded lists, against the tree and the test.
+    """The map's checkout lists, against the tree and the test.
 
     The repository already has a ledger for this — the Go test that names
     every manifest which must NOT ride along — so this compares against
@@ -611,10 +599,10 @@ def the_manifests_not_embedded_are_the_ones_the_go_test_names(doc: Doc, tree: Tr
     exclude, which is exactly the kind of gap a count hides.
     """
     _, body = doc.section("`k8s/`")
-    lists = re.findall(r"^\*\*(Product — applied from a checkout only|Product — the release agent|"
-                       r"Demonstration) \(" + NUM + r"\):\*\*(.*?)\n\n", body, re.M | re.S | re.I)
-    if len(lists) != 3:
-        raise Anchor(f"the `k8s/` section has {len(lists)} non-embedded lists, not three")
+    lists = re.findall(r"^\*\*(Checkout[^*(]*) \(" + NUM + r"\):\*\*(.*?)\n\n",
+                       body, re.M | re.S | re.I)
+    if not lists:
+        raise Anchor("the `k8s/` section has no counted checkout lists")
     problems, named = [], set()
     for label, count, text in lists:
         entry, unresolved = listed(text, "k8s", tree)
@@ -634,8 +622,9 @@ def the_manifests_not_embedded_are_the_ones_the_go_test_names(doc: Doc, tree: Tr
     problems += compare_count(number(m.group(1)), len(embedded_k8s(tree)), "embedded k8s files")
     problems += compare_count(number(m.group(2)), len(everything), "files in k8s/")
     problems += compare_count(number(m.group(3)), len(excluded), "manifests the Go test names")
-    thirteenth = once(phrase("the thirteenth is ") + r"`([^`]+)`", body, "the file in neither list")
-    return problems + compare_sets(named - excluded, {thirteenth.group(1)},
+    remainder = once(phrase("the remaining non-manifest is ") + r"`([^`]+)`",
+                     body, "the file in neither list")
+    return problems + compare_sets(named - excluded, {remainder.group(1)},
                                    "the non-embedded files the Go test does not name")
 
 
@@ -710,15 +699,15 @@ def the_short_version_agrees_with_the_long_one(doc: Doc, tree: Tree) -> list[str
     _, short = doc.section("The short version")
     row = once(phrase("| `scripts/` | {n} ({n} embedded in the binary, {n} operator) | {n} | {n}"),
                short, "the short version's scripts row")
-    product, embedded_n, operator, demonstration, scaffolding = (number(g) for g in row.groups())
+    installed, embedded_n, operator, demonstration, scaffolding = (number(g) for g in row.groups())
     everything = tree.under("scripts")
     problems = []
-    if product != embedded_n + operator:
-        problems.append(f"the short version's scripts row says {product} product = "
+    if installed != embedded_n + operator:
+        problems.append(f"the short version's scripts row says {installed} installed/checkout = "
                         f"{embedded_n} embedded + {operator} operator, which does not add up")
-    if product + demonstration + scaffolding != len(everything):
+    if installed + demonstration + scaffolding != len(everything):
         problems.append(f"the short version's scripts row totals "
-                        f"{product + demonstration + scaffolding}, and scripts/ has {len(everything)}")
+                        f"{installed + demonstration + scaffolding}, and scripts/ has {len(everything)}")
     problems += compare_count(embedded_n, len({p for p in embedded(tree) if p.startswith("scripts/")}),
                               "the short version's count of embedded scripts")
     brand_row = once(phrase("| `brand/` | {n} assets used by the README"), short,
@@ -727,16 +716,14 @@ def the_short_version_agrees_with_the_long_one(doc: Doc, tree: Tree) -> list[str
     brand_long = once(phrase("{n} image files plus a README"), brand, "the brand asset count")
     problems += compare_count(number(brand_row.group(1)), number(brand_long.group(1)),
                               "the short version's brand-asset count")
-    docs_row = once(phrase("| `docs/` | {n} capability docs"), short, "the short version's docs row")
-    _, long_docs = doc.section("`docs/`")
-    long_count = once(phrase("**Product documentation ({n})**"), long_docs, "the docs product count")
-    return problems + compare_count(number(docs_row.group(1)), number(long_count.group(1)),
-                                    "the short version's capability-doc count")
+    docs_row = once(phrase("| `docs/` | {n} tracked files"), short, "the short version's docs row")
+    return problems + compare_count(number(docs_row.group(1)), len(tree.under("docs")),
+                                    "the short version's docs count")
 
 
 @claim
 def the_number_of_embedded_shell_scripts_is_the_same_in_both_places(doc: Doc, tree: Tree) -> list[str]:
-    """The opening argument for why shell in `scripts/` can be product.
+    """The opening argument for why shell in `scripts/` can be installed.
 
     The number is stated twice — once in the reasoning and once in the
     summary table — and a second copy of a number is where drift lands
@@ -766,7 +753,7 @@ def the_mutation_harness_breaks_every_checker_the_map_counts(doc: Doc, tree: Tre
 
 @claim
 def the_docs_lists_cover_docs(doc: Doc, tree: Tree) -> list[str]:
-    """The four lists partition docs/, and their counts are the tree's."""
+    """The counted lists partition docs/; labels are editorial choices."""
     heading, body = doc.section("`docs/`")
     total = once(phrase("`docs/` — {n} tracked files"), heading, "the docs/ total")
     everything = tree.under("docs")
@@ -824,13 +811,7 @@ def the_brand_directory_is_what_the_map_says(doc: Doc, tree: Tree) -> list[str]:
 
 @claim
 def the_root_files_table_covers_the_root(doc: Doc, tree: Tree) -> list[str]:
-    """Every tracked file at the root, in .github/ and in blueprints/.
-
-    The map says this section was missing from its first version, which is
-    the point: a reader checking whether something is covered needs the
-    map to cover everything, and the root is where a new file is least
-    likely to be noticed.
-    """
+    """Every tracked file at the root, in .github/ and in blueprints/."""
     heading, body = doc.section("the root files")
     rows = re.findall(r"^\| (`.+?`.*?) \| \*\*.+?\*\* \|", body, re.M)
     if not rows:
@@ -838,8 +819,6 @@ def the_root_files_table_covers_the_root(doc: Doc, tree: Tree) -> list[str]:
     named: set[str] = set()
     problems = []
     for token in ticks("\n".join(rows)):
-        if token in NOT_A_PATH:
-            continue
         hit = resolve(token, "", tree)
         if hit:
             named |= hit
@@ -854,13 +833,12 @@ def the_root_files_table_covers_the_root(doc: Doc, tree: Tree) -> list[str]:
 
 @claim
 def nothing_under_scripts_is_orphaned(doc: Doc, tree: Tree) -> list[str]:
-    """The map's "none is orphaned", computed the way it describes.
+    """The map's reference coverage, computed the way it describes.
 
-    A file is named if any OTHER tracked file mentions its name — the map
-    itself excepted, because a map that names everything would make its
-    own claim true by writing it down. The exception is the mutation
-    specifications, which nothing names because the harness globs the
-    directory, and the map says so.
+    A file is named if another tracked file mentions its name, except
+    maps and tracking records: merely documenting a name is not a caller.
+    Mutation specifications are discovered by globbing, not individual
+    references, and the map says so.
     """
     _, body = doc.section("`scripts/`")
     m = once(phrase("{n} of the {n} are named by something outside themselves, and the {n} "
@@ -889,41 +867,12 @@ def readable(tree: Tree, path: str) -> bool:
 
 @claim
 def the_scripts_that_name_a_k8s_path(doc: Doc, tree: Tree) -> list[str]:
-    """The count behind "not moved, deliberately".
-
-    It is the argument for leaving k8s/ interleaved, so it is the number
-    that decides whether that reasoning still holds.
-    """
-    _, body = doc.section("What moved")
+    """The existing layout's script-path count, not a removal prescription."""
+    _, body = doc.section("Existing layout")
     m = once(phrase("{n} tracked files under `scripts/` contain the literal `k8s/`"),
              body, "the count of scripts naming a k8s/ path")
     got = [p for p in sorted(tree.under("scripts")) if readable(tree, p) and "k8s/" in tree.read(p)]
     return compare_count(number(m.group(1)), len(got), "tracked files under scripts/ naming k8s/")
-
-
-@claim
-def the_release_agent_quote_is_where_the_map_cites_it(doc: Doc, tree: Tree) -> list[str]:
-    """A quotation with a line number is a claim about two files.
-
-    Both halves rot: the quote can be reworded, and the lines can move
-    under it while the words stay somewhere else in the file — which is
-    the version a reader would never catch.
-    """
-    m = once(r"`docs/release-agent\.md:(\d+)-(\d+)`[.:]?\s*\*\"(.+?)\"\*", doc.text,
-             "the release-agent citation", re.S)
-    start, end, quoted = int(m.group(1)), int(m.group(2)), m.group(3)
-    lines = tree.read("docs/release-agent.md").splitlines()
-    if end > len(lines):
-        return [f"docs/release-agent.md has {len(lines)} lines and the map cites {start}-{end}"]
-    there = flat(" ".join(lines[start - 1:end]))
-    # A quotation is regularly cut short and closed with a full stop the
-    # source does not have. The words are the claim; the punctuation
-    # closing them is the map's own sentence.
-    want = flat(quoted).rstrip(".")
-    if want not in there:
-        return [f"docs/release-agent.md:{start}-{end} does not say what the map quotes.\n"
-                f"      map:  {want}\n      file: {there}"]
-    return []
 
 
 @claim
@@ -979,46 +928,22 @@ def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list
 
 @claim
 def exposure_scan_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
-    """The evidence for the first genuinely-unclear case.
-
-    It is unclear BECAUSE it has one caller and no documentation of its
-    own. A second caller would not resolve the question, but it would
-    change it, and the map would be describing a tree that had moved.
-    """
-    _, unclear = doc.section("Genuinely unclear")
-    once(phrase("`scripts/exposure-scan.sh`.** One caller — a make target"), unclear,
-         "the exposure-scan reasoning")
+    """Count make recipes without freezing an interpretation of ownership."""
+    _, body = doc.section("`scripts/`")
+    m = once(phrase("`scripts/exposure-scan.sh`: {n} make recipe"), body,
+             "the exposure-scan make caller")
     recipes = [line for line in tree.read("Makefile").splitlines()
                if line.startswith("\t") and "scripts/exposure-scan.sh" in line]
-    if len(recipes) != 1:
-        return [f"the Makefile has {len(recipes)} recipe lines running scripts/exposure-scan.sh, "
-                "and the map's reasoning rests on there being one"]
-    return []
+    return compare_count(number(m.group(1)), len(recipes), "exposure-scan make recipes")
 
 
 @claim
-def the_unclear_cases_survive(doc: Doc, tree: Tree) -> list[str]:
-    """The standing question, kept standing.
-
-    These three need a product decision and no script can make it. What a
-    script CAN do is refuse to let the question evaporate: the section
-    exists, it says how many cases it holds, it holds that many, and every
-    path it names is still in the tree. The number comes from the map, so
-    settling one is an edit to the map — never to this file.
-    """
-    heading, body = doc.section("Genuinely unclear")
-    m = once(phrase("Genuinely unclear — {n}, and this is a result"), heading,
-             "the count of unresolved cases")
+def the_open_question_count_matches(doc: Doc, tree: Tree) -> list[str]:
+    """Questions may evolve or reach zero; the declared count must agree."""
+    heading, body = doc.section("Open questions")
+    m = once(phrase("Open questions — {n}"), heading, "the count of open questions")
     items = re.findall(r"^\d+\. \*\*(.+?)\*\*", body, re.M)
-    if not items:
-        raise Anchor("the Genuinely unclear section lists no cases — a standing question that "
-                     "quietly emptied is the failure this section exists to prevent")
-    problems = compare_count(number(m.group(1)), len(items), "unresolved cases")
-    for token in ticks(body):
-        if is_path_candidate(token) and not resolve(token, "k8s", tree):
-            problems.append(f"the Genuinely unclear section rests on `{token}`, "
-                            "which is no longer in the tree")
-    return problems
+    return compare_count(number(m.group(1)), len(items), "open questions")
 
 
 @claim
@@ -1035,37 +960,6 @@ def the_architecture_svg_still_has_no_trailing_newline(doc: Doc, tree: Tree) -> 
         return [f"docs/assets/architecture.svg now ends with a newline or is {lines} lines by "
                 f"`wc -l`, and the map warns it reads as {m.group(1)}"]
     return []
-
-
-@claim
-def the_two_unfindable_docs_are_still_unfindable(doc: Doc, tree: Tree) -> list[str]:
-    """A legibility problem the map reports rather than fixes.
-
-    Worth checking in both directions: the day somebody links these from
-    the index, this paragraph becomes the misleading thing.
-    """
-    _, body = doc.section("`docs/`")
-    once(phrase("`isolation.md` appears nowhere in `docs/README.md`"), body,
-         "the isolation.md claim")
-    once(phrase("`docs/reviews/` is referenced exactly once anywhere in `docs/` outside this map"),
-         body, "the docs/reviews claim")
-    index = tree.read("docs/README.md")
-    problems = []
-    if "isolation.md" in index:
-        problems.append("docs/README.md now names isolation.md — the map says it appears nowhere there")
-    if "reviews/" in index:
-        problems.append("docs/README.md now names docs/reviews/ — the map says it never does")
-    # Scoped to docs/, which is what the claim is about: whether a reader
-    # moving through the documentation can find the directory. A mention in
-    # a changelog entry is not a way in, and counting one would make this
-    # say something the map does not.
-    elsewhere = sorted(p for p in tree.under("docs")
-                       if p not in NOT_EVIDENCE and readable(tree, p)
-                       and "docs/reviews" in tree.read(p))
-    if len(elsewhere) != 1:
-        problems.append(f"docs/reviews/ is referenced from {elsewhere or 'nowhere'} outside the map, "
-                        "and the map says exactly one place")
-    return problems
 
 
 # --------------------------------------------------------------------------
@@ -1136,92 +1030,270 @@ def main(argv) -> int:
 # the map happens to satisfy it by another route.
 # --------------------------------------------------------------------------
 
-# (search, replace, what the edit makes the map say). Each must make the
-# check FAIL. A replacement that is not present in the map is itself a
-# failure: the claim moved and this case stopped testing it.
+# A small independent repository, not a snapshot of live product prose.
+# Counts and membership are hand-specified so a broken extractor cannot
+# manufacture its own expected answer. The real tree is checked separately.
+SELFTEST_FILES = {
+    "README.md": "# Fixture\n![hero](brand/hero.png)\n",
+    "Makefile": "\t./scripts/embedded.sh\n\t./scripts/ap-demo.sh\n\t./scripts/ap-injection.sh\n"
+                "\t./scripts/exposure-scan.sh\n# scripts/verify-chat.py\n"
+                "# scripts/check-example.py\n",
+    "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
+    "go.mod": "module example.invalid/fixture\n",
+    "staticcheck.conf": "checks = [\"all\"]\n",
+    "cmd/kmx/main.go": "package main\n",
+    "internal/kmx/app/lift.go": "package app\n",
+    "internal/kmx/app/manifests_test.go":
+        'func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {\n'
+        'for _, name := range []string{"checkout.yaml", "release.yaml", "demo.yaml"} {}\n}\n',
+    "internal/demo/erp/server.go": '// the gateway in front of it is what the demo is about\n',
+    "plane/internal/db/db.go": "package db\n",
+    "plane/internal/db/migrations/001.sql": "SELECT 1;\n",
+    "plane/cmd/proxy/main.go": "package main\n",
+    "k8s/embedded.yaml": "kind: ConfigMap\n",
+    "k8s/plane/config.yaml": "kind: ConfigMap\n",
+    "k8s/checkout.yaml": "kind: ConfigMap\n",
+    "k8s/release.yaml": "kind: ConfigMap\n",
+    "k8s/demo.yaml": "kind: ConfigMap\n",
+    "k8s/erp-fixtures.json": "{}\n",
+    "scripts/embedded.sh": "true\n",
+    "scripts/ap-demo.sh": "./await-approval.sh\n",
+    "scripts/ap-injection.sh": "./await-approval.sh\n",
+    "scripts/await-approval.sh": "true\n",
+    "scripts/exposure-scan.sh": "true\n",
+    "scripts/verify-chat.py": "pass\n",
+    "scripts/check-example.py": "# k8s/\n",
+    "scripts/mutations/check-example.json": "{}\n",
+    "docs/README.md": "[Start](getting-started.md)\n[Review](reviews/retained.md)\n",
+    "docs/getting-started.md": "# Start\n",
+    "docs/release-agent.md": "# Legacy reference\nNo current product authority.\n",
+    "docs/reviews/retained.md": "# Retained review\n",
+    "docs/assets/architecture.svg": "<svg/>",
+    "brand/README.md": "hero.png and mark.svg\n",
+    "brand/hero.png": "image fixture\n",
+    "brand/mark.svg": "<svg/>\n",
+    "blueprints/release.yaml": "name: release\n",
+    ".github/workflows/ci.yml": "# verify-chat.py\nrun: python3 scripts/verify-chat.py\n",
+}
+
+SELFTEST_MAP = """# Fixture repository map
+Installed does not mean current direction, including one shell scripts.
+The comment at the top of `internal/demo/erp/server.go` says
+"the gateway in front of it is what the demo is about".
+
+## The short version
+| `internal/` | `kmx/` (one packages) |
+| `scripts/` | 2 (1 embedded in the binary, 1 operator) | 3 | 3 |
+| `docs/` | 6 tracked files |
+| `brand/` | 2 assets used by the README |
+
+## `cmd/` — installed commands
+| `cmd/kmx` (1 files) | **Installed** | CLI |
+
+## `internal/` — installed packages
+`internal/kmx/` is one packages; the one `lift*.go` files in `app`.
+| `kmx/app` | 1 | Installed |
+| `demo/erp` | 1 | Demonstration |
+
+## `plane/` — legacy module
+One internal packages and one binary (Postgres and one migrations).
+no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
+
+## `k8s/` — installed and checkout artifacts
+Two of `k8s/`'s 6 files are embedded, three are named by that test,
+and the remaining non-manifest is `k8s/erp-fixtures.json`.
+
+**Embedded in `kmx` (2):** `embedded.yaml`, all one of `plane/`.
+
+**Checkout — connectors (1):** `checkout.yaml`.
+
+**Checkout — release scenario (1):** `release.yaml`.
+
+**Checkout — demonstrations (2):** `demo.yaml`, `erp-fixtures.json`.
+
+## `scripts/` — 8 tracked files
+7 of the 8 are named by something outside themselves, and the one
+`scripts/mutations/*.json` are named by nothing.
+| **Installed** | 1 | `embedded.sh` |
+| **Checkout** | 1 | `exposure-scan.sh` |
+| **Demonstration** | 3 | `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
+| **Scaffolding** | 2 | the one `check-*` files, `verify-chat.py` |
+| **Scaffolding** | 1 | `scripts/mutations/*.json` |
+`embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
+Both `ap-demo.sh` and `ap-injection.sh` call it.
+`.github/workflows/ci.yml` (one invocations among two mentions).
+every occurrence in the Makefile is a comment line rather than a recipe.
+`scripts/exposure-scan.sh`: one make recipe.
+
+## `docs/` — 6 tracked files
+**Guidance (2):** `README.md`, `getting-started.md`.
+
+**Legacy reference (1):** `release-agent.md`.
+
+**Maintainer (2):** `repository-map.md`, `reviews/retained.md`.
+
+**Assets (1):** `docs/assets/architecture.svg`.
+
+**Asset note:** the `.svg` has no trailing newline, so `wc -l` reports it as 0.
+
+## `brand/` — assets
+Two image files plus a README.
+`README.md:2` embeds `brand/hero.png`. Also `mark.svg`.
+
+## `blueprints/`, `.github/` and the root files
+| `README.md`, `Makefile`, `embed.go`, `go.mod`, `staticcheck.conf` | **Root** | fixture |
+| `blueprints/release.yaml`, `.github/workflows/ci.yml` | **Build** | fixture |
+
+## Open questions — one
+1. **Authoring format.** Undecided.
+
+## Existing layout
+One tracked files under `scripts/` contain the literal `k8s/`.
+"""
+
+
+# (search, replace, the disagreement introduced). These edit the independent
+# fixture, so live prose and counts can evolve without maintaining a snapshot.
 MAP_EDITS = [
-    ("on the authority of `docs/release-agent.md:2-5`:",
-     "on the authority of `docs/release-agent.md:200-205`:",
-     "cites the release-agent quote at lines it is not on"),
     ("`internal/demo/erp/server.go`", "`internal/demo/erp/absent.go`",
      "names a source file that is not in the tree"),
-    ("Genuinely unclear — two", "Genuinely unclear — one",
-      "says one unresolved case and lists two"),
-    ("**`scripts/exposure-scan.sh`.** One caller", "**`scripts/gone.sh`.** One caller",
-     "rests the first unclear case on a script that is not there"),
-    ("| `kmx/app` | 45 |", "| `kmx/app` | 44 |",
+    ("Open questions — one", "Open questions — two",
+     "miscounts its open questions"),
+    ("| `kmx/app` | 1 |", "| `kmx/app` | 2 |",
      "gets a package's source-file count wrong"),
-    ("`kaimahi-tools.yaml`, `egress-hosted.yaml`", "`egress-hosted.yaml`",
+    ("`embedded.yaml`, all one", "all one",
      "drops a manifest from the embedded list that embed.go embeds"),
-    ("`ap-agent.yaml`, `erp-mcp.yaml`", "`ap-agent.yaml`, `erp-mcp.yaml`, `hello-world.yaml`",
-     "files an embedded manifest under demonstration as well"),
-    ("`plane-pods.sh`, `slack-secret.sh`", "`slack-secret.sh`",
-      "leaves a script out of every bucket"),
-    ("`getting-started.md`, `kmx.md`", "`kmx.md`",
+    ("`demo.yaml`, `erp-fixtures.json`", "`demo.yaml`, `erp-fixtures.json`, `embedded.yaml`",
+     "files an embedded manifest under checkout as well"),
+    ("`ap-injection.sh`, `await-approval.sh`", "`ap-injection.sh`",
+     "leaves a script out of every bucket"),
+    ("`README.md`, `getting-started.md`", "`README.md`",
      "leaves a doc out of every list"),
-    ("Fourteen internal packages and one binary", "Thirteen internal packages and one binary",
+    ("One internal packages and one binary", "Two internal packages and one binary",
      "miscounts the plane's packages"),
-    ("Postgres and twelve migrations", "Postgres and eleven migrations",
+    ("Postgres and one migrations", "Postgres and two migrations",
      "miscounts the plane's migrations"),
-    ("Both `ap-demo.sh` and `ap-injection.sh` call it",
-      "Only `ap-demo.sh` calls it",
-      "no longer names both demo callers for await-approval.sh"),
-    ("`isolation.md` appears nowhere in\n`docs/README.md`",
-     "`isolation.md` is listed in\n`docs/README.md`",
-     "no longer makes the unfindable-docs claim"),
-    ("no `require`, and no `plane/...`\nimport anywhere in root `cmd/` or `internal/`",
-     "the root module imports it freely",
-     "no longer makes the module-boundary claim"),
-    ("| `cmd/kmx` (19 files)", "| `cmd/kmx` (18 files)",
+    ("Both `ap-demo.sh` and `ap-injection.sh` call it", "Only `ap-demo.sh` calls it",
+     "no longer names both await-approval demo callers"),
+    ("no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`",
+     "the root module imports it freely", "no longer makes the module-boundary claim"),
+    ("| `cmd/kmx` (1 files)", "| `cmd/kmx` (2 files)",
      "gets a binary's file count wrong"),
-    ("`internal/kmx/` is sixteen packages", "`internal/kmx/` is fifteen packages",
+    ("`internal/kmx/` is one packages", "`internal/kmx/` is two packages",
      "miscounts the packages under internal/kmx"),
-    ("the\nfive `lift*.go` files in `app`", "the\nsix `lift*.go` files in `app`",
+    ("the one `lift*.go` files in `app`", "the two `lift*.go` files in `app`",
      "miscounts the cloud-running half of the AKS lift"),
-    ("| `scripts/` | 13 (6 embedded in the binary, 7 operator) | 4 | 52",
-      "| `scripts/` | 13 (6 embedded in the binary, 6 operator) | 4 | 52",
+    ("2 (1 embedded in the binary, 1 operator)", "2 (1 embedded in the binary, 2 operator)",
      "has a summary row whose own parts no longer add up"),
-    ("Six image files plus a README", "Seven image files plus a README",
+    ("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files",
+     "miscounts the docs in its summary"),
+    ("Two image files plus a README", "Three image files plus a README",
      "miscounts the brand assets"),
-    ("including six shell scripts", "including seven shell scripts",
+    ("including one shell scripts", "including two shell scripts",
      "miscounts the shell scripts inside the binary"),
-    ("one of the twelve checkers the\nmutation harness", "one of the ten checkers the\nmutation harness",
+    ("one of the one checkers the mutation harness", "one of the two checkers the mutation harness",
      "miscounts the checkers the mutation harness proves"),
-    ("| `staticcheck.conf` |", "| `staticcheck.conf.gone` |",
+    ("`staticcheck.conf` |", "`staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("57 of the 69 are named", "56 of the 69 are named",
+    ("7 of the 8 are named", "6 of the 8 are named",
      "miscounts which scripts anything outside names"),
-    ("eleven tracked files under `scripts/` contain the literal `k8s/`",
-      "twelve tracked files under `scripts/` contain the literal `k8s/`",
-     "miscounts the scripts that would have to change if k8s/ were split"),
-    ("(fourteen invocations among nineteen\nmentions", "(thirteen invocations among nineteen\nmentions",
+    ("One tracked files under `scripts/` contain the literal `k8s/`",
+     "Two tracked files under `scripts/` contain the literal `k8s/`",
+     "miscounts the scripts naming k8s paths"),
+    ("(one invocations among two mentions", "(two invocations among two mentions",
      "miscounts how often CI runs the chat verifier"),
     ("`wc -l` reports it as 0", "`wc -l` reports it as 1",
      "gets the architecture asset's line count wrong"),
-    ("The comment at the top of\n  `internal/demo/erp/server.go`",
-     "The comment at the bottom of\n  `internal/demo/erp/server.go`",
-     "no longer makes the ERP-evidence claim in a form this file can find"),
+    ("The comment at the top of `internal/demo/erp/server.go`",
+     "The comment at the bottom of `internal/demo/erp/server.go`",
+     "no longer makes the ERP-evidence claim"),
+    ("`scripts/exposure-scan.sh`: one make recipe", "`scripts/exposure-scan.sh`: two make recipes",
+     "miscounts the exposure-scan make recipes"),
 ]
 
 
 def selftest() -> int:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        files = {**SELFTEST_FILES, MAP: SELFTEST_MAP}
+        for path, content in files.items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        tree = Tree(root, files=list(files))
+        return selftest_fixture(tree)
+
+
+def selftest_fixture(tree: Tree) -> int:
     import copy
 
     failed = 0
-    tree = Tree(ROOT)
     real = tree.read(MAP)
-
     problems, ran = check(tree, real)
     if problems:
-        print("FAIL the map does not pass on the real tree, so no case below proves anything:",
+        print("FAIL the independent fixture does not pass, so no case below proves anything:",
               file=sys.stderr)
         for p in problems:
             print("     " + p, file=sys.stderr)
         return 1
-    print(f"ok   the real map passes ({ran} claims), so a failure below is the edit and not the tree")
+    print(f"ok   the independent fixture passes ({ran} claims)")
+
+    resolved = real.replace("## Open questions — one\n1. **Authoring format.** Undecided.",
+                            "## Open questions — zero\nNone.")
+    problems, _ = check(tree, resolved)
+    if problems:
+        print(f"FAIL explicitly resolved questions were rejected: {problems}")
+        failed += 1
+    else:
+        print("ok   questions may be explicitly resolved without editing the checker")
     if not CLAIMS:
         print("FAIL no claims are registered")
         return 1
+
+    # Class labels and the number of checkout groups are editorial choices.
+    # The boundary and membership stay the same after merging these groups.
+    regrouped = real.replace(
+        "**Checkout — connectors (1):** `checkout.yaml`.\n\n"
+        "**Checkout — release scenario (1):** `release.yaml`.\n\n"
+        "**Checkout — demonstrations (2):** `demo.yaml`, `erp-fixtures.json`.",
+        "**Checkout — retained examples (4):** `checkout.yaml`, `release.yaml`, "
+        "`demo.yaml`, `erp-fixtures.json`.",
+    ).replace("**Guidance (2):**", "**Operator references (2):**")
+    problems, _ = check(tree, regrouped)
+    if problems:
+        print(f"FAIL regrouping fully covered lists was rejected: {problems}")
+        failed += 1
+    else:
+        print("ok   classification labels and checkout grouping may evolve")
+
+    grown = copy.copy(tree)
+    grown.files = sorted(tree.files + ["docs/new-guide.md"])
+    expanded = real.replace("6 tracked files", "7 tracked files").replace(
+        "**Guidance (2):** `README.md`, `getting-started.md`.",
+        "**Guidance (3):** `README.md`, `getting-started.md`, `new-guide.md`.",
+    )
+    problems, _ = check(grown, expanded)
+    if problems:
+        print(f"FAIL a new doc with updated coverage and counts was rejected: {problems}")
+        failed += 1
+    else:
+        print("ok   docs may grow when membership and counts are updated")
+
+    # Exercise boundaries directly: unrelated count findings must not make
+    # these tests pass when the resolver or glob implementation is broken.
+    if listed("`docs/`", "docs", tree) == (set(), []):
+        print("ok   mentioning the section directory does not enumerate its files")
+    else:
+        print("FAIL a directory mention became a list of every file")
+        failed += 1
+    if (globbed("scripts/example-probe.sh", "scripts/*-probe.sh")
+            and not globbed("scripts/ci/example-probe.sh", "scripts/*-probe.sh")):
+        print("ok   globs match one directory level only")
+    else:
+        print("FAIL a glob crossed a directory boundary or missed a direct match")
+        failed += 1
 
     proven: set[str] = set()
 
@@ -1262,6 +1334,19 @@ def selftest() -> int:
             print(f"FAIL a new file in {where} was not noticed by any claim")
             failed += 1
 
+    # Each demo caller must be checked, not just the anchor or the first file.
+    for caller in ("scripts/ap-demo.sh", "scripts/ap-injection.sh"):
+        changed = copy.copy(tree)
+        changed._text = {**tree._text, caller: "true\n"}
+        problems, _ = check(changed, real)
+        note(problems)
+        if any(p.startswith("[await_approval_has_the_demo_callers_the_map_names]")
+               for p in problems):
+            print(f"ok   removing the helper call from {caller} is caught")
+        else:
+            print(f"FAIL removing the helper call from {caller} went unnoticed")
+            failed += 1
+
     # And the empty case, from both ends.
     try:
         Tree(ROOT, files=[])
@@ -1298,26 +1383,16 @@ def selftest() -> int:
                   "none about reading")
             failed += 1
 
-    # The standing question, emptied in the one way that is otherwise
-    # consistent: the cases deleted AND the heading honestly saying zero.
-    emptied = re.sub(r"(## Genuinely unclear — )two(, and this is a result\n)(?:.|\n)*?(?=\n## )",
-                     r"\1zero\2\nNone.\n", real)
-    if emptied == real:
-        print("FAIL the Genuinely unclear section could not be emptied — the case has stopped "
-              "testing anything")
-        failed += 1
+    # Deleting items without updating the declared count is drift; explicitly
+    # resolving all questions is valid and is tested above.
+    emptied = real.replace("1. **Authoring format.** Undecided.", "None.")
+    problems, _ = check(tree, emptied)
+    note(problems)
+    if any(p.startswith("[the_open_question_count_matches]") for p in problems):
+        print("ok   a nonzero question count without any questions is refused")
     else:
-        problems, _ = check(tree, emptied)
-        note(problems)
-        # Named, not merely counted: other claims anchor into that section
-        # too, and their complaints would make this case pass without the
-        # guard it exists to prove ever running.
-        if any(p.startswith("[the_unclear_cases_survive]") for p in problems):
-            print("ok   a map whose standing question has emptied itself is refused")
-        else:
-            print("FAIL the standing question emptied itself and the claim that guards it "
-                  f"said nothing ({len(problems)} unrelated problem(s))")
-            failed += 1
+        print("FAIL the question count disagrees with its list without a finding")
+        failed += 1
 
     # And the verdict itself.
     if exit_code(["a disagreement"]) == 1 and exit_code([]) == 0:
@@ -1340,7 +1415,7 @@ def selftest() -> int:
         print(f"\ncheck-repository-map self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
     print(f"\ncheck-repository-map self-test: {len(CLAIMS)} claims, each broken by at least one "
-          f"of {len(MAP_EDITS)} map edits and 5 tree changes, every one caught")
+          f"of {len(MAP_EDITS)} map edits and 7 tree changes, every one caught")
     return 0
 
 

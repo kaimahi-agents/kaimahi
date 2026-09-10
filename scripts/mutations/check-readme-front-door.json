@@ -1,90 +1,72 @@
 {
   "checker": "check-readme-front-door.py",
-  "why": "This checker is a list of markers plus an ordering rule, and both halves fail open: a pattern that matches anything, or a search that starts again from the top of the file, reports the front door intact while it is being dismantled. Each edit below removes one claim the checker makes, and none of them removes code a reader would miss.",
+  "why": "The Orka front door must retain a runnable setup sequence and distinguish migration from installation. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
   "verify": ["python3", "scripts/check-readme-front-door-test.py"],
   "signature": "check-readme-front-door self-test:",
   "mutations": [
     {
       "name": "the hero image marker matches anything",
-      "breaks": "The image at the top of the page can be removed or renamed and the check still passes.",
+      "breaks": "The page's identity marker can disappear unnoticed.",
       "find": "    (\"hero image\", r'src=\"brand/hero\\.png\"'),",
       "replace": "    (\"hero image\", r''),"
     },
     {
       "name": "the product line marker matches anything",
-      "breaks": "The one line that says what this project is can be reworded into anything, or deleted.",
-      "find": "    (\"product line\", r\"^## Build and govern cloud-native AI agents on Kubernetes\\.$\"),",
+      "breaks": "The Orka-first identity stops being required.",
+      "find": "    (\"product line\", r\"^## Get agents onto Orka$\"),",
       "replace": "    (\"product line\", r\"\"),"
     },
     {
-      "name": "the 'control model spend' outcome marker matches anything",
-      "breaks": "One of the three promises the page makes stops being required.",
-      "find": "    (\"outcome: control model spend\", r\"^### Control model spend$\"),",
-      "replace": "    (\"outcome: control model spend\", r\"\"),"
+      "name": "the migration marker matches anything",
+      "breaks": "The page can omit the separate migration section.",
+      "find": "    (\"migration heading\", r\"^## Migrate model traffic$\"),",
+      "replace": "    (\"migration heading\", r\"\"),"
     },
     {
-      "name": "the 'constrain tool calls' outcome marker matches anything",
-      "breaks": "The second promise stops being required while the other two still look enforced.",
-      "find": "    (\"outcome: constrain tool calls\", r\"^### Constrain tool calls$\"),",
-      "replace": "    (\"outcome: constrain tool calls\", r\"\"),"
+      "name": "the status marker matches anything",
+      "breaks": "The page can omit current status and limitations.",
+      "find": "    (\"Status heading\", r\"^## Status$\"),",
+      "replace": "    (\"Status heading\", r\"\"),"
     },
     {
-      "name": "the 'approve consequential actions' outcome marker matches anything",
-      "breaks": "The third promise stops being required.",
-      "find": "    (\"outcome: approve consequential actions\", r\"^### Approve consequential actions$\"),",
-      "replace": "    (\"outcome: approve consequential actions\", r\"\"),"
+      "name": "the documentation marker matches anything",
+      "breaks": "The page can lose its documentation navigation.",
+      "find": "    (\"documentation heading\", r\"^## Documentation$\"),",
+      "replace": "    (\"documentation heading\", r\"\"),"
     },
     {
-      "name": "the architecture diagram marker matches anything",
-      "breaks": "The diagram that shows where governance sits can vanish from the page unnoticed.",
-      "find": "    (\"architecture diagram\", r'src=\"docs/assets/architecture\\.svg\"'),",
-      "replace": "    (\"architecture diagram\", r''),"
+      "name": "the Orka install marker matches anything",
+      "breaks": "The setup can install only the legacy runtime instead of Orka.",
+      "find": "    (\"kmx orka install\", r\"^kmx orka install\\b\"),",
+      "replace": "    (\"kmx orka install\", r\"\"),"
     },
     {
-      "name": "the one-command install marker matches anything",
-      "breaks": "The first line a reader can paste stops being required, so the quickstart can go back to opening with a prerequisite.",
-      "find": "    (\"the one-command install\", r\"^curl -fsSL https://raw\\.githubusercontent\\.com/kaimahi-agents/kaimahi/[^|]*install\\.sh \\|\"),",
-      "replace": "    (\"the one-command install\", r\"\"),"
-    },
-    {
-      "name": "the 'kmx agent chat' marker matches anything",
-      "breaks": "The quickstart can bring up a cluster and never talk to the agent, which is the payoff the whole sequence exists for.",
-      "find": "    (\"kmx agent chat\", r\"^kmx agent chat\\b\"),",
-      "replace": "    (\"kmx agent chat\", r\"\"),"
-    },
-    {
-      "name": "the 'kmx govern' marker matches anything",
-      "breaks": "The command that actually puts a seam under governance stops being required, while the plane and the ledger on either side of it still look enforced.",
-      "find": "    (\"kmx govern\", r\"^kmx govern\\b\"),",
-      "replace": "    (\"kmx govern\", r\"\"),"
+      "name": "the Orka status marker matches anything",
+      "breaks": "Setup can omit checking the running Orka.",
+      "find": "    (\"kmx orka status\", r\"^kmx orka status\\b\"),",
+      "replace": "    (\"kmx orka status\", r\"\"),"
     },
     {
       "name": "the quickstart command list is emptied",
-      "breaks": "The checker iterates a hand-written list, and an empty list is satisfied by every block. The Quickstart may then contain any commands at all, or none.",
+      "breaks": "Any fenced block can satisfy setup without containing its commands.",
       "find": "QUICKSTART_COMMANDS = [\n",
       "replace": "QUICKSTART_COMMANDS = []\nUNUSED_QUICKSTART_COMMANDS = [\n"
     },
     {
       "name": "command order is searched from the top of the block",
-      "breaks": "The commands become a set rather than a sequence: chatting before the cluster is up reads as valid, and the reader who follows it gets an error instead of an agent.",
+      "breaks": "Status before installation is accepted as a runnable sequence.",
       "find": "        found = re.compile(pattern, re.M).search(block, position)",
       "replace": "        found = re.compile(pattern, re.M).search(block, 0)"
     },
     {
       "name": "marker order is searched from the top of the file",
-      "breaks": "The hierarchy stops being a hierarchy: the outcomes may sit below the diagram and the quickstart above the product line, and every marker is still \"present\".",
+      "breaks": "The hierarchy becomes a set of headings rather than ordered navigation.",
       "find": "        match = re.compile(pattern, re.M).search(text, position)",
       "replace": "        match = re.compile(pattern, re.M).search(text, 0)"
     },
     {
-      "name": "the proposed-CLI position check is dropped",
-      "breaks": "A CLI that does not exist yet may be advertised above the working path and above the honest status section.",
-      "find": "    if cli is not None and cli.start() < status_start:",
-      "replace": "    if False:"
-    },
-    {
-      "name": "the script's entry point is neutered",
-      "breaks": "The verdict never reaches an exit code. A self-test that imports the module and calls check() directly stays green while the script itself always passes.",
+      "name": "the script entry point is neutered",
+      "breaks": "The verdict never reaches CI as an exit code.",
       "find": "    raise SystemExit(main(target))",
       "replace": "    raise SystemExit(0)"
     }

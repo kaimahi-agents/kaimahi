@@ -6,14 +6,16 @@ corrections, tests, and small capability changes. Start with the organization
 
 ## Before building something new
 
-Kaimahi builds on kagent, Kubernetes, and existing MCP servers. Check those
-projects first. In the pull request, explain why configuration or integration
-cannot provide the requested behavior.
+Orka is the platform; Kaimahi is tooling to help people get agents onto it.
+Check Orka, Kubernetes and existing integrations first. In the pull request,
+explain why configuration, integration or an upstream contribution cannot
+provide the requested behavior. The migration bridge should shrink as upstream
+capabilities cover it. Native-only versus kagent YAML authoring remains open.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and
 [`docs/repository-map.md`](docs/repository-map.md) says which parts of the
-tree are the product and which are demonstrations or scaffolding — worth
+tree are current tooling, retained legacy implementation or test support — worth
 reading before you change something you found by grepping.
 
 ## Local verification

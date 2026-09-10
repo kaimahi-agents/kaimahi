@@ -4,8 +4,14 @@ Kaimahi is **pre-1.0 and incubating**. This page is the whole contract: how a
 version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
-Nothing here claims a trademark, and nothing here claims a package-manager
-namespace. The name is provisional ([NAMING.md](NAMING.md)).
+As of 2026-09-10, the latest tagged release is `v0.1.0` and predates the
+Orka helpers. The current [getting-started path](getting-started.md) uses a
+build from `main`; `@latest` does not provide those new commands. Orka's own
+installation and upgrade limits are separate: see [orka.md](orka.md).
+The plane-upgrade sections below apply only to the retained legacy plane.
+
+Nothing here claims a trademark or a package-manager namespace. The name's
+publication constraints remain in [NAMING.md](NAMING.md).
 
 ## Versions
 
@@ -36,7 +42,7 @@ kmx's own version, and Go resolves a nested module's version from a
 
 ## Install
 
-The one-line install, and the one the [README](../README.md) quickstart uses:
+The one-line installer for the latest **tagged** CLI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
@@ -142,8 +148,9 @@ kagent chart and the agents.
 
 ## Upgrading the plane
 
-The governance plane holds everything that matters: the ledger, budgets,
-allowlists, approvals and grants, all in Postgres. Upgrading it is
+The retained governance plane stores its ledger, budgets,
+allowlists, approvals and grants in Postgres. This is not Orka's storage
+or upgrade contract. Upgrading the legacy plane is
 `kmx plane` again with the newer kmx:
 
 ```bash
@@ -297,9 +304,8 @@ purpose:
   public name (see [scripts/plane-deploy.sh](../scripts/plane-deploy.sh)).
   Publishing an image is exactly the change that would put pressure on that
   pin.
-- **A registry namespace is a namespace.** The name is provisional and no
-  trademark opinion has been obtained; every namespace claimed raises the cost
-  of a rename that may still happen.
+- **A registry namespace is a namespace.** No trademark opinion has been
+  obtained; claiming a distribution namespace remains a separate decision.
 
 The cost, stated plainly: Go remains a prerequisite for `kmx plane` even if
 you installed a downloaded binary. Registry-backed clusters (AKS) already have

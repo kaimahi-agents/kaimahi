@@ -1,5 +1,16 @@
 # Orka and Kaimahi: how these two become one better thing
 
+> **Reading this report now (2026-09-10):** retain its version-qualified
+> measurements because they inform the current [migration boundary](../migrate.md),
+> not as a platform roadmap or an instruction to remove code. Orka is the
+> platform; migrated applications keep owner-managed Deployments, and the
+> bridge governs model traffic. `orka.harness.v2` is out. Native-only versus
+> kagent YAML authoring remains open. The argument-binding equivalence reported
+> below has not been independently reconfirmed against current upstream; do not
+> present argument-bound approval as uniquely Kaimahi's. The OTLP candidate is
+> closed: Orka ships OTLP with GenAI conventions. Upstream filings and their
+> current states are in [COORDINATION.md](../COORDINATION.md).
+
 **Subject:** [`orka-agents/orka`](https://github.com/orka-agents/orka) —
 "Cloud and AI-native multi-agent orchestration platform for Kubernetes".
 MIT, Microsoft-governed today and intended for donation to a
@@ -32,7 +43,7 @@ created and then destroyed, or read in their source with a line cited.
 ## The answer, first
 
 **Kaimahi's last remaining exclusive claim is gone, and Orka is where it
-went.** The [KARS comparison](2026-09-09-kars-comparison.md) merged onto
+went.** The KARS comparison (subsequently relocated out of this repository) merged onto
 `main` this morning — commit `4b61c9b`, 12:18, about five hours before
 this lane's first Orka command — opened with "**Kaimahi's central
 claim survives, and it is now the only one.** An approval welded to the
@@ -232,8 +243,8 @@ nothing can attach a sidecar or rewrite an env var on a Deployment
 somebody else applied. An existing Deployment stays exactly
 as it is, and Orka has no opinion about it.
 
-That is the same structural answer the [KARS
-comparison](2026-09-09-kars-comparison.md) reached about KARS, and it
+That is the same structural answer the earlier KARS
+comparison reached about KARS, and it
 was the claim this project has been leaning on. It survives here — but
 much less of it than expected, because of what comes next.
 
@@ -249,8 +260,8 @@ does.** Unauthenticated is `401`; the bearer token is a Kubernetes
 ServiceAccount token checked through TokenReview. An OpenAI client sends
 its "API key" as `Authorization: Bearer`, so a SA token drops straight
 into the field the app already has. This is the thing our own tool seam
-could *not* do for the same third-party app — [the foreign-app
-report](2026-09-08-foreign-app-sundae-funday.md) had to put an nginx
+could *not* do for the same third-party app — the earlier plane experiment
+([PR #153](https://github.com/kaimahi-agents/kaimahi/pull/153)) had to put an nginx
 shim in the pod because their MCP client could not set a header at all.
 
 **The authorization half is newer than the release, and this report
@@ -413,8 +424,8 @@ project built and proved on somebody else's application on two clusters.
 
 ## 3. The approval bound to the call — theirs, live
 
-The [KARS comparison](2026-09-09-kars-comparison.md), merged this
-morning, closed with "One thing, and it is the thing this project has been
+The earlier KARS comparison, merged on the morning of this measurement,
+closed with "One thing, and it is the thing this project has been
 building toward since P12: **an approval welded to the exact call.**",
 and recommended taking it to them.
 **That sentence is now false, and Orka is the counterexample.** This
@@ -746,7 +757,7 @@ before we touch ours again.
 
 Specific, and each one because Orka does it and does it better.
 
-- **OpenTelemetry.** It is a candidate on this board and unbuilt. Orka
+- **OpenTelemetry — candidate now closed.** Orka
   has real OTLP trace and metric exporters with GenAI semantic
   conventions, behind `-enable-tracing` and the standard
   `OTEL_EXPORTER_OTLP_ENDPOINT`. KARS has an exporter too. Close the
