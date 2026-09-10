@@ -1,0 +1,17 @@
+# Native Orka invocation. Run check.py before applying; no Task overrides.
+apiVersion: core.orka.ai/v1alpha1
+kind: Task
+metadata:
+  name: shim-proof-success
+  namespace: orka-system
+spec:
+  type: ai
+  agentRef:
+    name: shim-reader
+  prompt: |
+    Call the provided Kubernetes tool with exactly these arguments:
+    {"resource_type":"configmap","resource_name":"shim-proof-target","namespace":"orka-system","output":"json"}
+    Then return the data.proof value from that tool's result exactly. Do not guess.
+  timeout: 180s
+  retryPolicy:
+    maxRetries: 0

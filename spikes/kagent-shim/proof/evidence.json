@@ -1,0 +1,61 @@
+{
+  "target": "Orka v0.1.3 on kind v1.32.2",
+  "source": "proof/source.yaml",
+  "snapshot": "proof/tools.json",
+  "expectedConfigMapValue": "mcp-executed-001189a805289e3b59fef762",
+  "taskResult": {
+    "result": "mcp-executed-001189a805289e3b59fef762"
+  },
+  "events": [
+    {
+      "type": "ModelRequestStarted",
+      "createdAt": "2026-09-10T19:12:57.828832235Z",
+      "content": {
+        "iteration": 1,
+        "messageCount": 1,
+        "model": "qwen2.5:3b",
+        "provider": "openai",
+        "toolCount": 5
+      }
+    },
+    {
+      "type": "ToolCallStarted",
+      "createdAt": "2026-09-10T19:13:23.989276803Z",
+      "toolName": "shim-4c93a72e18eb8dd4c3f84fc9b46250a9",
+      "content": {
+        "argumentBytes": 129,
+        "toolCallID": "call_b9vozcit",
+        "toolName": "shim-4c93a72e18eb8dd4c3f84fc9b46250a9"
+      }
+    },
+    {
+      "type": "ToolCallCompleted",
+      "createdAt": "2026-09-10T19:13:24.064096794Z",
+      "toolName": "shim-4c93a72e18eb8dd4c3f84fc9b46250a9",
+      "content": {
+        "resultLength": 458,
+        "toolCallID": "call_b9vozcit",
+        "toolName": "shim-4c93a72e18eb8dd4c3f84fc9b46250a9"
+      }
+    },
+    {
+      "type": "ModelRequestStarted",
+      "createdAt": "2026-09-10T19:13:24.068741612Z",
+      "content": {
+        "iteration": 2,
+        "messageCount": 3,
+        "model": "qwen2.5:3b",
+        "provider": "openai",
+        "toolCount": 5
+      }
+    }
+  ],
+  "images": {
+    "docker.io/library/kagent-shim-spike:dev": "sha256:96fe245f23b4b149d8c2dace64cf687dc3b6f8417de0cac0479262fb7ad7c456",
+    "ghcr.io/orka-agents/orka/agent-harness-wrapper:0.1.3": "ghcr.io/orka-agents/orka/agent-harness-wrapper@sha256:390380f29055075547af975436361a6411216f58e6fd3fbb5e19ef5b300940a5",
+    "ghcr.io/orka-agents/orka:0.1.3": "ghcr.io/orka-agents/orka@sha256:a63b6d414012a03415f290148deccb0f7b5066352d6b3bf184cfe6751ac375a8",
+    "docker.io/ollama/ollama:0.11.8": "docker.io/ollama/ollama@sha256:03eaa1581455ba16e7c954d799e4f44996b60ae668261acd00a0e80a241ed720",
+    "ghcr.io/orka-agents/orka/ai-worker:0.1.3": "ghcr.io/orka-agents/orka/ai-worker@sha256:598c598b9e9be8a86b93b190faa2d8a62ba7eee314deae5f00474c95f2f0bb0a",
+    "ghcr.io/kagent-dev/kagent/tools:0.2.1": "ghcr.io/kagent-dev/kagent/tools@sha256:50b431281d3e32666f27a292962fd486aabaac157083a844d037c12137e353aa"
+  }
+}

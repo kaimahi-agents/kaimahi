@@ -1,0 +1,47 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: cluster-helper
+  namespace: demo
+spec:
+  type: Declarative
+  description: Inspect a cluster
+  declarative:
+    modelConfig: selected-model
+    systemMessage: Inspect Kubernetes resources using the selected tools.
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: cluster-tools
+          kind: RemoteMCPServer
+          apiGroup: kagent.dev
+          toolNames: [k8s_get_resources]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: selected-model
+  namespace: demo
+spec:
+  provider: OpenAI
+  model: gpt-4.1-mini
+  apiKeySecret: llm-key
+  apiKeySecretKey: api-key
+  openAI:
+    baseUrl: https://api.openai.com/v1
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: cluster-tools
+  namespace: demo
+spec:
+  description: Cluster MCP endpoint
+  protocol: STREAMABLE_HTTP
+  url: http://mcp.demo.svc:8080/mcp
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: mcp-key
+        key: token

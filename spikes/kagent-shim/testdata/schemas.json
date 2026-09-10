@@ -1,0 +1,20 @@
+{
+  "cluster-tools": {
+    "tools": [
+      {
+        "name": "k8s_get_resources",
+        "description": "Get Kubernetes resources",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "resource": {"type": "string", "description": "Resource kind"},
+            "namespace": {"type": "string"},
+            "limit": {"type": "integer", "maximum": 9007199254740993}
+          },
+          "required": ["resource"],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

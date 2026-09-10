@@ -1,0 +1,47 @@
+# SPIKE: a kagent v0.10.1 declarative definition, not Orka YAML in disguise.
+# Credential values are provisioned separately; conversion never reads them.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: shim-reader
+  namespace: orka-system
+spec:
+  type: Declarative
+  description: Read a live Kubernetes ConfigMap using an explicitly selected MCP tool.
+  declarative:
+    modelConfig: shim-model
+    systemMessage: |
+      You read Kubernetes ConfigMaps using your supplied tool.
+      For every request, call the provided tool to get the requested ConfigMap
+      in namespace orka-system, with output json. Answer with the exact value
+      of data.proof from the tool output. Do not guess, use memory, or ask questions.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: shim-tools
+          toolNames: [k8s_get_resources]
+---
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: shim-model
+  namespace: orka-system
+spec:
+  provider: OpenAI
+  model: qwen2.5:3b
+  apiKeySecret: shim-model-credentials
+  apiKeySecretKey: token
+  openAI:
+    baseUrl: http://shim-model.orka-system.svc:11434/v1
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: shim-tools
+  namespace: orka-system
+spec:
+  description: Read-only Kubernetes tools provided by kagent-tools.
+  protocol: STREAMABLE_HTTP
+  url: http://shim-tools.orka-system.svc:8084/mcp
