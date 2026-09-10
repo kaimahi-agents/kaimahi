@@ -154,16 +154,28 @@ Installing Orka and authoring an agent are separate steps. `kmx agent create`
 continues to emit `kagent.dev/v1alpha2` resources for kagent; installing Orka
 neither converts those files nor changes that command's output.
 
-For a new Orka-native agent, author Orka's `core.orka.ai/v1alpha1` `Agent`
-and `Provider` resources and invoke it with an Orka `Task`. Use the schemas
-and examples from the Orka version you install, rather than assuming that
-its `main` branch describes the release pinned here.
+For a new agent that will run on Orka, **author Orka's native
+`core.orka.ai/v1alpha1` `Agent` and `Provider` resources and invoke it with
+an Orka `Task`.** This keeps the runtime configuration explicit: changing a
+kagent resource's API group would not translate its referenced model
+credentials, MCP connections or workload settings. Dropping those settings
+would not preserve the agent, and this project provides no supported
+translation layer. Native authoring is the recommendation for that reason,
+not because another authoring format could never target Orka.
+
+Use the schemas and examples from the Orka version you install, rather than
+assuming that its `main` branch describes the release pinned here. Include
+the Provider and its named credential Secret, not just the Agent; an accepted
+Agent manifest alone does not prove it can reach its model.
 
 For an application image you already operate, keep its Deployment under your
 own management. [`kmx migrate`](migrate.md) describes the model-traffic path
 for supported applications. That path does not register the application as
 an Orka `Agent` or turn its requests into Orka `Task` resources. The migration
-guide records the exercised behavior and its limits.
+guide records the exercised behavior and its limits. A kagent BYO definition
+is not an input to `kmx migrate`: the application must already have a
+Deployment it owns. Model-traffic migration is a separate boundary, not BYO
+Agent conversion.
 
 ## Limits, stated
 
