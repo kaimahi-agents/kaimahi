@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -14,7 +13,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -23,6 +21,11 @@ type createWizardStep uint8
 const (
 	createDescription createWizardStep = iota
 	createName
+	createNamespace
+	createProviderType
+	createModel
+	createSecret
+	createResultAccount
 	createConfirm
 	createDone
 )
@@ -53,7 +56,7 @@ type createWizardModel struct {
 }
 
 func newCreateWizardModel(opt CreateOptions) (createWizardModel, error) {
-	if _, err := scaffold.ParseTools(opt.Tools); err != nil {
+	if err := refuseWizardCredentials(opt.Description, opt.Name); err != nil {
 		return createWizardModel{}, err
 	}
 	if opt.Name != "" {
@@ -85,7 +88,7 @@ func newCreateWizardModel(opt CreateOptions) (createWizardModel, error) {
 	}
 	m.keys.Select.SetEnabled(false)
 	m.startMissingStep()
-	return m, nil
+	return m, m.err
 }
 
 func (m *createWizardModel) startMissingStep() {
@@ -104,9 +107,36 @@ func (m *createWizardModel) startMissingStep() {
 		m.input.CharLimit = 63
 		m.input.SetValue(slugAgentName(m.opt.Description))
 		m.input.Focus()
+	case strings.TrimSpace(m.opt.Namespace) == "":
+		m.startReferenceStep(createNamespace, "Namespace the Orka controller watches", scaffold.ValidateNamespace)
+	case strings.TrimSpace(m.opt.ProviderType) == "":
+		m.startReferenceStep(createProviderType, "openai or anthropic", nil)
+	case strings.TrimSpace(m.opt.Model) == "":
+		m.startReferenceStep(createModel, "Provider model identifier (not a ModelConfig)", nil)
+	case strings.TrimSpace(m.opt.Secret) == "":
+		m.startReferenceStep(createSecret, "Secret name, never its value", scaffold.ValidateObjectName)
+	case m.opt.Task != "" && !m.opt.NoApply && m.opt.Out != "-" && !m.opt.DryRun && m.opt.ResultServiceAccount == "":
+		m.startReferenceStep(createResultAccount, "Existing account in the selected namespace", scaffold.ValidateObjectName)
 	default:
 		m.finishFields()
 	}
+}
+
+func (m *createWizardModel) startReferenceStep(step createWizardStep, placeholder string, validate func(string) error) {
+	m.step = step
+	m.input.Placeholder = placeholder
+	m.input.CharLimit = 0
+	m.input.Validate = func(value string) error {
+		if value == "" {
+			return fmt.Errorf("a value is required")
+		}
+		if validate != nil {
+			return validate(value)
+		}
+		return nil
+	}
+	m.input.SetValue("")
+	m.input.Focus()
 }
 
 func requiredDescription(value string) error {
@@ -122,14 +152,10 @@ func validateAgentName(value string) error {
 
 func (m *createWizardModel) finishFields() {
 	m.input.Blur()
-	if m.opt.Instructions == "" && m.opt.Image == "" {
-		m.opt.InstructionText = "You are " + m.opt.Name + ". Your purpose is: " + m.opt.Description + "\nAnswer briefly and say plainly when you do not know something."
-	}
-	if m.opt.Namespace == "" {
-		m.opt.Namespace = config.DefaultNamespace
-	}
-	if m.opt.Out == "" {
-		m.opt.Out = filepath.Join("agents", m.opt.Name+".yaml")
+	if err := finishCreateWizardOptions(&m.opt); err != nil {
+		m.err = err
+		m.step = createDone
+		return
 	}
 	if m.opt.Out == "-" || m.opt.NoApply {
 		m.opt.NoApply = true
@@ -147,7 +173,7 @@ func (m *createWizardModel) finishFields() {
 }
 
 func (m createWizardModel) Init() tea.Cmd {
-	if m.step == createDescription || m.step == createName {
+	if m.step < createConfirm {
 		return textinput.Blink
 	}
 	return nil
@@ -179,6 +205,12 @@ func (m createWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key.Matches(msg, m.keys.Next) {
 			value := strings.TrimSpace(m.input.Value())
+			if err := refuseWizardCredentials(value); err != nil {
+				m.err = err
+				m.input.SetValue("")
+				m.step = createDone
+				return m, tea.Quit
+			}
 			if m.input.Validate != nil {
 				m.err = m.input.Validate(value)
 			}
@@ -190,6 +222,16 @@ func (m createWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.opt.Description = value
 			case createName:
 				m.opt.Name = value
+			case createNamespace:
+				m.opt.Namespace = value
+			case createProviderType:
+				m.opt.ProviderType = value
+			case createModel:
+				m.opt.Model = value
+			case createSecret:
+				m.opt.Secret = value
+			case createResultAccount:
+				m.opt.ResultServiceAccount = value
 			}
 			m.err = nil
 			m.startMissingStep()
@@ -200,7 +242,7 @@ func (m createWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.step == createDescription || m.step == createName {
+	if m.step < createConfirm {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.err = m.input.Err
@@ -223,8 +265,25 @@ func (m createWizardModel) View() tea.View {
 	case createName:
 		body.WriteString("Description: " + displayWizardValue(m.opt.Description) + "\n\nAgent name\n")
 		body.WriteString(m.input.View())
+	case createNamespace, createProviderType, createModel, createSecret, createResultAccount:
+		labels := map[createWizardStep]string{
+			createNamespace:     "Namespace the Orka controller watches",
+			createProviderType:  "Provider type (openai or anthropic)",
+			createModel:         "Provider model identifier (not a ModelConfig)",
+			createSecret:        "Existing Provider Secret name (not its value)",
+			createResultAccount: "Existing result-reader ServiceAccount",
+		}
+		body.WriteString(labels[m.step] + "\n")
+		body.WriteString(m.input.View())
 	case createConfirm:
-		fmt.Fprintf(&body, "Name:        %s\nDescription: %s\nNamespace:   %s\nOutput:      %s\n\nCreate and apply this agent?\n", displayWizardValue(m.opt.Name), displayWizardValue(m.opt.Description), displayWizardValue(m.opt.Namespace), displayWizardValue(m.opt.Out))
+		fmt.Fprintf(&body, "Name:        %s\nDescription: %s\nNamespace:   %s\nProvider:    %s\nModel:       %s\nSecret:      %s\nOutput:      %s\n", displayWizardValue(m.opt.Name), displayWizardValue(m.opt.Description), displayWizardValue(m.opt.Namespace), displayWizardValue(m.opt.ProviderType), displayWizardValue(m.opt.Model), displayWizardValue(m.opt.Secret), displayWizardValue(m.opt.Out))
+		if m.opt.BaseURL != "" {
+			fmt.Fprintf(&body, "Base URL:    %s\n", displayWizardValue(m.opt.BaseURL))
+		}
+		if m.opt.Task != "" {
+			body.WriteString("\n" + createTaskAuthorityNotice + "\n")
+		}
+		body.WriteString("\nCreate Orka resources?\n")
 		choices := []string{"Apply", "Cancel"}
 		for i, choice := range choices {
 			marker := "  "
@@ -234,6 +293,9 @@ func (m createWizardModel) View() tea.View {
 			}
 			body.WriteString(marker + choice + "  ")
 		}
+	}
+	if m.opt.BaseURL == "" {
+		body.WriteString("\n\n" + createBaseURLHint)
 	}
 	if m.err != nil {
 		body.WriteString("\n  " + lipgloss.NewStyle().Foreground(lipgloss.Red).Render(m.err.Error()))
@@ -273,6 +335,9 @@ func runCreateWizard(in io.Reader, out io.Writer, opt CreateOptions) (CreateOpti
 	}
 	if completed.cancelled {
 		return opt, errCreateCancelled
+	}
+	if completed.err != nil {
+		return opt, completed.err
 	}
 	return completed.opt, nil
 }

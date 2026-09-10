@@ -86,7 +86,7 @@ func TestCreateWizardCollectsSafeDefaultsAndAppliesByDefault(t *testing.T) {
 	if !strings.Contains(opt.InstructionText, "Reports unhealthy workloads") {
 		t.Fatalf("description did not configure instructions: %q", opt.InstructionText)
 	}
-	if !strings.HasPrefix(out.String(), "Describe this agent: ") {
+	if !strings.HasPrefix(out.String(), createBaseURLHint+"\nDescribe this agent: ") {
 		t.Fatalf("first prompt is not the requested description prompt: %q", out.String())
 	}
 }
@@ -122,14 +122,14 @@ func TestCreateWizardRepromptsInvalidConfirmation(t *testing.T) {
 	}
 }
 
-func TestCreateWizardScannerDoesNotAddInstructionsToBYOAgent(t *testing.T) {
+func TestCreateWizardScannerPreservesNativeInstructions(t *testing.T) {
 	scanner := &sliceScanner{values: []string{"Existing agent", "existing-agent"}}
-	opt, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{Image: "acme/agent:1", NoApply: true})
+	opt, err := collectCreateOptions(scanner, &bytes.Buffer{}, CreateOptions{Namespace: "team", ProviderType: "openai", Model: "custom-model", Secret: "model-key", InstructionText: "Supplied instructions", NoApply: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opt.InstructionText != "" {
-		t.Fatalf("BYO scanner fallback synthesized declarative instructions: %q", opt.InstructionText)
+	if opt.InstructionText != "Supplied instructions" {
+		t.Fatalf("scanner replaced native instructions: %q", opt.InstructionText)
 	}
 }
 
@@ -179,19 +179,38 @@ func TestCreateWizardModelCollectsMissingFieldsAndAppliesByDefault(t *testing.T)
 		t.Fatalf("description did not derive the name carefully: step=%d name=%q", m.step, m.input.Value())
 	}
 	m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
+	for _, field := range []struct{ label, value string }{
+		{"Namespace", "team"}, {"Provider type", "openai"},
+		{"Provider model identifier", "custom-model"}, {"Existing Provider Secret name", "model-key"},
+	} {
+		if m.step == createConfirm || m.step == createDone || !strings.Contains(ansi.Strip(m.View().Content), field.label) || m.input.Value() != "" {
+			t.Fatalf("missing explicit %s prompt (or invented default): step=%d view=%q", field.label, m.step, m.View().Content)
+		}
+		m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
+		if m.err == nil {
+			t.Fatalf("empty %s advanced", field.label)
+		}
+		m.input.SetValue(field.value)
+		m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
+	}
 	if m.step != createConfirm || m.selection != 0 {
 		t.Fatalf("wizard did not reach apply-default confirmation: step=%d selection=%d", m.step, m.selection)
 	}
 	m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
-	if m.cancelled || m.opt.NoApply || m.opt.Name != "reports-unhealthy-workloads" || m.opt.Namespace != config.DefaultNamespace {
+	if m.cancelled || m.opt.NoApply || m.opt.Name != "reports-unhealthy-workloads" || m.opt.Namespace != "team" || m.opt.ProviderType != "openai" || m.opt.Model != "custom-model" || m.opt.Secret != "model-key" || m.opt.Task != "" {
 		t.Fatalf("unexpected completed options: %+v cancelled=%v", m.opt, m.cancelled)
 	}
 }
 
 func TestCreateWizardModelValidatesInlineAndPreservesFlags(t *testing.T) {
+	prompt := filepath.Join(t.TempDir(), "prompt.md")
+	if err := os.WriteFile(prompt, []byte("Supplied instructions"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	m, err := newCreateWizardModel(CreateOptions{
 		Description: "Supplied description", Namespace: "team", Out: "custom.yaml",
-		NoApply: true, Tools: "server:read", Instructions: "prompt.md",
+		ProviderType: "anthropic", Model: "custom-model", Secret: "model-key", BaseURL: "https://model.example/v1",
+		NoApply: true, Tools: "read,search", Skills: "summarize", Instructions: prompt,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +232,7 @@ func TestCreateWizardModelValidatesInlineAndPreservesFlags(t *testing.T) {
 
 func TestCreateWizardModelCancelKeysAndVisibleSelection(t *testing.T) {
 	for _, code := range []rune{tea.KeyEscape, 'c'} {
-		m, err := newCreateWizardModel(CreateOptions{})
+		m, err := newCreateWizardModel(CreateOptions{Name: "demo", Description: "Demo"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -227,7 +246,7 @@ func TestCreateWizardModelCancelKeysAndVisibleSelection(t *testing.T) {
 		}
 	}
 
-	m, err := newCreateWizardModel(CreateOptions{Name: "demo", Description: "Demo"})
+	m, err := newCreateWizardModel(nativeWizardOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +276,9 @@ func TestCreateWizardFilterTreatsExternalQuitAsCancellation(t *testing.T) {
 }
 
 func TestCreateWizardModelRejectsInvalidToolsBeforeStarting(t *testing.T) {
-	if _, err := newCreateWizardModel(CreateOptions{Tools: "server:"}); err == nil {
+	opt := nativeWizardOptions()
+	opt.Tools = "server:read"
+	if _, err := newCreateWizardModel(opt); err == nil {
 		t.Fatal("invalid --tools reached the wizard")
 	}
 }
@@ -268,9 +289,11 @@ func TestCreateWizardModelRejectsInvalidSuppliedNameBeforeStarting(t *testing.T)
 	}
 }
 
-func TestCreateWizardModelSupportsBYOAndLongDescriptions(t *testing.T) {
+func TestCreateWizardModelSupportsNativeLongDescriptions(t *testing.T) {
 	long := strings.Repeat("description ", 30)
-	m, err := newCreateWizardModel(CreateOptions{Image: "acme/agent:1"})
+	opt := nativeWizardOptions()
+	opt.Name, opt.Description = "", ""
+	m, err := newCreateWizardModel(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,13 +303,15 @@ func TestCreateWizardModelSupportsBYOAndLongDescriptions(t *testing.T) {
 		t.Fatalf("long description was truncated: %d vs %d", len(m.opt.Description), len(strings.TrimSpace(long)))
 	}
 	m = updateCreateWizard(t, m, wizardKey(tea.KeyEnter))
-	if m.opt.InstructionText != "" {
-		t.Fatalf("BYO wizard synthesized declarative instructions: %q", m.opt.InstructionText)
+	if !strings.Contains(m.opt.InstructionText, strings.TrimSpace(long)) {
+		t.Fatalf("native wizard lost description in instructions: %q", m.opt.InstructionText)
 	}
 }
 
 func TestCreateWizardConfirmationSanitizesFlagValues(t *testing.T) {
-	m, err := newCreateWizardModel(CreateOptions{Name: "demo", Description: "safe\x1b[2J\nforged", Namespace: "team\nother", Out: "file\x1b]52;c;secret\a"})
+	opt := nativeWizardOptions()
+	opt.Out = "file\x1b]52;c;secret\a"
+	m, err := newCreateWizardModel(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +320,7 @@ func TestCreateWizardConfirmationSanitizesFlagValues(t *testing.T) {
 		t.Fatalf("flag value escaped confirmation hierarchy: %q", view)
 	}
 	plain := ansi.Strip(view)
-	for _, want := range []string{"safe forged", "team other", "Output:      file"} {
+	for _, want := range []string{"Demo", "team", "Output:      file"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("sanitized confirmation lacks %q: %q", want, plain)
 		}

@@ -285,7 +285,7 @@ mentions — the other five are comments, which is the trap),
 `scripts/release-run.sh`,
 and `docs/tools.md`, which gives it as a step a reader runs by hand.
 
-## `docs/` — 42 tracked files, two audiences and two assets
+## `docs/` — 43 tracked files, two audiences and two assets
 
 **Product documentation (24)** — a user or operator reads it: `README.md`
 (the index), `getting-started.md`, `kmx.md`, `aks.md`, `models.md`,
@@ -305,7 +305,7 @@ describe a scenario being run rather than a capability being configured.
 `ap-demo.md` says its ERP is simulated in its own second table row;
 `demo.md` is less explicit.
 
-**Maintainer and process (14):** `development.md`, `repository-map.md`
+**Maintainer and process (15):** `development.md`, `repository-map.md`
 (this file),
 `COORDINATION.md` (the coordination board, single-writer, and by a wide
 margin the largest file in `docs/` — enough that any tool measuring

@@ -1,5 +1,8 @@
 # Charm UX follow-up
 
+Status: implemented; native Orka field collection and local/PTY verification
+are integrated. Runtime orchestration remains outside the wizard.
+
 ## Decision
 
 Prototype Bubble Tea and Bubbles in `kmx agent create`, the smallest complete
@@ -9,13 +12,21 @@ interactive workflow in the CLI. The implementation uses
 application's stdin, writes only to its operator-facing stderr, and runs only
 when both are real terminals under the command's existing eligibility rule.
 
-The model owns only missing description and name collection, validation, and
-the explicit Apply/Cancel choice. Supplied flags remain authoritative. Tool
-syntax is checked with `scaffold.ParseTools` before the program starts; name
-errors from `scaffold.ValidateName` remain visible in the form. The program
-contains no secrets, file access, or subprocesses. It exits completely before
-`CreateAgent` writes a manifest, resolves cluster state, runs a guard, or
-invokes kubectl.
+The model collects missing description, name, namespace, Provider type, model
+identifier and existing Secret name, then offers the explicit Apply/Cancel
+choice. Namespace and model have no kagent defaults or preset discovery.
+Supplied native flags remain authoritative. Executable `--task` also collects a
+missing result-reader ServiceAccount and states its authority at confirmation;
+offline/dry-run never asks for that account. Optional custom/local endpoints
+stay in `--base-url`, explained visibly; no endpoint is inferred from a model.
+
+Name/reference errors remain visible in the form. Both collectors share final
+Orka option validation before confirmation or completion, including explicit
+rate limits and refusal of legacy server:tool syntax. Validation can read a
+supplied instructions file locally; there are no subprocesses or cluster calls.
+Credential-shaped input is refused before a derived-name echo. The program
+exits completely before `CreateAgent` writes a manifest, validates schemas,
+resolves cluster state, runs a guard, or invokes kubectl.
 
 Generated name defaults are capped at 32 characters rather than consuming the
 full Kubernetes name allowance. Short descriptions keep their readable slug.
@@ -35,8 +46,9 @@ state; interruption is treated as cancellation, never partial completion. The
 form uses the same cyan/magenta/red visual language as `cliui`. Flag-derived
 values are stripped of terminal controls and flattened before confirmation,
 while the underlying options remain unchanged. Descriptions are not silently
-length-limited; only Kubernetes names carry their 63-character bound. BYO image
-agents do not receive declarative instruction text their manifest cannot carry.
+length-limited; explicit Agent names retain their 63-character bound. Native
+Orka instructions preserve supplied text or file inputs. The removed BYO image,
+run-as-user and isolation flags are not restored by this UI.
 
 ## Research boundary
 
@@ -72,8 +84,12 @@ as Markdown without a separate trust and terminal-escape decision.
 
 The model tests send messages directly and cover default derivation, required
 description, inline name validation, authoritative supplied options, invalid
-tool syntax, explicit confirmation, Apply-by-default, and both cancellation
-keys. They also cover long descriptions, BYO agents, invalid supplied names,
-and hostile terminal sequences in flag values. A Linux PTY test runs the real
-program, sends Ctrl-C, verifies clean cancellation and exact terminal-mode
-restoration, and proves the wizard writes nothing to stdout.
+native references, explicit confirmation, Apply-by-default, and both cancellation
+keys. They also cover long descriptions, invalid supplied names/options,
+credential refusal before derived-name echo, hostile terminal sequences in
+output paths, and offline completion without discovery or a result account.
+Linux PTY tests run the real program through Ctrl-C, Escape and SIGTERM at
+missing-field prompts, checking cancellation and exact terminal-mode restoration
+without manifest output. Native stdout completion is exercised through both
+Bubbles and the `TERM=dumb` fallback. This is UI/local verification, not a new
+live-runtime claim.

@@ -506,11 +506,15 @@ behind the context guard. **No `--task` means no model response was tested.**
 | `--schema-target v0.1.3\|main` | offline only; defaults to `v0.1.3`, `main` is an immutable fixture snapshot, not a fetch |
 | `--dry-run` | installed-schema and strict server admission checks, no writes, token or forward; tests neither result access nor execution. Incompatible with offline modes |
 
-Without a name on an interactive terminal, the wizard asks for description,
-name, and any missing namespace/Provider/model/Secret references. When applying
-`--task`, it also asks for the existing result account. Enter at the final confirmation
-creates resources; no cancels without writing. Non-interactive use requires a
-name. Other customization stays in flags.
+Without a name on an interactive terminal, the inline Bubbles wizard asks for
+description, name, and any missing namespace/Provider/model/Secret references.
+Supplied native flags are preserved; there is no namespace or model preset
+default. When applying `--task`, it also asks for the existing result account.
+Enter at the final Apply/Cancel selection creates resources; arrows or Tab
+select Cancel, and Escape/Ctrl-C cancel without writing. `TERM=dumb` retains
+linear prompts with a Y/n confirmation. Non-interactive use requires a name.
+Custom/local endpoints use `--base-url` (also explained in the wizard), never a
+model-name inference. Other customization stays in flags.
 
 ### Offline is schema validation, not a runtime proof
 

@@ -18,6 +18,45 @@ import (
 
 var errCreateCancelled = errors.New("agent creation cancelled")
 
+const createBaseURLHint = "For a custom or local model endpoint, supply --base-url <HTTP(S) URL>; no endpoint is inferred from the model name."
+const createTaskAuthorityNotice = "Applying authorizes Task execution. The temporary token has the account's full authority; v0.1.3 does not enforce Task-read RBAC."
+
+func refuseWizardCredentials(values ...string) error {
+	for _, value := range values {
+		if err := scaffold.RefuseKeyShapes(value); err != nil {
+			return fmt.Errorf("refusing credential-shaped wizard input; supply references, never credentials")
+		}
+	}
+	return nil
+}
+
+// Both terminal collectors validate native options before offering confirmation.
+// This is local validation only; CreateAgent owns schema/admission and execution.
+func finishCreateWizardOptions(opt *CreateOptions) error {
+	if opt.Out == "-" {
+		opt.NoApply = true
+	}
+	if opt.NoApply && opt.DryRun {
+		return fmt.Errorf("--no-apply (including --out -) and --dry-run cannot be used together")
+	}
+	if opt.SchemaTarget != "" && !opt.NoApply {
+		return fmt.Errorf("--schema-target is offline only; online creation uses installed CRDs")
+	}
+	if opt.Instructions == "" && opt.InstructionText == "" {
+		opt.InstructionText = "You are " + opt.Name + ", a declarative Orka agent. Your purpose is: " + opt.Description + "\nAnswer briefly and say plainly when you do not know something."
+	}
+	if err := validateOrkaResultOptions(opt); err != nil {
+		return err
+	}
+	if _, err := createOrkaBundle(*opt); err != nil {
+		return err
+	}
+	if opt.Out == "" {
+		opt.Out = filepath.Join("agents", opt.Name+".yaml")
+	}
+	return nil
+}
+
 func (a *App) CreateAgentInteractive(opt CreateOptions) error {
 	errFile, visible := a.Err.(*os.File)
 	if a.Stdin == nil || !visible || !term.IsTerminal(int(a.Stdin.Fd())) || !term.IsTerminal(int(errFile.Fd())) {
@@ -52,6 +91,9 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 	if opt.NoApply && opt.DryRun {
 		return opt, fmt.Errorf("--no-apply (including --out -) and --dry-run cannot be used together")
 	}
+	if opt.BaseURL == "" {
+		fmt.Fprintln(out, createBaseURLHint)
+	}
 	var err error
 	if opt.Description == "" {
 		opt.Description, err = promptValue(scanner, out, "Describe this agent", "", true)
@@ -60,10 +102,8 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		}
 	}
 
-	for _, value := range []string{opt.Description, opt.Name} {
-		if err := scaffold.RefuseKeyShapes(value); err != nil {
-			return opt, fmt.Errorf("refusing credential-shaped wizard input; supply references, never credentials")
-		}
+	if err := refuseWizardCredentials(opt.Description, opt.Name); err != nil {
+		return opt, err
 	}
 	defaultName := opt.Name
 	if defaultName == "" {
@@ -74,8 +114,8 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		if err != nil {
 			return opt, err
 		}
-		if err := scaffold.RefuseKeyShapes(opt.Name); err != nil {
-			return opt, fmt.Errorf("refusing credential-shaped wizard input; supply references, never credentials")
+		if err := refuseWizardCredentials(opt.Name); err != nil {
+			return opt, err
 		}
 		if err := scaffold.ValidateName(opt.Name); err != nil {
 			fmt.Fprintf(out, "  %v\n", err)
@@ -100,23 +140,14 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 			}
 		}
 	}
-	if opt.Instructions == "" && opt.InstructionText == "" {
-		opt.InstructionText = "You are " + opt.Name + ", a declarative Orka agent. Your purpose is: " + opt.Description + "\nAnswer briefly and say plainly when you do not know something."
-	}
 	if opt.Task != "" && !opt.NoApply && opt.Out != "-" && !opt.DryRun && opt.ResultServiceAccount == "" {
 		opt.ResultServiceAccount, err = promptValue(scanner, out, "Existing result-reader ServiceAccount", "", true)
 		if err != nil {
 			return opt, err
 		}
 	}
-	if err := validateOrkaResultOptions(&opt); err != nil {
+	if err := finishCreateWizardOptions(&opt); err != nil {
 		return opt, err
-	}
-	if _, err := createOrkaBundle(opt); err != nil {
-		return opt, err
-	}
-	if opt.Out == "" {
-		opt.Out = filepath.Join("agents", opt.Name+".yaml")
 	}
 	if opt.Out == "-" || opt.NoApply {
 		opt.NoApply = true
@@ -126,7 +157,7 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		return opt, nil
 	}
 	if opt.Task != "" {
-		fmt.Fprintln(out, "Applying authorizes Task execution. The temporary token has the account's full authority; v0.1.3 does not enforce Task-read RBAC.")
+		fmt.Fprintln(out, createTaskAuthorityNotice)
 	}
 	for {
 		apply, err := promptValue(scanner, out, "Create Orka resources in "+opt.Namespace+"? (Y/n)", "y", true)

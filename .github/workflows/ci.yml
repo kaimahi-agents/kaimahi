@@ -885,11 +885,15 @@ jobs:
         run: |
           set -euo pipefail
           # This is not another model-only assertion: it opens a real Linux
-          # PTY, lets Bubble Tea enter raw mode, sends Ctrl-C, and proves the
-          # terminal was restored without writing or applying an agent.
+          # PTY, checks Ctrl-C/Escape/SIGTERM cancellation and native offline
+          # completion, and proves the terminal was restored.
           go test ./internal/kmx/app \
-            -run '^TestCreateWizardPTYCancellationRestoresTerminal$' \
-            -count=1 -v
+            -run '^TestCreateWizardPTY' \
+            -count=1 -v | tee wizard-pty.out
+          grep -q -- '--- PASS: TestCreateWizardPTYCancellationRestoresTerminal' wizard-pty.out
+          grep -q -- '--- PASS: TestCreateWizardPTYNativeCompletionRestoresTerminal' wizard-pty.out
+          grep -q -- '--- PASS: TestCreateWizardPTYSIGTERMRestoresTerminal' wizard-pty.out
+          ! grep -q -- '--- SKIP:' wizard-pty.out
       - name: Makefile does not re-implement what kmx owns
         run: |
           python3 scripts/check-kmx-delegation.py --selftest
