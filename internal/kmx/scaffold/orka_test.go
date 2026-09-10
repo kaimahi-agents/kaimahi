@@ -112,6 +112,43 @@ func TestOrkaRejectsIncompleteOrUnsafeInputs(t *testing.T) {
 	}
 }
 
+func TestOrkaSecretKeyRejectsDirectoryPrefixes(t *testing.T) {
+	for _, tc := range []struct {
+		name, key string
+		valid     bool
+	}{
+		{"dot", ".", false},
+		{"parent", "..", false},
+		{"parent prefix", "..api-key", false},
+		{"single dot prefix", ".api-key", true},
+	} {
+		t.Run(tc.name+"/generation", func(t *testing.T) {
+			s := orkaSpec()
+			s.SecretKey = tc.key
+			b, err := GenerateOrka(s)
+			if !tc.valid {
+				if err == nil || b != nil {
+					t.Fatalf("generation accepted invalid Secret key %q", tc.key)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := b.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"]; got != tc.key {
+				t.Fatalf("Secret key changed: got %v, want %q", got, tc.key)
+			}
+		})
+		t.Run(tc.name+"/mutated bundle", func(t *testing.T) {
+			b := orkaBundle(t, orkaSpec())
+			b.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"] = tc.key
+			if err := b.Validate(); (err == nil) != tc.valid {
+				t.Fatalf("mutated Secret key %q: valid=%t, error=%v", tc.key, tc.valid, err)
+			}
+		})
+	}
+}
+
 func TestOrkaBaseURLBoundaries(t *testing.T) {
 	for _, good := range []string{"", "https://api.example.test/v1", "http://localhost:11434/v1", "http://[::1]:11434/v1"} {
 		s := orkaSpec()

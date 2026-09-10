@@ -188,8 +188,8 @@ func validateOrkaProvider(providerType, model, baseURL string) error {
 }
 
 func validateOrkaSecretKey(key string) error {
-	if len(key) > 253 || !orkaSecretKeyRE.MatchString(key) {
-		return fmt.Errorf("Secret key must be 1–253 letters, digits, dashes, underscores or dots")
+	if len(key) > 253 || !orkaSecretKeyRE.MatchString(key) || key == "." || strings.HasPrefix(key, "..") {
+		return fmt.Errorf("Secret key must be 1–253 letters, digits, dashes, underscores or dots; it must not be '.' or start with '..'")
 	}
 	return nil
 }
