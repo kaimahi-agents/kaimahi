@@ -166,6 +166,24 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   covers both halves, plus `disableVerify`, and proves it can still catch each
   one before its verdict on the tree is trusted.
 
+- **`kmx migrate` measured on AKS, with the application deployed BEFORE
+  Orka.** [docs/migrate.md](docs/migrate.md) §9 is the same migration on a
+  managed cluster — `Standard_D8s_v5`, Cilium, Kubernetes 1.35.7 — against
+  the same Orka `v0.1.3` and the same application, exercising four phases of
+  `kmx lift` on the way, with wall clock per step, the ledger's rows, the
+  cost of a second run, a table saying which differences are Orka's, which
+  are ours and which are just AKS, and a proved teardown (≈ US$0.35,
+  computed from published rates). The first live run of the observability
+  phase on any cluster: it works, and Managed Prometheus is shown scraping
+  the plane rather than merely configured to. Three claims that were true
+  only of kind are corrected: the seam token's lifetime is the cluster's
+  decision (AKS granted **24 hours** against the same 720 h request kind
+  granted in full), a tool-calling turn through the translating seam
+  **fails part of the time** on `previous_response_id` — measured at 5
+  failures in 11 identical turns, with the mechanism traced line by line and
+  the refusal shown to be correct — and four defects in `kmx lift` are
+  recorded with what the unit tests were not catching.
+
 
 ### Fixed
 

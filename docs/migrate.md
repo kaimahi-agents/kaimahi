@@ -10,12 +10,15 @@ image, no fork of anybody's chart. What changes is four environment
 variables and one mounted file on a Deployment the adopter owns, and
 `kmx` writes that patch to a file rather than applying it.
 
-Everything below was measured on a kind cluster on 2026-09-09, against
+Sections 1-8 were measured on a kind cluster on 2026-09-09, against
 Orka `v0.1.3` — the published release bundle — and the application
 [`pauldotyu/sundae-funday`](https://github.com/pauldotyu/sundae-funday)
 at `bd2a035`, image `ghcr.io/pauldotyu/sundae-funday:0.1.0-36.1.gbd2a035`,
-its own Helm chart, unmodified. No AKS, no spend. Nothing in Orka's
-repository was touched: no issue, no comment, no pull request.
+its own Helm chart, unmodified. [Section 9](#9-the-same-migration-on-aks)
+is the same migration run again on **AKS** on 2026-09-10, same Orka tag and
+the same application, and says which of the differences are Orka's, which
+are ours and which are just AKS. Nothing in Orka's repository was touched on
+either run: no issue, no comment, no pull request.
 
 ---
 
@@ -530,8 +533,9 @@ are the portable part; the wall clock is this cluster's.
   metric that counts an unrouted POST as a 2xx success is not quoted here
   from this run; the log line above is, and it says `status: 200` for
   `/openai/v1/responses`.
-- **Not measured: AKS.** This lane spent nothing. Every number here is
-  kind, on one machine, with `qwen2.5:3b` on CPU.
+- **AKS: measured separately, in [§9](#9-the-same-migration-on-aks).** Every
+  number in §§1-8 is kind, on one machine, with `qwen2.5:3b` on CPU, and
+  that lane spent nothing.
 - **Not measured: Orka's `main`.** The release bundle `v0.1.3`
   authenticates its compatible endpoint without authorizing it per route;
   route authorization arrived after that tag. The Role this command
@@ -550,15 +554,33 @@ are the portable part; the wall clock is this cluster's.
   server; `kmx tools add` and `kmx tools govern` are the commands for
   that, and doing both silently would be deciding it for the adopter.
 - **Streaming is refused** on a translating upstream (§4).
+- **A tool-calling turn through this seam fails part of the time, and the
+  refusal is correct.** Measured on AKS over 11 identical turns: **6
+  answered, 5 did not**, each failure a `400` naming
+  `previous_response_id`. The chain is short and none of it is Orka's or
+  AKS's — see §9 — but the honest summary is that **the seam refuses to
+  continue a conversation it does not hold, and this framework asks it to,
+  because it decides whether the server stores state by reading its own
+  request option rather than the `"store": false` in our answer.** Ignoring
+  the field is not the fix: when the framework sends it, it deliberately
+  strips the server-issued item identities from the history it inlines —
+  assuming the server already holds them — so answering anyway would answer
+  from a conversation missing pieces we never stored. §9 has the mechanism,
+  line by line.
 - **A `helm upgrade` undoes the patch.** The four values belong in the
   application's own release; `kmx migrate` prints them.
-- **The seam's token expires** — 30 days here. Re-running `kmx migrate`
-  mints another; the application's own credential is untouched by that.
-  Measured: a second run 28 minutes later reported both files unchanged,
-  every object `unchanged`, `Credential "concierge" already issued and
-  kaimahi-concierge-token is bound to it; keeping both`, and a fresh
-  30-day token — 20.6 s, and the application answered afterwards without
-  being touched.
+- **The seam's token expires, and how soon is the CLUSTER's decision, not
+  ours.** `kmx migrate` asks for 720 h either way. kind granted all of it —
+  30 days. **AKS granted 24 hours** (§9), so on a managed cluster the
+  migration stops working after a day unless it is re-run. Read the expiry
+  the command prints; do not carry the number from one cluster to another.
+  Re-running `kmx migrate` mints another, and the application's own
+  credential is untouched by that. Measured on kind: a second run 28 minutes
+  later reported both files unchanged, every object `unchanged`,
+  `Credential "concierge" already issued and kaimahi-concierge-token is
+  bound to it; keeping both`, and a fresh token — 20.6 s, and the
+  application answered afterwards without being touched. The same second run
+  on AKS took 18.4 s and said the same things.
 - **The endpoint address is committed, not configurable.** `orka` and
   `orka-coordinator` name
   `orka-api.orka-system.svc.cluster.local:8080` in
@@ -594,9 +616,353 @@ are the portable part; the wall clock is this cluster's.
 
 ---
 
+## 9. The same migration on AKS
+
+Run on 2026-09-10 on a cluster in `westus3`: one `Standard_D8s_v5`, Free
+control-plane tier, Azure CNI Overlay with Cilium, Kubernetes 1.35.7. Same
+Orka `v0.1.3`, same application at `bd2a035`, same model — `qwen2.5:3b` on
+an in-cluster Ollama, so that a wall-clock difference is the cluster's and
+not a different model's.
+
+**The application was deployed BEFORE Orka**, which is the realistic
+adoption order and the one §1 could not show: on kind, Orka was already
+there.
+
+### 9a. What it costs to arrive
+
+Every kubectl and helm call carried an explicit `--context`, and so does
+every command below. On a shared kubeconfig that is not hygiene, it is the
+difference between two lanes and one incident.
+
+**These rows do not add up to the elapsed time, and are not meant to.**
+Several overlap — the model was still downloading while the application's
+chart was being installed — so the total below is the observed clock, not
+the column's sum. Where a row's kind figure is not in this document it is
+marked `[c]` and comes from
+[the Orka composition report](reviews/2026-09-09-orka-composition.md),
+`[8]` means §8 of this document, and the rest are §§1-2.
+
+| step | AKS | kind |
+|---|---|---|
+| `kmx lift --step cluster` | **4m40s** | 11.9 s for `kind create cluster` `[c]` |
+| `kubectl apply` Ollama -> `ollama pull qwen2.5:3b` done | 40 s | — |
+| `helm upgrade --install sundae` issued -> concierge Ready | 35 s | 14 s |
+| Orka namespace created -> controller rolled out | **61 s** | **43 s** `[c]` |
+| Orka `Provider` "local" Ready | not measured (under 6 s) | — |
+| `kmx lift --step boundary` | 1m1s | — |
+| `kmx lift --step plane` | 1m38s (of which `az acr build` 1m14s) | — |
+| **`kmx migrate`** | **40.6 s** | **9.1 s** |
+| `kubectl patch` -> rolled out | 6 s | — |
+| the migrated question answered | 50.3 s | 22.2 s |
+| `kmx lift --step observability` | 6m5s | — |
+| second `kmx migrate` | 18.4 s | 20.6 s `[8]` |
+
+**Orka's own install is measured the way its own lane measured it** — from
+the first Orka command to `rollout status` returning — and on that footing
+it is **61 s against kind's 43 s**. Slower, by about 40%, and unremarkably
+so: it is two image pulls from ghcr onto a cold node.
+
+**The trap here is worth naming**, because it nearly went into this table as
+"44 s against 43 s — the same". 44 s is what `rollout status` takes on AKS,
+and that command was only issued once the pods already existed. Orka's own
+lane started its clock at the first Orka command. Two different intervals
+wearing the same units, and the shorter one happened to flatter the cluster
+being written up.
+
+`kmx migrate` is 4.5x slower on AKS — 40.6 s against 9.1 s — doing exactly
+the same work: the same seven steps, the same two files, the same objects.
+It was not broken down further, so this document does not say which step
+carries the difference. What can be said is where it is *not*: the second
+run, which skips issuing a credential and creating objects, took **18.4 s on
+AKS against 20.6 s on kind** — no slower at all. So essentially the whole
+31.5 s gap sits in the parts a repeat run skips, not in the parts it shares.
+
+### 9b. What the application had to be told
+
+Exactly what §2 says, and nothing extra. Four environment variables and one
+mounted file, written to `migrations/concierge-patch.yaml` and applied by
+one `kubectl patch`. No source edit, no rebuilt image, no chart fork. The
+one addition on AKS is not the application's at all: **Orka's `Provider` has
+to be authored by hand**, because nothing in this repository emits one —
+`kmx migrate` only reads its `.status.ready` and refuses when it is missing.
+
+Before Orka existed, the deployed application was Ready and failing in
+1.9 s with `APIConnectionError('Connection error.')`. That is the state an
+adopter is actually in when governance arrives beside a workload that
+already exists, and it is not the state §1 describes.
+
+Once Orka was there and the application pointed straight at it, §1
+reproduced exactly, including the endpoint calling it a success:
+
+```console
+$ POST /api/chat  {"session_id":"s1","message":"What flavors do you have?"}
+500  AttributeError: 'str' object has no attribute 'metadata'
+
+# Orka's log, at the same second:
+INFO api-server request completed {"method":"POST",
+  "path":"/openai/v1/responses","status":200,"duration":"5.249173ms"}
+```
+
+5.2 ms where kind measured 1.35 ms. Same behaviour, slower static handler.
+
+### 9c. What the ledger recorded
+
+After the patch, the same question, answered the same way §3's was — from
+the application's own menu tool, through the translation — though **not with
+the same answer**: §3's names five flavours and this one names four, Coffee
+absent. Same tool, same shape, a different sample from a 3B model.
+
+```console
+$ POST /api/chat  {"session_id":"s3","message":"What flavors do you have?"}
+200  {"reply":"... Vanilla Bean, Chocolate, Strawberry, and Mint Chip ...",
+      "source":"menu"}
+```
+
+50.3 s, `"source":"menu"`, so a tool-calling turn completed through the
+translation. And the rows:
+
+```console
+$ kmx flow concierge
+2026-09-10T01:28:02 concierge model local/qwen2.5:3b 200 0 539 in / 44 out via orka called by claimed "ua:agent-framework-python/1.14.0" from 10.244.0.30
+2026-09-10T01:28:32 concierge model local/qwen2.5:3b 200 0 749 in / 107 out via orka called by claimed "ua:agent-framework-python/1.14.0" from 10.244.0.30
+```
+
+**539 prompt tokens on the first call — the same number kind measured**, on
+every one of the eleven turns §9d ran. That is the portable part, and it is
+portable because it is fixed: the same system prompt and the same tool
+definitions, counted by the same endpoint under its own protocol. The
+follow-up prompt is **not** fixed — it carries the previous completion, so
+across this run's turns it was 749 once and 736 four times, against kind's
+736. So the honest form of "the meter is portable" is narrower than it
+looks: *identical inputs meter identically, and the wall clock does not
+follow them* — which is what §6 predicted, and this is the first run in a
+position to check it.
+
+Refusals 1-3 of §3 came back byte-for-byte, including Orka's own error
+body relayed rather than translated. **§3's fourth — Orka refusing an
+unauthenticated caller directly — was not re-run here**, so this section
+claims nothing about it. The seam's NetworkPolicy is
+load-bearing under Cilium as it is under kind's CNI: with
+`kaimahi-proxy-ingress-demo` deleted the probe hung until it was killed at
+60 s, and answered `401`/`400` again the moment it was re-applied.
+
+### 9d. What did not work: a turn that fails 5 times in 11
+
+Running the identical question 11 times, **6 answered and 5 returned
+`500`**. Every failure is the same, and the ledger names it without needing
+the application's log at all:
+
+```
+... 200  0 539 in /  41 out via orka     <- the model replied
+... 400  0   0 in /   0 out via orka     <- the seam refused the follow-up
+```
+
+against a successful turn, which is always a second `200` carrying the
+whole conversation — 736 or 749 prompt tokens, every time:
+
+```
+... 200  0 539 in /  21 out via orka
+... 200  0 736 in / 106 out via orka
+```
+
+Every one of the eleven turns opened identically at 539 prompt tokens, and
+the first reply's size does not predict which way it goes: 52 completion
+tokens went on to answer, 41 did not. Whatever selects the continuation path
+is inside the framework, and this lane did not pin it down further than the
+four steps below.
+
+The application's log names the field:
+
+```
+ChatClientException: ... previous_response_id asks this seam to continue a
+conversation it holds no state for — send the whole conversation in `input` instead
+```
+
+The chain, read rather than guessed:
+
+1. The seam answers with `"id": "resp_<id>"`
+   (`plane/internal/proxy/translate.go:666`) and `"store": false`, which is
+   this seam saying it holds nothing to continue from.
+2. **The client reads the answer, but not that field of it.**
+   `_get_conversation_id` reads `response.conversation` and
+   `response.id` — but it decides whether to bother by testing
+   `store is False`, and the `store` it tests is `options.get("store")`,
+   the option on its **own outgoing request**, never the `store` in our
+   reply (`agent_framework_openai/_chat_client.py:925-937`). The
+   application sets no `store`, so the value is `None`, the guard does not
+   fire, and it falls through to `return response.id`. Our `"store": false`
+   is not disbelieved; it is never consulted.
+3. That id becomes the conversation id, and because it begins `resp_` the
+   next request carries
+   `run_options["previous_response_id"] = conversation_id` (`:1443-1446`).
+4. The seam refuses it, which is right. When a request carries a
+   continuation marker the client deliberately strips server-issued item
+   identities from the inline history (`:1650-1658`), so the `input` it
+   sends is **not** the whole conversation. Honouring the request anyway
+   would answer from a truncated conversation — a wrong answer instead of a
+   refusal, which is the trade §4 exists to refuse.
+
+**Whose is it?** Ours and the framework's, in that order of who can fix it
+cheaply — and the answer is that neither can, cleanly. It is not AKS's:
+nothing in the chain touches the cluster. It is not Orka's: the request
+never reaches Orka. §4 accepted `include` because a truthful answer existed;
+here it does not, so the refusal stands and this is a stated limit rather
+than a bug with a patch behind it.
+
+**Was it happening on kind?** Not established either way, and worth being
+careful about rather than tidy. §3's kind ledger does carry two `400` rows
+from the same client, which §§4 and 7 attribute to `include` — nothing in
+that trail distinguishes an `include` refusal from this one, and the kind
+lane ran a handful of turns rather than eleven. Nothing in the chain above
+touches the cluster, so there is no *mechanism* by which kind would escape
+it; that is an argument, not a measurement, and it is left as one.
+
+What the run does establish is the shape of the mistake to avoid: **an
+intermittent failure looks like no failure until somebody runs it eleven
+times**, and a demo reported from its successes will not show you one.
+
+### 9e. What `kmx lift` did, and what it did not
+
+**The lift is never run against a real cluster in CI.**
+`grep lift .github/workflows/*.yml` returns exactly one hit, and it is a
+repository-map claim entry rather than anything that runs the lift. Its Go
+unit tests do run — `lift_test.go`, `lift_audit_test.go`,
+`lift_audit_linux_test.go` and `lift_observability_test.go`, under the
+ordinary `go test` job — so "untested" would be wrong; what no job can do is
+create a subscription and watch. This run used four of its eight phases and
+found four defects. None blocked the migration; none was fixed mid-run.
+
+**Which phases, and why not the others.** `cluster`, `boundary`, `plane` and
+`observability` ran. `kagent`, `agents` and `verify` are kagent-shaped and
+this path has no kagent — that is the point of `kmx migrate`. `credential`
+checks for `kaimahi-copilot-token` and refuses without it, and an Orka
+migration has no use for a Copilot token, so **a full `kmx lift` cannot
+complete for this scenario at all** and the phases have to be named one at a
+time. Not a bug in the phase; the phase LIST is kagent-and-Copilot shaped,
+and nothing says so before you find out.
+
+**The observability phase had never been watched to complete on a cluster.**
+A `kubectl` call with no verb made it fail closed on every lift; that was
+fixed in #155, which landed *after* #119's live run, and no live run has
+happened between then and this one. It works: 6m5s, and it created the Azure
+Monitor workspace, the Log
+Analytics workspace, Managed Prometheus, Container Insights, the
+`NetworkPolicy` that lets the add-on reach the ops port, the `PodMonitor`,
+and the workbook. Proven collecting rather than merely applied — the metrics
+add-on's target allocator, asked for its own jobs:
+
+```console
+$ curl .../jobs/podMonitor%2Fkaimahi%2Fkaimahi-plane%2F0/targets
+{"ama-metrics-...":{"targets":[{"targets":["10.244.0.115:9092"],
+  "labels":{"__address__":"10.244.0.115:9092",
+  "__meta_kubernetes_namespace":"kaimahi", ...,
+  "__meta_kubernetes_pod_container_port_name":"ops", ...
+```
+
+(`...` marks keys dropped for width; the reply carries the full label set.)
+
+Four defects, all confirmed on the cluster:
+
+- **The lift's plane reports its version as `unknown`, defeating the
+  handshake built to identify a remote plane.** `buildFromSource` reads the
+  checkout's revision and passes `--build-arg VERSION=<sha>`
+  (`internal/kmx/app/plane.go:279-285`). `liftPlane`'s `az acr build` passes
+  no build-arg at all (`internal/kmx/app/lift_steps.go:221-234`), so
+  `plane/Dockerfile:12`'s `ARG VERSION=unknown` stands. Off the running
+  proxy's own ops port:
+  `kaimahi_build_info{go_version="go1.26.8",version="unknown"} 1`, and every
+  admin call prints `plane unknown (admin contract 2)`, which reads like a
+  routine line rather than a handshake failing. It is exactly backwards: on
+  kind you can always `git rev-parse` the checkout in front of you.
+  **What the unit tests were not catching:** nothing asserts the
+  `az acr build` argv — `grep -rn "acr" internal/kmx/app/*_test.go` returns
+  two unrelated comment hits. The plane phase's command line is untested.
+- **The observability phase prints the subscription id to the terminal.**
+  `Options.Banner` states the rule in its own doc comment — "It deliberately
+  does not print the subscription id. The id is an identifier this project
+  keeps out of terminals and transcripts" — and the phase then echoes
+  `--azure-monitor-workspace-resource-id /subscriptions/<GUID>/...` because
+  the runner echoes its argv. `scripts/check-no-azure-ids.sh` refuses a
+  committed GUID for this exact reason, and the lift prints one on every
+  run, into the transcript the operator is most likely to paste.
+- **Any lift invocation moves the shared kubeconfig's `current-context`, and
+  says so in a line nobody reads.** A resumed `--step` goes through
+  `liftCredentials` -> `az aks get-credentials --overwrite-existing`
+  (`internal/kmx/app/lift_steps.go:35-39`); the `cluster` phase does the
+  same thing from inside `scripts/aks-up.sh`. Either way Azure prints
+  `WARNING: Merged "<cluster>" as current context in ~/.kube/config`. Two
+  corrections to how this is easy to state wrongly: it is **not** silent,
+  and it is **not** per phase — `internal/kmx/app/lift.go:113` calls
+  `liftCredentials` once per invocation and skips it when the run starts at
+  `cluster`, so a full `cluster`-to-`verify` lift never calls it at all.
+  kmx itself is unaffected either way, because it pins `--context`
+  everywhere. What is affected is every *other* tool the operator runs
+  afterwards, and this is the mechanism that aimed a previous lane's checks
+  at the wrong cluster.
+- **`--step <phase>` re-prints the full banner, including "creating a
+  cluster and everything around it", for phases that create no cluster.**
+  Cosmetic, but the banner is the thing an operator is asked to read before
+  acting on a subscription.
+
+### 9f. What a second run costs someone who is not us
+
+18.4 s, and it changes nothing it does not have to. Both generated files
+reported `Unchanged`, every object `unchanged`, `Credential "concierge"
+already issued and kaimahi-concierge-token is bound to it; keeping both`,
+and a fresh seam token. The application's own Deployment was not touched and
+went on answering at the same rate as before — which, per §9d, is not every
+time. The very next turn after this second run was one of the five that
+failed on `previous_response_id`, and that is worth stating rather than
+implying a clean "and it answered afterwards": the second run neither caused
+that nor cured it.
+
+The honest total is the clock, not the column. From the first `kmx lift`
+command to the application answering through the governed seam:
+**15 minutes 19 seconds** (01:13:12Z to 01:28:31Z). That is less than
+§9a's rows add up to, because several of them overlap — the model was still
+downloading while the application's chart was going on.
+
+Of those 15 minutes, **5 m 54 s is Azure before anything of ours or Orka's
+runs**: 4m40s creating the cluster and 1m14s building the plane's image in
+ACR. Wiring Azure-managed observability afterwards cost a further **6m5s**,
+also entirely Azure's — and it ran after the governed answer, so it is time
+an adopter spends on monitoring, not on getting an answer.
+
+### 9g. Which differences are whose
+
+| difference | whose |
+|---|---|
+| 4m40s to have a cluster at all | **AKS** |
+| 1m14s of the plane phase, building the image | **AKS** — `az acr build` runs in the registry |
+| 6m5s for the monitoring add-ons | **AKS** |
+| seam token 24 h instead of 30 days | **AKS** — the API server caps the `TokenRequest`; kmx asked for 720 h on both |
+| `kmx migrate` 40.6 s instead of 9.1 s | **ours** — same work; the whole gap is in what a repeat run skips (§9a), not broken down further |
+| plane reports `version="unknown"` | **ours** (§9e) |
+| Orka install 61 s against kind's 43 s | **AKS**, and unremarkably — two image pulls onto a cold node, measured the same way on both (§9a) |
+| `POST /openai/v1/responses` -> `200` with HTML | **Orka's**, unchanged from §1 |
+| the answer takes 50.3 s instead of 22.2 s | **the node's** — same model, same first prompt, CPU inference on a different machine. §6 already warned the wall clock is the cluster's |
+| 5 turns in 11 refused on `previous_response_id` | **ours and the framework's** (§9d) — not AKS's, not Orka's |
+| the first prompt meters 539 tokens on both | **nobody's** — a fixed input meters identically. The follow-up prompt is not fixed and did not (§9c) |
+
+### 9h. Not measured on AKS
+
+- **Orka's default coordinator** (§§5-6). Re-running it would have cost
+  another 16 minutes of a billing cluster to re-demonstrate a conclusion
+  §6 already reached, and nothing about it is cluster-shaped.
+- **Orka's `main`.** Same as §7: the Role `kmx migrate` creates is inert on
+  `v0.1.3`, which is the tag both runs used.
+- **A node smaller than `Standard_D8s_v5`.** The lift's own default is
+  `Standard_B4ms`, and this run deliberately did not use it: the cluster had
+  to carry the plane and its ledger, Orka's two pods, Ollama with a 3B
+  model, three application pods and two monitoring add-ons. Whether the
+  default would have held is untested, so this document does not say it
+  would not.
+
+---
+
 ## Teardown
 
-The cluster this was measured on is gone:
+**The kind cluster of §§1-8** is gone:
 
 ```console
 $ kmx down                     # kind delete cluster --name migrate
@@ -613,6 +979,49 @@ kind, one machine, no cloud resources and no spend, so there is nothing
 else to prove gone. `kind delete cluster` deletes by CONTAINER name and
 never reads the kubeconfig, which is why the line above names the node it
 actually removed.
+
+**The AKS cluster of §9** is gone too, and that one has to be proved rather
+than asserted, because it was billing. Note the confirmation names the
+RESOURCE GROUP here, not the cluster — the opposite of every other guarded
+command in this document:
+
+```console
+$ KAIMAHI_CONFIRM=<your-rg> kmx lift down \
+    --resource-group <your-rg> --cluster <name> --registry <name>
+aks-down: resource group '<your-rg>' deleted; kubeconfig entries removed.
+kmx lift down: resource group <your-rg> is gone (az group exists says false).
+  Cleanup covers that group and the outside resources in this run's record;
+  other resources and billing were not checked.
+```
+
+and then, independently of what the command claims:
+
+```console
+$ az group exists --name <your-rg>                         false
+$ az group exists --name MC_<your-rg>_<cluster>_westus3    false
+$ az aks list --query "[?name=='<cluster>'].name" -o tsv    (nothing)
+$ az acr list --query "[?name=='<registry>'].name" -o tsv   (nothing)
+$ kubectl config get-contexts -o name | grep <cluster>      (nothing)
+```
+
+The node resource group is checked separately on purpose: it is created by
+AKS rather than by us, it is where the disks and the load balancer actually
+live, and a run that deleted only the group it made would leave it behind.
+
+**Spend: about US$0.35, computed from published westus3 retail rates rather
+than read off an invoice** — billing lags by hours, and this lane ended
+before it caught up, so the figure is arithmetic and is labelled as such.
+The lane held resources from 01:13:20Z to 01:56:45Z — **43 m 25 s**, and
+that is an upper bound, because the clock starts before the cluster existed.
+At 0.724 h, one `Standard_D8s_v5` ($0.384/hr) on the Free control-plane tier
+($0), with an ACR Basic (~$0.007/hr), the cluster's outbound load balancer
+(~$0.025/hr) and its public IP (~$0.004/hr) is **≈ US$0.30**; a 1 GiB
+managed disk and 19 minutes of Log Analytics and Managed Prometheus
+ingestion take it to roughly **US$0.35**. **No model spend at all**: the
+model ran on the cluster's own CPU. The lane's cap was US$5.
+
+The rates are published retail figures rather than anything this run can
+evidence, which is the second reason to read the total as an estimate.
 
 ---
 
