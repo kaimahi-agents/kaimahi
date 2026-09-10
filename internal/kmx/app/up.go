@@ -653,7 +653,7 @@ func isNotFound(err error) bool {
 // NotFound (fresh cluster) may skip the capture — ANY other read failure
 // aborts rather than risk silently un-governing an agent.
 func (a *App) liveModelConfig(agent string) (string, error) {
-	out, err := a.kubectlCapture("-n", "kagent", "get", "agent", agent,
+	out, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent,
 		"-o", "jsonpath={.spec.declarative.modelConfig}")
 	if err != nil {
 		if isNotFound(err) {
@@ -685,13 +685,13 @@ func (a *App) desiredModelConfig(agent, current string) (string, bool) {
 
 func (a *App) patchModelConfig(agent, modelConfig string) error {
 	patch := fmt.Sprintf(`{"spec":{"declarative":{"modelConfig":%q}}}`, modelConfig)
-	return a.kubectlRun("-n", "kagent", "patch", "agent", agent, "--type", "merge", "-p", patch)
+	return a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", agent, "--type", "merge", "-p", patch)
 }
 
 func (a *App) waitAgentReady(agent string) error {
 	return a.kubectlRun("-n", "kagent", "wait",
 		`--for=jsonpath={.status.conditions[?(@.type=="Ready")].status}=True`,
-		"agent/"+agent, "--timeout=300s")
+		"agents.kagent.dev/"+agent, "--timeout=300s")
 }
 
 func (a *App) stepAgent() error {
@@ -739,7 +739,7 @@ func (a *App) stepToolsAgent() error {
 	}
 
 	var live agentJSON
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "agent", "hello-tools", "-o", "json")
+	raw, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "hello-tools", "-o", "json")
 	switch {
 	case isNotFound(err):
 		// Fresh cluster: nothing to preserve.
@@ -787,7 +787,7 @@ func (a *App) stepToolsAgent() error {
 	if governedByGateway {
 		a.notef("NOTE: hello-tools was governed via kaimahi-tools — restoring gateway wiring ('make ungovern-tools' opts out)")
 		patch := fmt.Sprintf(`{"spec":{"declarative":{"tools":%s}}}`, string(live.Spec.Declarative.Tools))
-		if err := a.kubectlRun("-n", "kagent", "patch", "agent", "hello-tools", "--type", "merge", "-p", patch); err != nil {
+		if err := a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", "hello-tools", "--type", "merge", "-p", patch); err != nil {
 			return err
 		}
 	}

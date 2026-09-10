@@ -455,7 +455,7 @@ stale forwards and concurrent chats do not collide.
 Other ways in, all shipped by kagent:
 
 ```bash
-kubectl -n kagent get agents            # CRD status (Ready / Accepted)
+kubectl --context kind-kaimahi-p1 -n kagent get agents.kagent.dev  # CRD status (Ready / Accepted)
 bin/kagent get agent                    # via the CLI (needs the port-forward)
 bin/kagent dashboard                    # kagent's web UI
 ```

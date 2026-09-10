@@ -177,7 +177,7 @@ agent was on, printing a `NOTE:` line naming the preserved preset. If it
 cannot read the live value it refuses rather than risk un-governing you.
 So if you're off the governed preset, something other than `make up` put
 you there. Check with
-`kubectl -n kagent get agent hello-world -o
+`kubectl --context <context> -n kagent get agents.kagent.dev hello-world -o
 jsonpath='{.spec.declarative.modelConfig}'` and re-run `make govern`
 (or `make use PRESET=governed-ollama`).
 
@@ -205,7 +205,7 @@ NAME=<preset>-api-key` for the five key-based presets (`anthropic`,
 `make copilot-secret` for `github-copilot` (its Secret is
 `github-copilot-token`), and `make govern` for the governed presets
 (their Secret is the issued `kaimahi-governed-token`). Check with
-`kubectl -n kagent describe agent hello-world` if it's something else.
+`kubectl --context <context> -n kagent describe agents.kagent.dev hello-world` if it's something else.
 
 ## The model I pulled disappeared after a pod restart
 

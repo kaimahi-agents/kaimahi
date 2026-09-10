@@ -393,8 +393,8 @@ func (a *App) UngovernTools(opt ToolsOptions) error {
 	if opt.Agent != config.DefaultToolsAgent {
 		return fmt.Errorf("kmx tools ungovern restores the committed agent %q, not %q.\n"+
 			"  There is no committed ungoverned form of %q to restore; repoint it yourself:\n"+
-			"    kubectl -n %s edit agent %s",
-			config.DefaultToolsAgent, opt.Agent, opt.Agent, config.DefaultNamespace, opt.Agent)
+			"    kubectl --context %s -n %s edit agents.kagent.dev %s",
+			config.DefaultToolsAgent, opt.Agent, opt.Agent, shellArg(a.Cfg.KubeContext), config.DefaultNamespace, opt.Agent)
 	}
 	if err := a.Guard(fmt.Sprintf("return agent %q to the ungoverned tool server", opt.Agent),
 		a.operationCommand("tools", "ungovern")); err != nil {
@@ -481,7 +481,7 @@ func (a *App) patchAgentTools(server, agent string, tools []string) error {
 	patch := fmt.Sprintf(
 		`{"spec":{"declarative":{"tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":%s,"toolNames":%s}}]}}}`,
 		name, names)
-	return a.kubectlRun("-n", config_kagentNamespace, "patch", "agent", agent, "--type", "merge", "-p", patch)
+	return a.kubectlRun("-n", config_kagentNamespace, "patch", "agents.kagent.dev", agent, "--type", "merge", "-p", patch)
 }
 
 // toolsDefaults fills the knobs the operator did not name. The credential

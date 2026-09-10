@@ -23,9 +23,9 @@ func (a *App) ListAgents(output string) error {
 		return err
 	}
 	if format != "table" {
-		return a.kubectlRun("-n", config_kagentNamespace, "get", "agents", "-o", format)
+		return a.kubectlRun("-n", config_kagentNamespace, "get", "agents.kagent.dev", "-o", format)
 	}
-	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get", "agents", "-o", "json")
+	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get", "agents.kagent.dev", "-o", "json")
 	if err != nil {
 		return err
 	}

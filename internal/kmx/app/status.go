@@ -422,7 +422,7 @@ type statusData struct {
 func (a *App) collectStatus() (*statusData, error) {
 	d := &statusData{}
 	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get",
-		"agents,modelconfigs,pods", "-o", "json", statusRequestTimeout)
+		"agents.kagent.dev,modelconfigs,pods", "-o", "json", statusRequestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +625,7 @@ func (a *App) statusTable() error {
 	if overall {
 		fmt.Fprintf(a.Out, "  kmx agent chat %s\n", agentRows[0][0])
 	} else {
-		fmt.Fprintf(a.Out, "  kubectl --context %s -n kagent get agents,pods\n", a.Cfg.KubeContext)
+		fmt.Fprintf(a.Out, "  kubectl --context %s -n kagent get agents.kagent.dev,pods\n", a.Cfg.KubeContext)
 	}
 	return nil
 }
@@ -669,7 +669,7 @@ func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
 	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Governance"), ui.Fields(governanceFields(g)))
 	fmt.Fprintln(a.Out, ui.Muted("Governed means the cluster object points at the plane; the plane field says whether enforcement is available."))
 
-	next := cliui.Action{Label: "Inspect the runtime", Command: fmt.Sprintf("kubectl --context %s -n kagent get agents,pods", a.Cfg.KubeContext)}
+	next := cliui.Action{Label: "Inspect the runtime", Command: fmt.Sprintf("kubectl --context %s -n kagent get agents.kagent.dev,pods", a.Cfg.KubeContext)}
 	if overall && len(agentRows) > 0 {
 		next = cliui.Action{Label: "Chat with an agent", Command: "kmx agent chat " + agentRows[0][0]}
 	}

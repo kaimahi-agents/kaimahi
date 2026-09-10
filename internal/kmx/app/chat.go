@@ -154,11 +154,11 @@ func (a *App) waitServable(agent string) error {
 }
 
 func (a *App) ensureAgentExists(agent string) error {
-	if _, err := a.kubectlCapture("-n", "kagent", "get", "agent", agent, "-o", "name"); err != nil {
+	if _, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent, "-o", "name"); err != nil {
 		if !isNotFound(err) {
 			return fmt.Errorf("cannot verify agent %q before chat: %w", agent, err)
 		}
-		available, listErr := a.kubectlCapture("-n", "kagent", "get", "agents", "-o", "name")
+		available, listErr := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "-o", "name")
 		if listErr != nil {
 			return fmt.Errorf("agent %q does not exist in namespace kagent", agent)
 		}

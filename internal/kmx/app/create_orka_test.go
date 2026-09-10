@@ -29,6 +29,10 @@ func TestOrkaKubectlHelper(t *testing.T) {
 		return
 	}
 	args := os.Args[slices.Index(os.Args, "--")+1:]
+	// Dependency probing is local, not a context-bound cluster operation.
+	if slices.Equal(args, []string{"version", "--client"}) {
+		os.Exit(0)
+	}
 	scenario := os.Getenv("KMX_ORKA_TEST_SCENARIO")
 	log, err := os.OpenFile(filepath.Join(dir, "calls"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {

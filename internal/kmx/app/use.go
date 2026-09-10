@@ -60,7 +60,7 @@ func (a *App) usePreset(agent, preset string, apply func() error) error {
 	if err != nil {
 		return err
 	}
-	agentGen, err := a.generation("agent/" + agent)
+	agentGen, err := a.generation("agents.kagent.dev/" + agent)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (a *App) usePreset(agent, preset string, apply func() error) error {
 	if err != nil {
 		return err
 	}
-	agentGenAfter, err := a.generation("agent/" + agent)
+	agentGenAfter, err := a.generation("agents.kagent.dev/" + agent)
 	if err != nil {
 		return err
 	}
@@ -169,12 +169,12 @@ func governedResourceName(prefix, agent string) string {
 // waitSwitched is `wait_switched`: reconcile, rollout, and then exactly one
 // pod on the new template.
 func (a *App) waitSwitched(agent string) error {
-	gen, err := a.generation("agent/" + agent)
+	gen, err := a.generation("agents.kagent.dev/" + agent)
 	if err != nil || gen == "" {
 		return fmt.Errorf("cannot read agent/%s's generation", agent)
 	}
 	if err := a.kubectlRun("-n", config_kagentNamespace, "wait",
-		"--for=jsonpath={.status.observedGeneration}="+gen, "agent/"+agent, "--timeout=120s"); err != nil {
+		"--for=jsonpath={.status.observedGeneration}="+gen, "agents.kagent.dev/"+agent, "--timeout=120s"); err != nil {
 		return err
 	}
 	if err := a.kubectlRun("-n", config_kagentNamespace, "rollout", "status",

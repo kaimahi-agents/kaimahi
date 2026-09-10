@@ -288,9 +288,9 @@ the kubectl commands for update and delete are here rather than in its
 output:
 
 ```bash
-kubectl -n kagent get agent <name> -o yaml     # read
-kubectl -n kagent edit agent <name>            # update
-kubectl -n kagent delete agent <name>          # delete
+kubectl --context <context> -n kagent get agents.kagent.dev <name> -o yaml  # read
+kubectl --context <context> -n kagent edit agents.kagent.dev <name>         # update
+kubectl --context <context> -n kagent delete agents.kagent.dev <name>       # delete
 ```
 
 Scaffolding is the only letter of CRUD with a real gap
@@ -504,7 +504,7 @@ behind the context guard. **No `--task` means no model response was tested.**
 | `--out <path>` | exclusive output file (default `agents/<name>.yaml`); `-` writes YAML only to stdout and implies offline |
 | `--no-apply` | offline artifact only; no tools, kubeconfig reads or cluster calls |
 | `--schema-target v0.1.3\|main` | offline only; defaults to `v0.1.3`, `main` is an immutable fixture snapshot, not a fetch |
-| `--dry-run` | installed-schema and strict server admission checks, no writes, token or forward; tests neither result access nor execution. Incompatible with offline modes |
+| `--dry-run` | installed-schema and strict server admission checks; writes the local artifact, but no cluster writes, token or forward. Tests neither result access nor execution; incompatible with offline modes |
 
 Without a name on an interactive terminal, the inline Bubbles wizard asks for
 description, name, and any missing namespace/Provider/model/Secret references.

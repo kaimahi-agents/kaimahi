@@ -45,7 +45,7 @@ case "$*" in
   *"svc/kagent-controller"*)
     printf 'Forwarding from 127.0.0.1:%s -> 8083\n' "$KMX_TEST_CHAT_PORT"
     exec sleep 30 ;;
-  *"get agent "*) printf 'agent.kagent.dev/hello-world\n'; exit 0 ;;
+  *"get agents.kagent.dev "*) printf 'agent.kagent.dev/hello-world\n'; exit 0 ;;
   *"get --raw"*) printf '{"name":"hello-world"}\n'; exit 0 ;;
 esac
 exit 0

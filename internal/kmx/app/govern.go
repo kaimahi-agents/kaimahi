@@ -144,7 +144,7 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 	// agent on an UNGOVERNED preset — spending outside the plane. An
 	// unreachable API server, an expired credential, an RBAC denial and a
 	// wrong context all look exactly like that if you do not look.
-	_, err = a.kubectlCapture("-n", config_kagentNamespace, "get", "agent", opt.Agent, "-o", "name")
+	_, err = a.kubectlCapture("-n", config_kagentNamespace, "get", "agents.kagent.dev", opt.Agent, "-o", "name")
 	switch {
 	case err == nil:
 		return a.UsePreset(opt.Agent, opt.Preset, presets)

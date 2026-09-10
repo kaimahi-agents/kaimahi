@@ -40,7 +40,7 @@ func TestUngovernToolsOnlyPatchesToolWiring(t *testing.T) {
 		t.Fatalf("ungovern reapplied the entire agent: %s", args)
 	}
 	for _, line := range strings.Split(args, "\n") {
-		if !strings.Contains(line, "patch agent hello-tools --type merge -p ") {
+		if !strings.Contains(line, "patch agents.kagent.dev hello-tools --type merge -p ") {
 			continue
 		}
 		var patch map[string]map[string]map[string]json.RawMessage

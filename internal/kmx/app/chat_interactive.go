@@ -1769,7 +1769,7 @@ func (a *App) showSessionHistory(base, id, agent, toolMode string, renderer *cha
 }
 
 func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *chatGovernancePosture) error {
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "agent", agent, "-o", "json")
+	raw, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent, "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot validate active agent: %w", err)
 	}

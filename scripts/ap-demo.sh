@@ -157,7 +157,7 @@ cat >&2 <<TXT
 TXT
 
 # --- 1. the investigation (informational) --------------------------------
-if [ "$AP_AGENT_TURN" = 1 ] && $KUBECTL -n kagent get agent ap-agent >/dev/null 2>&1; then
+if [ "$AP_AGENT_TURN" = 1 ] && $KUBECTL -n kagent get agents.kagent.dev ap-agent >/dev/null 2>&1; then
   step "The agent investigates $EXC_INVOICE (informational — nothing below asserts on it)"
   # shellcheck disable=SC2086 # AP_CHAT is a command line, not a word
   if ! $AP_CHAT TASK="Investigate invoice $EXC_INVOICE and resolve it." > "$work/chat.out" 2>&1; then

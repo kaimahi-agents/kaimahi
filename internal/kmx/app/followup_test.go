@@ -516,11 +516,11 @@ func TestMissingChatAgentFailsBeforeServabilityPoll(t *testing.T) {
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `
 case "$*" in
-  *"get agent hello-tool -o name"*)
+  *"get agents.kagent.dev hello-tool -o name"*)
     echo 'Error from server (NotFound): agents.kagent.dev "hello-tool" not found' >&2
     exit 1
     ;;
-  *"get agents -o name"*)
+  *"get agents.kagent.dev -o name"*)
     printf 'agent.kagent.dev/hello-tools\nagent.kagent.dev/hello-world\n'
     exit 0
     ;;

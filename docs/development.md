@@ -371,8 +371,8 @@ expensive way.
 ## Where to look when something is wrong
 
 ```bash
-kubectl -n kagent get agents                        # Accepted / Ready
-kubectl -n kagent describe agent <name>             # the real error
+kubectl --context <context> -n kagent get agents.kagent.dev             # Accepted / Ready
+kubectl --context <context> -n kagent describe agents.kagent.dev <name>  # the real error
 kubectl -n kagent logs deploy/<agent> --tail=50     # what it called
 kubectl -n kaimahi logs -l app=kaimahi-proxy --prefix   # governance decisions, both replicas
 make ledger    CRED=<name>                          # was the call metered?

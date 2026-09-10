@@ -88,7 +88,7 @@ func TestStatusCommandReadinessAndReportParity(t *testing.T) {
 				combined := fmt.Sprintf(`{"items":[{"kind":"Agent","metadata":{"name":"alpha"},"spec":{"declarative":{"modelConfig":"model"}},"status":{"conditions":[{"type":"Ready","status":"True"},{"type":"Accepted","status":"True"}]}},{"kind":"ModelConfig","metadata":{"name":"model"},"spec":{"openAI":{"baseUrl":%q},"apiKeySecret":"token"},"status":{"conditions":[{"type":"Accepted","status":"True"}]}},{"kind":"Pod","metadata":{"name":"runtime"},"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}}]}`, base)
 				script := fmt.Sprintf(`case "$*" in
 *"config view"*) printf '%%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-*"get agents,modelconfigs,pods"*) printf '%%s' '%s';;
+*"get agents.kagent.dev,modelconfigs,pods"*) printf '%%s' '%s';;
 *"get deployments"*) printf '%%s' '%s';;
 *"get secrets"*) printf '%%s' '%s';;
 *) printf '%%s' '{"items":[]}';;
@@ -167,7 +167,7 @@ func TestReadCommandsRichAndPlain(t *testing.T) {
 				out, text := reportOutput(t, rich, 32)
 				a := reportApp(t, out, `case "$*" in
 *"config view"*) printf '%s' '{"clusters":[{"name":"c","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"c"}}]}';;
-*"get agents"*) printf '%s' '{"items":[]}';;
+*"get agents.kagent.dev"*) printf '%s' '{"items":[]}';;
 *"get runtimeclass"*) printf 'spin';;
 *"get ds"*) printf '2/3';;
 *"get pods"*) printf 'ns/workload';;

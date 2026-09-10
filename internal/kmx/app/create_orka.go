@@ -36,6 +36,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		return err
 	}
 	if !opt.NoApply {
+		if err := a.preflight(depKubectl); err != nil {
+			return err
+		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)

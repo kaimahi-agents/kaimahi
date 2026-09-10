@@ -61,7 +61,7 @@ func TestGovernToolsCompletesOnAClusterWithNoKagent(t *testing.T) {
 		}
 	}
 	// And nothing was asked of a controller that is not there.
-	for _, kagentStep := range []string{"get remotemcpserver", "patch agent", "wait --for"} {
+	for _, kagentStep := range []string{"get remotemcpserver", "patch agents.kagent.dev", "wait --for"} {
 		if strings.Contains(args, kagentStep) {
 			t.Fatalf("%q ran on a cluster with no kagent:\n%s", kagentStep, args)
 		}
@@ -115,7 +115,7 @@ func TestGovernToolsStillDrivesKagentWhereItIsInstalled(t *testing.T) {
 	_ = f.app.GovernTools(ToolsOptions{Credential: "hello-tools", Tools: "k8s_get_resources"})
 
 	args := f.args()
-	for _, want := range []string{"get remotemcpserver", "patch agent"} {
+	for _, want := range []string{"get remotemcpserver", "patch agents.kagent.dev"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("the kagent path did not run %q:\n%s", want, args)
 		}

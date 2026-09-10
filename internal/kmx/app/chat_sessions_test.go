@@ -269,8 +269,8 @@ func chatUXFixture(t *testing.T) *App {
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `case "$*" in
   *port-forward*) printf 'Forwarding from 127.0.0.1:18083 -> 8083\n'; exec sleep 30 ;;
-  *"get agent agent -o name"*|*"get --raw"*) exit 0 ;;
-  *"get agent agent -o json"*) printf '%s' '{"metadata":{"generation":1},"spec":{"declarative":{"modelConfig":"model"}},"status":{"observedGeneration":1}}' ;;
+  *"get agents.kagent.dev agent -o name"*|*"get --raw"*) exit 0 ;;
+  *"get agents.kagent.dev agent -o json"*) printf '%s' '{"metadata":{"generation":1},"spec":{"declarative":{"modelConfig":"model"}},"status":{"observedGeneration":1}}' ;;
   *"get deployment agent"*) printf '%s' '{"metadata":{"generation":1},"spec":{"replicas":1},"status":{"observedGeneration":1,"updatedReplicas":1,"readyReplicas":1,"availableReplicas":1}}' ;;
   *"get deploy/agent"*) printf '1' ;;
   *"get rs "*) printf '1 hash' ;;

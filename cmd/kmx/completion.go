@@ -30,7 +30,7 @@ func completeLiveAgents(cmd *cobra.Command, args []string, toComplete string) ([
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	contextName := completionContext(cmd)
-	values := kubectlCompletion("--context", contextName, "-n", "kagent", "get", "agents", "-o", "name")
+	values := kubectlCompletion("--context", contextName, "-n", "kagent", "get", "agents.kagent.dev", "-o", "name")
 	for i, value := range values {
 		if _, name, ok := strings.Cut(value, "/"); ok {
 			values[i] = name

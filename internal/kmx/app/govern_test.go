@@ -42,7 +42,7 @@ JSON
     # it; kmx waits for exactly this line, so the fake has to print it.
     printf 'Forwarding from 127.0.0.1:%s -> 9091\n' "$KMX_TEST_ADMIN_PORT"
     exec sleep 30 ;;
-  *"get agent hello-world"*)
+  *"get agents.kagent.dev hello-world"*)
     if [ -n "$KMX_TEST_AGENT_ERR" ]; then
       printf '%s\n' "$KMX_TEST_AGENT_ERR" >&2
       exit 1

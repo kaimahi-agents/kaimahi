@@ -564,7 +564,7 @@ tools-agent: $(KMX)
 else
 agent: guard
 	@current=""; \
-	if out=$$($(KUBECTL) -n kagent get agent hello-world \
+	if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-world \
 		-o jsonpath='{.spec.declarative.modelConfig}' 2>&1); then \
 		current=$$out; \
 	elif ! printf '%s' "$$out" | grep -q 'NotFound'; then \
@@ -577,12 +577,12 @@ agent: guard
 	fi; \
 	$(KUBECTL) apply -f k8s/hello-world.yaml && \
 	if [ "$$desired" != hello-world-model ]; then \
-		$(KUBECTL) -n kagent patch agent hello-world --type merge \
+		$(KUBECTL) -n kagent patch agents.kagent.dev hello-world --type merge \
 			-p "{\"spec\":{\"declarative\":{\"modelConfig\":\"$$desired\"}}}"; \
 	fi
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-world --timeout=300s
+		agents.kagent.dev/hello-world --timeout=300s
 
 ## tools-agent: the tools-enabled agent (kagent-tools MCP server comes
 ## from the kagent helm install; this applies the Agent wired to it)
@@ -601,7 +601,7 @@ tools-agent: guard
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
 		remotemcpserver/kagent-tool-server --timeout=300s
 	@server=""; tools=""; current=""; \
-	if out=$$($(KUBECTL) -n kagent get agent hello-tools -o json 2>&1); then \
+	if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-tools -o json 2>&1); then \
 		server=$$(printf '%s' "$$out" | python3 -c 'import json,sys; t=(json.load(sys.stdin)["spec"].get("declarative") or {}).get("tools") or []; print((t[0].get("mcpServer") or {}).get("name","") if t else "")') || exit 1; \
 		tools=$$(printf '%s' "$$out" | python3 -c 'import json,sys; print(json.dumps((json.load(sys.stdin)["spec"].get("declarative") or {}).get("tools") or []))') || exit 1; \
 		current=$$(printf '%s' "$$out" | python3 -c 'import json,sys; print((json.load(sys.stdin)["spec"].get("declarative") or {}).get("modelConfig",""))') || exit 1; \
@@ -612,17 +612,17 @@ tools-agent: guard
 	if [ -n "$$current" ] && [ "$$current" != hello-world-model ]; then desired=$$current; fi; \
 	$(KUBECTL) apply -f k8s/tools-agent.yaml && \
 	if [ "$$desired" != hello-world-model ]; then \
-		$(KUBECTL) -n kagent patch agent hello-tools --type merge \
+		$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
 			-p "{\"spec\":{\"declarative\":{\"modelConfig\":\"$$desired\"}}}"; \
 	fi && \
 	if [ "$$server" = kaimahi-tools ] && [ -n "$$tools" ]; then \
 		echo "NOTE: hello-tools was governed via kaimahi-tools — restoring gateway wiring ('make ungovern-tools' opts out)" >&2; \
-		$(KUBECTL) -n kagent patch agent hello-tools --type merge \
+		$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
 			-p "{\"spec\":{\"declarative\":{\"tools\":$$tools}}}"; \
 	fi
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-tools --timeout=300s
+		agents.kagent.dev/hello-tools --timeout=300s
 endif
 
 ## chat: one question by default; INTERACTIVE=1 keeps a session open.
@@ -689,10 +689,10 @@ copilot-secret: guard
 # edited, the agent already on it) passes it at once; `use` covers that
 # case itself, before calling here — see the recipe.
 define wait_switched
-gen=$$($(KUBECTL) -n kagent get agent/$(1) -o jsonpath='{.metadata.generation}') \
+gen=$$($(KUBECTL) -n kagent get agents.kagent.dev/$(1) -o jsonpath='{.metadata.generation}') \
 	&& [ -n "$$gen" ] || { echo "cannot read agent/$(1)'s generation" >&2; exit 1; }; \
 $(KUBECTL) -n kagent wait --for=jsonpath='{.status.observedGeneration}'=$$gen \
-	agent/$(1) --timeout=120s >/dev/null || exit 1; \
+	agents.kagent.dev/$(1) --timeout=120s >/dev/null || exit 1; \
 $(KUBECTL) -n kagent rollout status deploy/$(1) --timeout=180s || exit 1; \
 rev=$$($(KUBECTL) -n kagent get deploy/$(1) \
 	-o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}') \
@@ -756,16 +756,16 @@ use: guard
 	elif ! printf '%s' "$$out" | grep -q 'NotFound'; then \
 		echo "cannot read modelconfig/$(PRESET): $$out" >&2; exit 1; \
 	fi; \
-	agent0=$$($(KUBECTL) -n kagent get agent/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
+	agent0=$$($(KUBECTL) -n kagent get agents.kagent.dev/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
 	rev0=$$($(KUBECTL) -n kagent get deploy/hello-world \
 		-o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}') || exit 1; \
 	echo "$(KUBECTL) apply -f k8s/models/$(PRESET).yaml"; \
 	$(KUBECTL) apply -f k8s/models/$(PRESET).yaml || exit 1; \
-	echo "$(KUBECTL) -n kagent patch agent hello-world (modelConfig: $(PRESET))"; \
-	$(KUBECTL) -n kagent patch agent hello-world --type merge \
+	echo "$(KUBECTL) -n kagent patch agents.kagent.dev hello-world (modelConfig: $(PRESET))"; \
+	$(KUBECTL) -n kagent patch agents.kagent.dev hello-world --type merge \
 		-p '{"spec":{"declarative":{"modelConfig":"$(PRESET)"}}}' || exit 1; \
 	mc1=$$($(KUBECTL) -n kagent get modelconfig/$(PRESET) -o jsonpath='{.metadata.generation}') || exit 1; \
-	agent1=$$($(KUBECTL) -n kagent get agent/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
+	agent1=$$($(KUBECTL) -n kagent get agents.kagent.dev/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
 	if [ "$$agent1" = "$$agent0" ] && [ "$$mc1" != "$$mc0" ]; then \
 		echo "NOTE: preset '$(PRESET)' changed while hello-world was already on it — waiting for kagent to cut a new revision (was $$rev0)" >&2; \
 		rolled=; \
@@ -783,7 +783,7 @@ use: guard
 	@$(call wait_switched,hello-world)
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-world --timeout=300s
+		agents.kagent.dev/hello-world --timeout=300s
 
 ## use-ollama: switch back to the keyless in-cluster model
 # The confirmation is passed down deliberately: reaching this line means
@@ -889,7 +889,7 @@ govern: guard
 	@# would print the reassuring NOTE, exit 0, and leave hello-world on an
 	@# UNGOVERNED preset, spending outside the plane. Same discrimination
 	@# the `agent` target above already applies for the same reason.
-	@if out=$$($(KUBECTL) -n kagent get agent hello-world 2>&1); then \
+	@if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-world 2>&1); then \
 		$(MAKE) use PRESET=$(GOVERNED_PRESET) KAIMAHI_CONFIRM='$(KUBE_CTX)'; \
 	elif printf '%s' "$$out" | grep -q 'NotFound'; then \
 		echo "NOTE: agent hello-world does not exist yet — it will be created on '$(AGENT_MODELCONFIG)' by 'make agent'" >&2; \
@@ -1006,12 +1006,12 @@ govern-tools: guard
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
 		remotemcpserver/kaimahi-tools --timeout=300s
-	$(KUBECTL) -n kagent patch agent hello-tools --type merge \
+	$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
 		-p '{"spec":{"declarative":{"tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":"kaimahi-tools","toolNames":[$(TOOLNAMES_JSON)]}}]}}}'
 	@$(call wait_switched,hello-tools)
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-tools --timeout=300s
+		agents.kagent.dev/hello-tools --timeout=300s
 endif
 
 ## ungovern-tools: restore the ungoverned wiring (direct to the chart-managed
@@ -1277,11 +1277,11 @@ govern-slack: guard
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
 		remotemcpserver/kaimahi-slack --timeout=300s
 	$(KUBECTL) apply -f k8s/slack-agent.yaml
-	$(KUBECTL) -n kagent patch agent hello-slack --type merge \
+	$(KUBECTL) -n kagent patch agents.kagent.dev hello-slack --type merge \
 		-p '{"spec":{"declarative":{"tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":"kaimahi-slack","toolNames":[$(SLACK_TOOLNAMES_JSON)]}}]}}}'
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-slack --timeout=300s
+		agents.kagent.dev/hello-slack --timeout=300s
 
 ## slack-allow: replace the Slack credential's allowlist, e.g.
 ##   make slack-allow SLACK_TOOLS=conversations_history
@@ -1319,7 +1319,7 @@ slack-post: $(KAGENT)
 ## slack-down: remove the Slack demo (agent, gateway seam, MCP server).
 ## The Secrets are left alone — delete them explicitly to revoke.
 slack-down: guard
-	-$(KUBECTL) -n kagent delete agent hello-slack
+	-$(KUBECTL) -n kagent delete agents.kagent.dev hello-slack
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-slack
 	-$(KUBECTL) -n kaimahi delete mcpserver kaimahi-slack-mcp
 
@@ -1401,11 +1401,11 @@ govern-github: guard
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
 		remotemcpserver/kaimahi-github --timeout=300s
 	$(KUBECTL) apply -f k8s/github-agent.yaml
-	$(KUBECTL) -n kagent patch agent hello-github --type merge \
+	$(KUBECTL) -n kagent patch agents.kagent.dev hello-github --type merge \
 		-p '{"spec":{"declarative":{"tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":"kaimahi-github","toolNames":[$(GITHUB_TOOLNAMES_JSON)]}}]}}}'
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/hello-github --timeout=300s
+		agents.kagent.dev/hello-github --timeout=300s
 
 ## github-allow: replace the GitHub credential's allowlist, e.g.
 ##   make github-allow GITHUB_TOOLS=list_issues
@@ -1434,7 +1434,7 @@ github-ask: $(KAGENT)
 ## github-down: remove the GitHub demo (agent, gateway seam). The token is
 ## a separate decision: make github-revoke.
 github-down: guard
-	-$(KUBECTL) -n kagent delete agent hello-github
+	-$(KUBECTL) -n kagent delete agents.kagent.dev hello-github
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-github
 
 ## ---- the release agent (docs/release-agent.md) ----
@@ -1488,7 +1488,7 @@ govern-release: guard
 	$(KUBECTL) -n kagent wait --for=condition=Accepted \
 		remotemcpserver/kaimahi-release-ado --timeout=300s
 	$(KUBECTL) apply -f k8s/release-agent.yaml
-	$(KUBECTL) -n kagent wait --for=condition=Ready agent/release-agent --timeout=300s
+	$(KUBECTL) -n kagent wait --for=condition=Ready agents.kagent.dev/release-agent --timeout=300s
 
 ## release-allow: replace the release credential's allowlist, e.g.
 ##   make release-allow RELEASE_TOOLS=list_tags
@@ -1548,7 +1548,7 @@ release-audit:
 ## release-down: remove the release agent and both seams. The tokens are a
 ## separate decision: make release-revoke.
 release-down: guard
-	-$(KUBECTL) -n kagent delete agent release-agent
+	-$(KUBECTL) -n kagent delete agents.kagent.dev release-agent
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-release-github
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-release-ado
 
@@ -1623,11 +1623,11 @@ govern-ap: guard
 	@# never reach Ready and the wait below would time out. GOVERNED_PRESET is
 	@# `governed-ollama` on kind, so this patch is a no-op there and the
 	@# committed file still names the preset kind uses.
-	$(KUBECTL) -n kagent patch agent ap-agent --type merge \
+	$(KUBECTL) -n kagent patch agents.kagent.dev ap-agent --type merge \
 		-p '{"spec":{"declarative":{"modelConfig":"$(GOVERNED_PRESET)","tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":"kaimahi-erp","toolNames":[$(AP_TOOLNAMES_JSON)]}}]}}}'
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agent/ap-agent --timeout=300s
+		agents.kagent.dev/ap-agent --timeout=300s
 
 ## ap-allow: replace the AP credential's allowlist, e.g.
 ##   make ap-allow AP_TOOLS=invoice_get
@@ -1676,7 +1676,7 @@ ap-injection: guard
 
 ## ap-down: remove the accounts-payable demo (agent, gateway seam, ERP)
 ap-down: guard
-	-$(KUBECTL) -n kagent delete agent ap-agent
+	-$(KUBECTL) -n kagent delete agents.kagent.dev ap-agent
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-erp
 	-$(KUBECTL) delete -f k8s/erp-mcp.yaml
 	-$(KUBECTL) -n kaimahi delete configmap kaimahi-erp-fixtures
