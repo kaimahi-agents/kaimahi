@@ -242,6 +242,26 @@ func TestOrkaInstallSkipsTheProviderWhenAskedTo(t *testing.T) {
 	}
 }
 
+// "Installed" means both Deployments are ready. Waiting for the controller
+// alone would report success while the wrapper — the half that needs the
+// Secret above — was still failing to start, which is the exact outcome this
+// command exists to make impossible.
+func TestOrkaInstallWaitsForBothDeployments(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	calls := f.calls(t)
+	for _, deployment := range []string{orkaController, orkaWrapper} {
+		if !strings.Contains(calls, "rollout status deploy/"+deployment) {
+			t.Errorf("the run never waited for %s:\n%s", deployment, calls)
+		}
+	}
+}
+
 // Installing is not governing, and the run has to say so: an adopter who
 // reads "Orka is running" as "its traffic is metered" has been misled by us.
 func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
