@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -176,6 +177,12 @@ func (a *App) emitOrka(opt CreateOptions, document string) error {
 		path = filepath.Join("agents", opt.Name+".yaml")
 	}
 	if err := scaffold.WriteNew(path, document); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists — refusing to overwrite it.\n"+
+				"  Keep the existing artifact or choose another --out <path>.\n"+
+				"  Do not bulk-apply an Orka bundle or write its Secret skeleton.\n"+
+				"  Create Provider only and wait for current-generation Ready; then Agent and wait; then optional Task.", path)
+		}
 		return err
 	}
 	a.notef("wrote %s", path)

@@ -148,6 +148,9 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		b.Task["spec"] = map[string]any{
 			"type": "ai", "prompt": spec.TaskPrompt,
 			"agentRef": map[string]any{"name": spec.Name, "namespace": spec.Namespace},
+			// Orka serializes its nonpointer Resources default on finalizer
+			// updates. Emit it now so that round-trip cannot change generation.
+			"resources": map[string]any{},
 		}
 	}
 	if err := b.Validate(); err != nil {

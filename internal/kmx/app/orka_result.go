@@ -238,6 +238,10 @@ func (a *App) waitOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 				return "", fmt.Errorf("refusing result that echoes session credential material")
 			}
 			answer = safeTerminal(answer)
+			// Removing control sequences can reconstruct a split credential.
+			if strings.Contains(answer, session.token) {
+				return "", fmt.Errorf("refusing result that echoes session credential material")
+			}
 			if strings.TrimSpace(answer) == "" {
 				return "", fmt.Errorf("Orka result contains no printable answer")
 			}

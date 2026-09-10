@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -111,8 +112,10 @@ func TestWriteNewRefusesToClobber(t *testing.T) {
 	if err := WriteNew(path, "first\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteNew(path, "second\n"); err == nil {
-		t.Fatal("overwrote file")
+	if err := WriteNew(path, "second\n"); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("collision must retain existence classification: %v", err)
+	} else if !strings.Contains(err.Error(), "kubectl apply -f "+path) {
+		t.Fatal("changed unrelated writer callers' advice")
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {

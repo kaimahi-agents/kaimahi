@@ -144,6 +144,73 @@ func TestOrkaTaskAnswerUsesOneFreshNameAndReadChecks(t *testing.T) {
 	}
 }
 
+func TestOrkaResultRefusesSanitizedCredentialsAndBlankAnswers(t *testing.T) {
+	token := orkaTestToken()
+	for _, tc := range []struct {
+		name, answer, want string
+	}{
+		{"raw-token", token, "credential material"},
+		{"raw-token-hidden-by-ANSI", "\x1b]0;" + token + "\ahello", "credential material"},
+		{"NUL-interleaving", token[:8] + "\x00" + token[8:], "credential material"},
+		{"ANSI-interleaving", token[:8] + "\x1b[31m" + token[8:], "credential material"},
+		{"sanitized-blank", "\x00\x1b[2J\t\n", "no printable answer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, out, diagnostics, dir := orkaCreateFixture(t, "")
+			var calls atomic.Int32
+			orkaResultServer(t, &opt, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if calls.Add(1) == 1 {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+					return
+				}
+				if err := json.NewEncoder(w).Encode(map[string]string{"result": tc.answer}); err != nil {
+					t.Error(err)
+				}
+			})
+			err := a.CreateAgent(opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("unsafe result was not refused with expected reason")
+			}
+			if out.Len() != 0 || strings.Contains(fmt.Sprint(err)+diagnostics.String(), token) || strings.Contains(fmt.Sprint(err)+diagnostics.String(), tc.answer) {
+				t.Error("unsafe answer or credential material escaped")
+			}
+			assertOrkaForwardExited(t, dir)
+		})
+	}
+}
+
+func TestOrkaTaskControllerRoundTripKeepsCreatedGeneration(t *testing.T) {
+	a, opt, out, _, dir := orkaCreateFixture(t, "task-resources-roundtrip")
+	var calls atomic.Int32
+	orkaResultServer(t, &opt, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"result":"hello from Orka"}`)
+	})
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "hello from Orka\n" {
+		t.Fatalf("answer not retrieved: %q", out.String())
+	}
+	writes := 0
+	for _, call := range orkaCalls(t, dir) {
+		if call.Document != nil && call.Document["kind"] == "Task" && !slices.Contains(call.Args, "--dry-run=server") {
+			writes++
+		}
+	}
+	if writes != 1 {
+		t.Fatalf("Task executions = %d, want exactly one", writes)
+	}
+	assertOrkaForwardExited(t, dir)
+}
+
 func TestOrkaTokenAndForwardFailuresStopBeforeArtifact(t *testing.T) {
 	for _, scenario := range []string{"token-fail", "short-token", "forward-fail"} {
 		t.Run(scenario, func(t *testing.T) {

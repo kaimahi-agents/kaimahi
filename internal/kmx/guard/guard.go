@@ -36,6 +36,7 @@
 package guard
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -223,6 +224,15 @@ type Request struct {
 // non-character-device stream means nobody is there to answer, and the
 // guard fails closed rather than hanging or assuming.
 func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
+	return CheckContext(context.Background(), cfg, req, out, in)
+}
+
+// CheckContext is Check with cancellation during interactive confirmation.
+// It borrows in for the prompt only; it never closes it or reads ahead.
+func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("kube-guard: confirmation cancelled — nothing was applied: %w", err)
+	}
 	posture, err := Classify(cfg, req.Context)
 	if err != nil {
 		return fmt.Errorf("kube-guard: %w", err)
@@ -331,7 +341,10 @@ func Check(cfg *Kubeconfig, req Request, out io.Writer, in *os.File) error {
 	}
 
 	fmt.Fprint(out, ui.Warning("Type the context name to continue (anything else aborts): "))
-	answer := readLine(in)
+	answer, err := readLineContext(ctx, in)
+	if err != nil {
+		return fmt.Errorf("kube-guard: confirmation stopped — nothing was applied: %w\n%s", err, proceed)
+	}
 	if answer != req.Context {
 		return fmt.Errorf("kube-guard: not confirmed — nothing was applied")
 	}
@@ -373,7 +386,7 @@ func isTerminal(f *os.File) bool {
 // readLine reads one line without pulling in bufio's buffering, which would
 // swallow bytes a subsequently-spawned command might want. Confirmations are
 // short; a byte at a time is free here.
-func readLine(f *os.File) string {
+func readLine(f io.Reader) string {
 	var b []byte
 	buf := make([]byte, 1)
 	for {

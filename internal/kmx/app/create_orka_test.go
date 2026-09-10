@@ -144,6 +144,24 @@ func TestOrkaKubectlHelper(t *testing.T) {
 					status["conditions"] = []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 0}}
 				}
 				if obj["kind"] == "Task" {
+					// Orka v0.1.3 adds a finalizer via whole-object Update. Its
+					// nonpointer ResourceRequirements serializes as {}, changing
+					// the spec (and generation) only when resources was absent.
+					if scenario == "task-resources-roundtrip" {
+						spec := obj["spec"].(map[string]any)
+						if _, exists := spec["resources"]; !exists {
+							spec["resources"] = map[string]any{}
+							meta["generation"] = meta["generation"].(float64) + 1
+						}
+						meta["finalizers"] = []string{"orka.ai/cleanup"}
+						body, err := json.Marshal(obj)
+						if err != nil {
+							fail()
+						}
+						if err := os.WriteFile(filepath.Join(dir, name+"-"+kind+".json"), body, 0600); err != nil {
+							fail()
+						}
+					}
 					status = map[string]any{"phase": "Succeeded", "resultRef": map[string]any{"available": true}}
 					if scenario == "failed-task" {
 						status["phase"] = "Failed"

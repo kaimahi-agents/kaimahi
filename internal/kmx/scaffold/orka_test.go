@@ -266,6 +266,30 @@ func TestOrkaYAMLPreservesInputAndTaskName(t *testing.T) {
 	}
 }
 
+func TestOrkaTaskEmitsCanonicalEmptyResources(t *testing.T) {
+	s := orkaSpec()
+	s.TaskPrompt = "Say hello"
+	b := orkaBundle(t, s)
+	resources, ok := b.Task["spec"].(map[string]any)["resources"].(map[string]any)
+	if !ok || resources == nil || len(resources) != 0 {
+		t.Fatal("Task must explicitly serialize the controller's empty resources default")
+	}
+	body, err := json.Marshal(b.Task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"resources":{}`) {
+		t.Fatal("Task create JSON omits canonical resources")
+	}
+	text, err := b.YAML("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "resources: {}") {
+		t.Fatal("review artifact omits canonical resources")
+	}
+}
+
 func TestOrkaSecretShapesAcrossEveryInputAndFinalOutput(t *testing.T) {
 	for _, shape := range secretshapes.All() {
 		t.Run(shape.Name, func(t *testing.T) {

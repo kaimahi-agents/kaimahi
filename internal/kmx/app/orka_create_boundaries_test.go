@@ -119,6 +119,42 @@ func TestOrkaOverwriteRefusalDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestOrkaOfflineCollisionAdviceNeverBulkApplies(t *testing.T) {
+	for _, target := range []string{"file", "device"} {
+		t.Run(target, func(t *testing.T) {
+			a, opt, out, diagnostics, dir := orkaCreateFixture(t, "")
+			opt.NoApply = true
+			if target == "device" {
+				opt.Out = os.DevNull
+			} else if err := os.WriteFile(opt.Out, []byte("user owned\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := a.CreateAgent(opt)
+			if err == nil {
+				t.Fatal("existing artifact accepted")
+			}
+			message := err.Error() + diagnostics.String()
+			if strings.Contains(message, "kubectl") || strings.Contains(message, "Apply it as it stands") {
+				t.Fatalf("unsafe or unpinned collision advice: %s", message)
+			}
+			for _, want := range []string{"already exists", "--out", "Secret skeleton", "Provider", "Agent", "Task"} {
+				if !strings.Contains(message, want) {
+					t.Errorf("collision advice missing %q: %s", want, message)
+				}
+			}
+			if target == "file" {
+				body, err := os.ReadFile(opt.Out)
+				if err != nil || string(body) != "user owned\n" {
+					t.Fatalf("existing file changed: %q, %v", body, err)
+				}
+			}
+			if out.Len() != 0 || len(orkaCalls(t, dir)) != 0 {
+				t.Fatal("offline collision emitted manifest or invoked kubectl")
+			}
+		})
+	}
+}
+
 func TestOrkaStaleReadinessStopsAtDeadline(t *testing.T) {
 	a, opt, _, _, dir := orkaCreateFixture(t, "stale-ready")
 	if err := validateOrkaResultOptions(&opt); err != nil {
@@ -292,7 +328,7 @@ func TestOrkaUnreadyAgentAndUnavailableResultBlockLaterSteps(t *testing.T) {
 }
 
 func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
-	for _, scenario := range []string{"auth-lost", "replace-after-read", "changed-spec-after-read", "disappear-after-read", "echo-token"} {
+	for _, scenario := range []string{"auth-lost", "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read", "echo-token"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, opt, out, diagnostics, dir := orkaCreateFixture(t, "")
 			reads := 0
@@ -308,7 +344,7 @@ func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
 				case "auth-lost":
 					w.WriteHeader(403)
 					fmt.Fprintf(w, `{"error":{"code":403,"message":%q}}`, orkaTestToken())
-				case "replace-after-read", "changed-spec-after-read", "disappear-after-read":
+				case "replace-after-read", "changed-spec-after-read", "changed-prompt-after-read", "disappear-after-read":
 					name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/"), "/result")
 					path := filepath.Join(dir, name+"-tasks.core.orka.ai.json")
 					body, err := os.ReadFile(path)
@@ -318,8 +354,11 @@ func TestOrkaResultAuthLossAndReplacementFailWithoutPrinting(t *testing.T) {
 					if scenario == "replace-after-read" {
 						body = bytes.ReplaceAll(body, []byte("task-uid"), []byte("other-uid"))
 					}
-					if scenario == "changed-spec-after-read" {
+					if scenario == "changed-spec-after-read" || scenario == "changed-prompt-after-read" {
 						body = bytes.ReplaceAll(body, []byte(`"generation":1`), []byte(`"generation":2`))
+					}
+					if scenario == "changed-prompt-after-read" {
+						body = bytes.ReplaceAll(body, []byte(`"prompt":"Say hello"`), []byte(`"prompt":"Run a different request"`))
 					}
 					if scenario == "disappear-after-read" {
 						err = os.Remove(path)

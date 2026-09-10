@@ -80,7 +80,7 @@ func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 	if opt.DryRun {
 		action = "server dry-run Orka resources in " + opt.Namespace
 	}
-	if err := guard.Check(cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command}, a.Err, a.Stdin); err != nil {
+	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command}, a.Err, a.Stdin); err != nil {
 		return err
 	}
 	a.guarded = true

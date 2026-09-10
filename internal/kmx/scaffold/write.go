@@ -21,10 +21,7 @@ func WriteNew(path, content string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
-			return fmt.Errorf("%s already exists — refusing to overwrite it.\n"+
-				"  It may be a manifest you have edited. Apply it as it stands:\n"+
-				"    kubectl apply -f %s\n"+
-				"  or scaffold under another name with --out <path>.", path, path)
+			return &fileExistsError{path: path, cause: err}
 		}
 		return err
 	}
@@ -34,6 +31,22 @@ func WriteNew(path, content string) error {
 	}
 	return nil
 }
+
+// fileExistsError preserves the shared diagnostic while letting callers with
+// different artifact semantics supply their own advice via errors.Is.
+type fileExistsError struct {
+	path  string
+	cause error
+}
+
+func (e *fileExistsError) Error() string {
+	return fmt.Sprintf("%s already exists — refusing to overwrite it.\n"+
+		"  It may be a manifest you have edited. Apply it as it stands:\n"+
+		"    kubectl apply -f %s\n"+
+		"  or scaffold under another name with --out <path>.", e.path, e.path)
+}
+
+func (e *fileExistsError) Unwrap() error { return e.cause }
 
 // WriteNewOrIdentical is WriteNew for a command that is meant to be
 // re-runnable: an existing file whose bytes are exactly what would have
