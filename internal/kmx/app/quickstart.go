@@ -160,13 +160,13 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		Context:  a.Cfg.KubeContext,
 		Cluster:  a.Cfg.KindCluster,
 		Agent:    agent,
-		Manifest: "k8s/hello-world.yaml (embedded in kmx; `kmx agent create` writes your own)",
+		Manifest: "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
 		Question: task,
 		Answer:   answer,
 		Governed: false,
 		Next: []string{
 			a.operationCommand("agent", "chat", agent, "ask it something else"),
-			a.operationCommand("agent", "create", "my-agent", "--description", "Describe your agent"),
+			a.operationCommand("orka", "install"),
 			a.operationCommand("up"),
 			a.operationCommand("plane"),
 			a.operationCommand("govern", a.Cfg.Credential),
@@ -199,13 +199,13 @@ func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
-			{Label: "Create your own agent", Command: result.Next[1], Detail: "reviewable YAML; replace the example name and description"},
+			{Label: "Install Orka", Command: result.Next[1], Detail: "prerequisite for Orka authoring; docs/kmx.md#kmx-agent-create"},
 			{Label: "Install the full runtime", Command: result.Next[2], Detail: "tool server and second agent"},
 			{Label: "Delete this cluster", Command: down, Detail: "delete the cluster and everything in it"},
 		}))
 	} else {
 		a.notef("\nNEXT  %s  # ask it something else\n"+
-			"      %s  # reviewable YAML; replace the example name and description\n"+
+			"      %s  # prerequisite for Orka authoring; docs/kmx.md#kmx-agent-create\n"+
 			"      %s  # the rest of the runtime (tool server, second agent)\n"+
 			"      %s  # delete the cluster and everything in it", result.Next[0], result.Next[1], result.Next[2], down)
 	}

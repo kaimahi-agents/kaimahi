@@ -60,10 +60,12 @@ it, the right answer is to print the command that already works.
 
 ### 2. The generated YAML is the product, not a by-product
 
-`kmx agent create` writes `agents/<name>.yaml` and applies it. The file is
-the point. It is the same YAML a developer would have written by hand, it
-is theirs from that moment, and it is reviewable, diffable, committable
-and portable to any conformant cluster.
+`kmx agent create` writes `agents/<name>.yaml`: now an Orka Provider/Agent
+bundle with a value-free Secret prerequisite and optional Task. The file is
+the point: owned, reviewable, diffable and committable. Portability requires
+compatible Orka CRDs, a watched namespace and separately provisioned credentials;
+it is not a promise about every Kubernetes cluster. Do not bulk-apply it or
+write the Secret skeleton: [create in dependency order and wait](kmx.md#kmx-agent-create).
 
 An entry point that hides the artifact has built a black box with a nice
 front door. The moment the tool disappears — because it is unmaintained,
@@ -196,12 +198,12 @@ The entry point was built in slices, and the slices were chosen so that
 each one was useful alone. All of them have since shipped, in this order,
 and the ordering is the part worth keeping:
 
-**The runtime journey first.** `ctx`, `up`, `agent create`, `agent chat`,
-`status`, `down` — kind, kagent, Ollama, the agents, and no governance
-plane. A consequence was stated and accepted rather than discovered: on a
-fresh cluster `agent create` scaffolds the keyless preset and prints the
-ungoverned warning, because governed presets only exist once the plane
-does.
+**The runtime journey first.** Originally `ctx`, `up`, `agent create`,
+`agent chat`, `status`, `down` meant kind, kagent, Ollama and no governance
+plane. That create path selected the keyless preset until a governed preset
+existed. **That default is retired:** current [create](kmx.md#kmx-agent-create)
+authors Orka with explicit Provider fields and no governance inference.
+`up`, `agent chat` and the preset/governance commands remain kagent paths.
 
 **Then the plane.** `plane`, `govern <name>`, and the read-only views —
 `ledger`, `grants`, the audit reads. Clone-free: the binary carries the

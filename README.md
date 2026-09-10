@@ -110,10 +110,11 @@ money, changes infrastructure, or emails a customer, the difference between
 
 **[`kmx`](docs/kmx.md) is the entry point** — one Go binary that drives
 `kind`, `helm`, `kubectl` and the kagent CLI so a first agent takes minutes
-instead of a prerequisite list. It carries the whole journey — `up`, `agent create`,
-`agent chat`, `plane`, `govern`, `ledger`, `status`, `down` — and needs no
-clone, because it fetches the plane at its own revision from the public Go
-proxy.
+instead of a prerequisite list. It carries `up`, `agent chat`, `plane`,
+`govern`, `ledger`, `status`, `down`, plus native Orka authoring through
+`orka install` and `agent create`. These are separate runtime paths, not a
+create→chat migration. No clone is needed: it fetches the plane at its own
+revision from the public Go proxy.
 
 ```bash
 # One command. A container engine is the only thing you need installed.
@@ -146,8 +147,11 @@ the Helm release state, it refuses rather than guessing that nothing exists.
 That is a real agent conversation with **no API key**: the cluster runs an
 in-cluster Ollama model, and the governed half is keyless too. **Nothing on
 that path is governed** — the plane is the next command, not a gate you pass
-through first. Create your own agent with `kmx agent create <name>`, which
-writes reviewable YAML and applies it.
+through first. To author your own **Orka** Agent, install Orka in the same
+context, then supply an explicit namespace, Provider type, model ID and Secret
+name to [`kmx agent create`](docs/kmx.md#kmx-agent-create). The
+[local Task example](docs/orka.md#author-an-orka-agent-and-get-an-answer) returns
+an actual answer; existing `agent chat/edit/list` remain kagent-specific.
 
 `@latest` is the newest tagged release; `kmx version` tells you which one you
 got. The install script verifies the release checksum before it installs
@@ -217,7 +221,7 @@ cache (checksum-verified), port-forwards the controller, and invokes the agent.
 | 9 | Run it for real: two stateless replicas, exact budgets, metrics | **runs** — two replicas behind every seam, every budget and grant decision serialized per credential in Postgres (N concurrent calls against a cap with room for one admit exactly one, asserted across both replicas in CI), a replica killed mid-cycle and Postgres restarted without a proxy restart, migrations under a lock, Prometheus on its own port, `make backup` / `make restore` ([docs/operations.md](docs/operations.md)) |
 | 10 | Hosted tool upstreams — the gateway reaches GitHub's MCP server on the internet through one hardened dialer | **runs** — `make github-secret` → `make govern-github`; the dialer's refusals, a synthetic public upstream, the opt-in allowance and the fail-closed negative asserted keyless in CI; GitHub itself verified once on kind ([docs/hosted-upstreams.md](docs/hosted-upstreams.md)) |
 | 12 | Argument-level policy — an approval binds the CALL, and standing constraints let routine calls through | **runs** — a tool declares which argument fields are policy-relevant; a credential may carry declarative bounds on them (a call inside proceeds with no human, one outside is denied and files a request); the request, the grant and the audit carry the call's digest and a readable summary, so an approval for one transaction cannot be spent on another. Asserted keyless in CI ([docs/approvals.md](docs/approvals.md#the-approval-binds-the-call)) |
-| 11 | `kmx` — the developer journey as one command | **runs** — `go install …/cmd/kmx@latest`, then `kmx up`, `kmx agent create`, `kmx agent chat`, `kmx plane`, `kmx govern`, `kmx ledger`, `kmx status`, `kmx down`; the Makefile's kind path delegates to it, so CI proves it on every PR, and a post-merge job drives the whole journey from an installed binary with no checkout ([docs/kmx.md](docs/kmx.md)). It now carries the runtime, the plane, the operator verbs (`use`, `budget`, `approvals`/`approve`/`deny`/`request`, `tools`, `backup`/`restore`, `metrics`), a governed workflow (`workflow`), the one credential path (`credential capture`), the managed-cluster path (`lift`) and the migration of an application this project did not write onto Orka (`migrate`, [docs/migrate.md](docs/migrate.md)) |
+| 11 | `kmx` — the developer journey as one command | **runs** — `go install …/cmd/kmx@latest`, then `kmx up`, kagent `kmx agent chat`, `kmx plane`, `kmx govern`, `kmx ledger`, `kmx status`, `kmx down`; separately `kmx orka install` and native Orka `kmx agent create` with optional Task result; the Makefile's kind path delegates to it, so CI proves it on every PR, and a post-merge job drives the whole journey from an installed binary with no checkout ([docs/kmx.md](docs/kmx.md)). It now carries the runtime, the plane, the operator verbs (`use`, `budget`, `approvals`/`approve`/`deny`/`request`, `tools`, `backup`/`restore`, `metrics`), a governed workflow (`workflow`), the one credential path (`credential capture`), the managed-cluster path (`lift`) and the migration of an application this project did not write onto Orka (`migrate`, [docs/migrate.md](docs/migrate.md)) |
 
 | 32 | **Used for real**: an agent helps cut releases of a real project | **runs** — one command drafts the notes from what merged since the last release and proposes the branch and the builds; cutting the branch and publishing are denied, filed naming the version and the repository, approved by a human, and admitted under a grant welded to that call, while build dispatch runs under a standing constraint bounded to named pipelines. The driver does the waiting. Asserted keyless in CI against the synthetic hosted upstream, including that a consolidated dispatcher is governed by its action rather than its name ([docs/release-agent.md](docs/release-agent.md)) |
 | 13 | Tagged releases, a verified download, and a proven upgrade | **runs** — CI builds four platforms from the tag with `checksums.txt`, refuses a tag whose version has no changelog section or whose binary does not report its own tag, and upgrades a two-migration-old plane with live data in it on every PR; the failure case (a migration that cannot apply) is documented and asserted ([docs/releases.md](docs/releases.md)) |
@@ -407,10 +411,20 @@ and needing no clone:
 
 ```bash
 kmx up
-kmx agent create fleet-reporter --tools kagent-tool-server:k8s_get_resources
-kmx agent chat fleet-reporter "What is running in the ollama namespace?"
+kmx agent chat hello-tools "What is running in the ollama namespace?"
+kmx --context kind-kaimahi-p1 orka install
+kmx --context kind-kaimahi-p1 agent create my-agent \
+  --namespace orka-system --provider-type openai --model qwen2.5:3b \
+  --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1
 kmx down
 ```
+
+Chat above uses the embedded kagent example. Create writes an Orka Provider and
+Agent and tests readiness, not a response; [add a Task and a separately
+provisioned result account](docs/orka.md#author-an-orka-agent-and-get-an-answer)
+for that. Create never writes its value-free Secret skeleton or reuses the
+installer's shared Provider.
 
 Once the plane is up it is also the operator's command — the budget an agent
 spends under, the approvals waiting for a human (each showing the *call* it

@@ -1,9 +1,15 @@
 # Isolation options for agents and their tools
 
-*Status: option A is built (`--image`, `--isolation`, `--run-as-user`);
-B–E are not. This note
-separates three questions that get asked as one, records why A was the only
-one shippable today, and states what the others would cost.*
+*Status: historical kagent/BYO survey. Option A's create flags (`--image`,
+`--isolation`, `--run-as-user`) have been retired. Current
+[`kmx agent create`](kmx.md#kmx-agent-create) authors native Orka resources and
+does not deploy application images or copy this hardening/governance wiring.
+Keep image, identity and placement in the application's own Deployment/chart;
+there is no replacement application-scaffold command. B–E remain unbuilt here.*
+
+The rest of this note records the former design and its constraints, **not
+current executable instructions**. Present-tense claims below belong to that
+survey; the runtime boundary is now the linked create guide.
 
 **One finding changed the design after it was written: there is no `kata`
 profile.** Kata is a RuntimeClass and kagent exposes no `runtimeClassName`,
@@ -63,7 +69,7 @@ L3.** A single `--sandbox` flag covering them would be a design mistake.
 | D. Hyperlight around tools | L3 | needs building | **medium** | a host process per MCP server; unmeasured per-call cost |
 | E. Contribute `runtimeClassName` upstream | L2 | no | medium, slow | unblocks Kata *and* runwasi properly, for everyone |
 
-## Chosen: A — BYO on a placement profile
+## Historical choice: A — BYO on a placement profile
 
 The closest honest answer to "hyperscale VM" that this CRD can express, and
 the only one that needs no new runtime.
@@ -110,9 +116,9 @@ Both matter. Neither substitutes for the other:
 An isolated, ungoverned agent is not an upgrade. So the design has to carry
 the governance across the boundary, not drop it.
 
-### How it surfaces in `agent create`
+### Retired `agent create` interface (historical, no longer accepted)
 
-```
+```text
 kmx agent create <name>
   --image <ref>              make it a BYO agent (serves A2A on :8080)
   --isolation virtual-node | none    where it schedules (default: none)
@@ -164,7 +170,7 @@ Rules that keep it honest:
    would fail the pod at `CreateContainer` over a UID the operator never
    chose, in a message that never names the image.
 
-### What `Spec` gains
+### Former `Spec` additions
 
 `scaffold.Spec` grows `Image`, `Placement`, `Governance` and `Identity`, all
 zero-valued to today's behaviour. `Generate` branches on `Image` for
@@ -179,7 +185,7 @@ all there, and so are `nodeSelector` and `tolerations`. `runtimeClassName`
 is on neither `byo.deployment` nor `declarative.deployment`, which is the
 finding at the top of this note.
 
-### Gates before it ships
+### Gates proposed for that design
 
 - a BYO image on a virtual node answers `kmx agent chat`, and `kubectl`
   shows it there;

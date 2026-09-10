@@ -9,6 +9,12 @@
   "signature": "check-repository-map self-test:",
   "mutations": [
     {
+      "name": "versioned fixture directories stop matching the table parser",
+      "breaks": "Embedded schema fixture rows containing version punctuation become invisible even when correctly classified; the positive directory fixture must fail rather than treating YAML data as an unlisted package.",
+      "find": "([a-z0-9/._-]+)",
+      "replace": "([a-z/]+)"
+    },
+    {
       "name": "a count that disagrees with the tree is not a problem",
       "breaks": "Every number in the map. The file counts, the package counts, the bucket totals and the arithmetic between them all stop being compared, and the map reads clean whatever it says.",
       "find": "    if doc_value == tree_value:\n        return []",

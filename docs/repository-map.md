@@ -73,7 +73,7 @@ still in the tree.
 | Area | Product | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | `demo/kaimahi-erp` | — |
-| `internal/` | `kmx/` (17 packages) | `demo/erp` | `kmx/delegation` (tests only) |
+| `internal/` | `kmx/` (18 packages) | `demo/erp` | `kmx/delegation` (tests only) |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
 | `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 54 (checkers, probes, CI fixtures, mutation specs) |
@@ -86,20 +86,18 @@ still in the tree.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (19 files) | **Product** | The CLI. The documented front door is `install.sh`, piped from `curl` to `sh`; `go install .../cmd/kmx@latest` is the stated alternative. |
+| `cmd/kmx` (20 files) | **Product** | The CLI. The documented front door is `install.sh`, piped from `curl` to `sh`; `go install .../cmd/kmx@latest` is the stated alternative. |
 | `cmd/demo/kaimahi-erp` (2 files) | **Demonstration** | A fake accounts-payable ERP. Applied by `k8s/erp-mcp.yaml` via `scripts/erp-deploy.sh`; `docs/ap-demo.md` lists it under "Simulated" — "no vendor, no bank, no payment rail". |
 
 Until this change both sat directly under `cmd/`, as peers, and nothing
 distinguished them.
 
-The command count includes tests, including the new chat flag-refusal test in
-the current working tree. The tracked-tree checker sees new files only after
-they are staged; this count anticipates that inclusion without changing its
-tracked-only policy.
+The command count includes tests, including the Orka create flag/refusal tests.
+The checker counts tracked files; new files enter its inventory when staged.
 
-## `internal/` — the product's packages, and one fixture
+## `internal/` — packages and embedded fixture directories
 
-`internal/kmx/` is seventeen packages. All but one are product — the
+`internal/kmx/` is eighteen packages. All but one are product — the
 exception, `delegation`, is below — and the line between them is
 consistent enough to state as a rule: **anything that
 can be decided without reaching a cluster lives in its own package;
@@ -109,21 +107,25 @@ can be decided without reaching a cluster lives in its own package;
 and talks to no cloud, so they are tested without a subscription — the
 five `lift*.go` files in `app` are the half that runs `az`. `blueprint`
 parses and validates a governed workflow; `workflow_run.go` in `app`
-executes it. `scaffold` generates agent YAML; `guard` decides whether a
+executes it. `scaffold` generates Orka bundles and seam artifacts; `orkaschema` validates
+against installed or embedded upstream CRDs; `guard` decides whether a
 context may be written to; `seam`, `secretshapes`, `toolchain` and
 `version` are each one decidable question; `seamcert` mints and reads
-the certificate the plane's data seams serve with. That is why `app` is 44
+the certificate the plane's data seams serve with. That is why `app` is 47
 files: it is not a grab bag, it is everything left after the decidable
 parts were taken out, and what remains all shares one receiver holding
 a kubectl and the operator's terminal.
 
-| Package | Non-test source files | Class | What it is |
+| Internal directory | Non-test files (code and data) | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 44 | Product | Every kmx command. The shell-out orchestration layer. |
+| `kmx/app` | 47 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
 | `kmx/blueprint` | 5 | Product | The declarative governed-workflow file. |
-| `kmx/scaffold` | 11 | Product | Generates the reviewable Agent YAML, and the onboarding artifacts: a tool upstream's four documents, a model upstream's three, and a migration's identity, seam allowance and workload patch. |
-| `kmx/guard` | 1 | Product | The context-safety net. A local kind context proceeds with a banner; any other requires confirmation naming it; no confirmation, unknown context or unreadable kubeconfig refuses. |
+| `kmx/scaffold` | 11 | Product | Generates the reviewable Orka Provider/Agent/optional Task bundle and value-free Secret skeleton, plus tool/model onboarding and migration artifacts. Retains kagent editor/placement helpers for their existing callers. |
+| `kmx/orkaschema` | 3 | Product | One Go validator plus fixture provenance README and upstream LICENSE; offline validation is shipped behavior, not a test-only fixture. |
+| `kmx/orkaschema/fixtures/v0.1.3` | 3 | Product | Three embedded, byte-exact upstream CRD YAML fixtures for the pinned release; no Go files and not a Go package. |
+| `kmx/orkaschema/fixtures/main` | 3 | Product | Three embedded upstream CRD YAML fixtures at an immutable main snapshot; no Go files and not a Go package. |
+| `kmx/guard` | 2 | Product | The context-safety net. A local kind context proceeds with a banner; any other requires confirmation naming it; no confirmation, unknown context or unreadable kubeconfig refuses. |
 | `kmx/seam` | 1 | Product | What kmx knows about each upstream credential. |
 | `kmx/seamcert` | 1 | Product | Mints the certificate the plane's two data seams serve with, and answers when it expires. The authority outlives what it signs, so renewal is a re-sign rather than a redistribution. |
 | `kmx/toolchain` | 2 | Product | Fetches kind/kubectl/helm, pinned and checksum-verified. |
@@ -133,7 +135,7 @@ a kubectl and the operator's terminal.
 | `kmx/config` | 1 | Product | Settings resolution. |
 | `kmx/cliui` | 2 | Product | Destination-aware rich fields, tables, actions and callouts; plain compatibility stays at callers. NO_COLOR retains rich layout without ANSI. |
 | `kmx/run` | 1 | Product | The shell-out layer. |
-| `kmx/secretshapes` | 2 | Product | The one list of credential shapes — `shapes.json` is the list, `shapes.go` reads it. The only package here whose non-test files are not all Go. |
+| `kmx/secretshapes` | 2 | Product | The one list of credential shapes — `shapes.json` is the list, `shapes.go` reads it. The count includes the embedded JSON data file, as the Orka rows include their schemas and attribution. |
 | `kmx/version` | 1 | Product | Version and upgrade answers. |
 | `kmx/delegation` | **0** | **Scaffolding** | A package with no source at all — only `delegation_test.go`. It exists to hold the test that make and kmx are one implementation. |
 | `demo/erp` | 2 | **Demonstration** | The fixture ERP. |
@@ -143,10 +145,11 @@ product package from the outside and contains no product code. That is
 deliberate and correct — a test needs a package to live in — but a
 reader counting packages will miscount without being told.
 
-The source counts above exclude every Go test file, including newly added audit,
-session/history, Linux PTY, and typed-binding tests in `app`, `admin`, and
-`blueprint`. Those tests do not increase `app`'s 44, `admin`'s 5, or `blueprint`'s
-5 non-test files; `cmd/kmx` is 19 files, tests included.
+The directory counts above exclude every Go test file but include all other
+tracked files, including the embedded CRD fixtures, provenance and license.
+Fixture subdirectories are not extra Go packages. Audit, session/history, Linux
+PTY, typed-binding and Orka tests do not increase `app`'s 47, `admin`'s 5, or
+`blueprint`'s 5 non-test files; `cmd/kmx` is 20 files, tests included.
 Presentation and safety audit coverage is described
 in [cli-ux-plan.md](cli-ux-plan.md); these tests do not constitute live-cluster
 verification.

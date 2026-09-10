@@ -19,10 +19,11 @@ Assumes the governance plane is deployed (`kmx plane`, see
 [tool-governance.md](tool-governance.md), which is the reference for what
 the gateway enforces. This is the procedure.
 
-The agent itself is not this page's job: it must already exist, and
-`kmx agent create <name>` ([kmx.md](kmx.md#kmx-agent-create)) is how you
-make one. Everything below repoints an existing agent at a governed
-seam.
+The agent itself is not this page's job: it must already exist as a **kagent**
+Agent (for example `hello-tools` from `kmx up`). Everything below repoints that
+Agent and its RemoteMCPServer wiring at a governed seam. New
+[`kmx agent create`](kmx.md#kmx-agent-create) authors **Orka**, so this is not
+its follow-on procedure and does not imply automatic Orka MCP translation.
 
 > **Ungoverned by default.** Nothing here happens on its own. An agent
 > whose `tools` point straight at an MCP server calls it with no

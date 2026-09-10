@@ -10,9 +10,11 @@ checkout, and a Secret an operator is told to create by hand. There is no
 published CLI binary and no GitHub Release to fetch.
 
 **Installing Orka governs nothing.** That sentence is printed by the command
-itself, and it is the reason this page is short: putting an application's
-model traffic on the governed seam is [`kmx migrate`](migrate.md), one
-workload at a time, and the two are deliberately separate commands.
+itself. Authoring a native Orka Agent is now [`kmx agent create`](kmx.md#kmx-agent-create);
+putting an existing application's model traffic on the governed seam is
+[`kmx migrate`](migrate.md), one owned Deployment at a time. Migration does not
+translate a kagent BYO definition or create Tasks; install, create and migrate
+are deliberately separate commands.
 
 ## The command
 
@@ -90,7 +92,9 @@ That is a weaker claim than a publisher's signature and a stronger one than
 trusting whatever the URL serves today. It is written down rather than
 skipped so that the weakness is visible.
 
-The manifest is **fetched, not vendored**. 525 kB of somebody else's
+The installer manifest is **fetched, not vendored**. Offline agent creation
+separately embeds three CRD schemas per pinned target; those fixtures do not
+install anything. 525 kB of somebody else's
 installer committed here would be a copy that silently ages, and the
 repository map would have to classify it. Fetching keeps the bytes theirs
 and keeps "install exactly these bytes" ours. The cost is that this one
@@ -136,6 +140,64 @@ key, so a placeholder is written and named for what it is.
 the command refuses rather than creating a Provider that resolves nothing —
 an adopter should learn that here, not at their first model call.
 
+## Author an Orka Agent and get an answer
+
+`agent create` authors Orka resources; it does not install Orka. On the local
+kind path, reuse the Ollama model from `quickstart` or `up`, then install the
+pinned release in that **same** context:
+
+```bash
+kmx --context kind-kaimahi-p1 orka install
+```
+
+The installer provisions `local-provider-key` separately. Create will reference
+it by name and key only, and will create a **new Provider named `orka-hello`**;
+it never adopts or updates the installer's shared Provider `local`. This is a
+new Agent/Task example, not a continuation command for an Agent you already
+created. Choose unused names and output paths; creation refuses collisions.
+
+Task execution requires an existing result account. An operator with RBAC
+creation permission can provision this dedicated account separately; these
+commands contain names only, not token values:
+
+```bash
+kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
+kubectl --context kind-kaimahi-p1 -n orka-system create role orka-result-reader \
+  --verb=get --resource=tasks.core.orka.ai
+kubectl --context kind-kaimahi-p1 -n orka-system create rolebinding orka-result-reader \
+  --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
+
+kmx --context kind-kaimahi-p1 agent create orka-hello \
+  --namespace orka-system --provider-type openai --model qwen2.5:3b \
+  --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
+  --task 'Reply with exactly this text: Orka says hello.' \
+  --result-service-account orka-result-reader
+```
+
+This creates Provider → waits for current-generation Ready → creates Agent →
+waits → creates a fresh Task → retrieves its actual answer. A local kind run
+against pinned `v0.1.3` returned stdout `Orka says hello.` with exit 0, using
+Ollama and no paid endpoint (US$0). That is a demonstrated release run, **not**
+a live main-snapshot or AKS proof. CI's clone-free journey also asserts the
+actual answer, rather than calling Ready an execution result.
+
+The generated `agents/orka-hello.yaml` includes a **value-free Secret skeleton
+that must never be written**. The command does not write it or provision RBAC.
+Without `--task`, only Provider/Agent readiness is tested. Use `--out -` or
+`--no-apply` for fully offline generation; [the canonical create guide](kmx.md#kmx-agent-create)
+covers explicit inputs, pinned schemas, ordered manual creation and collisions.
+
+**Authority is broader than the name "result reader" suggests.** The temporary
+ten-minute token has this account's full effective authority, and discarding
+it is not revocation. Pinned main requires the namespaced Task-get permission
+above, but release `v0.1.3` authenticates result reads without enforcing that
+Task-read RBAC. Results travel via a loopback HTTP port-forward; UID checks do
+not bind the returned bytes to a UID. Dry-run does not test access or execution.
+
+`agent chat/edit/list` still operate on kagent, not this Orka Agent. No automatic
+MCP translation, application image deployment or governance is added here.
+
 ## The whole journey, from nothing
 
 ```console
@@ -151,8 +213,8 @@ front door.
 ## Authoring an agent for Orka
 
 Installing Orka and authoring an agent are separate steps. `kmx agent create`
-continues to emit `kagent.dev/v1alpha2` resources for kagent; installing Orka
-neither converts those files nor changes that command's output.
+now emits native Orka resources; installing Orka does not convert existing
+`kagent.dev/v1alpha2` files.
 
 For a new agent that will run on Orka, **author Orka's native
 `core.orka.ai/v1alpha1` `Agent` and `Provider` resources and invoke it with
@@ -197,6 +259,7 @@ Agent conversion.
 
 ## See also
 
+- [kmx agent create](kmx.md#kmx-agent-create) — native Orka authoring and Task result contract
 - [migrate.md](migrate.md) — putting an application's model traffic on the seam
 - [the Orka composition report](reviews/2026-09-09-orka-composition.md) — what
   each project has, measured rather than compared

@@ -116,7 +116,7 @@ kmx quickstart --output json --task 'Who are you?'
   "context": "kind-kaimahi-p1",
   "cluster": "kaimahi-p1",
   "agent": "hello-world",
-  "manifest": "k8s/hello-world.yaml (embedded in kmx; `kmx agent create` writes your own)",
+  "manifest": "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
   "question": "Who are you?",
   "answer": "I am a declarative kagent agent defined entirely in YAML...",
   "governed": false,
@@ -124,7 +124,7 @@ kmx quickstart --output json --task 'Who are you?'
   "elapsed_seconds": 42.1,
   "next": [
     "kmx --context kind-kaimahi-p1 agent chat hello-world 'ask it something else'",
-    "kmx --context kind-kaimahi-p1 agent create my-agent --description 'Describe your agent'",
+    "kmx --context kind-kaimahi-p1 orka install",
     "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 up",
     "KIND_CLUSTER=kaimahi-p1 CONTAINER_ENGINE=docker kmx --context kind-kaimahi-p1 plane",
     "kmx --context kind-kaimahi-p1 govern hello-world"
@@ -268,20 +268,28 @@ prose summary is less reliable than the tool call underneath it.
 
 ## An agent of your own
 
+The quickstart above and the manifests below use **kagent**. New
+`kmx agent create` output uses **Orka**; it is not a replacement file for the
+kagent walkthrough, and `agent chat/edit/list` do not operate on it.
+Quickstart's second next-action slot installs Orka as an authoring prerequisite,
+not as a migration of the existing agent.
+
 ```bash
-kmx agent create fleet-reporter \
-  --description "Reports what is running in the cluster." \
-  --instructions ./fleet.md \
-  --tools kagent-tool-server:k8s_get_resources
+kmx --context kind-kaimahi-p1 orka install
+kmx --context kind-kaimahi-p1 agent create my-agent \
+  --namespace orka-system --provider-type openai --model qwen2.5:3b \
+  --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1
 ```
 
-That writes `agents/fleet-reporter.yaml` — the same kind of document as the
-one below, which you own, review and commit — and applies it. The tool
-allowlist is mandatory: naming a server alone would grant every tool it
-offers, today and after its next release. `kmx agent create` accepts no
-credential in any form, and refuses to write a manifest with anything
-key-shaped in it. [kmx.md](kmx.md#kmx-agent-create) has the full list of
-what it refuses and why.
+The installer separately provisions the named Secret for local Ollama. Create
+writes `agents/my-agent.yaml` with a value-free Secret skeleton (never written
+to the cluster), a new Provider and its Agent; it waits in dependency order.
+This example tests readiness, not a model response. For a first Task and a
+separately provisioned result account, follow [the local Orka example](orka.md#author-an-orka-agent-and-get-an-answer).
+[kmx.md](kmx.md#kmx-agent-create) is the canonical input, offline-schema,
+result-authority and safety contract. Create accepts references, not credentials,
+and refuses known key shapes before emission.
 
 There is exactly one path in `kmx` that takes a credential —
 `kmx credential capture <upstream> <repository|organization>`, for the

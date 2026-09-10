@@ -794,6 +794,7 @@ jobs:
               # The reason this job is required at all.
               "internal/kmx/guard": "the context guard's port decisions",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
+              "internal/kmx/orkaschema": "pinned Orka schemas and unknown-field refusals",
               "internal/kmx/kagentcli": "the pinned kagent CLI's checksum",
               # kmx downloads kind, kubectl and Helm as well as the kagent
               # CLI — the difference between five prerequisites and one. A
@@ -865,11 +866,10 @@ jobs:
           print(f"every required package ran its own tests: {sum(passed.values())} passed "
                 f"across {len(REQUIRED)} required packages")
           EOF
-          # The generated-manifest check is the only test that hands the
-          # scaffolder's output to a REAL YAML parser, and it skips itself
-          # when python3/PyYAML are missing — right on a laptop, a green
-          # no-op here. Assert it ran. (The runner has PyYAML; the "All YAML
-          # parses" step above imports it too.)
+          # Generated Orka YAML must parse without letting instructions
+          # escape their scalar. This named test now uses the Go YAML parser
+          # with no Python dependency or skip path. Keep asserting it ran:
+          # a renamed test must not turn go test -run into a green no-op.
           go test ./internal/kmx/scaffold/ -v \
             -run TestGeneratedManifestParsesAndKeepsInstructionsInsideTheScalar 2>&1 | tee parse.out
           grep -q -- '--- PASS: TestGeneratedManifestParsesAndKeepsInstructionsInsideTheScalar' parse.out
@@ -4621,16 +4621,37 @@ jobs:
         env:
           KIND_CLUSTER: kmx-clone-free
         run: kmx up
-      - name: agent create — a scaffolded agent, applied
+      - name: Orka — install beside the existing kagent runtime
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
+        run: kmx --context kind-kmx-clone-free orka install
+      - name: Orka — separately provision the Task result account
+        if: steps.changes.outputs.docs_only != 'true'
+        working-directory: /home/runner/journey
         run: |
-          kmx agent create fleet-reporter \
-            --description 'Reports what is running in the cluster.' \
-            --tools kagent-tool-server:k8s_get_resources
-          test -f agents/fleet-reporter.yaml
+          # Names only: create never provisions this account or its RBAC.
+          # Main requires Task get; v0.1.3 authenticates result reads but does
+          # not enforce that read RBAC. The token has the SA's full authority.
+          kubectl --context kind-kmx-clone-free -n orka-system create serviceaccount orka-result-reader
+          kubectl --context kind-kmx-clone-free -n orka-system create role orka-result-reader \
+            --verb=get --resource=tasks.core.orka.ai
+          kubectl --context kind-kmx-clone-free -n orka-system create rolebinding orka-result-reader \
+            --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
+      - name: agent create — native Orka Task returns an actual local-model answer
+        if: steps.changes.outputs.docs_only != 'true'
+        working-directory: /home/runner/journey
+        run: |
+          # Reuse the installer's Secret, never its shared Provider/local.
+          # This proof is additive: later kagent hello-world/hello-tools and
+          # plane probes still exercise the original runtime/tool journey.
+          kmx --context kind-kmx-clone-free agent create orka-hello \
+            --namespace orka-system --provider-type openai --model qwen2.5:3b \
+            --secret local-provider-key \
+            --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
+            --task 'Reply with exactly this text: Orka says hello.' \
+            --result-service-account orka-result-reader > orka-answer.out
+          test -f agents/orka-hello.yaml
+          test "$(cat orka-answer.out)" = 'Orka says hello.'
       - name: plane — fetched from the Go proxy at kmx's own revision, built and side-loaded
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey

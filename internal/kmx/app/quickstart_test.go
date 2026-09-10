@@ -90,9 +90,9 @@ func TestQuickstartDeletionConsequenceSurvivesRichAndPlainOutput(t *testing.T) {
 	for _, rich := range []bool{false, true} {
 		var out bytes.Buffer
 		a := &App{Cfg: &config.Config{KindCluster: "test", KubeContext: "kind-test", ContainerEngine: "podman"}, Err: &out}
-		a.quickstartNext(cliui.WithCapabilities(cliui.Capabilities{Rich: rich, Width: 50}), QuickstartResult{Next: []string{"chat", "create", "up"}})
-		for _, want := range []string{"delete the cluster and everything in it", a.operationCommand("down")} {
-			if !strings.Contains(strings.Join(strings.Fields(out.String()), " "), want) {
+		a.quickstartNext(cliui.WithCapabilities(cliui.Capabilities{Rich: rich, Width: 50}), QuickstartResult{Next: []string{"chat", "orka install", "up"}})
+		for _, want := range []string{"delete the cluster and everything in it", a.operationCommand("down"), "prerequisite for Orka authoring", "docs/kmx.md#kmx-agent-create"} {
+			if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(out.String(), "│", "")), " "), want) {
 				t.Errorf("rich=%v lost %q:\n%s", rich, want, out.String())
 			}
 		}
@@ -212,6 +212,19 @@ esac`)
 				}
 				if result.Answer != tc.answer || result.Governed {
 					t.Fatalf("unexpected result: %+v", result)
+				}
+				wantNext := []string{
+					"kmx --context kind-no-such-cluster-kmx-test agent chat hello-world 'ask it something else'",
+					"kmx --context kind-no-such-cluster-kmx-test orka install",
+					"KIND_CLUSTER=no-such-cluster-kmx-test CONTAINER_ENGINE=docker kmx --context kind-no-such-cluster-kmx-test up",
+					"KIND_CLUSTER=no-such-cluster-kmx-test CONTAINER_ENGINE=docker kmx --context kind-no-such-cluster-kmx-test plane",
+					"kmx --context kind-no-such-cluster-kmx-test govern release-agent",
+				}
+				if !reflect.DeepEqual(result.Next, wantNext) {
+					t.Fatalf("follow-ups must separate Orka prerequisites from kagent chat/governance: got %q, want %q", result.Next, wantNext)
+				}
+				if !strings.Contains(result.Manifest, "kagent") || strings.Contains(result.Manifest, "`kmx agent create` writes your own") {
+					t.Fatalf("manifest suggests Orka create replaces the kagent example: %s", result.Manifest)
 				}
 				for _, command := range result.Next {
 					if !strings.Contains(command, "--context "+f.app.Cfg.KubeContext) {

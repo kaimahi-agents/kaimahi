@@ -152,7 +152,7 @@ swap plus a credential the agent cannot read past.
 | `kmx lift --step <step>` | one phase only — every phase is re-runnable, so a failure is resumed rather than unpicked: `cluster`, `boundary`, `kagent`, `credential`, `plane`, `agents`, `observability`, `verify` |
 | `kmx lift down` | remove what the lift created. On a cluster it created, the whole resource group, proven gone. On yours, only the resources it recorded the id of, deleted by that id and never by name — anything it cannot prove is its own is left alone and named |
 | `kmx agent list [-o table\|json\|yaml]` | list agents with readiness, acceptance, active ModelConfig, and tool-server wiring |
-| `kmx agent create [<name>]` | scaffold an Agent manifest; without a name, run the guided wizard beginning `Describe this agent:` |
+| `kmx agent create [<name>]` | create an Orka Provider and Agent, optionally run a Task; explicit namespace, Provider type, model ID and Secret required (wizard prompts when omitted) |
 | `kmx agent edit <name> [--file <path>]` | edit and validate owned local Agent source; never edits the live resource implicitly |
 | `kmx agent chat <name> [message]` | ask an agent one question, through `kagent invoke` |
 | `kmx agent chat <name> --json` | the raw A2A task instead of the readable one-shot view (piped one-shot output is always raw); refused together with `--interactive` |
@@ -461,61 +461,154 @@ are tested against the same cases.
 
 ## `kmx agent create`
 
+**This command now authors Orka, not kagent.** It emits a value-free Secret
+skeleton, a same-name Provider and referencing Agent in `core.orka.ai/v1alpha1`,
+and optionally a fresh-name Task. Existing `agent chat`, `agent edit` and
+`agent list` remain kagent-specific; they are not follow-ups for this bundle.
+`quickstart`, `up` and the kagent governance walkthroughs are unchanged.
+
+For a local model, first [install Orka](orka.md#the-command) in the same context
+as Ollama. The separate [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer)
+creates a fresh Agent named `orka-hello`.
+The installer separately provisions `local-provider-key`; create references
+that Secret but creates its **own** Provider named `my-agent`, not `local`:
+
 ```bash
-kmx agent create fleet-reporter \
-  --description "Reports what is running in the cluster." \
-  --instructions ./fleet.md \
-  --tools kagent-tool-server:k8s_get_resources
+kmx --context kind-kaimahi-p1 agent create my-agent \
+  --namespace orka-system --provider-type openai --model qwen2.5:3b \
+  --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
+  --description "Answers short questions."
 ```
 
-It writes `agents/fleet-reporter.yaml` — reviewable YAML that *is* the
-agent, the same file you would have written by hand — then applies it behind
-the guard and waits for Ready.
+This writes `agents/my-agent.yaml` exclusively and creates Provider → Agent
+behind the context guard. **No `--task` means no model response was tested.**
+
+### Inputs and modes
 
 | Flag | Meaning |
 |---|---|
-| `--model <preset>` | the ModelConfig to think with (default: the plane's governed preset if it exists on the cluster, else the keyless in-cluster one) |
-| `--instructions <file>` | file whose contents become the system message |
-| `--description <text>` | one-line description |
-| `--tools <server>:<tool>[,<tool>…]` | MCP wiring; **the allowlist is mandatory** |
-| `--namespace <ns>` | default `kagent` |
-| `--out <path>` | where to write it (`-` for stdout) |
-| `--no-apply` | write the manifest and stop |
-| `--dry-run` | server-side dry run against the live CRDs |
-| `--image <ref>` | run **your own** image instead of a declarative agent. kagent deploys it and expects A2A on `:8080`. `spec.byo` has one property, `deployment` — no `modelConfig`, no `tools` — so the governed seams that a declarative agent gets by reference travel as environment instead, and kmx prints each one it injected ([isolation.md](isolation.md)) |
-| `--isolation virtual-node\|none` | where a BYO agent schedules. Needs `--image`. There is no `kata` profile: Kata is a RuntimeClass and kagent's Agent CRD exposes no `runtimeClassName`, so scheduling onto a Kata-capable node without it runs an ordinary container there — `--isolation kata` is refused with that reason rather than shipping the appearance of a VM boundary |
-| `--run-as-user <uid>\|root` | the user a `--image` runs as. kmx will not guess it: see the safety table below |
+| `--namespace <ns>` | required, explicitly choose a namespace the Orka controller watches; never inferred |
+| `--provider-type openai\|anthropic` | required; `openai` also covers OpenAI-compatible custom endpoints. Azure OpenAI's separate deployment/version fields are not scaffolded |
+| `--model <id>` | required actual Provider model ID, not a kagent ModelConfig or a `provider/model` routing alias |
+| `--secret <name>` / `--secret-key <key>` | required existing Secret name in that namespace; key defaults to `api-key`. Neither is a credential value |
+| `--base-url <url>` | optional HTTP(S) endpoint; no userinfo, query or fragment. Plain HTTP is useful for local models |
+| `--description <text>` | one-line `kaimahi.dev/description` annotation |
+| `--instructions <file>` | file whose contents become the Agent system prompt; never put credentials in it |
+| `--tools <name,...>` / `--skills <name,...>` | explicit Orka references; not `server:tool`, not an MCP allowlist or translation |
+| `--agent-requests-per-minute` / `--provider-requests-per-minute` | optional positive int32 limits; omitted when unset |
+| `--agent-tokens-per-minute` / `--provider-tokens-per-minute` | optional positive int64 limits; omitted when unset |
+| `--task <prompt>` | optional first AI Task; applying authorizes a model call |
+| `--result-service-account <name>` | existing account in the selected namespace, required when applying a Task; kmx creates no account or RBAC |
+| `--orka-api-service <name>` / `--result-port <port>` | result API Service (default `orka-api`, port 8080) and free loopback forwarding port (default `19180`) |
+| `--out <path>` | exclusive output file (default `agents/<name>.yaml`); `-` writes YAML only to stdout and implies offline |
+| `--no-apply` | offline artifact only; no tools, kubeconfig reads or cluster calls |
+| `--schema-target v0.1.3\|main` | offline only; defaults to `v0.1.3`, `main` is an immutable fixture snapshot, not a fetch |
+| `--dry-run` | installed-schema and strict server admission checks, no writes, token or forward; tests neither result access nor execution. Incompatible with offline modes |
 
-### Safety properties, and why each exists
+Without a name on an interactive terminal, the wizard asks for description,
+name, and any missing namespace/Provider/model/Secret references. When applying
+`--task`, it also asks for the existing result account. Enter at the final confirmation
+creates resources; no cancels without writing. Non-interactive use requires a
+name. Other customization stays in flags.
 
-| Property | Why |
-|---|---|
-| **This command accepts no credential** — no flag, no environment variable, no file | The generator emits Secret *references*. A scaffolder that can take a key is a scaffolder that can leak one into a file you are about to commit. (`kmx credential capture` is the one command that takes a credential, and it takes it from a terminal and writes it to a Secret — never to a file you might commit.) |
-| **Refuses key-shaped output** | Fail closed: if anything matching a known key shape reaches the manifest — including through an instructions file — writing stops. |
-| **The tool allowlist is mandatory, and validated** | `--tools server` is refused; you name the tools. Naming a server alone grants every tool it offers, today and after its next release. Names must be identifiers and are quoted on emission, so a newline cannot close the YAML sequence and append a tool nobody reviewed. |
-| **Block scalars indent uniformly** | A hostile instructions file cannot dedent out of the system message and become a sibling key. Multi-line values in single-line positions are refused rather than escaped. |
-| **Won't overwrite** | The manifest is written with an exclusive create, so a file you have edited is never clobbered. There is no `--force`. |
-| **Blast radius is the guard** | Applying goes through the same context guard as every other mutation. |
-| **Preflight on the ModelConfig** | A missing ModelConfig is admitted by the API server and then fails to reconcile in silence — the Agent exists, never goes Ready, and nothing says why. kmx checks first and prints the fix. |
-| **Preflight on tools** | Before apply/dry-run, the referenced RemoteMCPServer must exist, be Accepted, and currently discover every allowlisted tool. A typo cannot become an Agent that silently never reaches Ready. |
-| **A BYO agent is CONFIGURED, NOT PROVEN** | Environment injection is an intention. kmx cannot see inside your image to check it reads `OPENAI_BASE_URL`, so it says so instead of implying the agent is governed because the variables are present. A row in `kmx ledger` is what makes it proven. |
-| **BYO hardening splits on what kmx can know** | The declarative pod is pinned `runAsNonRoot` at UID **1001** with a read-only root filesystem, because that is the user of *kagent's* image — which spells its user as the name `python`, and Kubernetes refuses to start a `runAsNonRoot` container whose user it cannot prove is non-root. Your image is a different image, so a BYO pod always gets the half of the posture no image can invalidate (`drop: [ALL]`, no privilege escalation, `RuntimeDefault` seccomp) and the half that depends on the image only when you state it. `--run-as-user <uid>` buys the full posture; `--run-as-user root` runs as root because you said so; **neither** leaves `runAsNonRoot` and `readOnlyRootFilesystem` unset, with a comment in the manifest saying which two were left off and how to find the number. Pinning 1001 by default would fail your pod at `CreateContainer` over a UID you never chose, in a message that never names your image. |
-| **Governed by default where a plane exists** | If the plane's governed preset is on the cluster, the new agent is metered, budgeted and ledgered from its first call. On a fresh `kmx up` cluster there is no plane, so the keyless preset is used and the ungoverned warning is printed. |
+### Offline is schema validation, not a runtime proof
 
-The reserved names `hello-world` and `hello-tools` are refused: they are
-`kmx up`'s own agents, and scaffolding over one would replace a committed
-artifact that the next `kmx up` would replace right back.
+```bash
+kmx agent create preview --namespace orka-system \
+  --provider-type openai --model qwen2.5:3b --secret local-provider-key \
+  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
+  --schema-target main --out -
+```
 
-Running `kmx agent create` without a name on a terminal starts a local wizard.
-It asks `Describe this agent:`, proposes a Kubernetes-safe name, and asks once
-before creating and applying it. Enter accepts the default and applies, matching
-named `agent create`; answering no cancels without writing. `--no-apply` remains
-the explicit artifact-only path. The
-description seeds both metadata and the agent's instructions. Namespace, model,
-tools, instructions file, and output customization remain available through the
-existing flags rather than turning the common path into a questionnaire. The
-ordinary create guard, preflights, apply, and Ready wait run unchanged.
-Non-interactive use still requires a name.
+All emitted custom-resource fields are checked against the served v1alpha1
+OpenAPI schemas; unknown fields are refused rather than silently pruned.
+The same validator reads installed CRDs online, with **no fixture fallback**.
+Offline fixtures are byte-exact upstream files, with [digests and attribution](../internal/kmx/orkaschema/README.md):
+
+- `v0.1.3`: release commit `b07d42c0b9e52fe511b434827a342b4720f5d422`.
+- `main`: snapshot `7c4753c2c68a510112ea2bb25b60a406d9c45686`.
+
+Both accept the ordinary Provider/Agent/Task bundle. Release supports Agent and
+Provider `spec.rateLimit`; this main snapshot lacks both, so each of the four
+rate flags is refused with the resource and `spec.rateLimit` path. Fields are
+never dropped to make output pass. Offline does not evaluate CEL, admission,
+controller defaulting, readiness, rate enforcement or model execution.
+
+### Ordered creation, not bulk apply
+
+The Secret document is **metadata-only**, naming an external prerequisite.
+It contains no `data`, `stringData`, credential placeholder or embedded prompt.
+**Never write that skeleton to the cluster.** Provision its key separately
+through your normal secret-management path, without putting values in argv,
+source files or this bundle. Online kmx checks key presence without printing it;
+it never creates, replaces or merges a Provider Secret.
+
+Online preflight reads installed schemas, refuses local-file and live-resource
+collisions, checks the Secret/key, and server-dry-runs each custom document with
+strict validation before emitting or creating anything. Task mode also proves
+API access first. Writes use **create**, never apply/patch/update:
+
+1. Create the new Provider and wait for Ready for the created UID and current
+   generation.
+2. Create the referencing Agent and wait for the same identity/generation
+   readiness checks.
+3. If requested, create its fresh Task once; wait for Succeeded and an available,
+   nonblank answer. Check Task UID, spec and generation around result retrieval.
+
+Failure stops the sequence; already-created resources are not rolled back.
+A rerun does not adopt or overwrite them. Review partial state before choosing
+new names or explicitly deleting resources you own.
+
+For manual use, review and split out **only** the Provider, Agent and optional
+Task into separate files. For the local example, run
+`kubectl --context kind-kaimahi-p1 -n orka-system create -f provider.yaml`,
+check that Provider's UID/generation and current-generation Ready, then
+`kubectl --context kind-kaimahi-p1 -n orka-system create -f agent.yaml` and
+check likewise, then
+`kubectl --context kind-kaimahi-p1 -n orka-system create -f task.yaml`.
+Substitute your explicitly chosen context and namespace together. Do not run
+`kubectl apply -f agents/<name>.yaml`: the bundle includes a Secret skeleton and
+its document order does not express waits. A plain Ready condition without
+checking its observed generation is not the same guarantee.
+
+### Task result authority and limits
+
+The [local example](orka.md#author-an-orka-agent-and-get-an-answer) provisions a
+dedicated result-reader ServiceAccount separately. Pinned main requires
+namespaced `get` on `tasks.core.orka.ai`. **v0.1.3 authenticates result reads but
+does not enforce ordinary Task-read RBAC**; that Role does not narrow release
+result access. The caller also needs permission to request a token for the
+chosen account and establish the port-forward.
+
+kmx requests a temporary ten-minute token and keeps it in memory, using a
+context-pinned loopback HTTP forward, not a public endpoint. This is the
+account's **full effective authority**, not a result-only token. Discarding it
+or closing the forward is not revocation. There is no token flag/env/file input.
+The operation is bounded by a five-minute deadline; it does not retry Task
+creation after an ambiguous failure. Fresh Task names and UID/spec/generation
+checks reduce stale-result risk, but **the API does not bind returned result
+bytes to a Kubernetes UID**. Dry-run proves neither authorization nor execution.
+
+### Retired create behavior
+
+`--image`, `--isolation` and `--run-as-user` are removed. This command does not
+build or deploy application images, translate ModelConfigs or MCP wiring,
+inject governance environment variables, or copy kagent pod hardening.
+Creating an Orka Agent is not a governance claim. Keep an application's own
+Deployment/chart for image, identity and placement; there is no replacement
+application-scaffold command. [Migrate](migrate.md) handles an owned
+application Deployment's model seam, not a kagent BYO definition, and does not
+create Tasks. Native authoring avoids pretending that an API-group change
+translates model, tool and workload dependencies; it is not a permanent ban on
+other authoring formats. The [isolation survey](isolation.md) retains the
+historical BYO design, not current create instructions.
+
+Input and final YAML still reject known credential shapes; values are safely
+encoded and existing files are never overwritten. `hello-world` and
+`hello-tools` remain reserved names for the embedded kagent examples.
+
+### Existing kagent editor (not an Orka bundle editor)
 
 `kmx agent edit <name>` treats `agents/<name>.yaml` as the source of truth and
 opens a secure temporary copy with `$VISUAL` or `$EDITOR`. It refuses symlinks

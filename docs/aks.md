@@ -246,7 +246,7 @@ cage.
 | Where the image lives | a **private** ACR, built by `az acr build` | Built in Azure, so no local Docker and no `docker push`; private, so nothing is published and no public name is claimed. | `--registry` names it; the privacy is not optional |
 | Model | governed Copilot | AKS is Copilot-only — no Ollama is deployed there. The keyless path is already proven on kind every PR; this cluster's job is proving the plane runs on a managed one with a real model. | none today |
 | Monitoring | on | An agent that arrives on a managed cluster with nothing to look at is the gap this path exists to close. | `--observability=false` |
-| Node placement | none | The plane and the agents are ordinary workloads and go wherever the scheduler puts them. Placement is a separate, existing concern: `kmx agent create --isolation` sets `nodeSelector` and tolerations for an agent that needs a particular node. | `kmx agent create --isolation` |
+| Node placement | none | The plane and the agents are ordinary workloads and go wherever the scheduler puts them. Application placement belongs in the application's Deployment/chart; Orka `agent create` no longer exposes BYO image/isolation flags. | application Deployment/chart |
 
 **Not** an opinion, and not overridable: the cluster must have a
 NetworkPolicy engine. See below.
