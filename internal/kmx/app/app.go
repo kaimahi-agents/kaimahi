@@ -68,6 +68,9 @@ type App struct {
 	// seamEnv points the upstream checks at a test server instead of the
 	// real ones. Nil everywhere but in tests.
 	seamEnv *seam.Env
+	// copilotEnv replaces GitHub's endpoints, cache and poll delay in tests.
+	// Nil in production; no command-line or environment input can set it.
+	copilotEnv *copilotEnvironment
 
 	// guarded records that the context guard has already run in this
 	// process, so a multi-step command asks at most once — the same

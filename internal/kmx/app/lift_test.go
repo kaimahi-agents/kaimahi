@@ -48,6 +48,22 @@ func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 	}
 }
 
+func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
+	body, err := kaimahi.Managed.ReadFile("scripts/aks-up.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{"KMX_LIFT_CONTINUE", "KMX_LIFT_DOWN", "continue:  $KMX_LIFT_CONTINUE", "teardown:  $KMX_LIFT_DOWN"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("embedded aks-up.sh does not carry %q", want)
+		}
+	}
+	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) || !strings.Contains(text, "make netpol-verify") {
+		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
+	}
+}
+
 // The local path must be untouched by everything the managed path adds. This
 // is the regression this work is most likely to cause: improving AKS by
 // editing a manifest that kind also applies.

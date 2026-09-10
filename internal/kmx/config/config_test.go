@@ -1,44 +1,18 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
 	"testing"
 )
 
-// kmx and the Makefile are ONE implementation of the journey, which only
-// stays true if they agree about the cluster name, the pinned kagent
-// version, the model and the chat port. Those values live in two files, so
-// read the Makefile and refuse to let them drift.
-func TestDefaultsMatchTheMakefile(t *testing.T) {
-	makefile, err := os.ReadFile(filepath.Join("..", "..", "..", "Makefile"))
-	if err != nil {
-		t.Fatalf("cannot read the Makefile: %v", err)
-	}
-	for _, tc := range []struct{ variable, want string }{
-		{"KIND_CLUSTER", DefaultKindCluster},
-		{"KAGENT_VERSION", DefaultKagentVersion},
-		{"MODEL", DefaultModel},
-		{"AGENT", DefaultAgent},
-		{"TASK", DefaultTask},
-		{"CONTAINER_ENGINE", DefaultContainerEngine},
+func TestProductDefaultsAreUsable(t *testing.T) {
+	for name, value := range map[string]string{
+		"kind cluster": DefaultKindCluster, "kagent version": DefaultKagentVersion,
+		"model": DefaultModel, "agent": DefaultAgent, "task": DefaultTask,
+		"container engine": DefaultContainerEngine,
 	} {
-		re := regexp.MustCompile(`(?m)^` + tc.variable + `\s*\?=\s*(.*?)\s*$`)
-		m := re.FindSubmatch(makefile)
-		if m == nil {
-			t.Errorf("%s has no `?=` default in the Makefile any more", tc.variable)
-			continue
+		if value == "" {
+			t.Errorf("%s default is empty", name)
 		}
-		if got := string(m[1]); got != tc.want {
-			t.Errorf("%s: Makefile says %q, kmx says %q — one of them moved", tc.variable, got, tc.want)
-		}
-	}
-	// Make keeps 8083 for legacy action-oriented helpers; it deliberately
-	// omits that implicit default when delegating chat so kmx can allocate a
-	// free port. An explicit CHAT_PORT still rides through.
-	if !regexp.MustCompile(`(?m)^CHAT_PORT\s*\?=\s*8083\s*$`).Match(makefile) {
-		t.Error("Makefile's legacy CHAT_PORT default moved")
 	}
 }
 
@@ -73,7 +47,7 @@ func TestContextResolutionOrder(t *testing.T) {
 		t.Errorf("selected: got %q from %q", c.KubeContext, c.ContextSource)
 	}
 
-	// 2. KUBE_CTX beats the selection (this is how make delegates).
+	// 2. KUBE_CTX beats the selection for environment-driven automation.
 	t.Setenv("KUBE_CTX", "kind-fromenv")
 	if c, err = Load(""); err != nil {
 		t.Fatal(err)
@@ -114,8 +88,8 @@ func TestAnUnchosenContextSaysItWasNotChosen(t *testing.T) {
 	}
 }
 
-// An unknown engine is refused rather than defaulted: the Makefile errors on
-// it, and silently falling back to docker would create a cluster the
+// An unknown engine is refused rather than defaulted: silently falling back
+// to docker would create a cluster the
 // operator's kind cannot see.
 func TestUnknownContainerEngineIsRefused(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())

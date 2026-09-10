@@ -25,8 +25,8 @@ CLIENT_ID="01ab8ac9400c4e429b23" # GitHub's VS Code OAuth app (Copilot-entitled)
 TOKEN_FILE="${KAIMAHI_COPILOT_TOKEN_FILE:-$HOME/.config/kaimahi/copilot-oauth-token}"
 KUBECTL="${KUBECTL:-kubectl}"
 # Defaults store the token for the ungoverned direct-to-Copilot preset;
-# the plane overrides both (make plane-copilot-secret) so the REAL token
-# lands only where the proxy reads it.
+# The native governed path is `kmx models credential copilot`; this retained
+# script serves only the direct github-copilot preset.
 NAMESPACE="${COPILOT_SECRET_NAMESPACE:-kagent}"
 SECRET_NAME="${COPILOT_SECRET_NAME:-github-copilot-token}"
 

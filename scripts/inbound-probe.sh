@@ -107,7 +107,7 @@ EOF
   none) ;;
 esac
 
-# --address pins IPv4 explicitly (see plane-admin.sh for why).
+# --address pins IPv4 explicitly so a stale listener cannot receive the request.
 $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \
   svc/kaimahi-inbound "$INBOUND_PORT:8082" >/dev/null 2>&1 &
 pf_pid=$!
@@ -133,7 +133,7 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 assert d.get("status") == "admitted" and d.get("event_id") and d.get("hook") == sys.argv[2], f"malformed admission: {d}"
 print(f"ADMITTED on hook {sys.argv[2]} (delivery {sys.argv[3]}): event {d['event_id']} -> agent {d.get('agent')} under grant {d.get('grant')}")
-print("The agent runs asynchronously; `make inbound-audit` shows the outcome when it lands.")
+print("The agent runs asynchronously; `kmx audit inbound` shows the outcome when it lands.")
 EOF
 else
   echo "REFUSED as expected (HTTP $status, auth=$AUTH, delivery=$delivery): $(tr -d '\n' < "$workdir/resp")"

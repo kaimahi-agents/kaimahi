@@ -115,16 +115,16 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent list",
 		"approvals", "approve", "audit", "backup", "budget", "completion",
-		"credential", "credential capture", "credential renew", "credentials",
+		"credential", "credential capture", "credential issue", "credential renew", "credentials",
 		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
-		"orka", "orka install", "orka status",
+		"models credential", "models credential copilot", "orka", "orka install", "orka status",
 		"plane", "quickstart", "request",
 		"restore", "status",
 		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
 		"tools sandbox", "tools sandbox status", "tools sidecar", "tools ungovern",
 		"up", "use", "version",
-		"workflow", "workflow govern", "workflow list", "workflow run", "workflow show",
+		"workflow", "workflow govern", "workflow list", "workflow refresh", "workflow run", "workflow show",
 	}
 	sort.Strings(want)
 
@@ -230,6 +230,34 @@ func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
 		if err := execute(args, deps); err == nil {
 			t.Fatalf("%v unexpectedly succeeded", args)
 		}
+	}
+}
+
+func TestCredentialIssueRequiresExactlyOneDestination(t *testing.T) {
+	for _, args := range [][]string{
+		{"credential", "issue", "inbound-demo"},
+		{"credential", "issue", "inbound-demo", "--discard=false"},
+		{"credential", "issue", "inbound-demo", "--discard", "--secret", "inbound-token"},
+	} {
+		var out, errOut bytes.Buffer
+		deps, loads := testDependencies(&out, &errOut)
+		if err := execute(args, deps); err == nil {
+			t.Fatalf("%v unexpectedly succeeded", args)
+		}
+		if *loads != 0 {
+			t.Fatalf("%v loaded config before enforcing the destination", args)
+		}
+	}
+}
+
+func TestCredentialIssueSecretDefaultsToKagentNamespace(t *testing.T) {
+	root := newRootCommand(&commandState{deps: productionDependencies()})
+	issue, _, err := root.Find([]string{"credential", "issue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := issue.Flag("namespace").DefValue; got != config.DefaultNamespace {
+		t.Fatalf("--namespace default=%q, want %q", got, config.DefaultNamespace)
 	}
 }
 

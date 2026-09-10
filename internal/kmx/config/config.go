@@ -2,8 +2,7 @@
 //
 // Every knob keeps the name this repository already uses — KIND_CLUSTER,
 // KUBE_CTX, CONTAINER_ENGINE, KAGENT_VERSION, MODEL, CHAT_PORT, CRED and
-// KAIMAHI_CONFIRM from the Makefile, ADMIN_PORT from
-// scripts/plane-admin.sh — so that the delegating make targets need to pass
+// KAIMAHI_CONFIRM and ADMIN_PORT from the Makefile, so delegating targets pass
 // nothing: an operator's `KIND_CLUSTER=mine make up` and their
 // `KIND_CLUSTER=mine kmx up` are the same run. Where the Makefile has a
 // default, that default is repeated here verbatim; the two are pinned
@@ -24,13 +23,11 @@ const (
 	DefaultKagentVersion = "0.9.12"
 	DefaultModel         = "qwen2.5:3b"
 	DefaultChatPort      = "auto"
-	// DefaultAdminPort is the local side of the plane's admin port-forward —
-	// scripts/plane-admin.sh's ADMIN_PORT, so a stale forward left by either
-	// implementation is noticed by the other rather than talked through.
+	// DefaultAdminPort is the local side of the plane's admin port-forward.
+	// Keeping one default makes a stale forward fail closed at bind time.
 	DefaultAdminPort = "19091"
-	// DefaultOpsPort is the local side of the metrics forward —
-	// scripts/plane-metrics.sh's OPS_PORT, for the same reason ADMIN_PORT
-	// is shared: a stale forward from either implementation is noticed.
+	// DefaultOpsPort is the local side of the metrics forward. Keeping one
+	// default makes a stale forward fail closed at bind time.
 	DefaultOpsPort     = "19092"
 	DefaultAgent       = "hello-world"
 	DefaultTask        = "Hello! Who are you and where are you running?"
@@ -55,9 +52,8 @@ const (
 	// `kmx tools govern --server` names another, scaffolded by
 	// `kmx tools add`.
 	DefaultToolServer = "kaimahi-tools"
-	// GovernedSecret is the agent-side Secret the issued token is stored in
-	// (scripts/plane-admin.sh's GOVERNED_SECRET default), in the kagent
-	// namespace.
+	// GovernedSecret is the agent-side Secret the issued token is stored in,
+	// in the kagent namespace.
 	GovernedSecret = "kaimahi-governed-token"
 	// The three Secrets the seam certificate lives in, and they are three
 	// on purpose.

@@ -1,6 +1,6 @@
 # Governing tool calls: the enforcing MCP gateway
 
-Assumes the governance plane is deployed (`make plane`, see
+Assumes the governance plane is deployed (`kmx plane`, see
 [spend.md](spend.md)) and the tools agent exists ([tools.md](tools.md)).
 
 Spend governance controls what an agent *spends*; this controls what it
@@ -141,7 +141,7 @@ with the rest of the consent flow in
 
 ## Credential custody
 
-`make govern-tools` mints a separate `hello-tools` credential. The
+`kmx tools govern` mints a separate `hello-tools` credential. The
 agent-side Secret `kagent/kaimahi-tools-token` holds only the `kmh_…`
 opaque token (the plane stores its sha256), and the RemoteMCPServer sends
 it via `headersFrom`. The gateway strips it, and every other
@@ -155,18 +155,18 @@ one wired that way, and the GitHub token is held the same way
 ## From zero
 
 ```sh
-make up             # cluster, ollama, kagent, agents
-make plane          # proxy + gateway + Postgres
-make govern-tools   # credential, allowlist, gateway wiring for hello-tools
-make chat AGENT=hello-tools TASK='What pods run in the ollama namespace?'
-make tool-audit     # the call you just made, in the audit trail
+kmx up             # cluster, ollama, kagent, agents
+kmx plane          # proxy + gateway + Postgres
+kmx tools govern --tools k8s_get_resources
+kmx agent chat hello-tools 'What pods run in the ollama namespace?'
+kmx audit tool hello-tools
 ```
 
 An upstream an operator onboarded lives in a separate ConfigMap,
 `kaimahi-upstreams-extra`, merged over the committed table at boot: this
 repo's six entries are never edited by onboarding, an overlay that would
 redefine one is refused rather than resolved by precedence, and
-`make plane` cannot discard somebody's added server. `POST
+`kmx plane` cannot discard somebody's added server. `POST
 /admin/config/validate` decides whether a candidate overlay would load,
 using the same `config.Parse` the proxy boots with — so a malformed entry
 is refused before it is applied rather than by a pod that will not start.
@@ -187,8 +187,8 @@ table the plane cannot check. The two seams share one overlay and one
 merge; nothing else about them is shared, and a model upstream has no
 allowlist (see [spend.md](spend.md#adding-a-model-upstream)).
 
-`make ungovern-tools` restores the direct, ungoverned wiring by
-re-applying `k8s/tools-agent.yaml`. Re-run `make plane` after editing
+`kmx tools ungovern` restores the direct, ungoverned wiring by
+re-applying the embedded tools agent. Re-run `kmx plane --source .` after editing
 `upstreams.yaml`: the config is read at boot, and the ConfigMap mounts
 via subPath, which never live-updates.
 
@@ -276,20 +276,20 @@ via subPath, which never live-updates.
 ## Changing the allowlist, and watching a denial
 
 ```sh
-make tool-allow TOOLS=k8s_get_resources,k8s_get_events   # widen
-make tool-allow TOOLS=-                                  # nothing callable
-make tool-allowlist                                      # show
+kmx tools allow k8s_get_resources,k8s_get_events   # widen
+kmx tools allow -                                  # nothing callable
+kmx tools allowlist hello-tools                    # show
 bash scripts/tool-denial-probe.sh k8s_describe_resource  # watch a denial
 ```
 
 The denial probe calls a non-allowlisted tool with the governed token
 and requires the JSON-RPC `-32001` "not permitted" error. The attempt
-lands in `make tool-audit` as a `denied 403` row.
+lands in `kmx audit tool hello-tools` as a `denied 403` row.
 
-Two levers, and they differ: `make govern-tools TOOLS=…` sets the
+Two levers, and they differ: `kmx tools govern --tools …` sets the
 gateway allowlist **and** keeps the agent's `toolNames` aligned with it.
-`make tool-allow` alone changes only the gateway policy. Re-run
-`govern-tools` (or widen `toolNames` yourself) if the agent should *use*
+`kmx tools allow` alone changes only the gateway policy. Re-run
+`kmx tools govern` (or widen `toolNames` yourself) if the agent should *use*
 newly allowed tools. The allowlist is the governance boundary either
 way.
 
@@ -312,21 +312,21 @@ the 8 tools the upstream offers.
 
 ## Operational notes
 
-- The gateway shares the proxy's lifecycle. `make plane` rebuilds and
+- The gateway shares the proxy's lifecycle. `kmx plane` rebuilds and
   rolls both. The image tag in
   [`k8s/plane/proxy.yaml`](../k8s/plane/proxy.yaml) moves with each
   release of the plane, so a stale side-loaded image can never satisfy a
-  newer manifest under `imagePullPolicy: Never`, and `make plane` always
+  newer manifest under `imagePullPolicy: Never`, and `kmx plane` always
   restarts the deployment so a same-tag rebuild takes effect.
-- `make govern-tools` is idempotent and ordered so discovery never sees
+- `kmx tools govern` is idempotent and ordered so discovery never sees
   an empty projection by accident: credential → allowlist → the
   RemoteMCPServer (waits Accepted) → agent patch (waits Ready).
 - If the RemoteMCPServer sits at `Accepted=False` right after
-  `make plane`, the first reconcile raced the proxy rollout. It
+  `kmx plane`, the first reconcile raced the proxy rollout. It
   self-heals within a minute, the same behaviour the chart's own server
   shows.
 - Argument declarations and standing constraints are read at boot from
-  the same ConfigMap as the rest of the table, so `make plane` after
+  the same ConfigMap as the rest of the table, so `kmx plane --source .` after
   editing them (the mount is subPath, which never live-updates). A
   malformed declaration or constraint refuses the config at load — the
   pod says so and the old replicas keep serving.
@@ -336,7 +336,7 @@ the 8 tools the upstream offers.
   do not share one credential across upstreams with different tool
   vocabularies.
 - The audit trail is demo-durable like the ledger: it survives pod
-  restarts via the Postgres PVC, and `make down` destroys it.
+  restarts via the Postgres PVC, and `kmx down` destroys it.
 
 ## Limitations
 

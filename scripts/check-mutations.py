@@ -13,8 +13,6 @@ and the difference is not academic: every finding this file exists to
 close was found by editing a checker until it was worthless and watching
 its own self-test stay green. Ten of thirteen edits to the chat verifier
 went unnoticed. Eleven of fifteen to the README front-door checker.
-Emptying the delegation checker's list of owned targets made it print "0
-targets delegate" and exit 0.
 
 So the contract here is stronger than a fixture pair. For every checker:
 

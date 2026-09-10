@@ -59,7 +59,7 @@ seam_ca "$workdir/plane-ca.crt"
 
 $KUBECTL -n "$AGENT_NAMESPACE" get secret "$GOVERNED_SECRET" \
   -o jsonpath='{.data.api-key}' | base64 -d > "$workdir/token"
-test -s "$workdir/token" || { echo "$GOVERNED_SECRET missing/empty (run make govern-tools)" >&2; exit 1; }
+test -s "$workdir/token" || { echo "$GOVERNED_SECRET missing/empty (run kmx tools govern)" >&2; exit 1; }
 { printf 'Authorization: Bearer '; cat "$workdir/token"; printf '\n'; } > "$workdir/auth-header"
 
 $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \

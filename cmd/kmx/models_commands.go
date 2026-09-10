@@ -21,7 +21,23 @@ func newModelsCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	group.AddCommand(newModelsAddCommand(state))
+	group.AddCommand(newModelsAddCommand(state), newModelsCredentialCommand(state))
+	return group
+}
+
+func newModelsCredentialCommand(state *commandState) *cobra.Command {
+	group := &cobra.Command{Use: "credential", Short: "Capture model provider credentials", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group.AddCommand(&cobra.Command{
+		Use:   "copilot",
+		Short: "Device-login to GitHub and store a short-lived Copilot token in plane custody",
+		Long: "Device-login to GitHub and store a short-lived Copilot token in plane custody.\n\n" +
+			"The OAuth login is cached in ~/.config/kaimahi with mode 0600. It is\n" +
+			"exchanged for a short-lived Copilot token, which is written through kubectl\n" +
+			"stdin to Secret kaimahi/kaimahi-copilot-token. Stdin is never read, and no\n" +
+			"credential appears in argv, environment variables, manifests on disk, or logs.",
+		Args: cobra.NoArgs,
+		RunE: appRun(state, func(a *app.App) error { return a.CaptureCopilotCredential() }),
+	})
 	return group
 }
 

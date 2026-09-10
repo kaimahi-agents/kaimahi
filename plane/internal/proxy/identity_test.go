@@ -39,7 +39,7 @@ func TestExpiredCredentialIsRefusedNamedAndLedgered(t *testing.T) {
 	body := w.Body.String()
 	require.Contains(t, body, `expired credential "hello-world"`)
 	require.Contains(t, body, past.UTC().Format(time.RFC3339), "the message says WHEN, so an operator is not guessing")
-	require.Contains(t, body, "make credential-renew NAME=hello-world", "and it says the fix")
+	require.Contains(t, body, "kmx credential renew hello-world --ttl 720h", "and it says the fix")
 
 	require.Len(t, f.ledger, 1, "the refusal is audited like every other refusal")
 	require.Equal(t, "denied", f.ledger[0].CostSource)

@@ -16,8 +16,7 @@ It is a flag, not a fourth bucket: every file still gets a best reading in
 the tables — a map with holes is less useful than a map with question
 marks — and the list at the end names the cases where that reading rests
 on thin evidence. A file can therefore appear in a table *and* at the end.
-`scripts/exposure-scan.sh`, `scripts/show-turn.py` and the connector
-seams do.
+`scripts/exposure-scan.sh` and the connector seams do.
 
 **How each row was decided.** Not by reading names. For every file the
 question was *who invokes this* — greps for the path and the symbol
@@ -61,7 +60,7 @@ It does NOT check the classifications themselves. Whether a manifest is
 product or demonstration is a judgement, and a checker enforcing one would
 either be wrong or would freeze an opinion this tree is allowed to change.
 That column is defended by review, and by the evidence each row cites. The
-three cases at the end are neither: they are a standing question, and what
+two cases at the end are neither: they are a standing question, and what
 is enforced is that the question survives — the section exists, it says
 how many cases it holds, it holds that many, and every path it rests on is
 still in the tree.
@@ -73,10 +72,10 @@ still in the tree.
 | Area | Product | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | `demo/kaimahi-erp` | — |
-| `internal/` | `kmx/` (18 packages) | `demo/erp` | `kmx/delegation` (tests only) |
+| `internal/` | `kmx/` (17 packages) | `demo/erp` | — |
 | `plane/` | all of it | — | test fakes inside packages |
 | `k8s/` | the embedded set, the plane, the model presets, the release agent and its seams | the AP, Slack and GitHub scenarios | — |
-| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 54 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 13 (6 embedded in the binary, 7 operator) | 4 | 52 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 24 capability docs, incl. `release-agent.md` | `ap-demo.md`, `demo.md` | `COORDINATION.md`, `reviews/`, `development.md`, this file |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -97,9 +96,8 @@ The checker counts tracked files; new files enter its inventory when staged.
 
 ## `internal/` — packages and embedded fixture directories
 
-`internal/kmx/` is eighteen packages. All but one are product — the
-exception, `delegation`, is below — and the line between them is
-consistent enough to state as a rule: **anything that
+`internal/kmx/` is seventeen packages. The line between them is consistent
+enough to state as a rule: **anything that
 can be decided without reaching a cluster lives in its own package;
 `app` is what shells out.**
 
@@ -111,14 +109,14 @@ executes it. `scaffold` generates Orka bundles and seam artifacts; `orkaschema` 
 against installed or embedded upstream CRDs; `guard` decides whether a
 context may be written to; `seam`, `secretshapes`, `toolchain` and
 `version` are each one decidable question; `seamcert` mints and reads
-the certificate the plane's data seams serve with. That is why `app` is 47
+the certificate the plane's data seams serve with. That is why `app` is 48
 files: it is not a grab bag, it is everything left after the decidable
 parts were taken out, and what remains all shares one receiver holding
 a kubectl and the operator's terminal.
 
 | Internal directory | Non-test files (code and data) | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 47 | Product | Every kmx command. The shell-out orchestration layer. |
+| `kmx/app` | 48 | Product | Every kmx command. The shell-out orchestration layer. |
 | `kmx/admin` | 5 | Product | Talks to the plane's admin API. |
 | `kmx/blueprint` | 5 | Product | The declarative governed-workflow file. |
 | `kmx/scaffold` | 11 | Product | Generates the reviewable Orka Provider/Agent/optional Task bundle and value-free Secret skeleton, plus tool/model onboarding and migration artifacts. Retains kagent editor/placement helpers for their existing callers. |
@@ -137,18 +135,12 @@ a kubectl and the operator's terminal.
 | `kmx/run` | 1 | Product | The shell-out layer. |
 | `kmx/secretshapes` | 2 | Product | The one list of credential shapes — `shapes.json` is the list, `shapes.go` reads it. The count includes the embedded JSON data file, as the Orka rows include their schemas and attribution. |
 | `kmx/version` | 1 | Product | Version and upgrade answers. |
-| `kmx/delegation` | **0** | **Scaffolding** | A package with no source at all — only `delegation_test.go`. It exists to hold the test that make and kmx are one implementation. |
 | `demo/erp` | 2 | **Demonstration** | The fixture ERP. |
-
-`internal/kmx/delegation` is worth naming because it looks like a
-product package from the outside and contains no product code. That is
-deliberate and correct — a test needs a package to live in — but a
-reader counting packages will miscount without being told.
 
 The directory counts above exclude every Go test file but include all other
 tracked files, including the embedded CRD fixtures, provenance and license.
 Fixture subdirectories are not extra Go packages. Audit, session/history, Linux
-PTY, typed-binding and Orka tests do not increase `app`'s 47, `admin`'s 5, or
+PTY, typed-binding and Orka tests do not increase `app`'s 48, `admin`'s 5, or
 `blueprint`'s 5 non-test files; `cmd/kmx` is 20 files, tests included.
 Presentation and safety audit coverage is described
 in [cli-ux-plan.md](cli-ux-plan.md); these tests do not constitute live-cluster
@@ -218,10 +210,10 @@ exist for a walkthrough; `release-agent.yaml` is also not embedded but is
 not a walkthrough either — it is the one agent this project depends on.
 All six are "an agent manifest in `k8s/`" and look alike.
 
-## `scripts/` — 79 tracked files, three different jobs
+## `scripts/` — 69 tracked files, three different jobs
 
-**None is orphaned**, but "orphaned" needs care: 66 of the 79 are named
-by something outside themselves, and the thirteen `scripts/mutations/*.json`
+**None is orphaned**, but "orphaned" needs care: 57 of the 69 are named
+by something outside themselves, and the twelve `scripts/mutations/*.json`
 are named by nothing at all — `check-mutations.py` finds them by globbing
 the directory. That is deliberate (a checker added without mutations is
 meant to be a failure, so the harness must not read a list someone can
@@ -229,27 +221,24 @@ forget to update), and it means a grep for references is the wrong test
 for that one directory.
 
 The counts below come from a classification of `git ls-files scripts` in
-which all 79 files land in exactly one bucket — not from reading the
+which all 69 files land in exactly one bucket — not from reading the
 directory and estimating.
 
 | Class | Count | Files |
 |---|---|---|
 | **Product** — embedded in the kmx binary | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
-| **Product** — operator scripts, reached through make, kmx, or another product script | 16 | `plane-admin.sh`, `plane-secrets.sh`, `plane-backup.sh`, `plane-restore.sh`, `plane-metrics.sh`, `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `release-bind.sh`, `release-run.sh`, `exposure-scan.sh`, `await-approval.sh`, `show-turn.py` |
-| **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
-| **Scaffolding** — checkers and their self-tests | 16 | the thirteen `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
+| **Product** — operator scripts, reached through make, kmx, or another product script | 7 | `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `exposure-scan.sh` |
+| **Demonstration** | 4 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
+| **Scaffolding** — checkers and their self-tests | 15 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py` |
 | **Scaffolding** — live-cluster probes | 16 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` — not a probe itself but sourced by ten of them, to fetch the authority the seams are verified against |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 8 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `plain-model.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `plain-model-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
-| **Scaffolding** — mutation specifications | 13 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
+| **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker, declaring how it must be broken |
 | **Scaffolding** — a checker's record of what it has been told about | 1 | `board-open-drift.json`, the disagreements in the coordination board that `check-board.py` found, plus those found by hand where it could not look, and a record of how each was closed |
 
-**Two of those look like demo scripts and are not.** `await-approval.sh`
-was renamed out of the AP demo — its own comment says "so the release
-driver can reuse" it — and `scripts/release-run.sh` calls it twice.
-`show-turn.py` renders one agent turn and is called only by
-`release-run.sh`. Both serve the release agent, which
-`docs/release-agent.md` calls "Kaimahi's first real user", so both are
-product with an `ap-`-shaped history.
+**One demonstration helper does not have an `ap-` name.**
+`await-approval.sh` waits for the real human decision in the accounts-payable
+scenario. Both `ap-demo.sh` and `ap-injection.sh` call it; it remains because
+those demos use it.
 
 Three things a reader would get wrong from the directory listing alone:
 
@@ -273,7 +262,7 @@ Three things a reader would get wrong from the directory listing alone:
 
 One file is genuinely dual-role and is counted once above:
 `kube-guard.sh` is embedded product — `kmx lift` writes it into a
-temporary tree and executes it — AND is one of the thirteen checkers the
+temporary tree and executes it — AND is one of the twelve checkers the
 mutation harness breaks on purpose.
 
 `verify-chat.py` is a checker. Neither make nor kmx runs it: every
@@ -281,9 +270,8 @@ occurrence in the Makefile is a comment line rather than a recipe, and
 every occurrence in Go is a comment or, in one case, the text of a test's
 own failure message. Its real callers are
 `.github/workflows/ci.yml` (fourteen invocations among nineteen
-mentions — the other five are comments, which is the trap),
-`scripts/release-run.sh`,
-and `docs/tools.md`, which gives it as a step a reader runs by hand.
+mentions — the other five are comments, which is the trap), and
+`docs/tools.md`, which gives it as a step a reader runs by hand.
 
 ## `docs/` — 43 tracked files, two audiences and two assets
 
@@ -372,6 +360,7 @@ covered needs the map to cover everything.
 | `CHANGELOG.md` | **Product** | A build input, not just prose: the release workflow EXTRACTS its notes from here via `release-notes.py`, and refuses to publish a tag with no section. |
 | `CONTRIBUTING.md`, `LICENSE` | **Product** | The contributor entry point and the MIT licence. |
 | `embed.go` | **Product** | The module root's only job: the one file from which a `go:embed` directive can reach `k8s/`. |
+| `embed_test.go` | **Scaffolding** | Walks each embedded filesystem and proves every carried asset can be read, independently of Make. |
 | `Makefile` | **Scaffolding** | The operator interface *from a checkout*. Someone who installed kmx never sees it; it delegates the developer journey to the binary and keeps the demo and connector targets kmx does not own. |
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | The gates, and the tag-driven release. |
 | `.github/actions/classify-change/` | **Scaffolding** | Decides whether a change is docs-only so cluster jobs can short-circuit. Fails closed. |
@@ -382,16 +371,14 @@ covered needs the map to cover everything.
 
 ---
 
-## Genuinely unclear — three, and this is a result
+## Genuinely unclear — two, and this is a result
 
 1. **`scripts/exposure-scan.sh`.** One caller — a make target — and no
    documentation of its own. Whether it is an operator tool or a
    maintainer's one-off is not answerable from the tree. (It is not
    unique in having one caller: `scripts/ci/status-unknown-probe.sh` is
    reached only from CI, but that one's home makes its purpose obvious.)
-2. **`scripts/show-turn.py`.** Called only from another script. Not
-   dead, but no reader would find it, and nothing says what it is for.
-3. **The connector seams and their agents as a class** —
+2. **The connector seams and their agents as a class** —
    `kaimahi-slack.yaml`, `kaimahi-github.yaml`, `kaimahi-release-*.yaml`
    and the `slack-agent.yaml` / `github-agent.yaml` /
    `release-agent.yaml` manifests beside them. Each supports a
@@ -416,7 +403,7 @@ covered needs the map to cover everything.
   this lane for the smallest gain: the demonstration manifests are named
   by the Makefile, three scripts (`erp-deploy.sh`, `ap-demo.sh`,
   `ap-injection.sh`), CI's inline Python assertions and several docs —
-  fourteen tracked files under `scripts/` contain the literal `k8s/` — and
+  eleven tracked files under `scripts/` contain the literal `k8s/` — and
   `embed.go`'s patterns cannot climb out of their own directory. The
   boundary is real but the naming already carries most of it
   (`ap-*`, `erp-*`, `*-agent.yaml`), and this table carries the rest.

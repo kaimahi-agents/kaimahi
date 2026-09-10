@@ -9,12 +9,13 @@ import (
 	"strings"
 )
 
+var issuedTokenRe = regexp.MustCompile(`^kmh_[0-9a-f]{64}$`)
+
 // The admin plane's MUTATIONS, and the argument validation in front of them.
 //
-// scripts/plane-admin.sh is the specification here as it is for the reads:
-// every check_name, check_cap, check_uuid and tool-name shape below is the
-// script's, and every well-formed-positive status check is the script's
-// `[ "$status" = 204 ] || …`. The plane validates all of it again — these
+// Every name, cap, UUID, and tool shape below is part of the command contract,
+// as is every well-formed-positive status check. The plane validates all of it
+// again — these
 // checks exist because these values are interpolated into JSON and paths,
 // and because a typo should fail before an admin port-forward is opened,
 // not after.
@@ -22,7 +23,7 @@ import (
 // Custody is the package's, unchanged: the admin bearer never leaves this
 // process, and no mutation follows a redirect.
 
-// ValidCredentialName is the script's check_name.
+// ValidCredentialName checks the public credential-name shape.
 func ValidCredentialName(name string) error {
 	if name == "" {
 		return fmt.Errorf("a credential name is required (want [a-z0-9-]+)")
@@ -35,7 +36,7 @@ func ValidCredentialName(name string) error {
 	return nil
 }
 
-// namePart is the script's shape for a tool name and for a request subject:
+// namePart is the shape for a tool name and for a request subject:
 // [A-Za-z0-9._-]+.
 func namePart(what, value string) error {
 	if value == "" {
@@ -54,7 +55,7 @@ func namePart(what, value string) error {
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// ValidRequestID is the script's check_uuid, message included: the id comes
+// ValidRequestID checks the UUID shape; the id comes
 // off the approvals table, so the error says where to find one.
 func ValidRequestID(id string) error {
 	if !uuidRe.MatchString(id) {
@@ -100,7 +101,7 @@ func CheckCap(what string, value *int64) error {
 	return nil
 }
 
-// ParseTTL reads an approval's TTL with the script's suffixes — a bare
+// ParseTTL reads an approval's TTL with the command's suffixes — a bare
 // number is seconds, s/m/h/d scale it — and returns seconds.
 func ParseTTL(value string) (*int64, error) {
 	value = strings.TrimSpace(value)
@@ -216,6 +217,40 @@ func (c *Client) RenewCredential(credential string, ttlSeconds *int64) (string, 
 	return str(doc["expires_at"]), nil
 }
 
+// IssueIdentityCredential mints an identity-only credential. A 409 is
+// idempotent success. On 201 the one-time bearer is checked and immediately
+// discarded; it is never returned to a caller that could print or store it.
+func (c *Client) IssueIdentityCredential(credential string, ttlSeconds *int64) (bool, error) {
+	if err := ValidCredentialName(credential); err != nil {
+		return false, err
+	}
+	body := map[string]any{"name": credential}
+	if ttlSeconds != nil {
+		body["ttl_seconds"] = *ttlSeconds
+	}
+	status, out, err := c.Do(http.MethodPost, "/admin/credentials", body)
+	if err != nil {
+		return false, err
+	}
+	if status == http.StatusConflict {
+		return false, nil
+	}
+	if status != http.StatusCreated {
+		// Unlike ordinary admin errors, do not quote this response. This is
+		// the one endpoint that can contain a bearer, and custody wins even
+		// if a broken plane returns it with the wrong status.
+		return false, fmt.Errorf("credential issue failed (HTTP %d)", status)
+	}
+	token, err := TokenFrom(out)
+	if err != nil {
+		return false, err
+	}
+	if !issuedTokenRe.MatchString(token) {
+		return false, fmt.Errorf("the plane issued the credential but returned an invalid Kaimahi token")
+	}
+	return true, nil
+}
+
 // Approve mints the bounded grant a pending request asked for.
 //
 // The at-least-one-bound rule is checked HERE as well as by the plane, and
@@ -232,7 +267,7 @@ func (c *Client) Approve(id string, ttlSeconds, maxUses, amount *int64) (map[str
 	if err := CheckCap("amount", amount); err != nil {
 		return nil, err
 	}
-	// Only the bounds that were SET are sent, as the script builds its body.
+	// Only the bounds that were SET are sent.
 	body := map[string]any{}
 	if ttlSeconds != nil {
 		body["ttl_seconds"] = *ttlSeconds
@@ -328,7 +363,7 @@ func ValidRequest(credential, kind, subject string, args map[string]any) error {
 }
 
 // expect performs a mutation and refuses anything but the well-formed
-// positive, quoting the body — the script's status check, unchanged.
+// positive, quoting the body.
 func (c *Client) expect(method, path string, body any, want int, what string) error {
 	status, out, err := c.Do(method, path, body)
 	if err != nil {
@@ -340,7 +375,7 @@ func (c *Client) expect(method, path string, body any, want int, what string) er
 	return nil
 }
 
-// GrantSummary renders an approval's reply the way the script does:
+// GrantSummary renders an approval's reply for the operator:
 // "Granted: <credential> <kind>/<subject> — <bounds> (grant <id>)".
 func GrantSummary(g map[string]any) string {
 	var bounds []string

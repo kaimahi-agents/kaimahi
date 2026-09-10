@@ -28,11 +28,6 @@ kmx plane
 kmx govern hello-world
 kmx ledger
 ```
-From a clone:
-```bash
-make up
-make chat
-```
 ## Status
 | row |
 ## Proposed CLI direction
@@ -63,8 +58,8 @@ CASES = [
     ("outcome 'approve consequential actions' missing",
      GOOD.replace("### Approve consequential actions\n", ""),
      "outcome: approve consequential actions is missing"),
-    # A stray "make up" in the intro must not satisfy the quickstart marker.
-    ("duplicate marker before its section", GOOD.replace("# Kaimahi\n", "# Kaimahi\nRun make up first.\n"), None),
+    # A stray command mention in the intro must not satisfy the quickstart marker.
+    ("duplicate marker before its section", GOOD.replace("# Kaimahi\n", "# Kaimahi\nRun kmx up first.\n"), None),
     # The install line is the whole point of the kmx path: without it the
     # commands below it are not runnable on a machine that has no clone.
     ("install line missing",
@@ -102,41 +97,22 @@ CASES = [
     ("the governed half missing", GOOD.replace("kmx plane\nkmx govern hello-world\nkmx ledger\n", ""),
      "kmx plane is missing"),
     ("govern without the ledger", GOOD.replace("kmx ledger\n", ""), "kmx ledger is missing"),
-    # The clone path may move down the section, but it may not vanish: it is
-    # what CI runs and what every other doc's commands assume.
-    ("clone path deleted",
-     GOOD.replace("From a clone:\n```bash\nmake up\nmake chat\n```\n", ""),
-     "the clone path (make up, make chat) is missing"),
-    ("clone path only in prose",
-     GOOD.replace("```bash\nmake up\nmake chat\n```", "make up, then make chat."),
-     "the clone path (make up, make chat) is missing"),
-    # The kmx block must be FIRST: a clone path above it is the old order.
-    ("clone path first",
-     GOOD.replace(
-         '```bash\ncurl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\nkmx up\nkmx agent chat hello-world "Who are you?"\nkmx plane\nkmx govern hello-world\nkmx ledger\n```\nFrom a clone:\n```bash\nmake up\nmake chat\n```',
-         '```bash\nmake up\nmake chat\n```\n```bash\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\nkmx up\nkmx agent chat hello-world "Who are you?"\nkmx plane\nkmx govern hello-world\nkmx ledger\n```'),
-     "the one-command install is missing"),
     ("outcome after the diagram",
      GOOD.replace('### Approve consequential actions\n<img src="docs/assets/architecture.svg">',
                   '<img src="docs/assets/architecture.svg">\n### Approve consequential actions'),
      "architecture diagram is missing or out of order"),
-    ("clone command missing", GOOD.replace("make chat\n", ""), "the clone path (make up, make chat) is missing"),
     # Prose that starts a line with the command name is not a runnable path.
     ("kmx path only in Quickstart prose",
      GOOD.replace('```bash\ncurl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\nkmx up\nkmx agent chat hello-world "Who are you?"\nkmx plane\nkmx govern hello-world\nkmx ledger\n```\n',
                   "go install the binary, then\nkmx up the cluster.\n"),
-     "the one-command install is missing"),
+      "Quickstart has no fenced command block"),
     ("kmx commands in prose, a fenced block without them",
      GOOD.replace('```bash\ncurl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\nkmx up\nkmx agent chat hello-world "Who are you?"\nkmx plane\nkmx govern hello-world\nkmx ledger\n```\n',
                   "go install the binary, then\nkmx up the cluster.\n```bash\nkmx status\n```\n"),
      "the one-command install is missing"),
-    ("clone path only in a later section's block",
-     GOOD.replace("From a clone:\n```bash\nmake up\nmake chat\n```\n", "").replace("| row |\n", "| row |\n```bash\nmake up\nmake chat\n```\n"),
-     "the clone path (make up, make chat) is missing"),
     ("heading only mentioned in prose", GOOD.replace("## Status\n", "See the Status section.\n"), "Status heading is missing"),
     ("CLI before the quickstart", GOOD.replace("## Quickstart\n", "npx kaimahi create\n## Quickstart\n"), "proposed CLI appears before"),
-    ("CLI between make up and make chat", GOOD.replace("make up\nmake chat", "make up\nnpx kaimahi create\nmake chat"), "proposed CLI appears before"),
-    ("CLI between make chat and Status", GOOD.replace("```\n## Status", "```\nnpx kaimahi create\n## Status"), "proposed CLI appears before"),
+    ("CLI between quickstart and Status", GOOD.replace("```\n## Status", "```\nnpx kaimahi create\n## Status"), "proposed CLI appears before"),
 ]
 
 failed = 0

@@ -164,7 +164,7 @@ without being invited. Drop it.
 
 ```sh
 make plane                                   # the governance plane
-make plane-copilot-secret                    # the demo model runs governed Copilot
+kmx models credential copilot                # the demo model runs governed Copilot
 make slack-secret SLACK_CHANNEL=C0XXXXXXXXX  # stdin-only; refuses a non-private channel
 make slack-mcp                               # the digest-pinned server, in-cluster
 make govern-slack                            # kmh_ credential + READ-ONLY allowlist + agent

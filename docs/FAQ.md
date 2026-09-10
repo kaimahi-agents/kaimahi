@@ -58,16 +58,16 @@ calling side and the relaying side.
 ## The Copilot preset worked yesterday and fails today
 
 The Copilot token expires, typically within hours. There's no long-lived
-key: `make copilot-secret` exchanges your GitHub device login for a
+key: `kmx models credential copilot` exchanges your GitHub device login for a
 short-lived API token, and that's what lives in the cluster. When auth
 starts failing:
 
 ```bash
-make copilot-secret                 # re-mint (the device login is cached — usually no browser step)
+kmx models credential copilot       # re-mint (the device login is cached — usually no browser step)
 make use PRESET=github-copilot      # restart the pod so it picks up the new Secret
 ```
 
-On the governed path it's `make plane-copilot-secret` instead, and no
+On the governed path use `kmx models credential copilot`, and no
 restart — the proxy reads the Secret-mounted file per request. An
 in-cluster auto-refresher was deliberately not built with the model path;
 token lifecycle is governance-plane territory.
@@ -156,7 +156,7 @@ no. The agent surfaces it as a failed task with the message text.
 - **503 service unavailable** — the plane protecting its own guarantees:
   the credential store or spend ledger is unreachable (nothing is admitted
   while spend can't be recorded), or "upstream credential unavailable" —
-  e.g. the governed Copilot preset before `make plane-copilot-secret` has
+  e.g. the governed Copilot preset before `kmx models credential copilot` has
   given the proxy a real token. Fix the stated dependency; the proxy
   recovers on its own.
 

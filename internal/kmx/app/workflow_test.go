@@ -471,3 +471,64 @@ func TestADryRunNeedsNoneOfTheToolsItWillNotUse(t *testing.T) {
 		}
 	}
 }
+
+func TestBundledScriptPreflightAutomaticallyRequiresBash(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	r := &workflowRun{
+		app:    &App{},
+		bundle: &blueprint.Bundle{Blueprint: &blueprint.Blueprint{}},
+		rendered: &blueprint.Rendered{Steps: []blueprint.RenderedStep{{
+			Label: "publish", Exec: &blueprint.RenderedExec{Script: "publish.sh"},
+		}}},
+	}
+	err := r.preflightRequirements()
+	if err == nil || !strings.Contains(err.Error(), "bash — needed for publish") {
+		t.Fatalf("preflight error = %v", err)
+	}
+}
+
+func TestWorkflowRefreshRefusesABlueprintWithNothingToRefresh(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plain.yaml")
+	if err := os.WriteFile(path, []byte(`blueprint: v1
+name: plain
+summary: no expiring seams
+credential: plain
+agent: plain
+parameters: {}
+seams:
+  demo:
+    requires:
+      read: []
+    allow: [read]
+steps:
+  - name: read
+    kind: read
+    prompt: read
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	a := &App{Out: &out, Err: &out}
+	err := a.RefreshWorkflow("", WorkflowOptions{File: path})
+	if err == nil || !strings.Contains(err.Error(), "declares no expiring seam credentials") {
+		t.Fatalf("RefreshWorkflow error = %v", err)
+	}
+}
+
+func TestStandaloneWorkflowRefreshFailsWhenItsMintingToolIsMissing(t *testing.T) {
+	r := &workflowRun{
+		app: &App{},
+		bundle: &blueprint.Bundle{Blueprint: &blueprint.Blueprint{Seams: map[string]blueprint.Seam{
+			"demo": {Refresh: &blueprint.Refresh{
+				Requires: "definitely-not-on-path-kmx", Command: []string{"definitely-not-on-path-kmx"},
+				Secret: "demo-token", Key: "token",
+			}},
+		}}},
+		strictRefresh: true,
+	}
+	err := r.refreshSeam("demo")
+	if err == nil || !strings.Contains(err.Error(), "cannot refresh the demo credential") {
+		t.Fatalf("strict refresh error = %v", err)
+	}
+}

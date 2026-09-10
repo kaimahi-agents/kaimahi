@@ -76,7 +76,7 @@ $KUBECTL -n "$AGENT_NAMESPACE" get secret "$GOVERNED_SECRET" \
 test -s "$workdir/token" || { echo "$GOVERNED_SECRET missing/empty" >&2; exit 1; }
 { printf 'Authorization: Bearer '; cat "$workdir/token"; printf '\n'; } > "$workdir/auth-header"
 
-# --address pins IPv4 explicitly (see plane-admin.sh for why).
+# --address pins IPv4 explicitly so a stale listener cannot receive the request.
 $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \
   svc/kaimahi-mcp-gateway "$GATEWAY_PORT:8081" >/dev/null 2>&1 &
 pf_pid=$!

@@ -84,7 +84,7 @@ func TestExpiredHookCredentialIsRefusedAtTheDoor(t *testing.T) {
 	rec := f.post("demo", `{"text":"hi"}`, bearer("d-expired"))
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Contains(t, rec.Body.String(), `expired credential "inbound-demo"`)
-	require.Contains(t, rec.Body.String(), "make credential-renew NAME=inbound-demo")
+	require.Contains(t, rec.Body.String(), "kmx credential renew inbound-demo --ttl 720h")
 	require.Equal(t, "denied", f.fs.last("demo").Decision)
 	require.Equal(t, 0, f.a2a.count(), "nothing runs on an expired credential")
 }

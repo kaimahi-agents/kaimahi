@@ -16,6 +16,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
+type createWizardCancelMsg struct{}
+
 type createWizardStep uint8
 
 const (
@@ -181,6 +183,10 @@ func (m createWizardModel) Init() tea.Cmd {
 
 func (m createWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case createWizardCancelMsg:
+		m.cancelled = true
+		m.step = createDone
+		return m, tea.Quit
 	case tea.WindowSizeMsg:
 		m.help.SetWidth(msg.Width)
 		m.input.SetWidth(max(20, min(60, msg.Width-4)))
@@ -305,11 +311,16 @@ func (m createWizardModel) View() tea.View {
 }
 
 func cancelUnfinishedWizard(model tea.Model, msg tea.Msg) tea.Msg {
-	if _, quitting := msg.(tea.QuitMsg); !quitting {
-		return msg
-	}
-	if m, ok := model.(createWizardModel); ok && m.step != createDone {
-		return tea.InterruptMsg{}
+	// InterruptMsg makes Bubble Tea skip joining its reader during shutdown.
+	// Finish cancellation through Update instead, like Escape/Ctrl-C, so the
+	// terminal and reader are restored before leaving the wizard.
+	switch msg.(type) {
+	case tea.InterruptMsg:
+		return createWizardCancelMsg{}
+	case tea.QuitMsg:
+		if m, ok := model.(createWizardModel); ok && m.step != createDone {
+			return createWizardCancelMsg{}
+		}
 	}
 	return msg
 }

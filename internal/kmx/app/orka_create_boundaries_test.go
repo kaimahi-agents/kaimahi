@@ -169,10 +169,12 @@ func TestOrkaStaleReadinessStopsAtDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	err = a.createOrkaOnline(ctx, opt, bundle)
-	if err == nil || !strings.Contains(err.Error(), "Ready") {
-		t.Fatalf("stale readiness admitted: %v", err)
+	// The deadline can interrupt either the poll delay or its kubectl read.
+	// Assert the reached boundary and timeout, not one path's diagnostic text.
+	if err == nil || ctx.Err() != context.DeadlineExceeded {
+		t.Fatalf("stale readiness did not stop at the deadline: %v", err)
 	}
-	writes := 0
+	writes, reads := 0, 0
 	for _, call := range orkaCalls(t, dir) {
 		if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") {
 			writes++
@@ -180,9 +182,12 @@ func TestOrkaStaleReadinessStopsAtDeadline(t *testing.T) {
 				t.Fatal("wrote beyond unready Provider")
 			}
 		}
+		if slices.Contains(call.Args, "get") && slices.Contains(call.Args, "providers.core.orka.ai") && slices.Contains(call.Args, "json") {
+			reads++
+		}
 	}
-	if writes != 1 {
-		t.Fatal("never exercised Provider wait")
+	if writes != 1 || reads == 0 {
+		t.Fatalf("never exercised Provider wait: writes=%d reads=%d", writes, reads)
 	}
 }
 

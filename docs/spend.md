@@ -15,13 +15,13 @@ plane you deploy here is also what [tool-governance.md](tool-governance.md),
 > **Every credential the plane issues now expires**, and every ledger
 > row names who the call was made for. Both are
 > [identity.md](identity.md); the ledger's last column and
-> `make credentials` are where you see them.
+> `kmx credentials` is where you see them.
 
 > **This governs LLM traffic only, and only through `governed-*`
 > presets.** Tool calls are governed separately
 > ([tool-governance.md](tool-governance.md)), approvals separately
 > ([approvals.md](approvals.md)); each is its own opt-in. The plain
-> hosted presets from [models.md](models.md) (`make use PRESET=openai`
+> hosted presets from [models.md](models.md) (`kmx use openai`
 > and friends) still exist and are still ungoverned. Nothing meters
 > them.
 
@@ -61,8 +61,7 @@ Agent pod (kagent)                         namespace kaimahi
   carries `tool_upstreams`, which is the MCP gateway's table and belongs
   to [tool-governance.md](tool-governance.md).
 - **Admin plane**: a second port (9091) that the Service deliberately
-  does not expose. `kmx govern`/`kmx ledger` (and `make govern`,
-  `make budget`, `make ledger`) reach
+  does not expose. `kmx govern`, `kmx budget`, and `kmx ledger` reach
   it via `kubectl port-forward` plus a bearer token read from the
   `kaimahi-admin` Secret, so cluster credentials gate every admin
   operation.
@@ -70,11 +69,11 @@ Agent pod (kagent)                         namespace kaimahi
 ## Credential custody
 
 - The agent-side Secret (`kagent/kaimahi-governed-token`) holds a
-  **kaimahi-issued opaque token** (`kmh_…`), minted by `make govern` and
+  **kaimahi-issued opaque token** (`kmh_…`), minted by `kmx govern` and
   shown exactly once. The plane stores only its sha256.
 - The **real** Copilot token lives in `kaimahi/kaimahi-copilot-token`,
-  mounted to the proxy pod and read per request. Rotate it with
-  `make plane-copilot-secret`; no restart needed. Ollama has no
+  mounted to the proxy pod and read per request. Rotate it with `kmx models
+  credential copilot`; the command restarts an existing plane. Ollama has no
   credential at all and is forwarded bare: nothing is injected, by
   contract rather than by accident.
 - The proxy strips the opaque token (and any other credential-slot
@@ -92,17 +91,6 @@ prints `kmh_`, not `sk-` or a GitHub token prefix.
 ## From zero
 
 ```sh
-make up          # cluster, ollama, kagent, agents
-make plane       # build the proxy image, load into kind, deploy proxy + Postgres
-make govern      # issue the credential, switch hello-world through the proxy
-make chat        # works as before, but now authenticated, metered, ledgered
-make ledger      # see the row the chat just wrote
-```
-
-Or without a clone, which is the same code — on kind these `make` targets
-are one-line recipes that call `kmx` ([kmx.md](kmx.md)):
-
-```sh
 kmx up
 kmx plane                # fetches the plane at kmx's own revision; no clone, no registry
 kmx govern hello-world
@@ -111,20 +99,17 @@ kmx ledger
 ```
 
 On a managed cluster the plane needs a registry, a rendered manifest and a
-captured model key. `kmx lift` does the first two and stops at the third,
-naming `make plane-copilot-secret`; `TARGET=aks make plane` /
-`TARGET=aks make govern` do the same work step by step — see
-[aks.md](aks.md). Budgets and approvals are `kmx` commands —
+captured model key. `kmx lift` does all three, using the same device-login
+operation exposed as `kmx models credential copilot`; see [aks.md](aks.md).
+Budgets and approvals are `kmx` commands —
 `kmx budget`, `kmx approvals`/`approve`/`deny`/`request` — and they act on
-whichever context you point them at. It is the *Makefile* that is split:
-`make budget` and `make approve` delegate to `kmx` on `TARGET=kind` and run
-`scripts/plane-admin.sh` on `TARGET=aks`.
+whichever context you point them at.
 
-`make govern` leaves `hello-world` on the `governed-ollama` preset and
+`kmx govern` leaves `hello-world` on the `governed-ollama` preset and
 also applies `governed-copilot`. Switch to the latter with
-`make use PRESET=governed-copilot` once `make plane-copilot-secret` has
-given the proxy the real token. (On AKS there is no ollama, so `make
-govern` switches to `governed-copilot` directly. See [aks.md](aks.md).)
+`kmx use governed-copilot` once `kmx models credential copilot` has given
+the proxy the real token. On AKS there is no Ollama, so `kmx govern`
+switches to `governed-copilot` directly.
 
 ## The ledger
 
@@ -259,9 +244,9 @@ add` says this before it applies anything.
 Caps are monthly (calendar month, UTC), per credential:
 
 ```bash
-make budget CAP_TOKENS=100000    # token cap — the only lever for the free tier
-make budget CAP_CENTS=500        # cents cap
-make budget                      # remove all caps
+kmx budget hello-world --tokens 100000   # token cap: the free-tier lever
+kmx budget hello-world --cents 500       # cents cap
+kmx budget hello-world                   # remove all caps
 ```
 
 ### What a denial looks like
@@ -269,8 +254,8 @@ make budget                      # remove all caps
 Set a cap below what any chat costs and try:
 
 ```bash
-make budget CAP_TOKENS=1
-make chat
+kmx budget hello-world --tokens 1
+kmx agent chat hello-world
 ```
 
 The task fails with the reason in plain text. This is a real run:
@@ -360,37 +345,38 @@ in the [FAQ](FAQ.md#what-the-planes-status-codes-mean).
   is live-verified on kind (no proxy-side token means 503 "upstream
   credential unavailable"; the request never leaves the cluster). A full
   governed Copilot chat needs an interactive device login
-  (`make plane-copilot-secret`), so it is not part of the kind
+  (`kmx models credential copilot`), so it is not part of the kind
   verification or CI. It **was** completed for real once, on AKS on
   2026-09-01, with its ledger row and a budget denial ([aks.md](aks.md)).
 
 ## Operational notes
 
 - On kind the proxy image is side-loaded (`imagePullPolicy: Never`).
-  `make plane` always restarts the proxy after applying, because a
+  `kmx plane` always restarts the proxy after applying, because a
   rebuilt image under the same tag leaves the spec unchanged and apply
   alone would keep the old binary running. On a real cluster the image
   goes through a registry; see [aks.md](aks.md).
-- `scripts/plane-secrets.sh` generates the Postgres password and admin
-  token idempotently. Existing Secrets are kept: regenerating the pg
+- `kmx plane --step secrets` generates the Postgres password and admin
+  token idempotently.
+  Existing Secrets are kept: regenerating the pg
   password under a live database would lock the proxy out.
 - The admin API answers 503 if its token file is unreadable and 401 when
   otherwise unauthenticated. Credential issuance shows the token exactly
   once; if the agent-side Secret is lost, follow
   [the FAQ](FAQ.md#i-lost-the-governed-token).
-- `make up` **preserves** a governed agent across re-runs: it warns and
+- `kmx up` **preserves** a governed agent across re-runs: it warns and
   restores a non-default modelConfig instead of silently resetting it.
-  `make use PRESET=ollama` is the explicit way back. If you are on an
+  `kmx use ollama` is the explicit way back. If you are on an
   older checkout, or something else re-applied the agent YAML, see
   [the FAQ](FAQ.md#my-governed-agent-stopped-showing-up-in-the-ledger).
-- Re-run `make plane` after editing `upstreams.yaml`: the config is read
+- Re-run `kmx plane --source .` after editing `upstreams.yaml`: the config is read
   at boot (the ConfigMap mounts via subPath, which never live-updates).
-- Postgres data survives pod restarts via the PVC; `make down` destroys
-  it. `make backup` writes a `pg_dump` of the whole plane database to a
-  local file and `make restore FILE=…` loads it back, proven on a fresh
+- Postgres data survives pod restarts via the PVC; `kmx down` destroys
+  it. `kmx backup` writes a `pg_dump` of the whole plane database to a
+  local file and `kmx restore <file>` loads it back, proven on a fresh
   cluster in CI ([operations.md](operations.md#backup-and-restore),
   [FAQ](FAQ.md#where-did-my-ledger-go)).
-- The proxy runs as two replicas; `make plane` rolls them one at a time
+- The proxy runs as two replicas; `kmx plane` rolls them one at a time
   and neither the ledger nor a budget decision depends on which one a
   call lands on ([operations.md](operations.md)).
 

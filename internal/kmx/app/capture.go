@@ -202,19 +202,23 @@ func (a *App) storeCredential(s *seam.Seam, token []byte) error {
 	if err := a.apply("plane/namespace.yaml"); err != nil {
 		return err
 	}
-	body := credentialSecretManifest(s.Secret, admin.Namespace, s.Key, token)
+	return a.storeCredentialValue(s.Secret, admin.Namespace, s.Key, token)
+}
+
+func (a *App) storeCredentialValue(name, namespace, key string, token []byte) error {
+	body := credentialSecretManifest(name, namespace, key, token)
 	defer zeroBytes(body)
 	// Echo off for this one command. Every other kmx command prints itself so
 	// an operator can copy it off the screen; this one's stdin is a
 	// credential, and a copyable line would invite reconstructing it.
 	quiet := *a.Run
 	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s, key %s, from the prompt)\n",
-		a.Cfg.KubeContext, admin.Namespace, s.Secret, s.Key)
-	if err := quiet.RunStdin(body, "kubectl", a.kubectl("-n", admin.Namespace, "apply", "-f", "-")...); err != nil {
+	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s, key %s, credential on stdin)\n",
+		a.Cfg.KubeContext, namespace, name, key)
+	if err := quiet.RunStdin(body, "kubectl", a.kubectl("-n", namespace, "apply", "-f", "-")...); err != nil {
 		return err
 	}
-	a.notef("Secret %s/%s stored.", admin.Namespace, s.Secret)
+	a.notef("Secret %s/%s stored.", namespace, name)
 	return nil
 }
 

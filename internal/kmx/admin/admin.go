@@ -1,8 +1,6 @@
 // Package admin talks to the governance plane's admin API.
 //
-// This is scripts/plane-admin.sh's transport and its four read renderings,
-// in Go. The script's contract is the specification and is carried across
-// unchanged:
+// It owns the admin transport, read renderings, and mutation contracts:
 //
 //   - The admin port (9091) is on NO Service. Reaching it takes a
 //     `kubectl port-forward` to the pod — i.e. CLUSTER credentials gate every
@@ -20,7 +18,7 @@
 //   - Fail closed: every call checks for a well-formed positive, and no
 //     redirect is ever followed on an authenticated request.
 //   - Custody: the admin bearer token exists only in this process's memory.
-//     The shell script had to spill it into a 0600 file for curl to read;
+//     The former shell client had to spill it into a 0600 file for curl to read;
 //     Go does not, so it never reaches a file, argv, the environment or a
 //     log. TestTokensNeverLeaveTheProcess holds that line.
 package admin
@@ -45,12 +43,11 @@ import (
 // Namespace is where the plane lives.
 const Namespace = "kaimahi"
 
-// DefaultPort is the local side of the admin forward — plane-admin.sh's
-// ADMIN_PORT, so a stale forward from either implementation is noticed by
-// the other rather than silently talked to.
+// DefaultPort is the local side of the admin forward. A fixed default makes a
+// stale forward visible as a bind failure rather than silently talking to it.
 const DefaultPort = "19091"
 
-// The forward's readiness wait: the script's 150 × 0.2s, twice over (once
+// The forward's readiness wait: 150 × 0.2s, twice over (once
 // for kubectl's bind, once for the plane behind it). Variables rather than
 // constants so the tests can exercise the timeout paths without spending
 // half a minute on each.
@@ -295,8 +292,7 @@ func (c *Client) Do(method, path string, body any) (int, []byte, error) {
 	return resp.StatusCode, out, nil
 }
 
-// Get performs a read and refuses anything but 200, quoting the body — the
-// script's `[ "$status" = 200 ] || { …; cat resp; exit 1; }`.
+// Get performs a read and refuses anything but 200, quoting the body.
 func (c *Client) Get(what, path string) (map[string]any, error) {
 	status, body, err := c.Do(http.MethodGet, path, nil)
 	if err != nil {

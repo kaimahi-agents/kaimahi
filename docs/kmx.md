@@ -5,25 +5,14 @@ model, kagent, an agent, a conversation — and then the governance plane, a
 governed credential, and the ledger that shows what it spent. It needs no
 clone and no Makefile.
 
-It is also the only implementation of that journey. Thirty-seven Makefile
-targets are one-line recipes that call this binary on the kind path — the
-runtime (`up`, `cluster`, `ollama`, `model`, `kagent`, `agent`,
-`tools-agent`, `chat`, `status`, `down`), the plane (`plane`, `plane-image`,
-`plane-secrets`, `govern`), the reads (`ledger`, `grants`, `tool-audit`,
-`approval-audit`, `approvals`, `tool-allowlist`, `plane-metrics`,
-`backup`), and the operator verbs (`use`, `use-ollama`, `budget`,
-`approve`, `deny`, `request`, `govern-tools`, `ungovern-tools`,
-`tool-allow`, `restore`, `credentials`, `credential-renew`) and the
-credential capture (`github-secret`,
-`release-secret`, `ado-secret`) — so CI proves the code you actually run.
-What is left in the Makefile is the Slack and inbound connector families;
+It is also the only user command interface for that journey. From a checkout,
+Make builds the binary and orchestrates repository demos that have no binary
+equivalent. Those remaining demos are the Slack and inbound connector families;
 the agents this repository wires from committed manifests — the release
 agent, the accounts-payable demo and the hosted-GitHub agent, whose
 `Agent` and `RemoteMCPServer` documents `kmx` does not carry
 ([workflows.md](workflows.md) has the checkout table); the model-key
-capture; and the network probes. The managed-cluster path is `kmx lift`;
-the Makefile's `TARGET=aks` targets still exist and do the same work step
-by step.
+capture; and the network probes. The managed-cluster path is `kmx lift`.
 
 **Status.** v0.1.0 is released ([releases.md](releases.md)); no
 package-manager namespace is claimed. `kmx` is a provisional name,
@@ -33,16 +22,11 @@ like `kaimahi` itself, and is not claimed anywhere
 **Local unless you say otherwise.** Everything below assumes a local kind
 cluster, except `kmx lift`, which puts the same agent on AKS: it builds the
 image in a private registry, renders the manifest for it, and wires
-Azure-managed monitoring ([aks.md](aks.md)). The Makefile's `TARGET=aks`
-path still exists and does the same work step by step.
+Azure-managed monitoring ([aks.md](aks.md)).
 
-The one thing on that path kmx does **not** do is capture the model
-credential. A managed cluster runs a hosted model, and the model key is not
-one of the upstream credentials `kmx credential capture` knows how to check —
-storing a credential it cannot vet is the thing that path exists to avoid.
-`kmx lift` checks for the Secret, stops if it is missing, and names
-`make plane-copilot-secret`, which needs a checkout. That is the only step
-that still does.
+The managed path's model credential is also direct. `kmx lift` checks for the
+plane-side Copilot Secret and, when it is absent, performs the GitHub device
+flow through `kmx models credential copilot`. It needs no checkout or Make.
 
 ## Install
 
@@ -76,15 +60,14 @@ for linux and macOS on amd64 and arm64. The download, the version scheme and
 the upgrade path — including what happens when a migration fails — are in
 [releases.md](releases.md).
 
-From a clone, `make bin/kmx` builds the same binary and every `make` target
-below uses it.
+From a clone, `make bin/kmx` is the contributor build command.
 
 Plain `make` is build-only and prints the resulting binary path. It never
 creates or changes a cluster; provisioning requires the explicit command:
 
 ```bash
 make       # build bin/kmx
-make up    # build if stale, then create/update the local runtime
+bin/kmx up # create/update the local runtime with the checkout build
 ```
 
 | Prerequisite | Why |
@@ -162,14 +145,17 @@ swap plus a credential the agent cannot read past.
 | `kmx plane --source <path>` | build the plane from a checkout instead of fetching it (`-` forces the fetch) |
 | `kmx govern [<credential>]` | issue the governed credential (default `$CRED`), apply the governed presets, switch the agent onto one. `--ttl` sets the credential's lifetime; the plane defaults one, and there is no way to ask for "never" |
 | `kmx credentials` | the governed credentials and when each one expires, soonest first, with the state an operator scans: `EXPIRED`, `EXPIRING`, `ok`, or `no expiry` (the legacy class) ([identity.md](identity.md)) |
+| `kmx credential issue <name> (--discard \| --secret <name>) [--namespace kagent] [--ttl duration]` | issue a credential to exactly one destination. `--discard` creates an identity for a signed inbound hook and validates then discards its one-time bearer. `--secret` stores the bearer directly in the named Kubernetes Secret through kubectl stdin, after verifying that an existing Secret is not bound to another credential. It never prints the token; an already-issued credential is kept only when the Secret proves it is bound to that same identity |
 | `kmx credential renew <name> [--ttl 720h]` | extend a credential's deadline. It moves a **date**, not material: the token does not change, so no Secret is rewritten and no credential bytes travel. Rotating the token is still `kmx govern` |
 | `kmx credential capture <upstream> <repository\|organization>` | store the credential an upstream needs, in plane custody. `github` and `github-release` take `owner/name`, `ado` takes an organization. The value is **typed at a prompt with the echo off**: there is no flag, environment variable or file that takes it, and a pipe or a redirect is refused — a credential that can arrive through a pipe can arrive from a shell history or a CI log. It is checked against the upstream first (nothing is stored if that fails) and written straight into the Secret the gateway reads; it never reaches argv, a file or a log. An upstream that already has one is refused unless `--replace` |
 | `kmx ledger [<credential>]` | the spend ledger, newest first, plus month-to-date totals. The last column is `acted for`: who the call was made for. The two before it say who *called* — `caller (claimed)`, the client's own unverified word for itself, and `from (observed)`, the address the plane saw |
 | `kmx grants [<credential>]` | grants, with liveness — an expired grant is not a grant |
 | `kmx audit tool\|approval [<cred>]` | the enforcement points' audit trails. The tool trail carries the same two caller columns the ledger does |
+| `kmx audit inbound [<hook>]` | the signed inbound event trail for every hook, or one named hook |
 | `kmx flow [<credential>]` | the ledger, the tool audit, the approval audit and the inbound audit as one chronological reading, oldest first — what triggered a run, what it spent, what it called, what it was refused and what a human let through. Defaults to every credential. It is a **timeline, not a trace**: the four trails share only the credential and the timestamp, so rows are ordered by time and never linked causally, and it says so under every rendering |
+| `kmx workflow govern\|refresh\|run <blueprint>` | apply a blueprint's allowlist and standing bounds, refresh its declared short-lived seam credentials without running an agent turn, or run its steps. `workflow run --step` may be repeated to select several concrete steps |
 | `kmx use <preset>` | switch an agent onto a preset from `k8s/models/` (`--agent`, default `hello-world`); waits until exactly one pod is on the new template |
-| `kmx budget [<credential>] [--cents n\|-] [--tokens n\|-]` | replace the monthly caps. No flags **clears** both — the same as `make budget` with no `CAP_*` |
+| `kmx budget [<credential>] [--cents n\|-] [--tokens n\|-]` | replace the monthly caps. No flags **clears** both |
 | `kmx approvals` | the requests waiting for a decision, each with the CALL it is about |
 | `kmx approve <id> [--ttl 10m] [--uses 1] [--amount n]` | mint the bounded grant. At least one of `--ttl`/`--uses` is required — an unbounded grant is a config change, not an approval |
 | `kmx deny <id>` | refuse a pending request |
@@ -179,6 +165,7 @@ swap plus a credential the agent cannot read past.
 | `kmx orka install` | install [Orka](https://github.com/orka-agents/orka) on the cluster kmx is pointed at: fetch their `deploy/orka.yaml` at the pinned tag and **refuse bytes that do not hash to the digest kmx pins**, create the `harness-wrapper-auth` Secret their own instructions ask an operator to make by hand — before the manifest, because the wrapper mounts it at start — apply their installer unmodified, wait for both Deployments, and create a keyless `Provider` at the in-cluster model server so their fourth prerequisite (an API key) is not one (`--provider`, `--model`, `--model-url`, `--no-apply`, `--dry-run`; [orka.md](orka.md)). Installing governs nothing: `kmx migrate` does |
 | `kmx orka status` | what is installed and what it can resolve — the version **running** (read off the controller's image, and named as a skew when it disagrees with the pin), both Deployments, the CRD count, and the `Provider` list, with "none — a model call would be refused" said rather than left as an empty column. An unreadable cluster is reported as unread, never as absent |
 | `kmx migrate <deployment>` | put an application **you did not write** onto Orka with its model traffic authenticated, Provider-scoped and recorded, and without changing the application: read what the workload reads today, refuse a model Orka has no ready `Provider` for, create the identity the seam presents to Orka and the seam's allowance for your namespace, mint both credentials into Secrets through a pipe, and write the four environment variables and one mounted file as a patch **kmx does not apply** — it does not mutate a Deployment this project does not own (`--namespace`, `--model`, `--container`, `--upstream`, `--credential`, `--secret`, `--orka-namespace`, `--service-account`, `--token-duration`, `--base-url-var`, `--key-var`, `--model-var`, `--out`, `--no-apply`, `--dry-run`; [migrate.md](migrate.md)) |
+| `kmx models credential copilot` | perform GitHub device login (or reuse its `0600` OAuth cache), exchange it for a short-lived Copilot token, and write only that token to `kaimahi/kaimahi-copilot-token` through kubectl stdin. It applies the Copilot egress policy and restarts an existing plane; stdin, flags and environment variables never accept credential bytes |
 | `kmx tools govern` | issue the gateway credential, set the allowlist, wire the governed `RemoteMCPServer`, repoint the agent (`--tools`, `--credential`, `--agent`, `--secret`, `--server`). It APPLIES the committed seam (`kaimahi-tools`); a seam scaffolded by `kmx tools add` is the operator's file, so it is not re-applied here — if you used `--no-apply` or `--dry-run`, apply it first, and kmx says so rather than waiting on an object that is not there. On a cluster with no kagent there is no seam to accept and no Agent to repoint, so it writes the credential, the allowlist and the authority and stops there |
 | `kmx tools sidecar <upstream>` | scaffold the credential shim for a client that cannot set a header: an in-pod reverse proxy that presents the token from the Secret the plane wrote (`--deployment`, `--namespace`, `--secret`, `--out`, `--no-apply`). kmx applies the config; the Deployment patch is yours to apply |
 | `kmx tools allow <tool,tool\|->` | replace the allowlist. `-` is the **empty** allowlist: nothing callable without a live grant |
@@ -298,9 +285,7 @@ Scaffolding is the only letter of CRUD with a real gap
 
 ## Settings
 
-kmx reads the names this repository already uses — the Makefile's, and
-`ADMIN_PORT` from `scripts/plane-admin.sh` — with the same defaults, so
-`KIND_CLUSTER=mine make up` and `KIND_CLUSTER=mine kmx up` are the same run.
+kmx reads environment settings such as `KIND_CLUSTER` and `ADMIN_PORT`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -627,7 +612,6 @@ editor work is not lost. For a direct live-resource edit, use `kubectl edit`.
 
 ```bash
 kmx agent chat --interactive hello-tools
-# from make: INTERACTIVE=1 make chat AGENT=hello-tools
 ```
 
 On capable terminals, a compact startup view leads with the agent name and a
@@ -812,7 +796,7 @@ Which revision is actually running is not inferred from the image tag (the
 tag is fixed, because the manifest is applied unrendered). Ask the plane:
 
 ```bash
-make plane-metrics | grep kaimahi_build_info
+kmx metrics | grep kaimahi_build_info
 ```
 
 ### If `go install` says it cannot cross-compile
@@ -1043,7 +1027,7 @@ Postgres client is needed.
 
 ## What is NOT in `kmx`
 
-Deliberately — these stay in the Makefile and the scripts. Most are
+Deliberately, these stay in repository Make orchestration and scripts. Most are
 entangled with capturing a credential of a kind `kmx credential capture`
 cannot vet, and a capture that stores an unchecked value would be worse than
 the script it replaced: faster at getting a broken credential into a cluster.
@@ -1051,8 +1035,7 @@ the script it replaced: faster at getting a broken credential into a cluster.
 | Not here | Where it is |
 |---|---|
 | The Slack, GitHub and inbound connector families — everything but the credential capture | [slack.md](slack.md), [hosted-upstreams.md](hosted-upstreams.md), [inbound.md](inbound.md) |
-| Capturing a **model** key, a Slack token or an inbound signing key | `make model-secret`, `make copilot-secret`, `make slack-secret`, `make inbound-secret` — those steps stay in standalone scripts. `kmx credential capture` covers the three tool upstreams whose credentials it can prove something about: `github`, `github-release` and `ado` |
-| The **model credential** a managed cluster needs | `make plane-copilot-secret`. This is the one hand-off in `kmx lift`, and the one step on that path that still needs a checkout: the lift checks whether the Secret is there and stops if it is not, rather than pretending it can mint one |
+| Other model keys, Slack tokens or inbound signing keys | Checkout-only repository demo setup: `make model-secret`, `make slack-secret`, `make inbound-secret`. Copilot is the focused exception: `kmx models credential copilot` can obtain and exchange it through GitHub's device flow, and `kmx lift` uses that operation directly |
 | The network and tool probes | `scripts/*-probe.sh` |
 | Publishing — a tap, a package manager namespace | nowhere. Settling the name lifted the freeze on publishing, and the first tagged release shipped checksummed binaries; `install.sh` and `go install` are the two install paths, and no npm/crates/PyPI/Homebrew namespace is claimed ([NAMING.md](NAMING.md)) |
 

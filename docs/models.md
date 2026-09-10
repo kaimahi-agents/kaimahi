@@ -3,9 +3,9 @@
 The hello-world agent thinks with an in-cluster Ollama model by default.
 This doc is how to make the same agent think with a hosted endpoint
 instead. Each endpoint is a kagent `ModelConfig` preset committed under
-[`k8s/models/`](../k8s/models/), and one make target switches the agent
-between them. Nothing else changes: same cluster, same agent YAML, same
-`make chat`.
+[`k8s/models/`](../k8s/models/), and `kmx use` switches the agent between
+them. Nothing else changes: same cluster, same agent YAML, same `kmx agent
+chat`.
 
 > **A plain hosted preset is a live credit card.** Switching to one
 > sends every conversation to a billed API with no budget, metering, or
@@ -20,20 +20,20 @@ between them. Nothing else changes: same cluster, same agent YAML, same
 | Preset (`k8s/models/`) | Endpoint | Key Secret expected | Live-verified? |
 |---|---|---|---|
 | `ollama` | in-cluster Ollama (keyless, free) | none | **yes**, keyless end to end in CI on every PR |
-| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via `make copilot-secret`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
+| `github-copilot` | Copilot subscription (OpenAI models via api.githubcopilot.com) | `github-copilot-token` (via `kmx models credential copilot`) | **yes**, 2026-08-31, `gpt-5-mini`, A2A task completed |
 | `anthropic` | Anthropic first-party API | `anthropic-api-key` | not live-verified |
 | `openai` | OpenAI first-party API | `openai-api-key` | not live-verified |
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | not live-verified |
 | `azure-foundry` | Azure AI Foundry, v1 GA API (edit `baseUrl` + `model` first) | `azure-foundry-api-key` | not live-verified |
 | `openai-compatible` | any OpenAI-compatible base URL (template, edit first) | `openai-compatible-api-key` | not live-verified |
-| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (via `make govern`) | **yes**, live and in CI. See [spend.md](spend.md) |
-| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (via `make govern`), plus `make plane-copilot-secret` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
+| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (via `kmx govern`) | **yes**, live and in CI. See [spend.md](spend.md) |
+| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (via `kmx govern`), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
 
 "Not live-verified" means exactly that. The preset is schema-valid
 against the kagent 0.9.12 CRDs, which CI proves with a server-side
 dry-run on every PR, so the YAML is well-formed and the fields exist. But
 no real completion has been bought through it yet. A preset graduates to
-live-verified only when an actual `make chat` completes through the
+live-verified only when an actual `kmx agent chat` completes through the
 endpoint, and nobody has paid to do that for those five. They should
 work. "Should" is the honest word. (More in the
 [FAQ](FAQ.md#what-schema-valid-only-means).)
@@ -70,11 +70,13 @@ real API key and stays a reviewed entry in
 
 ## Storing an API key
 
-Keys go in Kubernetes Secrets and nowhere else: never in YAML,
-ConfigMaps, argv, environment listings, or logs. The make target reads
-the key from stdin only:
+Keys go in Kubernetes Secrets and nowhere else: never in YAML, ConfigMaps,
+argv, environment listings, or logs. For providers other than Copilot, the
+repository currently has only a checkout setup helper, not a public `kmx`
+capture command:
 
 ```bash
+# Checkout-only repository setup:
 make model-secret NAME=anthropic-api-key
 # Paste the key, press Enter, then Ctrl-D.
 ```
@@ -87,12 +89,12 @@ To rotate, `kubectl -n kagent delete secret <name>` and re-run.
 ## Switching the agent
 
 ```bash
-make use PRESET=anthropic      # apply the preset, point the agent at it, wait Ready
-make chat                      # same conversation, different brain
-make use-ollama                # back to the keyless local model
+kmx use anthropic              # apply the preset, point the agent at it, wait Ready
+kmx agent chat hello-world     # same conversation, different brain
+kmx use ollama                 # back to the keyless local model
 ```
 
-`make use` applies `k8s/models/$(PRESET).yaml` and patches the one field
+`kmx use` applies its embedded preset and patches the one field
 that matters on the Agent, `spec.declarative.modelConfig`. The kagent
 controller rolls the agent deployment; the target waits for both the
 rollout and the Agent's Ready condition. The committed
@@ -101,10 +103,11 @@ rollout and the Agent's Ready condition. The committed
 Two things bite people here:
 
 - **Create the preset's Secret before switching.** An agent pointed at a
-  ModelConfig whose Secret is missing never becomes Ready, and `make use`
+  ModelConfig whose Secret is missing never becomes Ready, and `kmx use`
   hangs waiting for it
   ([FAQ](FAQ.md#make-use-hangs-at-waiting-for-ready)).
-- **`make use` only touches `hello-world`.** The tools agent keeps its
+- **`kmx use` defaults to `hello-world`.** Use `--agent hello-tools` to
+  switch the tools agent; otherwise it keeps its
   own `modelConfig`; point it at a preset by patching that field
   yourself if you want it on a hosted model.
 
@@ -143,13 +146,13 @@ include API access to OpenAI and other models** at
 `github-copilot` preset targets it:
 
 ```bash
-make copilot-secret                 # GitHub device login -> Copilot token -> K8s Secret
-make use PRESET=github-copilot
-make chat
+kmx models credential copilot      # GitHub device login -> Copilot token -> K8s Secret
+kmx use github-copilot
+kmx agent chat hello-world
 ```
 
-`make copilot-secret` (script: [`scripts/copilot-secret.sh`](../scripts/copilot-secret.sh))
-logs you in once via GitHub's device flow (open the printed URL, enter
+`kmx models credential copilot` logs you in once via GitHub's device flow
+(open the printed URL, enter
 the code), caches that OAuth token 0600 under `~/.config/kaimahi/`
 (override with `KAIMAHI_COPILOT_TOKEN_FILE`), exchanges it at GitHub's
 Copilot token endpoint, and stores **only the short-lived Copilot token**
@@ -170,11 +173,10 @@ Custody properties worth knowing:
   logs, and no keyed call follows redirects. Fail-closed: a failed or
   empty exchange stores nothing.
 - **The exchanged token expires**, typically within hours. When the agent
-  starts failing auth, re-run `make copilot-secret` and then
-  `make use PRESET=github-copilot` (the pod must restart to pick up the
-  rotated Secret). On the governed path it is `make plane-copilot-secret`
-  instead, and no restart: the proxy reads the Secret-mounted file per
-  request. An in-cluster auto-refresher was deliberately not built; token
+  starts failing auth, re-run `kmx models credential copilot` and then
+  `kmx use github-copilot` (the pod must restart to pick up the rotated
+  Secret). The credential command restarts an existing governance plane too.
+  An in-cluster auto-refresher was deliberately not built; token
   lifecycle is governance-plane territory
   ([FAQ](FAQ.md#the-copilot-preset-worked-yesterday-and-fails-today)).
 - **`api.githubcopilot.com` is not part of GitHub's documented public API
@@ -189,7 +191,7 @@ Custody properties worth knowing:
 
 ## Swapping the local model
 
-`make model MODEL=<tag>` pulls another Ollama model into the pod; then
+`MODEL=<tag> kmx up --step model` pulls another Ollama model into the pod; then
 edit `model:` in the ModelConfig of [`k8s/hello-world.yaml`](../k8s/hello-world.yaml)
 and re-apply. Test it with several fresh chats before trusting it:
 small models misfire kagent's built-in `ask_user` tool, and small models

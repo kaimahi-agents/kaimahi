@@ -33,9 +33,8 @@ package blueprint
 //
 // The operator's CONFIGURATION — which repository, which organization,
 // which project — is never in the blueprint under any of the three. It is
-// `--set`, or a values file, for the reason scripts/release-bind.sh
-// states: somebody's real project is not a thing a public repository
-// commits.
+// `--set`, or a values file: somebody's real project is not a thing a public
+// repository commits.
 
 import (
 	"fmt"

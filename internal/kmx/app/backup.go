@@ -15,8 +15,7 @@ import (
 
 // Backup and restore of the plane's database.
 //
-// scripts/plane-backup.sh and scripts/plane-restore.sh are the
-// specification, and the property that matters most is the transport:
+// The property that matters most is the transport:
 // pg_dump and psql run INSIDE the Postgres pod, over its unix socket, and
 // the bytes travel through `kubectl exec`. The database password never
 // leaves the pod (the socket authenticates the postgres OS user), nothing is
@@ -96,7 +95,7 @@ func (a *App) Backup(file string) error {
 
 // inspectDump reads a dump once and answers the three questions asked of it:
 // did pg_dump finish, how many tables does it carry, and how big is it. The
-// shell asked these with grep, grep -c and wc -c over three passes.
+// implementation answers them in one pass.
 func inspectDump(path string) (complete bool, tables int, size int64, err error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -43,12 +43,13 @@ case "$*" in
 esac`,
 		"kubectl": `printf 'kubectl %s\n' "$*" >> "$LIFT_CALLS"
 case "$*" in
-  'version --client'|'config '*) exit 0 ;;
+  'version --client') exit 0 ;;
+  'config '*) printf '%s\n' '{"current-context":"demo-cluster","contexts":[{"name":"demo-cluster","context":{"cluster":"demo-cluster","namespace":"default"}}],"clusters":[{"name":"demo-cluster","cluster":{"server":"https://example.invalid"}}]}' ;;
   *'delete networkpolicy'*) [ "$LIFT_FAIL" != policy ] ;;
   *'delete podmonitors.azmonitoring.coreos.com'*) [ "$LIFT_FAIL" != monitor ] && [ "$LIFT_FAIL" != mixed ] ;;
   *'get podmonitors.azmonitoring.coreos.com'*) exit 0 ;;
   *'get secret'*)
-    if [ "$LIFT_FAIL" = credential ]; then printf 'NotFound\n' >&2; exit 1; fi ;;
+    if [ "$LIFT_FAIL" = credential ]; then printf 'Error from server (Forbidden): secrets is forbidden\n' >&2; exit 1; fi ;;
   *) printf 'unexpected kubectl call\n' >&2; exit 99 ;;
 esac`,
 		"helm":    "exit 0",
@@ -250,8 +251,8 @@ func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 			a.Cfg.Confirm = opt.Cluster
 			err := a.Lift(opt)
 			if failure != "" {
-				if err == nil || !strings.Contains(err.Error(), a.liftCommand(opt, false)) {
-					t.Fatalf("credential recovery lost effective options: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "cannot tell whether") {
+					t.Fatalf("credential failure was not preserved: %v", err)
 				}
 				if !strings.Contains(out.String(), a.liftCommand(opt, false)) {
 					t.Fatalf("phase failure lost recovery command: %s", out)
@@ -302,12 +303,121 @@ func TestLiftPlanWithObservabilityDisabledRemainsReadOnly(t *testing.T) {
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
 	for _, line := range strings.Split(strings.TrimSpace(string(calls)), "\n") {
-		if line != "az version" && line != "kubectl version --client" && line != "az account show -o json" {
+		if line != "az version" && line != "az account show -o json" {
 			t.Fatalf("plan went beyond preflight and account: %s", calls)
 		}
 	}
 	path, _ := liftRecordPath(opt.ResourceGroup, opt.Cluster)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("plan wrote recovery record: %v", err)
+	}
+}
+
+func TestLiftPlanNeedsOnlyTheInstalledAzureCLI(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	t.Setenv("PLAN_CALLS", calls)
+	t.Setenv("KMX_HOME", filepath.Join(dir, "home"))
+	t.Setenv("KMX_TOOLCHAIN", "")
+	stub := `#!/bin/sh
+printf 'az %s\n' "$*" >> "$PLAN_CALLS"
+case "$*" in
+  version) exit 0 ;;
+  'account show -o json') printf '%s\n' '{"id":"test-subscription","name":"Test","user":{"name":"test"}}' ;;
+  *) exit 99 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "az"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	var out bytes.Buffer
+	a := &App{Cfg: &config.Config{}, Run: &run.Runner{Stdout: io.Discard, Stderr: &out}, Out: io.Discard, Err: &out}
+	opt := lift.Options{ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345", Plan: true}
+	if err := a.Lift(opt); err != nil {
+		t.Fatalf("installed-binary plan required more than az: %v\n%s", err, out.String())
+	}
+	if len(a.provisioned) != 0 {
+		t.Fatalf("plan downloaded tools: %+v", a.provisioned)
+	}
+	got, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "az version\naz account show -o json\n" {
+		t.Fatalf("plan executed more than Azure preflight and account inspection:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "home")); !os.IsNotExist(err) {
+		t.Fatalf("plan created state or a lift record: %v", err)
+	}
+	if !strings.Contains(out.String(), "will do, in order") || !strings.Contains(out.String(), "nothing was created") {
+		t.Fatalf("plan was not printed: %s", out.String())
+	}
+}
+
+func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
+	names := func(opt lift.Options) map[string]bool {
+		got := map[string]bool{}
+		for _, dep := range (&App{}).liftDependencies(opt) {
+			got[dep.name] = true
+		}
+		return got
+	}
+	base := lift.Options{ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345", Observability: true}
+	for _, tc := range []struct {
+		step string
+		want []string
+		not  []string
+	}{
+		{"cluster", []string{"az", "kubectl", "bash"}, []string{"helm", "go", "python3", "curl"}},
+		{"boundary", []string{"az", "kubectl", "bash", "python3"}, []string{"helm", "go", "curl"}},
+		{"kagent", []string{"az", "kubectl", "helm"}, []string{"bash", "go", "python3", "curl"}},
+		{"credential", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
+		{"plane", []string{"az", "kubectl", "bash", "go"}, []string{"helm", "curl"}},
+		{"verify", []string{"az", "kubectl", "curl"}, []string{"bash", "helm", "go", "python3"}},
+	} {
+		t.Run(tc.step, func(t *testing.T) {
+			opt := base
+			opt.Step = tc.step
+			got := names(opt)
+			for _, want := range tc.want {
+				if !got[want] {
+					t.Errorf("missing %s dependency: %v", want, got)
+				}
+			}
+			for _, unwanted := range tc.not {
+				if got[unwanted] {
+					t.Errorf("unexpected %s dependency: %v", unwanted, got)
+				}
+			}
+		})
+	}
+
+	full := names(base)
+	for _, want := range []string{"az", "kubectl", "bash", "python3", "helm", "go", "curl"} {
+		if !full[want] {
+			t.Errorf("full lift does not preflight eventual dependency %s before cluster creation: %v", want, full)
+		}
+	}
+	withoutTelemetry := base
+	withoutTelemetry.Step = "verify"
+	withoutTelemetry.Observability = false
+	if names(withoutTelemetry)["curl"] {
+		t.Error("verify without Azure telemetry requires curl")
+	}
+}
+
+func TestLiftPyYAMLAndScriptPlatformChecksAreStepAware(t *testing.T) {
+	if liftNeedsManifestRenderer([]string{"credential", "verify"}) {
+		t.Fatal("a phase that does not render the plane requires PyYAML")
+	}
+	if !liftNeedsManifestRenderer([]string{"cluster", "plane", "verify"}) {
+		t.Fatal("a run containing plane does not require PyYAML")
+	}
+	if err := liftPlatformError([]string{"credential"}, "windows"); err != nil {
+		t.Fatalf("a phase with no script was rejected on Windows: %v", err)
+	}
+	if err := liftPlatformError([]string{"boundary"}, "windows"); err == nil || !strings.Contains(err.Error(), "WSL") {
+		t.Fatalf("script-backed phase has no clear Windows refusal: %v", err)
 	}
 }

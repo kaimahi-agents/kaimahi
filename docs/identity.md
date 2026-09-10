@@ -109,7 +109,7 @@ So a reader meeting `none` in the last column can now see which case it
 is (trimmed in the middle to fit this page; the real table is wider):
 
 ```console
-$ make tool-audit CRED_TOOLS=ap-agent
+$ kmx audit tool ap-agent
 created (UTC)       credential upstream method     tool         decision status detail  call    caller (claimed)   from (observed) acted for
 2026-09-08T13:58:28 ap-agent   erp      tools/call invoice_get  allowed     200         …       ua:kagent/0.9.12   10.244.1.7      none
 2026-09-08T13:52:04 ap-agent   erp      tools/call invoice_get  allowed     200         …       ua:curl/8.5.0      127.0.0.1       none
@@ -188,14 +188,14 @@ first two. The lines below are trimmed in the middle to fit this page;
 the real tables are wider:
 
 ```console
-$ make ledger
+$ kmx ledger
 created (UTC)       credential   upstream  model         …  status caller (claimed)   from (observed) acted for
 2026-09-03T20:55:41 hello-world  ollama    qwen2.5:3b    …  200    ua:kagent/0.9.12   10.244.1.7      slack:U0123ABC
 2026-09-03T20:54:12 hello-world  ollama    qwen2.5:3b    …  200    ua:kagent/0.9.12   10.244.1.7      none
 ```
 
 ```console
-$ make tool-audit CRED_TOOLS=hello-tools
+$ kmx audit tool hello-tools
 created (UTC)       credential   upstream     method     tool               … call                                   caller (claimed)  from (observed) acted for
 2026-09-03T20:55:36 hello-tools  kagent-tools tools/call k8s_get_resources  … k8s_get_resources: (…) [3494fcafa57a]  ua:kagent/0.9.12  10.244.1.7      slack:U0123ABC
 ```
@@ -222,15 +222,15 @@ its own right, not a side effect, and nothing here pretends otherwise.
 
 The Slack user id and nothing else. No name, no email, no profile, and
 no lookup against Slack to get one. These tables are in every `pg_dump`
-(`make backup`), so an identifier is what belongs in them; a profile
+(`kmx backup`), so an identifier is what belongs in them; a profile
 does not. The schema enforces the shape.
 
 ## Part 2: credentials that expire
 
 ### The rules
 
-- Every credential issued from now on **has a deadline**. `make govern`
-  and `make govern-tools` apply the plane's default (30 days); the admin
+- Every credential issued from now on **has a deadline**. `kmx govern`
+  and `kmx tools govern` apply the plane's default (30 days); the admin
   surface offers **no way to ask for "never"**. Only `kmx govern --ttl`
   names a lifetime at issue — `kmx tools govern` has no `--ttl`, so a
   gateway credential always takes the default and is moved afterwards
@@ -254,7 +254,7 @@ A credential that expires silently at 3am is an outage nobody
 diagnosed. Three places say it first:
 
 ```console
-$ make credentials
+$ kmx credentials
 credential       cap cents  cap tokens   expires (UTC)          state     created (UTC)
 hello-world      -          -            2026-09-03T22:56:34    EXPIRING  2026-09-03T20:52:41
 hello-tools      -          -            2026-10-03T20:53:10    ok        2026-09-03T20:53:10
@@ -265,7 +265,7 @@ Soonest deadline first, so the one about to strand an agent is at the
 top. `EXPIRING` is the week's warning window; `no expiry` is the legacy
 class, named rather than left blank so it does not read as a bug.
 
-`make grants` carries the credential's deadline as its last column too:
+`kmx grants` carries the credential's deadline as its last column too:
 a grant that outlives the credential it was given on is a promise the
 plane cannot keep, so the two are read side by side.
 
@@ -277,9 +277,9 @@ job is to trend to zero.
 ### The refusal
 
 ```console
-$ make chat
+$ kmx agent chat hello-world
 … expired credential "hello-world": it expired at 2026-09-03T19:56:30Z;
-  renew it with 'make credential-renew NAME=hello-world TTL=720h', or
+  renew it with 'kmx credential renew hello-world --ttl 720h', or
   re-issue the credential and re-point its Secret
 ```
 
@@ -290,14 +290,14 @@ that credential, so it is in the audit trail and in the metrics.
 ### Renewing, and rotating
 
 ```bash
-make credential-renew NAME=hello-world TTL=720h     # or kmx credential renew
+kmx credential renew hello-world --ttl 720h
 ```
 
 Renewal moves a **date**, not material. The token does not change, so no
 Secret has to be rewritten and no credential bytes travel.
 
 **Rotating the material** is what it always was: issue the credential
-again (`make govern`), which mints a fresh token and pipes it straight
+again (`kmx govern hello-world`), which mints a fresh token and pipes it straight
 into the agent-side Secret. Renewal is not a substitute for rotation;
 it buys time on the same token.
 
@@ -351,9 +351,9 @@ kagent verdicts carry an age.
 | The three attribution answers stay distinguishable; an unclosed run stops counting; both trails carry the actor; the schema refuses an actor outside the vocabulary | Postgres-backed store tests, CI on every PR (`go-plane`) |
 | An expired credential is refused, audited and named at the proxy, the gateway and the inbound door; a lost attribution reads `unknown` | package tests, CI on every PR |
 | An operator-driven turn is `none`, and no row is ever `unknown` or `legacy` | e2e (`e2e-spend`), CI on every PR |
-| A credential's deadline is visible; an expired one refuses `make chat` with the operator message; the refusal is ledgered; a NULL expiry still works; renewal restores service | e2e (`e2e-spend`), CI on every PR |
+| A credential's deadline is visible; an expired one refuses `kmx agent chat` with the operator message; the refusal is ledgered; a NULL expiry still works; renewal restores service | e2e (`e2e-spend`), CI on every PR |
 | A signed Slack mention from a person triggers a run, and the ledger, the tool audit and the inbound trail all name them — across two credentials — then read `none` once the run closes | e2e (`e2e-tools`), CI on every PR |
-| `make backup` / `make restore` round-trip across both migrations | e2e (`e2e-resilience`), CI on every PR |
+| `kmx backup` / `kmx restore` round-trip across both migrations | e2e (`e2e-resilience`), CI on every PR |
 
 ## Limitations
 

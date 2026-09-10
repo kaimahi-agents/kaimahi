@@ -1,16 +1,8 @@
-# Thin glue over kind/AKS + helm + kubectl + the kagent CLI. No Kaimahi CLI
-# here — kagent already ships one (see docs/getting-started.md for the full story).
+# Repository-only demos, connectors and probes around kmx.
+# TARGET selects the environment for those retained recipes.
 #
-# TARGET selects the environment. kind is the default and its
-# behaviour is unchanged: every kind command, context, and manifest is
-# exactly what it was before this file learned about anything else.
-#
-#   make up                      # kind, as always
-#   TARGET=aks make ...          # a managed cluster (docs/aks.md)
-#
-# KUBE_CTX is now overridable, which is the whole point of the managed
-# path — and also its one new hazard, since `make down` can suddenly name
-# a cluster somebody cares about. Nearly every MUTATING target below
+# KUBE_CTX is overridable, which is the whole point of the managed path and
+# also its one hazard. Nearly every MUTATING target below
 # therefore depends on `guard` (scripts/kube-guard.sh): it prints where
 # the action is going, and demands explicit confirmation for anything that
 # is not a local kind cluster. Fail closed — no confirmation, no action.
@@ -18,11 +10,9 @@
 # The exceptions, stated so the rule is not trusted further than it holds:
 # `netpol-verify` and `inbound-fire` run the same guard INSIDE their
 # scripts, deriving the context from the KUBECTL they are handed rather
-# than an inherited KUBE_CTX; `aks-cluster` (and `cluster` when
-# TARGET=aks, which delegates to it) is what CREATES the cluster, so there
-# is nothing to guard yet — it points the context at the new cluster, and
-# everything after it is guarded; and `plane-image` and `erp-image` on AKS
-# build in the registry and touch no cluster at all.
+# than an inherited KUBE_CTX; managed lift aliases are guarded inside kmx
+# (the cluster phase has no context to guard yet); and `plane-image` and
+# `erp-image` on AKS build in the registry and touch no cluster at all.
 TARGET         ?= kind
 
 # A bare `make` is build-only. Provisioning a cluster is consequential and
@@ -30,64 +20,23 @@ TARGET         ?= kind
 # it was written.
 .DEFAULT_GOAL := build
 
-# Container engine for the kind path. Explicit rather than auto-detected:
+# Container engine for the kind demo path. Explicit rather than auto-detected:
 # which engine built an image is exactly the kind of thing that should be
 # visible in the command, not inferred from what happens to be installed.
-#   make up   CONTAINER_ENGINE=podman
-# kind talks to podman only when KIND_EXPERIMENTAL_PROVIDER says so, so the
-# two are set together and can never disagree — a cluster created under one
-# engine is invisible to the other, which otherwise reads as "kind is
-# broken".
+#   make erp CONTAINER_ENGINE=podman
 CONTAINER_ENGINE ?= docker
-ifeq ($(CONTAINER_ENGINE),podman)
-KIND_ENV := KIND_EXPERIMENTAL_PROVIDER=podman
-else ifeq ($(CONTAINER_ENGINE),docker)
-KIND_ENV :=
-else
-$(error unknown CONTAINER_ENGINE '$(CONTAINER_ENGINE)' — expected 'docker' or 'podman')
-endif
-# NOT named KIND: that is already a user-facing parameter for
-# `make request KIND=tool|budget`. Shadowing it would have made the usage
-# check pass with "kind" and filed a nonsense approval request.
-KIND_CMD       := $(KIND_ENV) kind
-
 KIND_CLUSTER   ?= kaimahi-p1
 AKS_CLUSTER    ?= kaimahi
 KAGENT_VERSION ?= 0.9.12
 MODEL          ?= qwen2.5:3b
-AGENT          ?= hello-world
-TASK           ?= Hello! Who are you and where are you running?
-ifneq ($(filter environment environment override,$(origin AGENT)),)
-override AGENT := hello-world
-endif
-ifneq ($(filter environment environment override,$(origin TASK)),)
-override TASK := Hello! Who are you and where are you running?
-endif
 KAGENT         ?= bin/kagent
-STATUS_OUTPUT  ?= table
-export KMX_STATUS_OUTPUT := $(STATUS_OUTPUT)
-SESSION        ?=
-export KMX_CHAT_SESSION := $(SESSION)
-export KMX_CHAT_AGENT := $(AGENT)
-export KMX_CHAT_TASK := $(TASK)
 export KMX_KIND_CLUSTER := $(KIND_CLUSTER)
 export KMX_CONTAINER_ENGINE := $(CONTAINER_ENGINE)
 export KMX_KAGENT_VERSION := $(KAGENT_VERSION)
 export KMX_MODEL := $(MODEL)
 export KMX_KAGENT := $(KAGENT)
 export KMX_CONFIRM := $(KAIMAHI_CONFIRM)
-KMX_CHAT_ARGS = $(strip $(if $(filter 1,$(INTERACTIVE)),--interactive) \
-	$(if $(SESSION),--session "$$KMX_CHAT_SESSION") "$$KMX_CHAT_AGENT" \
-	$(if $(filter 1,$(INTERACTIVE)),$(if $(filter command line,$(origin TASK)),"$$KMX_CHAT_TASK"),"$$KMX_CHAT_TASK"))
-
-# ---- kmx: one implementation, and the targets below call it --------------
-# The developer journey — cluster, model, kagent, the agents, a conversation,
-# teardown — is implemented ONCE, in Go, in cmd/kmx. The targets below that
-# used to spell it out in shell are now one-line recipes that call this
-# binary, so CI keeps proving the code a developer actually runs. Everything
-# else in this file (the plane, governance, approvals, Slack, GitHub, AKS,
-# the probes) is unchanged and still make's.
-#
+# ---- kmx ---------------------------------------------------------------
 # A developer who has cloned the repo gets kmx built from the checkout; a
 # developer who has not runs `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@<sha>`
 # and never sees this file. Both run the same code.
@@ -98,9 +47,7 @@ KMX_SOURCES  := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2
 # embed.go's three //go:embed blocks — manifests, blueprints and the scripts
 # the managed path ships — and it drifted from them once already: twelve
 # embedded files were missing, so an edit to any of them left a stale bin/kmx
-# that `make sandbox`, `make lift` or a blueprint run then applied. It is now
-# held to embed.go by a test that DERIVES the list from those directives
-# (internal/kmx/delegation), rather than one that restates two filenames.
+# that `make sandbox`, `make lift` or a blueprint run then applied.
 # Over-covering is harmless here — a spurious relink — so the directories use
 # wildcards.
 KMX_ASSETS   := k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/tools-agent.yaml \
@@ -121,7 +68,7 @@ KMX_ENV       = KIND_CLUSTER="$$KMX_KIND_CLUSTER" KUBE_CTX="$$KMX_KUBE_CTX" \
 		MODEL="$$KMX_MODEL" $(if $(filter command line,$(origin CHAT_PORT)),CHAT_PORT="$$KMX_CHAT_PORT",) \
 		$(if $(filter command line environment override,$(origin KAGENT)),KAGENT="$$KMX_KAGENT",) \
 		ADMIN_PORT="$$KMX_ADMIN_PORT" OPS_PORT="$$KMX_OPS_PORT" \
-		CRED="$$KMX_CRED" CRED_TOOLS="$$KMX_CRED_TOOLS" \
+		CRED="$$KMX_CRED" \
 		KAIMAHI_CONFIRM="$$KMX_CONFIRM"
 export KMX_CHAT_PORT := $(CHAT_PORT)
 
@@ -149,11 +96,6 @@ ERP_IMAGE_TAG    ?= p13
 # collected here, so the recipes below stay readable.
 ifeq ($(TARGET),kind)
 KUBE_CTX         ?= kind-$(KIND_CLUSTER)
-# Side-loaded local image; `Never` is deliberate — see k8s/plane/proxy.yaml.
-PLANE_IMAGE      ?= $(PLANE_IMAGE_REPO):$(PLANE_IMAGE_TAG)
-PLANE_TARGET     := kind
-# The keyless in-cluster model is the default everywhere on kind.
-AGENT_MODELCONFIG ?= hello-world-model
 GOVERNED_PRESET  ?= governed-ollama
 # The proxy leaves the cluster only when Copilot is enabled
 # (k8s/egress-copilot.yaml). Not on kind by default — the probe asserts
@@ -161,10 +103,6 @@ GOVERNED_PRESET  ?= governed-ollama
 COPILOT_EGRESS   ?= 0
 else ifeq ($(TARGET),aks)
 KUBE_CTX         ?= $(AKS_CLUSTER)
-# Built in Azure by `az acr build` and PULLED — a private ACR, never
-# a public image.
-PLANE_IMAGE      ?= $(ACR_NAME).azurecr.io/$(PLANE_IMAGE_REPO):$(PLANE_IMAGE_TAG)
-PLANE_TARGET     := registry
 # The demo ERP travels the same road as the proxy: built by the registry,
 # pulled by the kubelet identity, never published. A private ACR is not
 # publication, and the guardrail against publishing the demo ERP holds.
@@ -172,7 +110,6 @@ ERP_IMAGE        ?= $(ACR_NAME).azurecr.io/$(ERP_IMAGE_REPO):$(ERP_IMAGE_TAG)
 ERP_TARGET       := registry
 # Copilot-only on AKS. No Ollama is deployed there, so the agent goes
 # straight onto the governed Copilot preset rather than the ollama one.
-AGENT_MODELCONFIG ?= governed-copilot
 GOVERNED_PRESET  ?= governed-copilot
 # Copilot-only: the proxy's 443 allowance is always applied here.
 COPILOT_EGRESS   ?= 1
@@ -182,16 +119,12 @@ endif
 
 export KMX_KUBE_CTX := $(KUBE_CTX)
 
-PLANE_PULL_POLICY ?= IfNotPresent
 ERP_PULL_POLICY   ?= IfNotPresent
 KUBECTL        := kubectl --context $(KUBE_CTX)
 CRED           ?= hello-world
-CRED_TOOLS     ?= hello-tools
 export KMX_ADMIN_PORT := $(ADMIN_PORT)
 export KMX_OPS_PORT := $(OPS_PORT)
 export KMX_CRED := $(CRED)
-export KMX_CRED_TOOLS := $(CRED_TOOLS)
-TOOLS          ?= k8s_get_resources
 # The Slack seam has its own credential, agent and allowlist. The
 # read-only tool is allowlisted from the start; POSTING is not — it is
 # the action a human approves (make approvals / make approve).
@@ -208,7 +141,6 @@ SLACK_AGENT_TOOLS ?= $(SLACK_TOOLS),$(SLACK_POST_TOOL)
 # TOOLS as a JSON string array for the Agent patch, so the agent's
 # toolNames stay aligned with the gateway allowlist ("-" -> empty).
 comma          := ,
-TOOLNAMES_JSON  = $(if $(filter -,$(TOOLS)),,"$(subst $(comma),"$(comma)",$(TOOLS))")
 SLACK_TOOLNAMES_JSON = $(if $(filter -,$(SLACK_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(SLACK_AGENT_TOOLS))")
 # The GitHub seam (GitHub's HOSTED MCP server behind the gateway)
 # has its own credential, agent and allowlist. Two READ tools are
@@ -225,8 +157,7 @@ GITHUB_TOOLNAMES_JSON = $(if $(filter -,$(GITHUB_AGENT_TOOLS)),,"$(subst $(comma
 # allowlist, separate from the read-only GitHub demo above, because this
 # credential's token can change a real repository.
 #
-# The READ tools are allowlisted from the start, and `make release-bind`
-# additionally constrains them to one repository. The two consequential
+# The READ tools are allowlisted from the start. The two consequential
 # ones are not allowlisted and must never be: creating the release branch
 # and dispatching a build are the actions a human approves, one call at a
 # time. There is no destructive tool in either list, and none is
@@ -234,7 +165,6 @@ GITHUB_TOOLNAMES_JSON = $(if $(filter -,$(GITHUB_AGENT_TOOLS)),,"$(subst $(comma
 # server with X-MCP-Exclude-Tools / X-MCP-Toolsets.
 CRED_RELEASE   ?= release-agent
 RELEASE_TOOLS  ?= get_latest_release,list_tags,list_releases,get_release_by_tag,list_pull_requests,list_commits,actions_list,actions_get,core_list_projects,pipelines_definition,pipelines_build,pipelines_build_log
-RELEASE_ACT_TOOLS := create_branch,actions_run_trigger,pipelines_write
 # The accounts-payable seam (the demo's fixture ERP behind the
 # gateway) has its own credential, agent and allowlist. The SIX READ
 # tools are allowlisted from the start. The three with consequences are
@@ -257,24 +187,18 @@ AP_INVOICE     ?= INV-88134
 # default keeps kind and CI exactly as they were.
 AP_HUMAN       ?= 0
 
-.PHONY: build up cluster ollama model kagent agent tools-agent chat down status guard \
-	model-secret copilot-secret use use-ollama \
-	plane plane-image plane-secrets govern budget ledger plane-copilot-secret \
-	credentials credential-renew \
-	govern-tools ungovern-tools tool-allow tool-allowlist tool-audit \
-	approvals approve deny request grants approval-audit \
-	slack-secret slack-mcp govern-slack slack-allow slack-audit \
-	slack-post slack-down aks-cluster aks-creds aks-down \
+.PHONY: build guard model-secret copilot-secret \
+	plane-image \
+	slack-secret slack-mcp govern-slack \
+	slack-post slack-down aks-creds \
 	netpol-verify egress-copilot egress-copilot-off \
-	inbound-credential inbound-secret inbound-fire inbound-audit \
+	inbound-secret inbound-fire \
 	inbound-expose inbound-unexpose exposure-scan \
 	slack-approvers notify-slack slack-mention \
-	backup restore plane-metrics \
-	github-secret github-revoke egress-hosted egress-hosted-off \
-	govern-github github-allow github-audit github-ask github-down \
-	erp erp-image erp-fixtures govern-ap ap-allow ap-audit ap-ask ap-demo ap-injection ap-down \
-	release-secret ado-secret release-revoke govern-release release-allow \
-	release-bind release release-audit release-down release-refresh
+	github-revoke egress-hosted egress-hosted-off \
+	govern-github github-ask github-down \
+	erp erp-image erp-fixtures govern-ap ap-ask ap-demo ap-injection ap-down \
+	release-revoke govern-release release-down
 
 ## build: build kmx from this checkout and print the resulting path
 build: $(KMX)
@@ -283,21 +207,14 @@ build: $(KMX)
 # guard: the context-safety net every MUTATING target depends on. Prints
 # the target context/namespaces; demands explicit confirmation for
 # anything that is not a local kind cluster; fails closed. Make runs it
-# once per invocation, so a single `make up` asks at most once.
+# once per invocation.
 #
-# Unguarded: status, ledger, audits and the approvals lists (they read),
-# and `chat`. Calling chat "read-only" would be wrong — it spends budget,
-# writes a ledger row, and can burn a grant. It is unguarded because the
-# line being drawn is not "mutates" but "can be aimed somewhere
-# unintended": chat runs through $(KUBECTL), which carries an explicit
-# --context, so it lands wherever the rest of the invocation was already
-# going to land. The scripts/tool-*-probe.sh scripts mutate the same
+# The scripts/tool-*-probe.sh scripts mutate governance state and ARE
+# guarded, because they run outside make and
 # governance state and ARE guarded, because they run outside make and
 # would otherwise follow whatever `kubectl config current-context` says —
 # which `az aks get-credentials` rewrites. Mutation is why anyone cares;
 # an inherited context is what makes it a surprise.
-# MAKECMDGOALS is empty for a bare `make`, which would print an action-less
-# banner; name the default goal instead.
 guard:
 	@KUBE_CTX='$(KUBE_CTX)' KUBE_NS='$(GUARD_NS)' \
 		bash scripts/kube-guard.sh '$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL)) [TARGET=$(TARGET)]'
@@ -443,199 +360,6 @@ cat "$$out"; rm -f "$$out"; \
 exit $$rc
 endef
 
-# The `up` journey differs by environment. On kind it is unchanged. On AKS
-# there is no Ollama (that path is Copilot-only), and governance has to exist
-# BEFORE the agents do, because the agents go straight onto the governed
-# Copilot preset — there is no keyless model for them to start on.
-ifeq ($(TARGET),kind)
-# The kind journey is kmx's, in one process — so it guards once, and so
-# the sequence CI runs is the sequence the binary implements, not a list of
-# targets that could drift from it. The individual steps below are still
-# addressable (`make cluster`, `make agent`, ...) and delegate one step each.
-UP_STEPS :=
-else
-# The Copilot credential is minted BEFORE the plane is deployed, not
-# after. The proxy mounts kaimahi-copilot-token as an OPTIONAL secret
-# volume, so a pod that starts before the Secret exists comes up with an
-# empty mount and every governed Copilot call fails closed with "upstream
-# credential unavailable" until kubelet gets round to projecting it.
-# Minting first makes the first chat on a fresh cluster work. (kind never
-# hit this: its governed demo path is ollama, which needs no upstream
-# credential.)
-UP_STEPS := cluster kagent plane-copilot-secret plane govern agent \
-	tools-agent govern-tools status
-endif
-
-## up: everything from an empty machine to ready agents (hello-world + tools)
-#
-# `up` deliberately does NOT list `guard` itself — each step below does,
-# and make runs it once per invocation, so the prompt still happens
-# exactly once. Guarding here too would break the headline case: on a
-# genuinely empty Azure subscription the AKS context does not exist yet,
-# and an absent NON-kind context is precisely what the guard refuses as a
-# typo. The first step (`cluster`) is what brings that context into
-# existence; every step after it is guarded, by which time there is a real
-# context to check. (On kind the whole journey is one `kmx up`, which runs
-# the same guard once, in-process, before it touches anything.)
-ifeq ($(TARGET),kind)
-up: $(KMX)
-	@$(KMX_ENV) $(KMX) up
-else
-up: $(UP_STEPS)
-endif
-
-ifeq ($(TARGET),kind)
-# The Podman recovery #53 added to this recipe — restart the cluster's
-# stopped nodes rather than trying to create a cluster that already exists,
-# refuse when kind lists a cluster Podman has no nodes for, and wait for
-# /readyz and CoreDNS before returning — moved into kmx with it, so the one
-# implementation keeps it. See internal/kmx/app/up.go, stepCluster.
-cluster: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step cluster
-else
-## cluster (TARGET=aks): resource group + private ACR + AKS, via the az CLI
-cluster: aks-cluster
-endif
-
-# Ollama is the kind path's keyless model server. On AKS it is deliberately
-# not deployed there: the keyless path is already proven on kind by CI on
-# every PR, and AKS's job is proving the plane runs on a managed cluster
-# with a real model. Refuse loudly rather than half-deploying it.
-#
-# The non-kind forms carry no `guard`: they touch nothing, so making the
-# operator confirm a cluster before being told the target does not apply
-# there is pure friction — and friction is what teaches people to type
-# past confirmations.
-ifeq ($(TARGET),kind)
-ollama: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step ollama
-
-model: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step model
-else
-ollama:
-	@echo 'ollama is not deployed on TARGET=$(TARGET) — the managed path is' >&2
-	@echo 'Copilot-only. See docs/aks.md.' >&2
-	@exit 1
-
-model:
-	@echo 'no Ollama on TARGET=$(TARGET) — nothing to pull.' >&2
-	@exit 1
-endif
-
-ifeq ($(TARGET),kind)
-kagent: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step kagent
-else
-kagent: guard
-	helm upgrade --install kagent-crds \
-		oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
-		--version $(KAGENT_VERSION) --namespace kagent --create-namespace \
-		--kube-context $(KUBE_CTX)
-	helm upgrade --install kagent \
-		oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-		--version $(KAGENT_VERSION) --namespace kagent \
-		--kube-context $(KUBE_CTX) -f k8s/kagent-values.yaml
-	$(KUBECTL) -n kagent wait --for=condition=Ready pods --all --timeout=420s
-endif
-
-# Re-applying the committed YAML must not silently drop governance (or
-# any preset switch) from a live agent: capture the current modelConfig
-# first and restore a non-default one after the apply, with a warning.
-# Only a NotFound (fresh cluster) may skip the capture — any other read
-# failure aborts rather than risk silently un-governing.
-#
-# The managed path generalises the same mechanism one step. The committed
-# artifact names the keyless ollama ModelConfig, which does not exist on a
-# Copilot-only managed cluster, so the desired config is:
-#   a live non-default one (preserve it, as before)  else
-#   $(AGENT_MODELCONFIG)  — hello-world-model on kind (identical to the
-#   previous behaviour: the patch branch is simply never taken), and the
-#   governed Copilot preset on AKS.
-# k8s/hello-world.yaml is still never mutated.
-ifeq ($(TARGET),kind)
-## agent: the hello-world agent (kmx owns the preservation rules above)
-agent: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step agent
-
-## tools-agent: the tools-enabled agent
-tools-agent: $(KMX)
-	@$(KMX_ENV) $(KMX) up --step tools-agent
-else
-agent: guard
-	@current=""; \
-	if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-world \
-		-o jsonpath='{.spec.declarative.modelConfig}' 2>&1); then \
-		current=$$out; \
-	elif ! printf '%s' "$$out" | grep -q 'NotFound'; then \
-		echo "cannot read hello-world's live modelConfig (refusing to risk un-governing it): $$out" >&2; exit 1; \
-	fi; \
-	desired='$(AGENT_MODELCONFIG)'; \
-	if [ -n "$$current" ] && [ "$$current" != hello-world-model ]; then \
-		desired=$$current; \
-		echo "NOTE: hello-world was on modelConfig '$$current' — preserving it ('make use PRESET=ollama' resets)" >&2; \
-	fi; \
-	$(KUBECTL) apply -f k8s/hello-world.yaml && \
-	if [ "$$desired" != hello-world-model ]; then \
-		$(KUBECTL) -n kagent patch agents.kagent.dev hello-world --type merge \
-			-p "{\"spec\":{\"declarative\":{\"modelConfig\":\"$$desired\"}}}"; \
-	fi
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agents.kagent.dev/hello-world --timeout=300s
-
-## tools-agent: the tools-enabled agent (kagent-tools MCP server comes
-## from the kagent helm install; this applies the Agent wired to it)
-# Same desired-modelConfig treatment as `agent` above — but note this one
-# IS a behavioural delta on kind, not just a generalisation: previously
-# `tools-agent` never read modelConfig, so re-applying always reset
-# hello-tools to the committed value. It now preserves a live non-default
-# one. That is deliberate and matches the governance-preservation guard
-# just below (which already covers hello-tools' gateway wiring); it is
-# unreachable in every documented kind workflow, because nothing switches
-# hello-tools' model — `make use` and `make govern` only touch
-# hello-world. It matters on AKS, where hello-tools must come up on the
-# governed Copilot preset.
-tools-agent: guard
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
-		remotemcpserver/kagent-tool-server --timeout=300s
-	@server=""; tools=""; current=""; \
-	if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-tools -o json 2>&1); then \
-		server=$$(printf '%s' "$$out" | python3 -c 'import json,sys; t=(json.load(sys.stdin)["spec"].get("declarative") or {}).get("tools") or []; print((t[0].get("mcpServer") or {}).get("name","") if t else "")') || exit 1; \
-		tools=$$(printf '%s' "$$out" | python3 -c 'import json,sys; print(json.dumps((json.load(sys.stdin)["spec"].get("declarative") or {}).get("tools") or []))') || exit 1; \
-		current=$$(printf '%s' "$$out" | python3 -c 'import json,sys; print((json.load(sys.stdin)["spec"].get("declarative") or {}).get("modelConfig",""))') || exit 1; \
-	elif ! printf '%s' "$$out" | grep -q 'NotFound'; then \
-		echo "cannot read hello-tools' live tool wiring (refusing to risk un-governing it): $$out" >&2; exit 1; \
-	fi; \
-	desired='$(AGENT_MODELCONFIG)'; \
-	if [ -n "$$current" ] && [ "$$current" != hello-world-model ]; then desired=$$current; fi; \
-	$(KUBECTL) apply -f k8s/tools-agent.yaml && \
-	if [ "$$desired" != hello-world-model ]; then \
-		$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
-			-p "{\"spec\":{\"declarative\":{\"modelConfig\":\"$$desired\"}}}"; \
-	fi && \
-	if [ "$$server" = kaimahi-tools ] && [ -n "$$tools" ]; then \
-		echo "NOTE: hello-tools was governed via kaimahi-tools — restoring gateway wiring ('make ungovern-tools' opts out)" >&2; \
-		$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
-			-p "{\"spec\":{\"declarative\":{\"tools\":$$tools}}}"; \
-	fi
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agents.kagent.dev/hello-tools --timeout=300s
-endif
-
-## chat: one question by default; INTERACTIVE=1 keeps a session open.
-## Override AGENT=hello-tools for the tools-enabled agent; SESSION=<id> resumes.
-#
-# Delegated on every TARGET: kmx's `agent chat` is this recipe's
-# `kagent_forward` — the servable-through-the-Service check, the waited-for
-# port-forward on an explicit port, and the same two retry classes. The
-# define itself stays because `slack-post` and `github-ask` still use it,
-# with the narrower refused-only class a non-idempotent action needs.
-chat: $(KMX)
-	@$(KMX_ENV) $(KMX) agent chat $(KMX_CHAT_ARGS)
-
 ## model-secret: store an API key as a K8s Secret, stdin-only (paste, Enter, Ctrl-D).
 # The key never touches argv, env listings, YAML, or logs; tr strips the
 # trailing newline so it doesn't corrupt the Authorization header.
@@ -651,177 +375,7 @@ model-secret: guard
 copilot-secret: guard
 	@KUBECTL="$(KUBECTL)" bash scripts/copilot-secret.sh
 
-# Wait until an agent's switch has fully landed: kagent has reconciled the
-# Agent's current generation, the Deployment has rolled, and it is served
-# by EXACTLY ONE pod carrying the current pod-template-hash. $(1) is the
-# agent name. Replaces the bare `rollout status` every switch used to do.
-#
-# Three waits, because each of the obvious signals is wrong on its own:
-#
-# 1. kagent reconciles the Agent ASYNCHRONOUSLY. Straight after the patch,
-#    `rollout status` can run before the controller has rewritten the
-#    Deployment and report "successfully rolled out" about the OLD
-#    template. So first wait for status.observedGeneration to reach the
-#    Agent's generation. (The Ready condition is useless here: it stays
-#    True, at the old observedGeneration, for the whole rollout.)
-# 2. `rollout status` is then the right rollout signal, but with maxSurge
-#    1 / maxUnavailable 0 it returns the moment the NEW pod is Ready —
-#    while the OLD pod, still on the previous ModelConfig, is Terminating
-#    (the ReplicaSet controller stops counting a pod as soon as it has a
-#    deletionTimestamp, so the rollout looks complete). A chat in that
-#    window can land on the old pod: a governed chat once completed with
-#    an EMPTY ledger because the ungoverned pod answered it. "Governed"
-#    must mean the ungoverned pod is gone, not outnumbered.
-# 3. So finally wait for the pod set. The current hash is read from the
-#    ReplicaSet whose revision matches the Deployment's (kagent stamps a
-#    config-hash on the pod template, so a ModelConfig switch that changes
-#    anything cuts a new ReplicaSet; one that changes nothing — e.g.
-#    hello-world-model → ollama, identical specs — rolls nothing and
-#    passes straight through). The pod listing is compared as a whole: it
-#    equals the hash only when there is one pod and it is that pod.
-#    Terminating pods still list, which is the point.
-#
-# Bounded: after `rollout status` the remaining work is the old pod's
-# termination grace, so 120s is generous; on timeout the pod list is
-# printed and the target fails rather than handing a half-switched agent
-# to the next step. Wait 1 keys on the AGENT's generation, so a switch
-# that changes only a referenced object's content (the preset's YAML
-# edited, the agent already on it) passes it at once; `use` covers that
-# case itself, before calling here — see the recipe.
-define wait_switched
-gen=$$($(KUBECTL) -n kagent get agents.kagent.dev/$(1) -o jsonpath='{.metadata.generation}') \
-	&& [ -n "$$gen" ] || { echo "cannot read agent/$(1)'s generation" >&2; exit 1; }; \
-$(KUBECTL) -n kagent wait --for=jsonpath='{.status.observedGeneration}'=$$gen \
-	agents.kagent.dev/$(1) --timeout=120s >/dev/null || exit 1; \
-$(KUBECTL) -n kagent rollout status deploy/$(1) --timeout=180s || exit 1; \
-rev=$$($(KUBECTL) -n kagent get deploy/$(1) \
-	-o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}') \
-	&& [ -n "$$rev" ] || { echo "cannot read deploy/$(1)'s revision" >&2; exit 1; }; \
-hash=$$($(KUBECTL) -n kagent get rs -l kagent=$(1) \
-	-o jsonpath='{range .items[*]}{.metadata.annotations.deployment\.kubernetes\.io/revision} {.metadata.labels.pod-template-hash}{"\n"}{end}' \
-	| awk -v r="$$rev" '$$1==r{print $$2}'); \
-[ -n "$$hash" ] || { echo "no ReplicaSet at revision $$rev for deploy/$(1)" >&2; exit 1; }; \
-single=; \
-for _ in $$(seq 1 60); do \
-	pods=$$($(KUBECTL) -n kagent get pods -l kagent=$(1) \
-		-o jsonpath='{range .items[*]}{.metadata.labels.pod-template-hash}{"\n"}{end}') || exit 1; \
-	if [ "$$pods" = "$$hash" ]; then single=1; break; fi; \
-	sleep 2; \
-done; \
-if [ -z "$$single" ]; then \
-	echo "deploy/$(1): still not exactly one pod on template $$hash after 120s:" >&2; \
-	$(KUBECTL) -n kagent get pods -l kagent=$(1) -o wide >&2; \
-	exit 1; \
-fi
-endef
-
-## use: switch the hello-world agent to a model preset from k8s/models/
-# (e.g. make use PRESET=anthropic). Hosted presets need their Secret first
-# (make model-secret) — and remember: spend through a preset is ungoverned
-# until the governance plane is in front of it (make plane).
-#
-# One shell for apply + patch, because the wait that follows needs three
-# values from BEFORE them. `wait_switched` keys its reconcile wait on the
-# Agent's generation, which only moves when the Agent's spec does. Two
-# switches leave it still and yet must roll the pods:
-#   - the preset's YAML changed and hello-world is already on it (the
-#     patch is a no-op; kagent rolls on the ModelConfig change alone);
-#   - the preset was just CREATED under a name the Agent already carried.
-# Verified 2026-09-02: a content-only ModelConfig change bumps its
-# generation and kagent cuts a new Deployment revision within a second —
-# without an Agent generation change. So when the ModelConfig's
-# generation moved and the Agent's did not, wait (bounded, loud) for the
-# Deployment's revision to advance past what it was before the apply;
-# only then is `wait_switched`'s rollout/pod check looking at the new
-# template. Identical content ("unchanged") moves neither generation and
-# takes the fast path. Only a genuine NotFound may leave the "before"
-# generation empty; any other read failure aborts.
-ifeq ($(TARGET),kind)
-# kmx owns the kind path. `wait_switched` — the three-deep wait this
-# recipe used to spell out, every layer of it paid for by a flake — lives in
-# internal/kmx/app/use.go with its reasons attached, and is now the ONE
-# implementation the governed-tools switch shares.
-use: $(KMX)
-	@$(KMX_ENV) $(KMX) use $(PRESET)
-
-## use-ollama: switch back to the keyless in-cluster model
-use-ollama: $(KMX)
-	@$(KMX_ENV) $(KMX) use ollama
-else
-use: guard
-	@test -n "$(PRESET)" || { echo 'usage: make use PRESET=<name from k8s/models/>' >&2; exit 1; }
-	@mc0=""; \
-	if out=$$($(KUBECTL) -n kagent get modelconfig/$(PRESET) -o jsonpath='{.metadata.generation}' 2>&1); then \
-		mc0=$$out; \
-	elif ! printf '%s' "$$out" | grep -q 'NotFound'; then \
-		echo "cannot read modelconfig/$(PRESET): $$out" >&2; exit 1; \
-	fi; \
-	agent0=$$($(KUBECTL) -n kagent get agents.kagent.dev/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
-	rev0=$$($(KUBECTL) -n kagent get deploy/hello-world \
-		-o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}') || exit 1; \
-	echo "$(KUBECTL) apply -f k8s/models/$(PRESET).yaml"; \
-	$(KUBECTL) apply -f k8s/models/$(PRESET).yaml || exit 1; \
-	echo "$(KUBECTL) -n kagent patch agents.kagent.dev hello-world (modelConfig: $(PRESET))"; \
-	$(KUBECTL) -n kagent patch agents.kagent.dev hello-world --type merge \
-		-p '{"spec":{"declarative":{"modelConfig":"$(PRESET)"}}}' || exit 1; \
-	mc1=$$($(KUBECTL) -n kagent get modelconfig/$(PRESET) -o jsonpath='{.metadata.generation}') || exit 1; \
-	agent1=$$($(KUBECTL) -n kagent get agents.kagent.dev/hello-world -o jsonpath='{.metadata.generation}') || exit 1; \
-	if [ "$$agent1" = "$$agent0" ] && [ "$$mc1" != "$$mc0" ]; then \
-		echo "NOTE: preset '$(PRESET)' changed while hello-world was already on it — waiting for kagent to cut a new revision (was $$rev0)" >&2; \
-		rolled=; \
-		for _ in $$(seq 1 60); do \
-			rev=$$($(KUBECTL) -n kagent get deploy/hello-world \
-				-o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}') || exit 1; \
-			if [ -n "$$rev" ] && [ "$$rev" -gt "$${rev0:-0}" ]; then rolled=1; break; fi; \
-			sleep 2; \
-		done; \
-		if [ -z "$$rolled" ]; then \
-			echo "deploy/hello-world: revision still $$rev0 after 120s — kagent did not roll for the changed preset; refusing to call it switched" >&2; \
-			exit 1; \
-		fi; \
-	fi
-	@$(call wait_switched,hello-world)
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agents.kagent.dev/hello-world --timeout=300s
-
-## use-ollama: switch back to the keyless in-cluster model
-# The confirmation is passed down deliberately: reaching this line means
-# the guard above already asked about THIS context and was answered, so
-# the sub-make must not ask a second time for the same action.
-use-ollama: guard
-	$(MAKE) use PRESET=ollama KAIMAHI_CONFIRM='$(KUBE_CTX)'
-endif
-
 ## ---- the governance plane (docs/spend.md) ----
-
-ifeq ($(TARGET),kind)
-## plane: build + deploy the Kaimahi proxy and its Postgres ledger
-# kmx owns the kind path: it builds the proxy image, bootstraps the
-# plane's secrets, applies k8s/plane/ UNRENDERED, and always restarts the
-# proxy, since a rebuilt image under the same tag leaves the spec unchanged.
-#
-# `--source .` is the load-bearing argument. Without it kmx FETCHES the plane
-# from the public Go proxy at its own revision, which is the right answer for
-# someone who has no clone and the wrong one here: a pull request that
-# changes plane/ must be proved against the code it changes.
-plane: $(KMX)
-	@$(KMX_ENV) $(KMX) plane --source .
-else
-## plane: build + deploy the Kaimahi proxy and its Postgres ledger
-plane: guard plane-image plane-secrets plane-certificate
-	@KUBECTL="$(KUBECTL)" PLANE_TARGET=$(PLANE_TARGET) \
-		PLANE_IMAGE='$(PLANE_IMAGE)' PLANE_PULL_POLICY=$(PLANE_PULL_POLICY) \
-		bash scripts/plane-deploy.sh
-	$(KUBECTL) -n kaimahi rollout status deploy/kaimahi-postgres --timeout=300s
-	@# Always restart: a rebuilt image under the SAME tag leaves the spec
-	@# unchanged, so apply alone would keep the old binary running (kind's
-	@# imagePullPolicy: Never reuses same-tag images without complaint, and
-	@# a registry target with IfNotPresent behaves the same way).
-	$(KUBECTL) -n kaimahi rollout restart deploy/kaimahi-proxy
-	$(KUBECTL) -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
-
-endif
 
 ifeq ($(TARGET),kind)
 # kmx builds the image and side-loads it. The engine-aware load this recipe
@@ -843,322 +397,7 @@ plane-image:
 		--image $(PLANE_IMAGE_REPO):$(PLANE_IMAGE_TAG) plane/
 endif
 
-ifeq ($(TARGET),kind)
-plane-secrets: $(KMX)
-	@$(KMX_ENV) $(KMX) plane --step secrets
-else
-plane-secrets: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-secrets.sh
-endif
-
-## plane-certificate: mint or renew the certificate the two data seams
-## serve with, and publish the authority agents verify it against
-#
-# One implementation on every target: the minting, the create-once
-# authority and the renewal decision are all decidable without a cluster and
-# live in internal/kmx/seamcert, so there is no shell version of them to keep
-# in step. The proxy refuses to start without this material, which is why it
-# is a prerequisite of `plane` rather than something to remember.
-plane-certificate: $(KMX)
-	@$(KMX_ENV) $(KMX) plane --step certificate
-
-## govern: issue the Kaimahi credential (opaque token -> agent-side
-## Secret), apply the governed presets, switch hello-world through the
-## proxy. The agent never sees a real upstream key.
-#
-# Both governed presets are applied on every target, but which one
-# the agent is switched to depends on the environment ($(GOVERNED_PRESET):
-# governed-ollama on kind, governed-copilot on AKS where no Ollama exists).
-# The switch is also skipped when the agent is not there yet — on a
-# managed cluster governance is stood up BEFORE the agents, because the
-# agents have no keyless model to start on. On kind the agent always
-# exists by this point, so the path taken is the one it always was.
-# On kind this is kmx's, waits and NotFound discrimination included; the
-# managed path below is unchanged — kmx drives the kind path only.
-ifeq ($(TARGET),kind)
-govern: $(KMX)
-	@$(KMX_ENV) $(KMX) govern $(CRED) --agent hello-world --preset $(GOVERNED_PRESET)
-else
-govern: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh issue $(CRED)
-	$(KUBECTL) apply -f k8s/models/governed-ollama.yaml
-	$(KUBECTL) apply -f k8s/models/governed-copilot.yaml
-	@# Only a genuine NotFound may skip the switch. `>/dev/null 2>&1` would
-	@# collapse NotFound with an unreachable API server, an expired
-	@# credential, an RBAC denial or a wrong context — every one of which
-	@# would print the reassuring NOTE, exit 0, and leave hello-world on an
-	@# UNGOVERNED preset, spending outside the plane. Same discrimination
-	@# the `agent` target above already applies for the same reason.
-	@if out=$$($(KUBECTL) -n kagent get agents.kagent.dev hello-world 2>&1); then \
-		$(MAKE) use PRESET=$(GOVERNED_PRESET) KAIMAHI_CONFIRM='$(KUBE_CTX)'; \
-	elif printf '%s' "$$out" | grep -q 'NotFound'; then \
-		echo "NOTE: agent hello-world does not exist yet — it will be created on '$(AGENT_MODELCONFIG)' by 'make agent'" >&2; \
-	else \
-		echo "cannot tell whether hello-world exists (refusing to leave it ungoverned): $$out" >&2; exit 1; \
-	fi
-endif
-
-## budget: set monthly caps for a credential, e.g.
-##   make budget CAP_CENTS=100 CAP_TOKENS=-     (- or empty = no cap)
-ifeq ($(TARGET),kind)
-budget: $(KMX)
-	@$(KMX_ENV) $(KMX) budget $(CRED) --cents "$(if $(CAP_CENTS),$(CAP_CENTS),-)" --tokens "$(if $(CAP_TOKENS),$(CAP_TOKENS),-)"
-else
-budget: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh budget $(CRED) \
-		"$(if $(CAP_CENTS),$(CAP_CENTS),-)" "$(if $(CAP_TOKENS),$(CAP_TOKENS),-)"
-endif
-
-## credentials: list the governed credentials and when each one expires.
-## The state column is what an operator scans: EXPIRED, EXPIRING (inside
-## the week's warning window), ok, or "no expiry" — the legacy class,
-## issued before credentials expired, still valid, and only ever
-## shrinking. Reads only; unguarded like `ledger`.
-ifeq ($(TARGET),kind)
-credentials: $(KMX)
-	@$(KMX_ENV) $(KMX) credentials
-else
-credentials:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh credentials
-endif
-
-## credential-renew: extend a credential's expiry, e.g.
-##   make credential-renew NAME=hello-world TTL=720h
-## No token moves — renewal changes a date, so no Secret has to be
-## rewritten and nothing has to travel. Rotating the MATERIAL is still
-## `make govern` against a fresh name.
-ifeq ($(TARGET),kind)
-credential-renew: $(KMX)
-	@test -n "$(NAME)" || { echo 'credential-renew: NAME=<credential> is required' >&2; exit 1; }
-	@$(KMX_ENV) $(KMX) credential renew $(NAME) --ttl "$(if $(TTL),$(TTL),-)"
-else
-credential-renew: guard
-	@test -n "$(NAME)" || { echo 'credential-renew: NAME=<credential> is required' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh renew $(NAME) "$(if $(TTL),$(TTL),-)"
-endif
-
-## ledger: show the spend ledger (newest first) + month-to-date totals
-ifeq ($(TARGET),kind)
-ledger: $(KMX)
-	@$(KMX_ENV) $(KMX) ledger $(CRED)
-else
-ledger:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh ledger $(CRED)
-endif
-
-## ---- running it for real (docs/operations.md) ----
-
-## backup: pg_dump the plane's database to a local file (default
-## backups/kaimahi-<UTC timestamp>.sql). Streams through kubectl exec
-## over the Postgres pod's unix socket — no password leaves the pod, no
-## local client needed. The dump holds credential HASHES and audit
-## trails, never a token or an upstream key; keep it as you would the
-## database. Reads only; unguarded like `ledger`.
-##   make backup [FILE=path]
-ifeq ($(TARGET),kind)
-backup: $(KMX)
-	@$(KMX_ENV) $(KMX) backup $(FILE)
-else
-backup:
-	@KUBECTL="$(KUBECTL)" FILE='$(FILE)' bash scripts/plane-backup.sh
-endif
-
-## restore: load a backup into the running plane's database, REPLACING
-## its contents (the dump drops and recreates every table). Proven on a
-## fresh cluster in CI. Guarded: this rewrites the ledger.
-##   make restore FILE=backups/kaimahi-....sql
-ifeq ($(TARGET),kind)
-restore: $(KMX)
-	@$(KMX_ENV) $(KMX) restore $(FILE)
-else
-restore: guard
-	@test -n "$(FILE)" || { echo 'restore: FILE=<backup.sql> is required' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" FILE='$(FILE)' bash scripts/plane-restore.sh
-endif
-
-## plane-metrics: print one replica's Prometheus text (port-forward to a
-## pod's ops port; the port is on no Service). POD=<name> picks a
-## replica; default is the first.
-ifeq ($(TARGET),kind)
-plane-metrics: $(KMX)
-	@$(KMX_ENV) $(KMX) metrics $(if $(POD),--pod $(POD))
-else
-plane-metrics:
-	@KUBECTL="$(KUBECTL)" POD='$(POD)' bash scripts/plane-metrics.sh
-endif
-
 ## ---- the enforcing MCP gateway (docs/tool-governance.md) ----
-
-## govern-tools: put the tools agent behind the MCP gateway — issue its
-## kmh_ credential (agent-side Secret kaimahi-tools-token), set the
-## default allowlist, apply the Kaimahi RemoteMCPServer, repoint
-## hello-tools at it. `make chat AGENT=hello-tools` then rides the
-## gateway: authenticated, allowlisted, audited.
-ifeq ($(TARGET),kind)
-govern-tools: $(KMX)
-	@$(KMX_ENV) $(KMX) tools govern --credential $(CRED_TOOLS) --tools "$(TOOLS)"
-else
-govern-tools: guard
-	@KUBECTL="$(KUBECTL)" GOVERNED_SECRET=kaimahi-tools-token \
-		bash scripts/plane-admin.sh issue $(CRED_TOOLS)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_TOOLS) "$(TOOLS)"
-	$(KUBECTL) apply -f k8s/kaimahi-tools.yaml
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
-		remotemcpserver/kaimahi-tools --timeout=300s
-	$(KUBECTL) -n kagent patch agents.kagent.dev hello-tools --type merge \
-		-p '{"spec":{"declarative":{"tools":[{"type":"McpServer","mcpServer":{"apiGroup":"kagent.dev","kind":"RemoteMCPServer","name":"kaimahi-tools","toolNames":[$(TOOLNAMES_JSON)]}}]}}}'
-	@$(call wait_switched,hello-tools)
-	$(KUBECTL) -n kagent wait \
-		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
-		agents.kagent.dev/hello-tools --timeout=300s
-endif
-
-## ungovern-tools: restore the ungoverned wiring (direct to the chart-managed
-## tool server) by re-applying the committed Agent YAML
-ifeq ($(TARGET),kind)
-ungovern-tools: $(KMX)
-	@$(KMX_ENV) $(KMX) tools ungovern
-else
-ungovern-tools: guard
-	$(KUBECTL) apply -f k8s/tools-agent.yaml
-	@$(call wait_switched,hello-tools)
-endif
-
-## tool-allow: replace the tools credential's allowlist, e.g.
-##   make tool-allow TOOLS=k8s_get_resources,k8s_get_events
-##   make tool-allow TOOLS=-        (empty: nothing callable)
-ifeq ($(TARGET),kind)
-tool-allow: $(KMX)
-	@$(KMX_ENV) $(KMX) tools allow "$(TOOLS)" --credential $(CRED_TOOLS)
-else
-tool-allow: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_TOOLS) "$(TOOLS)"
-endif
-
-## tool-allowlist: show the tools credential's allowlist
-ifeq ($(TARGET),kind)
-tool-allowlist: $(KMX)
-	@$(KMX_ENV) $(KMX) tools allowlist $(CRED_TOOLS)
-else
-tool-allowlist:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allowlist $(CRED_TOOLS)
-endif
-
-## tool-audit: show the tool-call audit trail (newest first)
-ifeq ($(TARGET),kind)
-tool-audit: $(KMX)
-	@$(KMX_ENV) $(KMX) audit tool $(CRED_TOOLS)
-else
-tool-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_TOOLS)
-endif
-
-## ---- approvals and time-boxed permits (docs/approvals.md) ----
-
-## approvals: list pending approval requests (denied actions file them
-## automatically; `make request` files one explicitly)
-ifeq ($(TARGET),kind)
-approvals: $(KMX)
-	@$(KMX_ENV) $(KMX) approvals
-else
-approvals:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh approvals
-endif
-
-## approve: approve a pending request with BOUNDS (at least one of TTL/
-## USES required; AMOUNT tokens-or-cents only for budget requests), e.g.
-##   make approve ID=<uuid> TTL=60s USES=1
-##   make approve ID=<uuid> TTL=5m AMOUNT=100000
-ifeq ($(TARGET),kind)
-approve: $(KMX)
-	@$(KMX_ENV) $(KMX) approve "$(ID)" --ttl "$(if $(TTL),$(TTL),-)" --uses "$(if $(USES),$(USES),-)" --amount "$(if $(AMOUNT),$(AMOUNT),-)"
-else
-approve: guard
-	@test -n "$(ID)" || { echo 'usage: make approve ID=<uuid> [TTL=60s] [USES=1] [AMOUNT=n]' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh approve "$(ID)" \
-		"$(if $(TTL),$(TTL),-)" "$(if $(USES),$(USES),-)" "$(if $(AMOUNT),$(AMOUNT),-)"
-endif
-
-## deny: deny a pending request
-ifeq ($(TARGET),kind)
-deny: $(KMX)
-	@$(KMX_ENV) $(KMX) deny "$(ID)"
-else
-deny: guard
-	@test -n "$(ID)" || { echo 'usage: make deny ID=<uuid>' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh deny "$(ID)"
-endif
-
-## request: file an approval request explicitly, e.g.
-##   make request KIND=tool SUBJECT=k8s_get_events
-##   make request KIND=tool SUBJECT=k8s_get_events ARGS='{"namespace": "default"}'
-##   make request KIND=budget SUBJECT=tokens CRED=hello-world
-## ARGS (tool requests only) names the CALL to pre-approve; omitted
-## means the argument-less call, never "any call".
-ifeq ($(TARGET),kind)
-request: $(KMX)
-	@$(KMX_ENV) $(KMX) request $(KIND) $(SUBJECT) --credential "$(REQ_CRED)" $(if $(ARGS),--args '$(ARGS)')
-else
-request: guard
-	@test -n "$(KIND)" && test -n "$(SUBJECT)" || \
-		{ echo 'usage: make request KIND=tool|budget SUBJECT=<tool|tokens|cents> [CRED=...] [ARGS=<json>]' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh request "$(REQ_CRED)" "$(KIND)" "$(SUBJECT)" '$(ARGS)'
-endif
-
-# The filing credential: an explicit CRED= wins; otherwise tool requests
-# default to the tools credential and budget requests to the chat one.
-REQ_CRED = $(if $(filter command line,$(origin CRED)),$(CRED),$(if $(filter tool,$(KIND)),$(CRED_TOOLS),$(CRED)))
-
-## grants: list grants with liveness (an expired grant is not a grant)
-ifeq ($(TARGET),kind)
-grants: $(KMX)
-	@$(KMX_ENV) $(KMX) grants
-else
-grants:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh grants
-endif
-
-## approval-audit: the approvals' own audit trail (filed/approved/denied)
-ifeq ($(TARGET),kind)
-approval-audit: $(KMX)
-	@$(KMX_ENV) $(KMX) audit approval
-else
-approval-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh approval-audit
-endif
-
-## plane-copilot-secret: mint the Copilot token into the PROXY's
-## namespace (real-key custody: the agent-side governed preset never
-## holds it). Re-run to rotate; the proxy picks it up without a restart.
-plane-copilot-secret: guard
-	@KUBECTL="$(KUBECTL)" COPILOT_SECRET_NAMESPACE=kaimahi \
-		COPILOT_SECRET_NAME=kaimahi-copilot-token \
-		bash scripts/copilot-secret.sh
-	@# Enabling Copilot is the moment the proxy needs the internet.
-	@# The plane's own boundary (k8s/plane/network-policy.yaml) lets it
-	@# reach nothing outside the cluster; this opens TCP 443 out, and
-	@# only for the proxy. `make egress-copilot-off` closes it again.
-	@# (The script above created the namespace if it did not exist, so
-	@# this also works in the AKS ordering, where the token is minted
-	@# before the plane is deployed.)
-	$(KUBECTL) apply -f k8s/egress-copilot.yaml
-
-status: $(KMX)
-	@$(KMX_ENV) $(KMX) status $(if $(filter table,$(STATUS_OUTPUT)),,-o "$$KMX_STATUS_OUTPUT")
-
-ifeq ($(TARGET),kind)
-## down: delete the local kind cluster
-# kmx carries the KIND_CLUSTER/KUBE_CTX consistency check this recipe had:
-# the guard vouches for KUBE_CTX and the delete names KIND_CLUSTER, both are
-# overridable, and a banner naming one cluster while another is destroyed is
-# exactly the accident the guard exists to prevent.
-down: $(KMX)
-	@$(KMX_ENV) $(KMX) down
-else
-## down (TARGET=aks): delete the whole ephemeral resource group
-down: aks-down
-endif
 
 ## ---- the managed-cluster path (docs/aks.md) ----
 #
@@ -1169,25 +408,10 @@ endif
 #   AKS_LOCATION        optional   default westus3
 #   AKS_NODE_SIZE       optional   default Standard_B4ms
 #   AKS_NODE_COUNT      optional   default 1
-#   AKS_NETWORK_POLICY  optional   cilium (default) | azure | calico — the
-#                                  policy engine; scripts/aks-up.sh refuses
-#                                  a cluster without one (the plane's
-#                                  egress policies would be inert). Set it
-#                                  on the make command line or export it
-#                                  in the shell;
-#                                  it is deliberately NOT in the recipe's
-#                                  explicit list below, because that would
-#                                  turn "unset" into an explicit empty
-#                                  string, which the script refuses.
+#   AKS_NETWORK_POLICY  optional   cilium (default) | azure | calico; an
+#                                  explicitly empty value is forwarded and
+#                                  refused rather than replaced by a default
 # See docs/aks.md for why those defaults, and what a run costs.
-
-## aks-cluster: create the resource group, the PRIVATE ACR, and the AKS
-## cluster (with AcrPull for its kubelet identity), then write kubeconfig
-aks-cluster:
-	@AKS_RESOURCE_GROUP='$(AKS_RESOURCE_GROUP)' ACR_NAME='$(ACR_NAME)' \
-		AKS_CLUSTER='$(AKS_CLUSTER)' AKS_LOCATION='$(AKS_LOCATION)' \
-		AKS_NODE_SIZE='$(AKS_NODE_SIZE)' AKS_NODE_COUNT='$(AKS_NODE_COUNT)' \
-		bash scripts/aks-up.sh
 
 ## aks-creds: refresh the kubeconfig entry for an existing AKS cluster
 aks-creds:
@@ -1196,17 +420,8 @@ aks-creds:
 	az aks get-credentials --name $(AKS_CLUSTER) \
 		--resource-group $(AKS_RESOURCE_GROUP) --overwrite-existing
 
-## aks-down: DELETE the ephemeral resource group (cluster + registry + all).
-## Refuses any group not tagged by scripts/aks-up.sh, and requires an
-## explicit confirmation naming the group. This is not best-effort: a
-## managed verification cluster is meant to be gone when the work ends.
-aks-down:
-	@AKS_RESOURCE_GROUP='$(AKS_RESOURCE_GROUP)' AKS_CLUSTER='$(AKS_CLUSTER)' \
-		bash scripts/aks-down.sh
-
-## kmx: build the CLI this Makefile's kind path delegates to
-# Not .PHONY: a rebuild costs a second, but doing it on every `make chat`
-# would put a Go toolchain in the middle of the most-used command.
+## kmx: build the CLI from this checkout
+# Not .PHONY: retained demos rebuild only when an input changed.
 $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 	@command -v go >/dev/null 2>&1 || { \
 		echo 'kmx needs a Go toolchain to build from a checkout (https://go.dev/dl/).' >&2; \
@@ -1218,15 +433,8 @@ $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 # Pinned kagent CLI, checksum-verified. The release .sha256 files embed a
 # build path, so compare digests directly.
 #
-# Still here, and still make's, because `slack-post` and `github-ask` invoke
-# the CLI through $(call kagent_forward,...). kmx carries its own copy of the
-# same pinned fetch for the install-without-a-clone case, and in an ordinary
-# checkout the two are SEPARATE downloads: KMX_ENV forwards KAGENT to kmx
-# only when the variable's origin is the command line or the environment, and
-# the `?=` below makes its origin `file`. So a kmx-delegating target fetches
-# kmx's own copy, and only `make <target> KAGENT=bin/kagent` puts both on the
-# one binary. `command make -n chat` shows the KMX_ENV line with no KAGENT= in
-# it.
+# Still here because `slack-post` and `github-ask` invoke it through
+# $(call kagent_forward,...).
 $(KAGENT):
 	mkdir -p bin
 	curl -sSfLo $(KAGENT) https://github.com/kagent-dev/kagent/releases/download/v$(KAGENT_VERSION)/kagent-$(OS)-$(ARCH)
@@ -1268,10 +476,9 @@ slack-mcp: guard
 ## its kmh_ credential (agent-side Secret kaimahi-slack-token), set the
 ## READ-ONLY allowlist, apply the Kaimahi RemoteMCPServer and the agent.
 ## Posting is deliberately absent from the allowlist.
-govern-slack: guard
-	@KUBECTL="$(KUBECTL)" GOVERNED_SECRET=kaimahi-slack-token \
-		bash scripts/plane-admin.sh issue $(CRED_SLACK)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_SLACK) "$(SLACK_TOOLS)"
+govern-slack: guard $(KMX)
+	@$(KMX_ENV) $(KMX) credential issue $(CRED_SLACK) --secret kaimahi-slack-token
+	@$(KMX_ENV) $(KMX) tools allow "$(SLACK_TOOLS)" --credential $(CRED_SLACK)
 	$(KUBECTL) apply -f k8s/kaimahi-slack.yaml
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
@@ -1282,17 +489,6 @@ govern-slack: guard
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
 		agents.kagent.dev/hello-slack --timeout=300s
-
-## slack-allow: replace the Slack credential's allowlist, e.g.
-##   make slack-allow SLACK_TOOLS=conversations_history
-##   make slack-allow SLACK_TOOLS=-        (empty: nothing callable)
-## Widening this is a CONFIG change; the demo widens by APPROVAL instead.
-slack-allow: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_SLACK) "$(SLACK_TOOLS)"
-
-## slack-audit: the Slack credential's tool-call audit trail
-slack-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_SLACK)
 
 ## slack-post: ask the demo agent to post to the channel. Denied until a
 ## human approves it; that denial is the point.
@@ -1326,8 +522,8 @@ slack-down: guard
 ## ---- the network boundary (docs/egress.md) ----
 #
 # The policies themselves need no target: k8s/plane/network-policy.yaml
-# ships with `make plane` on every environment. What needs a target is
-# PROOF — a NetworkPolicy the CNI ignores is indistinguishable from one
+# ships with the plane on every environment. What needs a target is PROOF:
+# a NetworkPolicy the CNI ignores is indistinguishable from one
 # it enforces until something is shown to be blocked.
 
 ## netpol-verify: prove the boundary is ENFORCED, not merely present —
@@ -1340,8 +536,8 @@ netpol-verify:
 	@KUBECTL="$(KUBECTL)" COPILOT_EGRESS=$(COPILOT_EGRESS) bash scripts/netpol-probe.sh
 
 ## egress-copilot: let the proxy (and only the proxy) reach TCP 443 on
-## public addresses — the Copilot upstream. `make plane-copilot-secret`
-## applies this for you; it is here for the case where the token was
+## public addresses — the Copilot upstream. `kmx models credential copilot`
+## applies this for you; this target is for the case where the token was
 ## minted before the plane existed and the policy needs re-applying.
 egress-copilot: guard
 	$(KUBECTL) apply -f k8s/egress-copilot.yaml
@@ -1362,15 +558,6 @@ egress-copilot-off: guard
 # is the credential in plane custody, the opt-in network allowance, and
 # the governed agent.
 
-## github-secret: capture a fine-grained, read-only, one-repository
-## GitHub token AT A PROMPT, vet it against that repository, store it as
-## the plane-side Secret, and open the gateway's 443-to-public allowance.
-## The value is typed with the echo off and a piped stdin is refused —
-## there is no flag, variable or file that will carry it.
-##   make github-secret GITHUB_REPO=owner/name
-github-secret: $(KMX)
-	@$(KMX_ENV) $(KMX) credential capture github $(GITHUB_REPO)
-
 ## github-revoke: the inverse — delete the token Secret and close the
 ## allowance. Governed GitHub calls then fail closed (503: no credential;
 ## and 502: no route out), which is the point.
@@ -1379,8 +566,8 @@ github-revoke: guard
 	$(KUBECTL) delete -f k8s/egress-hosted.yaml --ignore-not-found
 
 ## egress-hosted / egress-hosted-off: the allowance on its own (CI's
-## synthetic-upstream steps use these; `make github-secret` applies it
-## for you). Delete by manifest, not by a typed name, so a renamed policy
+## synthetic-upstream steps use these). Delete by manifest, not by a typed
+## name, so a renamed policy
 ## cannot leave the hole open with exit 0.
 egress-hosted: guard
 	$(KUBECTL) apply -f k8s/egress-hosted.yaml
@@ -1392,10 +579,9 @@ egress-hosted-off: guard
 ## issue its kmh_ credential (agent-side Secret kaimahi-github-token),
 ## set the READ-ONLY allowlist, apply the Kaimahi RemoteMCPServer and the
 ## agent. The write tool is deliberately absent from the allowlist.
-govern-github: guard
-	@KUBECTL="$(KUBECTL)" GOVERNED_SECRET=kaimahi-github-token \
-		bash scripts/plane-admin.sh issue $(CRED_GITHUB)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_GITHUB) "$(GITHUB_TOOLS)"
+govern-github: guard $(KMX)
+	@$(KMX_ENV) $(KMX) credential issue $(CRED_GITHUB) --secret kaimahi-github-token
+	@$(KMX_ENV) $(KMX) tools allow "$(GITHUB_TOOLS)" --credential $(CRED_GITHUB)
 	$(KUBECTL) apply -f k8s/kaimahi-github.yaml
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
@@ -1406,17 +592,6 @@ govern-github: guard
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
 		agents.kagent.dev/hello-github --timeout=300s
-
-## github-allow: replace the GitHub credential's allowlist, e.g.
-##   make github-allow GITHUB_TOOLS=list_issues
-##   make github-allow GITHUB_TOOLS=-        (empty: nothing callable)
-## Widening this is a CONFIG change; the demo widens by APPROVAL instead.
-github-allow: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_GITHUB) "$(GITHUB_TOOLS)"
-
-## github-audit: the GitHub credential's tool-call audit trail
-github-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_GITHUB)
 
 ## github-ask: ask the demo agent what is open on a repository.
 ##   make github-ask GITHUB_REPO=owner/name
@@ -1445,23 +620,6 @@ github-down: guard
 # build and publish. The agent never carries a byte and never decides to
 # ship.
 
-## release-secret: capture the release agent's GitHub token — FINE-GRAINED,
-## one repository, Contents+Actions write and Pull requests read. Applies
-## the hosted allowance. Typed at a prompt; a pipe is refused.
-##   make release-secret GITHUB_REPO=owner/name
-release-secret: $(KMX)
-	@$(KMX_ENV) $(KMX) credential capture github-release $(GITHUB_REPO)
-
-## ado-secret: capture an Azure DevOps ACCESS TOKEN (Entra, not a PAT —
-## the hosted ADO MCP server accepts nothing else) and store it in plane
-## custody. It lives about an hour; re-run it before a release session
-## with --replace. Mint it with `az account get-access-token --scope
-## https://mcp.dev.azure.com/.default --query accessToken -o tsv`, then
-## paste it at the prompt: a pipe is refused, deliberately.
-##   make ado-secret ADO_ORG=<organization>
-ado-secret: $(KMX)
-	@$(KMX_ENV) $(KMX) credential capture ado $(ADO_ORG)
-
 ## release-revoke: delete BOTH release tokens and close the hosted
 ## allowance. Run it at the end of any session that was only a test.
 release-revoke: guard
@@ -1478,10 +636,9 @@ release-revoke: guard
 ## Unlike govern-github there is no toolNames patch: this agent's tool
 ## SELECTION is fixed in k8s/release-agent.yaml across two servers, and a
 ## merge patch would replace the whole array with one of them.
-govern-release: guard
-	@KUBECTL="$(KUBECTL)" GOVERNED_SECRET=kaimahi-release-token \
-		bash scripts/plane-admin.sh issue $(CRED_RELEASE)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_RELEASE) "$(RELEASE_TOOLS)"
+govern-release: guard $(KMX)
+	@$(KMX_ENV) $(KMX) credential issue $(CRED_RELEASE) --secret kaimahi-release-token
+	@$(KMX_ENV) $(KMX) tools allow "$(RELEASE_TOOLS)" --credential $(CRED_RELEASE)
 	$(KUBECTL) apply -f k8s/kaimahi-release-github.yaml -f k8s/kaimahi-release-ado.yaml
 	$(KUBECTL) -n kagent wait --for=condition=Accepted \
 		remotemcpserver/kaimahi-release-github --timeout=300s
@@ -1489,61 +646,6 @@ govern-release: guard
 		remotemcpserver/kaimahi-release-ado --timeout=300s
 	$(KUBECTL) apply -f k8s/release-agent.yaml
 	$(KUBECTL) -n kagent wait --for=condition=Ready agents.kagent.dev/release-agent --timeout=300s
-
-## release-allow: replace the release credential's allowlist, e.g.
-##   make release-allow RELEASE_TOOLS=list_tags
-##   make release-allow RELEASE_TOOLS=-      (empty: nothing callable)
-release-allow: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_RELEASE) "$(RELEASE_TOOLS)"
-
-## release-bind: constrain the release credential's READ tools to ONE
-## repository, at the plane. Written as an overlay fragment, so
-## `make plane` keeps it.
-##   make release-bind GITHUB_REPO=owner/name
-##   make release-bind GITHUB_REPO=-          (remove the binding)
-release-bind: guard
-	@test -n "$(GITHUB_REPO)" || \
-		{ echo 'usage: make release-bind GITHUB_REPO=owner/name' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" CRED_RELEASE=$(CRED_RELEASE) GITHUB_REPO="$(GITHUB_REPO)" \
-		ADO_ORG='$(ADO_ORG)' ADO_PROJECT='$(ADO_PROJECT)' ADO_PIPELINES='$(ADO_PIPELINES)' \
-		bash scripts/release-bind.sh
-
-## release: cut a release. ONE command — the agent drafts and proposes,
-## this waits for the approvals and polls the builds itself.
-##   make release GITHUB_REPO=owner/name VERSION=v1.2.3 \
-##        [BASE=main] [RELEASE_BRANCH=...] [GH_WORKFLOW=a.yml,b.yml] \
-##        [ADO_PROJECT=... ADO_PIPELINES=12,13] [SLACK_USER=U0EXAMPLE] \
-##        [DRY_RUN=1] [STEP=propose|cut|build|watch]
-##
-## DRY_RUN=1 reads and drafts the notes and stops before the first
-## consequential call — the right first command against a real repository.
-release: guard
-	@KUBECTL="$(KUBECTL)" CRED_RELEASE=$(CRED_RELEASE) \
-		GITHUB_REPO='$(GITHUB_REPO)' VERSION='$(VERSION)' BASE='$(BASE)' \
-		RELEASE_BRANCH='$(RELEASE_BRANCH)' GH_WORKFLOW='$(GH_WORKFLOW)' \
-		ADO_ORG='$(ADO_ORG)' ADO_PROJECT='$(ADO_PROJECT)' ADO_PIPELINES='$(ADO_PIPELINES)' \
-		ADO_BUILDS='$(ADO_BUILDS)' PRERELEASE='$(PRERELEASE)' \
-		ADO_ARTIFACTS='$(ADO_ARTIFACTS)' ASSET_GLOBS='$(ASSET_GLOBS)' \
-		SLACK_USER='$(SLACK_USER)' DRY_RUN='$(DRY_RUN)' STEP='$(STEP)' \
-		RELEASE_CHAT='make chat AGENT=release-agent TARGET=$(TARGET) KIND_CLUSTER=$(KIND_CLUSTER)' \
-		bash scripts/release-run.sh
-
-## release-refresh: re-mint the Azure DevOps token into plane custody and
-## reconnect the seam. `make release` does this itself; this target is for
-## everything else — a bare `make chat` against the release agent does NOT
-## refresh, and an expired token reaches you as "the agent has no such
-## tool" rather than as an expired token.
-##   make release-refresh ADO_ORG=<organization>
-release-refresh: guard
-	@test -n "$(ADO_ORG)" || \
-		{ echo 'usage: make release-refresh ADO_ORG=<organization>' >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" CRED_RELEASE=$(CRED_RELEASE) ADO_ORG='$(ADO_ORG)' \
-		STEP=refresh GITHUB_REPO=placeholder/placeholder VERSION=v0 \
-		bash scripts/release-run.sh
-
-## release-audit: the release credential's tool-call audit trail
-release-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_RELEASE)
 
 ## release-down: remove the release agent and both seams. The tokens are a
 ## separate decision: make release-revoke.
@@ -1607,10 +709,9 @@ endif
 ## may DO is not here: payment_schedule is bounded by the standing
 ## constraint in k8s/plane/upstreams.yaml, and dispute_open and
 ## vendor_notify need an approval each.
-govern-ap: guard
-	@KUBECTL="$(KUBECTL)" GOVERNED_SECRET=kaimahi-ap-token \
-		bash scripts/plane-admin.sh issue $(CRED_AP)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_AP) "$(AP_TOOLS)"
+govern-ap: guard $(KMX)
+	@$(KMX_ENV) $(KMX) credential issue $(CRED_AP) --secret kaimahi-ap-token
+	@$(KMX_ENV) $(KMX) tools allow "$(AP_TOOLS)" --credential $(CRED_AP)
 	$(KUBECTL) apply -f k8s/kaimahi-erp.yaml
 	$(KUBECTL) -n kagent wait \
 		--for=jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'=True \
@@ -1629,25 +730,11 @@ govern-ap: guard
 		--for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
 		agents.kagent.dev/ap-agent --timeout=300s
 
-## ap-allow: replace the AP credential's allowlist, e.g.
-##   make ap-allow AP_TOOLS=invoice_get
-##   make ap-allow AP_TOOLS=-        (empty: nothing callable)
-## Widening this is a CONFIG change; the demo widens by APPROVAL instead.
-ap-allow: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_AP) "$(AP_TOOLS)"
-
-## ap-audit: the AP credential's tool-call audit trail
-ap-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-audit $(CRED_AP)
-
 ## ap-ask: ask the AP agent to investigate an invoice.
 ##   make ap-ask AP_INVOICE=INV-88134
 ap-ask: export KAIMAHI_AP_TASK = Investigate invoice $(AP_INVOICE) and resolve it.
-# No $(KAGENT) prerequisite: this delegates to `chat`, which is kmx, which
-# fetches its own pinned copy. Depending on the make-side binary downloaded
-# it twice over and used neither.
-ap-ask:
-	@$(MAKE) chat AGENT=ap-agent TASK="$$KAIMAHI_AP_TASK"
+ap-ask: $(KMX)
+	@$(KMX_ENV) $(KMX) agent chat --json ap-agent "$$KAIMAHI_AP_TASK"
 
 ## ap-demo: the exception scenario end to end — the routine invoice pays
 ## itself under the standing constraint, the exception is denied, filed,
@@ -1659,19 +746,19 @@ ap-ask:
 ## approval line and WAITS for that person to type it in Slack, instead of
 ## synthesising a signed app_mention in their name. See
 ## scripts/await-approval.sh.
-ap-demo: guard
-	@KUBECTL="$(KUBECTL)" CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
+ap-demo: guard $(KMX)
+	@$(KMX_ENV) KUBECTL="$(KUBECTL)" KMX='$(abspath $(KMX))' \
+		CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
 		AP_HUMAN='$(AP_HUMAN)' \
-		AP_CHAT='make chat AGENT=ap-agent TARGET=$(TARGET) KIND_CLUSTER=$(KIND_CLUSTER)' \
 		bash scripts/ap-demo.sh
 
 ## ap-injection: the manipulated invoice — the agent may comply; the call
 ## is denied anyway, audited with the changed payee, and cannot ride the
 ## approval the earlier call earned.
-ap-injection: guard
-	@KUBECTL="$(KUBECTL)" CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
+ap-injection: guard $(KMX)
+	@$(KMX_ENV) KUBECTL="$(KUBECTL)" KMX='$(abspath $(KMX))' \
+		CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
 		AP_HUMAN='$(AP_HUMAN)' \
-		AP_CHAT='make chat AGENT=ap-agent TARGET=$(TARGET) KIND_CLUSTER=$(KIND_CLUSTER)' \
 		bash scripts/ap-injection.sh
 
 ## ap-down: remove the accounts-payable demo (agent, gateway seam, ERP)
@@ -1685,24 +772,10 @@ ap-down: guard
 #
 # The plane's one ingress: an external event (a webhook) may trigger a
 # kagent agent, on the plane's terms. The hooks live in the committed
-# upstreams table (k8s/plane/upstreams.yaml); these targets issue the
-# hook's identity, store its signing secret, deliver an event, and read
-# the trail. Approving a hook rides the approval targets unchanged:
-# `make approvals` / `make approve ID=... USES=... TTL=...`.
+# upstreams table (k8s/plane/upstreams.yaml); these targets store its
+# signing secret and deliver an event.
 HOOK          ?= demo
-CRED_INBOUND  ?= inbound-demo
-# Where a BEARER hook's token goes (kaimahi namespace: the caller is
-# outside the cluster, not an agent). `-` discards the token: the right
-# choice for SIGNED hooks, whose credential is an identity, not a bearer.
-INBOUND_SECRET ?= -
 EVENT         ?= Reply with exactly the word PONG.
-
-## inbound-credential: issue the hook's plane credential, e.g.
-##   make inbound-credential                                  (signed demo hook)
-##   make inbound-credential CRED_INBOUND=inbound-bearer INBOUND_SECRET=kaimahi-inbound-token
-inbound-credential: guard
-	@KUBECTL="$(KUBECTL)" SECRET_NAMESPACE=kaimahi GOVERNED_SECRET='$(INBOUND_SECRET)' \
-		bash scripts/plane-admin.sh issue $(CRED_INBOUND)
 
 ## inbound-secret: store a hook's signing secret — paste the SOURCE's
 ## secret on stdin, or GENERATE=1 for a fresh one a Kaimahi-scheme caller
@@ -1717,14 +790,6 @@ inbound-secret: guard
 ##                     [EXPECT=202] [DELIVERY=<id to resend>]
 inbound-fire:
 	@KUBECTL="$(KUBECTL)" bash scripts/inbound-probe.sh $(HOOK) "$(EVENT)"
-
-## inbound-audit: the inbound event trail (decisions and outcomes, newest
-## first) — every hook, unless HOOK=<name> is given on the command line.
-## (HOOK's default serves inbound-fire/inbound-secret; an audit that
-## silently narrowed to it would hide the other hooks' events.)
-inbound-audit:
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh inbound-audit \
-		$(if $(filter command line,$(origin HOOK)),$(HOOK),)
 
 ## ---- approvals from Slack (docs/approvals.md, "Deciding from Slack") ----
 #
@@ -1746,10 +811,9 @@ slack-approvers: guard
 ## the plane-side Secret kaimahi-notifier-token) and allowlist it to the
 ## posting tool only. Configuration, not a grant: the plane is the trust
 ## root. The proxy reads the file per post (first projection can lag ~1m).
-notify-slack: guard
-	@KUBECTL="$(KUBECTL)" SECRET_NAMESPACE=kaimahi GOVERNED_SECRET=kaimahi-notifier-token \
-		bash scripts/plane-admin.sh issue $(CRED_PLANE)
-	@KUBECTL="$(KUBECTL)" bash scripts/plane-admin.sh tool-allow $(CRED_PLANE) "$(SLACK_POST_TOOL)"
+notify-slack: guard $(KMX)
+	@$(KMX_ENV) $(KMX) credential issue $(CRED_PLANE) --secret kaimahi-notifier-token --namespace kaimahi
+	@$(KMX_ENV) $(KMX) tools allow "$(SLACK_POST_TOOL)" --credential $(CRED_PLANE)
 
 ## slack-mention: deliver ONE synthetic, correctly signed app_mention to
 ## the slack-events hook as Slack would (kind: the keyless stand-in for

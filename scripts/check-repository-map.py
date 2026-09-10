@@ -23,11 +23,11 @@ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 
   What IS enforced about a classification is that one exists: every
   tracked file in the areas the map enumerates lands in exactly one of
-  its lists, and the lists' own counts add up. Add a script and this
+its lists, and the lists' own counts add up. Add a script and this
   fails until somebody has said what it is — without this file ever
   saying which answer is right.
 
-  The three GENUINELY UNCLEAR cases are a standing question, not a gap to
+  The two GENUINELY UNCLEAR cases are a standing question, not a gap to
   close. They need a product decision, and the risk is not that they stay
   unresolved — it is that the ambiguity quietly disappears. So the section
   is required to survive, to say how many cases it holds, to hold that
@@ -466,8 +466,8 @@ def the_cmd_table_covers_cmd(doc: Doc, tree: Tree) -> list[str]:
 def the_package_table_covers_internal(doc: Doc, tree: Tree) -> list[str]:
     """Every file-bearing internal directory, including embedded fixture data.
 
-    Counts exclude Go tests, not non-Go data. `delegation` is genuinely zero;
-    an embedded fixture directory is not, even though it is not a Go package.
+    Counts exclude Go tests, not non-Go data. Embedded fixtures count even
+    though their directories are not Go packages.
     """
     _, body = doc.section("`internal/`")
     rows = re.findall(r"^\| `([a-z0-9/._-]+)` \| \*?\*?" + NUM + r"\*?\*? \|", body, re.M | re.I)
@@ -940,28 +940,16 @@ def the_erp_says_what_it_is(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def show_turn_and_await_approval_have_the_callers_the_map_names(doc: Doc, tree: Tree) -> list[str]:
-    """Two scripts filed as product on the strength of who calls them.
-
-    Both look like demo leftovers and are not, and the only thing making
-    that true is the caller — so the caller is what is checked.
-    """
+def await_approval_has_the_demo_callers_the_map_names(doc: Doc, tree: Tree) -> list[str]:
+    """The retained helper is demonstration code because the AP demos call it."""
     _, body = doc.section("`scripts/`")
-    once(phrase("`scripts/release-run.sh` calls it twice"), body, "the await-approval caller")
-    once(phrase("`show-turn.py` renders one agent turn and is called only by `release-run.sh`"),
-         body, "the show-turn caller")
-    problems = []
-    run = tree.read("scripts/release-run.sh")
-    calls = len(re.findall(r"await-approval\.sh", run))
-    if calls != 2:
-        problems.append(f"scripts/release-run.sh names await-approval.sh {calls} times, not twice")
-    callers = {p for p in tree.files
-               if p not in NOT_EVIDENCE | {"scripts/show-turn.py"} and readable(tree, p)
-               and "show-turn.py" in tree.read(p)}
-    if callers != {"scripts/release-run.sh"}:
-        problems.append("show-turn.py's callers are now " + (", ".join(sorted(callers)) or "nobody")
-                        + ", and the map says only scripts/release-run.sh")
-    return problems
+    once(phrase("Both `ap-demo.sh` and `ap-injection.sh` call it"), body,
+         "the await-approval demo callers")
+    missing = [path for path in ("scripts/ap-demo.sh", "scripts/ap-injection.sh")
+               if "await-approval.sh" not in tree.read(path)]
+    if not missing:
+        return []
+    return [f"{path} does not call await-approval.sh as the map says" for path in missing]
 
 
 @claim
@@ -1157,28 +1145,27 @@ MAP_EDITS = [
      "cites the release-agent quote at lines it is not on"),
     ("`internal/demo/erp/server.go`", "`internal/demo/erp/absent.go`",
      "names a source file that is not in the tree"),
-    ("Genuinely unclear — three", "Genuinely unclear — two",
-     "says two unresolved cases and lists three"),
+    ("Genuinely unclear — two", "Genuinely unclear — one",
+      "says one unresolved case and lists two"),
     ("**`scripts/exposure-scan.sh`.** One caller", "**`scripts/gone.sh`.** One caller",
      "rests the first unclear case on a script that is not there"),
-    ("| `kmx/app` | 47 |", "| `kmx/app` | 46 |",
+    ("| `kmx/app` | 48 |", "| `kmx/app` | 47 |",
      "gets a package's source-file count wrong"),
     ("`kaimahi-tools.yaml`, `egress-hosted.yaml`", "`egress-hosted.yaml`",
      "drops a manifest from the embedded list that embed.go embeds"),
     ("`ap-agent.yaml`, `erp-mcp.yaml`", "`ap-agent.yaml`, `erp-mcp.yaml`, `hello-world.yaml`",
      "files an embedded manifest under demonstration as well"),
-    ("`plane-admin.sh`, `plane-secrets.sh`", "`plane-secrets.sh`",
-     "leaves a script out of every bucket"),
+    ("`plane-pods.sh`, `slack-secret.sh`", "`slack-secret.sh`",
+      "leaves a script out of every bucket"),
     ("`getting-started.md`, `kmx.md`", "`kmx.md`",
      "leaves a doc out of every list"),
     ("Fourteen internal packages and one binary", "Thirteen internal packages and one binary",
      "miscounts the plane's packages"),
     ("Postgres and twelve migrations", "Postgres and eleven migrations",
      "miscounts the plane's migrations"),
-    ("is called only by\n`release-run.sh`", "is called only by\n`ap-demo.sh`",
-     "names the wrong caller for show-turn.py"),
-    ("`scripts/release-run.sh` calls it twice", "`scripts/release-run.sh` calls it three times",
-     "no longer makes the await-approval claim in a form this file can find"),
+    ("Both `ap-demo.sh` and `ap-injection.sh` call it",
+      "Only `ap-demo.sh` calls it",
+      "no longer names both demo callers for await-approval.sh"),
     ("`isolation.md` appears nowhere in\n`docs/README.md`",
      "`isolation.md` is listed in\n`docs/README.md`",
      "no longer makes the unfindable-docs claim"),
@@ -1187,25 +1174,25 @@ MAP_EDITS = [
      "no longer makes the module-boundary claim"),
     ("| `cmd/kmx` (20 files)", "| `cmd/kmx` (19 files)",
      "gets a binary's file count wrong"),
-    ("`internal/kmx/` is eighteen packages", "`internal/kmx/` is seventeen packages",
+    ("`internal/kmx/` is seventeen packages", "`internal/kmx/` is sixteen packages",
      "miscounts the packages under internal/kmx"),
     ("the\nfive `lift*.go` files in `app`", "the\nsix `lift*.go` files in `app`",
      "miscounts the cloud-running half of the AKS lift"),
-    ("| `scripts/` | 22 (6 embedded in the binary, 16 operator) | 3 | 54",
-     "| `scripts/` | 22 (6 embedded in the binary, 15 operator) | 3 | 54",
+    ("| `scripts/` | 13 (6 embedded in the binary, 7 operator) | 4 | 52",
+      "| `scripts/` | 13 (6 embedded in the binary, 6 operator) | 4 | 52",
      "has a summary row whose own parts no longer add up"),
     ("Six image files plus a README", "Seven image files plus a README",
      "miscounts the brand assets"),
     ("including six shell scripts", "including seven shell scripts",
      "miscounts the shell scripts inside the binary"),
-    ("one of the thirteen checkers the\nmutation harness", "one of the ten checkers the\nmutation harness",
+    ("one of the twelve checkers the\nmutation harness", "one of the ten checkers the\nmutation harness",
      "miscounts the checkers the mutation harness proves"),
     ("| `staticcheck.conf` |", "| `staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("66 of the 79 are named", "65 of the 79 are named",
+    ("57 of the 69 are named", "56 of the 69 are named",
      "miscounts which scripts anything outside names"),
-    ("fourteen tracked files under `scripts/` contain the literal `k8s/`",
-     "fifteen tracked files under `scripts/` contain the literal `k8s/`",
+    ("eleven tracked files under `scripts/` contain the literal `k8s/`",
+      "twelve tracked files under `scripts/` contain the literal `k8s/`",
      "miscounts the scripts that would have to change if k8s/ were split"),
     ("(fourteen invocations among nineteen\nmentions", "(thirteen invocations among nineteen\nmentions",
      "miscounts how often CI runs the chat verifier"),
@@ -1340,7 +1327,7 @@ def selftest() -> int:
 
     # The standing question, emptied in the one way that is otherwise
     # consistent: the cases deleted AND the heading honestly saying zero.
-    emptied = re.sub(r"(## Genuinely unclear — )three(, and this is a result\n)(?:.|\n)*?(?=\n## )",
+    emptied = re.sub(r"(## Genuinely unclear — )two(, and this is a result\n)(?:.|\n)*?(?=\n## )",
                      r"\1zero\2\nNone.\n", real)
     if emptied == real:
         print("FAIL the Genuinely unclear section could not be emptied — the case has stopped "

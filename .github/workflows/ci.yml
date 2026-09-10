@@ -230,7 +230,7 @@ jobs:
       # ever exercise the one branch it runs on (local kind). These tests
       # build their own kubeconfig, so all of them are covered keyless in
       # seconds: local kind proceeds, an unwritten kind context proceeds
-      # (that is `make up` on an empty machine), and a typo, a kind-NAMED
+      # (that is `kmx up` on an empty machine), and a typo, a kind-NAMED
       # remote, a remote with no confirmation, and a confirmation naming a
       # different context are all refused.
       - name: Context guard fails closed
@@ -740,7 +740,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: kmx — gofmt clean
-        run: test -z "$(gofmt -l cmd internal embed.go)"
+        run: test -z "$(gofmt -l cmd internal embed.go embed_test.go)"
       - name: kmx — vet
         run: go vet ./...
       # staticcheck, pinned to an exact release tag.
@@ -767,7 +767,7 @@ jobs:
           "$(go env GOPATH)/bin/staticcheck" ./...
       - name: kmx — build
         run: go build ./...
-      - name: kmx — test (guard port, scaffolder, kagent checksum, make delegation)
+      - name: kmx — test (guard port, scaffolder, kagent checksum)
         run: |
           # This job does not set `shell: bash`, so it runs under `bash -e`
           # with NO pipefail: without this line `go test | tee` reports tee's
@@ -801,7 +801,6 @@ jobs:
               # binary it fetches runs with the operator's kubeconfig, so
               # the digest checks are not decoration.
               "internal/kmx/toolchain": "the fetched toolchain's digests",
-              "internal/kmx/delegation": "make and kmx being one implementation",
               # Which revision the plane is fetched at, the GOBIN
               # cross-compile refusal, and the credential custody the shell
               # could only approximate with a 0600 file.
@@ -900,10 +899,6 @@ jobs:
           go test ./internal/kmx/app -run '^TestLegacyAgentsWithOrkaDiscovery$' -count=1 -v | tee agent-discovery.out
           grep -q -- '--- PASS: TestLegacyAgentsWithOrkaDiscovery' agent-discovery.out
           ! grep -q -- '--- SKIP:' agent-discovery.out
-      - name: Makefile does not re-implement what kmx owns
-        run: |
-          python3 scripts/check-kmx-delegation.py --selftest
-          python3 scripts/check-kmx-delegation.py
 
   # The governance plane's Go module — build, vet, gofmt, tests.
   # A separate quick job so proxy logic failures surface in seconds, not
@@ -1047,7 +1042,7 @@ jobs:
   #                       measured too, and does not pay. Each job is its
   #                       own VM, so what could be shared is the ~5.1GB of
   #                       images, not the cluster: with every image already
-  #                       on the node `make up` is 87s instead of 188s, but
+  #                       on the node `bin/kmx up` is 87s instead of 188s, but
   #                       `kind load image-archive` takes 94s to put them
   #                       there (~54MB/s into containerd, SLOWER than the
   #                       node pulls them from the registry). Trimmed to
@@ -1058,7 +1053,7 @@ jobs:
   #                       if they could reach it: this one wipes the
   #                       database, that one kills replicas, another
   #                       enforces default-deny.)
-  #   `make plane`        60s, of which ~30s is a docker build that needs no
+  #   `bin/kmx plane`     60s, of which ~30s is a docker build that needs no
   #                       cluster. Building it in the background during the
   #                       bring-up measured 53s against 60s and is NOT done
   #                       here: kmx owns that build now, and a
@@ -1101,10 +1096,15 @@ jobs:
   e2e-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kaimahi-p1
+      KUBE_CTX: kind-kaimahi-p1
+      CRED: hello-world
+      CRED_TOOLS: hello-tools
     defaults:
       run:
         # An explicit bash shell turns on `-o pipefail`, so the
-        # `make chat | tee` pipelines fail on make's own exit code instead
+        # `bin/kmx agent chat | tee` pipelines fail on kmx's exit code instead
         # of relying solely on the content check in verify-chat.py.
         shell: bash
     steps:
@@ -1125,24 +1125,25 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # `make up` and every other target below runs THROUGH kmx, so
-      # this job is what proves the binary a developer installs. Building it
+      # This job runs the binary a developer installs directly. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
-        run: make up
+        run: bin/kmx up
       - name: Converse with the agent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make chat | tee chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat.out
           # Fail closed: require a completed A2A task with non-empty reply text.
           python3 scripts/verify-chat.py chat.out
       # Keyless: the model presets must be schema-valid against the live
@@ -1155,8 +1156,8 @@ jobs:
       - name: Switch preset and converse again (keyless)
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make use PRESET=ollama
-          make chat | tee chat-preset.out
+          bin/kmx use ollama
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat-preset.out
           python3 scripts/verify-chat.py chat-preset.out
       # Keyless: prove a REAL MCP tool call, not a plausible answer. A
       # ConfigMap with an unguessable random name is created, the tools
@@ -1193,8 +1194,8 @@ jobs:
           probe="probe-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
           kubectl --context kind-kaimahi-p1 -n default create configmap "$probe" \
             --from-literal=owner=kaimahi-p3-ci
-          make chat AGENT=hello-tools \
-            TASK='List the configmaps in the default namespace.' | tee tool-chat.out
+          bin/kmx agent chat hello-tools \
+            'List the configmaps in the default namespace.' | tee tool-chat.out
           python3 scripts/verify-chat.py tool-chat.out k8s_get_resources "$probe"
       # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
@@ -1245,7 +1246,7 @@ jobs:
           PY
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       # Keyless: a HOSTED tool upstream — the first the gateway reaches
       # over the internet — proven against a SYNTHETIC stand-in, since no
       # GitHub token exists in CI, ever. scripts/ci/synthetic-upstream.sh
@@ -1285,10 +1286,10 @@ jobs:
       - name: "Hosted upstreams: read-only credential; the write tool is not allowlisted; the agent-side Secret holds only kmh_"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token \
-            bash scripts/plane-admin.sh issue hello-github
-          make github-allow GITHUB_TOOLS=echo
-          make tool-allowlist CRED_TOOLS=hello-github | tee github-allowlist.out
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx credential issue hello-github \
+            --secret kaimahi-github-token --namespace kagent
+          bin/kmx tools allow echo --credential hello-github
+          bin/kmx tools allowlist hello-github | tee github-allowlist.out
           grep -qE '^hello-github: echo$' github-allowlist.out
           if grep -q echo_write github-allowlist.out; then
             echo 'the write tool is allowlisted — it must be approved, not configured' >&2; exit 1
@@ -1305,7 +1306,7 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-call-probe.sh echo "{\"text\": \"$probe\"}" | tee hosted-call.out
           grep -qF "echo:{\"text\": \"$probe\"}" hosted-call.out
-          make github-audit | tee github-audit.out
+          bin/kmx audit tool hello-github | tee github-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +echo +allowed +200' github-audit.out
       - name: "Hosted upstreams: the write tool is denied and files a request; a redirecting stand-in is refused and audited"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1314,9 +1315,9 @@ jobs:
             bash scripts/tool-denial-probe.sh echo_write
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo-redirect \
             EXPECT_BODY='redirected (refused)' bash scripts/upstream-refusal-probe.sh
-          make github-audit | tee github-audit-2.out
+          bin/kmx audit tool hello-github | tee github-audit-2.out
           grep -E 'hello-github +mcp-echo +tools/call +echo_write +denied +403' github-audit-2.out
-          make approvals | tee github-approvals.out
+          bin/kmx approvals | tee github-approvals.out
           grep -E 'hello-github +tool +echo_write' github-approvals.out
           grep -E 'hello-github +mcp-echo-redirect +tools/call +echo +allowed +502 +tool upstream redirected' github-audit-2.out
       # Keyless: argument-level policy end to end. The synthetic
@@ -1327,7 +1328,7 @@ jobs:
       - name: "Argument policy: a call inside the standing constraint proceeds with NO approval"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals > constraint-approvals-before.out
+          bin/kmx approvals > constraint-approvals-before.out
           before=$(grep -c pay_invoice constraint-approvals-before.out || true)
           # Just under the bound, and AT it: both proceed, audited allowed
           # with the constraint named — no request filed, no human asked.
@@ -1336,10 +1337,10 @@ jobs:
               bash scripts/tool-call-probe.sh pay_invoice \
               "{\"invoice_id\": \"INV-88134\", \"amount_cents\": $amount, \"payee_id\": \"MER-4471\"}"
           done
-          make github-audit | tee constraint-audit.out
+          bin/kmx audit tool hello-github | tee constraint-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +pay_invoice +allowed +200 +within standing constraint .*amount_cents 999999' constraint-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +pay_invoice +allowed +200 +within standing constraint .*amount_cents 1000000' constraint-audit.out
-          make approvals > constraint-approvals-after.out
+          bin/kmx approvals > constraint-approvals-after.out
           after=$(grep -c pay_invoice constraint-approvals-after.out || true)
           test "$before" = "$after"
       - name: "Argument policy: a cent outside it is denied and files a request carrying the call"
@@ -1355,39 +1356,39 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh pay_invoice \
             '{"invoice_id": "INV-88134", "amount_cents": 900000, "payee_id": "EVIL-1"}'
-          make approvals | tee constraint-approvals.out
+          bin/kmx approvals | tee constraint-approvals.out
           test "$(grep -c 'pay_invoice' constraint-approvals.out)" = 2
           grep -E 'hello-github +tool +pay_invoice .*amount_cents 1000001, payee_id MER-4471' constraint-approvals.out
           grep -E 'hello-github +tool +pay_invoice .*amount_cents 900000, payee_id EVIL-1' constraint-approvals.out
-          make github-audit | tee constraint-audit-2.out
+          bin/kmx audit tool hello-github | tee constraint-audit-2.out
           grep -E 'hello-github +mcp-echo +tools/call +pay_invoice +denied +403 +tool call not permitted: outside the standing constraint' constraint-audit-2.out
       - name: "Argument policy: the approval is welded to THAT call — a different one is denied again"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           id=$(awk '$3=="hello-github" && $5=="pay_invoice" && /amount_cents 1000001/ {print $1}' constraint-approvals.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
-          make grants | tee constraint-grants.out
+          bin/kmx approve "$id" --uses 1 --ttl 10m
+          bin/kmx grants | tee constraint-grants.out
           grep -E 'hello-github +tool +pay_invoice +yes .*call [0-9a-f]{12}' constraint-grants.out
           # A DIFFERENT amount cannot spend that approval: denied, and it
           # files its own request. The grant is untouched.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh pay_invoice \
             '{"invoice_id": "INV-88134", "amount_cents": 4800000, "payee_id": "MER-4471"}'
-          make approvals | tee constraint-approvals-2.out
+          bin/kmx approvals | tee constraint-approvals-2.out
           grep -E 'hello-github +tool +pay_invoice .*amount_cents 4800000' constraint-approvals-2.out
           # The approved call itself is admitted, and the audit shows the
           # grant and the call it was welded to.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-call-probe.sh pay_invoice \
             '{"invoice_id": "INV-88134", "amount_cents": 1000001, "payee_id": "MER-4471"}'
-          make github-audit | tee constraint-audit-3.out
+          bin/kmx audit tool hello-github | tee constraint-audit-3.out
           grep -E 'hello-github +mcp-echo +tools/call +pay_invoice +allowed +200 +granted .*amount_cents 1000001' constraint-audit-3.out
           # The use is spent: the same call is denied again.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh pay_invoice \
             '{"invoice_id": "INV-88134", "amount_cents": 1000001, "payee_id": "MER-4471"}'
-          make approval-audit | tee constraint-approval-audit.out
+          bin/kmx audit approval | tee constraint-approval-audit.out
           grep -E 'hello-github +tool +pay_invoice +approved +admin .*pay_invoice: invoice_id INV-88134, amount_cents 1000001' constraint-approval-audit.out
       - name: "Argument policy: a duplicate key inside arguments is refused, not collapsed"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1397,7 +1398,7 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             EXPECT=400 EXPECT_BODY='duplicate JSON key' bash scripts/tool-raw-probe.sh \
             '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "pay_invoice", "arguments": {"amount_cents": 1, "amount_cents": 9900000}}}'
-          make github-audit | tee dup-audit.out
+          bin/kmx audit tool hello-github | tee dup-audit.out
           # The refusal happens BEFORE the method is known, so the row
           # carries no method or tool — only that the body was refused.
           grep -E 'hello-github +mcp-echo +denied +400 +request body carries a duplicate JSON key' dup-audit.out
@@ -1415,28 +1416,28 @@ jobs:
       - name: "Release agent: a read is bound to ONE repository — the right one proceeds with no human"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals > release-approvals-before.out
+          bin/kmx approvals > release-approvals-before.out
           before=$(grep -c list_pull_requests release-approvals-before.out || true)
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-call-probe.sh list_pull_requests \
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "state": "closed", "base": "main"}'
-          make github-audit | tee release-read.out
+          bin/kmx audit tool hello-github | tee release-read.out
           grep -E 'hello-github +mcp-echo +tools/call +list_pull_requests +allowed +200 +within standing constraint' release-read.out
-          make approvals > release-approvals-after.out
+          bin/kmx approvals > release-approvals-after.out
           after=$(grep -c list_pull_requests release-approvals-after.out || true)
           test "$before" = "$after"
       - name: "Release agent: the SAME read on another repository is denied and files a request"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           # The one-repository claim made at the PLANE, not only at the
-          # token. `make release-bind` applies this constraint against a
+          # token. `kmx workflow govern release` applies this constraint against a
           # real repository; here the bound repo is a synthetic one.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh list_pull_requests \
             '{"owner": "someone-else", "repo": "the-one-repo", "state": "closed", "base": "main"}'
-          make github-audit | tee release-read-denied.out
+          bin/kmx audit tool hello-github | tee release-read-denied.out
           grep -E 'hello-github +mcp-echo +tools/call +list_pull_requests +denied +403 +tool call not permitted: outside the standing constraint' release-read-denied.out
-          make approvals | tee release-read-approvals.out
+          bin/kmx approvals | tee release-read-approvals.out
           grep -E 'hello-github +tool +list_pull_requests .*owner someone-else' release-read-approvals.out
       - name: "Release agent: cutting a branch is denied, and what a human is asked is the ARTIFACT"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1444,7 +1445,7 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh create_branch \
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "branch": "release/v9.9.9", "from_branch": "main"}'
-          make approvals | tee branch-approvals.out
+          bin/kmx approvals | tee branch-approvals.out
           # Every declared field, in the declared order — the version and
           # the repository are part of what is bound, which is the whole
           # point of the declaration.
@@ -1454,12 +1455,12 @@ jobs:
         run: |
           id=$(awk '$3=="hello-github" && $5=="create_branch" && /release\/v9.9.9/ {print $1}' branch-approvals.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
+          bin/kmx approve "$id" --uses 1 --ttl 10m
           # The approved cut proceeds.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-call-probe.sh create_branch \
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "branch": "release/v9.9.9", "from_branch": "main"}'
-          make github-audit | tee branch-audit.out
+          bin/kmx audit tool hello-github | tee branch-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +create_branch +allowed +200 +granted .*branch release/v9.9.9' branch-audit.out
           # An approval is welded to the digest of the exact call, so
           # approving "publish v9.9.9" cannot authorize the next release: a
@@ -1467,7 +1468,7 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh create_branch \
             '{"owner": "kaimahi-ci", "repo": "the-one-repo", "branch": "release/v9.9.10", "from_branch": "main"}'
-          make approvals | tee branch-approvals-2.out
+          bin/kmx approvals | tee branch-approvals-2.out
           grep -E 'hello-github +tool +create_branch .*branch release/v9.9.10' branch-approvals-2.out
           # And a cut of the SAME version from a different base is a
           # different call too: from_branch is bound.
@@ -1486,23 +1487,23 @@ jobs:
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh actions_run_trigger \
             '{"method": "run_workflow", "owner": "kaimahi-ci", "repo": "the-one-repo", "workflow_id": "release.yml", "ref": "release/v9.9.9"}'
-          make approvals | tee trigger-approvals.out
+          bin/kmx approvals | tee trigger-approvals.out
           grep -E 'hello-github +tool +actions_run_trigger .*method run_workflow, owner kaimahi-ci, repo the-one-repo, workflow_id release.yml, ref release/v9.9.9' trigger-approvals.out
           id=$(awk '$3=="hello-github" && $5=="actions_run_trigger" && /method run_workflow/ {print $1}' trigger-approvals.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
+          bin/kmx approve "$id" --uses 1 --ttl 10m
           # CANCELLING a run is a different call on the same tool name, and
           # the approval to START a build cannot be spent on it.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-denial-probe.sh actions_run_trigger \
             '{"method": "cancel_workflow_run", "owner": "kaimahi-ci", "repo": "the-one-repo", "workflow_id": "release.yml", "ref": "release/v9.9.9"}'
-          make approvals | tee trigger-approvals-2.out
+          bin/kmx approvals | tee trigger-approvals-2.out
           grep -E 'hello-github +tool +actions_run_trigger .*method cancel_workflow_run' trigger-approvals-2.out
           # The grant is untouched: the call it was welded to still runs.
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             bash scripts/tool-call-probe.sh actions_run_trigger \
             '{"method": "run_workflow", "owner": "kaimahi-ci", "repo": "the-one-repo", "workflow_id": "release.yml", "ref": "release/v9.9.9"}'
-          make github-audit | tee trigger-audit.out
+          bin/kmx audit tool hello-github | tee trigger-audit.out
           grep -E 'hello-github +mcp-echo +tools/call +actions_run_trigger +allowed +200 +granted .*method run_workflow' trigger-audit.out
       - name: "Release agent: the OUTER ring — a tool the server was told not to offer is not there at all"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1529,7 +1530,7 @@ jobs:
       - name: "Release agent: the audit names who approved which release"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approval-audit | tee release-approval-audit.out
+          bin/kmx audit approval | tee release-approval-audit.out
           grep -E 'hello-github +tool +create_branch +approved +admin .*branch release/v9.9.9' release-approval-audit.out
           grep -E 'hello-github +tool +actions_run_trigger +approved +admin .*method run_workflow' release-approval-audit.out
       # ---- a governed workflow, declared in one file -------------------
@@ -1544,8 +1545,8 @@ jobs:
       - name: "Workflow: a credential for the fixture blueprint to govern"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-workflow-ci-token \
-            bash scripts/plane-admin.sh issue workflow-ci
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx credential issue workflow-ci \
+            --secret kaimahi-workflow-ci-token --namespace kagent
       - name: "Workflow: `kmx workflow govern` writes exactly what `kmx workflow show` rendered"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1778,7 +1779,7 @@ jobs:
             bash scripts/ci/synthetic-upstream.sh rebind "$(cat .synthetic-upstream/sidecar.ip)"
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo-rebind \
             EXPECT_BODY='refused by the egress policy' bash scripts/upstream-refusal-probe.sh
-          make github-audit | tee github-audit-3.out
+          bin/kmx audit tool hello-github | tee github-audit-3.out
           grep -E 'hello-github +mcp-echo-rebind +tools/call +echo +allowed +502 +egress refused: .*resolves to 172\.[0-9.]+ \(private' github-audit-3.out
       - name: "Hosted upstreams: allowance removed → the dial fails closed (unreachable), audited"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1790,7 +1791,7 @@ jobs:
           fi
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-github-token UPSTREAM=mcp-echo \
             EXPECT_BODY='unreachable' bash scripts/upstream-refusal-probe.sh
-          make github-audit | tee github-audit-4.out
+          bin/kmx audit tool hello-github | tee github-audit-4.out
           # Anchored on the dial timeout: the network dropped the packets.
           # A dead sidecar ("connection refused") or a lost hosts entry
           # ("no such host") would also read "unreachable" and must not pass.
@@ -1843,10 +1844,15 @@ jobs:
   e2e-spend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kaimahi-p1
+      KUBE_CTX: kind-kaimahi-p1
+      CRED: hello-world
+      CRED_TOOLS: hello-tools
     defaults:
       run:
         # An explicit bash shell turns on `-o pipefail`, so the
-        # `make chat | tee` pipelines fail on make's own exit code instead
+        # `bin/kmx agent chat | tee` pipelines fail on kmx's exit code instead
         # of relying solely on the content check in verify-chat.py.
         shell: bash
     steps:
@@ -1867,20 +1873,21 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # `make up` and every other target below runs THROUGH kmx, so
-      # this job is what proves the binary a developer installs. Building it
+      # This job runs the binary a developer installs directly. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
-        run: make up
+        run: bin/kmx up
       # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
@@ -1902,16 +1909,16 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       # Two replicas (10m each — the node is already at its request ceiling
       # with the plane's trimmed requests above; this is the whole added
       # cost). Both must be Ready and each must answer its own probes, and
       # the schema under them must carry one row per migration: the first
-      # `make plane` above booted both replicas together against an
+      # `bin/kmx plane --source .` above booted both replicas together against an
       # EMPTY database, so the migration lock was exercised for real
       # there (its outcome is the consistent version table and two
       # Ready pods). The current pods are usually the post-restart
-      # generation and log "nothing to apply" — but `make plane` restarts
+      # generation and log "nothing to apply" — but `bin/kmx plane` restarts
       # the deployment the moment Postgres is Ready, and a first-generation
       # pod still in its connect retry can be replaced before it migrated,
       # so a post-restart pod may be the one that logs "applied" (seen on
@@ -1923,12 +1930,12 @@ jobs:
         run: |
           ready=$(kubectl --context kind-kaimahi-p1 -n kaimahi get deploy kaimahi-proxy -o jsonpath='{.status.readyReplicas}')
           test "$ready" = 2
-          # Ready and not terminating (the restart in `make plane` leaves
+          # Ready and not terminating (the restart in `bin/kmx plane` leaves
           # the old pods draining for a moment): scripts/plane-pods.sh.
           pods=$(KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/plane-pods.sh)
           test "$(echo "$pods" | wc -l)" = 2
           for pod in $pods; do
-            KUBECTL="kubectl --context kind-kaimahi-p1" POD="$pod" bash scripts/plane-metrics.sh > "metrics-$pod.out"
+            KUBE_CTX=kind-kaimahi-p1 bin/kmx metrics --pod "$pod" > "metrics-$pod.out"
             grep -q '^kaimahi_build_info{' "metrics-$pod.out"
             kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -qE 'migrations: (nothing to apply|applied)'
           done
@@ -1942,16 +1949,16 @@ jobs:
           python3 -c 'import sys; n,d=open("versions.out").read().strip().split("|"); e=int(sys.argv[1]); assert e>0, "no migration files found"; assert n==d, (n,d); assert int(n)==e, ("applied", n, "committed", e)' "$expected"
       - name: Issue governed credential and switch agent through the proxy
         if: steps.changes.outputs.docs_only != 'true'
-        run: make govern
+        run: bin/kmx govern hello-world --agent hello-world --preset governed-ollama
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make chat | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       - name: Assert the ledger recorded the governed chat
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make ledger | tee ledger.out
+          bin/kmx ledger hello-world | tee ledger.out
           # Fail closed: a free-tier row for the governed chat with real
           # token counts, and a non-zero month-to-date token total.
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger.out
@@ -1963,7 +1970,7 @@ jobs:
       - name: "Identity on the call: an operator-driven turn has no person behind it, and says so"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make ledger | tee ledger-actor.out
+          bin/kmx ledger hello-world | tee ledger-actor.out
           # 'none' is a COMPLETE answer: nothing triggered this through
           # the plane's inbound door, so there is no person to name.
           # The caller columns sit between `status` and `acted for`, so the
@@ -1979,9 +1986,9 @@ jobs:
       - name: "Credentials expire: the deadline is visible, the refusal names the fix, and renewal restores it"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The credential has carried a deadline since `make govern`
+          # The credential has carried a deadline since `bin/kmx govern`
           # issued it, and the view an operator watches shows it.
-          make credentials | tee credentials.out
+          bin/kmx credentials | tee credentials.out
           grep -E 'hello-world +.* ok ' credentials.out
           # Advance the CLOCK, not the policy: the admin surface refuses
           # to mint a credential that is already dead (60s minimum), so
@@ -1990,20 +1997,20 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -q -c \
             "UPDATE credential SET expires_at = now() - interval '1 hour' WHERE name = 'hello-world'"
-          make credentials | tee credentials-expired.out
+          bin/kmx credentials | tee credentials-expired.out
           grep -E 'hello-world +.* EXPIRED ' credentials-expired.out
-          make chat > expired-chat.out 2>&1 || true
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > expired-chat.out 2>&1 || true
           cat expired-chat.out
           # The refusal names the fault, the time, and the fix. A
           # credential that expires silently at 3am is an outage nobody
           # diagnosed; this is what stops that.
           grep -q 'expired credential' expired-chat.out
-          grep -q 'make credential-renew NAME=hello-world' expired-chat.out
+          grep -q 'kmx credential renew hello-world' expired-chat.out
           if grep -q '"state":"completed"' expired-chat.out; then
             echo 'chat completed on an expired credential' >&2; exit 1
           fi
           # Audited like every other refusal, and still attributed.
-          make ledger | tee ledger-expired.out
+          bin/kmx ledger hello-world | tee ledger-expired.out
           grep -E 'hello-world +ollama .*denied +403 .*none *$' ledger-expired.out
           # A credential with no expiry at all is the LEGACY class and
           # still authenticates: expiring a running estate at migration
@@ -2011,26 +2018,26 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -q -c \
             "UPDATE credential SET expires_at = NULL WHERE name = 'hello-world'"
-          make credentials | tee credentials-legacy.out
+          bin/kmx credentials | tee credentials-legacy.out
           grep -E 'hello-world +.* no expiry ' credentials-legacy.out
-          make chat | tee legacy-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee legacy-chat.out
           python3 scripts/verify-chat.py legacy-chat.out
           # And the fix the refusal named actually fixes it: renewal moves
           # the deadline without minting anything, so the Secret the agent
           # mounts is untouched and the same token keeps working.
-          make credential-renew NAME=hello-world TTL=2h
-          make credentials | tee credentials-renewed.out
+          bin/kmx credential renew hello-world --ttl 2h
+          bin/kmx credentials | tee credentials-renewed.out
           grep -E 'hello-world +.* (ok|EXPIRING) ' credentials-renewed.out
-          make chat | tee renewed-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee renewed-chat.out
           python3 scripts/verify-chat.py renewed-chat.out
       - name: Budget exhaustion fails closed
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make budget CAP_TOKENS=1
+          bin/kmx budget hello-world --tokens 1
           # The same chat must now fail with the meter's clear error; the
           # task must NOT complete. kagent may exit nonzero on a failed
           # task, so capture output regardless and assert on content.
-          make chat > denied-chat.out 2>&1 || true
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > denied-chat.out 2>&1 || true
           cat denied-chat.out
           grep -q 'monthly token budget reached' denied-chat.out
           grep -q '"state":"failed"' denied-chat.out
@@ -2039,11 +2046,11 @@ jobs:
           if grep -q '"state":"completed"' denied-chat.out; then
             echo 'chat completed despite exhausted budget' >&2; exit 1
           fi
-          make ledger | tee ledger-denied.out
+          bin/kmx ledger hello-world | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
       # Keyless: the plane's NetworkPolicy boundary, proven ENFORCED
       # rather than present. Every governed step above already ran with
-      # the policies applied (they ship with `make plane`), which is the
+      # the policies applied (they ship with `bin/kmx plane`), which is the
       # positive: chat, tools, approvals and the Slack cycle all still
       # work behind default-deny. This is the NEGATIVE: pods that must
       # not reach ollama / the internet / the ledger demonstrably cannot
@@ -2132,7 +2139,7 @@ jobs:
         run: |
           # The signed hook's credential is an IDENTITY: no bearer token
           # is stored anywhere for it.
-          make inbound-credential
+          bin/kmx credential issue inbound-demo --discard
           if kubectl --context kind-kaimahi-p1 -n kaimahi get secret kaimahi-inbound-token >/dev/null 2>&1; then
             echo 'a bearer token was stored for the signed hook' >&2; exit 1
           fi
@@ -2147,7 +2154,7 @@ jobs:
           AUTH=none EXPECT=401 bash scripts/inbound-probe.sh demo 'unauthenticated event'
           AUTH=forged EXPECT=401 bash scripts/inbound-probe.sh demo 'forged signature'
           AUTH=stale EXPECT=401 bash scripts/inbound-probe.sh demo 'correctly signed, ten minutes ago'
-          make inbound-audit | tee inbound-audit-denied.out
+          bin/kmx audit inbound | tee inbound-audit-denied.out
           test "$(grep -cE 'demo +inbound-demo +  +denied +401 ' inbound-audit-denied.out)" = 3
       # The door checks the target's budget BEFORE the hook's grant (a
       # budget denial must burn no grant use), so with hello-world's cap
@@ -2159,25 +2166,25 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           EXPECT=429 bash scripts/inbound-probe.sh demo 'budget exhausted'
-          make inbound-audit | tee inbound-audit-budget.out
+          bin/kmx audit inbound | tee inbound-audit-budget.out
           grep -E 'demo +inbound-demo +probe-[0-9a-f]+ +denied +429 +.*target budget' inbound-audit-budget.out
-          make budget   # clear both caps for the steps below
+          bin/kmx budget hello-world   # clear both caps for the steps below
       - name: "Inbound: signed but ungranted event refused and files its approval request"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           EXPECT=403 bash scripts/inbound-probe.sh demo 'no grant yet'
-          make inbound-audit | tee inbound-audit-ungranted.out
+          bin/kmx audit inbound | tee inbound-audit-ungranted.out
           grep -E 'demo +inbound-demo +probe-[0-9a-f]+ +denied +403 +.*no live grant' inbound-audit-ungranted.out
       - name: "Inbound: bounded approval admits, the agent runs, replay and exhaustion refused"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals | tee approvals-inbound.out
+          bin/kmx approvals | tee approvals-inbound.out
           id=$(awk '$3=="inbound-demo" && $4=="inbound" && $5=="demo" {print $1}' approvals-inbound.out)
           test -n "$id"
-          make approve ID="$id" USES=2 TTL=10m
-          # Count governed rows into a file first, so a `make ledger`
+          bin/kmx approve "$id" --uses 2 --ttl 10m
+          # Count governed rows into a file first, so a `bin/kmx ledger`
           # failure fails the step instead of being read as zero rows.
-          make ledger > ledger-before.out
+          bin/kmx ledger hello-world > ledger-before.out
           before=$(grep -cE 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-before.out || [ $? = 1 ])
           d="ci-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
           DELIVERY="$d" bash scripts/inbound-probe.sh demo 'Reply with exactly the word PONG.'
@@ -2185,7 +2192,7 @@ jobs:
           DELIVERY="$d" EXPECT=409 bash scripts/inbound-probe.sh demo 'Reply with exactly the word PONG.'
           # The invocation is asynchronous: wait for its outcome row.
           for _ in $(seq 1 60); do
-            make inbound-audit > inbound-audit.out 2>/dev/null
+            bin/kmx audit inbound > inbound-audit.out 2>/dev/null
             grep -qE "demo +inbound-demo +$d +(completed|failed) " inbound-audit.out && break
             sleep 5
           done
@@ -2196,20 +2203,20 @@ jobs:
           grep -E "demo +inbound-demo +$d +denied +409 " inbound-audit.out
           # The event's spend was governed and ledgered by the proxy
           # under the agent's credential: one more governed row.
-          make ledger > ledger-after.out
+          bin/kmx ledger hello-world > ledger-after.out
           after=$(grep -cE 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-after.out || [ $? = 1 ])
           test "$after" -gt "$before"
           # Second use admitted; the grant is then spent: refused again
           # and a fresh request filed.
           bash scripts/inbound-probe.sh demo 'second use'
           EXPECT=403 bash scripts/inbound-probe.sh demo 'third: grant exhausted'
-          make approval-audit | tee approval-audit-inbound.out
+          bin/kmx audit approval | tee approval-audit-inbound.out
           # The trail names who decided, between the action and the bounds.
           grep -E 'inbound-demo +inbound +demo +approved +admin +expires=.* uses=2' approval-audit-inbound.out
       - name: "Inbound: bearer hook authenticates the same way and is gated the same way"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make inbound-credential CRED_INBOUND=inbound-bearer INBOUND_SECRET=kaimahi-inbound-token
+          bin/kmx credential issue inbound-bearer --secret kaimahi-inbound-token --namespace kaimahi
           n=$(kubectl --context kind-kaimahi-p1 -n kaimahi get secret kaimahi-inbound-token \
             -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
           test "$n" = 1
@@ -2258,10 +2265,15 @@ jobs:
   e2e-tools:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kaimahi-p1
+      KUBE_CTX: kind-kaimahi-p1
+      CRED: hello-world
+      CRED_TOOLS: hello-tools
     defaults:
       run:
         # An explicit bash shell turns on `-o pipefail`, so the
-        # `make chat | tee` pipelines fail on make's own exit code instead
+        # `bin/kmx agent chat | tee` pipelines fail on kmx's exit code instead
         # of relying solely on the content check in verify-chat.py.
         shell: bash
     steps:
@@ -2282,20 +2294,21 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # `make up` and every other target below runs THROUGH kmx, so
-      # this job is what proves the binary a developer installs. Building it
+      # This job runs the binary a developer installs directly. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
-        run: make up
+        run: bin/kmx up
       # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
@@ -2317,14 +2330,14 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       - name: Issue governed credential and switch agent through the proxy
         if: steps.changes.outputs.docs_only != 'true'
-        run: make govern
+        run: bin/kmx govern hello-world --agent hello-world --preset governed-ollama
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make chat | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       # Keyless: the enforcing MCP gateway in the same cluster/job.
       # No new pods (the gateway is a second listener in the existing
@@ -2334,7 +2347,7 @@ jobs:
       # and a NOT-allowlisted call is denied fail-closed and audited.
       - name: Govern the tools agent through the MCP gateway
         if: steps.changes.outputs.docs_only != 'true'
-        run: make govern-tools
+        run: bin/kmx tools govern --credential hello-tools --tools k8s_get_resources
       # This cluster carries BOTH — kaimahi-tools through the
       # gateway and the chart-managed kagent-tool-server direct — so it is
       # the one place the count can be proven to distinguish them rather
@@ -2376,19 +2389,19 @@ jobs:
           probe="probe-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
           kubectl --context kind-kaimahi-p1 -n default create configmap "$probe" \
             --from-literal=owner=kaimahi-p4b-ci
-          make chat AGENT=hello-tools \
-            TASK='List the configmaps in the default namespace.' | tee gw-chat.out
+          bin/kmx agent chat hello-tools \
+            'List the configmaps in the default namespace.' | tee gw-chat.out
           python3 scripts/verify-chat.py gw-chat.out k8s_get_resources "$probe"
       - name: Assert the audit recorded the governed tool call
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make tool-audit | tee tool-audit.out
+          bin/kmx audit tool hello-tools | tee tool-audit.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_resources +allowed +200' tool-audit.out
       - name: Non-allowlisted tool call denied fail-closed and audited
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           bash scripts/tool-denial-probe.sh k8s_describe_resource
-          make tool-audit | tee tool-audit-denied.out
+          bin/kmx audit tool hello-tools | tee tool-audit-denied.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_describe_resource +denied +403' tool-audit-denied.out
       - name: Agent-side tool wiring carries only the kmh_ token
         if: steps.changes.outputs.docs_only != 'true'
@@ -2420,16 +2433,16 @@ jobs:
           # committed table), so the request carries that call's digest
           # and a summary a human can read.
           bash scripts/tool-denial-probe.sh k8s_get_events '{"namespace": "default"}'
-          make approvals | tee approvals-tool.out
+          bin/kmx approvals | tee approvals-tool.out
           grep -E 'hello-tools +tool +k8s_get_events .*k8s_get_events: namespace default' approvals-tool.out
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-tool.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
+          bin/kmx approve "$id" --uses 1 --ttl 10m
           # A DIFFERENT call is not covered by that approval: denied, and
           # it files its OWN request (two pending, two digests) — the
           # grant is untouched.
           bash scripts/tool-denial-probe.sh k8s_get_events '{"namespace": "kube-system"}'
-          make approvals | tee approvals-tool-2.out
+          bin/kmx approvals | tee approvals-tool-2.out
           grep -E 'hello-tools +tool +k8s_get_events .*namespace kube-system' approvals-tool-2.out
           test "$(grep -c 'k8s_get_events' approvals-tool-2.out)" = 1
           # The approved call itself is admitted, consuming the single use.
@@ -2437,7 +2450,7 @@ jobs:
           # The single use is consumed: the same call is denied again,
           # fail closed, and a fresh request is filed.
           bash scripts/tool-denial-probe.sh k8s_get_events '{"namespace": "default"}'
-          make tool-audit | tee tool-audit-p4c.out
+          bin/kmx audit tool hello-tools | tee tool-audit-p4c.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted' tool-audit-p4c.out
           # The denial and the admitted call carry the SAME digest: the
           # call approved and the call that ran are provably one call.
@@ -2594,10 +2607,10 @@ jobs:
           # at ~92% of its CPU requests (measured on the 2-CPU runner with
           # the plane deployed) and neither is needed
           # to exercise the gateway's decisions.
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-slack-token \
-            bash scripts/plane-admin.sh issue hello-slack
-          make slack-allow SLACK_TOOLS=conversations_history
-          make tool-allowlist CRED_TOOLS=hello-slack | tee slack-allowlist.out
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx credential issue hello-slack \
+            --secret kaimahi-slack-token --namespace kagent
+          bin/kmx tools allow conversations_history --credential hello-slack
+          bin/kmx tools allowlist hello-slack | tee slack-allowlist.out
           grep -q conversations_history slack-allowlist.out
           # The authority: posting must NOT be allowlisted. `! cmd` is
           # exempt from errexit, so assert the absence explicitly.
@@ -2623,28 +2636,28 @@ jobs:
         run: |
           UPSTREAM=slack GOVERNED_SECRET=kaimahi-slack-token \
             bash scripts/tool-denial-probe.sh conversations_add_message '{"channel_id": "C0CIONLY", "payload": "ci"}'
-          make slack-audit | tee slack-audit-denied.out
+          bin/kmx audit tool hello-slack | tee slack-audit-denied.out
           grep -E 'hello-slack +slack +tools/call +conversations_add_message +denied +403' slack-audit-denied.out
       - name: "Bounded approval admits the post, exhaustion re-denies"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals | tee approvals-slack.out
+          bin/kmx approvals | tee approvals-slack.out
           id=$(awk '$3=="hello-slack" && $4=="tool" && $5=="conversations_add_message" {print $1}' approvals-slack.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
+          bin/kmx approve "$id" --uses 1 --ttl 10m
           # Admitted by the grant, then forwarded to an upstream that does
           # not exist. The probe FAILS on a 200 (it reached a tool server)
           # and on any 503 that is a pre-forward denial wearing a 503.
           UPSTREAM=slack GOVERNED_SECRET=kaimahi-slack-token \
             bash scripts/tool-admit-probe.sh conversations_add_message '{"channel_id": "C0CIONLY", "payload": "ci"}'
-          make slack-audit | tee slack-audit-granted.out
+          bin/kmx audit tool hello-slack | tee slack-audit-granted.out
           # Exactly 502: an admitted call that was dialed and unreachable.
           # 503 here would mean the gateway never forwarded at all.
           grep -E 'hello-slack +slack +tools/call +conversations_add_message +allowed +502 +granted' slack-audit-granted.out
           # The single use is consumed: denied again, and a fresh request filed.
           UPSTREAM=slack GOVERNED_SECRET=kaimahi-slack-token \
             bash scripts/tool-denial-probe.sh conversations_add_message '{"channel_id": "C0CIONLY", "payload": "ci"}'
-          make approval-audit | tee approval-audit-slack.out
+          bin/kmx audit approval | tee approval-audit-slack.out
           grep -E 'hello-slack +tool +conversations_add_message +approved' approval-audit-slack.out
       # Keyless: approvals FROM Slack, and the plane telling Slack a
       # request is waiting. Slack cannot reach a kind cluster and CI holds
@@ -2661,7 +2674,7 @@ jobs:
       - name: "Approvals from Slack: setup (approver file, the plane's own credential, a signed hook)"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make inbound-credential CRED_INBOUND=inbound-slack
+          bin/kmx credential issue inbound-slack --discard
           make inbound-secret HOOK=slack-events GENERATE=1
           # The channel the hook is bound to and the notifier posts into:
           # the bot Secret's channel key only — no bot token exists in CI.
@@ -2672,7 +2685,7 @@ jobs:
           make notify-slack
           # The plane's credential may post and nothing else — config,
           # not a grant.
-          make tool-allowlist CRED_TOOLS=kaimahi-plane | tee plane-allowlist.out
+          bin/kmx tools allowlist kaimahi-plane | tee plane-allowlist.out
           grep -qx 'kaimahi-plane: conversations_add_message' plane-allowlist.out
           # Its token is plane-side only (kaimahi namespace, kmh_ shape),
           # and no Slack id is anywhere in the tree.
@@ -2707,7 +2720,7 @@ jobs:
           # name; a 502 row carries why: "upstream unreachable: …".
           bash scripts/tool-denial-probe.sh k8s_get_pods
           for _ in $(seq 1 30); do
-            KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/plane-admin.sh tool-audit kaimahi-plane > plane-audit.out 2>/dev/null
+            KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane > plane-audit.out 2>/dev/null
             grep -qE 'kaimahi-plane +slack +tools/call +conversations_add_message +allowed +502' plane-audit.out && break
             sleep 2
           done
@@ -2719,36 +2732,36 @@ jobs:
           # a notification posted twice is the double-post this repo
           # avoids. The notification is once per filing.
           sleep 5
-          KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/plane-admin.sh tool-audit kaimahi-plane > plane-audit.out
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane > plane-audit.out
           test "$(grep -cE 'kaimahi-plane +slack +tools/call +conversations_add_message +allowed +502' plane-audit.out)" = 1
       - name: "Approvals from Slack: a non-approver is refused 403 and audited; the request stays pending"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals | tee approvals-p8b.out
+          bin/kmx approvals | tee approvals-p8b.out
           # Several k8s_get_events requests can be pending at once —
           # one per distinct call — so the call is what selects the id.
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-p8b.out)
           test -n "$id"
           echo "$id" > p8b-request-id
           EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve $id uses=1"
-          make inbound-audit HOOK=slack-events | tee inbound-audit-p8b.out
+          bin/kmx audit inbound slack-events | tee inbound-audit-p8b.out
           grep -E 'slack-events +inbound-slack +Ev[0-9A-F]+ +denied +403 +.*user U0NOBODY is not an approver' inbound-audit-p8b.out
-          make approvals | grep -q "$id"
+          bin/kmx approvals | grep -q "$id"
       - name: "Approvals from Slack: an approver's command mints a grant in their name, and enforcement honours it"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           id=$(cat p8b-request-id)
           # The first block of the id is what a human types.
           WANT="approved request $id" bash scripts/slack-mention-probe.sh U0CIAPPROVER "approve ${id%%-*} uses=1 ttl=10m"
-          make grants | tee grants-p8b.out
+          bin/kmx grants | tee grants-p8b.out
           grep -E "hello-tools +tool +k8s_get_events +yes .* 0/1 .* slack:U0CIAPPROVER" grants-p8b.out
-          make approval-audit | tee approval-audit-p8b.out
+          bin/kmx audit approval | tee approval-audit-p8b.out
           grep -E 'hello-tools +tool +k8s_get_events +approved +slack:U0CIAPPROVER +expires=.* uses=1' approval-audit-p8b.out
           # The grant a Slack approver minted admits the retried action.
           bash scripts/tool-call-probe.sh k8s_get_events '{"namespace": "default"}'
-          make tool-audit | tee tool-audit-p8b.out
+          bin/kmx audit tool hello-tools | tee tool-audit-p8b.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted' tool-audit-p8b.out
-          make inbound-audit HOOK=slack-events | tee inbound-audit-p8b-2.out
+          bin/kmx audit inbound slack-events | tee inbound-audit-p8b-2.out
           grep -E "slack-events +inbound-slack +Ev[0-9A-F]+ +command +200 +.*approve ${id%%-*} by slack:U0CIAPPROVER: approved request $id" inbound-audit-p8b-2.out
           # The same command again: a decided request is immutable.
           WANT="already approved by slack:U0CIAPPROVER" bash scripts/slack-mention-probe.sh U0CIAPPROVER "approve ${id%%-*} uses=9"
@@ -2757,16 +2770,16 @@ jobs:
       - name: "Approvals from Slack: deny works and carries the identity"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make approvals | tee approvals-deny.out
+          bin/kmx approvals | tee approvals-deny.out
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_pods" {print $1}' approvals-deny.out)
           test -n "$id"
           WANT="denied request $id" bash scripts/slack-mention-probe.sh U0CIAPPROVER "deny $id"
-          make approval-audit | tee approval-audit-deny.out
+          bin/kmx audit approval | tee approval-audit-deny.out
           grep -E 'hello-tools +tool +k8s_get_pods +denied +slack:U0CIAPPROVER' approval-audit-deny.out
           # A command reply also rides the governed path: more plane rows,
           # still every one an allowed-502 dial of the absent upstream —
           # never a 200 (CI reached a tool server) and never a denial.
-          KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/plane-admin.sh tool-audit kaimahi-plane | tee plane-audit-2.out
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane | tee plane-audit-2.out
           if grep -E 'kaimahi-plane .*(allowed +200|denied)' plane-audit-2.out; then
             echo "the plane's own post reached a tool server or was denied" >&2; exit 1
           fi
@@ -2787,7 +2800,7 @@ jobs:
           # have got half right.
           make inbound-secret HOOK=slack-tools GENERATE=1
           # Its model spend has to be governed for the ledger half to
-          # exist at all; `make govern-tools` repoints the TOOLS wiring,
+          # exist at all; `bin/kmx tools govern` repoints the TOOLS wiring,
           # not the model.
           KIND_CLUSTER=kaimahi-p1 bin/kmx use governed-ollama --agent hello-tools
           # A new key in an already-mounted Secret takes kubelet up to a
@@ -2804,17 +2817,17 @@ jobs:
           # first mention is refused and files a request.
           EXPECT=403 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
             'List the configmaps in the default namespace.'
-          make approvals | tee approvals-slack-tools.out
+          bin/kmx approvals | tee approvals-slack-tools.out
           id=$(awk '$3=="inbound-slack" && $4=="inbound" && $5=="slack-tools" {print $1}' approvals-slack-tools.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=15m
+          bin/kmx approve "$id" --uses 1 --ttl 15m
           # Now the same person's mention runs the agent.
           EXPECT=202 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
             'List the configmaps in the default namespace.' | tee mention-admitted.out
           ev=$(sed -n 's/.*(event \(Ev[0-9A-F]*\)).*/\1/p' mention-admitted.out)
           test -n "$ev"
           for _ in $(seq 1 60); do
-            make inbound-audit HOOK=slack-tools > inbound-slack-tools.out 2>/dev/null
+            bin/kmx audit inbound slack-tools > inbound-slack-tools.out 2>/dev/null
             grep -qE "slack-tools +inbound-slack +$ev +(completed|failed) " inbound-slack-tools.out && break
             sleep 5
           done
@@ -2823,7 +2836,7 @@ jobs:
           # approver vocabulary, reused for a requester.
           grep -E "slack-tools +inbound-slack +$ev +completed .*slack:U0CIPERSON *$" inbound-slack-tools.out
           # The SPEND names them, under the agent's budget credential...
-          make ledger | tee ledger-slack-tools.out
+          bin/kmx ledger hello-world | tee ledger-slack-tools.out
           grep -E 'hello-world +ollama .*slack:U0CIPERSON *$' ledger-slack-tools.out
           # The spend trail records the caller too, and on a cluster this
           # young no row may say it predates the column.
@@ -2832,12 +2845,12 @@ jobs:
           # The tool and the decision are deliberately not pinned: the
           # claim under test is the attribution, not which tool a model
           # chose.
-          make tool-audit CRED_TOOLS=hello-tools | tee tool-audit-slack-tools.out
+          bin/kmx audit tool hello-tools | tee tool-audit-slack-tools.out
           grep -E 'hello-tools +kagent-tools +tools/call .*slack:U0CIPERSON *$' tool-audit-slack-tools.out
           # The run is CLOSED when the turn ends: a call after it reads
           # 'none' again, not the person who has gone home.
           bash scripts/tool-call-probe.sh k8s_get_resources '{"resource_type": "ConfigMap", "namespace": "default"}'
-          make tool-audit CRED_TOOLS=hello-tools | tee tool-audit-after-run.out
+          bin/kmx audit tool hello-tools | tee tool-audit-after-run.out
           head -2 tool-audit-after-run.out
           test "$(sed -n '2p' tool-audit-after-run.out | grep -c 'none *$')" = 1
           # And the row SAYS it was not an agent that made it. This is the
@@ -2877,14 +2890,14 @@ jobs:
         run: |
           # A fresh credential with a 1-token cap and nothing spent: room
           # for exactly one call. Its token stays in the plane namespace.
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-race-token SECRET_NAMESPACE=kaimahi \
-            bash scripts/plane-admin.sh issue race-cred
-          make budget CRED=race-cred CAP_TOKENS=1
+          KUBE_CTX=kind-kaimahi-p1 bin/kmx credential issue race-cred \
+            --secret kaimahi-race-token --namespace kaimahi
+          bin/kmx budget race-cred --tokens 1
           GOVERNED_SECRET=kaimahi-race-token SECRET_NAMESPACE=kaimahi EXPECT_ADMITTED=1 \
             bash scripts/spend-race-probe.sh 8 | tee spend-race.out
           grep -q 'admitted=1 denied(429)=7 other=0' spend-race.out
           # The ledger agrees: one allowed row, seven denials, no open hold.
-          make ledger CRED=race-cred | tee ledger-race.out
+          bin/kmx ledger race-cred | tee ledger-race.out
           test "$(grep -cE 'race-cred +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-race.out)" = 1
           test "$(grep -cE 'race-cred +ollama +qwen2\.5:3b +0 +0 +0 +denied +429' ledger-race.out)" = 7
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
@@ -2897,23 +2910,23 @@ jobs:
             psql -U kaimahi -d kaimahi -tAc "SELECT count(*) FROM tool_audit WHERE credential_name = 'hello-tools' AND tool = 'k8s_get_events' AND decision = 'allowed' AND status = 200 AND detail LIKE 'granted %'"; }
           before=$(granted)
           bash scripts/tool-denial-probe.sh k8s_get_events '{"namespace": "default"}'
-          make approvals | tee approvals-race.out
+          bin/kmx approvals | tee approvals-race.out
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-race.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m
+          bin/kmx approve "$id" --uses 1 --ttl 10m
           EXPECT_ADMITTED=1 bash scripts/tool-race-probe.sh k8s_get_events 8 '{"namespace": "default"}' | tee tool-race.out
           grep -q 'admitted=1 denied(-32001)=7 other=0' tool-race.out
           after=$(granted)
           test "$after" -eq $((before + 1))
-          make tool-audit | grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted'
+          bin/kmx audit tool hello-tools | grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted'
       - name: Budget exhaustion fails closed
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make budget CAP_TOKENS=1
+          bin/kmx budget hello-world --tokens 1
           # The same chat must now fail with the meter's clear error; the
           # task must NOT complete. kagent may exit nonzero on a failed
           # task, so capture output regardless and assert on content.
-          make chat > denied-chat.out 2>&1 || true
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > denied-chat.out 2>&1 || true
           cat denied-chat.out
           grep -q 'monthly token budget reached' denied-chat.out
           grep -q '"state":"failed"' denied-chat.out
@@ -2922,32 +2935,32 @@ jobs:
           if grep -q '"state":"completed"' denied-chat.out; then
             echo 'chat completed despite exhausted budget' >&2; exit 1
           fi
-          make ledger | tee ledger-denied.out
+          bin/kmx ledger hello-world | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
       - name: "Approvals budget cycle: cap denial filed a request, bounded raise admits, exhaustion re-denies"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           # The budget-exhaustion step above (CAP_TOKENS=1) already
           # denied a governed chat, which auto-filed this request:
-          make approvals | tee approvals-budget.out
+          bin/kmx approvals | tee approvals-budget.out
           id=$(awk '$3=="hello-world" && $4=="budget" && $5=="tokens" {print $1}' approvals-budget.out)
           test -n "$id"
-          make approve ID="$id" USES=1 TTL=10m AMOUNT=1000000
-          make chat | tee granted-chat.out
+          bin/kmx approve "$id" --uses 1 --ttl 10m --amount 1000000
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee granted-chat.out
           python3 scripts/verify-chat.py granted-chat.out
           # Grant exhausted (USES=1): the next chat is denied again.
-          make chat > overage-denied.out 2>&1 || true
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > overage-denied.out 2>&1 || true
           grep -q 'monthly token budget reached' overage-denied.out
           if grep -q '"state":"completed"' overage-denied.out; then
             echo 'chat completed despite exhausted grant' >&2; exit 1
           fi
-          make approval-audit | tee approval-audit.out
+          bin/kmx audit approval | tee approval-audit.out
           grep -E 'hello-world +budget +tokens +approved' approval-audit.out
           grep -E 'hello-tools +tool +k8s_get_events +approved' approval-audit.out
       - name: "Metrics on the ops port: Prometheus text, expected names, no identifier labels; admin and ops ports on no Service"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make plane-metrics | tee metrics.out
+          bin/kmx metrics | tee metrics.out
           grep -q '^# TYPE kaimahi_decisions_total counter' metrics.out
           for m in kaimahi_decisions_total kaimahi_ledger_month_tokens kaimahi_ledger_month_cents kaimahi_live_grants \
                    kaimahi_open_reservations kaimahi_upstream_latency_seconds_bucket kaimahi_queue_depth \
@@ -3307,8 +3320,8 @@ jobs:
         run: |
           # A credential of its own, so this cannot be confused with — or
           # exhausted by — the budget cycles above.
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-house-token \
-            bash scripts/plane-admin.sh issue house-agent
+          bin/kmx credential issue house-agent \
+            --secret kaimahi-house-token --namespace kagent
           # Four words in, and the fixture answers a six-word sentence.
           # Those are the numbers the UPSTREAM reports; the assertion
           # below is that the ledger carries them and not zeros.
@@ -3390,11 +3403,11 @@ jobs:
       - name: "Models: the entry survives the next kmx plane"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The whole reason the overlay exists. `make plane` re-applies
+          # The whole reason the overlay exists. `bin/kmx plane` re-applies
           # the committed table, which is a different ConfigMap — so an
           # entry added here is not discarded by the next deploy, and the
           # measured failure that started this lane cannot recur.
-          make plane
+          bin/kmx plane --source .
           kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams-extra \
             -o jsonpath='{.data}' | tee overlay-after-plane.out
           python3 -c "import json; d=json.load(open('overlay-after-plane.out')); assert 'model-house.json' in d, sorted(d); print('the model fragment survived kmx plane')"
@@ -3462,10 +3475,15 @@ jobs:
   e2e-resilience:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kaimahi-p1
+      KUBE_CTX: kind-kaimahi-p1
+      CRED: hello-world
+      CRED_TOOLS: hello-tools
     defaults:
       run:
         # An explicit bash shell turns on `-o pipefail`, so the
-        # `make chat | tee` pipelines fail on make's own exit code instead
+        # `bin/kmx agent chat | tee` pipelines fail on kmx's exit code instead
         # of relying solely on the content check in verify-chat.py.
         shell: bash
     steps:
@@ -3486,20 +3504,21 @@ jobs:
         run: |
           curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
           chmod +x kind && sudo mv kind /usr/local/bin/kind
-      # `make up` and every other target below runs THROUGH kmx, so
-      # this job is what proves the binary a developer installs. Building it
+      # This job runs the binary a developer installs directly. Building it
       # as its own step keeps a compile error legible instead of surfacing
       # halfway through a cluster bring-up.
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
-        run: make up
+        run: bin/kmx up
       # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
@@ -3521,14 +3540,14 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       - name: Issue governed credential and switch agent through the proxy
         if: steps.changes.outputs.docs_only != 'true'
-        run: make govern
+        run: bin/kmx govern hello-world --agent hello-world --preset governed-ollama
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make chat | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       - name: "Replica killed mid-cycle: the in-flight call drains, the survivor serves the next, no ledger row lost"
         if: steps.changes.outputs.docs_only != 'true'
@@ -3556,7 +3575,7 @@ jobs:
             kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -q 'migrations: nothing to apply'
             kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -q 'kaimahi-proxy up'
           done
-          make chat | tee restart-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee restart-chat.out
           python3 scripts/verify-chat.py restart-chat.out
       - name: "Backup, wipe the database, restore: the ledger rows come back"
         if: steps.changes.outputs.docs_only != 'true'
@@ -3564,7 +3583,7 @@ jobs:
           rows() { kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
                      psql -U kaimahi -d kaimahi -tAc 'SELECT count(*) FROM ledger_entry'; }
           before=$(rows); test "$before" -gt 0
-          make backup FILE=ci-backup.sql | tee backup.out
+          bin/kmx backup ci-backup.sql | tee backup.out
           test -s ci-backup.sql
           # A dump holds hashes, never a token (and no hosted key exists here).
           if grep -qE 'kmh_[0-9a-f]{64}' ci-backup.sql; then echo 'a token in the backup' >&2; exit 1; fi
@@ -3577,14 +3596,14 @@ jobs:
           tables=$(kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -tAc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
           test "$tables" = 0
-          KAIMAHI_CONFIRM=kind-kaimahi-p1 make restore FILE=ci-backup.sql | tee restore.out
+          bin/kmx restore ci-backup.sql | tee restore.out
           test "$(rows)" = "$before"
           # The proxies reconnect on their own and the plane works again:
           # the restored hashes admit the same agent-side token.
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
-          make ledger | tee ledger-restored.out
+          bin/kmx ledger hello-world | tee ledger-restored.out
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-restored.out
-          make chat | tee restored-chat.out
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee restored-chat.out
           python3 scripts/verify-chat.py restored-chat.out
           rm -f ci-backup.sql
       - name: Cluster state on failure
@@ -3647,7 +3666,7 @@ jobs:
   # response and a completed task, never prose. A model that words things
   # differently, or reaches the wrong number, cannot redden this job.
   #
-  # Approvals go through `make slack-mention`: the synthetic, correctly
+  # Approvals go through `scripts/slack-mention-probe.sh`: the synthetic, correctly
   # signed app_mention that is already CI's stand-in for a person typing in
   # the channel, so the AP scenario proves the Slack approver-identity path
   # and not just the admin one. CI never reaches a real Slack workspace —
@@ -3656,6 +3675,11 @@ jobs:
   e2e-ap:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kaimahi-p1
+      KUBE_CTX: kind-kaimahi-p1
+      CRED: hello-world
+      CRED_TOOLS: hello-tools
     defaults:
       run:
         shell: bash
@@ -3681,12 +3705,14 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: Cluster + Ollama + model + kagent + agent
         if: steps.changes.outputs.docs_only != 'true'
-        run: make up
+        run: bin/kmx up
       - name: Shrink hello-world requests so preset switches can surge
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3695,10 +3721,10 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       - name: Issue governed credential (ap-agent runs the governed ollama preset)
         if: steps.changes.outputs.docs_only != 'true'
-        run: make govern
+        run: bin/kmx govern hello-world --agent hello-world --preset governed-ollama
       # The runner has 2 CPUs and this shard adds a THIRD agent pod.
       # hello-tools is proven in e2e-tools and nothing here touches it, so
       # its Agent is removed rather than left competing for the node.
@@ -3747,7 +3773,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           make govern-ap
-          make tool-allowlist CRED_TOOLS=ap-agent | tee ap-allowlist.out
+          bin/kmx tools allowlist ap-agent | tee ap-allowlist.out
           # The allowlist reads back sorted, not in the order it was set.
           grep -qx 'ap-agent: contract_get, invoice_get, invoice_list, payment_policy_get, po_get, receiving_get' ap-allowlist.out
           for t in payment_schedule dispute_open vendor_notify; do
@@ -3774,7 +3800,7 @@ jobs:
             KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-ap-token UPSTREAM=erp \
               bash scripts/tool-call-probe.sh "${spec%%|*}" "${spec#*|}"
           done
-          make ap-audit | tee ap-reads.out
+          bin/kmx audit tool ap-agent | tee ap-reads.out
           for tool in invoice_get invoice_list po_get receiving_get contract_get payment_policy_get; do
             grep -qE "ap-agent +erp +tools/call +$tool +allowed +200" ap-reads.out \
               || { echo "$tool did not audit as allowed" >&2; exit 1; }
@@ -3786,7 +3812,7 @@ jobs:
       - name: "AP: the approver path (approver file, the plane's own credential, a signed hook)"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make inbound-credential CRED_INBOUND=inbound-slack
+          bin/kmx credential issue inbound-slack --discard
           make inbound-secret HOOK=slack-events GENERATE=1
           kubectl --context kind-kaimahi-p1 -n kaimahi create secret generic kaimahi-slack-bot \
             --from-literal=SLACK_MCP_ADD_MESSAGE_TOOL=C0CIONLY \
@@ -3812,7 +3838,7 @@ jobs:
       - name: "AP: the audit and the approvals carry the transaction and the approver"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make ap-audit | tee ap-audit.out
+          bin/kmx audit tool ap-agent | tee ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +within standing constraint .*amount_cents 412000, payee_id HAR-2088' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +denied +403 +tool call not permitted: outside the standing constraint .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +granted .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
@@ -3832,12 +3858,12 @@ jobs:
           grep -E 'ap-agent +erp +tools/call +vendor_notify +allowed +200 +granted' ap-audit.out
           # Three grants, each welded to a call, each decided by the SLACK
           # approver — the Slack identity path, not the admin bearer.
-          make grants | tee ap-grants.out
+          bin/kmx grants | tee ap-grants.out
           for tool in payment_schedule dispute_open vendor_notify; do
             grep -qE "ap-agent +tool +$tool .*slack:U0CIAPPROVER +call [0-9a-f]{12}" ap-grants.out \
               || { echo "no slack-decided, call-bound grant for $tool" >&2; exit 1; }
           done
-          make approval-audit | tee ap-approval-audit.out
+          bin/kmx audit approval | tee ap-approval-audit.out
           grep -E 'ap-agent +tool +payment_schedule +approved +slack:U0CIAPPROVER .*payment_schedule: invoice_id INV-88134, amount_cents 3255000, payee_id MER-4471' ap-approval-audit.out
           grep -E 'ap-agent +tool +dispute_open +approved +slack:U0CIAPPROVER .*dispute_open: invoice_id INV-88134, amount_cents 600000' ap-approval-audit.out
           grep -E 'ap-agent +tool +vendor_notify +approved +slack:U0CIAPPROVER .*vendor_notify: vendor_id MER-4471' ap-approval-audit.out
@@ -3848,14 +3874,14 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           AP_AGENT_TURN=0 make ap-injection SLACK_USER=U0CIAPPROVER
-          make ap-audit | tee ap-audit-2.out
+          bin/kmx audit tool ap-agent | tee ap-audit-2.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +denied +403 .*amount_cents 4800000, payee_id MER-9911' ap-audit-2.out
           if grep -E 'payment_schedule +allowed' ap-audit-2.out | grep -q 'MER-9911'; then
             echo "a payment to the substituted payee was allowed" >&2; exit 1
           fi
-          make approvals | tee ap-approvals-2.out
+          bin/kmx approvals | tee ap-approvals-2.out
           grep -E 'ap-agent +tool +payment_schedule .*amount_cents 4800000, payee_id MER-9911' ap-approvals-2.out
-          make grants | tee ap-grants-2.out
+          bin/kmx grants | tee ap-grants-2.out
           grep -E 'ap-agent +tool +payment_schedule +yes .* 1/2 .*slack:U0CIAPPROVER +call [0-9a-f]{12}' ap-grants-2.out
       # KEPT SEPARATE, and last: the only step where a model runs. It proves
       # the agent can reach the ERP through the gateway and produce a turn —
@@ -3865,10 +3891,10 @@ jobs:
       - name: "AP: a bounded smoke run of the real agent on ollama (tool path only, never its prose)"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          make chat AGENT=ap-agent \
-            TASK='Call invoice_get for invoice INV-88134 and report its total.' | tee ap-chat.out
+          bin/kmx agent chat ap-agent \
+            'Call invoice_get for invoice INV-88134 and report its total.' | tee ap-chat.out
           python3 scripts/verify-chat.py --tool-path ap-chat.out invoice_get 'Expedited handling'
-          make ap-audit | tee ap-audit-3.out
+          bin/kmx audit tool ap-agent | tee ap-audit-3.out
           grep -E 'ap-agent +erp +tools/call +invoice_get +allowed +200' ap-audit-3.out
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
@@ -4092,7 +4118,7 @@ jobs:
 
   # ---- the shape with no kagent on the cluster at all -----------------------
   #
-  # Every other shard runs `make up`, which installs kagent. This one is the
+  # Every other shard runs `bin/kmx up`, which installs kagent. This one is the
   # configuration the plane now claims to support: an application this project
   # did not write, governed by a plane deployed beside it, with no agent
   # runtime, no CRD and no controller anywhere on the cluster.
@@ -4130,12 +4156,14 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
-      - name: Build kmx (the Makefile's kind path delegates to it)
+      - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
-        run: make bin/kmx
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
       - name: A cluster, and nothing else
         if: steps.changes.outputs.docs_only != 'true'
-        run: make cluster
+        run: bin/kmx up --step cluster
       - name: "The premise: no kagent, proven rather than assumed"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -4154,7 +4182,7 @@ jobs:
           grep -q 'not found' kagent-ns.out
       - name: The governance plane, deployed beside nothing
         if: steps.changes.outputs.docs_only != 'true'
-        run: make plane
+        run: bin/kmx plane --source .
       - name: The application this project did not write
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -4709,8 +4737,8 @@ jobs:
 
           # --address pins IPv4 explicitly: kubectl's default is `localhost`,
           # which can bind the v6 side only while curl talks to 127.0.0.1
-          # (scripts/plane-admin.sh's rule, and scripts/plane-metrics.sh does
-          # exactly this against exactly this port).
+          # (`bin/kmx metrics` uses exactly this rule against exactly this
+          # port).
           #
           # The forward's own output is KEPT and printed on failure. Hiding
           # it in /dev/null is why the first two failures of this step could
@@ -4985,7 +5013,7 @@ jobs:
 
           # 2. It renders, with parameters supplied at apply time. Contoso is
           #    a documentation name: the real repository is operator config
-          #    and is never committed (scripts/release-bind.sh).
+          #    and is never committed (the release blueprint takes it via --set).
           kmx workflow show release --set repo=Contoso/widget | tee wf-show.out
           # SEAMS is the section that says which upstreams the plane must
           # already carry. A render missing it would still satisfy the other

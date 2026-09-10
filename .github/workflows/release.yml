@@ -232,6 +232,26 @@ jobs:
             exit 1
           fi
 
+      # Exercise the artifact with no checkout files in reach. The runner can
+      # execute only the linux/amd64 member of the cross-platform release set.
+      - name: The released binary carries the release workflow
+        run: |
+          set -euo pipefail
+          empty=$(mktemp -d)
+          cd "$empty"
+          test -z "$(ls -A)"
+          "$RUNNER_TEMP/dist/kmx-linux-amd64" workflow list | tee "$RUNNER_TEMP/workflows.txt"
+          grep -q '^release ' "$RUNNER_TEMP/workflows.txt"
+          "$RUNNER_TEMP/dist/kmx-linux-amd64" workflow show release \
+            --set repo=example/example \
+            --set version=v0.0.0-test \
+            --set ado_org=example \
+            --set ado_project=example \
+            --set ado_builds=1 \
+            --set notes_file=/dev/null \
+            | tee "$RUNNER_TEMP/release-workflow.txt"
+          grep -q 'runs: the bundled script release-publish.sh' "$RUNNER_TEMP/release-workflow.txt"
+
       - name: Checksums
         run: |
           set -euo pipefail

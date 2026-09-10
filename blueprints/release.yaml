@@ -6,14 +6,14 @@
 # of a public repository's tree and keeps kmx's rule that it accepts no
 # credential material true of a file format as well as of a flag.
 #
-# What it replaces, and this is the point of a blueprint: the same intent
-# used to live in four places at once —
+# What it replaced, and this is the point of a blueprint: the same intent
+# used to live in five places at once —
 #
 #   k8s/release-agent.yaml       the drill in `systemMessage`, and `toolNames`
 #   k8s/plane/upstreams.yaml     policy_fields, extra_headers, the seams
 #   make release-allow           the credential's allowlist
-#   scripts/release-bind.sh      the standing constraints
-#   scripts/release-run.sh       556 lines of orchestration
+#   a release-specific binder   the old standing-constraint implementation
+#   a release-specific driver   the old orchestration implementation
 #
 # Three of those five are here. The two that are NOT, deliberately:
 #
@@ -44,6 +44,9 @@
 #
 # Start with --dry-run: it reads, drafts the notes, and stops before the
 # first consequential call.
+# Refresh the short-lived credentials without running a step with:
+#
+#   kmx workflow refresh release
 blueprint: v1
 name: release
 summary: Cut a GitHub release from Azure DevOps and GitHub Actions builds — the agent drafts and proposes, a human approves, CI moves the bytes.
@@ -102,12 +105,24 @@ parameters:
       agent's reply. Pass them on the resumed run (--step publish); the
       driver files the approval from what you type, never from what the
       model said.
+  notes_file:
+    type: string
+    required_for: [publish]
+    help: >-
+      a durable local file containing the release notes. Publish runs may be
+      resumed in a new process, so they never depend on a temporary capture
+      from an earlier compose step.
   ado_artifacts:
     type: string_list
     help: artifact names to attach (omit for all)
   asset_globs:
     type: string_list
     help: which files inside the artifacts count as release assets
+  prerelease:
+    type: string
+    default: "1"
+    help: whether the published GitHub release is marked as a prerelease (1 or 0)
+    pattern: '^[01]$'
 
 seams:
   # GitHub's hosted MCP server. Committed as `github-release` in
@@ -371,17 +386,18 @@ steps:
         approved publishing this tag on this repository.
     exec:
       script: release-publish.sh
-      requires: [az, gh]
+      requires: [az, gh, curl, python3, unzip]
       # Run before the approval, so whoever decides sees what lands on a
       # public release rather than a count they take on trust.
       preview: ["--list"]
       env:
         GITHUB_REPO: "${repo.owner}/${repo.name}"
         VERSION: "${version}"
-        NOTES_FILE: "${capture.notes.file}"
+        NOTES_FILE: "${notes_file}"
         RELEASE_TARGET: "${release_branch}"
         ADO_ORG: "${ado_org}"
         ADO_PROJECT: "${ado_project}"
         ADO_BUILDS: "${ado_builds}"
         ADO_ARTIFACTS: "${ado_artifacts}"
         ASSET_GLOBS: "${asset_globs}"
+        PRERELEASE: "${prerelease}"

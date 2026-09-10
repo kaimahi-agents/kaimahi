@@ -412,15 +412,14 @@ func (a *App) loadImage() error {
 // planeSecrets bootstraps the plane's own secrets idempotently: the Postgres
 // password and the admin API bearer, both in the kaimahi namespace.
 //
-// This is scripts/plane-secrets.sh, with one deliberate difference: the
-// namespace is APPLIED from the embedded k8s/plane/namespace.yaml rather
-// than created bare, so it carries whatever that manifest carries and a
-// later `kmx plane` step cannot be the first thing to define it.
+// The namespace is applied from the embedded k8s/plane/namespace.yaml rather
+// than created bare, so it carries whatever that manifest carries and a later
+// `kmx plane` step cannot be the first thing to define it.
 //
 // Existing Secrets are KEPT — regenerating
 // the pg password under a live database would lock the proxy out — and the
-// generated values travel only through the pipe into kubectl. The script had
-// to write them to 0600 files first, because `kubectl create secret
+// generated values travel only through the pipe into kubectl. The former
+// shell implementation had to write them to 0600 files first, because `kubectl create secret
 // --from-file` reads a path; kmx renders the Secret itself and pipes it, so
 // no secret value ever reaches a file, argv, the environment or a log.
 func (a *App) planeSecrets() error {
@@ -463,8 +462,7 @@ func (a *App) ensureSecret(name, key string) error {
 	return nil
 }
 
-// randomHex returns n cryptographically random bytes, hex encoded — the
-// script's `od -An -N32 -tx1 /dev/urandom`.
+// randomHex returns n cryptographically random bytes, hex encoded.
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

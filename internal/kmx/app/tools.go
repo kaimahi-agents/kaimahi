@@ -31,8 +31,8 @@ type UseOptions struct {
 
 // Use switches an agent onto a model preset from k8s/models/.
 //
-// Hosted presets need their key Secret first (`make model-secret`,
-// `make copilot-secret`). Those are not on kmx's one credential-accepting
+// Hosted presets need their key Secret first (checkout-only generic model
+// setup, or `kmx models credential copilot`). Those are not on the ordinary
 // path, so this applies the preset and switches the agent, and the Secret
 // the preset NAMES is somebody else's job. A preset whose Secret is missing produces an
 // agent that starts and then fails its calls; that is the behaviour
@@ -206,7 +206,7 @@ func (a *App) GovernTools(opt ToolsOptions) error {
 			Secret:          opt.Secret,
 			SecretNamespace: opt.SecretNamespace,
 			Command:         "kmx tools govern",
-		}, false, false); err != nil {
+		}, false); err != nil {
 			return err
 		}
 		return a.setToolAllowlist(c, opt.Credential, tools)
@@ -430,8 +430,8 @@ func (a *App) ToolAllowlist(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.ToolAllowlist(a.Out, credential) })
 }
 
-// setToolAllowlist writes the allowlist and says what it means, carrying
-// both of the script's notes. The second one is not decoration: enforcement
+// setToolAllowlist writes the allowlist and says what it means. The second
+// note is not decoration: enforcement
 // is immediate, but what an AGENT can see only catches up on kagent's next
 // RemoteMCPServer reconcile, and an operator who does not know that reads
 // the lag as the allowlist not having taken.
@@ -450,8 +450,8 @@ func (a *App) setToolAllowlist(c *admin.Client, credential string, tools []strin
 	return nil
 }
 
-// quotedList renders the allowlist the way the script's note does — the JSON
-// array's own contents, so what is echoed is what was sent.
+// quotedList renders the JSON array's own contents, so what is echoed is what
+// was sent.
 func quotedList(tools []string) string {
 	quoted := make([]string, 0, len(tools))
 	for _, t := range tools {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
@@ -53,10 +54,14 @@ func (a *App) Lift(opt lift.Options) error {
 	if err := opt.Validate(); err != nil {
 		return err
 	}
-	if err := a.preflight(a.liftDependencies(opt)...); err != nil {
-		return err
-	}
-	if err := a.preflightManifestRenderer(); err != nil {
+	if opt.Plan {
+		// An installed binary must be able to describe a lift without first
+		// installing the tools that would perform it. The account read below is
+		// the plan's only external operation.
+		if err := a.preflight(depAz); err != nil {
+			return err
+		}
+	} else if err := a.preflightLift(opt, runtime.GOOS); err != nil {
 		return err
 	}
 	acct, err := a.azAccount()
@@ -190,11 +195,70 @@ func withLiftDefaults(opt lift.Options) lift.Options {
 }
 
 func (a *App) liftDependencies(opt lift.Options) []dependency {
-	deps := []dependency{depAz, depKubectl, depHelm}
-	if opt.Step == "" || opt.Step == "plane" {
-		deps = append(deps, depGo) // the plane's source is fetched and built
+	deps := []dependency{depAz}
+	for _, step := range opt.StepsToRun() {
+		// Every phase either uses kubectl itself or obtains credentials for the
+		// cluster before it starts. The remaining tools are phase-specific.
+		deps = append(deps, depKubectl)
+		switch step {
+		case "cluster":
+			deps = append(deps, depBash)
+		case "boundary":
+			deps = append(deps, depBash, depPython3)
+		case "kagent":
+			deps = append(deps, depHelm)
+		case "plane":
+			deps = append(deps, depBash, depGo)
+		case "verify":
+			if opt.Observability {
+				deps = append(deps, depCurl)
+			}
+		}
 	}
 	return deps
+}
+
+func (a *App) preflightLift(opt lift.Options, goos string) error {
+	steps := opt.StepsToRun()
+	if err := liftPlatformError(steps, goos); err != nil {
+		return err
+	}
+	if err := a.preflight(a.liftDependencies(opt)...); err != nil {
+		return err
+	}
+	if liftNeedsManifestRenderer(steps) {
+		return a.preflightManifestRenderer()
+	}
+	return nil
+}
+
+func liftPlatformError(steps []string, goos string) error {
+	if goos == "windows" && liftUsesScripts(steps) {
+		return fmt.Errorf("kmx lift: %s is not supported on Windows: it runs embedded bash scripts. Run this phase from Linux, macOS, or WSL", strings.Join(scriptSteps(steps), ", "))
+	}
+	return nil
+}
+
+func liftNeedsManifestRenderer(steps []string) bool {
+	for _, step := range steps {
+		if step == "plane" {
+			return true
+		}
+	}
+	return false
+}
+
+func liftUsesScripts(steps []string) bool { return len(scriptSteps(steps)) > 0 }
+
+func scriptSteps(steps []string) []string {
+	var out []string
+	for _, step := range steps {
+		switch step {
+		case "cluster", "boundary", "plane":
+			out = append(out, step)
+		}
+	}
+	return out
 }
 
 // confirmLift is the cloud equivalent of the context guard, and it runs
@@ -367,6 +431,12 @@ func mergeEnv(base []string, extra map[string]string) []string {
 }
 
 func (a *App) liftCluster(opt lift.Options, work string) error {
+	resume := opt
+	resume.Step = "boundary"
+	downConfirm := opt.ResourceGroup
+	if opt.BringYourOwn {
+		downConfirm = opt.Cluster
+	}
 	return a.runScript(work, "scripts/aks-up.sh", map[string]string{
 		"AKS_RESOURCE_GROUP":   opt.ResourceGroup,
 		"ACR_NAME":             opt.Registry,
@@ -376,6 +446,8 @@ func (a *App) liftCluster(opt lift.Options, work string) error {
 		"AKS_NODE_COUNT":       fmt.Sprint(opt.NodeCount),
 		"AKS_NODE_OSDISK_SIZE": fmt.Sprint(DefaultNodeDiskGiB),
 		"AKS_NETWORK_POLICY":   opt.NetworkPolicy,
+		"KMX_LIFT_CONTINUE":    a.liftCommand(resume, false),
+		"KMX_LIFT_DOWN":        "KAIMAHI_CONFIRM=" + shellArg(downConfirm) + " " + a.liftCommand(opt, true),
 	})
 }
 

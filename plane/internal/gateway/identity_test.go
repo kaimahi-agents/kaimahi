@@ -29,7 +29,7 @@ func TestExpiredCredentialReachesNoToolAndIsAudited(t *testing.T) {
 	rec := post(h, goodToken, rpc(t, "tools/call", map[string]any{"name": "k8s_get_resources"}))
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Contains(t, rec.Body.String(), `expired credential "hello-tools"`)
-	assert.Contains(t, rec.Body.String(), "make credential-renew NAME=hello-tools")
+	assert.Contains(t, rec.Body.String(), "kmx credential renew hello-tools --ttl 720h")
 	assert.False(t, upstreamHit, "an expired credential must not reach a tool server")
 
 	require.Len(t, fs.audits, 1, "unlike an unknown token there IS a credential to attribute this to")

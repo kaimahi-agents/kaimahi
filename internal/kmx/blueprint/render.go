@@ -397,9 +397,8 @@ func (s RenderedStep) Summary() string {
 }
 
 // Fragment is the overlay ConfigMap fragment this blueprint's constraints
-// become: the same `{"standing_constraints": {...}}` shape
-// scripts/release-bind.sh writes, because it goes through the same
-// overlay and the plane parses it with the same parser.
+// become: `{"standing_constraints": {...}}`, the shape the overlay parser
+// accepts.
 //
 // An overlay may carry `tool_upstreams` too, and this deliberately does
 // not. plane/internal/config/overlay.go refuses `credential_file`,

@@ -185,14 +185,10 @@ const (
 	// KindBounded is a call with consequences that a STANDING CONSTRAINT
 	// admits: it proceeds with no human, inside declared bounds, and is
 	// audited. It exists as its own kind because "bounded" and
-	// "consequential" are two different answers to the same question and
-	// the release workflow gives BOTH for one tool — `scripts/release-bind.sh`
-	// bounds
-	// `pipelines_write` ("builds are bounded, not approved",
-	// docs/release-agent.md) while `scripts/release-run.sh` files an
-	// approval request for it. Naming the posture turns that into a
-	// validation error instead of a contradiction spread across a shell
-	// script and a document.
+	// "consequential" are two different answers to the same question. The
+	// former release binding bounded `pipelines_write` while the former
+	// release driver filed an approval request for it. Naming the posture
+	// turns that historical contradiction into a validation error.
 	KindBounded = "bounded"
 	// KindPoll is a bounded wait: an agent turn asking for a status,
 	// repeated on an interval until it reports a terminal state.
@@ -828,11 +824,10 @@ func (b *Blueprint) validateStepReferences(where string, s *Step, captured map[s
 //   - a BOUNDED step's tool must be bounded and not allowlisted, or the
 //     constraint is not the thing deciding.
 //
-// The release workflow gets the first right by hand and says why
-// (`release-bind.sh` binds the read tools only). It gets the second
-// WRONG, and this is what found it: `release-run.sh`'s `do_build` files
-// an approval request for `pipelines_write`, which `release-bind.sh`
-// optionally gives a standing
+// The former release shell workflow got the first right by binding only
+// read tools. It got the second wrong: its build path filed an approval
+// request for `pipelines_write`, while its governance path optionally gave
+// that same tool a standing
 // bound — and docs/release-agent.md says those builds "run with no human
 // at all". Both cannot be true.
 func (b *Blueprint) validatePostures() error {

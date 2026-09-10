@@ -168,13 +168,13 @@ anything of yours ([docs/aks.md](docs/aks.md)).
 Continue with the [getting-started guide](docs/getting-started.md), or choose
 a capability from the [documentation index](docs/README.md).
 
-From a clone, `make` builds the same binary without touching a cluster;
-provisioning stays explicit:
+From a clone, `make` is contributor build orchestration only. Build the
+checkout and then use its `kmx` directly; provisioning stays explicit:
 
 ```bash
 make        # build bin/kmx and print its path
-make up     # kind cluster + local model + kagent + agents (~5–10 minutes)
-make chat   # talk to the default agent
+bin/kmx up  # kind cluster + local model + kagent + agents (~5–10 minutes)
+bin/kmx agent chat hello-world "Who are you?"
 ```
 
 | Prerequisite | Needed for | Install |
@@ -185,43 +185,43 @@ make chat   # talk to the default agent
 | make, git | only the clone path below | your package manager |
 
 ```bash
-make chat TASK="What are you defined in?"
-make chat AGENT=hello-tools TASK="What pods are running in the ollama namespace?"
-make govern                              # route the agent's model calls through the governed proxy
-make status                              # grouped agents, models, runtime health, next actions
-make down                                # delete the cluster
+kmx agent chat hello-world "What are you defined in?"
+kmx agent chat hello-tools "What pods are running in the ollama namespace?"
+kmx govern hello-world                   # route model calls through the governed proxy
+kmx status                               # grouped agents, models, runtime health, next actions
+kmx down                                 # delete the cluster
 ```
 
-`make chat` delegates to kmx, which acquires the pinned kagent CLI in its
+`kmx agent chat` acquires the pinned kagent CLI in its
 cache (checksum-verified), port-forwards the controller, and invokes the agent.
 
 | Consume it as | How |
 |---|---|
-| **Local dev** | `make up` on kind; keyless, free, offline-capable model |
+| **Local dev** | `kmx up` on kind; keyless, free, offline-capable model |
 | **Any conformant cluster** | the manifests are plain CRDs; **AKS** is the named managed target, and the governance plane has been [run there six times, on six clusters, each deleted the same day](docs/aks.md) |
 | **CI / automation** | the same targets run headless — this repo's [CI](.github/workflows/ci.yml) boots a cluster and asserts a real reply, and a real tool call, on every PR |
-| **Your own repo** | copy `k8s/` + the make targets; each agent is one YAML file |
+| **Your own repo** | install `kmx`; each agent is one YAML file |
 | **Existing kagent install** | `kubectl apply -f k8s/hello-world.yaml` — no kaimahi runtime required |
 
 ## Status
 
 | # | Phase | State |
 |---|---|---|
-| 1 | Hello world on Kubernetes | **runs** — `make up && make chat`, verified in CI |
+| 1 | Hello world on Kubernetes | **runs** — `kmx up` then `kmx agent chat hello-world`, verified in CI |
 | 2 | Hosted LLM endpoints via ModelConfig | **runs** — presets below |
 | 3 | Connectors/tools via MCP | **runs** — `hello-tools`, real tool call asserted in CI |
-| 4a | Governed LLM spend (proxy, budgets, ledger, custody) | **runs** — `make govern`, denial + ledger asserted in CI |
-| 4b | Governed tool calls (MCP gateway, allowlists, audit) | **runs** — `make govern-tools`, denial + audit asserted in CI |
-| 4c | Approvals / time-boxed permits (deny-and-pend, bounded grants) | **runs** — `make approvals`, both cycles asserted in CI |
-| 5a | Governed Slack outbound — posting is an approved action | **runs** — `make govern-slack`; the deny → approve → post → burn cycle asserted keyless in CI ([docs/slack.md](docs/slack.md)) |
+| 4a | Governed LLM spend (proxy, budgets, ledger, custody) | **runs** — `kmx govern`, denial + ledger asserted in CI |
+| 4b | Governed tool calls (MCP gateway, allowlists, audit) | **runs** — `kmx tools govern`, denial + audit asserted in CI |
+| 4c | Approvals / time-boxed permits (deny-and-pend, bounded grants) | **runs** — `kmx approvals`, both cycles asserted in CI |
+| 5a | Governed Slack outbound — posting is an approved action | **runs** — checkout-only repository demo orchestration: `make govern-slack`; the deny → approve → post → burn cycle asserted keyless in CI ([docs/slack.md](docs/slack.md)) |
 | 5b | Cluster portability + a real managed-cluster run | **demonstrated once** (the status vocabulary's term for "not continuously tested", not a run count) — this phase was proven by the first of the six AKS runs: the plane, a governed Copilot chat, a ledger row, a budget denial and a governed tool call, all on a real AKS cluster, which was then deleted ([docs/aks.md](docs/aks.md)) |
 | 7a | Network policy around the plane | **runs** — default-deny NetworkPolicy in both directions, proven by a probe on every PR ([docs/egress.md](docs/egress.md)) |
 | 7b | Inbound hooks (webhooks → agent), governed | **runs** — auth before any work, budget checked at the door, a bounded grant consumed per event, probed keyless in CI; the pre-auth rate limiter and the queue are per replica by design ([docs/inbound.md](docs/inbound.md)) |
 | 8 | Approvals routed to Slack, with the approver's identity | **runs** — a filed request is announced in the channel through the plane's own governed post; `@kaimahi approve <id>` from a listed approver mints the grant in their name, asserted keyless in CI with signed synthetic mentions; live verification on AKS pending ([docs/approvals.md](docs/approvals.md#deciding-from-slack)) |
-| 9 | Run it for real: two stateless replicas, exact budgets, metrics | **runs** — two replicas behind every seam, every budget and grant decision serialized per credential in Postgres (N concurrent calls against a cap with room for one admit exactly one, asserted across both replicas in CI), a replica killed mid-cycle and Postgres restarted without a proxy restart, migrations under a lock, Prometheus on its own port, `make backup` / `make restore` ([docs/operations.md](docs/operations.md)) |
-| 10 | Hosted tool upstreams — the gateway reaches GitHub's MCP server on the internet through one hardened dialer | **runs** — `make github-secret` → `make govern-github`; the dialer's refusals, a synthetic public upstream, the opt-in allowance and the fail-closed negative asserted keyless in CI; GitHub itself verified once on kind ([docs/hosted-upstreams.md](docs/hosted-upstreams.md)) |
+| 9 | Run it for real: two stateless replicas, exact budgets, metrics | **runs** — two replicas behind every seam, every budget and grant decision serialized per credential in Postgres (N concurrent calls against a cap with room for one admit exactly one, asserted across both replicas in CI), a replica killed mid-cycle and Postgres restarted without a proxy restart, migrations under a lock, Prometheus on its own port, `kmx backup` / `kmx restore` ([docs/operations.md](docs/operations.md)) |
+| 10 | Hosted tool upstreams — the gateway reaches GitHub's MCP server on the internet through one hardened dialer | **runs** — `kmx credential capture github owner/name`, then checkout-only `make govern-github` to deploy the repository demo agent; the dialer's refusals, a synthetic public upstream, the opt-in allowance and the fail-closed negative asserted keyless in CI; GitHub itself verified once on kind ([docs/hosted-upstreams.md](docs/hosted-upstreams.md)) |
 | 12 | Argument-level policy — an approval binds the CALL, and standing constraints let routine calls through | **runs** — a tool declares which argument fields are policy-relevant; a credential may carry declarative bounds on them (a call inside proceeds with no human, one outside is denied and files a request); the request, the grant and the audit carry the call's digest and a readable summary, so an approval for one transaction cannot be spent on another. Asserted keyless in CI ([docs/approvals.md](docs/approvals.md#the-approval-binds-the-call)) |
-| 11 | `kmx` — the developer journey as one command | **runs** — `go install …/cmd/kmx@latest`, then `kmx up`, kagent `kmx agent chat`, `kmx plane`, `kmx govern`, `kmx ledger`, `kmx status`, `kmx down`; separately `kmx orka install` and native Orka `kmx agent create` with optional Task result; the Makefile's kind path delegates to it, so CI proves it on every PR, and a post-merge job drives the whole journey from an installed binary with no checkout ([docs/kmx.md](docs/kmx.md)). It now carries the runtime, the plane, the operator verbs (`use`, `budget`, `approvals`/`approve`/`deny`/`request`, `tools`, `backup`/`restore`, `metrics`), a governed workflow (`workflow`), the one credential path (`credential capture`), the managed-cluster path (`lift`) and the migration of an application this project did not write onto Orka (`migrate`, [docs/migrate.md](docs/migrate.md)) |
+| 11 | `kmx` — the developer journey as one command | **runs** — `go install …/cmd/kmx@latest`, then `kmx up`, kagent `kmx agent chat`, `kmx plane`, `kmx govern`, `kmx ledger`, `kmx status`, `kmx down`; separately `kmx orka install` and native Orka `kmx agent create` with optional Task result. CI runs the binary directly on every PR, and a post-merge job drives the whole journey from an installed binary with no checkout ([docs/kmx.md](docs/kmx.md)). It carries the runtime, the plane, operator verbs, governed workflows, credential capture including Copilot device login, the managed-cluster path (`lift`), and migration of an application this project did not write (`migrate`, [docs/migrate.md](docs/migrate.md)) |
 
 | 32 | **Used for real**: an agent helps cut releases of a real project | **runs** — one command drafts the notes from what merged since the last release and proposes the branch and the builds; cutting the branch and publishing are denied, filed naming the version and the repository, approved by a human, and admitted under a grant welded to that call, while build dispatch runs under a standing constraint bounded to named pipelines. The driver does the waiting. Asserted keyless in CI against the synthetic hosted upstream, including that a consolidated dispatcher is governed by its action rather than its name ([docs/release-agent.md](docs/release-agent.md)) |
 | 13 | Tagged releases, a verified download, and a proven upgrade | **runs** — CI builds four platforms from the tag with `checksums.txt`, refuses a tag whose version has no changelog section or whose binary does not report its own tag, and upgrades a two-migration-old plane with live data in it on every PR; the failure case (a migration that cannot apply) is documented and asserted ([docs/releases.md](docs/releases.md)) |
@@ -238,9 +238,9 @@ on 53; Postgres and the fixture ERP get no egress at all
 ([docs/egress.md](docs/egress.md) has the whole table). The
 `kagent` and `ollama` namespaces are not policed. Slack is the only chat
 route for approvals (the
-`make approve` path remains, recording `admin`). The plane runs as two
+`kmx approve` records `admin`). The plane runs as two
 stateless replicas that agree on every decision in Postgres; Postgres
-itself is one replica with `make backup` / `make restore`, not a highly
+itself is one replica with `kmx backup` / `kmx restore`, not a highly
 available database ([docs/operations.md](docs/operations.md)).
 
 Cloud-agnostic — it runs on any conformant Kubernetes — with first-class
@@ -268,8 +268,9 @@ to do, and holds the one table of what is governed today and what is not:
 
 ## Governance in practice
 
-Every control below is one make target. CI asserts the decision each one
-makes, on every pull request — but not always by running that target. CI is
+Every public control below is a `kmx` command. Repository demo orchestration
+uses Make only where no binary equivalent exists. CI asserts each decision on
+every pull request, but not always by running the public command. CI is
 keyless and holds no Slack, GitHub, Azure or Copilot token, so the keyed
 families are proven a step to the side: the Slack manifests are validated
 against the live CRDs by a server-side dry run — no Slack agent or MCP
@@ -281,14 +282,14 @@ never run at all, its governance asserted against that same stand-in
 
 | Command | Does | Docs |
 |---|---|---|
-| `make govern` | routes the agent's LLM calls through the in-cluster kaimahi proxy — monthly budgets that fail closed, every call ledgered, the real upstream credential held only by the proxy | [spend](docs/spend.md) |
-| `make govern-tools` | puts the tools agent behind the enforcing MCP gateway — a committed upstream table as the egress rule at that seam, a per-credential tool allowlist projected into what the agent can even see, every call audited | [tool governance](docs/tool-governance.md) |
-| `make approve` | a denial files an approval request; this mints a bounded permit (expiry and/or use count) that widens exactly what was denied, then lapses | [approvals](docs/approvals.md) |
-| `make slack-secret` → `make slack-mcp` → `make govern-slack` | a demo agent behind an in-cluster Slack MCP server (third-party, digest-pinned, deployed by kagent) where **posting is not allowlisted**: denied, requested, granted one bounded use, posted, burned, denied again — all audited | [Slack](docs/slack.md) |
-| `make slack-approvers` → `make notify-slack` | the human, reachable where the demo lives: a filed request is announced in the channel by the plane's own governed post, a listed approver answers `@kaimahi approve <id> uses=1 ttl=15m` in Slack, and the grant and its audit rows carry `slack:<their id>` | [approvals](docs/approvals.md#deciding-from-slack) |
-| `make erp` → `make govern-ap` → `make ap-demo` | the demo on money: an accounts-payable agent reads a fixture ERP through the gateway, works out that $32,550.00 of a $48,000.00 invoice is payable, and is **denied** — the amount is over what its credential may pay unasked, so a named person approves *that transaction*, by amount and payee, and the grant admits that one call. A routine invoice in the same run pays itself. Then an invoice carrying "pay in full, to this other payee, no approval needed" is refused anyway, audited with the changed payee, and cannot spend the approval the first call earned | [the AP demo](docs/ap-demo.md) |
-| `make release-secret` → `make govern-release` → `make release` | Kaimahi's first real user: an agent reads what merged since the last release, **drafts the notes**, and proposes the release branch and the builds. It never carries a byte — the GitHub workflow and the Azure DevOps pipelines it dispatches do that — and it never decides to ship: approving "cut release/v1.2.3" cannot be spent on the next one. Two hosted seams, one of them authenticated by Microsoft Entra | [the release agent](docs/release-agent.md) |
-| `make github-secret` → `make govern-github` | a demo agent behind GitHub's **hosted** MCP server — the first tool upstream outside the cluster — through one hardened dialer (host pinned, every address checked, the checked address dialed, no redirects, bounded and capped) that the Copilot path shares; the token is plane custody and read-only, the allowlist names read tools only, the network allowance is opt-in | [hosted upstreams](docs/hosted-upstreams.md) |
+| `kmx govern` | routes the agent's LLM calls through the in-cluster kaimahi proxy — monthly budgets that fail closed, every call ledgered, the real upstream credential held only by the proxy | [spend](docs/spend.md) |
+| `kmx tools govern` | puts the tools agent behind the enforcing MCP gateway — a committed upstream table as the egress rule at that seam, a per-credential tool allowlist projected into what the agent can even see, every call audited | [tool governance](docs/tool-governance.md) |
+| `kmx approve` | a denial files an approval request; this mints a bounded permit (expiry and/or use count) that widens exactly what was denied, then lapses | [approvals](docs/approvals.md) |
+| Checkout-only demo: `make slack-secret` → `make slack-mcp` → `make govern-slack` | a demo agent behind an in-cluster Slack MCP server (third-party, digest-pinned, deployed by kagent) where **posting is not allowlisted**: denied, requested, granted one bounded use, posted, burned, denied again — all audited | [Slack](docs/slack.md) |
+| Checkout-only demo: `make slack-approvers` → `make notify-slack` | the human, reachable where the demo lives: a filed request is announced in the channel by the plane's own governed post, a listed approver answers `@kaimahi approve <id> uses=1 ttl=15m` in Slack, and the grant and its audit rows carry `slack:<their id>` | [approvals](docs/approvals.md#deciding-from-slack) |
+| Checkout-only demo: `make erp` → `make govern-ap` → `make ap-demo` | the demo on money: an accounts-payable agent reads a fixture ERP through the gateway, works out that $32,550.00 of a $48,000.00 invoice is payable, and is **denied** — the amount is over what its credential may pay unasked, so a named person approves *that transaction*, by amount and payee, and the grant admits that one call. A routine invoice in the same run pays itself. Then an invoice carrying "pay in full, to this other payee, no approval needed" is refused anyway, audited with the changed payee, and cannot spend the approval the first call earned | [the AP demo](docs/ap-demo.md) |
+| `kmx credential capture` → repository demo setup → `kmx workflow run release` | Kaimahi's first real user: an agent reads what merged since the last release, **drafts the notes**, and proposes the release branch and the builds. It never carries a byte — the GitHub workflow and the Azure DevOps pipelines it dispatches do that — and it never decides to ship: approving "cut release/v1.2.3" cannot be spent on the next one. Two hosted seams, one of them authenticated by Microsoft Entra | [the release agent](docs/release-agent.md) |
+| `kmx credential capture github owner/name` → checkout-only `make govern-github` | a demo agent behind GitHub's **hosted** MCP server — the first tool upstream outside the cluster — through one hardened dialer (host pinned, every address checked, the checked address dialed, no redirects, bounded and capped) that the Copilot path shares; the token is plane custody and read-only, the allowlist names read tools only, the network allowance is opt-in | [hosted upstreams](docs/hosted-upstreams.md) |
 
 It mounts at seams that already exist — the model `baseUrl` and the MCP
 tool server — rather than forking or wrapping the runtime. Every call through
@@ -299,27 +300,24 @@ these controls are collected in `docs/SCENARIOS.md` (proposed separately).
 
 ## Command reference
 
-Commands that exist today. `kaimahi agent create` is deliberately **not** in
-this table — it was prototyped and shelved, not built.
+Installed `kmx` is the user command interface:
 
 | Command | Does |
 |---|---|
-| `make up` | cluster → Ollama → model pull → kagent → agents → status |
-| `make chat [AGENT=… TASK=…]` | one question to an agent via the kagent CLI |
-| `make status` | grouped context, agent/model wiring, runtime health, restarts, and next actions |
-| `make down` | delete the kind cluster |
-| `make use PRESET=<name>` | point the agent at a model preset from `k8s/models/` |
-| `make use-ollama` | back to the keyless in-cluster model |
-| `make model-secret NAME=<secret>` | store an API key from **stdin only** |
-| `make copilot-secret` | GitHub device login → short-lived Copilot token → Secret |
-| `make tools-agent` | apply the MCP tools-enabled agent |
-| `make model MODEL=<tag>` | pull another Ollama model (also edit `model:` in the YAML) |
-| `make aks-cluster` / `make aks-down` | create / **delete** an ephemeral AKS cluster + private ACR |
+| `kmx up` | cluster → Ollama → model pull → kagent → agents → status |
+| `kmx agent chat <agent> [message]` | one question to an agent via the kagent CLI |
+| `kmx status` | grouped context, agent/model wiring, runtime health, restarts, and next actions |
+| `kmx down` | delete the kind cluster |
+| `kmx use <preset>` | point the agent at an embedded model preset |
+| `kmx models credential copilot` | GitHub device login → short-lived Copilot token → Secret |
+| `kmx up --step tools-agent` | apply the MCP tools-enabled agent |
+| `MODEL=<tag> kmx up --step model` | pull another Ollama model (also edit `model:` in the YAML) |
+| `kmx lift` / `kmx lift down` | create / **delete** an ephemeral AKS cluster + private ACR |
 
 Overridable: `KIND_CLUSTER`, `KAGENT_VERSION`, `MODEL`, `AGENT`, `TASK`,
 and `TARGET` (`kind` by default, or `aks`).
 
-**Targeting a real cluster.** `KUBE_CTX` is overridable, so `make down`
+**Targeting a real cluster.** `--context` is explicit, so `kmx down`
 can name a cluster somebody cares about. Every target that *writes to
 a cluster* therefore prints the context, API-server host and namespaces it
 is about to touch, and requires an explicit confirmation naming the
@@ -377,15 +375,16 @@ Each endpoint is a committed kagent `ModelConfig` preset in
 [`k8s/models/`](k8s/models/); one command switches the agent between them.
 
 ```bash
+# From a checkout only: repository helper for providers kmx cannot validate.
 make model-secret NAME=anthropic-api-key   # stdin only — never argv, YAML, or logs
-make use PRESET=anthropic
-make chat
+kmx use anthropic
+kmx agent chat hello-world
 ```
 
 | Preset | Endpoint | Secret | Live-verified |
 |---|---|---|---|
 | `ollama` | in-cluster, keyless, free | — | **yes** (e2e in CI) |
-| `github-copilot` | Copilot subscription models | `make copilot-secret` | **yes** (`gpt-5-mini`) |
+| `github-copilot` | Copilot subscription models | `kmx models credential copilot` | **yes** (`gpt-5-mini`) |
 | `anthropic` | Anthropic API | `anthropic-api-key` | schema-valid only |
 | `openai` | OpenAI API | `openai-api-key` | schema-valid only |
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | schema-valid only |
@@ -433,12 +432,12 @@ is about), the tool allowlist, the database backup, one replica's metrics.
 It duplicates nothing kagent's own CLI ships: `kmx agent chat` is a
 passthrough to `kagent invoke`, there is no `kmx install`, and reading,
 updating and deleting agents print the `kubectl` command that already does
-the job. The Makefile's equivalents now call this binary, so there is one
-implementation and CI proves the code you run. v0.1.0 is released
+the job. It is the sole installed user interface for what it owns, and CI
+proves the code you run. v0.1.0 is released
 ([docs/releases.md](docs/releases.md)); neither `kmx` nor `kaimahi` is
 claimed as a package name.
 
-What it is, what it refuses and what it deliberately leaves to the Makefile:
+What it is, what it refuses and what remains checkout-only repository demo orchestration:
 [docs/kmx.md](docs/kmx.md). The original survey against kagent's CLI, which
 still binds, is [docs/CLI-PROPOSAL.md](docs/CLI-PROPOSAL.md).
 

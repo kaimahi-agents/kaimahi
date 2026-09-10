@@ -7,24 +7,19 @@ available. Everything here is proven on kind in CI on every PR; nothing
 here has been run on a managed cluster since the AKS demonstrations in
 [aks.md](aks.md).
 
-Assumes the plane from [spend.md](spend.md) is deployed (`make plane`, or
-`kmx plane` — on kind they are the same code, see [kmx.md](kmx.md)).
+Assumes the plane from [spend.md](spend.md) is deployed with `kmx plane`.
 
-**Which path is which.** On kind, everything on this page is `kmx`'s and
-`make` delegates to it: standing the plane up, governing an agent, the
-read-only views, `backup`, `restore`, `plane-metrics`, budgets and
-approvals (`kmx backup`, `kmx restore`, `kmx metrics`, `kmx budget`,
-`kmx approvals`/`approve`/`deny`/`request`).
+Everything on this page is available through installed `kmx`: standing the
+plane up, governing an agent, read-only views, backup, restore, metrics,
+budgets and approvals.
 
 The managed-cluster path is `kmx lift`, which creates the cluster, builds
 the plane's image in a private registry, renders the manifest for it and
-wires Azure-managed monitoring ([aks.md](aks.md)); the Makefile's
-`TARGET=aks` path still exists and does the same work step by step. The one
-step neither of them does is capturing the **model** key: a managed cluster
-runs a hosted model, and a provider token is not one of the three upstream
-credentials `kmx credential capture` can check a value against, so
-`kmx lift` stops and names `make plane-copilot-secret`, from a checkout.
-That is the only step on the managed path that still needs one.
+wires Azure-managed monitoring ([aks.md](aks.md)). Its credential phase uses
+`kmx models credential copilot`: GitHub device login, exchange for a
+short-lived Copilot token, then a direct write to the plane-side Secret and
+its egress policy. The whole lift therefore works from an installed binary,
+without a checkout or Make.
 
 ## Shape
 
@@ -59,7 +54,7 @@ What IS per replica, deliberately:
   ledger or audit write failed). Each replica trips and heals on its
   own; `kaimahi_seam_degraded` shows which.
 
-`make plane` rolls the replicas one at a time (`maxUnavailable: 0`,
+`kmx plane` rolls the replicas one at a time (`maxUnavailable: 0`,
 `maxSurge: 1`); a PodDisruptionBudget keeps one up through a node
 drain. On a one-node kind cluster both replicas share the node (the
 anti-affinity is a preference); on a real cluster they spread.
@@ -93,7 +88,7 @@ Two probes, on the ops port (9092), and they mean different things:
 
 Migrations run at every replica's start, under a Postgres session-level
 advisory lock (goose's session locker). Two replicas booting together
-against an empty database — the first `make plane` on a fresh cluster —
+against an empty database — the first `kmx plane` on a fresh cluster —
 take the lock in turn: one applies, the other waits and then finds
 nothing to do. Both say which in their logs (`migrations: applied` /
 `migrations: nothing to apply`). CI deletes both pods at once and
@@ -136,7 +131,7 @@ discovered:
 
 ```bash
 kmx status          # a certificate line: subject, issuer, days remaining
-make plane-metrics  # kaimahi_seam_certificate_expires_in_seconds
+kmx metrics  # kaimahi_seam_certificate_expires_in_seconds
 ```
 
 and the proxy logs the subject, issuer and expiry at startup. Renewal on
@@ -158,13 +153,13 @@ on that path — so the agent's own message will not say "certificate".
 
 ## Backup and restore
 
-Postgres is one replica on one PVC. `make down` destroys it. Between
+Postgres is one replica on one PVC. `kmx down` destroys it. Between
 those two facts sits the backup:
 
 ```bash
-make backup                          # backups/kaimahi-<UTC timestamp>.sql
-make backup FILE=/somewhere/safe.sql
-make restore FILE=backups/kaimahi-20260902T120000Z.sql   # guarded
+kmx backup                           # backups/kaimahi-<UTC timestamp>.sql
+kmx backup /somewhere/safe.sql
+kmx restore backups/kaimahi-20260902T120000Z.sql          # guarded
 ```
 
 `pg_dump` runs inside the Postgres pod over its unix socket and streams
@@ -172,8 +167,8 @@ through `kubectl exec` into the local file: no password leaves the pod,
 nothing is written to disk in the cluster, no local Postgres client is
 needed. The dump is `--clean --if-exists`, so restoring **replaces**
 the database — every table dropped and recreated — which is what makes
-it work on a fresh cluster whose `make plane` already ran the
-migrations. A restore is a short outage by design: the script scales
+it work on a fresh cluster whose `kmx plane` already ran the
+migrations. A restore is a short outage by design: `kmx restore` scales
 the proxies to zero first (in-flight calls drain), replaces the tables,
 and scales them back — a proxy admitting calls during the reload could
 write ledger rows the restore then discards, or decide a budget against
@@ -206,8 +201,8 @@ editing those two selectors. Because the port has no auth, that
 allowance *is* the access control.
 
 ```bash
-make plane-metrics              # one replica's exposition (port-forward to a pod)
-make plane-metrics POD=<name>   # a specific replica
+kmx metrics                     # one replica's exposition (port-forward to a pod)
+kmx metrics --pod <name>        # a specific replica
 ```
 
 | Metric | Labels | What |

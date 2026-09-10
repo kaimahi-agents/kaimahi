@@ -9,9 +9,8 @@ import (
 
 // Budgets, and the approval verbs.
 //
-// scripts/plane-admin.sh is the specification (see internal/kmx/admin for
-// the transport and the validation carried across). What is decided HERE is
-// which of these run behind the context guard, and that follows the
+// internal/kmx/admin owns the transport and validation. What is decided HERE
+// is which operations run behind the context guard, and that follows the
 // Makefile exactly: `budget`, `approve`, `deny` and `request` are `guard`
 // prerequisites there because each one changes what an agent may do or
 // spend, and `approvals` is not, because it is a read.
@@ -50,7 +49,7 @@ func (a *App) Budget(credential string, capCents, capTokens *int64) error {
 	})
 }
 
-// capOrNone renders a cap for the operator note the way the script does:
+// capOrNone renders a cap for the operator note:
 // the number, or `null` for "no cap".
 func capOrNone(v *int64) string {
 	if v == nil {

@@ -262,16 +262,22 @@ func TestCreateWizardModelCancelKeysAndVisibleSelection(t *testing.T) {
 }
 
 func TestCreateWizardFilterTreatsExternalQuitAsCancellation(t *testing.T) {
-	m, err := newCreateWizardModel(CreateOptions{Name: "demo", Description: "Demo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := cancelUnfinishedWizard(m, tea.QuitMsg{}).(tea.InterruptMsg); !ok {
-		t.Fatal("external quit at confirmation was allowed to apply")
-	}
-	m.step = createDone
-	if _, ok := cancelUnfinishedWizard(m, tea.QuitMsg{}).(tea.QuitMsg); !ok {
-		t.Fatal("intentional completion was converted to cancellation")
+	for _, signal := range []tea.Msg{tea.QuitMsg{}, tea.InterruptMsg{}} {
+		m, err := newCreateWizardModel(nativeWizardOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, command := m.Update(cancelUnfinishedWizard(m, signal))
+		completed := updated.(createWizardModel)
+		if !completed.cancelled || completed.step != createDone || command == nil {
+			t.Fatal("external signal did not finish the model as cancelled")
+		}
+		if _, ok := command().(tea.QuitMsg); !ok {
+			t.Fatal("external cancellation did not request graceful terminal cleanup")
+		}
+		if _, ok := cancelUnfinishedWizard(completed, tea.QuitMsg{}).(tea.QuitMsg); !ok {
+			t.Fatal("completed cancellation did not allow graceful quit")
+		}
 	}
 }
 

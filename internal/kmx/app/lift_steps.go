@@ -10,10 +10,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
-// copilotSecret is the Secret the proxy mounts to reach the hosted model. The
-// managed path has no Ollama, so this is the only model credential there is.
-const copilotSecret = "kaimahi-copilot-token"
-
 // aimAtTheCluster points every later read and write at the managed cluster.
 //
 // kmx passes an explicit --context on every kubectl and helm invocation, so
@@ -131,16 +127,10 @@ func (a *App) liftKagent() error {
 	return a.installKagent()
 }
 
-// liftCredential is the one hand-off in this path, and it is a deliberate
-// one.
-//
 // The managed cluster runs a hosted model, so it needs a real provider token.
-// kmx accepts credential material on exactly one path, which is being built
-// separately and is not this one — so the lift does not capture this token,
-// does not read it from a flag or an environment variable, and does not go
-// looking for it. It checks whether the Secret is there and stops if it is
-// not, which is the honest shape: a step kmx cannot do is a step it should
-// name rather than pretend to.
+// If the Secret is absent, use the same device-login operation exposed as
+// `kmx models credential copilot`; no checkout, Make target, key flag or stdin
+// credential path is involved.
 //
 // The order matters and it is the thing that has bitten this path before. The
 // proxy mounts the token as an OPTIONAL Secret volume, so a proxy pod that
@@ -150,34 +140,19 @@ func (a *App) liftKagent() error {
 // like a broken deployment rather than a race. Checking here, before the
 // plane phase, is what keeps that from happening.
 func (a *App) liftCredential(opt lift.Options, work string) error {
-	_, err := a.kubectlCapture("-n", admin.Namespace, "get", "secret", copilotSecret, "-o", "name")
+	_, err := a.kubectlCapture("-n", admin.Namespace, "get", "secret", copilotSecretName, "-o", "name")
 	switch {
 	case err == nil:
-		a.notef("model credential %s is present in the %s namespace.", copilotSecret, admin.Namespace)
+		a.notef("model credential %s is present in the %s namespace.", copilotSecretName, admin.Namespace)
 		return nil
 	case !isNotFound(err):
 		// An unreachable API server or an RBAC denial must not read as
 		// "absent" here: absence sends the operator off to mint a token they
 		// may already have, and presence lets the plane start correctly.
-		return fmt.Errorf("cannot tell whether the model credential %s exists (refusing to guess): %w", copilotSecret, err)
+		return fmt.Errorf("cannot tell whether the model credential %s exists (refusing to guess): %w", copilotSecretName, err)
 	}
-	opt.Step = "credential"
-	return fmt.Errorf(`the managed path needs a model credential, and kmx does not capture one.
-
-  A managed cluster runs a hosted model — there is no local model server on
-  it — so the plane needs a real provider token. A model key is not one of
-  the upstream credentials kmx can check a value against, so kmx will not
-  store one and this step is yours:
-
-    TARGET=aks KUBE_CTX=%s make plane-copilot-secret        # from a checkout of this repository
-
-  It reads the token on the terminal and writes it straight into the Secret
-  %s in the %s namespace. Nothing else about the lift needs a
-  checkout; this is the one thing that still does.
-
-  Then resume where this stopped — nothing before it is undone:
-
-    %s`, shellArg(a.Cfg.KubeContext), copilotSecret, admin.Namespace, a.liftCommand(opt, false))
+	a.notef("model credential %s is absent; starting the direct Copilot device-login flow.", copilotSecretName)
+	return a.CaptureCopilotCredential()
 }
 
 // liftPlane builds the plane's image IN Azure and deploys it from the private

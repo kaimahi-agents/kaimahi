@@ -2,7 +2,7 @@
 
 Assumes a running cluster from [getting-started.md](getting-started.md).
 
-The hello-world agent talks. `hello-tools`, the second agent `make up`
+The hello-world agent talks. `hello-tools`, the second agent `kmx up`
 creates, can also act: it calls a tool over MCP, kagent's native tool
 mechanism. The topology stays agent-as-code: one extra Agent YAML
 ([`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml)) and a few lines of
@@ -19,17 +19,17 @@ here.
 ## Run it
 
 ```bash
-make up                     # enables kagent-tools and applies hello-tools
-make chat AGENT=hello-tools TASK='What pods are running in the ollama namespace?'
+kmx up                     # enables kagent-tools and applies hello-tools
+kmx agent chat hello-tools 'What pods are running in the ollama namespace?'
 ```
 
-`make up` waits for the `kagent-tool-server` RemoteMCPServer to be
+`kmx up` waits for the `kagent-tool-server` RemoteMCPServer to be
 Accepted (the controller must connect and discover tools) and then
 applies the agent. The first reconcile can race the tool-server pod and
-retry for up to a minute. Everything else, `make chat`, `make use
-PRESET=…`, `make down`, is unchanged. The model presets in
+retry for up to a minute. Everything else, `kmx agent chat`, `kmx use`,
+`kmx down`, is unchanged. The model presets in
 [models.md](models.md) apply to `hello-tools` too if you point its
-`modelConfig` at one; note that `make use` only switches `hello-world`.
+`modelConfig` at one; `kmx use --agent hello-tools <preset>` switches it.
 
 ## What kagent ships for MCP
 
@@ -152,7 +152,7 @@ deliberately avoids by choosing a keyless tool.
 
 ## Limitations
 
-- Ungoverned by design until you run `make govern-tools`. The full
+- Ungoverned by design until you run `kmx tools govern`. The full
   governed-versus-ungoverned picture is in
   [README.md](README.md#what-is-governed-today-and-what-is-not).
 - The lockdown is the tool server's own posture, not a network boundary.

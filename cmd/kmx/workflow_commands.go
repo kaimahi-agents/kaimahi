@@ -32,6 +32,7 @@ func newWorkflowCommand(state *commandState) *cobra.Command {
 		newWorkflowListCommand(state),
 		newWorkflowShowCommand(state),
 		newWorkflowGovernCommand(state),
+		newWorkflowRefreshCommand(state),
 		newWorkflowRunCommand(state),
 	)
 	return group
@@ -41,8 +42,7 @@ func newWorkflowCommand(state *commandState) *cobra.Command {
 //
 // `--set name=value`, repeated, and deliberately not a values FILE: the
 // values are somebody's real repository and real Azure organization, and
-// a file invites committing them. `scripts/release-bind.sh` states the
-// rule this keeps — a public repository is the wrong place for another
+// a file invites committing them. A public repository is the wrong place for another
 // project's identifiers — and typing them, or keeping them in the
 // operator's own shell history or wrapper script, keeps that decision
 // theirs rather than this repository's.
@@ -131,7 +131,7 @@ func newWorkflowRunCommand(state *commandState) *cobra.Command {
 	blueprintFlags(cmd, &opt.WorkflowOptions, &set)
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false,
 		"read and draft, then stop before the first call with consequences")
-	cmd.Flags().StringVar(&opt.Step, "step", "", "run one step only, by name (how a run is resumed)")
+	cmd.Flags().StringArrayVar(&opt.Steps, "step", nil, "run only this step, by name; repeat to select multiple steps")
 	cmd.Flags().StringVar(&opt.Approver, "approver", "",
 		"require this person's approval (a Slack user id, as the plane records it)")
 	cmd.Flags().StringVar(&opt.AdminPort, "admin-port", app.DefaultWorkflowAdminPort,
@@ -143,6 +143,22 @@ func newWorkflowRunCommand(state *commandState) *cobra.Command {
 			return err
 		}
 		return a.RunWorkflow(cmd.Flags().Arg(0), opt)
+	})
+	cmd.ValidArgsFunction = completeBlueprints
+	return cmd
+}
+
+func newWorkflowRefreshCommand(state *commandState) *cobra.Command {
+	var opt app.WorkflowOptions
+	cmd := &cobra.Command{
+		Use:   "refresh [blueprint]",
+		Short: "Refresh the expiring seam credentials declared by a workflow",
+		Args:  usageArgs(0, 1, "kmx workflow refresh [<blueprint>] [--file <path>]"),
+	}
+	cmd.Flags().StringVar(&opt.File, "file", "", "a blueprint you wrote (default: one kmx carries, named)")
+	_ = cmd.MarkFlagFilename("file", "yaml", "yml")
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		return a.RefreshWorkflow(cmd.Flags().Arg(0), opt)
 	})
 	cmd.ValidArgsFunction = completeBlueprints
 	return cmd

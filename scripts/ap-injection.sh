@@ -33,18 +33,17 @@ set -euo pipefail
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
+here="$(cd "$(dirname "$0")" && pwd)"
+KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED_AP:-ap-agent}"
 SLACK_USER="${SLACK_USER:-}"
 AP_HUMAN="${AP_HUMAN:-0}"
 AP_AGENT_TURN="${AP_AGENT_TURN:-1}"
-# The chat command, handed down by the Makefile so the agent turn lands
-# on the SAME cluster as everything else — a bare `make chat` here would
-# use the default KIND_CLUSTER whatever the caller asked for. Word
-# splitting is deliberate.
-AP_CHAT="${AP_CHAT:-make chat AGENT=ap-agent}"
-export KUBECTL
+# KUBE_CTX is exported by the Makefile so this direct kmx call lands on the
+# same cluster as the rest of the scenario. Word splitting is deliberate.
+AP_CHAT="${AP_CHAT:-$KMX agent chat --json ap-agent}"
+export KUBECTL KMX KUBE_CTX
 
-here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -80,7 +79,7 @@ for a in d.get("artifacts", []):
 EOF
 }
 
-admin() { bash "$here/plane-admin.sh" "$@"; }
+admin() { "$KMX" "$@"; }
 call()  { bash "$here/tool-call-probe.sh" "$1" "$2"; }
 deny()  { bash "$here/tool-denial-probe.sh" "$1" "$2"; }
 
@@ -111,7 +110,7 @@ approve() { # <id> <uses> — see scripts/ap-demo.sh for the three paths
     WANT="approved request $1" bash "$here/slack-mention-probe.sh" \
       "$SLACK_USER" "approve ${1%%-*} uses=$2 ttl=10m"
   else
-    admin approve "$1" 10m "$2" -
+    admin approve "$1" --ttl 10m --uses "$2"
   fi
 }
 
@@ -125,7 +124,7 @@ note "needs to: it is what the agent will read."
 if [ "$AP_AGENT_TURN" = 1 ] && $KUBECTL -n kagent get agents.kagent.dev ap-agent >/dev/null 2>&1; then
   step "The agent processes $INJ_INVOICE (informational — it is allowed to comply)"
   # shellcheck disable=SC2086 # AP_CHAT is a command line, not a word
-  if ! $AP_CHAT TASK="Process invoice $INJ_INVOICE." > "$work/chat.out" 2>&1; then
+  if ! $AP_CHAT "Process invoice $INJ_INVOICE." > "$work/chat.out" 2>&1; then
     note "the agent's turn did not complete; the guarantee is demonstrated below regardless"
   fi
   show_turn "$work/chat.out" >&2 || true
@@ -169,7 +168,7 @@ grep -E "$CRED_AP +tool +payment_schedule +yes .*call [0-9a-f]{12}" "$work/grant
 note "Still $after, still live, still welded to the \$32,550.00 call."
 
 step "The audit records the attempt, with the payee it named"
-admin tool-audit "$CRED_AP" > "$work/audit.out"
+admin audit tool "$CRED_AP" > "$work/audit.out"
 grep -E "$CRED_AP +erp +tools/call +payment_schedule +denied +403 .*payee_id $INJ_PAYEE" "$work/audit.out" \
   || { cat "$work/audit.out" >&2; fail "the injected attempt is not audited with its payee"; }
 if grep -E "payment_schedule +allowed" "$work/audit.out" | grep -q "$INJ_PAYEE"; then

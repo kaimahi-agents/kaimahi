@@ -50,10 +50,6 @@ QUICKSTART_COMMANDS = [
     ("kmx govern", r"^kmx govern\b"),
     ("kmx ledger", r"^kmx ledger\b"),
 ]
-# The clone path is not allowed to disappear: `make up` / `make chat` are what
-# CI runs and what every other doc's commands assume, so they must still be a
-# runnable block in the same section — after the kmx one, not instead of it.
-CLONE_COMMANDS = [("make up", r"^make up\b"), ("make chat", r"^make chat\b")]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
 PROPOSED_CLI = re.compile(r"npx kaimahi create")
@@ -93,8 +89,6 @@ def check(text: str) -> str | None:
             missing = ordered_in(blocks[0], QUICKSTART_COMMANDS)
             if missing is not None:
                 return f"README front door: {missing} is missing from the Quickstart command block"
-            if not any(ordered_in(block, CLONE_COMMANDS) is None for block in blocks[1:]):
-                return "README front door: the clone path (make up, make chat) is missing from the Quickstart section"
         if label == "Status heading":
             status_start = match.start()
     cli = PROPOSED_CLI.search(text)

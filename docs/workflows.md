@@ -8,12 +8,11 @@ decisions, and until now they lived in four places:
 | which servers it reaches | `k8s/plane/upstreams.yaml`, the committed table |
 | what its arguments MEAN | `policy_fields`, in the same table |
 | which calls need no human | a Make variable, `RELEASE_TOOLS` |
-| which calls need one, and in what order | 556 lines of shell |
+| which calls need one, and in what order | the release blueprint's steps |
 
-That works — [the release agent](release-agent.md) cuts real releases
-with it — and it is unrepeatable. Change the repository and you edit a
-shell script; add a step and you write bash; want two approvers and there
-is nowhere to say so.
+The first implementation worked, but was unrepeatable: changing a step meant
+editing release-specific shell. The blueprint makes that workflow data the
+generic kmx driver can validate and run.
 
 A **blueprint** is one file that says all of it, and `kmx workflow` is the
 command that applies and runs it.
@@ -22,6 +21,7 @@ command that applies and runs it.
 kmx workflow list
 kmx workflow show release --set repo=owner/name
 kmx workflow govern release --set repo=owner/name
+kmx workflow refresh release
 kmx workflow run release --set repo=owner/name --set version=v1.2.3 --dry-run
 ```
 
@@ -35,7 +35,8 @@ from its toolset.
 checkout — and neither does capturing the credentials they use. What still
 needs one is **provisioning the release agent itself**: its `Agent`
 manifest and the two `RemoteMCPServer` objects are not carried by `kmx`,
-so `make govern-release` applies them from a clone, once. After that,
+so the checkout-only repository target `make govern-release` applies them
+once. After that,
 running the workflow needs no checkout at any step.
 
 **What a blueprint does not create.** A blueprint governs a credential and
@@ -45,7 +46,7 @@ no `release-agent` credential, naming the command that issues one. The
 release agent's own `Agent` manifest and the two `RemoteMCPServer` objects
 that point it at the gateway (`k8s/release-agent.yaml`,
 `k8s/kaimahi-release-github.yaml`, `k8s/kaimahi-release-ado.yaml`) are not
-carried by `kmx` — `make govern-release` applies them, from a clone.
+carried by `kmx`; the checkout-only `make govern-release` applies them.
 
 So the honest sequence is:
 
@@ -53,7 +54,7 @@ So the honest sequence is:
 |---|---|
 | `kmx quickstart` / `kmx up`, `kmx plane` | no — `kmx` carries the runtime and plane manifests, including the upstream table the release seams are declared in |
 | `kmx credential capture github-release owner/name`, `kmx credential capture ado <organization>` | no — typed at a prompt |
-| the release agent and its two seam objects (`make govern-release`, which also issues the credential and sets its allowlist) | **yes** |
+| the release agent and its two seam objects (checkout-only repository orchestration: `make govern-release`, which also issues the credential and sets its allowlist) | **yes** |
 | issuing the credential on its own, for an agent that already exists (`kmx tools govern --credential release-agent --agent release-agent --secret …`) | no |
 | `kmx workflow list` / `show` / `govern` / `run` | no |
 
@@ -153,15 +154,22 @@ operator passes them on the resumed run:
 
 ```sh
 kmx workflow run release --step publish --set repo=owner/name \
-    --set version=v1.2.3 --set ado_builds=9001,9002
+    --set version=v1.2.3 --set ado_org=contoso --set ado_project=widget \
+    --set ado_builds=9001,9002 --set notes_file=release-notes-v1.2.3.md
 ```
 
 That is the whole answer, and it is the only one available: the value
 being approved has to come from a human, not from a model's reply. What
 CAN come from a previous step is prose — `capture:` stores a turn's reply
 and `${capture.notes}` reads it back — because prose is not what an
-approval binds. The release notes are a `capture`; the tag is a
-parameter.
+approval binds. A compose step can capture release notes for use later in
+the same process, but a resumed process cannot read that temporary capture.
+The release blueprint therefore makes `notes_file` another parameter
+`required_for: [publish]`. Write the reviewed notes to that durable file and
+pass it to either a full run that includes publish or a resumed publish run.
+There is deliberately no implicit fallback: the blueprint language has no
+conditional expressions, and a release must not depend on a temporary file
+that disappeared with an earlier process.
 
 ## What is in a run: `when:`, and what `--set` turns on
 
@@ -231,9 +239,8 @@ Two places, and a third that was rejected.
    with the review step still visible.
 
 Your configuration — which repository, which organization, which project
-— is never in the blueprint. It is `--set`, for the reason
-`scripts/release-bind.sh` states: somebody else's project is not
-something a public repository commits.
+— is never in the blueprint. It is `--set`: somebody else's project is
+not something a public repository commits.
 
 ## Applying it: imperative, with a precondition
 
@@ -248,10 +255,9 @@ refuses; `--replace` is the deliberate act that overwrites. There is no
 controller here, and a command that silently reverted a bound somebody
 tightened by hand would take away the operator's own escape hatch.
 
-If another fragment already constrains the same credential — a cluster
-where `make release-bind` was run — it says so and names the command that
-removes it, because the plane refuses two fragments defining one
-credential rather than resolving by precedence.
+If another fragment already constrains the same credential, kmx says so and
+requires that fragment to be removed first, because the plane refuses two
+fragments defining one credential rather than resolving by precedence.
 
 **It needs a plane new enough to answer.** Checking `requires` means
 asking the plane what its merged table declares, and that is a field the
@@ -262,7 +268,7 @@ refuses rather than applying a blueprint unchecked, and says to run
 ## What the driver does that a script should not have to re-learn
 
 `kmx workflow run` is one driver for every blueprint. It carries the
-properties `scripts/release-run.sh` paid for:
+properties learned from the original release implementation:
 
 - **it files the approval request itself**, for the call your parameters
   name, and stops if the plane did not file exactly that one;
@@ -279,6 +285,11 @@ properties `scripts/release-run.sh` paid for:
   tool in my toolset"* — a symptom nowhere near its cause;
 - **it resumes**: `--step <name>`, which is how a run continues after a
   failed build or a person going home.
+
+`--step` may be repeated when a resume needs several concrete steps. The
+release Make alias uses that for the old provider-aggregate names `build`
+and `watch`. `kmx workflow refresh` runs only the declared credential
+refresh and seam reconnection, without starting an agent turn.
 
 ## The step that is not governed, said out loud
 
@@ -305,7 +316,12 @@ kmx does not fetch `az` or `gh`. It fetches `kubectl`, `kind` and `helm`
 because those are pinned, checksum-verified release artifacts whose
 identity IS the checksum; a freshly downloaded `az` is a binary with
 nobody logged into it, which buys nothing and adds a supply chain. A step
-that needs one names it and stops.
+that needs one names it and stops. A step that executes a bundled script
+automatically requires `bash`; its `requires` list names the script's other
+non-core dependencies. The release publish step declares `az`, `gh`, `curl`,
+`python3`, and `unzip`, and kmx checks the complete set before running any
+workflow step or asking for an approval. The script checks them again before
+touching either service.
 
 ## See also
 

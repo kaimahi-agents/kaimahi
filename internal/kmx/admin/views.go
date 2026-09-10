@@ -58,7 +58,7 @@ func renderTable(out io.Writer, headers []string, rows [][]string, format string
 }
 
 // The read views. Every format string, column width, header and empty-case
-// line below is plane-admin.sh's, verbatim — because these are not decorative.
+// line below is a compatibility contract because these are not decorative.
 // CI greps them (`hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free
 // +200`), the docs quote them, and an operator reading a ledger from `kmx`
 // and one reading it from `make` must see the same table.
@@ -76,6 +76,7 @@ const (
 	toolFmt        = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %-28s %-16s %s\n"
 	credentialsFmt = "%-16s %-10s %-12s %-22s %-9s %s\n"
 	approvalFmt    = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s\n"
+	inboundFmt     = "%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s\n"
 	pendingFmt     = "%-36s %-19s %-12s %-8s %-18s %-34s %s\n"
 )
 
@@ -127,8 +128,8 @@ func (c *Client) Grants(out io.Writer, credential string) error {
 		viewRows = append(viewRows, []string{
 			str(g["id"]), str(g["credential"]), str(g["kind"]), str(g["subject"]),
 			yesno(g["live"]),
-			// [:19] inside a 22-wide column, exactly as the script slices
-			// it: an expiry is printed to the second, and the extra width
+			// [:19] inside a 22-wide column: an expiry is printed to the
+			// second, and the extra width
 			// is the gap before the next column.
 			trunc(dash(g["expires_at"]), 19), uses, dash(g["amount"]),
 			trunc(str(g["created_at"]), 19), dash(g["decided_by"]), binds(g, cliui.New(out).Rich()),
@@ -147,7 +148,7 @@ func (c *Client) Grants(out io.Writer, credential string) error {
 // call, so an approver who can see only the verb is being asked to approve
 // something they cannot see. That is the whole problem restated.
 //
-// The columns are the script's, to the character. CI does not grep this
+// The columns are stable to the character. CI does not grep this
 // table, it AWKs it — `$1` is the id an approval is then issued against —
 // so a widened column is a broken pipeline, not a cosmetic change.
 func (c *Client) Approvals(out io.Writer) error {
@@ -173,8 +174,7 @@ func (c *Client) Approvals(out io.Writer) error {
 // ToolAllowlist prints what a credential may call without a live grant.
 //
 // An EMPTY allowlist is an answer, not an error: it means nothing is
-// callable unless an approval grants it. The script says so in words and so
-// does this.
+// callable unless an approval grants it.
 func (c *Client) ToolAllowlist(out io.Writer, credential string) error {
 	if err := ValidCredentialName(credential); err != nil {
 		return err
@@ -234,6 +234,28 @@ func (c *Client) ApprovalAudit(out io.Writer, credential string) error {
 			dash(e["arg_summary"])})
 	}
 	renderTable(out, []string{"created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"}, viewRows, approvalFmt)
+	return nil
+}
+
+// InboundAudit prints signed inbound events, newest first.
+func (c *Client) InboundAudit(out io.Writer, hook string) error {
+	if hook != "" {
+		if err := ValidCredentialName(hook); err != nil {
+			return err
+		}
+	}
+	doc, err := c.Get("inbound-audit", "/admin/inbound-audit?hook="+url.QueryEscape(hook)+"&limit=50")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, inboundFmt, "created (UTC)", "hook", "credential", "delivery", "decision",
+		"status", "in", "out", "detail", "acted for")
+	for _, e := range rows(doc, "entries") {
+		fmt.Fprintf(out, inboundFmt,
+			trunc(str(e["created_at"]), 19), str(e["hook"]), str(e["credential"]),
+			trunc(str(e["delivery_id"]), 20), str(e["decision"]), str(e["status"]),
+			str(e["input_tokens"]), str(e["output_tokens"]), str(e["detail"]), actedFor(e))
+	}
 	return nil
 }
 
@@ -341,7 +363,7 @@ func callerAddr(e map[string]any, rich ...bool) string {
 // a whole one. An IPv6 address cut to sixteen characters is a different,
 // perfectly plausible address, and every caller in the same prefix
 // renders identically — which would quietly destroy the one half of the
-// pair the caller cannot choose. The script's `clip()` is this function.
+// pair the caller cannot choose.
 func clipCell(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -392,7 +414,7 @@ func call(e map[string]any, rich ...bool) string {
 }
 
 // rows returns a document's list of records, tolerating a null or absent
-// key exactly as the script's `d.get("entries") or []` does.
+// key because an empty result is a valid response.
 func rows(doc map[string]any, key string) []map[string]any {
 	list, _ := doc[key].([]any)
 	out := make([]map[string]any, 0, len(list))
@@ -406,7 +428,7 @@ func rows(doc map[string]any, key string) []map[string]any {
 
 // str renders a JSON value for a table cell. Numbers keep the digits the
 // plane sent (the decoder is in UseNumber mode), and a null prints empty —
-// the shell's behaviour, since these tables are read by eye and by grep.
+// the API's textual behaviour, since these tables are read by eye and by grep.
 // It also keeps a cell to ONE LINE. The plane bounds what it writes into
 // an audit column, but this renderer prints rows it did not write today:
 // an older plane's, a restored dump's, a fixture's. A newline in a cell
@@ -447,8 +469,8 @@ func yesno(v any) string {
 	return "no"
 }
 
-// oneLine is the script's `cell()`, and it is the read-side twin of the
-// store's audit-text rule: a value that is already one printable line
+// oneLine is the read-side twin of the store's audit-text rule: a value that
+// is already one printable line
 // with no padding is printed exactly as it is; anything else is QUOTED.
 //
 // Quoted rather than stripped, for the reason the store gives at length
@@ -458,10 +480,8 @@ func yesno(v any) string {
 // The store stops such a value being written today — this is for the
 // rows it did not write: an older plane's, a restored dump's.
 //
-// The escaping is spelled out here rather than taken from strconv,
-// because plane-admin.sh has to produce the same bytes from Python and
-// `strconv.Quote` and `repr()` do not agree (quote character, escape
-// forms). TestTheTwoRenderersAgreeByteForByte holds the pair to it.
+// The escaping is spelled out here so its quote character and escape forms
+// remain an explicit output contract rather than inheriting strconv changes.
 func oneLine(s string) string {
 	if isCleanCell(s) {
 		return s
@@ -506,15 +526,15 @@ func isCleanCell(s string) bool {
 	return true
 }
 
-// trunc cuts a cell to n characters, as the script's `e["created_at"][:19]`
-// does — a timestamp is printed to the second, not to the microsecond.
+// trunc cuts a cell to n characters: a timestamp is printed to the second,
+// not to the microsecond.
 //
-// CHARACTERS, not bytes. Python's `[:n]` counts characters and Go's format
-// widths count runes, so a byte slice here would both cut a multibyte rune
+// CHARACTERS, not bytes. Go's format widths count runes, so a byte slice here
+// would both cut a multibyte rune
 // in half — printing replacement junk into an audit table — and make the
-// two renderers disagree on exactly the values most worth reading
-// carefully, since a caller chooses its own name. Identical for the ASCII
-// this truncates most of the time.
+// corrupt exactly the values most worth reading carefully, since a caller
+// chooses its own name. Identical for the ASCII this truncates most of the
+// time.
 func trunc(s string, n int) string {
 	r := []rune(s)
 	if len(r) > n {

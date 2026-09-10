@@ -259,8 +259,7 @@ func (a *App) GovernWorkflow(name string, opt WorkflowOptions) error {
 			return fmt.Errorf("the overlay already carries standing constraints for credential %q, in %q.\n"+
 				"  The plane refuses two fragments defining one credential's constraints — the merge is per name "+
 				"and refuses collisions rather than resolving by precedence, so applying this would take the next\n"+
-				"  proxy rollout down. Remove the other one first. If it is the release workflow's, that is:\n"+
-				"    make release-bind GITHUB_REPO=-",
+				"  proxy rollout down. Remove the obsolete fragment first, then govern the workflow again.",
 				b.Credential, other)
 		}
 	}

@@ -374,6 +374,21 @@ az aks get-credentials --name "$CLUSTER" --resource-group "$RG" \
 
 kubectl --context "$CLUSTER" get nodes
 
+if [ -n "${KMX_LIFT_CONTINUE:-}" ] && [ -n "${KMX_LIFT_DOWN:-}" ]; then
+cat >&2 <<EOF
+
+aks-up: ready.
+
+  context:   $CLUSTER   (NOT a kind context — kmx lift already confirmed it)
+  registry:  $ACR.azurecr.io
+  netpol:    $NETWORK_POLICY engine (present; the next lift phase proves enforcement)
+  continue:  $KMX_LIFT_CONTINUE
+  teardown:  $KMX_LIFT_DOWN
+
+The invoking kmx lift continues automatically. Use the commands above only
+to resume after interruption or to tear the billed resources down.
+EOF
+else
 cat >&2 <<EOF
 
 aks-up: ready.
@@ -396,3 +411,4 @@ Next (see docs/aks.md):
    optionally, so a pod started without it fails closed for minutes. Or
    just run 'make up', which is these steps in this order.)
 EOF
+fi

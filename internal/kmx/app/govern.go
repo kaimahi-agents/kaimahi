@@ -116,7 +116,7 @@ func (a *App) Govern(credential string, opt GovernOptions) error {
 	}
 	defer client.Close()
 
-	if err := a.issueCredential(client, credential, opt, false, false); err != nil {
+	if err := a.issueCredential(client, credential, opt, false); err != nil {
 		return err
 	}
 
@@ -190,7 +190,7 @@ func (a *App) GovernInteractiveModel(agent string) error {
 	if err != nil {
 		return err
 	}
-	secretExists, err := a.validateInteractiveResourceOwnership(agent, secret, preset)
+	_, err = a.validateInteractiveResourceOwnership(agent, secret, preset)
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func (a *App) GovernInteractiveModel(agent string) error {
 		return err
 	}
 	defer client.Close()
-	if err := a.issueCredential(client, credential, opt, true, secretExists); err != nil {
+	if err := a.issueCredential(client, credential, opt, true); err != nil {
 		return err
 	}
 	if err := a.publishPlaneAuthority(config_kagentNamespace); err != nil {
@@ -253,16 +253,13 @@ func interactiveModelManifest(preset, secret, model string, governed bool, agent
 }
 
 // issueCredential mints the credential and stores its token as the
-// agent-side Secret, reconciling the already-issued case as
-// scripts/plane-admin.sh does (minus its `GOVERNED_SECRET=-` form, which
-// discards the token for the inbound bridge's signed hooks — an inbound
-// feature kmx does
-// not have).
+// agent-side Secret, reconciling the already-issued case without exposing the
+// one-time token.
 //
 // The token is shown EXACTLY ONCE, at issue time, and cannot be recovered.
 // That is what makes both the check before the POST and the 409 branch below
 // more than politeness.
-func (a *App) issueCredential(client *admin.Client, credential string, opt GovernOptions, interactive, secretExists bool) error {
+func (a *App) issueCredential(client *admin.Client, credential string, opt GovernOptions, interactive bool) error {
 	// Whose token is in that Secret? Asked BEFORE issuing, because the
 	// answer can forbid the whole operation: `kmx govern demo` while the
 	// Secret holds hello-world's token would otherwise mint demo's
@@ -271,9 +268,13 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Gover
 	// 409 branch refuses exactly this once the credential already exists;
 	// the first issue of a SECOND name has to refuse it too, and refusing
 	// before the POST also avoids leaving an orphan credential row behind.
-	bound, err := a.boundCredential(opt)
+	bound, secretExists, err := a.secretBinding(opt)
 	if err != nil {
 		return err
+	}
+	if secretExists && bound == "" {
+		return fmt.Errorf("Secret %s/%s already exists without a kaimahi.dev/credential binding; refusing to overwrite it",
+			opt.SecretNamespace, opt.Secret)
 	}
 	if bound != "" && bound != credential {
 		return a.wrongCredentialError(bound, credential, opt)
@@ -292,8 +293,9 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Gover
 		return a.reconcileExistingCredential(credential, opt, interactive)
 	}
 	if status != http.StatusCreated {
-		return fmt.Errorf("issuing credential %q failed (HTTP %d): %s",
-			credential, status, strings.TrimSpace(string(body)))
+		// A broken or incompatible plane could include a bearer in an error
+		// response. Never copy credential endpoint bodies into operator output.
+		return fmt.Errorf("issuing credential %q failed (HTTP %d)", credential, status)
 	}
 
 	token, err := admin.TokenFrom(body)
@@ -303,12 +305,15 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Gover
 	// Straight from the reply into the manifest into kubectl's stdin. The
 	// token is in this process's memory and in the cluster, and nowhere
 	// else: not argv, not the environment, not a file, not a log.
+	annotations := map[string]string{
+		"kaimahi.dev/credential":       credential,
+		"app.kubernetes.io/managed-by": "kmx",
+	}
+	if opt.Agent != "" {
+		annotations["kaimahi.dev/chat-agent"] = opt.Agent
+	}
 	manifest := secretManifest(opt.Secret, opt.SecretNamespace,
-		map[string]string{"api-key": token},
-		// Bind the Secret to its credential, so a later issue of a
-		// DIFFERENT name detects the mismatch instead of silently reusing
-		// this token.
-		map[string]string{"kaimahi.dev/credential": credential, "app.kubernetes.io/managed-by": "kmx", "kaimahi.dev/chat-agent": opt.Agent})
+		map[string]string{"api-key": token}, annotations)
 	quiet := *a.Run
 	quiet.Echo = false
 	verb := credentialSecretVerb(interactive, secretExists)
@@ -336,23 +341,30 @@ func credentialSecretVerb(interactive, secretExists bool) string {
 	return "apply"
 }
 
-// boundCredential returns the credential the agent-side Secret holds the
-// token for, or "" when there is no such Secret.
+// secretBinding returns whether the agent-side Secret exists and, if so, the
+// credential its token is bound to.
 //
 // Only a genuine NotFound is "no Secret". Any other read failure aborts: an
 // unreadable Secret answered as absent is how the overwrite this check
 // exists to prevent would happen anyway.
-func (a *App) boundCredential(opt GovernOptions) (string, error) {
-	bound, err := a.kubectlCapture("-n", opt.SecretNamespace, "get", "secret", opt.Secret,
-		"-o", `jsonpath={.metadata.annotations.kaimahi\.dev/credential}`)
+func (a *App) secretBinding(opt GovernOptions) (string, bool, error) {
+	raw, err := a.kubectlCapture("-n", opt.SecretNamespace, "get", "secret", opt.Secret, "-o", "json")
 	if err != nil {
 		if isNotFound(err) {
-			return "", nil
+			return "", false, nil
 		}
-		return "", fmt.Errorf("cannot read Secret %s to tell whose token it holds (refusing to overwrite it blind): %w",
+		return "", false, fmt.Errorf("cannot read Secret %s to tell whose token it holds (refusing to overwrite it blind): %w",
 			opt.Secret, err)
 	}
-	return strings.TrimSpace(bound), nil
+	var secret struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(raw), &secret); err != nil {
+		return "", false, fmt.Errorf("cannot decode Secret %s to tell whose token it holds (refusing to overwrite it blind)", opt.Secret)
+	}
+	return strings.TrimSpace(secret.Metadata.Annotations["kaimahi.dev/credential"]), true, nil
 }
 
 // command is the invocation the refusals point back at.
@@ -374,7 +386,7 @@ func (a *App) wrongCredentialError(bound, credential string, opt GovernOptions) 
 // reconcileExistingCredential decides what an HTTP 409 means, given what the
 // agent-side Secret is bound to.
 func (a *App) reconcileExistingCredential(credential string, opt GovernOptions, interactive bool) error {
-	bound, err := a.boundCredential(opt)
+	bound, _, err := a.secretBinding(opt)
 	if err != nil {
 		return err
 	}
@@ -480,8 +492,8 @@ func (a *App) validateInteractiveModelOwnership(agent, preset string) error {
 	return nil
 }
 
-// validCredentialName is the script's check_name, kept because these names
-// are interpolated into JSON and query strings. The plane validates again.
+// validCredentialName checks names before they are interpolated into JSON and
+// query strings. The plane validates again.
 func validCredentialName(name string) error {
 	if name == "" {
 		return fmt.Errorf("usage: kmx govern <credential>")

@@ -34,20 +34,20 @@ its install page.
 
 ### Using Podman instead of Docker
 
-Pass `CONTAINER_ENGINE=podman` to any target. It is explicit rather than
+Pass `CONTAINER_ENGINE=podman` to `kmx`. It is explicit rather than
 auto-detected, so the engine that built an image is always visible in the
 command:
 
 ```bash
-make up   KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman
-make plane KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman
-make down KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman
+KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx up
+KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx plane
+KIND_CLUSTER=<your-name> CONTAINER_ENGINE=podman kmx down
 ```
 
 Set it once per shell with `export CONTAINER_ENGINE=podman` if you never use
-Docker. **Pass it to every target for a given cluster** — kind reaches a
-podman cluster only with `KIND_EXPERIMENTAL_PROVIDER=podman`, which the
-Makefile sets from this variable, so a cluster created with one engine is
+Docker. **Pass it to every command for a given cluster** — kind reaches a
+podman cluster only with `KIND_EXPERIMENTAL_PROVIDER=podman`, which `kmx`
+sets from this variable, so a cluster created with one engine is
 invisible to the other and looks like "kind lost my cluster".
 
 On macOS the podman machine must be able to read your checkout. Machines
@@ -180,13 +180,11 @@ kmx down    # delete the kind cluster (and everything in it, ledger included)
 
 `kmx` is the whole journey in one command; [kmx.md](kmx.md) is its
 reference, including what it deliberately does *not* do. Budgets,
-approvals, tool governance, backup/restore, metrics and the managed-cluster
-path (`kmx lift`) are all `kmx`'s now. What is still the Makefile's: the
-Slack and inbound connector families; the demo and first-user agents that
-are wired from committed manifests — the release agent, the
-accounts-payable demo and the hosted-GitHub agent (`make govern-release`,
-`make release`, `make erp`/`make govern-ap`/`make ap-demo`,
-`make govern-github`); capturing a model key; and the network probes.
+approvals, tool governance, backup/restore, metrics, workflows and the
+managed-cluster path (`kmx lift`) are all `kmx`'s. A checkout still uses Make
+for contributor builds and repository demos with no binary equivalent: Slack
+and inbound connectors, the accounts-payable fixture, the hosted-GitHub demo
+agent, provider keys that `kmx` cannot validate, and network probes.
 
 ### Governing that agent
 
@@ -208,19 +206,18 @@ never an upstream key. [spend.md](spend.md) is what the plane does;
 [kmx.md](kmx.md#how-the-plane-gets-there-without-a-clone) is how it gets
 there.
 
-### The same journey from a clone
+### Developing the same journey from a clone
 
-Everything below uses `make`, and every one of these targets now calls the
-same `kmx` binary — the Makefile builds it from the checkout. Use whichever
-you prefer; they run the same code.
+Make builds `kmx` from the checkout; use that binary directly so the command
+shape remains the same as an installation:
 
 ```bash
 make        # build bin/kmx and print its path; no cluster changes
-make up     # kind cluster + Ollama + model pull + kagent + two agents (first run ~5-10 min)
-make chat   # ask the default question
+bin/kmx up  # kind cluster + Ollama + model pull + kagent + two agents (first run ~5-10 min)
+bin/kmx agent chat hello-world "Who are you?"
 ```
 
-At a terminal `make chat` prints a readable view of the reply. Piped into
+At a terminal `kmx agent chat` prints a readable view of the reply. Piped into
 a file or a script — and with `--json` — it prints the raw A2A task JSON
 instead, which is what CI asserts on. Buried in that JSON is the reply,
 from a real run:
@@ -236,15 +233,14 @@ internally, and that is the name the model sees and repeats.
 Ask your own question, or talk to the second agent, which has a tool:
 
 ```bash
-make chat TASK="What are you defined in?"
-make chat AGENT=hello-tools TASK="What pods are running in the ollama namespace?"
+bin/kmx agent chat hello-world "What are you defined in?"
+bin/kmx agent chat hello-tools "What pods are running in the ollama namespace?"
 ```
 
 Keep a back-and-forth session with streamed replies and visible tool activity:
 
 ```bash
-INTERACTIVE=1 make chat AGENT=hello-tools
-# or directly: kmx agent chat --interactive hello-tools
+bin/kmx agent chat --interactive hello-tools
 ```
 
 The header names the active agent, model/tool governance posture, and effective
@@ -291,22 +287,22 @@ separately provisioned result account, follow [the local Orka example](orka.md#a
 result-authority and safety contract. Create accepts references, not credentials,
 and refuses known key shapes before emission.
 
-There is exactly one path in `kmx` that takes a credential —
-`kmx credential capture <upstream> <repository|organization>`, for the
-three tool upstreams it can check a token against. The value is **typed at
+`kmx credential capture <upstream> <repository|organization>` handles the
+tool upstreams whose tokens it can validate. The value is **typed at
 a prompt with the echo off**: no flag, no environment variable, no file,
 and a pipe or a redirect is refused rather than read, because a credential
 that can arrive through a pipe can arrive from a shell history or a CI log.
-Model keys, the Slack bot token and inbound signing keys are still captured
-by their own scripts (`make model-secret`, `make copilot-secret`,
-`make slack-secret`, `make inbound-secret`), which read from stdin.
+Copilot has its own device flow in `kmx models credential copilot`. Other
+model keys, the Slack bot token and inbound signing keys are checkout-only
+repository demo setup (`make model-secret`, `make slack-secret`,
+`make inbound-secret`), whose scripts read from stdin.
 
 ```bash
-make status   # grouped agents, models, runtime health, next actions
-make down     # delete the kind cluster (and everything in it, ledger included)
+kmx status   # grouped agents, models, runtime health, next actions
+kmx down     # delete the kind cluster (and everything in it, ledger included)
 ```
 
-`make status` groups the selected context, agent-to-model/tool wiring, runtime
+`kmx status` groups the selected context, agent-to-model/tool wiring, runtime
 health across kagent/Ollama/the optional plane, pod restarts, next actions, and
 a **Governance** section that counts how much of the system is actually behind
 the plane:
@@ -341,8 +337,8 @@ agent conditions still say Accepted. These are intentional safety corrections
 in both rich and plain reports; they do not make the supported direct path a
 fault or change the structured envelope.
 
-For the machine-readable form use `kmx status -o json`, `kmx status -o yaml`,
-or from Make: `make status STATUS_OUTPUT=yaml`. That document carries
+For the machine-readable form use `kmx status -o json` or `kmx status -o
+yaml`. That document carries
 `context`, the `governance` block, and the kubectl objects verbatim under
 `items` — so `jq '.items[]'` reads exactly what it always did. **What
 changed:** the top level is no longer a Kubernetes `List`, so the
@@ -352,9 +348,8 @@ read first: an `unknown` population publishes no counts at all, so a script
 that reads `governed` without checking `state` gets a missing key rather
 than a zero nobody counted.
 
-On the clone path the governed half is `make plane` and `make govern`, which
-are the same kmx commands with the checkout passed as the plane's source —
-so a change you make to `plane/` is what gets deployed.
+On the clone path use `bin/kmx plane --source .` so a change you make to
+`plane/` is what gets deployed, then `bin/kmx govern hello-world`.
 
 Coming from the project's old name? The cluster is now `kaimahi-p1` and
 the Copilot login cache moved. See
@@ -387,9 +382,9 @@ The topology grows the same way:
 a `tools:` block. No make target ever mutates the committed file.
 Switching models patches the live Agent resource, not the YAML.
 
-## What `make up` does, step by step
+## What `kmx up` does, step by step
 
-The `up` target on kind runs `cluster`, `ollama`, `model`, `kagent`,
+`kmx up` runs `cluster`, `ollama`, `model`, `kagent`,
 `agent`, `tools-agent`, then `status`. In plain commands:
 
 ```bash
@@ -424,12 +419,12 @@ Every step that writes to a cluster runs a guard first. On a local kind
 cluster it prints a banner and proceeds; on anything else it demands a
 confirmation naming the context. See [aks.md](aks.md) for why.
 
-Re-running `make up` is safe for a governed agent. The `agent` and
+Re-running `kmx up` is safe for a governed agent. The `agent` and
 `tools-agent` steps read the live agent first and, if it is on a
 non-default ModelConfig or wired through the governed tool gateway, they
 re-apply the committed YAML and then restore that state, with a `NOTE:`
-line saying so. `make use PRESET=ollama` and `make ungovern-tools` are
-the explicit ways back. An earlier version of `make up` silently reset
+line saying so. `kmx use ollama` and `kmx tools ungovern` are
+the explicit ways back. An earlier version of `kmx up` silently reset
 the agent; if you see that symptom, the
 [FAQ entry](FAQ.md#my-governed-agent-stopped-showing-up-in-the-ledger)
 covers it.
@@ -439,7 +434,7 @@ and `TARGET` (`kind` by default, or `aks`).
 
 ## Talking to the agent
 
-`make chat` lets kmx fetch/cache the pinned kagent CLI (checksum-verified),
+`kmx agent chat` fetches/caches the pinned kagent CLI (checksum-verified),
 checks that the agent answers through its Service, asks kubectl for a free
 loopback port, and port-forwards the kagent controller there. Set `CHAT_PORT`
 only when a fixed port is required.
@@ -467,13 +462,14 @@ bin/kagent dashboard                    # kagent's web UI
   with malformed arguments and the invocation fails with
   `'str' object has no attribute 'get'`. Telling the model not to use the
   tool in the system message does not stop it. Qwen 2.5 answers plainly.
-  Any tool-capable Ollama model works via `make model MODEL=<tag>` plus
+  Any tool-capable Ollama model works via `MODEL=<tag> kmx up --step model` plus
   the `model:` field in the two agent YAML files, but invocation-test it
   with several fresh chats before trusting it. "It's a known model" is
   not a test. Both small-model failure modes are in the
   [FAQ](FAQ.md#the-agent-errors-with-str-object-has-no-attribute-get).
 - **Models are pod-local**: the Ollama pod stores models in an
-  `emptyDir`, so a pod restart re-pulls (`make model`). Deliberate: no
+  `emptyDir`, so a pod restart requires `MODEL=<tag> kmx up --step model`.
+  Deliberate: no
   PVC to manage in a demo.
 - **Version pin**: kagent v0.9.12 (`KAGENT_VERSION`), the latest stable
   at the time; 0.10 was still in RC. The Agent CRD's `runtime: go`
@@ -484,7 +480,7 @@ bin/kagent dashboard                    # kagent's web UI
   [`k8s/kagent-values.yaml`](../k8s/kagent-values.yaml). The agents here
   stay on the default python runtime. (Verified at 0.9.12 when the pin
   was chosen; not re-verified in this restructure.)
-- **`make down` deletes everything**, including the governance plane's
+- **`kmx down` deletes everything**, including the governance plane's
   Postgres and its ledger, if you have deployed them. Demo-durable, not
   backup-managed.
 

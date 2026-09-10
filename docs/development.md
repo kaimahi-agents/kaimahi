@@ -53,8 +53,7 @@ Everything below is runnable from a clean checkout with no cluster.
 # Two Go modules: kmx at the root, the plane under plane/.
 # `gofmt -l` LISTS unformatted files but still exits 0, so it has to be
 # wrapped to actually fail the chain — the same trap as `! grep` below.
-test -z "$(gofmt -l cmd internal embed.go)" && go vet ./... && go build ./... && go test ./...
-python3 scripts/check-kmx-delegation.py --selftest && python3 scripts/check-kmx-delegation.py
+test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go build ./... && go test ./...
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)
 
 # Every plane/internal/store test SKIPS without a real Postgres, so on a
@@ -206,11 +205,12 @@ public route terminates TLS at an edge:
 | 9091 | **admin** | issuing credentials, budgets, approvals — bearer-token, cluster-internal |
 | 9092 | **ops** | Prometheus `/metrics`, `/readyz`, `/livez` — no auth, on no Service ([operations.md](operations.md)) |
 
-The admin port is deliberately separate from every data path. `make budget`,
-`make approve` and friends reach it through a port-forward in
-`scripts/plane-admin.sh`; it is not exposed. The ops port is on no
-Service either; kubelet probes it, `make plane-metrics` port-forwards to
-a pod, and a scraper gets in only through the NetworkPolicy allowance.
+The admin port is deliberately separate from every data path. `kmx budget`,
+`kmx approve` and the other admin commands reach it through a port-forward;
+the corresponding Make targets are compatibility aliases, and the port is
+not exposed. The ops port is on no Service either; kubelet probes it, `kmx
+metrics` (or its `make plane-metrics` alias) port-forwards to a pod, and a
+scraper gets in only through the NetworkPolicy allowance.
 
 The process holds no governance state. Every decision that must be
 exact — a budget admission, a grant use, a replay check, a filing, an

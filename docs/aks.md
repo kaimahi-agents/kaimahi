@@ -212,21 +212,20 @@ unpicking the ones before it. The error tells you which:
 kmx lift --step plane --resource-group <rg> --cluster <name> --registry <reg>
 ```
 
-**There is one hand-off, and it is the credential.** A managed cluster
-runs a hosted model — there is no local model server on it — so the
-plane needs a real provider token. The model key is not one of the
-upstream credentials `kmx credential capture` knows how to check, and
-storing a credential it cannot vet is what that path exists to avoid, so
-the lift checks whether the Secret is there and stops if it is not,
-naming the command that mints it:
+**The credential phase is direct too.** A managed cluster runs a hosted
+model, so the plane needs a real provider token. If its Secret is absent,
+the lift runs the same operation exposed independently as:
 
 ```bash
-make plane-copilot-secret        # from a checkout; reads the token on the terminal
+kmx --context <cluster> models credential copilot
 ```
 
-This is the one step that still needs a checkout, and it is the honest
-shape rather than a limitation being hidden: a step `kmx` cannot do is a
-step it should name. Everything else on this path is clone-free.
+It starts GitHub's device login when the cached OAuth login is absent, then
+exchanges that login for a short-lived Copilot token. Only the short-lived
+token enters `kaimahi/kaimahi-copilot-token`; the OAuth token is cached as a
+`0600` local file. Neither token enters argv, an environment variable, a
+manifest on disk, or output, and stdin is not a credential channel. The
+operation also applies the plane's Copilot egress rule before continuing.
 
 ### The opinions, and how to override each one
 
@@ -310,7 +309,9 @@ export TARGET=aks
 ### 1. Provision: resource group + private ACR + AKS
 
 ```bash
-make aks-cluster
+kmx lift --step cluster \
+  --resource-group "$AKS_RESOURCE_GROUP" --cluster "$AKS_CLUSTER" \
+  --registry "$ACR_NAME" --location "$AKS_LOCATION"
 ```
 
 This creates the group **tagged** `kaimahi-ephemeral`, a **private** ACR
@@ -343,8 +344,8 @@ All three ride Azure CNI Overlay (`--network-plugin azure
 and Azure NPM never supported it. The script reads the engine back from
 the control plane after the create and fails if it does not match, but
 that only proves the flag took. Enforcement is a property of the CNI,
-which the API server cannot vouch for, so the proof is step 6's
-`make netpol-verify`.
+which the API server cannot vouch for, so `kmx lift` proves the boundary
+before it deploys the plane.
 
 **Existing clusters are not migrated.** If the cluster already exists
 on a different engine, or on none, the script refuses and says what
@@ -352,7 +353,7 @@ the cluster actually has. `az aks update --network-policy` exists for
 `azure` and `calico` but reimages every node pool at once, and moving
 to Cilium is a dataplane upgrade with its own prerequisites; neither
 belongs behind a script whose contract is "create". The cluster is
-ephemeral, so the honest fix is `make aks-down` and a fresh create.
+ephemeral, so the honest fix is `kmx lift down` and a fresh create.
 
 Everything after this point acts on a **remote** context, so confirm once
 for the session:
@@ -364,7 +365,8 @@ export KAIMAHI_CONFIRM=$AKS_CLUSTER
 ### 2. kagent
 
 ```bash
-make kagent
+kmx --context "$AKS_CLUSTER" lift --step kagent \
+  --resource-group "$AKS_RESOURCE_GROUP" --cluster "$AKS_CLUSTER" --registry "$ACR_NAME"
 ```
 
 Identical to kind: the chart, the pins, and `k8s/kagent-values.yaml` are
@@ -373,7 +375,7 @@ the same. This is the portability claim in its plainest form.
 ### 3. The Copilot credential, **before** the plane, not after
 
 ```bash
-make plane-copilot-secret     # real Copilot token -> the kaimahi namespace only
+kmx --context "$AKS_CLUSTER" models credential copilot
 ```
 
 > **Order matters, and this is the one thing that bit us.** The proxy
@@ -398,8 +400,9 @@ opaque `kmh_` token and never holds a provider key.
 ### 4. The governance plane, from the private registry
 
 ```bash
-make plane
-make govern                   # issue the agent's opaque kmh_ token; apply presets
+kmx --context "$AKS_CLUSTER" lift --step plane \
+  --resource-group "$AKS_RESOURCE_GROUP" --cluster "$AKS_CLUSTER" --registry "$ACR_NAME"
+kmx --context "$AKS_CLUSTER" govern hello-world
 ```
 
 `plane-image` runs `az acr build` (built in Azure; no local docker build,
@@ -411,9 +414,9 @@ image reference and a real pull policy. The committed manifest keeps
 ### 5. The agents
 
 ```bash
-make agent          # hello-world, created directly on governed-copilot
-make tools-agent
-make govern-tools   # the tools agent behind the enforcing MCP gateway
+kmx --context "$AKS_CLUSTER" lift --step agents \
+  --resource-group "$AKS_RESOURCE_GROUP" --cluster "$AKS_CLUSTER" --registry "$ACR_NAME"
+kmx --context "$AKS_CLUSTER" tools govern --tools k8s_get_resources
 ```
 
 On kind the agents start on the keyless Ollama preset and are switched
@@ -424,12 +427,12 @@ agents, not bolted on after.
 ### 6. Prove it
 
 ```bash
-make chat                                     # governed Copilot completion
-make ledger                                   # the row it wrote
-make budget CAP_TOKENS=1 && make chat         # fails closed
-make chat AGENT=hello-tools TASK='List the configmaps in the default namespace.'
-make tool-audit                               # the tool call, allowed + audited
-make netpol-verify                            # the boundary is ENFORCED, not just present
+kmx --context "$AKS_CLUSTER" agent chat hello-world
+kmx --context "$AKS_CLUSTER" ledger
+kmx --context "$AKS_CLUSTER" budget hello-world --tokens 1
+kmx --context "$AKS_CLUSTER" agent chat hello-world   # fails closed
+kmx --context "$AKS_CLUSTER" agent chat hello-tools 'List the configmaps in the default namespace.'
+kmx --context "$AKS_CLUSTER" audit tool hello-tools
 ```
 
 `netpol-verify` is the step that makes the policy engine above a fact
@@ -441,11 +444,12 @@ allowance from step 3 is always applied there.
 
 ### 6b. Optional: the Slack loop, through a public edge
 
-The one internet-reachable thing this repo can put on a cluster is the
+The one internet-reachable thing this repository demo can put on a cluster is the
 inbound edge for the Slack Events hook: a Caddy pod with a Let's Encrypt
 certificate on a load balancer whose public IP carries a DNS label you
 choose. It is opt-in, AKS-only, and documented in
-[inbound.md](inbound.md#putting-it-on-the-internet); the Slack side
+[inbound.md](inbound.md#putting-it-on-the-internet). This is checkout-only
+repository orchestration with no binary equivalent; the Slack side
 (`make slack-secret`, `make slack-mcp`, `make govern-slack`) is
 [slack.md](slack.md). In short:
 
@@ -467,7 +471,8 @@ tear down.
 
 ### 6c. Optional: the accounts-payable demo
 
-The [accounts-payable exception demo](ap-demo.md) runs here, and this is
+The [accounts-payable exception demo](ap-demo.md) is also checkout-only
+repository orchestration. It runs here, and this is
 where it is worth running: a real model doing the investigating, and a
 real person approving the payment in Slack.
 
@@ -508,19 +513,20 @@ Slack message to reach the plane at all.
 make ap-down      # the agent, the gateway seam, the ERP and its corpus
 ```
 
-Or the whole journey in one command, once the exports from step 1 are set:
+The installed-command path is the whole journey in one command:
 
 ```bash
-make up      # cluster -> kagent -> copilot secret -> plane -> govern -> agents
+kmx lift --resource-group "$AKS_RESOURCE_GROUP" --cluster "$AKS_CLUSTER" \
+  --registry "$ACR_NAME" --location "$AKS_LOCATION"
 ```
 
-`up` runs exactly the steps above, in that order. The credential comes
+`kmx lift` runs the phases in order. The credential comes
 **before** the plane, for the reason in step 3.
 
 ### 7. Tear it down. This is not optional
 
 ```bash
-KAIMAHI_CONFIRM=$AKS_RESOURCE_GROUP make aks-down
+KAIMAHI_CONFIRM="$AKS_RESOURCE_GROUP" kmx lift down
 ```
 
 > **The confirmation names the RESOURCE GROUP, not the cluster.** The
@@ -849,25 +855,24 @@ pods' logs land in the same Log Analytics workspace as the plane's
 whether or not you add a scrape job, which is often enough to correlate
 the two by timestamp and pod.
 
-### The `make` path does not do any of this
+### Observability belongs to the lift
 
-Observability is `kmx lift` only. The step-by-step `make` path above
-builds the same cluster and the same governed agent, and leaves you with
-`/metrics` on a cluster-internal port and nothing reading it, exactly as
-before.
+Observability is part of `kmx lift`. Running individual repository scripts
+does not configure it and leaves `/metrics` on a cluster-internal port with
+nothing reading it.
 
 ## What differs from kind
 
 | | kind | AKS |
 |---|---|---|
-| **Model** | Ollama `qwen2.5:3b`, keyless, in-cluster | **Copilot only.** No Ollama is deployed; `make ollama` refuses rather than half-deploying it. |
+| **Model** | Ollama `qwen2.5:3b`, keyless, in-cluster | **Copilot only.** No Ollama is deployed; `kmx lift` does not half-deploy it. |
 | **Plane image** | `docker build` + `kind load`, `imagePullPolicy: Never` | `az acr build` into a **private** ACR, pulled via the kubelet identity's `AcrPull` |
 | **Demo ERP image** | the same: `docker build` + `kind load`, `imagePullPolicy: Never` | the same as the plane's: `az acr build` into that private ACR, pulled by the same identity. Never published either way |
 | **Agent's initial model** | starts on the keyless preset, governed later | created **on** `governed-copilot`; governance precedes the agents |
 | **Storage** | the kind default `standard` provisioner | the cluster's default StorageClass, which on AKS 1.35.7 is one literally **named `default`** (`disk.csi.azure.com`), *not* `managed-csi`, which also exists but is not marked default. The PVC deliberately sets **no** `storageClassName`, so it takes whichever class the cluster defaults to; it bound `1Gi RWO` first try. Verified, not assumed: the assumption going in was `managed-csi`. |
-| **NetworkPolicy** | enforced by kindnetd (kube-network-policies), nothing to configure | enforced **only** because `aks-up.sh` provisions a policy engine (Cilium by default). A cluster created without one applies the same manifests and blocks nothing. `make netpol-verify` is the proof either way. |
+| **NetworkPolicy** | enforced by kindnetd (kube-network-policies), nothing to configure | enforced **only** because the lift provisions and proves a policy engine (Cilium by default). A cluster created without one applies the same manifests and blocks nothing. |
 | **Mutating commands** | proceed with a banner | require confirmation naming the context |
-| **`make down`** | `kind delete cluster` | deletes the whole tagged resource group |
+| **Teardown** | `kmx down` deletes the kind cluster | `kmx lift down` deletes the whole tagged resource group |
 | **Slack** | demonstrated ([slack.md](slack.md)) | **opt-in** (step 6b). It is the only way an approval can come from a real person, so the accounts-payable run needs it; a run that does not need it should leave it off, because a real workspace token in a temporary cloud cluster is credential exposure for no added proof. |
 | **Approvals** | admin bearer, or a **synthetic** signed `app_mention` | a person typing in Slack (`AP_HUMAN=1`). The synthetic path is a forgery here and the scenarios refuse to pretend otherwise |
 | **Cost** | free | see above |
@@ -887,9 +892,9 @@ Two smaller carry-overs, recorded rather than hidden:
 
 ## Working two clusters at once: move the local ports
 
-`make chat` now asks kubectl for a free loopback port, so concurrent chats do
+`kmx agent chat` asks kubectl for a free loopback port, so concurrent chats do
 not collide. Action-oriented `make slack-post` still uses fixed `8083`
-(`CHAT_PORT`), `plane-admin.sh` uses `19091` (`ADMIN_PORT`), and each probe
+(`CHAT_PORT`), kmx admin commands use `19091` (`ADMIN_PORT`), and each probe
 has its own `GATEWAY_PORT` default:
 `tool-denial-probe.sh` `18081`, `tool-call-probe.sh` `18082`,
 `tool-admit-probe.sh` `18083`. Running a kind and an AKS verification
@@ -897,23 +902,22 @@ concurrently makes the second bind lose, and its requests land on the
 *other* cluster's forward. Override per cluster:
 
 ```bash
-CHAT_PORT=8183 make chat                            # optional deterministic chat port
+CHAT_PORT=8183 kmx --context kind-kaimahi-p1 agent chat hello-world
 CHAT_PORT=8283 make slack-post                      # fixed action helper
-ADMIN_PORT=19291 make approvals                     # plane-admin targets
+ADMIN_PORT=19291 kmx --context "$AKS_CLUSTER" approvals
 GATEWAY_PORT=18281 bash scripts/tool-denial-probe.sh k8s_get_events
 ```
 
-`ADMIN_PORT` is what the plane-admin targets read; `GATEWAY_PORT` is
-read only by the probe scripts, which are run directly rather than
-through a target; `CHAT_PORT` is optional for chat and still required to move
-the legacy action helper.
+`ADMIN_PORT` is what kmx's admin commands read; `GATEWAY_PORT` is read only by the probe
+scripts, which are run directly rather than through a target; `CHAT_PORT` is
+optional for chat and still required to move the legacy action helper.
 
 **The two collisions behave differently, and one used to be silent.** An
 `ADMIN_PORT` clash fails closed with a flat `HTTP 401 unauthorized` (the
 other cluster's admin token does not match): safe, though the message
 does not name the cause. A `CHAT_PORT` clash had no such protection: the
 kagent controller on that forward is unauthenticated, so the task quietly
-ran on the wrong cluster and returned a plausible reply. `make chat` now
+ran on the wrong cluster and returned a plausible reply. `kmx agent chat`
 waits for its own forward and **refuses** if it did not come up, naming
 the port. `--context` cannot help here; the aiming happens at the
 socket, not at kubectl.
@@ -998,8 +1002,9 @@ that shipped it):
   the engine back from the control plane, then, on a re-run, taking the
   existing-cluster path and accepting the cluster because its engine
   matched;
-- the whole `make up` journey on that cluster: kagent, the Copilot
-  Secret, the plane from the private ACR, governance, both agents;
+- the whole journey, then driven by the repository's Make orchestration:
+  kagent, the Copilot Secret, the plane from the private ACR, governance,
+  both agents;
 - `TARGET=aks make netpol-verify`: **boundary enforced as written**. The
   unlabeled pod in the plane's namespace, which is the enforcement check
   itself, was blocked on DNS, Postgres, 443 and 80; the proxy-shaped
@@ -1081,9 +1086,10 @@ to this path:
 - **Slack on AKS is the inbound-loop demo only**, on a cluster deleted
   the same day; the workspace token is not meant to live in a cloud
   cluster longer than that.
-- **The edge is the only public surface, and it is opt-in.** Nothing
-  in `make up` or `make plane` creates a LoadBalancer; `make
-  exposure-scan` is how you check that stayed true.
+- **The edge is the only public surface, and it is opt-in.** Neither `kmx
+  lift` nor `kmx plane` creates a LoadBalancer. The checkout-only repository
+  probe `make exposure-scan` checks that this stayed true after deploying the
+  inbound demo.
 - **The AKS cluster is not hardened** beyond a private registry, a
   tagged, ephemeral resource group, and the plane's NetworkPolicy
   boundary: default node SSH access, no durability story, and the

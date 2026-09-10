@@ -3,7 +3,7 @@
 # printed — the model seam's counterpart to `tool-call-probe.sh`.
 #
 # Why it exists as its own probe: the other way to make a governed model
-# call is `make chat`, which goes through an agent, and an agent's OpenAI
+# call is `kmx agent chat`, which goes through an agent, and an agent's OpenAI
 # client speaks exactly one protocol and retries on its own. Neither is
 # usable for proving that an upstream speaking the Responses API is
 # metered — the client would never send that shape, and a retry would

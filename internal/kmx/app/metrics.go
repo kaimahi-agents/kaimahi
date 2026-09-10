@@ -12,8 +12,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// Metrics prints ONE proxy replica's Prometheus exposition
-// (scripts/plane-metrics.sh).
+// Metrics prints ONE proxy replica's Prometheus exposition.
 //
 // The ops port is on no Service, so this forwards to a POD: cluster
 // credentials gate it exactly as they gate the admin port. The port itself
@@ -86,8 +85,8 @@ func (a *App) Metrics(pod string) error {
 	return err
 }
 
-// proxyPods is scripts/plane-pods.sh: the kaimahi-proxy pods that can take
-// traffic RIGHT NOW — Ready and not terminating.
+// proxyPods returns the kaimahi-proxy pods that can take traffic RIGHT NOW:
+// Ready and not terminating.
 //
 // `status.phase=Running` alone is not that. A pod draining after a rolling
 // restart stays Running (and keeps its IP) until its grace period ends, and

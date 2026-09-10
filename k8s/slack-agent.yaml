@@ -28,7 +28,7 @@ spec:
   declarative:
     # Governed Copilot: the agent holds a kaimahi token; the real
     # Copilot token lives only with the proxy. `make govern` /
-    # `make plane-copilot-secret` set this up.
+    # `kmx models credential copilot` sets this up.
     modelConfig: governed-copilot
     # The agent pod runs model output; it is the LEAST trusted workload here
     # and was, until now, the least constrained. kagent exposes the fields

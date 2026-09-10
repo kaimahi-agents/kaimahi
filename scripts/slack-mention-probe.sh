@@ -88,7 +88,7 @@ with open(sys.argv[8], "w") as f:
     f.write(f"X-Slack-Request-Timestamp: {ts}\nX-Slack-Signature: v0={sig}\n")
 EOF
 
-# --address pins IPv4 explicitly (see plane-admin.sh for why).
+# --address pins IPv4 explicitly so a stale listener cannot receive the request.
 $KUBECTL -n "$NAMESPACE" port-forward --address 127.0.0.1 \
   svc/kaimahi-inbound "$INBOUND_PORT:8082" >/dev/null 2>&1 &
 pf_pid=$!

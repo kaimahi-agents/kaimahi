@@ -40,18 +40,17 @@ set -euo pipefail
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
+here="$(cd "$(dirname "$0")" && pwd)"
+KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED_AP:-ap-agent}"
 SLACK_USER="${SLACK_USER:-}"
 AP_HUMAN="${AP_HUMAN:-0}"
 AP_AGENT_TURN="${AP_AGENT_TURN:-1}"
-# The chat command, handed down by the Makefile so the agent turn lands
-# on the SAME cluster as everything else — a bare `make chat` here would
-# use the default KIND_CLUSTER whatever the caller asked for. Word
-# splitting is deliberate.
-AP_CHAT="${AP_CHAT:-make chat AGENT=ap-agent}"
-export KUBECTL
+# KUBE_CTX is exported by the Makefile so this direct kmx call lands on the
+# same cluster as the rest of the scenario. Word splitting is deliberate.
+AP_CHAT="${AP_CHAT:-$KMX agent chat --json ap-agent}"
+export KUBECTL KMX KUBE_CTX
 
-here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -94,8 +93,8 @@ EOF
 
 call()  { bash "$here/tool-call-probe.sh" "$1" "$2"; }
 deny()  { bash "$here/tool-denial-probe.sh" "$1" "$2"; }
-admin() { bash "$here/plane-admin.sh" "$@"; }
-audit() { admin tool-audit "$CRED_AP"; }
+admin() { "$KMX" "$@"; }
+audit() { admin audit tool "$CRED_AP"; }
 
 # request_id <tool> <summary substring> -> the pending request for THAT
 # call. Selected by its summary, never by position: several requests for
@@ -134,7 +133,7 @@ approve() {
     WANT="approved request $id" bash "$here/slack-mention-probe.sh" \
       "$SLACK_USER" "approve ${id%%-*} uses=$uses ttl=10m"
   else
-    admin approve "$id" 10m "$uses" -
+    admin approve "$id" --ttl 10m --uses "$uses"
   fi
 }
 
@@ -160,7 +159,7 @@ TXT
 if [ "$AP_AGENT_TURN" = 1 ] && $KUBECTL -n kagent get agents.kagent.dev ap-agent >/dev/null 2>&1; then
   step "The agent investigates $EXC_INVOICE (informational — nothing below asserts on it)"
   # shellcheck disable=SC2086 # AP_CHAT is a command line, not a word
-  if ! $AP_CHAT TASK="Investigate invoice $EXC_INVOICE and resolve it." > "$work/chat.out" 2>&1; then
+  if ! $AP_CHAT "Investigate invoice $EXC_INVOICE and resolve it." > "$work/chat.out" 2>&1; then
     note "the agent's turn did not complete; the scenario continues without it"
   fi
   show_turn "$work/chat.out" >&2 || true
@@ -234,7 +233,7 @@ n=$(awk -v cred="$CRED_AP" '$2==cred && $3=="tool" {print}' "$work/grants.out" |
 [ "$n" -ge 3 ] || fail "expected a grant per approved call, found $n"
 
 step "The approvals audit — who decided what, and which transaction"
-admin approval-audit "$CRED_AP" >&2
+admin audit approval "$CRED_AP" >&2
 
 step "The tool audit — every decision this credential got"
 audit >&2

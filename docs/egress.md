@@ -48,7 +48,7 @@ Everything not in the table is denied. In particular:
 
 - Postgres has zero egress, not even DNS. It has nobody to look up.
 - Nothing in the pod network can reach the proxy's admin port (9091).
-  `plane-admin.sh` reaches it by `kubectl port-forward`, which is
+  kmx's admin commands reach it by `kubectl port-forward`, which is
   node-originated traffic (kubelet to pod), and NetworkPolicy governs
   pod traffic. Measured on kind: port-forward into a deny-all pod still
   works. The admin plane keeps its existing gate of cluster credentials
@@ -150,7 +150,7 @@ Copilot upstream lives on the internet, so enabling Copilot is what
 opens the hole:
 
 ```sh
-make plane-copilot-secret     # mints the token, then applies k8s/egress-copilot.yaml
+kmx models credential copilot # mints the token, then applies k8s/egress-copilot.yaml
 make egress-copilot-off       # closes it again; governed Copilot calls then fail closed
 ```
 

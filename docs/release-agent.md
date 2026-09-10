@@ -13,9 +13,10 @@ more than the feature.
 ## One command
 
 ```sh
-make release GITHUB_REPO=owner/name VERSION=v1.2.3 \
-     GH_WORKFLOW=build-app-win.yml,build-app-mac.yml \
-     ADO_PROJECT=<project> ADO_PIPELINES=41,42
+kmx workflow run release \
+  --set repo=owner/name --set version=v1.2.3 \
+  --set gh_workflows=build-app-win.yml,build-app-mac.yml \
+  --set ado_project=<project> --set ado_pipelines=41,42
 ```
 
 That is the whole interface, and the shape of it is the design. It is not
@@ -28,14 +29,19 @@ Slack from a phone:
 @kaimahi approve 3f1c9a2e uses=1 ttl=10m
 ```
 
-Start with `DRY_RUN=1`. It reads, drafts the notes, and stops before the
+Start with `--dry-run`. It reads, drafts the notes, and stops before the
 first consequential call.
 
-`STEP=<name>` runs one part of it instead of all of it. There are eight:
-`propose`, `compose`, `cut`, `build`, `watch`, `publish`, `refresh` and
-the default `all`. `compose` and `publish` re-run the steps they depend on
-(`publish` composes the notes itself), and `refresh` only re-mints the
-Azure DevOps credential and checks the seam.
+`--step <name>` runs one part of it instead of all of it and may be repeated.
+`kmx workflow refresh release` only re-mints the Azure DevOps credential and
+checks the seam.
+
+Publishing has one additional input:
+`--set notes_file=release-notes-v1.2.3.md`.
+It is required even when publish is part of a full run. Captures are temporary
+artifacts of one process, while `--step publish` is specifically a new-process
+resume; requiring a reviewed, durable notes file gives both paths the same
+reliable contract.
 
 ## What the agent does, and what it cannot
 
@@ -69,6 +75,11 @@ welded to it — but the **transfer** is not: the gateway is not in that
 path, and the credentials are the operator's own `az` and `gh`, not plane
 custody. That is written down rather than glossed, in the script's own
 header.
+
+Before any workflow step or approval, kmx checks `bash` plus the publish
+script's declared `az`, `gh`, `curl`, `python3`, and `unzip` dependencies.
+The script checks its non-core tools and the readability of `NOTES_FILE`
+again before making a network call.
 
 **It never decides to ship.** Every consequential call is denied by
 default, files an approval request carrying the exact call, and proceeds
@@ -114,8 +125,8 @@ blast radius of the alternative is an approval flow that fails randomly.
 
 **What the driver checks before a human is asked.** A model that proposed
 a *different* branch files a request too, and it would look identical in
-`make approvals`. So between the agent proposing and a person being
-shown anything, `scripts/release-run.sh` requires a pending request whose
+`kmx approvals`. So between the agent proposing and a person being
+shown anything, the kmx workflow driver requires a pending request whose
 summary names every policy-relevant field of the call that was asked for
 on the command line. If the agent proposed something else, the run stops
 and says so, and nothing is approved. The accounts-payable demo learned
@@ -174,9 +185,6 @@ kmx credential capture github-release owner/name   # paste the fine-grained toke
 kmx credential capture ado <organization>          # paste the Entra access token
 ```
 
-(`make release-secret GITHUB_REPO=owner/name` and `make ado-secret
-ADO_ORG=<organization>` run exactly those.)
-
 Capturing a credential is a human's job here and stays one. It is typed at
 a prompt with the terminal's echo off, and the value is read **from a
 terminal or not at all**: there is no flag, environment variable or file
@@ -204,7 +212,7 @@ repository — GitHub exposes neither. A check for the second one used to
 sit here and was removed: it asked `GET /user/repos`, which answers by the
 user's affiliations rather than the token's scope, so it refused
 correctly-scoped tokens and proved nothing about wrong ones. What actually
-holds the blast radius is `make release-bind`, below.
+holds the blast radius is `kmx workflow govern release`, below.
 
 **Azure DevOps**: a Microsoft **Entra access token**, not a PAT — see
 [the ADO seam](#the-azure-devops-seam-is-not-a-pat). Refused if it is not
@@ -217,7 +225,7 @@ minted by the documented command. The server is asked instead, which is
 the only authority on it. The deadline is reported, because it is about an
 hour: re-capture with `--replace`.
 
-Both revoked by one command:
+The repository demo has a checkout-only cleanup target:
 
 ```sh
 make release-revoke
@@ -235,7 +243,7 @@ the command says so.
    assertion when you create it, and not something the capture can check,
    because GitHub exposes no endpoint that reports a token's repository
    grant. The two bounds below are what actually hold it.
-2. `make release-bind GITHUB_REPO=owner/name` adds a **standing
+2. `kmx workflow govern release --set repo=owner/name` adds a **standing
    constraint** — a declarative bound the credential carries, checked
    before the allowlist — so the read tools are callable only with that `owner` and
    `repo`. A read naming another repository is denied at the plane and
@@ -244,8 +252,8 @@ the command says so.
    the design.
 
    It is written as an **overlay fragment**
-   (`kaimahi-upstreams-extra/release-bind.json`), not as a patch to the
-   committed table, so `make plane` keeps it — a repository binding that
+   (`kaimahi-upstreams-extra/workflow-release.json`), not as a patch to the
+   committed table, so `kmx plane` keeps it — a repository binding that
    silently disappeared on the next deploy would be worse than none. The
    overlay merges per name and refuses collisions, so it sits beside the
    accounts-payable agent's constraint without touching it, and it is
@@ -261,8 +269,8 @@ the command says so.
 ## Long builds: the driver polls, the agent never blocks
 
 A kagent turn is request/response; an Azure DevOps build is minutes. The
-waiting therefore lives in `scripts/release-run.sh`, in shell, and each
-agent turn is one short step.
+waiting therefore lives in the kmx workflow driver, and each agent turn is
+one short step.
 
 Rejected, and why:
 
@@ -353,7 +361,7 @@ gone `Accepted=False` with `Unauthorized`, and kagent had dropped its
 tools. The cause and the symptom are nowhere near each other, and nothing
 in the message points at a credential.
 
-Two things follow. `scripts/release-run.sh` **refreshes the token itself**
+Two things follow. The kmx workflow driver **refreshes the token itself**
 before every step that touches Azure DevOps: it runs on the operator's
 machine, `az` is already there, and the gateway reads the credential file
 per request so no restart is needed. And it checks the seam's `Accepted`
@@ -369,8 +377,9 @@ credentials exist for the same reason.
 
 ## Builds are bounded, not approved
 
-`make release-bind` optionally takes `ADO_ORG`, `ADO_PROJECT` and
-`ADO_PIPELINES`, and constrains `pipelines_write` to `action
+`kmx workflow govern release` optionally takes `--set ado_org=...`, `--set
+ado_project=...` and `--set ado_pipelines=...`. They constrain
+`pipelines_write` to `action
 run_pipeline` on exactly those pipeline ids in that one project of that
 one organization. Those builds then run with **no human at all**,
 audited; anything else on that tool — another pipeline, another project,
@@ -440,24 +449,22 @@ rollout; the dispatcher tools are asserted to bind their selector first.
 ## The same workflow, as a blueprint
 
 Everything above is the release agent as first built: four layers, and
-one 556-line driver. A user who wants this workflow, or a slightly
+one release-specific driver. A user who wants this workflow, or a slightly
 different one, should not have to reproduce that by hand — so the answer is
 [a blueprint](workflows.md) — one file, applied and run by `kmx
 workflow`, with `blueprints/release.yaml` reproducing exactly the
-governance the make targets below produce.
+governance the old release-specific implementation produced.
 
 Two things that generalising found, and neither is a defect in what
 shipped:
 
-- **`pipelines_write` has two postures at once.** `make release-bind`
-  with `ADO_PIPELINES` gives it a standing constraint, and this document
-  says those builds "run with no human at all" — while
-  `scripts/release-run.sh`'s build step files an approval request for it
-  and waits. A standing constraint ADMITS, so on a cluster where both are
-  in force the approval is not what lets the call through. The blueprint
-  cannot express both: it marks that step `kind: bounded`, which is what
-  this document describes, and kmx refuses a blueprint that declares a
-  tool consequential and bounded at once.
+- **`pipelines_write` had two postures at once.** The old binding and driver
+  gave it both a standing constraint and an approval, while this document
+  says those builds "run with no human at all". A standing constraint
+  ADMITS, so the blueprint resolves that old
+  disagreement by marking the step `kind: bounded`, which is what this
+  document describes. kmx refuses a blueprint that declares a tool
+  consequential and bounded at once.
 - **The blueprint watches GitHub and Azure DevOps in two poll steps**
   rather than the one combined turn `do_watch` uses, because a single
   prompt naming both would carry an Azure organization into a run that
@@ -466,15 +473,18 @@ shipped:
 ## From zero
 
 ```sh
-make up && make plane
-make plane-copilot-secret                       # the agent thinks on governed Copilot
-make govern
-make release-secret GITHUB_REPO=owner/name      # paste the fine-grained token
-make ado-secret ADO_ORG=<organization>          # paste the Entra access token (about an hour)
-make govern-release                             # credential, read allowlist, both seams, the agent
-make release-bind GITHUB_REPO=owner/name        # the reads may reach only that repository (survives make plane)
-make release GITHUB_REPO=owner/name VERSION=v1.2.3 DRY_RUN=1
+kmx up && kmx plane
+kmx models credential copilot
+kmx govern
+kmx credential capture github-release owner/name
+kmx credential capture ado <organization>
+
+# Checkout-only repository orchestration: kmx does not carry these manifests.
+make govern-release
+kmx workflow govern release --set repo=owner/name
+kmx workflow run release --set repo=owner/name --set version=v1.2.3 --dry-run
 ```
 
-When done: `make release-down` removes the agent and both seams;
-`make release-revoke` deletes both tokens and closes the allowance.
+When done, the checkout-only `make release-down` removes the repository's
+agent and both seams; `make release-revoke` deletes both tokens and closes the
+allowance.

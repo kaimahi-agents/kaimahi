@@ -40,10 +40,12 @@ set -euo pipefail
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
+here="$(cd "$(dirname "$0")" && pwd)"
+KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED:-${CRED_AP:-ap-agent}}"
 TIMEOUT="${HUMAN_TIMEOUT:-${AP_HUMAN_TIMEOUT:-900}}"
 POLL="${HUMAN_POLL:-${AP_HUMAN_POLL:-5}}"
-export KUBECTL
+export KUBECTL KMX KUBE_CTX
 
 id="${1:?usage: await-approval.sh <request id> <slack user id | -> [uses]}"
 user="${2:?usage: await-approval.sh <request id> <slack user id | -> [uses]}"
@@ -64,11 +66,10 @@ case "$TIMEOUT$POLL" in
   (*[!0-9]*|'') echo "HUMAN_TIMEOUT and HUMAN_POLL must be whole seconds" >&2; exit 2 ;;
 esac
 
-here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-admin() { bash "$here/plane-admin.sh" "$@"; }
+admin() { "$KMX" "$@"; }
 
 # What is pending, read BEFORE the wait: the subject (the tool) is what
 # the checks below match on, and once the request is decided it is no
@@ -161,7 +162,7 @@ fi
 # scenarios). Without it, a
 # human who approved the OTHER request and denied this one would satisfy
 # every other check.
-admin approval-audit "$CRED_AP" > "$work/audit.out"
+admin audit approval "$CRED_AP" > "$work/audit.out"
 who="slack:$user"
 [ "$any_approver" = yes ] && who=""
 if ! awk -v cred="$CRED_AP" -v subj="$subject" -v who="$who" -v want="$want_call" \

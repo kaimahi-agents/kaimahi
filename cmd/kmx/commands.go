@@ -99,6 +99,36 @@ func newCredentialsCommand(state *commandState) *cobra.Command {
 
 func newCredentialCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "credential", Short: "Manage credential lifecycle", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	var discard bool
+	var secret string
+	var namespace string
+	var issueTTL string
+	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name>) [--namespace <namespace>] [--ttl duration]")}
+	issue.Flags().BoolVar(&discard, "discard", false, "discard the one-time bearer instead of storing or printing it")
+	issue.Flags().StringVar(&secret, "secret", "", "store the one-time bearer in this Kubernetes Secret")
+	issue.Flags().StringVar(&namespace, "namespace", config.DefaultNamespace, "Secret namespace")
+	issue.Flags().StringVar(&issueTTL, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
+	issue.RunE = func(cmd *cobra.Command, _ []string) error {
+		if discard == (secret != "") {
+			return fmt.Errorf("kmx credential issue requires exactly one destination: --discard or --secret <name>")
+		}
+		name := issue.Flags().Arg(0)
+		if err := admin.ValidCredentialName(name); err != nil {
+			return err
+		}
+		parsed, err := admin.ParseTTL(issueTTL)
+		if err != nil {
+			return err
+		}
+		a, err := state.application()
+		if err != nil {
+			return err
+		}
+		if discard {
+			return a.IssueIdentityCredential(name, parsed)
+		}
+		return a.IssueCredentialToSecret(name, secret, namespace, parsed)
+	}
 	var ttl string
 	renew := &cobra.Command{Use: "renew <name>", Short: "Extend credential expiry", Args: usageArgs(1, 1, "kmx credential renew <name> [--ttl 720h]")}
 	renew.Flags().StringVar(&ttl, "ttl", "-", "new lifetime from now")
@@ -112,7 +142,7 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 		}
 		return a.RenewCredential(renew.Flags().Arg(0), parsed)
 	})
-	group.AddCommand(renew, newCaptureCommand(state))
+	group.AddCommand(issue, renew, newCaptureCommand(state))
 	return group
 }
 
@@ -186,10 +216,10 @@ func newFlowCommand(state *commandState) *cobra.Command {
 }
 
 func newAuditCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "audit <tool|approval> [credential]", Short: "Show enforcement audit trails", Args: usageArgs(1, 2, "kmx audit tool|approval [<credential>]")}
+	cmd := &cobra.Command{Use: "audit <tool|approval|inbound> [credential|hook]", Short: "Show enforcement audit trails", Args: usageArgs(1, 2, "kmx audit tool|approval [<credential>] | kmx audit inbound [<hook>]")}
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return filterCompletions([]string{"tool", "approval"}, toComplete), cobra.ShellCompDirectiveNoFileComp
+			return filterCompletions([]string{"tool", "approval", "inbound"}, toComplete), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

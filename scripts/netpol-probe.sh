@@ -30,7 +30,7 @@
 # requests) so it schedules on the full CI node, runs as non-root, and
 # is deleted on exit.
 #
-# With Copilot enabled (`make plane-copilot-secret` applies
+# With Copilot enabled (`kmx models credential copilot` applies
 # k8s/egress-copilot.yaml) the proxy row legitimately reaches net:443;
 # set COPILOT_EGRESS=1 to expect that instead of failing on it.
 #
@@ -70,7 +70,7 @@ trap cleanup EXIT
 # Under errexit a bare `var=$(cmd)` exits on cmd's failure before any
 # message, so capture the outcome explicitly to say what to do about it.
 if ! pg_ip=$($KUBECTL -n "$NAMESPACE" get svc kaimahi-postgres -o jsonpath='{.spec.clusterIP}' 2>&1) || [ -z "$pg_ip" ]; then
-  echo "kaimahi-postgres Service not found — deploy the plane first (make plane): $pg_ip" >&2
+  echo "kaimahi-postgres Service not found — deploy the plane first (kmx plane): $pg_ip" >&2
   exit 1
 fi
 # Only a genuine NotFound may drop the ollama column (a Copilot-only

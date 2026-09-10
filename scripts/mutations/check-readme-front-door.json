@@ -65,18 +65,6 @@
       "replace": "QUICKSTART_COMMANDS = []\nUNUSED_QUICKSTART_COMMANDS = [\n"
     },
     {
-      "name": "the clone command list is emptied",
-      "breaks": "`make up` and `make chat` are what CI runs and what every other document's commands assume; with an empty list any second fenced block satisfies the clone path.",
-      "find": "CLONE_COMMANDS = [(\"make up\", r\"^make up\\b\"), (\"make chat\", r\"^make chat\\b\")]",
-      "replace": "CLONE_COMMANDS = []"
-    },
-    {
-      "name": "the clone-path check is dropped",
-      "breaks": "The clone path can disappear from the Quickstart entirely, taking every other document's commands with it.",
-      "find": "            if not any(ordered_in(block, CLONE_COMMANDS) is None for block in blocks[1:]):",
-      "replace": "            if False:"
-    },
-    {
       "name": "command order is searched from the top of the block",
       "breaks": "The commands become a set rather than a sequence: chatting before the cluster is up reads as valid, and the reader who follows it gets an error instead of an agent.",
       "find": "        found = re.compile(pattern, re.M).search(block, position)",

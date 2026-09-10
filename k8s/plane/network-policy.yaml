@@ -33,7 +33,7 @@
 #     GitHub's hosted MCP server, and the release driver's own entry
 #     against it) and mcp.dev.azure.com once, but nothing in THIS file
 #     lets the proxy leave the cluster. Those allowances are
-#     k8s/egress-copilot.yaml (applied by `make plane-copilot-secret`) and
+#     k8s/egress-copilot.yaml (applied by `kmx models credential copilot`) and
 #     k8s/egress-hosted.yaml (applied by `make github-secret`) — the
 #     moment a hosted upstream is enabled is the moment the proxy needs
 #     the internet, and not before.

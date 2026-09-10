@@ -41,8 +41,10 @@ func (a *App) Audit(kind, credential string) error {
 		return a.session(func(c *admin.Client) error { return c.ToolAudit(a.Out, credential) })
 	case "approval":
 		return a.session(func(c *admin.Client) error { return c.ApprovalAudit(a.Out, credential) })
+	case "inbound":
+		return a.session(func(c *admin.Client) error { return c.InboundAudit(a.Out, credential) })
 	default:
-		return fmt.Errorf("usage: kmx audit tool|approval [<credential>]")
+		return fmt.Errorf("usage: kmx audit tool|approval [<credential>] | kmx audit inbound [<hook>]")
 	}
 }
 
@@ -98,5 +100,50 @@ func (a *App) RenewCredential(name string, ttl *int64) error {
 		}
 		a.notef("Credential %q now expires %s.", name, expires)
 		return nil
+	})
+}
+
+// IssueIdentityCredential creates an identity for signed inbound hooks. The
+// hook authenticates with its signing secret, so the one-time bearer is
+// validated and discarded rather than printed or stored.
+func (a *App) IssueIdentityCredential(name string, ttl *int64) error {
+	if err := a.Guard(fmt.Sprintf("issue identity-only credential %q and DISCARD its bearer", name), "kmx credential issue "+name+" --discard"); err != nil {
+		return err
+	}
+	return a.session(func(c *admin.Client) error {
+		created, err := c.IssueIdentityCredential(name, ttl)
+		if err != nil {
+			return err
+		}
+		if created {
+			a.notef("Credential %q issued as an identity only; its bearer token was discarded, not stored.", name)
+		} else {
+			a.notef("Credential %q already issued; keeping it (no token is stored for it).", name)
+		}
+		return nil
+	})
+}
+
+// IssueCredentialToSecret issues a bearer directly into Kubernetes custody.
+// issueCredential contains the shared pre-POST binding and 409 safety checks
+// used by govern; this entry point deliberately adds no second implementation.
+func (a *App) IssueCredentialToSecret(name, secret, namespace string, ttl *int64) error {
+	if err := validCredentialName(name); err != nil {
+		return err
+	}
+	if secret == "" || namespace == "" {
+		return fmt.Errorf("kmx credential issue: secret and namespace must be named")
+	}
+	command := "kmx credential issue " + name + " --secret " + secret
+	if err := a.Guard(fmt.Sprintf("issue credential %q into Secret %s/%s", name, namespace, secret), command); err != nil {
+		return err
+	}
+	return a.session(func(c *admin.Client) error {
+		return a.issueCredential(c, name, GovernOptions{
+			Secret:          secret,
+			SecretNamespace: namespace,
+			TTLSeconds:      ttl,
+			Command:         command,
+		}, false)
 	})
 }

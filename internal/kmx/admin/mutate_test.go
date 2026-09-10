@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// The validation in front of every mutation. These are the script's checks,
-// and they exist because these values are interpolated into JSON bodies and
+// The validation in front of every mutation exists because these values are
+// interpolated into JSON bodies and
 // URL paths — and because a typo should fail before a port-forward is
 // opened, not after.
 
@@ -96,6 +96,61 @@ func TestParseTTL(t *testing.T) {
 		if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
 			t.Errorf("ParseTTL(%q) = %v, want %v", tc.in, deref(got), deref(tc.want))
 		}
+	}
+}
+
+func TestIdentityIssueValidatesThenDiscardsTheBearer(t *testing.T) {
+	var body map[string]any
+	token := "kmh_" + strings.Repeat("a", 64)
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/admin/credentials" {
+			t.Errorf("request was %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	}))
+
+	created, err := c.IssueIdentityCredential("inbound-demo", ptr(300))
+	if err != nil || !created {
+		t.Fatalf("IssueIdentityCredential: created=%v err=%v", created, err)
+	}
+	if body["name"] != "inbound-demo" || body["ttl_seconds"] != json.Number("300") && body["ttl_seconds"] != float64(300) {
+		t.Errorf("issue body = %#v", body)
+	}
+}
+
+func TestIdentityIssueTreatsConflictAsIdempotentSuccess(t *testing.T) {
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"credential already exists"}`, http.StatusConflict)
+	}))
+	created, err := c.IssueIdentityCredential("inbound-demo", nil)
+	if err != nil || created {
+		t.Fatalf("conflict: created=%v err=%v", created, err)
+	}
+}
+
+func TestIdentityIssueRefusesAnInvalidOneTimeBearer(t *testing.T) {
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + "not-a-real-token"})
+	}))
+	if _, err := c.IssueIdentityCredential("inbound-demo", nil); err == nil || !strings.Contains(err.Error(), "invalid Kaimahi token") {
+		t.Fatalf("invalid token error = %v", err)
+	}
+}
+
+func TestIdentityIssueNeverQuotesABearerFromAnErrorResponse(t *testing.T) {
+	token := "kmh_" + strings.Repeat("b", 64)
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	}))
+	_, err := c.IssueIdentityCredential("inbound-demo", nil)
+	if err == nil || strings.Contains(err.Error(), token) || strings.Contains(err.Error(), "kmh_") {
+		t.Fatalf("error exposed bearer: %v", err)
 	}
 }
 
@@ -208,8 +263,8 @@ func TestApprovalAndCredentialNumericBounds(t *testing.T) {
 	}
 }
 
-// Only the bounds that were SET are sent, and the reply is rendered the way
-// the script renders it.
+// Only the bounds that were SET are sent, and the reply has a stable operator
+// rendering.
 func TestApproveSendsOnlyTheBoundsGiven(t *testing.T) {
 	var body map[string]any
 	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {

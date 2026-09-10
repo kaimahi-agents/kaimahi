@@ -1,7 +1,8 @@
 # Postgres 16: the plane's durable store — credentials (hashes
 # only), budgets, and the append-only spend ledger. The password comes
-# from the kaimahi-pg Secret (created by scripts/plane-secrets.sh —
-# stdin/file-only, never YAML) via POSTGRES_PASSWORD_FILE, so no secret
+# from the kaimahi-pg Secret (created by `kmx plane --step secrets`, also
+# reached through `make plane-secrets`; stdin/file-only, never YAML) via
+# POSTGRES_PASSWORD_FILE, so no secret
 # value appears in this manifest or in `kubectl describe` env listings.
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -62,7 +62,7 @@ func ExpiredMessage(c Credential) string {
 		when = c.ExpiresAt.UTC().Format(time.RFC3339)
 	}
 	return ExpiredPrefix + strconv.Quote(c.Name) + ": it expired at " + when +
-		"; renew it with 'make credential-renew NAME=" + c.Name + " TTL=720h', " +
+		"; renew it with 'kmx credential renew " + c.Name + " --ttl 720h', " +
 		"or re-issue the credential and re-point its Secret"
 }
 

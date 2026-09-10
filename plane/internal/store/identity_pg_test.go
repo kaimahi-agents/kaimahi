@@ -166,7 +166,7 @@ func TestExpiredCredentialResolvesRenewsAndIsListed(t *testing.T) {
 	cred, err := s.CredentialByTokenHash(ctx, h[:])
 	require.NoError(t, err)
 	require.True(t, cred.Expired(time.Now()), "the lookup must still RESOLVE it — an operator told 'unknown token' hunts the wrong problem")
-	require.Contains(t, store.ExpiredMessage(cred), "make credential-renew NAME="+name,
+	require.Contains(t, store.ExpiredMessage(cred), "kmx credential renew "+name+" --ttl 720h",
 		"the refusal has to name the fix, not just the fault")
 
 	listed, err := s.ListCredentials(ctx)

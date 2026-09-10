@@ -22,6 +22,9 @@ var (
 	depKubectl = dependency{"kubectl", "to read and write Kubernetes resources", "https://kubernetes.io/docs/tasks/tools/", []string{"version", "--client"}, true}
 	depKind    = dependency{"kind", "to manage the local Kubernetes cluster", "https://kind.sigs.k8s.io/docs/user/quick-start/#installation", []string{"version"}, true}
 	depHelm    = dependency{"helm", "to install kagent", "https://helm.sh/docs/intro/install/", []string{"version"}, true}
+	depBash    = dependency{"bash", "to run the embedded scripts used by this lift phase", "https://www.gnu.org/software/bash/", []string{"--version"}, false}
+	depPython3 = dependency{"python3", "to render JSON safely in the embedded boundary probe", "https://www.python.org/downloads/", []string{"--version"}, false}
+	depCurl    = dependency{"curl", "to query Azure Managed Prometheus during verification", "https://curl.se/download.html", []string{"--version"}, false}
 	// Go is deliberately NOT fetchable. It is a toolchain and a directory
 	// tree rather than one binary, and only the commands that BUILD the
 	// governance plane need it — `kmx plane`, and `kmx lift`, which builds

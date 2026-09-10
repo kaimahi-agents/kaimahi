@@ -3797,8 +3797,7 @@ Build (D33(5) fixes the scope):
   its own verb, and either way it takes the identical `wait_switched`
   path, because the flake it guards against does not care which name
   reached it.
-- **The Makefile delegates** these targets the way milestone 2's do, and
-  scripts/check-kmx-delegation.py's OWNED map grows to match. One
+- **The Makefile delegates** these targets the way milestone 2's do. One
   implementation per behaviour (D27(1)): say in the PR, per script,
   which one is the implementation and which is a caller.
 
@@ -4865,8 +4864,8 @@ commits contain them.
 Guardrails: change no behaviour. No code moves, no renames, no
 refactoring "while you are in there" — a comment lane that also edits
 logic cannot be reviewed for either. `go test ./...` (root and `plane/`),
-`go vet`, `gofmt`, the doc-link checker, the delegation checker, the
-front-door checker, the Azure-identifier checker and the docs-only guard
+`go vet`, `gofmt`, the doc-link checker, the front-door checker, the
+Azure-identifier checker and the docs-only guard
 meta-check must all still pass, and the CI comment edits must not
 disturb the guard assertions that parse `ci.yml`.
 

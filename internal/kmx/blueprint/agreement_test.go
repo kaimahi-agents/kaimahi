@@ -19,6 +19,7 @@ package blueprint_test
 // stay true.
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -54,7 +55,7 @@ var runCases = []struct {
 	name: "the resumed publish, with the build ids the operator read off the builds",
 	set: map[string]string{"repo": "Contoso/widget", "version": "v1.2.3",
 		"ado_org": "contoso", "ado_project": "widget", "ado_pipelines": "41,42",
-		"ado_builds": "9001,9002"},
+		"ado_builds": "9001,9002", "notes_file": "/tmp/release-notes.md"},
 	want: []string{"propose", "compose", "cut", "build-ado[41]", "build-ado[42]", "watch-ado", "publish"},
 }}
 
@@ -243,12 +244,47 @@ func TestAskingForOneConditionalStepWithoutItsGuardRunsNothing(t *testing.T) {
 	}
 	// Supply it and the same request runs exactly that step.
 	set["ado_org"], set["ado_project"], set["ado_builds"] = "contoso", "widget", "9001"
+	set["notes_file"] = "/tmp/release-notes.md"
 	_, active, err = b.BindRun(set, []string{"publish"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(active, ",") != "publish" {
 		t.Fatalf("`--step publish` with its guard supplied ran %v", active)
+	}
+}
+
+func TestResumedPublishUsesAnExplicitNotesFile(t *testing.T) {
+	b := loadRelease(t)
+	set := map[string]string{
+		"repo": "Contoso/widget", "version": "v1.2.3", "ado_org": "contoso",
+		"ado_project": "widget", "ado_builds": "9001",
+	}
+	if _, _, err := b.BindRun(set, []string{"publish"}); err == nil || !strings.Contains(err.Error(), "notes_file") {
+		t.Fatalf("publish without notes_file error = %v", err)
+	}
+	set["notes_file"] = "/tmp/release-notes.md"
+	v, active, err := b.BindRun(set, []string{"publish"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.Render(v, active, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Steps) != 1 || r.Steps[0].Exec == nil {
+		t.Fatalf("resumed publish rendered %+v", r.Steps)
+	}
+	if got := r.Steps[0].Exec.Env["NOTES_FILE"]; got != "/tmp/release-notes.md" {
+		t.Fatalf("NOTES_FILE = %q", got)
+	}
+	if strings.Contains(r.Steps[0].Exec.Env["NOTES_FILE"], "capture.") {
+		t.Fatal("resumed publish still depends on a process-local capture")
+	}
+	requires := append([]string(nil), r.Steps[0].Exec.Requires...)
+	sort.Strings(requires)
+	if got, want := strings.Join(requires, ","), "az,curl,gh,python3,unzip"; got != want {
+		t.Fatalf("publish dependencies = %q, want %q", got, want)
 	}
 }
 

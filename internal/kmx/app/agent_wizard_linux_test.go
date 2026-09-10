@@ -153,39 +153,43 @@ func TestCreateWizardSignalHelper(t *testing.T) {
 }
 
 func TestCreateWizardPTYSIGTERMRestoresTerminal(t *testing.T) {
-	master, slave := chatPTY(t, 100)
-	before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, executable, "-test.run=^TestCreateWizardSignalHelper$")
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "KMX_WIZARD_SIGNAL_HELPER=1")
-	cmd.Stdin, cmd.Stderr = slave, slave
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = cmd.Process.Kill() }()
-	var captured strings.Builder
-	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Namespace the Orka controller watches") })
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("SIGTERM bypassed cancellation cleanup: %v", err)
-	}
-	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
-	if err != nil || *before != *after {
-		t.Fatalf("SIGTERM did not restore terminal: %v", err)
-	}
-	if stdout.Len() != 0 {
-		t.Fatal("SIGTERM wrote to stdout")
+	for _, signal := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		t.Run(signal.String(), func(t *testing.T) {
+			master, slave := chatPTY(t, 100)
+			before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestCreateWizardSignalHelper$")
+			cmd.Env = append(os.Environ(), "TERM=xterm-256color", "KMX_WIZARD_SIGNAL_HELPER=1")
+			cmd.Stdin, cmd.Stderr = slave, slave
+			var stdout bytes.Buffer
+			cmd.Stdout = &stdout
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = cmd.Process.Kill() }()
+			var captured strings.Builder
+			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Namespace the Orka controller watches") })
+			if err := cmd.Process.Signal(signal); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Wait(); err != nil {
+				t.Fatalf("signal bypassed cancellation cleanup: %v", err)
+			}
+			after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+			if err != nil || *before != *after {
+				t.Fatalf("signal did not restore terminal: %v", err)
+			}
+			if stdout.Len() != 0 {
+				t.Fatal("signal wrote to stdout")
+			}
+		})
 	}
 }

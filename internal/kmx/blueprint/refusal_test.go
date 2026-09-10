@@ -107,8 +107,8 @@ func TestRefusals(t *testing.T) {
 	}, {
 		// A standing constraint ADMITS. A consequential step on a
 		// bounded tool approves a call that was already permitted —
-		// which is the disagreement between scripts/release-bind.sh and
-		// scripts/release-run.sh, caught.
+		// which catches the disagreement between the former release binding
+		// and release driver.
 		name: "a consequential tool may not also carry a standing bound",
 		edit: func(s string) string {
 			return strings.Replace(s, `      thing_read:

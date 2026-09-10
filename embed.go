@@ -33,11 +33,10 @@ import "embed"
 // `make use` and `make use PRESET=anthropic` has always been a documented
 // flow — a `kmx use` that handled only the keyless presets would be a
 // regression the delegating recipe would inherit. This does not put a
-// credential anywhere near kmx: a preset is a ModelConfig that NAMES a
-// Secret (`apiKeySecret`), it never carries a key, and minting that Secret
-// stays outside kmx — `make model-secret`, `make copilot-secret`, the
-// scripts. The one credential kmx does take, it takes at a prompt and writes
-// to a Secret of its own; no manifest here carries a value either way.
+// credential inside a manifest: a preset is a ModelConfig that NAMES a
+// Secret (`apiKeySecret`) and never carries a key. Generic model keys remain
+// checkout-only setup; Copilot's device flow is the focused native exception
+// exposed by `kmx models credential copilot`.
 //
 // k8s/wasm/runtime.yaml is the tool sandbox's runtime: a node installer and
 // the RuntimeClass that selects it. It rides along because `kmx tools

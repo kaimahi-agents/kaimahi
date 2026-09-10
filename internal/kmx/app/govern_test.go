@@ -32,8 +32,17 @@ case "$*" in
 JSON
     exit 0 ;;
   *"get secret kaimahi-admin"*) printf '%s' "$KMX_TEST_ADMIN_B64"; exit 0 ;;
-  *"get secret kaimahi-governed-token"*) printf '%s' "$KMX_TEST_BOUND"; exit 0 ;;
+  *"get secret kaimahi-governed-token"*)
+    if [ "$KMX_TEST_SECRET_EXISTS" != true ]; then
+      printf 'Error from server (NotFound): secrets "kaimahi-governed-token" not found\n' >&2
+      exit 1
+    fi
+    printf '{"metadata":{"annotations":{"kaimahi.dev/credential":"%s"}}}' "$KMX_TEST_BOUND"
+    exit 0 ;;
   *"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_SEAM_TLS"; exit 0 ;;
+  *"get secret "*)
+    printf 'Error from server (NotFound): secret not found\n' >&2
+    exit 1 ;;
   *"get modelconfig custom"*)
     if [ -n "$KMX_TEST_MODEL_ERR" ]; then printf '%s\n' "$KMX_TEST_MODEL_ERR" >&2; exit 1; fi
     printf '%s' "$KMX_TEST_MODEL"; exit 0 ;;
@@ -110,6 +119,11 @@ func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *go
 	t.Setenv("KMX_TEST_ADMIN_B64", base64.StdEncoding.EncodeToString([]byte("admin-bearer")))
 	t.Setenv("KMX_TEST_ADMIN_PORT", u.Port())
 	t.Setenv("KMX_TEST_BOUND", os.Getenv("KMX_TEST_BOUND"))
+	if os.Getenv("KMX_TEST_BOUND") != "" {
+		t.Setenv("KMX_TEST_SECRET_EXISTS", "true")
+	} else {
+		t.Setenv("KMX_TEST_SECRET_EXISTS", os.Getenv("KMX_TEST_SECRET_EXISTS"))
+	}
 	t.Setenv("KMX_TEST_SEAM_TLS", seamTLSSecret(t))
 
 	cfg := &config.Config{
@@ -442,8 +456,112 @@ func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 	}
 }
 
+func TestCredentialIssueStoresTokenWithGovernSafetyWithoutLoggingIt(t *testing.T) {
+	token := "kmh_" + strings.Repeat("e", 64)
+	var request map[string]any
+	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode issue request: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	})
+	ttl := int64(3600)
+	if err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, "jobs", &ttl); err != nil {
+		t.Fatalf("issue to Secret: %v", err)
+	}
+	if request["name"] != "batch-agent" || request["ttl_seconds"] != float64(3600) {
+		t.Fatalf("issue request=%v", request)
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(token))
+	for _, want := range []string{
+		"namespace: jobs",
+		`kaimahi.dev/credential: "batch-agent"`,
+		"api-key: " + encoded,
+	} {
+		if !strings.Contains(f.piped(), want) {
+			t.Errorf("Secret manifest lacks %q:\n%s", want, f.piped())
+		}
+	}
+	if strings.Contains(f.piped(), "kaimahi.dev/chat-agent") {
+		t.Errorf("generic Secret was spuriously bound to an agent:\n%s", f.piped())
+	}
+	if !strings.Contains(f.args(), "-n jobs apply -f -") {
+		t.Errorf("Secret was not applied in the requested namespace:\n%s", f.args())
+	}
+	for label, output := range map[string]string{"stdout": f.out.String(), "stderr": f.errOut.String(), "arguments": f.args()} {
+		if strings.Contains(output, token) || strings.Contains(output, encoded) {
+			t.Errorf("token leaked through %s:\n%s", label, output)
+		}
+	}
+}
+
+func TestCredentialIssueChecksSecretBindingBeforePost(t *testing.T) {
+	t.Setenv("KMX_TEST_BOUND", "other-agent")
+	posted := false
+	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		posted = true
+		w.WriteHeader(http.StatusCreated)
+	})
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	if err == nil || !strings.Contains(err.Error(), `not "batch-agent"`) {
+		t.Fatalf("wrong binding error: %v", err)
+	}
+	if posted {
+		t.Fatal("credential was issued before the conflicting Secret binding was checked")
+	}
+}
+
+func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
+	t.Setenv("KMX_TEST_SECRET_EXISTS", "true")
+	posted := false
+	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		posted = true
+		w.WriteHeader(http.StatusCreated)
+	})
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	if err == nil || !strings.Contains(err.Error(), "without a kaimahi.dev/credential binding") {
+		t.Fatalf("wrong unbound Secret error: %v", err)
+	}
+	if posted {
+		t.Fatal("credential was issued before the existing Secret identity was validated")
+	}
+}
+
+func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
+	t.Setenv("KMX_TEST_BOUND", "batch-agent")
+	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"credential exists"}`))
+	})
+	if err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+		t.Fatalf("reconcile matching credential: %v", err)
+	}
+	if !strings.Contains(f.errOut.String(), "keeping both") {
+		t.Errorf("matching identity was not reported as reconciled:\n%s", f.errOut.String())
+	}
+	if strings.Contains(f.piped(), "kind: Secret") {
+		t.Errorf("409 reconciliation unexpectedly rotated the Secret:\n%s", f.piped())
+	}
+}
+
+func TestCredentialIssueNeverPrintsUnexpectedResponseBody(t *testing.T) {
+	token := "kmh_" + strings.Repeat("f", 64)
+	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"token":"` + token + `"}`))
+	})
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 502") {
+		t.Fatalf("unexpected issue error: %v", err)
+	}
+	if strings.Contains(err.Error(), token) || strings.Contains(f.errOut.String(), token) || strings.Contains(f.out.String(), token) {
+		t.Fatal("unexpected credential response body leaked its token")
+	}
+}
+
 // A credential name is interpolated into JSON and a query string. The
-// script's check_name is kept because the plane validating again is a second
+// The command's name check is kept because the plane validating again is a second
 // line, not the first.
 func TestCredentialNamesAreValidated(t *testing.T) {
 	for _, bad := range []string{"", "Hello", "hello world", "hello/../x", `hello"`, "hello.world"} {

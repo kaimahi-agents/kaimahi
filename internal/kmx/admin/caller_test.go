@@ -3,9 +3,6 @@ package admin
 import (
 	"bytes"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -131,39 +128,9 @@ func TestAHostileCallerNameCannotBreakTheRenderedTable(t *testing.T) {
 	}
 }
 
-// TestTheTwoRenderersAgreeByteForByte runs the shell renderer's own
-// python block and this package's Go one over the same document and
-// requires identical bytes.
-//
-// The format-string test below catches a width that drifts. This catches
-// the harder half: the two now ESCAPE a hostile cell rather than
-// stripping it, and Go's strconv.Quote and Python's repr() disagree on
-// the quote character and the escape forms — so the scheme is spelled
-// out twice and only running both proves they agree. The fixture is
-// deliberately nasty: a newline, a tab, a quote, a backslash, a
-// zero-width space, a multibyte name and a value long enough to clip.
-func TestTheTwoRenderersAgreeByteForByte(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available; the shell renderer cannot be run")
-	}
-	script, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "plane-admin.sh"))
-	if err != nil {
-		t.Fatalf("read plane-admin.sh: %v", err)
-	}
-	// Lift the tool-audit view's python block out of its heredoc.
-	block := string(script)
-	start := strings.Index(block, "  tool-audit)")
-	if start < 0 {
-		t.Fatal("plane-admin.sh has no tool-audit block")
-	}
-	block = block[start:]
-	from := strings.Index(block, "import json, sys")
-	to := strings.Index(block, "\nEOF\n")
-	if from < 0 || to < 0 || to < from {
-		t.Fatal("cannot delimit the tool-audit python block")
-	}
-	py := block[from:to]
-
+// The renderer must keep every record on one physical line, visibly escape
+// hostile cells, and clip caller fields without making them look complete.
+func TestToolAuditEscapesAndClipsHostileCells(t *testing.T) {
 	doc := `{"entries": [
 	  {"created_at": "2026-09-08T13:58:28Z", "credential": "ap-agent", "upstream": "erp",
 	   "method": "tools/call", "tool": "invoice_get", "decision": "allowed", "status": 200,
@@ -179,20 +146,6 @@ func TestTheTwoRenderersAgreeByteForByte(t *testing.T) {
 	   "caller_claim": "legacy", "caller_addr": "legacy"}
 	]}`
 
-	dir := t.TempDir()
-	docPath := filepath.Join(dir, "doc.json")
-	if err := os.WriteFile(docPath, []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	pyPath := filepath.Join(dir, "render.py")
-	if err := os.WriteFile(pyPath, []byte(py), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	shellOut, err := exec.Command("python3", pyPath, docPath).CombinedOutput()
-	if err != nil {
-		t.Fatalf("shell renderer failed: %v\n%s", err, shellOut)
-	}
-
 	c, _ := open(t, health(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(doc))
 	}))
@@ -201,51 +154,22 @@ func TestTheTwoRenderersAgreeByteForByte(t *testing.T) {
 		t.Fatalf("ToolAudit: %v", err)
 	}
 
-	if goOut.String() != string(shellOut) {
-		t.Errorf("the two renderers disagree.\n--- go ---\n%s\n--- shell ---\n%s", goOut.String(), shellOut)
+	got := goOut.String()
+	if lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n"); len(lines) != 4 {
+		t.Fatalf("header plus three one-line records expected, got %d lines:\n%s", len(lines), got)
 	}
-	// And the hostile cells really were escaped, so this is not two
-	// renderers agreeing on having done nothing.
 	for _, want := range []string{
 		`"invoice_get\ttrailing"`, // a tab, which would have padded into a lookalike
 		"\\u200b\"",               // a zero-width space, invisible if it were passed through
 		`" openai"`,               // a leading space, which would render as the real name
+		`"quote \" and backslash \\ and newline \n here"`,
+		"fe80::1ff:fe23:…",
 	} {
-		if !strings.Contains(goOut.String(), want) {
-			t.Errorf("the fixture's hostile cell %s was not escaped:\n%s", want, goOut.String())
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered audit lacks %q:\n%s", want, got)
 		}
 	}
-}
-
-// The two renderers are one specification in two languages, and the file
-// comment on views.go says so. This holds them to it: every format string
-// here is the shell's, character for character. A width that drifts in one
-// and not the other is a broken pipeline in whichever half CI does not run.
-func TestTheFormatStringsAreTheScriptsVerbatim(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "plane-admin.sh"))
-	if err != nil {
-		t.Fatalf("read plane-admin.sh: %v", err)
-	}
-	script := string(raw)
-	for name, format := range map[string]string{
-		"ledger":     ledgerFmt,
-		"tool-audit": toolFmt,
-		"grants":     grantsFmt,
-		"approvals":  approvalFmt,
-		"pending":    pendingFmt,
-	} {
-		want := `fmt = "` + strings.TrimSuffix(format, "\n") + `"`
-		if !strings.Contains(script, want) {
-			t.Errorf("%s: plane-admin.sh does not carry the Go renderer's format\n  want line: %s", name, want)
-		}
-	}
-	// And the headers, which are what an operator and a grep both read.
-	for _, header := range []string{
-		`"status", "caller (claimed)", "from (observed)", "acted for"`,
-		`"call", "caller (claimed)", "from (observed)", "acted for"`,
-	} {
-		if !strings.Contains(script, header) {
-			t.Errorf("plane-admin.sh does not carry the header %s", header)
-		}
+	if !regexp.MustCompile(`(?m)legacy +legacy +none *$`).MatchString(got) {
+		t.Errorf("caller columns no longer precede the trailing acted-for column:\n%s", got)
 	}
 }

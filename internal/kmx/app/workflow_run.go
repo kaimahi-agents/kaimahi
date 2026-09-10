@@ -2,8 +2,7 @@ package app
 
 // ONE driver, for every blueprint.
 //
-// scripts/release-run.sh is 556 lines, and almost none of it is about
-// releases. What it actually encodes is a set of properties that any
+// The former release-specific driver established a set of properties that any
 // governed workflow needs, and this is those properties, once:
 //
 //   - THE DRIVER FILES THE APPROVAL REQUEST, for the call the operator's
@@ -59,9 +58,10 @@ const DefaultWorkflowAdminPort = "19291"
 // RunOptions are `kmx workflow run`'s knobs.
 type RunOptions struct {
 	WorkflowOptions
-	// Step runs one step only, by name. It is how a run is resumed after
-	// an expired credential, a failed build, or a person going home.
-	Step string
+	// Steps limits the run to these steps, in blueprint order. It is how a
+	// run is resumed after an expired credential, a failed build, or a
+	// person going home.
+	Steps []string
 	// DryRun reads and drafts and stops before the first consequential
 	// or bounded call. Nothing is created and nothing in the cluster is
 	// written to — including the seam credentials a live run re-mints,
@@ -83,11 +83,20 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 		return err
 	}
 	steps := b.StepNames()
-	if opt.Step != "" {
-		if !containsString(steps, opt.Step) {
-			return fmt.Errorf("blueprint %q has no step %q (it has: %s)", b.Name, opt.Step, strings.Join(steps, ", "))
+	if len(opt.Steps) > 0 {
+		selected := map[string]bool{}
+		for _, step := range opt.Steps {
+			if !containsString(steps, step) {
+				return fmt.Errorf("blueprint %q has no step %q (it has: %s)", b.Name, step, strings.Join(steps, ", "))
+			}
+			selected[step] = true
 		}
-		steps = []string{opt.Step}
+		steps = steps[:0]
+		for _, step := range b.StepNames() {
+			if selected[step] {
+				steps = append(steps, step)
+			}
+		}
 	}
 	// BindRun, not Bind: which steps are in this run is decided by the
 	// same parameters that are being bound, and binding every step
@@ -227,6 +236,38 @@ func (a *App) RunWorkflow(name string, opt RunOptions) error {
 	return client.ApprovalAudit(a.Out, b.Credential)
 }
 
+// RefreshWorkflow refreshes the expiring credentials declared by a
+// blueprint without inventing a synthetic workflow step or running an agent.
+func (a *App) RefreshWorkflow(name string, opt WorkflowOptions) error {
+	b, err := loadBlueprint(name, opt)
+	if err != nil {
+		return err
+	}
+	names := refreshingSeams(b)
+	if len(names) == 0 {
+		return fmt.Errorf("blueprint %q declares no expiring seam credentials to refresh", b.Name)
+	}
+	if err := a.preflight(depKubectl); err != nil {
+		return err
+	}
+	if err := a.Guard(fmt.Sprintf("refresh the expiring seam credentials for the %q workflow", b.Name),
+		"kmx workflow refresh "+name); err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "kmx-refresh")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	r := &workflowRun{app: a, bundle: b, dir: dir, strictRefresh: true}
+	for _, seam := range names {
+		if err := r.refreshSeam(seam); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // guardList names each step asked for that a `when:` left out, with the
 // flag that turns it on. "Nothing ran" is only a usable message if it
 // says what would have made something run.
@@ -256,6 +297,9 @@ type workflowRun struct {
 	// so a five-step workflow does not mint five tokens for one seam
 	// inside a minute.
 	refreshed map[string]time.Time
+	// strictRefresh is set by `workflow refresh`: unlike a workflow run,
+	// that command has no useful fallback work if refreshing does nothing.
+	strictRefresh bool
 }
 
 // preflightRequirements names every binary a step will need, before any
@@ -266,10 +310,16 @@ type workflowRun struct {
 // nothing and adds a supply chain. They are required and named.
 func (r *workflowRun) preflightRequirements() error {
 	want := map[string][]string{}
+	execWant := map[string]bool{}
 	for _, s := range r.rendered.Steps {
 		if s.Exec != nil {
+			if s.Exec.Script != "" {
+				want["bash"] = append(want["bash"], s.Label)
+				execWant["bash"] = true
+			}
 			for _, bin := range s.Exec.Requires {
 				want[bin] = append(want[bin], s.Label)
+				execWant[bin] = true
 			}
 		}
 	}
@@ -283,26 +333,27 @@ func (r *workflowRun) preflightRequirements() error {
 			}
 		}
 	}
-	var missing []string
+	var missing, warnings []string
 	for _, bin := range sortedAny(want) {
 		if _, err := exec.LookPath(bin); err != nil {
-			missing = append(missing, fmt.Sprintf("%s — needed for %s", bin, strings.Join(want[bin], ", ")))
+			message := fmt.Sprintf("%s — needed for %s", bin, strings.Join(want[bin], ", "))
+			if execWant[bin] {
+				missing = append(missing, message)
+			} else {
+				warnings = append(warnings, message)
+			}
 		}
 	}
-	if len(missing) == 0 {
-		return nil
+	if len(missing) > 0 {
+		return fmt.Errorf("workflow dependencies are not on PATH; no step was run:\n  %s", strings.Join(missing, "\n  "))
 	}
-	// A missing refresh binary is a warning, not a failure: the shell
-	// driver this replaces leaves the stored credential in place and
-	// carries on, and a run
-	// that started five minutes ago should not die because `az` is
-	// absent when the token in custody is still good.
-	r.app.notef("NOTE: not on PATH:")
-	for _, m := range missing {
-		r.app.notef("  %s", m)
+	if len(warnings) > 0 {
+		r.app.notef("NOTE: not on PATH:")
+		for _, warning := range warnings {
+			r.app.notef("  %s", warning)
+		}
+		r.app.notef("Credential refresh is best-effort during a workflow run; the stored credential remains in place.")
 	}
-	r.app.notef("kmx does not fetch these — they are your own logged-in tools, and a fresh download would have")
-	r.app.notef("nobody logged into it. A step that needs one will say so when it gets there.")
 	return nil
 }
 
@@ -350,8 +401,8 @@ func (r *workflowRun) turnStep(s blueprint.RenderedStep) error {
 }
 
 // turn runs one agent turn and returns its reply. A turn only counts if
-// the task completed WITH a reply: an earlier version of
-// scripts/release-run.sh printed a note and returned success on a failed
+// the task completed WITH a reply: an earlier version of the former release
+// driver printed a note and returned success on a failed
 // turn, which is the exact thing this repository's agent brief forbids,
 // in the code that enforces it.
 // retryPolicyFor picks the transport-retry class a step's turn may use.
@@ -946,6 +997,9 @@ func (r *workflowRun) exec(s blueprint.RenderedStep, args []string) error {
 	default:
 		bin, argv = s.Exec.Command[0], append(append([]string{}, s.Exec.Command[1:]...), args...)
 	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return fmt.Errorf("step %q needs %s on PATH and it is not there", s.Label, bin)
+	}
 	for _, need := range s.Exec.Requires {
 		if _, err := exec.LookPath(need); err != nil {
 			return fmt.Errorf("step %q needs %s on PATH and it is not there. kmx does not fetch it: it is your "+
@@ -1055,15 +1109,24 @@ func (r *workflowRun) refreshSeam(name string) error {
 		return nil
 	}
 	if _, err := exec.LookPath(ref.Requires); err != nil {
+		if r.strictRefresh {
+			return fmt.Errorf("%s is not on PATH; cannot refresh the %s credential", ref.Requires, name)
+		}
 		r.app.notef("%s is not on PATH — leaving the %s credential as it is (%s)", ref.Requires, name, ref.Why)
 		return nil
 	}
 	out, err := r.app.Run.Capture(ref.Command[0], ref.Command[1:]...)
 	if err != nil {
+		if r.strictRefresh {
+			return fmt.Errorf("could not mint a %s credential: %w", name, err)
+		}
 		r.app.notef("could not mint a %s credential (%v); the stored one stays in place", name, err)
 		return nil
 	}
 	if strings.TrimSpace(out) == "" {
+		if r.strictRefresh {
+			return fmt.Errorf("%s returned nothing for the %s credential", ref.Requires, name)
+		}
 		r.app.notef("%s returned nothing for the %s credential; the stored one stays in place", ref.Requires, name)
 		return nil
 	}

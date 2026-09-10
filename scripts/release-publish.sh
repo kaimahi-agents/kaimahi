@@ -36,7 +36,7 @@
 # KEEP or skip with its size. `--list` stops there, and the driver runs
 # it BEFORE asking for approval so the person deciding has seen the list.
 #
-# Usage (via scripts/release-run.sh STEP=publish):
+# Usage (invoked internally by `kmx workflow run release`):
 #   GITHUB_REPO=owner/name VERSION=v1.2.3 NOTES_FILE=notes.md \
 #   ADO_ORG=org ADO_PROJECT=proj ADO_BUILDS=1,2,3 [ADO_ARTIFACTS=...] \
 #   [ASSET_GLOBS='*.dmg,*.exe'] release-publish.sh [--list]
@@ -62,7 +62,10 @@ api="https://dev.azure.com/$ado_org/$ado_project/_apis"
 
 command -v az >/dev/null || { echo 'az is required to read Azure DevOps artifacts' >&2; exit 1; }
 command -v gh >/dev/null || { echo 'gh is required to create the GitHub release' >&2; exit 1; }
+command -v curl >/dev/null || { echo 'curl is required to read and download Azure DevOps artifacts' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'python3 is required to read Azure DevOps API responses' >&2; exit 1; }
 command -v unzip >/dev/null || { echo 'unzip is required to unpack an Azure DevOps artifact' >&2; exit 1; }
+[ -r "$notes_file" ] || { echo "NOTES_FILE is not readable: $notes_file" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

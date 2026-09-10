@@ -3,14 +3,14 @@
 #
 # Custody: the REAL Copilot token lives only in the kaimahi namespace
 # (Secret kaimahi-copilot-token, mounted to the proxy — mint it with
-# `make plane-copilot-secret`). This preset's apiKeySecret is the
+# `kmx models credential copilot`). This preset's apiKeySecret is the
 # Kaimahi-issued opaque token; the agent never holds the real key. The
 # proxy injects the real token upstream and counts every request's
 # tokens in the ledger (metered classification — no per-token price is
 # invented; configure one in k8s/plane/upstreams.yaml to bill cents).
 #
 # That endpoint's caveats still apply: undocumented API surface; the token
-# expires — re-run `make plane-copilot-secret` to rotate (the proxy reads
+# expires — re-run `kmx models credential copilot` to rotate (the proxy reads
 # it per request; no restart needed).
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig

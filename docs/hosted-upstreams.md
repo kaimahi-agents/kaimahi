@@ -44,9 +44,8 @@ Three things are new, and each is a separate opt-in:
   a plane-side Secret in `credential_file`. It is committed, so the
   plane always knows the entry and vets its host at boot; without the
   Secret and the allowance below, a call to it fails closed.
-- **The credential.** `kmx credential capture github owner/name` (or
-  `make github-secret GITHUB_REPO=owner/name`, which is the same command)
-  reads a fine-grained, read-only, one-repository token AT A PROMPT,
+- **The credential.** `kmx credential capture github owner/name` reads a
+  fine-grained, read-only, one-repository token AT A PROMPT,
   proves it can read that repository, and stores it as
   `kaimahi/kaimahi-github-pat`. The gateway injects it per request.
   `make github-revoke` deletes it.
@@ -57,9 +56,10 @@ Three things are new, and each is a separate opt-in:
   applies it for you, because a stored credential the gateway cannot
   reach the internet with is a credential that cannot be used.
 
-Then `make govern-github` issues the agent's credential with a read-only
-allowlist and puts `hello-github` behind the seam, and
-`make github-ask GITHUB_REPO=owner/name` asks it what is open.
+The remaining `hello-github` setup is a **checkout-only repository demo**:
+`make govern-github` issues the agent's credential with a read-only allowlist
+and applies manifests that installed `kmx` does not carry; `make github-ask
+GITHUB_REPO=owner/name` drives that demo agent.
 
 ## Custody
 
@@ -190,21 +190,23 @@ is in the PR that shipped this page.
 ## From zero
 
 ```sh
-make up && make plane
-make plane-copilot-secret                      # the demo agent thinks on governed Copilot
-make govern                                    # the governed presets
-make github-secret GITHUB_REPO=owner/name      # paste the fine-grained token; applies the allowance
-make govern-github                             # credential, read-only allowlist, seam, agent
-make github-ask GITHUB_REPO=owner/name         # "what is open on …?"
-make github-audit                              # allowed 200 rows for list_issues / list_pull_requests
+kmx up && kmx plane
+kmx models credential copilot                  # demo agent thinks on governed Copilot
+kmx govern
+kmx credential capture github owner/name       # prompt; applies the allowance
+
+# Checkout-only repository demo orchestration: applies hello-github manifests.
+make govern-github
+make github-ask GITHUB_REPO=owner/name
+kmx audit tool hello-github
 ```
 
 Ask it to create an issue and the call is denied and a request is filed
-(`make approvals`); an approval would mint a bounded grant for
+(`kmx approvals`); an approval would mint a bounded grant for
 `issue_write` exactly as in [approvals.md](approvals.md), and a granted
 write would still stop at GitHub, because the token is read-only. When
-done: `make github-down` removes the agent and the seam;
-`make github-revoke` deletes the token and closes the allowance.
+done, the checkout-only `make github-down` removes the demo agent and seam;
+`make github-revoke` deletes its token and closes its allowance.
 
 ## How to add another hosted server
 

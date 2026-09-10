@@ -28,12 +28,12 @@ tools. Pick a cluster name of your own and pass it to every command:
 (`AKS_RESOURCE_GROUP`, `ACR_NAME`, `AKS_CLUSTER`, `AKS_LOCATION`,
 `TARGET=aks`). Two traps that have cost people time:
 
-- Your `gh` login is not a Copilot login. `make plane-copilot-secret`
+- Your `gh` login is not a Copilot login. `kmx models credential copilot`
   runs GitHub's device flow (open the URL, type the code) because the
   gh CLI's token is refused by the Copilot exchange. Details in
   [models.md](models.md#github-models-is-retired-the-copilot-subscription-path-replaces-it).
 - The Copilot token expires within hours. If the agent starts failing
-  auth mid-demo, re-run `make plane-copilot-secret`; no restart needed.
+  auth mid-demo, re-run `kmx models credential copilot`; no restart needed.
 
 **Slack (AKS only):** a Slack app in a workspace you control, with the
 bot scopes in [slack.md](slack.md#credential-custody) plus
