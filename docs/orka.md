@@ -148,6 +148,23 @@ $ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 The fourth command is the one that governs anything. The first three are the
 front door.
 
+## Authoring an agent for Orka
+
+Installing Orka and authoring an agent are separate steps. `kmx agent create`
+continues to emit `kagent.dev/v1alpha2` resources for kagent; installing Orka
+neither converts those files nor changes that command's output.
+
+For a new Orka-native agent, author Orka's `core.orka.ai/v1alpha1` `Agent`
+and `Provider` resources and invoke it with an Orka `Task`. Use the schemas
+and examples from the Orka version you install, rather than assuming that
+its `main` branch describes the release pinned here.
+
+For an application image you already operate, keep its Deployment under your
+own management. [`kmx migrate`](migrate.md) describes the model-traffic path
+for supported applications. That path does not register the application as
+an Orka `Agent` or turn its requests into Orka `Task` resources. The migration
+guide records the exercised behavior and its limits.
+
 ## Limits, stated
 
 - **One pinned version.** `v0.1.3`. A newer Orka means editing the constant
