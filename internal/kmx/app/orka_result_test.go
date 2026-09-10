@@ -292,7 +292,10 @@ func TestOrkaResultReadFailuresAreBoundedAndDoNotResubmit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			// Reach the actual result boundary even when the real preflight
+			// subprocesses are race-instrumented. The Task-write assertion below
+			// still refuses a timeout that happened before execution.
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			err = a.createOrkaOnline(ctx, opt, bundle)
 			if err == nil {

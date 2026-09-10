@@ -164,7 +164,9 @@ func TestOrkaStaleReadinessStopsAtDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	// Include the real executable-boundary preflight: race-instrumented
+	// helper startup alone can exceed a second before the Ready poll begins.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	err = a.createOrkaOnline(ctx, opt, bundle)
 	if err == nil || !strings.Contains(err.Error(), "Ready") {
@@ -304,7 +306,9 @@ func TestOrkaUnreadyAgentAndUnavailableResultBlockLaterSteps(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			// The budget includes schema/preflight subprocesses, not only the
+			// blocked wait. Keep room for instrumented helper startup under -race.
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			if err := a.createOrkaOnline(ctx, opt, bundle); err == nil {
 				t.Fatal("unready dependency or unavailable result accepted")
