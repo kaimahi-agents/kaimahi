@@ -72,6 +72,13 @@ type App struct {
 	// process, so a multi-step command asks at most once — the same
 	// once-per-invocation behaviour make gives the `guard` prerequisite.
 	guarded bool
+
+	// orkaInstaller and orkaInstallerDigest point `kmx orka install` at a
+	// test origin serving bytes a test can pin. Both are empty in every
+	// real invocation, which is what keeps the shipped pin the only one:
+	// no flag, environment variable or file can move it.
+	orkaInstaller       string
+	orkaInstallerDigest string
 }
 
 // New builds an App around the process's own streams.

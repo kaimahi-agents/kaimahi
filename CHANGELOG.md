@@ -24,6 +24,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`kmx orka install` installs Orka, from a cluster with nothing on it and
+  with no API key anywhere.** Orka assumes a cluster, publishes no CLI binary
+  and no GitHub Release, and asks an operator to create a shared bearer token
+  by hand before applying its manifest — an install that skips that step comes
+  up and never becomes ready. One command now fetches their `deploy/orka.yaml`
+  at a pinned tag, **refuses bytes that do not hash to the digest kmx pins**,
+  creates that Secret first and never replaces an existing one, applies their
+  installer unmodified, waits for both Deployments, and creates a keyless
+  `Provider` at the in-cluster model server so their fourth prerequisite is not
+  one. `kmx orka status` reports the pinned version, both Deployments, the CRD
+  count and the Providers — saying "none — a model call would be refused"
+  rather than leaving an empty column, and reporting an unreadable cluster as
+  unread rather than as absent. The bytes stay theirs: the manifest is fetched,
+  never vendored, and nothing in Orka is modified. **Installing governs
+  nothing, and the command says so** — `kmx migrate` is what puts an
+  application's model traffic on the seam ([docs/orka.md](docs/orka.md)).
+
 - **`kmx migrate` puts an application you did not write onto Orka, with
   its model traffic governed and without changing the application.** One
   command reads what the workload reads today (including variables that
