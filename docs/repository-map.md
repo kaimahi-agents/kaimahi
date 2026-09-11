@@ -70,7 +70,7 @@ fixture directories below are not additional Go packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 48 | Installed | Command orchestration and shell-outs, including native Orka create/readiness/Task-result handling. |
+| `kmx/app` | 49 | Installed | Command orchestration and shell-outs, including native Orka create/readiness/Task-result handling. |
 | `kmx/admin` | 5 | Installed | Legacy plane admin API client. |
 | `kmx/blueprint` | 5 | Installed | Existing declarative governed-workflow format. |
 | `kmx/scaffold` | 11 | Installed | Native Orka bundles, retained kagent editing and onboarding artifacts; not a decision on the future authoring format. |

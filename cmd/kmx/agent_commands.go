@@ -10,8 +10,30 @@ import (
 
 func newAgentCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Create, inspect, edit, and chat with agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentCreateCommand(state), newAgentEditCommand(state), newAgentChatCommand(state))
+	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentEditCommand(state), newAgentChatCommand(state))
 	return group
+}
+
+// newAgentShowCommand answers one question: will this agent work, and if
+// not, which hop is broken.
+//
+// `list` is the inventory and this is the chain. They are separate verbs
+// because an Agent's own object says nothing about the Provider that refuses
+// its model calls, and joining three kinds by hand is the assembly an
+// operator gets wrong under pressure.
+func newAgentShowCommand(state *commandState) *cobra.Command {
+	var opt app.ShowOptions
+	cmd := &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show an Orka Agent and the chain it depends on",
+		Args:  usageArgs(1, 1, "kmx agent show <name> --namespace <namespace>"),
+	}
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace the Orka controller watches (required)")
+	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json")
+	cmd.Flags().IntVar(&opt.Tasks, "tasks", 5, "how many recent Tasks to read back")
+	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json"}))
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.ShowAgent(cmd.Flags().Arg(0), opt) })
+	return cmd
 }
 
 func newAgentListCommand(state *commandState) *cobra.Command {

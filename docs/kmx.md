@@ -105,6 +105,7 @@ repeatable to select multiple steps.
 | `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
 | `kmx lift` / `kmx lift down` | AKS legacy kagent/Copilot journey and owned cleanup; selected infrastructure phases support migration. [AKS](aks.md) |
 | `kmx agent list` | readiness, acceptance, ModelConfig, tool wiring; table/JSON/YAML |
+| `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
 | `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` for sessions, `--json` for raw one-shot task |
 | `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |

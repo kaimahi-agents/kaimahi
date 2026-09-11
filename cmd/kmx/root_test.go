@@ -113,7 +113,7 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent edit", "agent list",
+		"agent", "agent chat", "agent create", "agent edit", "agent list", "agent show",
 		"approvals", "approve", "audit", "backup", "budget", "completion",
 		"credential", "credential capture", "credential issue", "credential renew", "credentials",
 		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
