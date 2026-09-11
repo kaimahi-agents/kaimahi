@@ -86,6 +86,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newQuickstartCommand(state), newUpCommand(state), newLiftCommand(state),
 		newPlaneCommand(state), newGovernCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newGrantsCommand(state), newAuditCommand(state), newFlowCommand(state),
+		newWatchCommand(state),
 		newUseCommand(state),
 		newBudgetCommand(state), newApprovalsCommand(state), newApproveCommand(state), newDenyCommand(state),
 		newRequestCommand(state), newToolsCommand(state), newModelsCommand(state), newMigrateCommand(state),

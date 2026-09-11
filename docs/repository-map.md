@@ -53,7 +53,7 @@ before its counts describe the intended tree.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | The CLI, including tests. Existing commands include legacy plane operations; their presence is not the current platform definition. |
+| `cmd/kmx` (21 files) | **Installed** | The CLI, including tests. Existing commands include legacy plane operations; their presence is not the current platform definition. |
 | `cmd/demo/kaimahi-erp` (2 files) | **Demonstration** | A fake accounts-payable ERP, applied by `k8s/erp-mcp.yaml` via `scripts/erp-deploy.sh`. |
 
 ## `internal/` — packages in the existing CLI
@@ -70,8 +70,8 @@ fixture directories below are not additional Go packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 49 | Installed | Command orchestration and shell-outs, including native Orka create/readiness/Task-result handling. |
-| `kmx/admin` | 5 | Installed | Legacy plane admin API client. |
+| `kmx/app` | 50 | Installed | Command orchestration and shell-outs, including native Orka create/readiness/Task-result handling. |
+| `kmx/admin` | 6 | Installed | Legacy plane admin API client. |
 | `kmx/blueprint` | 5 | Installed | Existing declarative governed-workflow format. |
 | `kmx/scaffold` | 11 | Installed | Native Orka bundles, retained kagent editing and onboarding artifacts; not a decision on the future authoring format. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, fixture attribution and upstream license. |

@@ -77,6 +77,7 @@ These are the present seam implementation, including the bridge used by migrate.
 | `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
 | `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
 | `kmx flow [credential]` | model/tool/approval/inbound trails, oldest first; all credentials by default; **timeline, not causal trace** |
+| `kmx watch [credential]` | the same four trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
 | `kmx audit tool\|approval [credential]` / `kmx grants [credential]` | trails / grant liveness; all credentials by default |
 | `kmx audit inbound [hook]` | inbound audit, optionally filtered by hook rather than credential |
 | `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |

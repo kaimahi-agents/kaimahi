@@ -123,7 +123,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"restore", "status",
 		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
 		"tools sandbox", "tools sandbox status", "tools sidecar", "tools ungovern",
-		"up", "use", "version",
+		"up", "use", "version", "watch",
 		"workflow", "workflow govern", "workflow list", "workflow refresh", "workflow run", "workflow show",
 	}
 	sort.Strings(want)
