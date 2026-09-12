@@ -11,8 +11,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// Flow merges the model ledger and approval history into one timeline.
-// These are the same records `kmx ledger` and `kmx audit approval` expose.
+// Flow reads the model ledger as a timeline.
+// These are the same records `kmx ledger` exposes.
 // They share credential and timestamp, not a correlation id: ordering must
 // not imply causality when concurrent turns interleave.
 
@@ -33,13 +33,12 @@ type cutoff struct {
 	limit int
 }
 
-// flowEvent is one thing that happened, flattened out of whichever trail
-// recorded it so both can be sorted together.
+// flowEvent is one model call, flattened for chronological rendering.
 type flowEvent struct {
 	at          time.Time // parsed for ordering
 	raw         string    // as the plane sent it, for printing
 	cred        string    // which identity did this; every trail records it
-	kind        string    // model | approval
+	kind        string    // model
 	what        string
 	outcome     string
 	cents       string
@@ -48,7 +47,7 @@ type flowEvent struct {
 	denied      bool
 }
 
-// Flow prints one credential's merged trail, oldest first.
+// Flow prints one credential's model trail, oldest first.
 //
 // Oldest first is deliberate, and is the one place this view departs from its
 // neighbours. The other tables are newest-first because they answer "what is
@@ -63,18 +62,13 @@ func (c *Client) Flow(out io.Writer, credential string) error {
 	return nil
 }
 
-// flowEvents gathers both trails through the same admin session.
-// An empty trail contributes nothing; an unreadable one fails the reading
-// rather than passing for no activity.
+// flowEvents reads the ledger through the admin session.
+// An unreadable ledger fails the reading rather than passing for no activity.
 func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 	cred := url.QueryEscape(credential)
 	limit := fmt.Sprintf("&limit=%d", flowLimit)
 
 	ledger, err := c.Get("ledger", "/admin/ledger?credential="+cred+limit)
-	if err != nil {
-		return nil, nil, err
-	}
-	approval, err := c.Get("approval-audit", "/admin/approval-audit?credential="+cred+limit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,19 +89,14 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 		}
 	}
 	collect(ledger, "model")
-	collect(approval, "approval")
 
 	return trimToComplete(events, saturated)
 }
 
 // trimToComplete drops the part of the timeline we cannot vouch for.
 //
-// Each trail is fetched with its own limit, so they do not reach equally far
-// back. If approval history is saturated at 09:00 and the ledger reaches to
-// 07:00, then everything before 09:00 shows model calls with approval history
-// missing — a picture that reads like a complete account precisely where the
-// evidence is thinnest. The window therefore starts at the latest point every
-// saturated source still covers, and the caller is told the window was cut.
+// A saturated ledger page may omit older calls. Keep the existing cutoff
+// handling and disclose the fetched limit rather than imply a complete history.
 func trimToComplete(events []flowEvent, saturated []cutoff) ([]flowEvent, []string, error) {
 	sort.SliceStable(events, func(i, j int) bool { return events[i].at.Before(events[j].at) })
 	if len(saturated) == 0 {
@@ -136,36 +125,22 @@ func trimToComplete(events []flowEvent, saturated []cutoff) ([]flowEvent, []stri
 	return kept, []string{note}, nil
 }
 
-// flowEventFrom flattens one audit row. Each trail names its own columns, and
-// the point of the flow view is that the reader should not have to know which
-// trail a line came from to understand it.
+// flowEventFrom flattens one model ledger row.
 func flowEventFrom(r map[string]any, kind string) flowEvent {
 	// The plane's JSON names this "credential"; "credential_name" is the
 	// column name in Postgres and is not what crosses the wire.
 	e := flowEvent{raw: trunc(str(r["created_at"]), 19), cred: str(r["credential"]), kind: kind}
 	e.at = parseFlowTime(str(r["created_at"]))
 
-	switch kind {
-	case "model":
-		e.what = str(r["model"])
-		e.outcome = str(r["status"])
-		e.cents = str(r["cost_cents"])
-		base := joinDetail(fmt.Sprintf("%s in / %s out via %s",
-			str(r["input_tokens"]), str(r["output_tokens"]), str(r["upstream"])), calledBy(r))
-		// 'denied' in the ledger means the call was never forwarded.
-		e.denied = str(r["cost_source"]) == "denied"
-		e.plainDetail = base
-		e.detail = joinDetail(base, str(r["cost_source"]))
-
-	case "approval":
-		e.what = str(r["kind"]) + ":" + str(r["subject"])
-		e.outcome = str(r["action"])
-		e.detail = str(r["bounds"])
-		if by := str(r["decided_by"]); by != "" {
-			e.detail = joinDetail("by "+by, e.detail)
-		}
-		e.denied = str(r["action"]) == "denied"
-	}
+	e.what = str(r["model"])
+	e.outcome = str(r["status"])
+	e.cents = str(r["cost_cents"])
+	base := joinDetail(fmt.Sprintf("%s in / %s out via %s",
+		str(r["input_tokens"]), str(r["output_tokens"]), str(r["upstream"])), calledBy(r))
+	// 'denied' in the ledger means the call was never forwarded.
+	e.denied = str(r["cost_source"]) == "denied"
+	e.plainDetail = base
+	e.detail = joinDetail(base, str(r["cost_source"]))
 
 	if e.detail == "" {
 		e.detail = "-"

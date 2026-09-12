@@ -35,16 +35,14 @@ func at(t *testing.T, s string) time.Time {
 	return ts.UTC()
 }
 
-// The two surviving trails form one reading, ordered by time rather than
-// grouped by source. A removed endpoint must not prevent that reading.
-func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
+// The ledger is ordered by time. Removed endpoints must not prevent a reading.
+func TestFlowOrdersModelLedgerWithoutRetiredEndpoints(t *testing.T) {
 	replies := map[string]string{
 		"/admin/ledger": `{"entries":[
-			{"created_at":"2026-09-04T14:22:02Z","credential":"agent-1","model":"gpt-4o","status":200,
-			 "cost_source":"priced","cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai"}]}`,
-		"/admin/approval-audit": `{"entries":[
-			{"created_at":"2026-09-04T14:22:03Z","credential":"agent-1","kind":"tool","subject":"delete_ns",
-			 "action":"approved","decided_by":"alice","bounds":"uses=1"}]}`,
+			{"created_at":"2026-09-04T14:22:03Z","credential":"agent-1","model":"gpt-4o","status":200,
+			 "cost_source":"priced","cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai"},
+			{"created_at":"2026-09-04T14:22:02Z","credential":"agent-1","model":"gpt-4o-mini","status":429,
+			 "cost_source":"denied","cost_cents":0,"input_tokens":0,"output_tokens":0,"upstream":"openai"}]}`,
 	}
 	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
 		body, ok := replies[r.URL.Path]
@@ -70,7 +68,7 @@ func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
 	for _, e := range merged {
 		got = append(got, e.kind+":"+e.what)
 	}
-	want := []string{"model:gpt-4o", "approval:tool:delete_ns"}
+	want := []string{"model:gpt-4o-mini", "model:gpt-4o"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d events, want %d: %v", len(got), len(want), got)
 	}
@@ -81,16 +79,13 @@ func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
 	}
 }
 
-// The correctness detail this view exists to get right. Trails are fetched
-// with independent limits, so they do not reach equally far back. Showing the
-// older part anyway would render model calls with their tool calls missing —
-// an agent that looks well-behaved exactly where the evidence ran out.
+// A cutoff is a limit on evidence, not proof that older calls did not happen.
 func TestFlowRefusesToShowAWindowItCannotVouchFor(t *testing.T) {
 	old := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T07:00:00Z","model":"gpt-4o"}}`)["e"].(map[string]any), "model")
 	mid := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"gpt-4o"}}`)["e"].(map[string]any), "model")
-	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","kind":"budget","subject":"tokens"}}`)["e"].(map[string]any), "approval")
+	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","model":"gpt-4o"}}`)["e"].(map[string]any), "model")
 
-	// The approval trail was saturated and reaches back only to 09:00.
+	// The recorded cutoff reaches back only to 09:00.
 	kept, notes, err := trimToComplete([]flowEvent{old, mid, newer}, []cutoff{{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit}})
 	if err != nil {
 		t.Fatal(err)
@@ -155,15 +150,16 @@ func TestFlowSaysItIsNotACausalTrace(t *testing.T) {
 	}
 }
 
-// Totals count refusals across model and approval trails.
+// Totals count model-proxy refusals, not ordinary upstream errors.
 func TestFlowTotalsCountRefusalsAndCents(t *testing.T) {
 	var out bytes.Buffer
 	renderFlow(&out, []flowEvent{
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m","status":200,"cost_source":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","model":"m","status":403,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","kind":"tool","subject":"t","action":"denied"}}`)["e"].(map[string]any), "approval"),
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","model":"m","status":429,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:04Z","model":"m","status":403,"cost_source":"free","cost_cents":0}}`)["e"].(map[string]any), "model"),
 	}, nil)
-	if !strings.Contains(out.String(), "3 events, 14 cents, 2 refused") {
+	if !strings.Contains(out.String(), "4 events, 14 cents, 2 refused") {
 		t.Errorf("totals wrong:\n%s", out.String())
 	}
 }
@@ -218,9 +214,9 @@ func TestFlowLinesCarryNoTrailingWhitespace(t *testing.T) {
 		// a model row with no caller attribution
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m",
 			"status":200,"input_tokens":1,"output_tokens":2,"upstream":"openai"}}`)["e"].(map[string]any), "model"),
-		// an approval with no approver yet
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","kind":"tool",
-			"subject":"s","action":"requested","bounds":""}}`)["e"].(map[string]any), "approval"),
+		// a denied model row with no caller attribution
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","model":"m",
+			"status":429,"cost_source":"denied","cost_cents":0,"input_tokens":0,"output_tokens":0,"upstream":"openai"}}`)["e"].(map[string]any), "model"),
 	}, nil)
 	for i, line := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
 		if strings.TrimRight(line, " ") != line {
@@ -239,7 +235,7 @@ func TestFlowAttributesEveryEventToItsCredential(t *testing.T) {
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","credential":"triage",
 			"model":"gpt-4o","status":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","credential":"payments",
-			"kind":"budget","subject":"tokens","action":"denied"}}`)["e"].(map[string]any), "approval"),
+			"model":"gpt-4o","status":429,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
 	}, nil)
 	got := out.String()
 	if !strings.Contains(got, "credential") {
@@ -298,50 +294,51 @@ func flowCredentialColumn(t *testing.T, rendered string) []string {
 	return got
 }
 
-// A full approval page bounds the reading; a partial page must not
-// hide older model activity.
+// A full ledger page discloses the cutoff. Malformed rows and the oldest
+// parseable call survive, regardless of the page's order.
 func TestFlowJudgesSaturationAtTheFetchedLimit(t *testing.T) {
-	for _, trail := range []string{"approval-audit"} {
-		for _, tc := range []struct {
-			name          string
-			pageRows      int
-			wantEarlyCall bool
-			wantNote      bool
-		}{
-			{"partial", 49, true, false},
-			{"full", 50, false, true},
-		} {
-			t.Run(trail+"/"+tc.name, func(t *testing.T) {
-				page := make([]string, 0, tc.pageRows)
-				row := `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","kind":"budget","subject":"tokens","action":"approved"}`
-				for i := 0; i < tc.pageRows; i++ {
-					page = append(page, row)
+	for _, tc := range []struct {
+		name     string
+		pageRows int
+		wantNote bool
+	}{
+		{"partial", 49, false},
+		{"full", 50, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			page := []string{
+				ledgerRow("not-a-time", "malformed-time-model", 200),
+				ledgerRow("2026-09-04T07:00:00Z", "an-early-call", 200),
+			}
+			for len(page) < tc.pageRows {
+				page = append(page, ledgerRow("2026-09-04T10:00:00Z", "later-call", 200))
+			}
+			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/admin/ledger" {
+					http.NotFound(w, r)
+					return
 				}
-				c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Query().Get("limit") != "50" {
-						t.Errorf("%s requested an unexpected page limit: %v", r.URL.Path, r.URL.Query())
-					}
-					switch r.URL.Path {
-					case "/admin/" + trail:
-						fmt.Fprintf(w, `{"entries":[%s]}`, strings.Join(page, ","))
-					case "/admin/ledger":
-						io.WriteString(w, `{"entries":[{"created_at":"2026-09-04T07:00:00Z","credential":"agent-1","model":"an-early-call"}]}`)
-					default:
-						io.WriteString(w, `{"entries": []}`)
-					}
-				}))
-				var out bytes.Buffer
-				if err := c.Flow(&out, "agent-1"); err != nil {
-					t.Fatal(err)
+				if r.URL.Query().Get("limit") != "50" {
+					t.Errorf("unexpected page limit: %v", r.URL.Query())
 				}
-				if got := strings.Contains(out.String(), "an-early-call"); got != tc.wantEarlyCall {
-					t.Errorf("the 07:00 model call present=%v, want %v:\n%s", got, tc.wantEarlyCall, out.String())
+				fmt.Fprintf(w, `{"entries":[%s]}`, strings.Join(page, ","))
+			}))
+			var out bytes.Buffer
+			if err := c.Flow(&out, "agent-1"); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"an-early-call", "malformed-time-model", fmt.Sprintf("%d events", tc.pageRows)} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("reading lost %q:\n%s", want, &out)
 				}
-				if got := strings.Contains(out.String(), "hit its 50-row limit"); got != tc.wantNote {
-					t.Errorf("window-was-cut note present=%v, want %v:\n%s", got, tc.wantNote, out.String())
-				}
-			})
-		}
+			}
+			if got := strings.Contains(out.String(), "hit its 50-row limit"); got != tc.wantNote {
+				t.Errorf("window-was-cut note present=%v, want %v:\n%s", got, tc.wantNote, &out)
+			}
+			if tc.wantNote && !strings.Contains(out.String(), "window starts 2026-09-04T07:00:00") {
+				t.Errorf("wrong cutoff:\n%s", &out)
+			}
+		})
 	}
 }
 
@@ -422,13 +419,10 @@ func TestFlowDoesNotReportATrimmedWindowAsSilence(t *testing.T) {
 // the same question: silence and blindness rendered identically, with the
 // reassuring one winning.
 //
-// It already behaves this way, because every trail is fetched through Get and
-// Get fails on a non-200. That is worth pinning rather than leaving to hold by
-// construction: the tempting change is to let one absent trail contribute
-// nothing so the other two still render, and that is exactly the change this
-// forbids.
+// Get fails on a non-200. A missing or unreadable ledger must not be treated
+// as an empty ledger.
 func TestFlowRefusesToRenderAnUnreadableTrailAsSilence(t *testing.T) {
-	for _, trail := range []string{"ledger", "approval-audit"} {
+	for _, trail := range []string{"ledger"} {
 		t.Run(trail, func(t *testing.T) {
 			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(r.URL.Path, "/admin/"+trail) {

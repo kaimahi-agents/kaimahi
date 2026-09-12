@@ -95,7 +95,8 @@ current guarantee for another model or deployment.
 
 Direct tool traffic has no plane audit. [Network policy](egress.md) covers
 specific plane workloads, not the entire agent namespace. Tool results are
-not filtered or redacted by the model seam. Retained [budget approvals](approvals.md)
-limit model spend, not tool effects. This example remains direct kagent MCP;
-retiring the custom gateway does not remove native Orka tools or settle the
+not filtered or redacted by the model seam. Ordinary [budget caps](spend.md)
+limit model spend, not tool effects; custom approvals/grants are retired.
+This example remains direct kagent MCP; retiring the custom gateway does not
+remove native Orka tools or settle the
 open agent-authoring decision.

@@ -65,9 +65,13 @@ const (
 	// model overlays remain; upgrade the CLI and plane together.
 	AdminContractToolRetired = 4
 
+	// AdminContractApprovalsRetired removes approval/request/grant APIs
+	// and budget overrides. Model caps, accounting and overlays remain.
+	AdminContractApprovalsRetired = 5
+
 	// AdminContract is what THIS plane serves. Record additions and deliberate
 	// retirements with a named revision so readers can see what changed.
-	AdminContract = AdminContractToolRetired
+	AdminContract = AdminContractApprovalsRetired
 )
 
 // version reports this plane's identity. It is authenticated like every other

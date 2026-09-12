@@ -148,11 +148,11 @@ kagent chart and the agents.
 
 ## Upgrading the plane
 
-The retained model plane stores its ledger, budgets, approvals and grants in
-Postgres, alongside historical tool/inbound data. This is not Orka's storage
+The retained model plane stores its ledger, budgets and reservations in Postgres,
+alongside historical requests, grants and audit data. This is not Orka's storage
 or upgrade contract. Upgrading the legacy plane is
 `kmx plane` again with the newer kmx, **after** the
-[retirement cleanup review](operations.md#upgrading-after-gateway-retirement):
+[retirement review](operations.md#upgrading-after-approval-retirement):
 
 ```bash
 kmx backup plane-before-upgrade.sql   # take one; it is one command
@@ -170,15 +170,19 @@ What happens under that:
   is what lets a backup taken before an upgrade restore after one.
 - A rollout is a Kubernetes rolling update: a new pod does not take traffic
   until it is ready, and it is not ready until its migrations have applied.
+  **Old replicas can still consume grants during that overlap.** Declare
+  retirement effective only when every replica reports the new build, not
+  when one new pod is Ready.
 
 CI's `plane-upgrade` job
 ([scripts/plane-upgrade-probe.sh](../scripts/plane-upgrade-probe.sh)) installs
 a plane several migrations old from the module proxy, seeds it through its admin
 API with a credential, budget, bounded budget grant and priced ledger row, then
-starts the current plane on the same database. It checks that state survived
-and that the old budget grant admits a fresh model call over the cap. Historical
-tool data is retained, not served through removed allowlist/tool-audit APIs or
-live tool authority. All twelve SQL migrations remain unchanged.
+starts the current plane on the same database. The retirement check requires
+that state survive unchanged while old grants cannot admit over-cap model calls.
+Historical requests/grants/audits are SQL/backup data, not served through the
+removed APIs or used as authority. All twelve SQL migrations remain unchanged;
+no pending-request normalization, grant exhaustion or expiry rewriting occurs.
 
 ## When kmx and the plane are different versions
 
@@ -187,11 +191,11 @@ Installing kmx changes no running plane. Admin commands read
 **admin contract** marks API revisions; it is not release-version ordering or
 compatibility negotiation.
 
-Contract **4** removes the gateway/tool-policy API and executable tool approvals;
-contract 3 previously removed inbound interfaces. Lower-bound checks remain
-useful for surviving operations, such as model-table validation, without making
-an older plane unusable for every model operation. They cannot prove that every
-route used by an older CLI still exists on a newer plane.
+Contract **5** removes the remaining custom request/approval/grant APIs and
+approval audit; contract 4 removed the gateway/tool-policy APIs and contract 3
+removed inbound interfaces. Lower-bound checks remain useful for surviving
+operations: model-overlay validation still requires contract 2, not 5. They
+cannot prove that every route used by an older CLI exists on a newer plane.
 
 A newer plane can pass an older CLI's numeric check while its removed endpoints
 return errors. Upgrading one side alone therefore does not establish a working
@@ -201,12 +205,12 @@ operator path. Use matched CLI and plane revisions.
 
 The original grow-only promise no longer applies across governance retirement.
 **Upgrade kmx and the plane together.** Older binaries may still print their
-compiled-in grow-only reassurance. Their tool commands and three-/four-trail
-flow/watch calls fail against this plane. The current CLI uses **two trails:
-model and approval history**, and warns that a newer contract is not a
-compatibility guarantee. See the [retirement upgrade procedure](operations.md#upgrading-after-gateway-retirement)
-for rejected configuration, stale Services/policies, owner-managed references,
-credential cleanup and retained data.
+compiled-in grow-only reassurance. Their custom approval/tool commands and
+multi-trail flow/watch calls fail against this plane. The current CLI reads
+**only the model ledger** in flow/watch, and warns that a newer contract is not a
+compatibility guarantee. See the [retirement upgrade procedure](operations.md#upgrading-after-approval-retirement)
+for rolling-update/rollback risks and retained data; earlier gateway/inbound
+cleanup still covers rejected configuration, stale resources and owner references.
 
 Two consequences worth stating:
 
@@ -223,13 +227,21 @@ against the genuinely old plane it already has running, and asserts the version
 gap is named rather than reported as a 404 — and, at the other end, that a plane
 built from the checkout reports a usable contract.
 
-### One behaviour change worth knowing: historical tool grants
+### One behaviour change worth knowing: historical grants
 
-All tool grants are now **inactive**, including grants predating argument binding
-in migration `00008`. Their digests, summaries, expiry and use counts are
-preserved as history, not executable authority. New tool/inbound requests and
-approvals are refused; old pending requests remain readable and deniable.
-Budget requests, approvals and grant headroom remain until the final slice.
+All custom grants, including budget grants and tool grants predating argument
+binding in migration `00008`, are **inactive on this build**. Their digests,
+summaries, expiry and use counts remain unchanged. Historical pending requests
+are not normalized or deniable through the retired API; SQL/backups preserve the
+history without a new archive interface. Ordinary monthly caps, reservations,
+accounting and credential lifecycle remain. Cap denials no longer file requests
+or advise approval; recovery is an operator's deliberate budget change or the
+UTC month reset.
+
+**Rolling back to an approval-capable binary can reactivate stored grants.**
+An old replica still serving during rollout can consume them too. Preserve the
+database, but do not mistake preserved history for a revocation enforced by old
+code. Check every replica's build before declaring retirement effective.
 
 ### And one more: credentials that already exist keep working
 
@@ -264,9 +276,10 @@ should expect to see:
 
 To recover: fix the conflict, or restore the backup you took
 (`kmx restore plane-before-upgrade.sql`) and roll back to the previous
-version. CI proves this path too — the same probe seeds a second database,
-makes a migration impossible, and asserts the plane never serves, exits
-non-zero, and leaves the rows and the schema version untouched.
+version, explicitly reviewing the grant-reactivation risk above. CI proves this
+path too — the same probe seeds a second database, makes a migration impossible,
+and asserts the plane never serves, exits non-zero, and leaves the rows and the
+schema version untouched.
 
 ## Why no published image yet
 

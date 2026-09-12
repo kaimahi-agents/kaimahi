@@ -25,7 +25,7 @@ requested data:         stdout
 
 Much of `kmx`'s readable output is also an interface consumed by the project:
 
-- CI checks status governance lines and approval/grant output;
+- CI checks status governance lines and retained model-ledger reports;
 - release jobs parse `kmx version` exactly;
 - quickstart JSON, status JSON/YAML, manifests, completion, metrics, and raw
   chat output are machine formats.
@@ -50,7 +50,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | interactive chat | streamed human transcript | none | Enhanced input requires capable input/output terminals; scanner fallback is supported. `--interactive --json` is refused. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
-| ledger, credentials, approvals, grants, approval audit, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns and historical argument fields; flow now reads model and approval history only. |
+| ledger, credentials, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns; flow now reads only the model ledger. Custom approval/grant/audit reports are removed. |
 | version | fixed prose | release parser input | Keep exact plain format; only TTY token styling is safe. |
 | backup | result line plus SQL file | SQL artifact | Dump bytes are permanently raw and mode 0600. |
 | lift record | none | JSON recovery state | Permanently raw internal artifact. |
@@ -149,13 +149,13 @@ squeezed or horizontally stretched grid.
 
 ### Styled tables — implemented for modeled reports
 
-Status, agent list, ledger, credentials, pending approvals, grants, approval
-audit and flow use titled, counted reports with explicit state and numeric
-column roles. Tool audit/allowlists and managed-tool status counts are removed.
-Narrow tables become labeled records; rich admin views retain full model names,
-historical call digests and flow identifiers where the plain format historically
-truncates them. Numbers are not
-abbreviated. State styling never guesses from an identifier's spelling.
+Status, agent list, ledger, credentials and flow use titled, counted reports
+with explicit state and numeric column roles. Custom approval/grant/audit
+reports, tool allowlists and managed-tool status counts are removed.
+Narrow tables become labeled records; rich admin views retain full model names
+and flow identifiers where the plain format historically truncates them.
+Numbers are not abbreviated. State styling never guesses from an identifier's
+spelling.
 
 These TTY views do not require migrating redirected consumers: the plain table
 remains their compatibility format. Structured admin output is still not built.
@@ -280,10 +280,11 @@ not a structured-output feature to finish.
 
 ### 6. Admin reports — implemented with plain compatibility
 
-Rich reports preserve safety fields, exact totals, expiry/liveness, historical
-argument fields and flow's timeline-not-trace warning. Redirected reports retain the fixed-width
-formatter. JSON/YAML admin modes and migration away from scraped columns remain
-future work, not prerequisites for the implemented TTY-only layouts.
+Surviving reports preserve safety fields, exact totals, credential expiry and
+flow's timeline-not-trace warning. Flow/watch read only the model ledger, not
+historical approvals. Redirected reports retain the fixed-width formatter.
+JSON/YAML admin modes and migration away from scraped columns remain future work,
+not prerequisites for the implemented TTY-only layouts.
 
 ## Audit fixes and limits
 
@@ -310,10 +311,9 @@ These are safety-semantic and format fixes, not merely color changes:
   shared CRD upgrade/install and other setup mutations are not removed.
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
-  and context names. Approval/credential bounds and incompatible Secret/preset
-  wiring are rejected before issuance. Retired tool/inbound requests remain
-  readable/deniable, not approvable; their grants are inactive. A denial of a
-  pending budget request does not revoke an existing budget grant.
+  and context names. Credential bounds and incompatible Secret/preset wiring are
+  rejected before issuance. Custom requests, approvals, grants and approval-audit
+  commands/APIs are removed; historical rows remain unchanged in SQL/backups.
 - Backup uses an exclusive unique 0600 temporary file and warns before replacing
   an existing destination. Restore attempts replica recovery on failures and
   reports recovery errors; an initially stopped plane stays stopped. Lift

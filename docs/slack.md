@@ -14,6 +14,7 @@ and, where applicable, [public-edge cleanup](operations.md#upgrading-after-inbou
 Review owned workloads and Secrets, and arrange external token revocation
 separately; deleting a Secret does not revoke a token at its issuer. Do not
 remove an application's independent Slack integration merely because this
-fixture is retired. [Budget approvals](approvals.md) remain admin-operated.
+fixture is retired. [Custom approvals/grants](approvals.md), including budget
+exceptions, are also retired; ordinary model caps/accounting remain.
 
 Start at the [documentation index](README.md) for current operator paths.

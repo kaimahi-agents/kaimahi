@@ -23,7 +23,7 @@ this migration does not settle it. `orka.harness.v2` is outside the direction.
   `kmx orka install` / `kmx orka status` and [the Orka guide](orka.md).
   Installing Orka alone does not enable this model governance.
 - The Kaimahi plane deployed (`kmx plane` on kind; [AKS phases](aks.md) on AKS).
-  Upgrading an older plane requires the [retirement steps](operations.md#upgrading-after-gateway-retirement);
+  Upgrading an older plane requires the [retirement steps](operations.md#upgrading-after-approval-retirement);
   stale tool/inbound/notifier configuration is rejected, and apply does not
   prune retired Services, network allowances or owner-managed references.
 - An existing Deployment whose model base URL is configurable through its
@@ -127,8 +127,8 @@ multi-turn/tool-calling conversations too, including the continuation limit belo
 - `orka` is `metered` without configured prices. Tokens are counted, but `0 cents`
   is not evidence of free inference. A cents budget denies an unpriced pair;
   configure reviewed prices or use the appropriate token budget.
-- `flow` and `watch` read two trails: model and approval history. Credential and
-  timestamp form a chronological view, not a causal correlation ID. Concurrent
+- `flow` and `watch` read only the model ledger. Credential and timestamp form a
+  chronological view, not a causal correlation ID. Concurrent
   turns can interleave; this migration still governs only model traffic.
 - The generated ingress rule admits the application's namespace to the model
   port only. Tool access is a separate decision. On an enforcing CNI, removing
@@ -266,7 +266,44 @@ The migration implementation in `internal/kmx/app/migrate.go` and
 and rerun compatibility. Historical tool wording in generated comments does not
 restore runtime tool governance.
 
+### Final approval retirement
+
+**PR #185, recorded 2026-09-12.** A dedicated kind cluster used Orka `v0.1.3`,
+Ollama `qwen2.5:3b` and an owner-managed Python 3.12 HTTP client. Baseline
+`87f75a2` first migrated the Deployment; owner application of its patch enabled
+a real 45-token turn. An automatic admin-approved budget grant then admitted a
+42-token turn over a zero cap, consuming one of its three uses. Separate requests
+provided approved, denied and pending history before upgrade.
+
+After upgrading to `8080f271b5d5` (contract 5):
+
+- Both replicas' individual operations metrics reported that exact build, with
+  no live-grant family or granted outcome. No old replica remained in the pod
+  inventory used for this check.
+- The identical migration invocation reused byte-identical generated files and
+  the existing credential. Snapshots preserved the owner Deployment UID,
+  generation/specification, token, ConfigMap, source, CA authority, serving
+  certificate and copied application CA.
+- Repeated over-cap requests returned 429 despite the still-unexpired grant's
+  two unused uses. Complete SQL snapshots of three requests, one grant and five
+  audit rows stayed identical; grant uses remained one. No new request was filed.
+- Deliberately restoring ordinary token-cap headroom enabled `BRIDGE WORKS`,
+  with 39 input / 5 output tokens ledgered and zero outstanding reservations.
+  Historical approval data stayed unchanged after that successful turn too.
+- Fresh migration issued a credential without modifying the owner Deployment.
+  Owner application of its patch enabled a separate real 44-token answer.
+- The previous CLI accepted the higher contract number but its grants read
+  returned 404, demonstrating why matched CLI/plane upgrades remain necessary.
+
+This proves the selected migration/accounting boundary, not arbitrary SDKs,
+network policy enforcement or AKS. Historical data is not rewritten to prevent
+rollback: an approval-capable binary can still interpret preserved grants.
+
 ### Gateway retirement
+
+**Historical — PR #184 (recorded 2026-09-12).** This evidence predates final
+approval retirement. Its positive budget-grant result describes the prior
+contract-4 runtime, **not current grant authority**.
 
 The runtime at `e9373d8ed61e` was exercised against a fresh, dedicated kind
 cluster: Orka `v0.1.3`, Ollama `qwen2.5:3b`, and an owner-managed Python 3.12
@@ -293,11 +330,13 @@ After upgrading the same plane/database to contract 4:
 
 Both replicas became Ready with only model/admin/ops ports. The old MCP Service
 survived apply and was explicitly deleted in the disposable cluster. This proves
-model migration and the retained budget boundary, not arbitrary SDKs, network
-policy enforcement, tool routing or AKS.
+model migration and the then-retained budget-grant boundary, not arbitrary SDKs,
+network policy enforcement, tool routing, AKS or the current contract-5 retirement.
 
 ### Earlier inbound/notification retirement
 
+**Historical — PR #183 (recorded 2026-09-12).** This evidence also predates final
+approval retirement.
 The inbound/notification retirement was exercised on a dedicated kind cluster
 with Orka `v0.1.3`, Ollama `qwen2.5:3b` and an owner-managed Python 3.12
 standard-library HTTP client fixture. This is a controlled model-route smoke

@@ -12,7 +12,7 @@ func TestToolResponsesCannotClaimRetiredGatewayGovernance(t *testing.T) {
 	v := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{})
 	v.consumeTool("function_call", false, json.RawMessage(`{"id":"one","name":"delete","args":{}}`), &out)
 	v.consumeTool("function_response", false, json.RawMessage(`{"id":"one","name":"delete","response":{"isError":true,"content":[{"text":"tool not permitted; approval request filed"}]}}`), &out)
-	if v.denied || v.requestFiled || strings.Contains(out.String(), "KAIMAHI") {
+	if v.denied || strings.Contains(out.String(), "KAIMAHI") {
 		t.Fatalf("retired gateway claim: %s", &out)
 	}
 }

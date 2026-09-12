@@ -13,9 +13,9 @@
 three listeners: model (8080), admin (9091) and ops (9092). The MCP listener
 on 8081 is removed.
 [postgres.yaml](../k8s/plane/postgres.yaml) runs one Postgres instance on
-a PVC. Credentials, budgets, grants, request deduplication and audit
-history live in Postgres; it is **not highly available**. Historical inbound
-replay/audit and attribution records remain stored, not dropped by retirement.
+a PVC. Credentials, budgets, reservations and the model ledger live in Postgres;
+it is **not highly available**. Historical requests, grants, tool/inbound audit,
+replay and attribution records remain stored, not dropped by retirement.
 
 Rollouts use `maxUnavailable: 0`, `maxSurge: 1`; pod anti-affinity is a
 preference, so two replicas can still share a single node. Migrations run
@@ -30,13 +30,42 @@ Shutdown drops readiness first and waits within a **20-second process
 budget**; it is not a guarantee to finish every in-flight request or
 post-response audit. Source: [main.go](../plane/cmd/kaimahi-proxy/main.go).
 
+## Upgrading after approval retirement
+
+Upgrade kmx and the plane together from the same revision. Admin contract **5**
+marks deliberate API retirement, **not compatibility negotiation**. Old clients
+accept higher numbers but still call removed routes. The model-overlay capability
+floor remains 2; surviving capability checks do not restore retired APIs.
+
+1. Back up the database. Stop automation relying on custom requests, approvals,
+   denial, grants or approval audit. Those APIs/CLI commands are removed;
+   `flow`/`watch` now read only the model ledger. Historical records remain
+   accessible through SQL/backups; there is no replacement archive interface.
+2. Review budgets deliberately: stored grants no longer add headroom on the new
+   build. Monthly-cap refusal remains 429 without request filing or approval
+   advice; recovery is an operator's budget change or the UTC month reset.
+   Metering-unavailable 403 and the independent ledger-breaker 503 are unchanged.
+   Keep ordinary caps/accounting, reservations, credential custody/expiry, model
+   egress and TLS configuration. Update dashboards/alerts for removed grant
+   metrics and the retired `granted` decision vocabulary.
+3. Roll out and verify **every replica reports the new build**, using per-pod
+   `kmx metrics --pod <proxy-pod>` and `kaimahi_build_info`. Old approval-capable
+   replicas can still consume stored grants during a rolling update or a blocked
+   rollout. Do not declare retirement effective until all have been replaced;
+   apply success, one new replica or a reused image tag is insufficient.
+4. **Rollback can reactivate stored grants.** All twelve SQL migrations and
+   historical requests/grants/audits remain unchanged: no pending-request
+   normalization, grant exhaustion/expiry rewriting or schema drop. Restoring
+   a backup is not a retirement mechanism. Review the authority consequence
+   before running an older binary against that preserved database.
+
+Older installations also need the gateway and inbound cleanup below. Those
+checklists do not authorize deleting model resources or application-owned tools.
+
 ## Upgrading after gateway retirement
 
-Upgrade kmx and the plane together from the same revision. Admin contract **4**
-marks a deliberate breaking removal, **not compatibility negotiation**. Old CLI
-binaries can accept higher numbers while still calling removed tool/workflow
-routes. The surviving model operations retain lower capability checks; those
-checks do not make retired routes work.
+Contract **4** marked the earlier gateway/tool API retirement; current upgrades
+also require the contract-5 review above.
 
 1. Back up the database and stop jobs relying on the gateway or workflow runner.
    Inventory owner-managed Agents, RemoteMCPServers, Deployment sidecars, URLs,
@@ -78,21 +107,21 @@ checks do not make retired routes work.
    deleting a Secret or mount does not revoke the issuer's token. Keep model/
    Copilot/Orka credentials, the plane CA/serving Secrets and Postgres state.
 5. Check every replica is on the new build, all three surviving listeners,
-   model authentication/ledger, credential expiry and budget approvals. Verify
+   model authentication/ledger, credential expiry and ordinary budget caps. Verify
    the gateway is no longer served and old network allowances/references are
    resolved; apply success alone is not that proof. Update dashboards/alerts
-   for removed tool metrics. `flow`/`watch` now read **model and approval history**,
-   not tool/inbound audit. Old tool/inbound requests remain readable/deniable,
-   not approvable; their grants are inactive. **All twelve SQL migrations and
-   stored data remain intact**; no destructive database cleanup is required.
+   for removed tool metrics. `flow`/`watch` read **only the model ledger**;
+   retired requests/grants/audits remain SQL/backup history, not API views.
+   **All twelve SQL migrations and stored data remain intact**; no destructive
+   database cleanup is required.
 
 ## Upgrading after inbound retirement
 
 For installations predating the earlier inbound removal, these additional
 public-edge steps still apply. Inbound webhooks, Slack approval commands and
-notifications are removed. [Budget approvals](approvals.md) remain admin-operated;
-there is no Slack approver path or notification fallback. Contract 3 marked that
-earlier removal; contract 4 additionally retires the gateway as described above.
+notifications are removed; there is no Slack approver path or notification
+fallback. Contract 3 marked that earlier removal; contracts 4 and 5 additionally
+retire the gateway and remaining [custom approvals](approvals.md), respectively.
 
 1. Back up the database. Disable external webhook producers and Slack event
    subscriptions/Request URLs **before releasing the old public DNS name**;
@@ -120,8 +149,8 @@ earlier removal; contract 4 additionally retires the gateway as described above.
 
 After rollout, verify the old public endpoint is no longer exposed. The inbound
 audit API and CLI view are removed; old rows remain database history, not an
-active delivery/replay interface. The gateway checklist above covers current
-listener and retained model/budget verification.
+active delivery/replay interface. The checklists above cover current listener,
+retained model/budget and all-replica retirement verification.
 
 ## Probes
 
@@ -206,14 +235,15 @@ Key series in [metrics.go](../plane/internal/metrics/metrics.go):
 
 - `kaimahi_decisions_total`, `kaimahi_upstream_latency_seconds`;
 - `kaimahi_ledger_month_cents`, `kaimahi_ledger_month_tokens`,
-  `kaimahi_live_grants` (budget only), `kaimahi_open_reservations`;
+  `kaimahi_open_reservations`;
 - `kaimahi_credential_expires_in_seconds`,
   `kaimahi_credentials_without_expiry`,
   `kaimahi_seam_certificate_expires_in_seconds`;
 - `kaimahi_seam_degraded`, `kaimahi_store_up`, `kaimahi_build_info`.
 
-Gateway/tool and inbound/notifier series are removed, including live tool-grant
-collection; update dashboards and alerts that expected them.
+Gateway/tool and inbound/notifier series are removed, as are
+`kaimahi_live_grants` and the `granted` decision value. Update dashboards and
+alerts that expected them; ordinary model/accounting/expiry/build metrics remain.
 
 A failed store scrape omits store-derived series rather than returning stale
 values. Labels include credential/upstream **names**, not bearer tokens,

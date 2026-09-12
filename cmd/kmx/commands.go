@@ -151,46 +151,15 @@ func newLedgerCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-func newGrantsCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "grants [credential]", Short: "List grants and liveness", Args: usageArgs(0, 1, "kmx grants [<credential>]")}
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Grants(parseOptionalCredential(cmd.Flags().Args(), "")) })
-	return cmd
-}
-
-// newFlowCommand merges model and approval trails into one chronological reading.
+// newFlowCommand reads the model ledger chronologically.
 //
-// It defaults to ALL credentials, like grants and unlike the ledger: the
+// It defaults to ALL credentials, unlike the ledger: the
 // question a flow answers is "what has been going on", and an operator who
 // does not yet know which credential misbehaved cannot be asked to name it
 // first. Every row is attributed, so a merged reading stays readable.
 func newFlowCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge model and approval trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
+	cmd := &cobra.Command{Use: "flow [credential]", Short: "Show model activity in one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
-	return cmd
-}
-
-func newAuditCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{
-		Use: "audit approval [credential]", Short: "Show enforcement audit trails",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if err := usageArgs(1, 2, "kmx audit approval [<credential>]")(cmd, args); err != nil {
-				return err
-			}
-			if args[0] != "approval" {
-				return fmt.Errorf("usage: kmx audit approval [<credential>]")
-			}
-			return nil
-		},
-	}
-	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if len(args) == 0 {
-			return filterCompletions([]string{"approval"}, toComplete), cobra.ShellCompDirectiveNoFileComp
-		}
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		return a.Audit(cmd.Flags().Arg(0), parseOptionalCredential(cmd.Flags().Args()[1:], ""))
-	})
 	return cmd
 }
 
@@ -214,54 +183,6 @@ func newBudgetCommand(state *commandState) *cobra.Command {
 			return err
 		}
 		return a.Budget(parseOptionalCredential(cmd.Flags().Args(), a.Cfg.Credential), c, t)
-	})
-	return cmd
-}
-
-func newApprovalsCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{Use: "approvals", Short: "List pending approval requests", Args: cobra.NoArgs, RunE: appRun(state, func(a *app.App) error { return a.Approvals() })}
-}
-
-func newApproveCommand(state *commandState) *cobra.Command {
-	var ttl, uses, amount string
-	cmd := &cobra.Command{Use: "approve <id>", Short: "Approve a request with bounded authority", Args: usageArgs(1, 1, "kmx approve <id> [--ttl 10m] [--uses 1] [--amount n]")}
-	cmd.Flags().StringVar(&ttl, "ttl", "-", "expiry")
-	cmd.Flags().StringVar(&uses, "uses", "-", "maximum uses")
-	cmd.Flags().StringVar(&amount, "amount", "-", "tokens or cents")
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		t, u, m, err := parseApprovalValues(ttl, uses, amount)
-		if err != nil {
-			return err
-		}
-		return a.Approve(cmd.Flags().Arg(0), t, u, m)
-	})
-	return cmd
-}
-
-func newDenyCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "deny <id>", Short: "Deny a pending request", Args: usageArgs(1, 1, "kmx deny <id>")}
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Deny(cmd.Flags().Arg(0)) })
-	return cmd
-}
-
-func newRequestCommand(state *commandState) *cobra.Command {
-	var credential string
-	cmd := &cobra.Command{Use: "request budget <subject>", Short: "File a budget approval request", Args: func(cmd *cobra.Command, args []string) error {
-		if err := usageArgs(2, 2, "kmx request budget <subject> [--credential <name>]")(cmd, args); err != nil {
-			return err
-		}
-		if args[0] != "budget" {
-			return fmt.Errorf("kind must be budget; tool requests are retired")
-		}
-		return nil
-	}}
-	cmd.Flags().StringVar(&credential, "credential", "", "credential the request is filed against")
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		name := strings.TrimSpace(credential)
-		if name == "" {
-			name = a.Cfg.Credential
-		}
-		return a.Request(name, "budget", cmd.Flags().Arg(1))
 	})
 	return cmd
 }

@@ -20,8 +20,9 @@
 #   3. stops it, starts the NEW plane built from this checkout against
 #      the SAME database, and
 #   4. asserts every one of those survived, the schema moved, and the new
-#      plane serves — a fresh governed call lands in the same ledger,
-#      after the rows the old version wrote.
+#      plane serves ordinary budgets, not retired grants: a capped call is
+#      denied without changing history, then restored headroom admits a
+#      priced call whose reservation settles into the same ledger.
 #
 # Then, on a second database seeded the same way, it proves the failure
 # mode documented in docs/releases.md: when a migration cannot apply, the
@@ -77,7 +78,7 @@ ops_port=19192
 
 cleanup() {
   local rc=$?
-  stop_proxy || true
+  [ -n "${proxy_pid:-}" ] && stop_proxy || true
   [ -n "${stub_pid:-}" ] && kill "$stub_pid" 2>/dev/null || true
   if [ -n "${KEEP_WORKDIR:-}" ]; then
     echo "workdir kept at $work" >&2
@@ -97,6 +98,11 @@ psql_q() { # psql_q <database> <sql> -> one value
 
 # ---------------------------------------------------------------- fixtures
 
+[ "$UPGRADE_DB" != "$BROKEN_DB" ] || fail "probe databases must be distinct"
+for db in "$UPGRADE_DB" "$BROKEN_DB"; do
+  [[ "$db" =~ ^kaimahi_upgrade_[a-z0-9_]+$ && "$db" != "$PGDATABASE" ]] ||
+    fail "refusing to reset a database outside the isolated kaimahi_upgrade_* test namespace: $db"
+done
 for db in "$UPGRADE_DB" "$BROKEN_DB"; do
   psql_q "$PGDATABASE" "drop database if exists $db" >/dev/null
   psql_q "$PGDATABASE" "create database $db" >/dev/null
@@ -150,7 +156,7 @@ EOF
 # The upstream itself: an OpenAI-shaped response carrying usage, which is
 # the only part of an upstream the meter reads.
 cat > "$work/stub.py" <<'PY'
-import json, sys
+import json, pathlib, sys, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -158,6 +164,9 @@ class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("content-length", 0))
         self.rfile.read(length)
+        # Let the probe observe an admitted call's hold before settlement.
+        while pathlib.Path(sys.argv[2]).exists():
+            time.sleep(0.05)
         body = json.dumps({
             "id": "upgrade-probe",
             "object": "chat.completion",
@@ -179,7 +188,7 @@ class Stub(BaseHTTPRequestHandler):
 HTTPServer(("127.0.0.1", int(sys.argv[1])), Stub).serve_forever()
 PY
 
-python3 "$work/stub.py" "$stub_port" &
+python3 "$work/stub.py" "$stub_port" "$work/pause-upstream" &
 stub_pid=$!
 
 # ------------------------------------------------------------ proxy control
@@ -261,17 +270,23 @@ admin() { # admin <method> <path> [body]
   fi
 }
 
-governed_call() { # governed_call <token> — one metered call through the plane
-  local trust=()
+governed_call() { # governed_call <token> [expected status, default 200]
+  local expected="${2:-200}" status trust=()
   # Verified, never skipped: this call is the probe's evidence that the seam
   # answers, and a client that did not verify would keep saying so after the
   # certificate stopped being usable by any real agent.
   [ "$seam_scheme" = https ] && trust=(--cacert "$work/seam-tls/ca.crt")
   printf 'Authorization: Bearer %s\n' "$1" > "$work/governed-header"
-  curl -fsS "${trust[@]}" -X POST -H "@$work/governed-header" \
+  status=$(curl -sS --max-time 30 "${trust[@]}" -X POST -H "@$work/governed-header" \
     -H 'Content-Type: application/json' \
+    -o "$work/governed-response" -w '%{http_code}' \
     -d '{"model":"upgrade-probe-model","messages":[{"role":"user","content":"hi"}]}' \
-    "$seam_scheme://127.0.0.1:$data_port/upstream/stub/v1/chat/completions"
+    "$seam_scheme://127.0.0.1:$data_port/upstream/stub/v1/chat/completions")
+  if [ "$status" != "$expected" ]; then
+    cat "$work/governed-response" >&2
+    fail "governed call: expected $expected, got $status"
+  fi
+  cat "$work/governed-response"
 }
 
 seed() { # seed <database> — the state an upgrade must not lose
@@ -280,13 +295,21 @@ seed() { # seed <database> — the state an upgrade must not lose
     python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
   [ -n "$token" ] || fail "no credential token"
   admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":5000,"cap_tokens":null}'
-  # A live, bounded BUDGET grant must survive and remain usable. Retired
-  # tool authority is not evidence that the new plane serves its contract.
+  # The OLD plane mints real, unexpired authority. The current plane must
+  # preserve these rows but never consume this grant or file new requests.
   admin POST /admin/requests '{"credential":"upgrade-probe","kind":"budget","subject":"cents"}' >/dev/null
   request_id=$(admin GET /admin/approvals |
     python3 -c 'import json,sys; p=json.load(sys.stdin)["pending"]; print(p[0]["id"] if p else "")')
   [ -n "$request_id" ] || fail "the seeded approval request is not pending"
   admin POST "/admin/approvals/$request_id/approve" '{"ttl_seconds":86400,"max_uses":5,"amount":100}' >/dev/null
+  admin POST /admin/requests '{"credential":"upgrade-probe","kind":"budget","subject":"tokens"}' >/dev/null
+  local denied_id
+  denied_id=$(admin GET /admin/approvals |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["pending"][0]["id"])')
+  admin POST "/admin/approvals/$denied_id/deny" >/dev/null
+  admin POST /admin/requests '{"credential":"upgrade-probe","kind":"budget","subject":"tokens"}' >/dev/null
+  [ "$(psql_q "$db" "select count(*) from approval_request")" = 3 ] || fail "missing seeded requests"
+  [ "$(psql_q "$db" "select count(*) from approval_audit")" = 5 ] || fail "missing seeded approval audit"
   # A real metered call: the ledger row, with a cost.
   governed_call "$token" >/dev/null
   seeded_cents=$(psql_q "$db" "select coalesce(sum(cost_cents),0) from ledger_entry")
@@ -294,6 +317,28 @@ seed() { # seed <database> — the state an upgrade must not lose
   [ "$seeded_rows" -ge 1 ] || fail "the seeded call left no ledger row"
   [ "$seeded_cents" -gt 0 ] || fail "the seeded call recorded no cost"
   echo "seeded: $seeded_rows ledger row(s), ${seeded_cents}c, a budget grant, a budget" >&2
+}
+
+# Compare the columns schema 6 actually had, not post-upgrade defaults.
+# Sorted full rows catch mutation, deletion AND auto-filing; a row count
+# alone would miss rewritten bounds, deciders, timestamps or grant uses.
+history_snapshot() { # history_snapshot <database> <file prefix>
+  local table columns
+  for table in approval_request permit_grant approval_audit; do
+    case "$table" in
+      approval_request) columns='id,credential_name,kind,subject,status,detail,created_at,decided_at,decided_by' ;;
+      permit_grant) columns='id,request_id,credential_name,kind,subject,expires_at,max_uses,uses,amount,created_at,decided_by' ;;
+      approval_audit) columns='id,request_id,credential_name,kind,subject,action,bounds,created_at,decided_by' ;;
+    esac
+    psql_q "$1" "select row_to_json(r) from (select $columns from $table order by id) r" > "$2.$table"
+  done
+}
+assert_history() { # assert_history <database> <original file prefix>
+  local table
+  history_snapshot "$1" "$work/history-check"
+  for table in approval_request permit_grant approval_audit; do
+    cmp "$2.$table" "$work/history-check.$table" || fail "$table history changed"
+  done
 }
 
 # ------------------------------------------------------- 1: the old version
@@ -315,6 +360,7 @@ echo "old schema: migration $applied" >&2
 
 say "seeding governance state through the OLD plane's own admin API"
 seed "$UPGRADE_DB"
+history_snapshot "$UPGRADE_DB" "$work/old-history"
 
 # While a genuinely old plane is up, prove what a NEW kmx says to it.
 #
@@ -360,18 +406,22 @@ after_cents=$(psql_q "$UPGRADE_DB" "select coalesce(sum(cost_cents),0) from ledg
 [ "$after_rows" = "$seeded_rows" ] || fail "ledger rows changed: $seeded_rows -> $after_rows"
 [ "$after_cents" = "$seeded_cents" ] || fail "ledger cost changed: $seeded_cents -> $after_cents"
 
-# The budget grant stays live and bounded across the historical schema gap.
-admin GET '/admin/grants?credential=upgrade-probe' > "$work/grants.json"
-python3 - "$work/grants.json" <<'PY'
-import json, sys
-grants = json.load(open(sys.argv[1]))["grants"]
-live = [g for g in grants if g.get("live")]
-assert len(live) == 1, grants
-g = live[0]
-assert g["kind"] == "budget" and g["subject"] == "cents", g
-assert g["max_uses"] == 5 and g["uses"] == 0 and g["amount"] == 100, g
-print("grant intact and live:", g["subject"], "uses", g["uses"], "of", g["max_uses"])
-PY
+assert_history "$UPGRADE_DB" "$work/old-history"
+
+say "the current plane exposes no approval or historical-viewer routes"
+# Keep the same private header custody as admin(); HTTP failures are the
+# expected result here, so these calls assert status rather than use -f.
+for route in 'POST /admin/requests' 'GET /admin/approvals' \
+  "POST /admin/approvals/$request_id/approve" "POST /admin/approvals/$request_id/deny" \
+  'GET /admin/grants' 'GET /admin/approval-audit'; do
+  read -r method path <<< "$route"
+  status=$(curl -sS --max-time 10 -X "$method" -H "@$work/admin-header" \
+    -H 'Content-Type: application/json' \
+    -d '{"credential":"upgrade-probe","kind":"budget","subject":"cents","max_uses":1,"amount":100}' \
+    -o "$work/retired-route" -w '%{http_code}' "http://127.0.0.1:$admin_port$path")
+  [ "$status" = 404 ] || fail "$route: expected 404, got $status"
+done
+assert_history "$UPGRADE_DB" "$work/old-history"
 
 # The same rule, one migration later: a credential issued before expiry
 # existed keeps a NULL expiry and KEEPS WORKING. Expiring a running estate at
@@ -387,14 +437,41 @@ budget=$(admin GET '/admin/ledger?credential=upgrade-probe' |
   python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["month_cents"])')
 [ "$budget" = "$seeded_cents" ] || fail "month-to-date changed: $seeded_cents -> $budget"
 
-say "the upgraded plane serves: the old budget grant admits a call over the cap"
+say "cap zero denies despite an unexpired old grant, with no approval side effects"
 admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":0,"cap_tokens":null}'
-governed_call "$token" >/dev/null
-uses=$(psql_q "$UPGRADE_DB" "select uses from permit_grant where request_id = '$request_id' and kind = 'budget'")
-[ "$uses" = 1 ] || fail "the migrated budget grant was not consumed exactly once: $uses"
+[ "$(psql_q "$UPGRADE_DB" "select count(*) from permit_grant where request_id = '$request_id' and expires_at > now() and max_uses = 5 and uses = 0 and amount = 100")" = 1 ] ||
+  fail "the negative needs an unexpired, unused old grant"
+governed_call "$token" 429 > "$work/denied-response"
+grep -q 'monthly budget reached' "$work/denied-response" || fail "the refusal did not name the ordinary cap"
+if grep -qiE 'approval|kmx (request|approve)' "$work/denied-response"; then
+  fail "a budget denial still advises approval"
+fi
+[ "$(psql_q "$UPGRADE_DB" "select count(*) from ledger_entry where status = 429 and cost_source = 'denied' and input_tokens = 0 and output_tokens = 0 and cost_cents = 0")" = 1 ] ||
+  fail "the capped call did not leave exactly one zero-spend denial"
+[ "$(psql_q "$UPGRADE_DB" "select count(*) from spend_reservation")" = 0 ] || fail "the denial left a reservation"
+assert_history "$UPGRADE_DB" "$work/old-history"
+
+say "ordinary headroom admits a priced call and settles its reservation"
+admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":5000,"cap_tokens":null}'
+: > "$work/pause-upstream"
+governed_call "$token" > "$work/served-response" &
+call_pid=$!
+held=0
+for _ in $(seq 1 100); do
+  held=$(psql_q "$UPGRADE_DB" "select count(*) from spend_reservation where credential_name = 'upgrade-probe' and hold_cents = 1 and hold_tokens = 1 and expires_at > now()")
+  [ "$held" = 1 ] && break
+  sleep 0.1
+done
+rm "$work/pause-upstream"
+wait "$call_pid"
+[ "$held" = 1 ] || fail "the admitted priced call never reserved spend"
+[ "$(psql_q "$UPGRADE_DB" "select count(*) from spend_reservation")" = 0 ] || fail "the admitted call did not settle its reservation"
+[ "$(psql_q "$UPGRADE_DB" "select count(*) from ledger_entry where status = 200 and cost_source = 'priced' and input_tokens = 1000 and output_tokens = 500 and cost_cents = 2")" = 2 ] ||
+  fail "old and current calls did not retain their real priced usage"
 final_rows=$(psql_q "$UPGRADE_DB" "select count(*) from ledger_entry")
-[ "$final_rows" -gt "$after_rows" ] || fail "the new plane recorded nothing: $after_rows -> $final_rows"
-echo "served: ledger $after_rows -> $final_rows rows" >&2
+[ "$final_rows" = "$((after_rows + 2))" ] || fail "expected one denial and one priced call: $after_rows -> $final_rows"
+assert_history "$UPGRADE_DB" "$work/old-history"
+echo "served: ledger $after_rows -> $final_rows rows; history inert, reservation settled" >&2
 
 stop_proxy
 
@@ -408,6 +485,7 @@ wait_serving "$work/old-broken.log"
 seed "$broken_db"
 broken_rows="$seeded_rows"
 broken_cents="$seeded_cents"
+history_snapshot "$broken_db" "$work/broken-history"
 stop_proxy
 
 # Make migration 00007 impossible without touching the migration: the name
@@ -442,7 +520,8 @@ still_rows=$(psql_q "$broken_db" "select count(*) from ledger_entry")
 still_cents=$(psql_q "$broken_db" "select coalesce(sum(cost_cents),0) from ledger_entry")
 [ "$still_rows" = "$broken_rows" ] && [ "$still_cents" = "$broken_cents" ] ||
   fail "data changed under a failed migration: $broken_rows/$broken_cents -> $still_rows/$still_cents"
-echo "schema still at $stuck, $still_rows ledger row(s) and ${still_cents}c untouched" >&2
+assert_history "$broken_db" "$work/broken-history"
+echo "schema still at $stuck, $still_rows ledger row(s), ${still_cents}c and approval history untouched" >&2
 
 for db in "$UPGRADE_DB" "$BROKEN_DB"; do
   psql_q "$PGDATABASE" "drop database if exists $db" >/dev/null

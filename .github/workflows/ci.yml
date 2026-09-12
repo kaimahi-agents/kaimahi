@@ -657,9 +657,9 @@ jobs:
               # are exercised often enough to catch a regression.
               "internal/kmx/lift": "what may be deleted on a managed cluster",
               # The argument ORDER of every operator verb — Go's flag
-              # parsing stops at the first positional, and an approval whose
-              # --uses was silently dropped is an UNBOUNDED grant — and the
-              # backup/restore fail-closed checks.
+              # parsing stops at the first positional, so a dropped budget
+              # cap can silently clear limits — and the backup/restore
+              # fail-closed checks.
               "cmd/kmx": "the argument order of every operator verb",
               "internal/kmx/app": "the operator verbs and their refusals",
               # One list of credential shapes, read by the scaffolder, the
@@ -810,11 +810,11 @@ jobs:
   # where a migration cannot lose anything. This job runs the plane's own
   # upgrade: an older released plane, fetched from the module proxy at a
   # revision several migrations behind, seeded through its own admin API with a
-  # credential, a budget, an allowlist, an approved grant and a priced
-  # ledger row, then replaced by the plane this PR builds — against the same
-  # database. It asserts the rows survived, the schema moved, and the new
-  # plane serves; then, on a second database, that a migration which cannot
-  # apply leaves the plane refusing to start with the data untouched.
+  # credential, a budget, historical approval/grant rows and a priced ledger
+  # row, then replaced by the plane this PR builds — against the same
+  # database. History survives but cannot override caps or expose retired
+  # APIs; ordinary headroom admits and settles a priced call. On a second
+  # database, a failing migration refuses startup and leaves data untouched.
   #
   # No cluster: the proxy is env-configured and file-fed, so both versions
   # are plain processes against the service Postgres. That is why this can
@@ -1113,8 +1113,8 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 2 of 6 — spend: the metering proxy and its budgets, the budget
-  # approval cycle and the network boundary.
+  # Spend shard: the metering proxy, ordinary budgets, credential expiry
+  # and the network boundary.
   e2e-spend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1374,7 +1374,7 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # Model protocols, overlay safety, budget approvals, races and metrics.
+  # Model protocols, overlay safety, ordinary budget recovery, races and metrics.
   e2e-models:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1505,6 +1505,7 @@ jobs:
           KUBE_CTX=kind-kaimahi-p1 bin/kmx credential issue race-cred \
             --secret kaimahi-race-token --namespace kaimahi
           bin/kmx budget race-cred --tokens 1
+          test "$(bash scripts/plane-pods.sh | wc -l)" = 2
           GOVERNED_SECRET=kaimahi-race-token SECRET_NAMESPACE=kaimahi EXPECT_ADMITTED=1 \
             bash scripts/spend-race-probe.sh 8 | tee spend-race.out
           grep -q 'admitted=1 denied(429)=7 other=0' spend-race.out
@@ -1532,35 +1533,40 @@ jobs:
           fi
           bin/kmx ledger hello-world | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
-      - name: "Approvals budget cycle: cap denial filed a request, bounded raise admits, exhaustion re-denies"
+      - name: "Ordinary budget recovery: denial files no request, restoring headroom admits"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The budget-exhaustion step above (CAP_TOKENS=1) already
-          # denied a governed chat, which auto-filed this request:
-          bin/kmx approvals | tee approvals-budget.out
-          id=$(awk '$3=="hello-world" && $4=="budget" && $5=="tokens" {print $1}' approvals-budget.out)
-          test -n "$id"
-          bin/kmx approve "$id" --uses 1 --ttl 10m --amount 1000000
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee granted-chat.out
-          python3 scripts/verify-chat.py granted-chat.out
-          # Grant exhausted (USES=1): the next chat is denied again.
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > overage-denied.out 2>&1 || true
-          grep -q 'monthly token budget reached' overage-denied.out
-          if grep -q '"state":"completed"' overage-denied.out; then
-            echo 'chat completed despite exhausted grant' >&2; exit 1
+          # Reuse the denial and race above: no extra failed model task.
+          if grep -qiE 'approval|kmx (request|approve)' denied-chat.out; then
+            echo 'a cap denial still advises approval' >&2; exit 1
           fi
-          bin/kmx audit approval | tee approval-audit.out
-          grep -E 'hello-world +budget +tokens +approved' approval-audit.out
+          history_rows() {
+            kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
+              psql -U kaimahi -d kaimahi -tAc \
+              'SELECT (SELECT count(*) FROM approval_request) + (SELECT count(*) FROM permit_grant) + (SELECT count(*) FROM approval_audit)'
+          }
+          test "$(history_rows)" = 0
+          bin/kmx budget hello-world --tokens 1000000
+          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee recovered-chat.out
+          python3 scripts/verify-chat.py recovered-chat.out
+          bin/kmx ledger hello-world | tee ledger-recovered.out
+          grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-recovered.out
+          kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
+            psql -U kaimahi -d kaimahi -tAc "SELECT count(*) FROM spend_reservation WHERE credential_name = 'hello-world'" | grep -qx 0
+          test "$(history_rows)" = 0
       - name: "Metrics on the ops port: Prometheus text, expected names, no identifier labels; admin and ops ports on no Service"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           bin/kmx metrics | tee metrics.out
           grep -q '^# TYPE kaimahi_decisions_total counter' metrics.out
-          for m in kaimahi_decisions_total kaimahi_ledger_month_tokens kaimahi_ledger_month_cents kaimahi_live_grants \
+          for m in kaimahi_decisions_total kaimahi_ledger_month_tokens kaimahi_ledger_month_cents \
                    kaimahi_open_reservations kaimahi_upstream_latency_seconds_bucket \
                    kaimahi_seam_degraded kaimahi_build_info kaimahi_store_up go_goroutines; do
             grep -q "^$m" metrics.out || { echo "metric $m missing" >&2; exit 1; }
           done
+          if grep -qE 'kaimahi_live_grants|decision="granted"' metrics.out; then
+            echo 'retired approval metrics are still published' >&2; exit 1
+          fi
           # The ledger totals are by credential NAME, and the names the
           # run created are there; the store answered.
           grep -q 'kaimahi_ledger_month_tokens{credential="hello-world"}' metrics.out
@@ -2479,14 +2485,6 @@ jobs:
           m = re.search(r"month to date: (\d+) cents, (\d+) tokens", open("ledger.out").read())
           sys.exit(0 if m and int(m.group(2)) > 0 else 1)
           EOF
-      - name: grants — the read view answers on an empty plane
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx grants | tee grants.out
-          grep -q 'no grants' grants.out
       - name: "budget — the caps a credential spends under, set and cleared"
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
@@ -2499,32 +2497,6 @@ jobs:
           # a cap this one left behind.
           kmx budget hello-world 2>&1 | tee budget-clear.out
           grep -q 'cap_cents=null cap_tokens=null' budget-clear.out
-      - name: "approvals — budget requests are bounded and denials grant nothing"
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx request budget tokens --credential hello-world
-          kmx approvals | tee approvals.out
-          id=$(awk '$3=="hello-world" && $4=="budget" && $5=="tokens" {print $1}' approvals.out)
-          test -n "$id"
-          if kmx approve "$id" --amount 1000 2>unbounded.out; then
-            echo 'an unbounded approval was accepted'; exit 1
-          fi
-          grep -q 'an unbounded grant is a config change' unbounded.out
-          kmx approve "$id" --ttl 10m --uses 1 --amount 1000 | tee approved.out
-          grep -q 'Granted: hello-world budget/tokens' approved.out
-          kmx grants hello-world | tee grants-budget.out
-          grep -E 'hello-world +budget +tokens +yes ' grants-budget.out
-          kmx request budget cents --credential hello-world
-          kmx approvals | tee approvals-2.out
-          deny_id=$(awk '$3=="hello-world" && $4=="budget" && $5=="cents" {print $1}' approvals-2.out)
-          test -n "$deny_id"
-          kmx deny "$deny_id" 2>&1 | tee denied.out
-          grep -q "Request $deny_id denied." denied.out
-          kmx audit approval | tee approval-audit.out
-          grep -E 'hello-world +budget +cents +denied' approval-audit.out
       - name: "metrics — one replica's exposition, from a port on no Service"
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey

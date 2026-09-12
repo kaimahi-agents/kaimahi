@@ -2,7 +2,7 @@ package store
 
 // What may enter a free-text audit column.
 //
-// Free text a model ledger or approval row carries arrives from outside
+// Free text a model ledger row carries arrives from outside
 // the plane and is printed into fixed-width operator tables.
 //
 // The upstream name is worth spelling out because it looks safe and is
@@ -14,9 +14,8 @@ package store
 // with a newline in it renders as a SECOND LINE, which reads as a second
 // audit row that nobody wrote.
 //
-// So the bound lives here, at the store, for the spend ledger and the
-// approvals trail. Bounding at the seam would
-// leave it to be remembered once per caller; this way an audit column
+// So the bound lives here, at the store, for the spend ledger. Bounding
+// at the seam would leave it to be remembered once per caller; this way an audit column
 // cannot be written unbounded at all. It is not redaction —
 // internal/redact scrubs known secret values out of LOGS and is a
 // different job.
@@ -64,9 +63,9 @@ func OneLine(s string) string {
 
 // Clip bounds s to n BYTES, cutting on rune boundaries and counting the
 // ellipsis against the bound. Slicing by byte index would cut a
-// multibyte rune in half — these values land in audit rows and
-// approval requests, neither of which should carry
-// invalid UTF-8 — and would also overrun n, since "…" is three bytes.
+// multibyte rune in half — these values land in ledger rows, which
+// must not carry invalid UTF-8 — and would also overrun n, since "…"
+// is three bytes.
 func Clip(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -97,9 +96,8 @@ func Clip(s string, n int) string {
 
 // auditText is what an ordinary free-text column gets on the way in.
 //
-// DESCRIPTIVE COLUMNS ONLY. Never a column anything filters, matches or
-// deduplicates on — a request's detail, yes; its budget subject, no.
-// Subjects must match the cap being admitted. Those columns stay exactly
+// DESCRIPTIVE COLUMNS ONLY. Never an identifier used for matching or
+// enforcement, such as the credential name. Those columns stay exactly
 // as they arrived, and the renderers keep them from breaking a table.
 //
 // A clean value — already one printable line, no leading or trailing

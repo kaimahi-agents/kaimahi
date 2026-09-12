@@ -53,7 +53,7 @@ func TestToolDisplayModesDoNotAttributeDenialsToRetiredGateway(t *testing.T) {
 		var out bytes.Buffer
 		view := &streamView{toolCalls: map[string]string{"call-1": "post"}, messageText: map[string]string{}, toolMode: mode}
 		view.consumeTool("function_response", false, raw, &out)
-		if view.denied || view.requestFiled {
+		if view.denied {
 			t.Errorf("mode %s attributed a tool error to retired governance", mode)
 		}
 		if mode == "off" && out.Len() != 0 {
@@ -88,11 +88,25 @@ func TestGovernedModelDenialIsVisibleFromFailedStatus(t *testing.T) {
 		"Signal: response text matches a Kaimahi denial",
 		"Provenance: unverified",
 		"Reason: monthly token budget reached",
-		"Approval request: reported in response text",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("model governance output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestModelDenialDoesNotRecommendRetiredApprovals(t *testing.T) {
+	var out bytes.Buffer
+	view := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{modelGoverned: true})
+	status := json.RawMessage(`{"state":"failed","message":{"role":"agent","messageId":"m1","parts":[{"kind":"text","text":"monthly token budget reached; approval request filed"}]}}`)
+	view.consume(streamEvent{Status: status}, &out)
+	for _, retired := range []string{"Approval request:", "make approvals", "kmx approvals"} {
+		if strings.Contains(out.String(), retired) {
+			t.Errorf("retired advice %q: %s", retired, &out)
+		}
+	}
+	if !strings.Contains(out.String(), "Provenance: unverified") || !strings.Contains(out.String(), "monthly token budget reached; approval request filed") {
+		t.Fatalf("denial provenance or original response lost: %s", &out)
 	}
 }
 

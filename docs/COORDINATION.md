@@ -148,7 +148,8 @@ not inferred assignments. Unknown remaining work is marked UNKNOWN.
 | Orka agent creation | branch `feat/orka-agent-create` | LOCAL BRANCH EXISTS; disposition UNKNOWN | Branch `2267081`; no numbered lane or current assignment inferred |
 | Documentation retirement | coordinator; branch `docs/orka-documentation-retirement` | ACTIVE | Documentation and authorized documentation-checker changes only |
 | Plane/code retirement: inbound/notify | worker session; branch `cleanup/retire-governance-plane` | PR #183 MERGED | Inventory published before deletion; inbound/notify removed, live migration proved; no authoring changes. |
-| Plane/code retirement: gateway/tool approvals | worker session; branch `cleanup/retire-tool-governance` | PR #184 OPEN | Based on main after #183. Gateway/tool execution removed; shared model helpers retained. Both authoring paths unchanged; live migration, historical-grant inactivity and retained budget grants proved. Budget approvals/seam-adjacent cleanup follows last. |
+| Plane/code retirement: gateway/tool approvals | worker session; branch `cleanup/retire-tool-governance` | PR #184 MERGED | Gateway/tool execution removed; shared model helpers retained. Both authoring paths unchanged; live migration, historical-grant inactivity and retained budget grants proved. |
+| Plane/code retirement: final approvals | worker session; branch `cleanup/retire-budget-approvals` | PR #185 OPEN | Based on main after #184. Approval/grant execution and interfaces removed; ordinary model caps/accounting and SQL history preserved. Live upgrade proved inert grants, unchanged owner state and working migration; both authoring paths unchanged. |
 
 ## Upstream tracker
 

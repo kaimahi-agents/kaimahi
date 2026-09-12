@@ -14,7 +14,7 @@ import (
 )
 
 // fakeStore records what Reserve hands the locked admission and answers
-// with a scripted verdict; the admission logic itself (caps, grants,
+// with a scripted verdict; the admission logic itself (caps,
 // holds under the credential lock) is proven against a real Postgres in
 // internal/store.
 type fakeStore struct {
@@ -39,7 +39,6 @@ func TestReserveAdmitsWithReservation(t *testing.T) {
 	res, err := m.Reserve(context.Background(), store.Credential{Name: "a"}, false)
 	require.NoError(t, err)
 	require.Equal(t, "r1", res.ID)
-	require.False(t, res.Granted)
 	require.Equal(t, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), f.gotMonth)
 	require.Equal(t, meter.DefaultHoldTTL, f.gotTTL)
 }
@@ -62,13 +61,11 @@ func TestReserveDeniesAtCapNamingSubject(t *testing.T) {
 	var d meter.Denial
 	require.ErrorAs(t, err, &d)
 	require.Equal(t, http.StatusTooManyRequests, d.Status)
-	require.Equal(t, "tokens", d.BudgetSubject)
 	require.Equal(t, "monthly token budget reached", d.Msg)
 
 	f.admission = store.Admission{Denied: true, Subject: "cents"}
 	_, err = m.Reserve(context.Background(), store.Credential{Name: "a", CapCents: i64(5)}, true)
 	require.ErrorAs(t, err, &d)
-	require.Equal(t, "cents", d.BudgetSubject)
 	require.Equal(t, "monthly budget reached", d.Msg)
 }
 
@@ -78,7 +75,7 @@ func TestReserveFailsClosedOnStoreError(t *testing.T) {
 	var d meter.Denial
 	require.ErrorAs(t, err, &d)
 	require.Equal(t, http.StatusForbidden, d.Status)
-	require.Empty(t, d.BudgetSubject, "a store failure files no budget request")
+	require.Equal(t, "metering unavailable", d.Msg)
 }
 
 func TestReserveFailsClosedOnVanishedCredential(t *testing.T) {
@@ -87,13 +84,6 @@ func TestReserveFailsClosedOnVanishedCredential(t *testing.T) {
 	var d meter.Denial
 	require.ErrorAs(t, err, &d)
 	require.Equal(t, http.StatusForbidden, d.Status)
-}
-
-func TestReserveReportsGrantedAdmission(t *testing.T) {
-	m := &meter.Meter{Store: &fakeStore{admission: store.Admission{ReservationID: "r2", Granted: true}}}
-	res, err := m.Reserve(context.Background(), store.Credential{Name: "a", CapTokens: i64(5)}, false)
-	require.NoError(t, err)
-	require.True(t, res.Granted)
 }
 
 func TestHoldTTLOverride(t *testing.T) {

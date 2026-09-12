@@ -13,10 +13,9 @@ var issuedTokenRe = regexp.MustCompile(`^kmh_[0-9a-f]{64}$`)
 
 // The admin plane's MUTATIONS, and the argument validation in front of them.
 //
-// Every name, cap, UUID, and tool shape below is part of the command contract,
+// Every name and cap below is part of the command contract,
 // as is every well-formed-positive status check. The plane validates all of it
-// again — these
-// checks exist because these values are interpolated into JSON and paths,
+// again — these checks exist because the values enter JSON and paths,
 // and because a typo should fail before an admin port-forward is opened,
 // not after.
 //
@@ -36,37 +35,8 @@ func ValidCredentialName(name string) error {
 	return nil
 }
 
-// namePart is the shape for a tool name and for a request subject:
-// [A-Za-z0-9._-]+.
-func namePart(what, value string) error {
-	if value == "" {
-		return fmt.Errorf("invalid %s '' (want [A-Za-z0-9._-]+)", what)
-	}
-	for _, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
-			r == '.', r == '_', r == '-':
-		default:
-			return fmt.Errorf("invalid %s %q (want [A-Za-z0-9._-]+)", what, value)
-		}
-	}
-	return nil
-}
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// ValidRequestID checks the UUID shape; the id comes
-// off the approvals table, so the error says where to find one.
-func ValidRequestID(id string) error {
-	if !uuidRe.MatchString(id) {
-		return fmt.Errorf("invalid request id %q (want a UUID from `kmx approvals`)", id)
-	}
-	return nil
-}
-
 // ParseCap reads a cap-shaped argument: "-" or "" means "no cap" (JSON
-// null), anything else must be a non-negative integer. Approval `uses` and
-// `amount` additionally require positive values within the plane's limits.
+// null), anything else must be a non-negative integer.
 func ParseCap(what, value string) (*int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "-" {
@@ -82,26 +52,19 @@ func ParseCap(what, value string) (*int64, error) {
 	return &n, nil
 }
 
-// CheckCap preserves zero budgets, but approval uses and amounts must be
-// positive and within the plane's limits.
+// CheckCap preserves zero budgets and rejects negative caps.
 func CheckCap(what string, value *int64) error {
 	if value == nil {
 		return nil
 	}
 	min, max := int64(0), int64(math.MaxInt64)
-	switch what {
-	case "uses":
-		min, max = 1, 1_000_000
-	case "amount":
-		min, max = 1, 1_000_000_000_000
-	}
 	if *value < min || *value > max {
 		return fmt.Errorf("%s must be between %d and %d", what, min, max)
 	}
 	return nil
 }
 
-// ParseTTL reads an approval's TTL with the command's suffixes — a bare
+// ParseTTL reads a credential's TTL with the command's suffixes — a bare
 // number is seconds, s/m/h/d scale it — and returns seconds.
 func ParseTTL(value string) (*int64, error) {
 	value = strings.TrimSpace(value)
@@ -221,101 +184,6 @@ func (c *Client) IssueIdentityCredential(credential string, ttlSeconds *int64) (
 	return true, nil
 }
 
-// Approve mints the bounded grant a pending request asked for.
-//
-// The at-least-one-bound rule is checked HERE as well as by the plane, and
-// the plane's own sentence is the one reported: an operator who typed
-// `kmx approve <id>` should be told why before a port-forward is opened, and
-// should be told the same thing either way.
-func (c *Client) Approve(id string, ttlSeconds, maxUses, amount *int64) (map[string]any, error) {
-	if err := ValidRequestID(id); err != nil {
-		return nil, err
-	}
-	if err := CheckBounds(ttlSeconds, maxUses); err != nil {
-		return nil, err
-	}
-	if err := CheckCap("amount", amount); err != nil {
-		return nil, err
-	}
-	// Only the bounds that were SET are sent.
-	body := map[string]any{}
-	if ttlSeconds != nil {
-		body["ttl_seconds"] = *ttlSeconds
-	}
-	if maxUses != nil {
-		body["max_uses"] = *maxUses
-	}
-	if amount != nil {
-		body["amount"] = *amount
-	}
-	status, out, err := c.Do(http.MethodPost, "/admin/approvals/"+id+"/approve", body)
-	if err != nil {
-		return nil, err
-	}
-	if status != http.StatusCreated {
-		return nil, fmt.Errorf("approve failed (HTTP %d): %s", status, strings.TrimSpace(string(out)))
-	}
-	return decode(out)
-}
-
-// CheckBounds is the plane's at-least-one-bound rule, with the plane's own
-// wording (plane/internal/proxy/admin_approvals.go).
-func CheckBounds(ttlSeconds, maxUses *int64) error {
-	if ttlSeconds == nil && maxUses == nil {
-		return fmt.Errorf("an unbounded grant is a config change, not an approval — set --ttl and/or --uses")
-	}
-	if ttlSeconds != nil && (*ttlSeconds < 1 || *ttlSeconds > 30*24*60*60) {
-		return fmt.Errorf("approval ttl_seconds must be between 1 and 2592000")
-	}
-	return CheckCap("uses", maxUses)
-}
-
-// Deny refuses a pending request.
-func (c *Client) Deny(id string) error {
-	if err := ValidRequestID(id); err != nil {
-		return err
-	}
-	return c.expect(http.MethodPost, "/admin/approvals/"+id+"/deny", nil, http.StatusNoContent, "deny")
-}
-
-// Request files a budget approval request explicitly.
-func (c *Client) Request(credential, kind, subject string) (bool, error) {
-	if err := ValidRequest(credential, kind, subject); err != nil {
-		return false, err
-	}
-	body := map[string]any{"credential": credential, "kind": kind, "subject": subject}
-	status, out, err := c.Do(http.MethodPost, "/admin/requests", body)
-	if err != nil {
-		return false, err
-	}
-	if status != http.StatusCreated {
-		return false, fmt.Errorf("request failed (HTTP %d): %s", status, strings.TrimSpace(string(out)))
-	}
-	doc, err := decode(out)
-	if err != nil {
-		return false, err
-	}
-	deduped, _ := doc["deduped"].(bool)
-	return deduped, nil
-}
-
-// ValidRequest is the shape check in front of a filing. It is exported so
-// the command layer can run it BEFORE the guard and the port-forward: a
-// mistyped subject should fail on the spot, not after an operator has
-// confirmed a context for it.
-func ValidRequest(credential, kind, subject string) error {
-	if err := ValidCredentialName(credential); err != nil {
-		return err
-	}
-	if kind != "budget" {
-		return fmt.Errorf("kind must be budget; tool requests are retired")
-	}
-	if err := namePart("subject", subject); err != nil {
-		return err
-	}
-	return nil
-}
-
 // expect performs a mutation and refuses anything but the well-formed
 // positive, quoting the body.
 func (c *Client) expect(method, path string, body any, want int, what string) error {
@@ -327,22 +195,4 @@ func (c *Client) expect(method, path string, body any, want int, what string) er
 		return fmt.Errorf("%s failed (HTTP %d): %s", what, status, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// GrantSummary renders an approval's reply for the operator:
-// "Granted: <credential> <kind>/<subject> — <bounds> (grant <id>)".
-func GrantSummary(g map[string]any) string {
-	var bounds []string
-	if s := str(g["expires_at"]); s != "" {
-		bounds = append(bounds, "expires "+s)
-	}
-	if v, ok := g["max_uses"]; ok && v != nil {
-		bounds = append(bounds, str(v)+" use(s)")
-	}
-	if v, ok := g["amount"]; ok && v != nil {
-		bounds = append(bounds, "amount "+str(v))
-	}
-	return fmt.Sprintf("Granted: %s %s/%s — %s (grant %s)",
-		str(g["credential"]), str(g["kind"]), str(g["subject"]),
-		strings.Join(bounds, ", "), str(g["id"]))
 }

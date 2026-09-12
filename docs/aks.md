@@ -145,7 +145,7 @@ Use native `kmx lift` and its phases for managed provisioning; the former
 [Makefile](../Makefile) retains model credential helpers and probes such as
 `make netpol-verify`. For those helpers, set `TARGET=aks`,
 `KUBE_CTX=<cluster>` and confirmation explicitly; do not infer the target from
-kubectl's current-context. Read ledger/audit/approvals/metrics through native kmx.
+kubectl's current-context. Read the model ledger and metrics through native kmx.
 
 Lift carries its needed scripts/manifests. Registry rendering preserves the
 committed kind `imagePullPolicy: Never`, and the plane uses the default
@@ -238,7 +238,7 @@ billing audit. Use current Azure prices; historical run estimates are not quotes
 The gateway/MCP listener, public inbound edge, tool/workflow commands and
 Slack/ERP/AP fixtures are removed. The plane retains **model 8080, admin 9091
 and ops 9092**. Existing installations need the
-[explicit retirement steps](operations.md#upgrading-after-gateway-retirement):
+[explicit retirement steps](operations.md#upgrading-after-approval-retirement):
 review rejected tool overlays, old Services/network allowances, credentials and
 owner-managed application references. **Applying the new manifests does not
 prune them or safely repoint tools.** For older inbound installations also disable
@@ -246,9 +246,11 @@ external webhooks/Slack subscriptions before releasing their DNS name and remove
 obsolete owned edge resources. This is not automatic cloud deletion, credential
 revocation or database cleanup.
 
-Budget approvals remain admin-operated. Tool/inbound requests stay readable and
-deniable, not approvable; their grants are inactive. The original direct kagent
-MCP example remains, not the gateway-backed connector fixtures.
+All custom approvals/grants and their APIs/CLI views are retired. Ordinary model
+caps/accounting remain; historical requests/grants/audits remain in SQL/backups.
+Upgrade CLI and plane together and verify every replica's new build: old replicas
+can still consume grants during rollout, and rollback can reactivate them. The
+original direct kagent MCP example remains, not the gateway-backed fixtures.
 
 Chat allocates a free loopback port by default. Fixed-port helpers need distinct
 `CHAT_PORT`, `ADMIN_PORT`, or `OPS_PORT` values when checking two clusters

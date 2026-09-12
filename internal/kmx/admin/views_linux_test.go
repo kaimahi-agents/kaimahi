@@ -76,10 +76,10 @@ func TestAdminReportsRichPlainAndNumericParity(t *testing.T) {
 			if !strings.Contains(text(), "9007199254740993") {
 				t.Fatal("large token count rounded")
 			}
-			if err := c.ApprovalAudit(out, ""); err != nil {
+			if err := c.Credentials(out); err != nil {
 				t.Fatal(err)
 			}
-			if mode != "plain" && !strings.Contains(ansi.Strip(text()), "Approval audit (0)") {
+			if mode != "plain" && !strings.Contains(ansi.Strip(text()), "Credentials (0)") {
 				t.Fatal("empty report lost title/count")
 			}
 			if mode != "rich" && strings.Contains(text(), "\x1b") {

@@ -55,8 +55,10 @@ The following describes retained legacy code, not Orka's contracts.
 
 The kagent runtime can ask a human a question or request a tool approval.
 That is not an answer. `kmx agent chat --interactive <agent>` handles the
-pending human step. The small-model path may re-sample a question-only
-response up to twice, but not after a tool call or with an explicit session;
+pending human step. Native kagent HITL is separate from the retired custom
+Kaimahi approval/grant subsystem and remains supported. The small-model path may
+re-sample a question-only response up to twice, but not after a tool call or with
+an explicit session;
 there is no guarantee that a system instruction suppresses questions.
 Malformed `ask_user` arguments from smaller models can also fail invocation.
 The committed keyless model is `qwen2.5:3b`; test any replacement by invoking it.
@@ -80,8 +82,8 @@ Never put token values in command arguments or committed YAML.
 | Code | Check |
 |---|---|
 | 401 | Missing or unknown plane credential. Inspect the response's stated cause. |
-| 403 | A known credential has expired, the request is outside permitted routing or policy, or its cost cannot be admitted under the configured budget. |
-| 429 | The monthly token or money budget is exhausted. Runtime retries may create multiple denied rows. |
+| 403 | A known credential has expired, routing is refused, a cents-capped model is unpriced, or admission metering is unavailable (`metering unavailable`). |
+| 429 | The monthly token or money budget is exhausted. No approval request is filed; the operator may deliberately change the budget or wait for the UTC month reset. Runtime retries may create multiple denied rows. |
 | 502 | Upstream transport/protocol failure, including a response with no readable usage. An admitted attempt is not proof of downstream success. |
 | 503 | A dependency needed for custody, authentication or accounting is unavailable; restore that dependency rather than bypassing enforcement. |
 
