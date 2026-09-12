@@ -29,9 +29,10 @@ reference material, not evidence of present adoption or dependency.
 paths, membership lists, embedded boundaries, and the caller claims below.
 It checks coverage of tracked files under `cmd/`, `internal/`, `k8s/`,
 `scripts/`, `docs/`, `brand/` and the root, plus top-level section coverage.
-These existing mechanical checks are retained; this is not a new code-removal
-inventory. The checker does not decide product status, require historical
-quotations, or require documents to remain hard to find. Open questions may
+These existing mechanical checks are retained; the pre-deletion package
+inventory below is a separately reviewable judgment. The checker does not decide
+product status, require historical quotations, or require documents to remain
+hard to find. Open questions may
 change or resolve; their declared count must match their list.
 
 The checker uses `git ls-files`: additions and deletions must be staged
@@ -114,8 +115,126 @@ source at the CLI's revision. Documentation retirement does not change it.
 The existing packages cover the LLM proxy and admin API, MCP gateway,
 inbound webhooks, egress, budgets, pricing, storage and the database
 (Postgres and twelve migrations), configuration, redaction, metrics,
-notifications and operations. This description records the existing module;
-its disposition belongs to the separate code lane.
+notifications and operations.
+
+### Pre-deletion inventory — governance code retirement
+
+**Status: inventory only; no code removed.** Inspected against current main
+`47e71e843560c280ef380a1716c1cb331087aa4d` (PR #182), after documentation
+retirement in PR #178. Publish this inventory before a deletion commit, so its
+reasoning can be reviewed independently. The end state below is not a claim
+about the code currently installed.
+
+The decisions driving it are settled: Orka owns the platform; migrated
+applications retain their owner-managed Deployment; governance for migration
+means model traffic only; the seam is a temporary bridge whose disappearance
+would be success. The custom approval path leaves this repository, including
+argument-bound tool permits **and budget approvals**. Its possible upstream
+value is not a reason to retain it. Agent authoring is not being decided here.
+
+| Package under plane/internal | Disposition | Decision and source evidence |
+|---|---|---|
+| proxy | **Shrinks; model seam survives** | Migration still needs model authentication, credential custody, protocol translation, usage recording and admin credential/budget/ledger operations. Keep the model handlers, protocol/translation and validation. Remove tool/inbound admin routes, approval routes and deny-and-pend filing from `plane/internal/proxy/admin.go`, `plane/internal/proxy/admin_approvals.go`, `plane/internal/proxy/handler.go` and the Store interface. |
+| store | **Shrinks** | The seam needs credential hashes/expiry, ledger, attribution and exact spend reservations. Remove allowlists, tool/inbound audit access, request/grant operations and grant-derived headroom from `plane/internal/store/store.go`, `plane/internal/store/approvals.go`, `plane/internal/store/inbound.go`, `plane/internal/store/spend.go` and `plane/internal/store/metrics.go`. Keep database-backed model accounting, not a second governance platform. |
+| meter | **Shrinks** | Ordinary token/cents caps and fail-closed reservation admission protect model traffic. Remove grant headroom, granted verdicts and inbound-only Preview from `plane/internal/meter/meter.go`; exceeding a cap must deny, not create an approval request. Reservation atomicity across replicas must survive. |
+| pricing | **Survives** | `plane/internal/pricing/pricing.go` computes model cost used by the proxy ledger. Orka traffic currently has token usage without configured money prices; retaining accounting does not claim zero-cost inference or create prices. |
+| redact | **Survives** | `plane/internal/redact/redact.go` and `plane/internal/redact/slog.go` protect model credential/log custody independently of the retired connectors. Only connector secret collection in main wiring goes. |
+| metrics | **Shrinks** | Keep proxy outcomes/latency, ledger totals, credential deadlines, reservations, build identity and certificate expiry. Remove gateway/inbound labels, queue/notifier metrics and live-grant collection in `plane/internal/metrics/metrics.go`, together with their store queries. Orka's OTLP is not missing functionality to recreate here. |
+| gateway | **Goes** | Orka owns the platform and migration does not govern application tools. Remove the entire MCP relay, tool capability filtering, argument canonicalization/digests, constraints and grant enforcement in `plane/internal/gateway/`, plus its listener and deployment/caller wiring. |
+| inbound | **Goes** | Orka replaces the plane's connector orchestration. Remove webhook verification, queues, dedupe/invocation and approval commands in `plane/internal/inbound/`, plus its listener, ingress and caller wiring. |
+| notify | **Goes** | Notifications and replies exist to operate the retired approvals/connectors. Remove `plane/internal/notify/`, its filing wrapper, poster worker and configuration. |
+| config | **Shrinks** | Model routes, credential-file/header handling, protocol pairing, pricing and validated model overlays still serve migration. Remove tool upstreams, tool headers, argument policy/constraints, inbound hooks and notifier configuration from `plane/internal/config/config.go`, `plane/internal/config/overlay.go` and `plane/internal/config/policy.go`. Remove corresponding committed config and callers together; do not silently accept configuration for deleted enforcement. |
+| egress | **Survives** | `plane/internal/egress/egress.go` also serves hosted model upstreams: vetted DNS/IP dialing, TLS and redirect restrictions protect upstream credentials. Remove tool-host aggregation in main wiring, not the model transport's protections. |
+| seamtls | **Survives** | `plane/internal/seamtls/seamtls.go` serves the model certificate and builds verified transports. Migration mounts its CA in the owner's pod. Gateway names/callers can shrink only where compatible with protected scaffolding and existing model certificates. |
+| ops | **Survives; listener wiring shrinks** | `plane/internal/ops/ops.go` provides model-seam metrics/readiness/liveness, including DB readiness without turning an upstream outage into a restart. Main must stop probing listeners that are removed; deleting probes or the ops port would break the retained Deployment. |
+| db | **Shrinks in schema scope; migration engine survives** | `plane/internal/db/pool.go` and `plane/internal/db/migrate.go` remain necessary for the seam's Postgres ledger and replica-safe startup. Retiring tool/approval/inbound schema is a separate compatibility-bearing step, not permission to reset the database or rewrite applied migration history; see below. |
+
+**The module boundary is runtime, not a Go import.** There is no plane import in
+`internal/kmx/scaffold/migrate.go`: it generates identity, model-only ingress and
+an owner-applied patch. `internal/kmx/planebuild/planebuild.go` names the separate
+module for building/fetching the binary. The actual migration contract includes
+admin credential issuance/reconciliation, the model Service/port, CA publication,
+Orka token mount, model upstream/header/translation configuration and proxy
+rollout. A green root build cannot prove those contracts survived.
+
+### Protected-surface conflict — resolve before deletion
+
+The instruction to leave all of `internal/kmx/scaffold/` unchanged conflicts
+with removing every remaining reference to the retired gateway/approvals:
+
+- `internal/kmx/scaffold/upstream.go` declares the gateway address and contains
+  argument-binding/approval guidance. `internal/kmx/scaffold/upstream_yaml.go`
+  generates gateway overlays, policy fields and a gateway-backed RemoteMCPServer.
+- `internal/kmx/scaffold/sidecar.go` generates a credential shim for that gateway.
+  These are active generators, not only historical comments.
+- `internal/kmx/scaffold/upstream_pin_test.go` contains
+  TestTheDerivedGatewayURLMatchesTheCommittedSeam, which reads
+  `k8s/kaimahi-tools.yaml` and requires its gateway URL. Deleting the manifest
+  breaks a protected test; leaving a dummy manifest would conceal the conflict.
+
+Removing callers cannot make these references disappear. Before deletion, obtain
+an explicit ruling: either narrow protection solely for legacy gateway/approval
+generators and their tests, **without changing Orka authoring or migration**, or
+exempt the protected legacy surface and its pinned manifest from complete
+reference removal. Until then, keep the directory, `cmd/kmx/agent_commands.go`
+and `docs/orka.md` untouched. This is a scope conflict, not an authoring decision.
+
+### Database and review boundaries
+
+Versions 00009 and 00011 mix surviving ledger changes with retiring tool/inbound
+changes. Versions 00007, 00010 and 00012 support retained reservations,
+credential expiry and model accounting. Editing or removing historical SQL is
+not an upgrade for a database already at version 12; removing creation migrations
+also breaks a fresh database while mixed ALTER statements remain.
+
+Separate runtime removal from destructive schema retirement. Do not implicitly
+drop historical audit records or reset credentials/ledger. A schema change needs
+fresh-install and version-12 upgrade tests against Postgres, a documented data
+retention decision, and a deployment sequence that does not break old replicas
+still querying grant tables during the current two-replica rolling update.
+
+The code removal reaches beyond these fourteen packages: main wiring, kmx admin
+client/commands and flow/watch trails, tool/workflow orchestration, manifests,
+Make targets, embedded/operator scripts, probes, observability and CI all have
+callers of the retiring endpoints. Removing three package directories alone
+would leave an unusable installation and tests for a nonexistent product.
+
+Proposed review order, after resolving the protected boundary:
+
+1. This inventory, independently published with no deletion.
+2. Connector-facing removal: gateway/inbound/notify, their callers, listeners,
+   configuration, manifests and obsolete checks as one coherent runtime slice.
+   Do not leave the approval CLI claiming an enforcement path still exists.
+3. Seam-adjacent removal last: remaining proxy/budget approval filing and grants,
+   store/meter/metrics reduction, then schema retirement under an explicit
+   compatibility/data plan. Retain ordinary model budgets and reservations.
+
+Each removal commit must pass builds and the full test suite in **both** Go
+modules, with a disposable Postgres DSN so store tests do not skip. Keep test
+coverage for surviving behavior; adjust checks only when their checked feature
+is actually removed. If these slices still produce an unreviewable PR, split
+into independently based main-targeting PRs rather than stacked bases.
+
+For the retained bridge, document the model/admin/config/ops contract rather
+than resurrecting platform guidance. Update [migration verification](migrate.md#verify-the-migration),
+the map, CLI references and deployment guidance to match the result. Exercise
+`kmx migrate` on a dedicated kind cluster, apply the generated patch as the
+workload owner, send model traffic through the seam to Orka and inspect the
+ledger; repeat migration to verify the bound credential and owner Deployment
+are preserved. Fake-kubectl tests cover orchestration but are not this live proof.
+Run doc-link and repository-map checks after staging each changed inventory.
+
+**Recovery record.** No approval code has been removed by this inventory.
+The inspected source baseline is commit
+`47e71e843560c280ef380a1716c1cb331087aa4d`; argument-binding enforcement is in
+`plane/internal/gateway/digest.go` and `plane/internal/gateway/canon.go`, policy
+in `plane/internal/config/policy.go`, persistence in
+`plane/internal/store/approvals.go`, admin decisions in
+`plane/internal/proxy/admin_approvals.go`, and budget grants in
+`plane/internal/meter/meter.go` and `plane/internal/store/spend.go`.
+For each actual removal, record its parent as the last-carrying commit in the
+PR body, with a one-line reason grouped by package. That recovery route is for
+possible upstream reuse, not a reason to keep the implementation here.
 
 ## `k8s/` — embedded artifacts and checkout scenarios
 
