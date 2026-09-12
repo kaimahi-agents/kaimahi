@@ -266,6 +266,39 @@ The migration implementation in `internal/kmx/app/migrate.go` and
 and rerun compatibility. Historical tool wording in generated comments does not
 restore runtime tool governance.
 
+### Final approval retirement
+
+**PR #185, recorded 2026-09-12.** A dedicated kind cluster used Orka `v0.1.3`,
+Ollama `qwen2.5:3b` and an owner-managed Python 3.12 HTTP client. Baseline
+`87f75a2` first migrated the Deployment; owner application of its patch enabled
+a real 45-token turn. An automatic admin-approved budget grant then admitted a
+42-token turn over a zero cap, consuming one of its three uses. Separate requests
+provided approved, denied and pending history before upgrade.
+
+After upgrading to `8080f271b5d5` (contract 5):
+
+- Both replicas' individual operations metrics reported that exact build, with
+  no live-grant family or granted outcome. No old replica remained in the pod
+  inventory used for this check.
+- The identical migration invocation reused byte-identical generated files and
+  the existing credential. Snapshots preserved the owner Deployment UID,
+  generation/specification, token, ConfigMap, source, CA authority, serving
+  certificate and copied application CA.
+- Repeated over-cap requests returned 429 despite the still-unexpired grant's
+  two unused uses. Complete SQL snapshots of three requests, one grant and five
+  audit rows stayed identical; grant uses remained one. No new request was filed.
+- Deliberately restoring ordinary token-cap headroom enabled `BRIDGE WORKS`,
+  with 39 input / 5 output tokens ledgered and zero outstanding reservations.
+  Historical approval data stayed unchanged after that successful turn too.
+- Fresh migration issued a credential without modifying the owner Deployment.
+  Owner application of its patch enabled a separate real 44-token answer.
+- The previous CLI accepted the higher contract number but its grants read
+  returned 404, demonstrating why matched CLI/plane upgrades remain necessary.
+
+This proves the selected migration/accounting boundary, not arbitrary SDKs,
+network policy enforcement or AKS. Historical data is not rewritten to prevent
+rollback: an approval-capable binary can still interpret preserved grants.
+
 ### Gateway retirement
 
 **Historical — PR #184 (recorded 2026-09-12).** This evidence predates final
