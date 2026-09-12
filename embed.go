@@ -1,5 +1,5 @@
 // Package kaimahi embeds the assets kmx needs when installed without a checkout.
-// go:embed paths are relative to this module root and cannot cross into plane/.
+// Embedded paths are relative to this module root and cannot cross into plane/.
 package kaimahi
 
 import "embed"

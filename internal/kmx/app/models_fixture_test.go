@@ -63,8 +63,6 @@ esac
 exit 0
 `
 
-const warehouseService = `{"spec":{"selector":{"app":"acme-warehouse"},"ports":[{"port":8090,"targetPort":9090,"protocol":"TCP"}]}}`
-
 type addFixture struct {
 	app     *App
 	out     *bytes.Buffer

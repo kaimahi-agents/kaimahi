@@ -261,11 +261,42 @@ is [here](reviews/2026-09-09-orka-composition.md).
 
 ## Retirement regression evidence
 
-The evidence below is from the **earlier inbound/notification slice**, not a
-new gateway-retirement migration proof. The migration implementation in
-`internal/kmx/app/migrate.go` and `internal/kmx/scaffold/migrate.go` remains
-byte-identical for generated-artifact and rerun compatibility. Historical tool
-wording in generated comments does not restore runtime tool governance.
+The migration implementation in `internal/kmx/app/migrate.go` and
+`internal/kmx/scaffold/migrate.go` remains byte-identical for generated-artifact
+and rerun compatibility. Historical tool wording in generated comments does not
+restore runtime tool governance.
+
+### Gateway retirement
+
+The runtime at `e9373d8ed61e` was exercised against a fresh, dedicated kind
+cluster: Orka `v0.1.3`, Ollama `qwen2.5:3b`, and an owner-managed Python 3.12
+standard-library HTTP client. Baseline `a8694b8` first migrated the workload;
+the owner applied the generated patch and recorded a real 44-token model turn.
+
+After upgrading the same plane/database to contract 4:
+
+- The identical migration invocation accepted its existing identity/patch files
+  as byte-identical and reused its bound credential. Snapshots confirmed the
+  owner Deployment UID, generation and specification, token, original ConfigMap
+  and application source were unchanged.
+- A real Responses request returned `BRIDGE WORKS.` and recorded 39 input / 6
+  output tokens. The pre-upgrade ledger row survived.
+- A pre-upgrade tool grant, still within its expiry/use bounds, was readable
+  but inactive. A historical pending tool request could not be approved
+  (HTTP 400, unsupported kind) but could be denied.
+- A zero token cap denied a model request (429). An admin-approved one-use budget
+  grant admitted one real model turn (200, 42 tokens); the following turn was
+  denied (429). This is an automatic admin fixture, not a human approval test.
+- Fresh migration issued a new credential without patching the owner's
+  Deployment. Owner application of that patch enabled a separate real answer
+  and its own 44-token ledger row.
+
+Both replicas became Ready with only model/admin/ops ports. The old MCP Service
+survived apply and was explicitly deleted in the disposable cluster. This proves
+model migration and the retained budget boundary, not arbitrary SDKs, network
+policy enforcement, tool routing or AKS.
+
+### Earlier inbound/notification retirement
 
 The inbound/notification retirement was exercised on a dedicated kind cluster
 with Orka `v0.1.3`, Ollama `qwen2.5:3b` and an owner-managed Python 3.12
