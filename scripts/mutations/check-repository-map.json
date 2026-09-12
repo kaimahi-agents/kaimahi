@@ -94,9 +94,15 @@
     },
     {
       "name": "only the first demo caller is checked",
-      "breaks": "The retained approval helper must still be called by both AP demos. Checking only ap-demo.sh lets ap-injection.sh silently stop using it while the map still claims both callers.",
+      "breaks": "Both AP demos must call admin approve directly. Checking only ap-demo.sh lets ap-injection.sh silently stop doing so while the map still claims both callers.",
       "find": "    missing = [path for path in (\"scripts/ap-demo.sh\", \"scripts/ap-injection.sh\")",
       "replace": "    missing = [path for path in (\"scripts/ap-demo.sh\",)"
+    },
+    {
+      "name": "commented admin approval counts as a direct call",
+      "breaks": "A comment mentioning admin approve is not an executed command. Both demo caller checks must reject a commented-out approval.",
+      "find": "               if not re.search(r\"^\\s*admin approve\\b\", tree.read(path), re.M)]",
+      "replace": "               if \"admin approve\" not in tree.read(path)]"
     },
     {
       "name": "the open-question count stops checking its list",

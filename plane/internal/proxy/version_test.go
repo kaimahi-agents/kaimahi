@@ -34,6 +34,21 @@ func TestThePlaneReportsItsVersionAndContract(t *testing.T) {
 		"the contract a plane reports must be one a client can act on; 0 means 'did not report'")
 }
 
+// The removed route must be distinguishable from the contract-2 surface.
+// This marker records a break; older clients still accept higher numbers.
+func TestContract3ReportsInboundRetirement(t *testing.T) {
+	mux, token := adminMux(t, newFakeStore())
+	require.Equal(t, 404, adminDo(mux, "GET", "/admin/inbound-audit", token, "").Code)
+
+	res := adminDo(mux, "GET", "/admin/version", token, "")
+	require.Equal(t, 200, res.Code, res.Body.String())
+	var doc struct {
+		AdminContract int `json:"admin_contract"`
+	}
+	require.NoError(t, json.Unmarshal(res.Body.Bytes(), &doc))
+	require.Equal(t, 3, doc.AdminContract, "the retired inbound surface must not still report contract 2")
+}
+
 // The build is not the one thing on this surface that answers without a
 // token. Nothing here is sensitive, but a surface with one unauthenticated
 // exception is a surface whose rule has to be remembered.
@@ -50,9 +65,9 @@ func TestTheVersionEndpointIsAuthenticatedLikeEveryOtherAdminRoute(t *testing.T)
 //
 // What can regress is the relationship between the served contract and the
 // steps the source records. Each raise is required to leave a named constant
-// behind saying what that step bought, so the committed set of step constants
-// is an independent record of how far the surface has come. Reading them back
-// out of the source gives the test a subject it does not control: lowering
+// behind saying what changed, including deliberate retirements. The set of
+// step constants records revision progression, not route survival. Reading
+// them back out of the source gives the test a subject it does not control: lowering
 // AdminContract while a higher step is still named fails here, and so does
 // adding a step constant without serving it.
 func TestTheContractNeverGoesBackwards(t *testing.T) {
@@ -64,13 +79,13 @@ func TestTheContractNeverGoesBackwards(t *testing.T) {
 	highest := 0
 	for name, value := range steps {
 		require.GreaterOrEqual(t, proxy.AdminContract, value,
-			"%s is a step this source records, so a plane serving less than it has removed surface", name)
+			"%s is a revision this source records, so reporting less would conceal a recorded change", name)
 		if value > highest {
 			highest = value
 		}
 	}
 	require.Equal(t, highest, proxy.AdminContract,
-		"the served contract is the newest step named; raising it without a constant saying what it bought "+
+		"the served contract is the newest step named; raising it without a constant saying what changed "+
 			"leaves the next reader unable to see what changed")
 
 	require.Equal(t, 0, proxy.AdminContractUnreported,

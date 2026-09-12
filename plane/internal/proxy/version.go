@@ -23,17 +23,14 @@ import (
 // AdminContract is the load-bearing half. A version string is for humans and
 // cannot be compared — "v0.1.0" against a development build's
 // "v0.0.0-20260906..." orders wrongly, and a client cannot know which
-// releases carried which routes. The contract is a single integer a client
-// CAN compare, and it answers the only question a client actually has: can
-// this plane serve the thing I am about to ask for?
+// releases carried which routes. The contract records admin surface
+// revisions and the introduction floors of surviving capabilities.
 //
-// The rule that makes the number safe to compare, and it is a promise this
-// plane keeps rather than an observation about it: within a major version
-// the admin surface only ever GROWS. A route that has been served is not
-// removed, and its request and response shapes are not changed in place —
-// new information arrives as new fields or new routes, and the contract
-// number goes up. That is what lets a client older than the plane proceed
-// instead of being stranded by a CLI that is merely behind.
+// Contract 3 deliberately breaks the former grow-only promise by retiring
+// inbound. A higher number no longer guarantees every older route survives.
+// The retirement marker is not a compatibility guard: older clients accept
+// higher numbers and will still call removed routes. Those clients need a
+// matching CLI upgrade; surviving capability floors remain unchanged.
 const (
 	// AdminContractUnreported is not served by anything; it is what a client
 	// concludes when this endpoint 404s. Every plane up to and including
@@ -42,8 +39,8 @@ const (
 	// so an absent route is an absent route.
 	AdminContractUnreported = 0
 
-	// AdminContractInitial is the first contract that reports itself, and it
-	// carries the surface as it stands: the sixteen admin routes, and
+	// AdminContractInitial was the first reporting contract. It introduced
+	// the original sixteen admin routes, and
 	// /admin/config/validate returning table_declared — the merged upstream
 	// table's policy-relevant fields, without which a blueprint's `requires`
 	// cannot be checked against the plane.
@@ -59,11 +56,13 @@ const (
 	// this is the number `kmx models add` requires before it sends.
 	AdminContractModelOverlay = 2
 
-	// AdminContract is what THIS plane serves. Raise it in the same change
-	// that adds something a client may depend on, and add a constant above
-	// naming what that was — the number is only useful if a reader can see
-	// what each step bought.
-	AdminContract = AdminContractModelOverlay
+	// AdminContractInboundRetired removes /admin/inbound-audit and inbound
+	// approval requests. Model overlays and tool/budget approvals remain.
+	AdminContractInboundRetired = 3
+
+	// AdminContract is what THIS plane serves. Record additions and deliberate
+	// retirements with a named revision so readers can see what changed.
+	AdminContract = AdminContractInboundRetired
 )
 
 // version reports this plane's identity. It is authenticated like every other

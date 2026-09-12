@@ -52,13 +52,13 @@ Do not put bearer tokens in query strings or public manifests.
 
 **There is no public model/MCP seam ingress.** Services are ClusterIP;
 the certificate names in-cluster services and loopback, not an external
-hostname. The [Slack edge](inbound.md) exposes neither data seam.
-The inbound bridge invokes kagent A2A only, not an arbitrary runtime.
+hostname. The inbound bridge and its public edge are removed; older deployments
+need [explicit cleanup](operations.md#upgrading-after-inbound-retirement).
 Model calls through the proxy are metered separately from turn invocation.
 
 **`acted_for=none` is not evidence that no human was involved.** Without
-an open inbound run the store writes `none`, including for independently
+a live historical run window the store writes `none`, including for independently
 triggered applications. Caller headers are self-claims, and socket addresses
 are not human identity. Read [identity](identity.md) before interpreting
 these rows. Historical no-kagent experiments did not prove a general runtime
-support contract, and this documentation retirement changes no runtime code.
+support contract. Retiring inbound adds no new attribution or identity guarantee.

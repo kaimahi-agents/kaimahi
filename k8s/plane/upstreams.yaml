@@ -133,74 +133,6 @@
 # enforce it on its http transport, so it does not close the
 # direct-access bypass — the Slack pod's NetworkPolicy does (proxy-only
 # ingress).
-#
-# inbound_hooks is the inbound bridge's table (docs/inbound.md): the
-# ONLY webhooks the plane accepts, each bound to a plane credential, a
-# proof mode, the agent it triggers, and the governed credential that
-# agent spends under. Four entries:
-#   - demo:         Kaimahi's generic SIGNED webhook (kaimahi-hmac): the
-#                   primitive, and the one CI exercises end to end —
-#                   unauthenticated, forged, stale, replayed and
-#                   ungranted events all refused fail-closed.
-#   - demo-bearer:  the same target for a source that can set a header
-#                   but cannot sign. Weaker (the proof travels with every
-#                   request); present so the generic path serves both.
-#   - slack-events: the one NAMED source, Slack's Events API request
-#                   signing (v0). Only a human's app_mention triggers
-#                   (every other subscribed event is acknowledged and
-#                   audited 'ignored'), and only from the channel(s) in
-#                   slack_channels_file. Live-verified on AKS through
-#                   the public edge (docs/inbound.md); CI covers the
-#                   handshake and mapping by unit test, since Slack
-#                   cannot reach a kind cluster.
-# signing_secret_file names (never carries) a key of the
-# kaimahi-inbound-signing Secret (scripts/inbound-secret.sh).
-# slack_channels_file names (never carries) the channel the bot may be
-# triggered from: the SLACK_MCP_ADD_MESSAGE_TOOL key of kaimahi-slack-bot
-# (scripts/slack-secret.sh), projected read-only into the proxy — the
-# same value that restricts where the MCP server may post, so the
-# private test channel has one source of truth in both directions and
-# a channel ID never appears in this file.
-# slack_approvers_file names (never carries) WHO may approve or deny a
-# request from Slack: the `approvers` key of kaimahi-slack-approvers
-# (scripts/slack-approvers.sh), projected next to the channel file. A
-# Slack user id is a workspace identifier and never appears here. A
-# command from anyone else is refused (403) and audited; channel
-# membership alone is not authority. A Slack approval that names
-# no bounds gets slack_default_uses / slack_default_ttl (1 use, 15m
-# unless set here): a chat-typed approval is the least deliberate kind,
-# so the default is the tightest grant that still admits the retried
-# action; `uses=`/`ttl=` on the command win.
-# budget_credential is the credential the target agent's governed preset
-# carries: hello-world's governed presets and the Slack demo agent's
-# governed-copilot preset all mount kaimahi-governed-token, issued to
-# credential "hello-world" by `make govern`.
-#
-# slack-tools is the same shape aimed at the TOOLS agent, and it is what
-# makes the identity claim provable end to end without a key: a mention
-# from a person triggers hello-tools, whose model spend lands in the
-# ledger under "hello-world" and whose tool calls land in the tool audit
-# under "hello-tools" — two credentials, one person, both trails naming
-# them. Inert until someone creates its signing secret AND approves an
-# inbound grant for it, like every other hook here.
-#
-# tool_credential is the OTHER credential the same agent authenticates
-# with — its MCP gateway one (`make govern-slack` issues "hello-slack").
-# Identity on the call needs both: the plane opens one run per
-# credential around an agent turn, and a run opened on only the budget
-# credential would put the person's name on the model calls and leave
-# every tool call in the audit trail saying nobody was there. Omit it
-# for a hook whose agent calls no tools.
-#
-# approval_notifier is how a human learns a request is waiting:
-# the plane posts into the pinned channel THROUGH its own gateway
-# (tool_upstream slack, the posting tool), under its OWN credential —
-# credential_file names (never carries) the kmh_ token issued to
-# "kaimahi-plane" by `make notify-slack`, allowlisted to that one tool;
-# channel_file is the same key that pins the MCP server's posting and
-# bounds the inbound hook. So the plane's own message is authenticated,
-# allowlisted, channel-pinned and audited exactly as an agent's would
-# be. Remove the block and nobody is told; `make approvals` remains.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -311,51 +243,6 @@ data:
             "pipelines_write":      {"policy_fields": ["action", "orgName", "project", "pipelineId", "previewRun"]}
           }
         }
-      },
-      "inbound_hooks": {
-        "demo": {
-          "credential": "inbound-demo",
-          "auth": "kaimahi-hmac",
-          "signing_secret_file": "/etc/kaimahi/inbound/demo",
-          "agent_namespace": "kagent",
-          "agent": "hello-world",
-          "budget_credential": "hello-world"
-        },
-        "demo-bearer": {
-          "credential": "inbound-bearer",
-          "auth": "bearer",
-          "agent_namespace": "kagent",
-          "agent": "hello-world",
-          "budget_credential": "hello-world"
-        },
-        "slack-events": {
-          "credential": "inbound-slack",
-          "auth": "slack",
-          "signing_secret_file": "/etc/kaimahi/inbound/slack-events",
-          "slack_channels_file": "/etc/kaimahi/slack/channel",
-          "slack_approvers_file": "/etc/kaimahi/slack/approvers",
-          "agent_namespace": "kagent",
-          "agent": "hello-slack",
-          "budget_credential": "hello-world",
-          "tool_credential": "hello-slack"
-        },
-        "slack-tools": {
-          "credential": "inbound-slack",
-          "auth": "slack",
-          "signing_secret_file": "/etc/kaimahi/inbound/slack-tools",
-          "slack_channels_file": "/etc/kaimahi/slack/channel",
-          "slack_approvers_file": "/etc/kaimahi/slack/approvers",
-          "agent_namespace": "kagent",
-          "agent": "hello-tools",
-          "budget_credential": "hello-world",
-          "tool_credential": "hello-tools"
-        }
-      },
-      "approval_notifier": {
-        "tool_upstream": "slack",
-        "tool": "conversations_add_message",
-        "credential_file": "/etc/kaimahi/notifier/api-key",
-        "channel_file": "/etc/kaimahi/slack/channel"
       },
       "standing_constraints": {
         "ap-agent": {

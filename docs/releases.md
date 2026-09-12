@@ -173,8 +173,8 @@ What happens under that:
 **Proven, not asserted.** CI's `plane-upgrade` job
 ([scripts/plane-upgrade-probe.sh](../scripts/plane-upgrade-probe.sh)) installs
 a plane several migrations old straight from the module proxy, seeds it through
-its own admin API with a credential, a budget, a tool allowlist, a grant a
-human approved and a priced ledger row, then starts the current plane on the
+its own admin API with a credential, a budget, a tool allowlist, an
+admin-approved fixture grant and a priced ledger row, then starts the current plane on the
 same database and asserts every one of those survived and that the upgraded
 plane serves a fresh governed call.
 
@@ -194,8 +194,10 @@ plane v0.2.0 (admin contract 1)
 
 The version string is for you. The **admin contract** is the number kmx
 compares: a version string cannot be ordered across releases and development
-builds, and it does not tell a client which routes exist. The contract does,
-and it rises whenever the admin surface gains something a client can depend on.
+builds. The contract marks admin-surface revisions; lower-bound capability checks
+remain useful for retained features, but the number alone cannot prove every old
+route still exists. Contract **3** marks intentional inbound retirement, not an
+additive feature.
 
 **Skew is decided per operation, not once for the whole session.** An older
 plane is not a broken one, so kmx keeps working against everything that plane
@@ -216,17 +218,19 @@ with more words in front of it.
 
 **A plane NEWER than kmx proceeds**, with one note saying so. The state lives in
 the plane — the ledger, the grants, the approvals — and stranding it because the
-CLI is behind would be the more expensive mistake. That is safe because of the
-promise below, not because it is usually fine.
+CLI is behind would be the more expensive mistake. This is not a compatibility
+guarantee: an intentional retirement can remove a route an older CLI still calls.
 
 ### The promise the contract rests on
 
-**Within a major version the plane's admin surface only ever grows.** A route
-that has been served is not removed, and its request and response shapes are
-not changed in place; new information arrives as new fields or new routes, and
-the contract number goes up. Break that and an older kmx talking to a newer
-plane breaks silently, which is the failure this whole mechanism exists to
-prevent.
+The original grow-only promise no longer applies across governance retirement.
+**Upgrade kmx and the plane together.** Contract 3 removes inbound audit and
+inbound approval filing. Older CLI binaries accept higher numbers and may still
+print their compiled-in grow-only reassurance; their four-trail flow/watch and
+inbound audit commands fail against this plane. The current CLI uses three
+trails and warns that compatibility with a newer plane is not guaranteed.
+See the [retirement upgrade procedure](operations.md#upgrading-after-inbound-retirement)
+for external endpoints, configuration and retained data.
 
 Two consequences worth stating:
 
@@ -261,9 +265,11 @@ shrink: every credential issued afterwards has a deadline, and
 `kaimahi_credentials_without_expiry` is the gauge whose job is to trend to
 zero. Renew or re-issue at your own pace ([identity.md](identity.md)).
 
-Both of these follow one rule, which is the rule to expect from any future
-migration here: **an upgrade never silently widens or voids what an operator
-already had.**
+Both preserve surviving model/tool capabilities without widening their authority.
+Retired inbound grants are a separate, explicit exception: their rows remain
+readable but are reported inactive and have no dispatcher. Old pending inbound
+requests can be denied, not approved into new grants. Retirement does not drop
+stored audit data or revoke credentials used by surviving seams.
 
 ### When a migration fails halfway
 

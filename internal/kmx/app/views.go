@@ -27,8 +27,8 @@ func (a *App) Grants(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.Grants(a.Out, credential) })
 }
 
-// Flow prints one credential's four audit trails merged into a single
-// chronological reading — what was triggered, what it spent, what it called,
+// Flow prints one credential's three audit trails merged into a single
+// chronological reading — what it spent, what it called,
 // what it was refused, and what a human let through.
 func (a *App) Flow(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.Flow(a.Out, credential) })
@@ -41,10 +41,8 @@ func (a *App) Audit(kind, credential string) error {
 		return a.session(func(c *admin.Client) error { return c.ToolAudit(a.Out, credential) })
 	case "approval":
 		return a.session(func(c *admin.Client) error { return c.ApprovalAudit(a.Out, credential) })
-	case "inbound":
-		return a.session(func(c *admin.Client) error { return c.InboundAudit(a.Out, credential) })
 	default:
-		return fmt.Errorf("usage: kmx audit tool|approval [<credential>] | kmx audit inbound [<hook>]")
+		return fmt.Errorf("usage: kmx audit tool|approval [<credential>]")
 	}
 }
 
@@ -103,9 +101,8 @@ func (a *App) RenewCredential(name string, ttl *int64) error {
 	})
 }
 
-// IssueIdentityCredential creates an identity for signed inbound hooks. The
-// hook authenticates with its signing secret, so the one-time bearer is
-// validated and discarded rather than printed or stored.
+// IssueIdentityCredential creates an identity without retaining its bearer.
+// The one-time bearer is validated and discarded rather than printed or stored.
 func (a *App) IssueIdentityCredential(name string, ttl *int64) error {
 	if err := a.Guard(fmt.Sprintf("issue identity-only credential %q and DISCARD its bearer", name), "kmx credential issue "+name+" --discard"); err != nil {
 		return err

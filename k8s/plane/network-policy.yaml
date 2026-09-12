@@ -80,21 +80,12 @@ spec:
 #
 # Out: the ledger, the five in-cluster upstreams the committed table
 # names (ollama, Orka's OpenAI-compatible endpoint, kagent's tool server,
-# the Slack MCP server, the fixture ERP), the kagent controller on 8083 (the inbound bridge invokes agents
-# through its A2A endpoint), and DNS. Each upstream is pinned to its POD
+# the Slack MCP server, the fixture ERP), and DNS. Each upstream is pinned to its POD
 # by label, in its namespace, on its port — not to the Service, because
 # policy is evaluated on the post-NAT pod address. A new in-cluster entry in
 # k8s/plane/upstreams.yaml needs a matching rule here, or the gateway's
-# 502 (or an inbound event's 'failed … agent unreachable' outcome row)
-# will say so; a hosted entry (`internet: true`) needs the opt-in
+# 502 will say so; a hosted entry (`internet: true`) needs the opt-in
 # allowance instead (see above).
-#
-# Not opened here: the inbound port (8082) from outside the cluster. On
-# kind the demo reaches it by port-forward (kubelet traffic, which this
-# policy does not see). The public path is opt-in (`make
-# inbound-expose` on TARGET=aks): k8s/inbound-edge.yaml carries the edge
-# and the one allowance it needs, kaimahi-proxy-ingress-edge (the edge
-# pod, 8082, nothing else).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -178,23 +169,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8085
-    # The inbound bridge invokes agents through the kagent
-    # controller's A2A endpoint (the one origin it dials, docs/inbound.md).
-    # The controller only, on 8083 — not the agent pods, not the rest of
-    # the kagent namespace. The controller's selector is the chart's
-    # (component=controller of the kagent instance).
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kagent
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: kagent
-              app.kubernetes.io/instance: kagent
-              app.kubernetes.io/component: controller
-      ports:
-        - protocol: TCP
-          port: 8083
     - to:
         - namespaceSelector:
             matchLabels:
@@ -211,7 +185,7 @@ spec:
 # 2b. The operations port. The proxy's metrics, readiness and
 #     liveness live on 9092, on NO Service: kubelet's probes are
 #     node-originated and need no rule, and nothing in the agent
-#     namespace or behind the edge can reach it (rule 2 opens 8080 and
+#     namespace can reach it (rule 2 opens 8080 and
 #     8081 to agents and nothing else). A scraper gets exactly this:
 #     pods labelled as Prometheus in a namespace called `monitoring`,
 #     on 9092, nothing more. Nothing scrapes in CI and no such namespace

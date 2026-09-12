@@ -117,20 +117,14 @@ func (m *Material) ServerConfig() *tls.Config {
 	}
 }
 
-// LoopbackClient is how the plane reaches its own seams: the liveness probe
-// asking each data listener whether it is answering, and the approval
-// notifier posting through its own gateway.
-//
-// It verifies. Those two are the places most tempted to skip it — the
-// connection never leaves the pod, so what would it buy? — and skipping it
-// there would leave the plane unable to notice its own certificate had
-// expired, which is the failure this whole path exists to make visible.
+// LoopbackClient is how the liveness probe asks each data listener
+// whether it is answering. Verification stays on even over loopback:
+// skipping it would hide an expired seam certificate from the probe.
 func (m *Material) LoopbackClient() *http.Client {
 	return &http.Client{Timeout: 2 * time.Second, Transport: m.Transport()}
 }
 
-// Transport is the same trust, for a caller that needs its own client
-// settings — the approval notifier's, which must not follow redirects.
+// Transport verifies the plane's own authority when dialing a seam.
 func (m *Material) Transport() *http.Transport {
 	return &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: m.roots, MinVersion: tls.VersionTLS12},

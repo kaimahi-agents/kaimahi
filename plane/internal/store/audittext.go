@@ -17,9 +17,9 @@ package store
 // with a newline in it renders as a SECOND LINE, which reads as a second
 // audit row that nobody wrote.
 //
-// So the bound lives here, at the store, and every write to the four
-// trails goes through it — the spend ledger, the tool audit, the
-// approvals trail and the inbound trail. Bounding at the seam would
+// So the bound lives here, at the store, and every write to the three
+// trails goes through it — the spend ledger, the tool audit, and the
+// approvals trail. Bounding at the seam would
 // leave it to be remembered once per caller; this way an audit column
 // cannot be written unbounded at all. It is not redaction —
 // internal/redact scrubs known secret values out of LOGS and is a
@@ -68,8 +68,8 @@ func OneLine(s string) string {
 
 // Clip bounds s to n BYTES, cutting on rune boundaries and counting the
 // ellipsis against the bound. Slicing by byte index would cut a
-// multibyte rune in half — these values land in an audit row, an
-// approval request and a Slack message, none of which should carry
+// multibyte rune in half — these values land in audit rows and
+// approval requests, neither of which should carry
 // invalid UTF-8 — and would also overrun n, since "…" is three bytes.
 func Clip(s string, n int) string {
 	if len(s) <= n {
@@ -106,11 +106,8 @@ func Clip(s string, n int) string {
 // request's `subject`, no. A grant is read back out of
 // `approval_request.subject` and matched against the raw tool name the
 // gateway hands `ConsumeToolGrant`, so altering it on the way in would
-// mint grants that can never be consumed. Inbound's `delivery_id` is the
-// same shape: replay detection is a unique index on the stored value, and
-// two different ids that normalised together would drop a real event as a
-// replay. Those columns stay exactly as they arrived, and the renderers
-// are what keep them from breaking a table.
+// mint grants that can never be consumed. Those columns stay exactly
+// as they arrived, and the renderers keep them from breaking a table.
 //
 // A clean value — already one printable line, no leading or trailing
 // space — is stored as it arrived. Anything else is stored in Go's

@@ -76,7 +76,6 @@ const (
 	toolFmt        = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %-28s %-16s %s\n"
 	credentialsFmt = "%-16s %-10s %-12s %-22s %-9s %s\n"
 	approvalFmt    = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s\n"
-	inboundFmt     = "%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s\n"
 	pendingFmt     = "%-36s %-19s %-12s %-8s %-18s %-34s %s\n"
 )
 
@@ -234,28 +233,6 @@ func (c *Client) ApprovalAudit(out io.Writer, credential string) error {
 			dash(e["arg_summary"])})
 	}
 	renderTable(out, []string{"created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"}, viewRows, approvalFmt)
-	return nil
-}
-
-// InboundAudit prints signed inbound events, newest first.
-func (c *Client) InboundAudit(out io.Writer, hook string) error {
-	if hook != "" {
-		if err := ValidCredentialName(hook); err != nil {
-			return err
-		}
-	}
-	doc, err := c.Get("inbound-audit", "/admin/inbound-audit?hook="+url.QueryEscape(hook)+"&limit=50")
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, inboundFmt, "created (UTC)", "hook", "credential", "delivery", "decision",
-		"status", "in", "out", "detail", "acted for")
-	for _, e := range rows(doc, "entries") {
-		fmt.Fprintf(out, inboundFmt,
-			trunc(str(e["created_at"]), 19), str(e["hook"]), str(e["credential"]),
-			trunc(str(e["delivery_id"]), 20), str(e["decision"]), str(e["status"]),
-			str(e["input_tokens"]), str(e["output_tokens"]), str(e["detail"]), actedFor(e))
-	}
 	return nil
 }
 

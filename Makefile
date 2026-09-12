@@ -8,8 +8,8 @@
 # is not a local kind cluster. Fail closed — no confirmation, no action.
 #
 # The exceptions, stated so the rule is not trusted further than it holds:
-# `netpol-verify` and `inbound-fire` run the same guard INSIDE their
-# scripts, deriving the context from the KUBECTL they are handed rather
+# `netpol-verify` runs the same guard INSIDE its
+# script, deriving the context from the KUBECTL it is handed rather
 # than an inherited KUBE_CTX; managed lift aliases are guarded inside kmx
 # (the cluster phase has no context to guard yet); and `plane-image` and
 # `erp-image` on AKS build in the registry and touch no cluster at all.
@@ -182,9 +182,8 @@ AP_ACT_TOOLS   := payment_schedule,dispute_open,vendor_notify
 AP_AGENT_TOOLS ?= $(AP_TOOLS),$(AP_ACT_TOOLS)
 AP_TOOLNAMES_JSON = $(if $(filter -,$(AP_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(AP_AGENT_TOOLS))")
 AP_INVOICE     ?= INV-88134
-# 1 = the approvals in `make ap-demo` / `make ap-injection` wait for a real
-# person in a real Slack rather than a synthesised app_mention. The
-# default keeps kind and CI exactly as they were.
+# Forward the retired flag so old invocations fail closed in both AP scripts.
+# Only 0/default permits automated fixture approvals with the admin bearer.
 AP_HUMAN       ?= 0
 
 .PHONY: build guard model-secret copilot-secret \
@@ -192,9 +191,6 @@ AP_HUMAN       ?= 0
 	slack-secret slack-mcp govern-slack \
 	slack-post slack-down aks-creds \
 	netpol-verify egress-copilot egress-copilot-off \
-	inbound-secret inbound-fire \
-	inbound-expose inbound-unexpose exposure-scan \
-	slack-approvers notify-slack slack-mention \
 	github-revoke egress-hosted egress-hosted-off \
 	govern-github github-ask github-down \
 	erp erp-image erp-fixtures govern-ap ap-ask ap-demo ap-injection ap-down \
@@ -738,17 +734,14 @@ ap-ask: $(KMX)
 
 ## ap-demo: the exception scenario end to end — the routine invoice pays
 ## itself under the standing constraint, the exception is denied, filed,
-## approved in Slack by a named human and only then paid, and the dispute
+## approved through the admin path and only then paid, and the dispute
 ## and the vendor notice need an approval each of their own.
-##   make ap-demo [SLACK_USER=U0EXAMPLE] [AP_HUMAN=1]
+##   make ap-demo
 ##
-## AP_HUMAN=1 is the live-workspace setting: the scenario prints each
-## approval line and WAITS for that person to type it in Slack, instead of
-## synthesising a signed app_mention in their name. See
-## scripts/await-approval.sh.
+## Approvals are automated fixture decisions using the demo's admin bearer.
 ap-demo: guard $(KMX)
 	@$(KMX_ENV) KUBECTL="$(KUBECTL)" KMX='$(abspath $(KMX))' \
-		CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
+		CRED_AP=$(CRED_AP) \
 		AP_HUMAN='$(AP_HUMAN)' \
 		bash scripts/ap-demo.sh
 
@@ -757,7 +750,7 @@ ap-demo: guard $(KMX)
 ## approval the earlier call earned.
 ap-injection: guard $(KMX)
 	@$(KMX_ENV) KUBECTL="$(KUBECTL)" KMX='$(abspath $(KMX))' \
-		CRED_AP=$(CRED_AP) SLACK_USER='$(SLACK_USER)' \
+		CRED_AP=$(CRED_AP) \
 		AP_HUMAN='$(AP_HUMAN)' \
 		bash scripts/ap-injection.sh
 
@@ -767,95 +760,3 @@ ap-down: guard
 	-$(KUBECTL) -n kagent delete remotemcpserver kaimahi-erp
 	-$(KUBECTL) delete -f k8s/erp-mcp.yaml
 	-$(KUBECTL) -n kaimahi delete configmap kaimahi-erp-fixtures
-
-## ---- inbound connectors (docs/inbound.md) ----
-#
-# The plane's one ingress: an external event (a webhook) may trigger a
-# kagent agent, on the plane's terms. The hooks live in the committed
-# upstreams table (k8s/plane/upstreams.yaml); these targets store its
-# signing secret and deliver an event.
-HOOK          ?= demo
-EVENT         ?= Reply with exactly the word PONG.
-
-## inbound-secret: store a hook's signing secret — paste the SOURCE's
-## secret on stdin, or GENERATE=1 for a fresh one a Kaimahi-scheme caller
-## is then told (see scripts/inbound-secret.sh for retrieval).
-inbound-secret: guard
-	@KUBECTL="$(KUBECTL)" HOOK=$(HOOK) bash scripts/inbound-secret.sh $(if $(GENERATE),--generate,)
-
-## inbound-fire: deliver one event to a hook and report the plane's
-## decision. Unguarded for the same reason `chat` is (it runs through
-## the guarded probe script, which resolves and vets its own context).
-##   make inbound-fire [HOOK=demo] [EVENT='...'] [AUTH=hmac|bearer|none|forged|stale]
-##                     [EXPECT=202] [DELIVERY=<id to resend>]
-inbound-fire:
-	@KUBECTL="$(KUBECTL)" bash scripts/inbound-probe.sh $(HOOK) "$(EVENT)"
-
-## ---- approvals from Slack (docs/approvals.md, "Deciding from Slack") ----
-#
-# A filed request is announced in the pinned channel by the plane, under
-# the plane's OWN gateway credential; an approver decides it by
-# mentioning the bot; the grant carries their Slack identity. Two
-# Secrets and one credential, all plane-side (kaimahi namespace).
-CRED_PLANE     ?= kaimahi-plane
-SLACK_USER     ?=
-COMMAND        ?=
-
-## slack-approvers: store WHO may approve from Slack — paste Slack user
-## ids (U…), comma- or newline-separated, on stdin. Workspace identifiers:
-## stdin-only, into Secret kaimahi-slack-approvers, never argv or YAML.
-slack-approvers: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/slack-approvers.sh
-
-## notify-slack: issue the PLANE's own gateway credential (kmh_ token into
-## the plane-side Secret kaimahi-notifier-token) and allowlist it to the
-## posting tool only. Configuration, not a grant: the plane is the trust
-## root. The proxy reads the file per post (first projection can lag ~1m).
-notify-slack: guard $(KMX)
-	@$(KMX_ENV) $(KMX) credential issue $(CRED_PLANE) --secret kaimahi-notifier-token --namespace kaimahi
-	@$(KMX_ENV) $(KMX) tools allow "$(SLACK_POST_TOOL)" --credential $(CRED_PLANE)
-
-## slack-mention: deliver ONE synthetic, correctly signed app_mention to
-## the slack-events hook as Slack would (kind: the keyless stand-in for
-## typing in the channel; CI's tool). Unguarded like inbound-fire.
-##   make slack-mention SLACK_USER=U0EXAMPLE COMMAND='approve <id> uses=1' [EXPECT=200] [WANT='approved request']
-slack-mention:
-	@test -n "$(SLACK_USER)" && test -n "$(COMMAND)" || \
-		{ echo "usage: make slack-mention SLACK_USER=U… COMMAND='approve <id> [uses=N] [ttl=D]' [EXPECT=200] [WANT=...]" >&2; exit 1; }
-	@KUBECTL="$(KUBECTL)" EXPECT="$(EXPECT)" WANT="$(WANT)" bash scripts/slack-mention-probe.sh "$(SLACK_USER)" "$(COMMAND)"
-
-## ---- the public edge (docs/inbound.md, "Putting it on the internet") ----
-#
-# The ONLY internet-reachable thing in this repo: a TLS edge in front of
-# the inbound bridge, on TARGET=aks only. kind has no public path and
-# these targets refuse there rather than pretend. KAIMAHI_DNS_LABEL is an
-# Azure identifier (it becomes <label>.<region>.cloudapp.azure.com) and is
-# never committed; neither is the public IP the scan reports.
-ifeq ($(TARGET),aks)
-## inbound-expose: put the inbound bridge on the internet — Caddy edge,
-## Let's Encrypt via TLS-ALPN-01, one port. Prints the Slack Request URL.
-##   TARGET=aks make inbound-expose KAIMAHI_DNS_LABEL=<unique-label>
-inbound-expose: guard
-	@KUBECTL="$(KUBECTL)" KAIMAHI_DNS_LABEL='$(KAIMAHI_DNS_LABEL)' AKS_LOCATION='$(AKS_LOCATION)' \
-		AKS_RESOURCE_GROUP='$(AKS_RESOURCE_GROUP)' AKS_CLUSTER='$(AKS_CLUSTER)' \
-		bash scripts/inbound-expose.sh
-
-## inbound-unexpose: take the edge down (Deployment, Service + public IP,
-## the certificate's volume, and the policy allowance). REMOVE the Slack
-## app's Request URL too — the name this frees can be claimed by anyone.
-inbound-unexpose: guard
-	$(KUBECTL) delete -f k8s/inbound-edge.yaml --ignore-not-found
-	@echo 'edge removed. Now remove the Request URL / disable Event Subscriptions in the Slack app.' >&2
-
-## exposure-scan: prove the internet-facing surface is exactly the edge
-## on 443 — every public IP in the cluster's node resource group is
-## connect-scanned on all 65535 TCP ports (IPs masked; REVEAL_IPS=1).
-exposure-scan:
-	@KUBECTL="$(KUBECTL)" AKS_RESOURCE_GROUP='$(AKS_RESOURCE_GROUP)' AKS_CLUSTER='$(AKS_CLUSTER)' \
-		bash scripts/exposure-scan.sh
-else
-inbound-expose inbound-unexpose exposure-scan:
-	@echo 'the public edge exists only on TARGET=aks — a kind cluster has no internet-reachable address,' >&2
-	@echo 'and the inbound bridge there is reached by port-forward only (docs/inbound.md).' >&2
-	@exit 1
-endif

@@ -67,8 +67,9 @@ type RunOptions struct {
 	// written to — including the seam credentials a live run re-mints,
 	// which is why a dry run rides whatever is already in custody.
 	DryRun bool
-	// Approver requires this person's approval (a Slack user id, as the
-	// approval trail records it). Empty means anyone the plane admits.
+	// Approver requires the identity recorded in the approval trail.
+	// Empty means anyone the plane admits; CLI approvals record "admin",
+	// not a verified person's identity.
 	Approver string
 	// AdminPort is the driver's own port-forward.
 	AdminPort string
@@ -605,9 +606,8 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	if r.opt.Approver == "" {
 		r.app.notef("%s  %s", r.app.presenter().Accent("Approve it with:"), r.app.operationCommand("approve", id, "--uses", "1", "--ttl", "10m"))
 	} else {
-		r.app.notef("Required approver: %s. Approve from that Slack account; CLI approval does not record this identity.", r.opt.Approver)
+		r.app.notef("Required approver: %s. CLI approvals record admin, not a verified person's identity.", r.opt.Approver)
 	}
-	r.app.notef("From Slack connected to context %s: @kaimahi approve %s uses=1 ttl=10m", r.app.Cfg.KubeContext, id)
 
 	permit, err := r.awaitApproval(id, s.Tool)
 	if err != nil {

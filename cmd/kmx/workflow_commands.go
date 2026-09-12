@@ -133,7 +133,7 @@ func newWorkflowRunCommand(state *commandState) *cobra.Command {
 		"read and draft, then stop before the first call with consequences")
 	cmd.Flags().StringArrayVar(&opt.Steps, "step", nil, "run only this step, by name; repeat to select multiple steps")
 	cmd.Flags().StringVar(&opt.Approver, "approver", "",
-		"require this person's approval (a Slack user id, as the plane records it)")
+		"require this decided_by value in the approval trail (CLI approvals record admin, not a person)")
 	cmd.Flags().StringVar(&opt.AdminPort, "admin-port", app.DefaultWorkflowAdminPort,
 		"the driver's own admin port-forward; the default admin port stays free for kmx approve")
 	cmd.Flags().IntVar(&opt.HumanSeconds, "wait", 900, "seconds to wait for a person on each approval")

@@ -10,7 +10,10 @@
 
 The model is **deny-and-retry**: no held-open MCP call or durable workflow
 is created by an approval. A denial can file a pending request; a human
-decides it; the client must attempt the action again.
+decides it; the client must attempt the action again. Tool (including
+argument-bound) and budget approvals still function in this retirement slice.
+Inbound requests can no longer be filed; old requests/grants/audit rows remain
+history, not usable webhook authority.
 
 ```sh
 kmx approvals
@@ -80,32 +83,16 @@ remain as history. A grant does not extend its credential's lifetime.
 Budget headroom is the cap plus live grant amounts. Only calls that need
 the overage consume budget-grant uses. Tool-grant uses are consumed before
 forwarding, so an upstream failure can spend the grant without delivering
-a result. Inbound grants admit events, not their later tool actions.
-See [spend](spend.md), [inbound](inbound.md) and [identity](identity.md).
+a result. See [spend](spend.md) and [identity](identity.md).
 
 ## Deciding from Slack
 
-The retained [inbound command parser](../plane/internal/inbound/command.go)
-accepts `@kaimahi approve <id> [uses=N] [ttl=D] [amount=N]` or
-`@kaimahi deny <id>`. IDs can be an unambiguous prefix of at least eight
-characters. Commands run after signature/channel checks but before the
-inbound grant gate, invoke no agent, and require membership in the hook's
-Secret-mounted `slack_approvers_file`. Channel membership is not authority.
-Missing, empty or invalid approver data fails commands closed; ordinary
-questions retain their own gates. Bot-authored events are ignored.
-
-The hook defaults are one use and fifteen minutes when not overridden;
-a budget approval still needs an amount. The decision records
-`slack:<user id>` on request, grant and audit, without resolving a display
-name. Synthetic signed mentions prove parser/authorization behavior, not
-that a human approved. Never impersonate a real approver for a demo.
-
-[slack-approvers.sh](../scripts/slack-approvers.sh) retains list capture;
-the notifier uses its own credential and the [Slack posting path](slack.md).
-Notifications are best-effort and asynchronous: known refusals may be
-retried up to three attempts; ambiguous post failures are not retried to
-avoid duplicates. A lost announcement never removes a filed request.
-**`kmx approvals` is the queue of record**, not the Slack channel.
+This path is removed along with inbound webhooks and the notifier. Use the
+admin commands above: **`kmx approvals` is the queue of record**. No Slack
+mention can approve or deny a request, and no automatic announcement or
+reply is posted. The retained [Slack MCP posting connector](slack.md) is not
+an approver path. Historical `slack:<user id>` decisions remain stored; new
+admin decisions do not identify a person.
 
 ## Remaining limits and evidence
 
@@ -116,6 +103,5 @@ a request. Per-call gateway checks remain authoritative.
 These controls govern inputs, not tool results, model reasoning or every
 network route. They do not prevent prompt injection. An allowed call, an
 in-bound call or a human-approved bad call can still have harmful effects.
-Store tests, [gateway constraint tests](../plane/internal/gateway/constraint_test.go)
-and [Slack command tests](../plane/internal/inbound/command_test.go) preserve
-implementation evidence without the retired demo transcripts.
+Store tests and [gateway constraint tests](../plane/internal/gateway/constraint_test.go)
+preserve evidence for the retained implementation, not the retired Slack path.

@@ -889,16 +889,16 @@ def the_erp_says_what_it_is(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def await_approval_has_the_demo_callers_the_map_names(doc: Doc, tree: Tree) -> list[str]:
-    """The retained helper is demonstration code because the AP demos call it."""
+def ap_demos_call_admin_approve_directly(doc: Doc, tree: Tree) -> list[str]:
+    """Both AP fixtures retain automated admin approval, not a human wait."""
     _, body = doc.section("`scripts/`")
-    once(phrase("Both `ap-demo.sh` and `ap-injection.sh` call it"), body,
-         "the await-approval demo callers")
+    once(phrase("Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly"), body,
+         "the AP demos' direct admin approvals")
     missing = [path for path in ("scripts/ap-demo.sh", "scripts/ap-injection.sh")
-               if "await-approval.sh" not in tree.read(path)]
+               if not re.search(r"^\s*admin approve\b", tree.read(path), re.M)]
     if not missing:
         return []
-    return [f"{path} does not call await-approval.sh as the map says" for path in missing]
+    return [f"{path} does not call admin approve directly as the map says" for path in missing]
 
 
 @claim
@@ -927,14 +927,14 @@ def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list
 
 
 @claim
-def exposure_scan_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
+def slack_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
     """Count make recipes without freezing an interpretation of ownership."""
     _, body = doc.section("`scripts/`")
-    m = once(phrase("`scripts/exposure-scan.sh`: {n} make recipe"), body,
-             "the exposure-scan make caller")
+    m = once(phrase("`scripts/slack-secret.sh`: {n} make recipe"), body,
+             "the slack-secret make caller")
     recipes = [line for line in tree.read("Makefile").splitlines()
-               if line.startswith("\t") and "scripts/exposure-scan.sh" in line]
-    return compare_count(number(m.group(1)), len(recipes), "exposure-scan make recipes")
+               if line.startswith("\t") and "scripts/slack-secret.sh" in line]
+    return compare_count(number(m.group(1)), len(recipes), "slack-secret make recipes")
 
 
 @claim
@@ -1036,7 +1036,7 @@ def main(argv) -> int:
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![hero](brand/hero.png)\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/ap-demo.sh\n\t./scripts/ap-injection.sh\n"
-                "\t./scripts/exposure-scan.sh\n# scripts/verify-chat.py\n"
+                "\t./scripts/slack-secret.sh\n# scripts/verify-chat.py\n"
                 "# scripts/check-example.py\n",
     "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
@@ -1057,10 +1057,9 @@ SELFTEST_FILES = {
     "k8s/demo.yaml": "kind: ConfigMap\n",
     "k8s/erp-fixtures.json": "{}\n",
     "scripts/embedded.sh": "true\n",
-    "scripts/ap-demo.sh": "./await-approval.sh\n",
-    "scripts/ap-injection.sh": "./await-approval.sh\n",
-    "scripts/await-approval.sh": "true\n",
-    "scripts/exposure-scan.sh": "true\n",
+    "scripts/ap-demo.sh": 'admin approve "$id" --ttl 10m --uses "$uses"\n',
+    "scripts/ap-injection.sh": 'admin approve "$id" --ttl 10m --uses "$uses"\n',
+    "scripts/slack-secret.sh": "true\n",
     "scripts/verify-chat.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
@@ -1083,7 +1082,7 @@ The comment at the top of `internal/demo/erp/server.go` says
 
 ## The short version
 | `internal/` | `kmx/` (one packages) |
-| `scripts/` | 2 (1 embedded in the binary, 1 operator) | 3 | 3 |
+| `scripts/` | 2 (1 embedded in the binary, 1 operator) | 2 | 3 |
 | `docs/` | 6 tracked files |
 | `brand/` | 2 assets used by the README |
 
@@ -1111,19 +1110,19 @@ and the remaining non-manifest is `k8s/erp-fixtures.json`.
 
 **Checkout — demonstrations (2):** `demo.yaml`, `erp-fixtures.json`.
 
-## `scripts/` — 8 tracked files
-7 of the 8 are named by something outside themselves, and the one
+## `scripts/` — 7 tracked files
+6 of the 7 are named by something outside themselves, and the one
 `scripts/mutations/*.json` are named by nothing.
 | **Installed** | 1 | `embedded.sh` |
-| **Checkout** | 1 | `exposure-scan.sh` |
-| **Demonstration** | 3 | `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
+| **Checkout** | 1 | `slack-secret.sh` |
+| **Demonstration** | 2 | `ap-demo.sh`, `ap-injection.sh` |
 | **Scaffolding** | 2 | the one `check-*` files, `verify-chat.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
 `embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
-Both `ap-demo.sh` and `ap-injection.sh` call it.
+Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly.
 `.github/workflows/ci.yml` (one invocations among two mentions).
 every occurrence in the Makefile is a comment line rather than a recipe.
-`scripts/exposure-scan.sh`: one make recipe.
+`scripts/slack-secret.sh`: one make recipe.
 
 ## `docs/` — 6 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
@@ -1165,7 +1164,7 @@ MAP_EDITS = [
      "drops a manifest from the embedded list that embed.go embeds"),
     ("`demo.yaml`, `erp-fixtures.json`", "`demo.yaml`, `erp-fixtures.json`, `embedded.yaml`",
      "files an embedded manifest under checkout as well"),
-    ("`ap-injection.sh`, `await-approval.sh`", "`ap-injection.sh`",
+    ("`ap-demo.sh`, `ap-injection.sh`", "`ap-demo.sh`",
      "leaves a script out of every bucket"),
     ("`README.md`, `getting-started.md`", "`README.md`",
      "leaves a doc out of every list"),
@@ -1173,8 +1172,9 @@ MAP_EDITS = [
      "miscounts the plane's packages"),
     ("Postgres and one migrations", "Postgres and two migrations",
      "miscounts the plane's migrations"),
-    ("Both `ap-demo.sh` and `ap-injection.sh` call it", "Only `ap-demo.sh` calls it",
-     "no longer names both await-approval demo callers"),
+    ("Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly",
+     "Only `ap-demo.sh` calls `kmx approve` directly",
+     "no longer names both direct admin approval callers"),
     ("no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`",
      "the root module imports it freely", "no longer makes the module-boundary claim"),
     ("| `cmd/kmx` (1 files)", "| `cmd/kmx` (2 files)",
@@ -1195,7 +1195,7 @@ MAP_EDITS = [
      "miscounts the checkers the mutation harness proves"),
     ("`staticcheck.conf` |", "`staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("7 of the 8 are named", "6 of the 8 are named",
+    ("6 of the 7 are named", "5 of the 7 are named",
      "miscounts which scripts anything outside names"),
     ("One tracked files under `scripts/` contain the literal `k8s/`",
      "Two tracked files under `scripts/` contain the literal `k8s/`",
@@ -1207,8 +1207,8 @@ MAP_EDITS = [
     ("The comment at the top of `internal/demo/erp/server.go`",
      "The comment at the bottom of `internal/demo/erp/server.go`",
      "no longer makes the ERP-evidence claim"),
-    ("`scripts/exposure-scan.sh`: one make recipe", "`scripts/exposure-scan.sh`: two make recipes",
-     "miscounts the exposure-scan make recipes"),
+    ("`scripts/slack-secret.sh`: one make recipe", "`scripts/slack-secret.sh`: two make recipes",
+     "miscounts the slack-secret make recipes"),
 ]
 
 
@@ -1362,18 +1362,18 @@ def selftest_fixture(tree: Tree) -> int:
             print(f"FAIL a new file in {where} was not noticed by any claim")
             failed += 1
 
-    # Each demo caller must be checked, not just the anchor or the first file.
+    # Each demo's actual command must be checked, not a comment or just the first file.
     for caller in ("scripts/ap-demo.sh", "scripts/ap-injection.sh"):
-        changed = copy.copy(tree)
-        changed._text = {**tree._text, caller: "true\n"}
-        problems, _ = check(changed, real)
-        note(problems)
-        if any(p.startswith("[await_approval_has_the_demo_callers_the_map_names]")
-               for p in problems):
-            print(f"ok   removing the helper call from {caller} is caught")
-        else:
-            print(f"FAIL removing the helper call from {caller} went unnoticed")
-            failed += 1
+        for replacement in ("true\n", '# admin approve "$id" --ttl 10m --uses "$uses"\n'):
+            changed = copy.copy(tree)
+            changed._text = {**tree._text, caller: replacement}
+            problems, _ = check(changed, real)
+            note(problems)
+            if any(p.startswith("[ap_demos_call_admin_approve_directly]") for p in problems):
+                print(f"ok   replacing admin approve in {caller} with {replacement.strip()!r} is caught")
+            else:
+                print(f"FAIL replacing admin approve in {caller} with {replacement.strip()!r} went unnoticed")
+                failed += 1
 
     # And the empty case, from both ends.
     try:
@@ -1443,7 +1443,7 @@ def selftest_fixture(tree: Tree) -> int:
         print(f"\ncheck-repository-map self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
     print(f"\ncheck-repository-map self-test: {len(CLAIMS)} claims, each broken by at least one "
-          f"of {len(MAP_EDITS)} map edits and 7 tree changes, every one caught")
+          f"of {len(MAP_EDITS)} map edits and 9 tree changes, every one caught")
     return 0
 
 

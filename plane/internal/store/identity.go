@@ -1,10 +1,9 @@
 package store
 
 // Identity on the call: the agent_run table and the one read that turns
-// it into an answer. A run is one agent turn the plane triggered and
-// held open — the inbound bridge opens it before the A2A call and
-// closes it when that call returns — so every governed call the agent
-// makes in between falls inside the window.
+// it into an answer. The retired inbound bridge was the only run writer.
+// Existing run windows are still resolved during an upgrade, and ledger
+// and tool-audit rows keep their historical attribution and back-references.
 //
 // That window is the only correlation the plane can SUBSTANTIATE. The
 // agent pod authenticates to the proxy and the gateway with its
@@ -75,31 +74,6 @@ type Run struct {
 	EventID        *string    `json:"event_id,omitempty"`
 	StartedAt      time.Time  `json:"started_at"`
 	EndedAt        *time.Time `json:"ended_at,omitempty"`
-}
-
-// OpenRun records an agent turn the plane is about to trigger, on
-// behalf of actedFor ('none' or 'slack:<user id>'). ttl bounds a run a
-// crashed replica never closes: past it the run stops counting, so one
-// lost close cannot poison every later call for that credential.
-func (s *Store) OpenRun(ctx context.Context, credential, actedFor, source, delivery, eventID string, ttl time.Duration) (string, error) {
-	var event *string
-	if eventID != "" {
-		event = &eventID
-	}
-	var id string
-	err := s.pool.QueryRow(ctx,
-		`INSERT INTO agent_run (credential_name, acted_for, source, delivery_id, event_id, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, now() + $6) RETURNING id`,
-		credential, actedFor, source, delivery, event, ttl).Scan(&id)
-	return id, err
-}
-
-// CloseRun marks a run finished. Idempotent: closing an already-closed
-// run changes nothing.
-func (s *Store) CloseRun(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE agent_run SET ended_at = now() WHERE id = $1 AND ended_at IS NULL`, id)
-	return err
 }
 
 // ActorFor resolves who a call for this credential is being made for,

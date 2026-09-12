@@ -779,8 +779,8 @@ func TestConsequentialStepRequiresMatchingRequestGrantAndAuditDigests(t *testing
 			} else if !strings.Contains(log, "kmx --context "+f.app.Cfg.KubeContext+" approve request-123 --uses 1 --ttl 10m") {
 				t.Fatalf("approval command lost context:\n%s", log)
 			}
-			if !strings.Contains(log, "From Slack connected to context "+f.app.Cfg.KubeContext) {
-				t.Fatalf("Slack advice lost context:\n%s", log)
+			if strings.Contains(log, "Slack") || strings.Contains(log, "@kaimahi") {
+				t.Fatalf("approval advice suggests a retired notification path:\n%s", log)
 			}
 		})
 	}

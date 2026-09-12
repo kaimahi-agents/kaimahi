@@ -58,8 +58,8 @@ type Deps struct {
 	// Listeners are loopback ORIGINS of the data listeners
 	// (scheme://host:port); liveness GETs each one's /healthz —
 	// unconditional "ok" handlers, so this proves only that the listener
-	// answers. The scheme is carried per listener rather than assumed,
-	// because the two seams serve TLS and the inbound bridge does not.
+	// answers. The scheme is carried per listener rather than assumed;
+	// both production data seams serve TLS.
 	Listeners []string
 	// StallAfter is how long the pool may be saturated with no acquire
 	// completing before the process is declared stuck (default 60s).

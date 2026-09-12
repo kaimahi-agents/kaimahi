@@ -235,6 +235,8 @@ jobs:
       # different context are all refused.
       - name: Context guard fails closed
         run: bash scripts/kube-guard-test.sh
+      - name: AP fixtures refuse retired human mode and retain exact-request admin approvals
+        run: python3 scripts/test_ap_approval.py
       # kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
       # local tag must never fall back to pulling a squattable public name),
       # so a registry-backed cluster needs both the image and the policy
@@ -401,30 +403,14 @@ jobs:
           hosted = yaml.safe_load(pathlib.Path("k8s/egress-hosted.yaml").read_text())
           assert hosted["metadata"]["name"] == "kaimahi-proxy-egress-hosted", hosted["metadata"]
           assert hosted["spec"] == copilot["spec"], "the hosted allowance must be the exact shape of the Copilot allowance"
-          # The public edge's policies live outside k8s/plane/ (they are
-          # an opt-in exposure, never deployed on kind) but obey the same
-          # egress rule, and their ingress is bounded here too.
-          edge = [d for d in yaml.safe_load_all(pathlib.Path("k8s/inbound-edge.yaml").read_text())
-                  if d and d.get("kind") == "NetworkPolicy"]
-          assert {p["metadata"]["name"] for p in edge} == {"kaimahi-inbound-edge", "kaimahi-proxy-ingress-edge"}, "edge policies renamed"
-          assert all(p["metadata"]["namespace"] == "kaimahi" for p in edge), "edge policy outside kaimahi"
-          for p in pols + [copilot, hosted] + edge:
+          # No public ingress remains: sources are selected by workload
+          # and namespace, never an internet IP range.
+          for p in pols + [copilot, hosted]:
               for rule in p["spec"].get("ingress") or []:
-                  ports = {(x.get("protocol", "TCP"), x["port"]) for x in rule.get("ports") or []}
-                  # A rule with no `from` admits every source; refuse it like a `to`-less egress.
                   assert rule.get("from"), f'{p["metadata"]["name"]}: ingress rule without `from` (admits all sources)'
                   for peer in rule["from"]:
-                      if "ipBlock" in peer:
-                          # The ONE internet-facing ingress in the repo, wherever a policy lives:
-                          # the edge's TLS port, nothing else.
-                          assert p["metadata"]["name"] == "kaimahi-inbound-edge" and ports == {("TCP", 8443)}, \
-                              f'{p["metadata"]["name"]}: internet ingress on {ports}'
-                      elif p in edge:
-                          # The plane-side allowance: the edge may reach the proxy on the inbound port only.
-                          assert p["metadata"]["name"] == "kaimahi-proxy-ingress-edge" and ports == {("TCP", 8082)} \
-                              and peer.get("podSelector", {}).get("matchLabels") == {"app": "kaimahi-inbound-edge"}, \
-                              f'{p["metadata"]["name"]}: unexpected ingress peer {peer} on {ports}'
-          for p in pols + [copilot, hosted] + edge:
+                      assert "ipBlock" not in peer, f'{p["metadata"]["name"]}: IP-range ingress is not permitted'
+          for p in pols + [copilot, hosted]:
               name = p["metadata"]["name"]
               for rule in p["spec"].get("egress") or []:
                   # A rule with no `to` allows its ports to EVERY destination,
@@ -451,7 +437,6 @@ jobs:
                             if any("ipBlock" in peer for r in p["spec"].get("egress") or [] for peer in r.get("to") or [])
                             and p["spec"].get("podSelector", {}).get("matchLabels", {}).get("app") == "kaimahi-proxy"]
           assert not plane_internet, f"the proxy has a baked-in internet allowance: {plane_internet}"
-          assert not ({p["metadata"]["name"] for p in edge} & {p["metadata"]["name"] for p in pols}), "edge policy leaked into k8s/plane/"
           # The ops port (metrics + probes, no auth) is on NO Service,
           # and the only policy that opens it is the scraper allowance —
           # a namespace+pod selector, never an ipBlock, never the agent
@@ -459,7 +444,7 @@ jobs:
           svc_ports = {x["port"] for d in docs if d.get("kind") == "Service" for x in d["spec"]["ports"]}
           assert 9092 not in svc_ports and 9091 not in svc_ports, f"admin/ops port on a Service: {svc_ports}"
           opens_ops = []
-          for p in pols + [copilot, hosted] + edge:
+          for p in pols + [copilot, hosted]:
               for rule in p["spec"].get("ingress") or []:
                   ports = {x["port"] for x in rule.get("ports") or []}
                   if 9092 in ports:
@@ -474,7 +459,7 @@ jobs:
           assert opens_ops == ["kaimahi-proxy-metrics"], f"ops port allowances: {opens_ops}"
           pdb = [d for d in docs if d.get("kind") == "PodDisruptionBudget"]
           assert len(pdb) == 1 and pdb[0]["spec"].get("minAvailable") == 1, "proxy PDB missing or not minAvailable: 1"
-          print(f"{len(pols)} plane policies + {len(edge)} edge policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); internet allowances are 443-only with private ranges excluded; internet ingress is the edge's 8443 only; ops port 9092 on no Service, opened only to the monitoring scraper")
+          print(f"{len(pols)} plane policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); internet allowances are 443-only with private ranges excluded; no internet ingress; ops port 9092 on no Service, opened only to the monitoring scraper")
           EOF
       # The managed path's own allowance, checked separately because it
       # ships separately. CI cannot reach Azure, so what is provable here
@@ -1839,8 +1824,7 @@ jobs:
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
   # SHARD 2 of 6 — spend: the metering proxy and its budgets, the budget
-  # approval cycle, the network boundary and the inbound bridge, whose door
-  # checks the same credential's budget.
+  # approval cycle and the network boundary.
   e2e-spend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1971,8 +1955,8 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           bin/kmx ledger hello-world | tee ledger-actor.out
-          # 'none' is a COMPLETE answer: nothing triggered this through
-          # the plane's inbound door, so there is no person to name.
+          # 'none' is a COMPLETE answer: this direct call has no run
+          # attribution, so there is no person to name.
           # The caller columns sit between `status` and `acted for`, so the
           # two are no longer adjacent; `acted for` is still last.
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200 .*none *$' ledger-actor.out
@@ -2064,164 +2048,6 @@ jobs:
       - name: Network boundary is enforced (policed pods cannot reach what they must not)
         if: steps.changes.outputs.docs_only != 'true'
         run: make netpol-verify
-      # Keyless: the inbound bridge — the plane's one INGRESS — in
-      # the same cluster/job (a fourth listener in the existing proxy
-      # pod: zero added CPU requests). The generic SIGNED webhook (the
-      # committed "demo" hook, Kaimahi's v1 HMAC scheme) is driven end to
-      # end through scripts/inbound-probe.sh, which passes only on the
-      # exact expected status: an unauthenticated event, a forged
-      # signature, an ungranted event, an event against an exhausted
-      # target budget, a REPLAY of an admitted delivery, and a spent
-      # grant are each refused fail-closed and audited; a bounded
-      # approval admits one, the agent actually runs (the outcome row
-      # carries the runtime's token counts, and the proxy ledgers the
-      # same call under hello-world).
-      #
-      # What this does NOT cover: the Slack Events source. Slack must
-      # reach a public HTTPS URL, which CI's kind cluster has no way to
-      # offer; its signature scheme and envelope handling are unit-tested
-      # in plane/internal/inbound and marked not-live-verified in
-      # docs/inbound.md. The rate limiter and the bounded queue are
-      # unit-tested (a port-forwarded probe cannot outrun a 60/min bucket).
-      - name: Inbound hook table is in-cluster and carries no secret
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams \
-            -o jsonpath='{.data.upstreams\.json}' > upstreams-inbound.json
-          python3 - <<'EOF'
-          import json
-          hooks = json.load(open("upstreams-inbound.json"))["inbound_hooks"]
-          assert set(hooks) == {"demo", "demo-bearer", "slack-events", "slack-tools"}, sorted(hooks)
-          for name, h in hooks.items():
-              # Every hook triggers an in-cluster kagent agent under a
-              # governed credential; signed hooks name a plane-side FILE.
-              assert h["agent_namespace"] == "kagent", (name, h)
-              assert h["budget_credential"] == "hello-world", (name, h)
-              if h["auth"] != "bearer":
-                  assert h["signing_secret_file"].startswith("/etc/kaimahi/inbound/"), (name, h)
-              if h["auth"] == "slack":
-                  # A Slack hook is bound to the channel(s) in a plane-side
-                  # FILE (the same Secret key that restricts posting); dropping
-                  # the key would widen the ingress to the whole workspace.
-                  assert h["slack_channels_file"].startswith("/etc/kaimahi/slack/"), (name, h)
-                  # Who may approve from Slack is a plane-side FILE too —
-                  # the table names it and carries no user id.
-                  assert h["slack_approvers_file"].startswith("/etc/kaimahi/slack/"), (name, h)
-              # tool_credential, where a hook's agent calls tools, names
-              # the OTHER credential the agent authenticates with — the
-              # plane opens a run per credential so both trails can name
-              # the person. A name, never a value, like everything here.
-              if "tool_credential" in h:
-                  assert h["tool_credential"] in ("hello-slack", "hello-tools"), (name, h)
-              assert not any(k in h for k in ("secret", "signing_secret", "token", "api_key", "approvers", "users")), (name, h)
-          print("inbound hooks:", {k: (v["auth"], v["agent"]) for k, v in hooks.items()})
-          # The notifier posts THROUGH the gateway's committed slack
-          # upstream under a credential read from plane custody; the block
-          # names files, never values.
-          n = json.load(open("upstreams-inbound.json"))["approval_notifier"]
-          assert n["tool_upstream"] == "slack" and n["tool"] == "conversations_add_message", n
-          assert n["credential_file"].startswith("/etc/kaimahi/notifier/"), n
-          assert n["channel_file"].startswith("/etc/kaimahi/slack/"), n
-          assert set(n) == {"tool_upstream", "tool", "credential_file", "channel_file"}, n
-          EOF
-          # The ingress Service exposes the bridge only; no Service exposes admin.
-          ports=$(kubectl --context kind-kaimahi-p1 -n kaimahi get svc -o jsonpath='{range .items[*]}{.metadata.name}={.spec.ports[*].port} {end}')
-          echo "$ports"
-          case " $ports " in
-            *" kaimahi-inbound=8082 "*) ;;
-            *) echo 'kaimahi-inbound Service must expose exactly 8082' >&2; exit 1 ;;
-          esac
-          case "$ports" in
-            *9091*) echo 'admin port exposed by a Service' >&2; exit 1 ;;
-          esac
-      - name: "Inbound: unauthenticated, forged and ungranted events refused fail-closed"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          # The signed hook's credential is an IDENTITY: no bearer token
-          # is stored anywhere for it.
-          bin/kmx credential issue inbound-demo --discard
-          if kubectl --context kind-kaimahi-p1 -n kaimahi get secret kaimahi-inbound-token >/dev/null 2>&1; then
-            echo 'a bearer token was stored for the signed hook' >&2; exit 1
-          fi
-          make inbound-secret HOOK=demo GENERATE=1
-          # kubelet projects a first-time Secret mount with a lag — it can
-          # take a minute — per pod, and with two replicas a probe through the
-          # Service could land on the one still lagging. A rolling
-          # restart starts both pods with the Secret already there (the
-          # image is distroless, so there is no `cat` to wait on anyway).
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
-          AUTH=none EXPECT=401 bash scripts/inbound-probe.sh demo 'unauthenticated event'
-          AUTH=forged EXPECT=401 bash scripts/inbound-probe.sh demo 'forged signature'
-          AUTH=stale EXPECT=401 bash scripts/inbound-probe.sh demo 'correctly signed, ten minutes ago'
-          bin/kmx audit inbound | tee inbound-audit-denied.out
-          test "$(grep -cE 'demo +inbound-demo +  +denied +401 ' inbound-audit-denied.out)" = 3
-      # The door checks the target's budget BEFORE the hook's grant (a
-      # budget denial must burn no grant use), so with hello-world's cap
-      # at 1 token and its budget grant spent (steps above) a correctly
-      # signed event is refused here as 429, whatever the hook's grant
-      # state. Assert that first, clear the cap, and only then assert
-      # the grant gate — the order the product enforces.
-      - name: "Inbound: exhausted target budget refused at the door"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          EXPECT=429 bash scripts/inbound-probe.sh demo 'budget exhausted'
-          bin/kmx audit inbound | tee inbound-audit-budget.out
-          grep -E 'demo +inbound-demo +probe-[0-9a-f]+ +denied +429 +.*target budget' inbound-audit-budget.out
-          bin/kmx budget hello-world   # clear both caps for the steps below
-      - name: "Inbound: signed but ungranted event refused and files its approval request"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          EXPECT=403 bash scripts/inbound-probe.sh demo 'no grant yet'
-          bin/kmx audit inbound | tee inbound-audit-ungranted.out
-          grep -E 'demo +inbound-demo +probe-[0-9a-f]+ +denied +403 +.*no live grant' inbound-audit-ungranted.out
-      - name: "Inbound: bounded approval admits, the agent runs, replay and exhaustion refused"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx approvals | tee approvals-inbound.out
-          id=$(awk '$3=="inbound-demo" && $4=="inbound" && $5=="demo" {print $1}' approvals-inbound.out)
-          test -n "$id"
-          bin/kmx approve "$id" --uses 2 --ttl 10m
-          # Count governed rows into a file first, so a `bin/kmx ledger`
-          # failure fails the step instead of being read as zero rows.
-          bin/kmx ledger hello-world > ledger-before.out
-          before=$(grep -cE 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-before.out || [ $? = 1 ])
-          d="ci-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-          DELIVERY="$d" bash scripts/inbound-probe.sh demo 'Reply with exactly the word PONG.'
-          # The SAME delivery again is a replay: refused, no use burned.
-          DELIVERY="$d" EXPECT=409 bash scripts/inbound-probe.sh demo 'Reply with exactly the word PONG.'
-          # The invocation is asynchronous: wait for its outcome row.
-          for _ in $(seq 1 60); do
-            bin/kmx audit inbound > inbound-audit.out 2>/dev/null
-            grep -qE "demo +inbound-demo +$d +(completed|failed) " inbound-audit.out && break
-            sleep 5
-          done
-          cat inbound-audit.out
-          # A well-formed positive only: completed, HTTP 200, non-zero
-          # runtime-reported input tokens, a task id.
-          grep -E "demo +inbound-demo +$d +completed +200 +[1-9][0-9]* +[0-9]+ +task " inbound-audit.out
-          grep -E "demo +inbound-demo +$d +denied +409 " inbound-audit.out
-          # The event's spend was governed and ledgered by the proxy
-          # under the agent's credential: one more governed row.
-          bin/kmx ledger hello-world > ledger-after.out
-          after=$(grep -cE 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-after.out || [ $? = 1 ])
-          test "$after" -gt "$before"
-          # Second use admitted; the grant is then spent: refused again
-          # and a fresh request filed.
-          bash scripts/inbound-probe.sh demo 'second use'
-          EXPECT=403 bash scripts/inbound-probe.sh demo 'third: grant exhausted'
-          bin/kmx audit approval | tee approval-audit-inbound.out
-          # The trail names who decided, between the action and the bounds.
-          grep -E 'inbound-demo +inbound +demo +approved +admin +expires=.* uses=2' approval-audit-inbound.out
-      - name: "Inbound: bearer hook authenticates the same way and is gated the same way"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx credential issue inbound-bearer --secret kaimahi-inbound-token --namespace kaimahi
-          n=$(kubectl --context kind-kaimahi-p1 -n kaimahi get secret kaimahi-inbound-token \
-            -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
-          test "$n" = 1
-          AUTH=none EXPECT=401 bash scripts/inbound-probe.sh demo-bearer 'no token'
-          AUTH=bearer EXPECT=403 bash scripts/inbound-probe.sh demo-bearer 'authenticated, no grant'
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2260,7 +2086,7 @@ jobs:
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
   # SHARD 3 of 6 — the tool gateway, tool approvals, the governed Slack
-  # path, approvals from Slack, and the exact races and metrics that read
+  # path, admin approvals, and the exact races and metrics that read
   # what all of them wrote.
   e2e-tools:
     runs-on: ubuntu-latest
@@ -2397,6 +2223,13 @@ jobs:
         run: |
           bin/kmx audit tool hello-tools | tee tool-audit.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_resources +allowed +200' tool-audit.out
+          # Attribute the real call just verified in gw-chat.out, before
+          # direct probes add their own rows. No second model task is needed.
+          grep -E 'tools/call +k8s_get_resources +allowed +200 .*none *$' tool-audit.out > agent-rows.out
+          test -s agent-rows.out
+          if grep -qE 'ua:curl/' agent-rows.out; then
+            echo 'an agent row inherited the probe caller' >&2; exit 1
+          fi
       - name: Non-allowlisted tool call denied fail-closed and audited
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2659,225 +2492,62 @@ jobs:
             bash scripts/tool-denial-probe.sh conversations_add_message '{"channel_id": "C0CIONLY", "payload": "ci"}'
           bin/kmx audit approval | tee approval-audit-slack.out
           grep -E 'hello-slack +tool +conversations_add_message +approved' approval-audit-slack.out
-      # Keyless: approvals FROM Slack, and the plane telling Slack a
-      # request is waiting. Slack cannot reach a kind cluster and CI holds
-      # no Slack token, so the human is a synthetic, correctly SIGNED
-      # app_mention fired at the bridge (scripts/slack-mention-probe.sh,
-      # the way inbound-fire fires the generic hook) with synthetic user
-      # ids (U0CIAPPROVER / U0NOBODY — never a real workspace's), and the
-      # plane's own posts ride the same absent slack upstream the governed
-      # Slack cycle uses: admitted by the gateway, dialed, 502 — the audit row
-      # under the PLANE's credential is the proof the notification went
-      # through the governed path. What only the live run proves: the
-      # message landing in a channel, a person typing the command, the
-      # reply in the thread.
-      - name: "Approvals from Slack: setup (approver file, the plane's own credential, a signed hook)"
+      - name: "Admin approvals: a bounded grant admits the call; decided requests are immutable"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx credential issue inbound-slack --discard
-          make inbound-secret HOOK=slack-events GENERATE=1
-          # The channel the hook is bound to and the notifier posts into:
-          # the bot Secret's channel key only — no bot token exists in CI.
-          kubectl --context kind-kaimahi-p1 -n kaimahi create secret generic kaimahi-slack-bot \
-            --from-literal=SLACK_MCP_ADD_MESSAGE_TOOL=C0CIONLY \
-            --dry-run=client -o yaml | kubectl --context kind-kaimahi-p1 apply -f -
-          printf 'U0CIAPPROVER\n' | make slack-approvers
-          make notify-slack
-          # The plane's credential may post and nothing else — config,
-          # not a grant.
-          bin/kmx tools allowlist kaimahi-plane | tee plane-allowlist.out
-          grep -qx 'kaimahi-plane: conversations_add_message' plane-allowlist.out
-          # Its token is plane-side only (kaimahi namespace, kmh_ shape),
-          # and no Slack id is anywhere in the tree.
-          n=$(kubectl --context kind-kaimahi-p1 -n kaimahi get secret kaimahi-notifier-token \
-            -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
-          test "$n" = 1
-          if kubectl --context kind-kaimahi-p1 -n kagent get secret kaimahi-notifier-token >/dev/null 2>&1; then
-            echo "the plane's own credential must not live in the agent namespace" >&2; exit 1
-          fi
-          # kubelet projects first-time Secret mounts with a lag — it can
-          # take a minute — per pod: restart so both replicas start with every
-          # file present, then confirm through the plane's own behaviour
-          # — a signed mention from a NON-approver answers 503 while the
-          # signing secret, the channel or the approver list is missing,
-          # and exactly 403 once all three are readable. The notifier's
-          # file is proven by its audit row in the next step.
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
-          for _ in $(seq 1 60); do
-            EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve 00000000" >/dev/null 2>&1 && break
-            sleep 3
-          done
-          EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve 00000000"
-      - name: "Approvals from Slack: a filing is announced through the governed path (allowed 502 under the plane's credential)"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          # A fresh subject, so the filing is not deduped and the notifier
-          # fires: the denial files, the plane posts, the gateway admits
-          # the plane's call by allowlist (no grant — the detail is the dial
-          # failure, not a grant id), dials the absent upstream, 502 — same
-          # row shape as the governed Slack cycle, under the plane's own
-          # name; a 502 row carries why: "upstream unreachable: …".
-          bash scripts/tool-denial-probe.sh k8s_get_pods
-          for _ in $(seq 1 30); do
-            KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane > plane-audit.out 2>/dev/null
-            grep -qE 'kaimahi-plane +slack +tools/call +conversations_add_message +allowed +502' plane-audit.out && break
-            sleep 2
-          done
-          cat plane-audit.out
-          grep -E 'kaimahi-plane +slack +tools/call +conversations_add_message +allowed +502 +upstream unreachable: ' plane-audit.out
-          # Exactly ONE attempt: the gateway's 502 cannot say whether the
-          # post reached the server (a dial refusal and a reset after
-          # delivery answer alike), so it is recorded and NOT retried —
-          # a notification posted twice is the double-post this repo
-          # avoids. The notification is once per filing.
-          sleep 5
-          KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane > plane-audit.out
-          test "$(grep -cE 'kaimahi-plane +slack +tools/call +conversations_add_message +allowed +502' plane-audit.out)" = 1
-      - name: "Approvals from Slack: a non-approver is refused 403 and audited; the request stays pending"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx approvals | tee approvals-p8b.out
-          # Several k8s_get_events requests can be pending at once —
-          # one per distinct call — so the call is what selects the id.
-          id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-p8b.out)
+          bin/kmx approvals | tee approvals-admin.out
+          # Several requests can be pending for one tool; select the call.
+          id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_events" && /namespace default/ {print $1}' approvals-admin.out)
           test -n "$id"
-          echo "$id" > p8b-request-id
-          EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve $id uses=1"
-          bin/kmx audit inbound slack-events | tee inbound-audit-p8b.out
-          grep -E 'slack-events +inbound-slack +Ev[0-9A-F]+ +denied +403 +.*user U0NOBODY is not an approver' inbound-audit-p8b.out
-          bin/kmx approvals | grep -q "$id"
-      - name: "Approvals from Slack: an approver's command mints a grant in their name, and enforcement honours it"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          id=$(cat p8b-request-id)
-          # The first block of the id is what a human types.
-          WANT="approved request $id" bash scripts/slack-mention-probe.sh U0CIAPPROVER "approve ${id%%-*} uses=1 ttl=10m"
-          bin/kmx grants | tee grants-p8b.out
-          grep -E "hello-tools +tool +k8s_get_events +yes .* 0/1 .* slack:U0CIAPPROVER" grants-p8b.out
-          bin/kmx audit approval | tee approval-audit-p8b.out
-          grep -E 'hello-tools +tool +k8s_get_events +approved +slack:U0CIAPPROVER +expires=.* uses=1' approval-audit-p8b.out
-          # The grant a Slack approver minted admits the retried action.
+          bin/kmx approve "$id" --uses 1 --ttl 10m
+          bin/kmx grants | tee grants-admin.out
+          grep -E 'hello-tools +tool +k8s_get_events +yes .* 0/1 .* admin' grants-admin.out
+          bin/kmx audit approval | tee approval-audit-admin.out
+          grep -E 'hello-tools +tool +k8s_get_events +approved +admin +expires=.* uses=1' approval-audit-admin.out
           bash scripts/tool-call-probe.sh k8s_get_events '{"namespace": "default"}'
-          bin/kmx audit tool hello-tools | tee tool-audit-p8b.out
-          grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted' tool-audit-p8b.out
-          bin/kmx audit inbound slack-events | tee inbound-audit-p8b-2.out
-          grep -E "slack-events +inbound-slack +Ev[0-9A-F]+ +command +200 +.*approve ${id%%-*} by slack:U0CIAPPROVER: approved request $id" inbound-audit-p8b-2.out
-          # The same command again: a decided request is immutable.
-          WANT="already approved by slack:U0CIAPPROVER" bash scripts/slack-mention-probe.sh U0CIAPPROVER "approve ${id%%-*} uses=9"
-          # The admin path still records the admin bearer as the decider.
-          grep -E 'hello-tools +tool +k8s_get_events +approved +admin ' approval-audit-p8b.out
-      - name: "Approvals from Slack: deny works and carries the identity"
+          bin/kmx audit tool hello-tools | tee tool-audit-admin.out
+          grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_events +allowed +200 +granted' tool-audit-admin.out
+          if bin/kmx approve "$id" --uses 9 > reapprove.out 2>&1; then
+            echo 'a decided request was approved again' >&2; exit 1
+          fi
+          grep -q 'request already decided' reapprove.out
+      - name: "Admin approvals: denial is audited and does not grant authority"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
+          bash scripts/tool-denial-probe.sh k8s_get_pods
           bin/kmx approvals | tee approvals-deny.out
           id=$(awk '$3=="hello-tools" && $4=="tool" && $5=="k8s_get_pods" {print $1}' approvals-deny.out)
           test -n "$id"
-          WANT="denied request $id" bash scripts/slack-mention-probe.sh U0CIAPPROVER "deny $id"
+          bin/kmx deny "$id"
           bin/kmx audit approval | tee approval-audit-deny.out
-          grep -E 'hello-tools +tool +k8s_get_pods +denied +slack:U0CIAPPROVER' approval-audit-deny.out
-          # A command reply also rides the governed path: more plane rows,
-          # still every one an allowed-502 dial of the absent upstream —
-          # never a 200 (CI reached a tool server) and never a denial.
-          KUBE_CTX=kind-kaimahi-p1 bin/kmx audit tool kaimahi-plane | tee plane-audit-2.out
-          if grep -E 'kaimahi-plane .*(allowed +200|denied)' plane-audit-2.out; then
-            echo "the plane's own post reached a tool server or was denied" >&2; exit 1
-          fi
-          # The admin port is still on no Service.
+          grep -E 'hello-tools +tool +k8s_get_pods +denied +admin' approval-audit-deny.out
+          bash scripts/tool-denial-probe.sh k8s_get_pods
+          # Neither the admin nor operations port is exposed by a Service.
           ports=$(kubectl --context kind-kaimahi-p1 -n kaimahi get svc -o jsonpath='{range .items[*]}{.metadata.name}={.spec.ports[*].port} {end}')
           case "$ports" in
-            *9091*) echo 'admin port exposed by a Service' >&2; exit 1 ;;
+            *9091*|*9092*) echo 'admin/ops port exposed by a Service' >&2; exit 1 ;;
           esac
-      - name: "Identity on the call: a Slack mention triggers a run, and the person reaches BOTH the ledger and the tool audit"
+      - name: "Caller attribution: model and probe calls retain their own callers"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The widest attribution gap was here: a webhook or a mention
-          # means a PERSON triggered an unattended agent, and until now
-          # nothing downstream recorded who. The hook aims at the tools
-          # agent because that agent authenticates with TWO credentials —
-          # it spends model tokens under hello-world and calls tools under
-          # hello-tools — which is the case a single run per turn would
-          # have got half right.
-          make inbound-secret HOOK=slack-tools GENERATE=1
-          # Its model spend has to be governed for the ledger half to
-          # exist at all; `bin/kmx tools govern` repoints the TOOLS wiring,
-          # not the model.
-          KIND_CLUSTER=kaimahi-p1 bin/kmx use governed-ollama --agent hello-tools
-          # A new key in an already-mounted Secret takes kubelet up to a
-          # minute to project, and the plane fails a hook
-          # CLOSED (503) while its signing secret is unreadable — which
-          # is the right behaviour and the reason to wait for it here,
-          # exactly as the Slack-approvals setup above does.
-          for _ in $(seq 1 60); do
-            EXPECT=403 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
-              'List the configmaps in the default namespace.' >/dev/null 2>&1 && break
-            sleep 3
-          done
-          # Triggering an agent from outside is approvable: the
-          # first mention is refused and files a request.
-          EXPECT=403 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
-            'List the configmaps in the default namespace.'
-          bin/kmx approvals | tee approvals-slack-tools.out
-          id=$(awk '$3=="inbound-slack" && $4=="inbound" && $5=="slack-tools" {print $1}' approvals-slack-tools.out)
-          test -n "$id"
-          bin/kmx approve "$id" --uses 1 --ttl 15m
-          # Now the same person's mention runs the agent.
-          EXPECT=202 HOOK=slack-tools bash scripts/slack-mention-probe.sh U0CIPERSON \
-            'List the configmaps in the default namespace.' | tee mention-admitted.out
-          ev=$(sed -n 's/.*(event \(Ev[0-9A-F]*\)).*/\1/p' mention-admitted.out)
-          test -n "$ev"
-          for _ in $(seq 1 60); do
-            bin/kmx audit inbound slack-tools > inbound-slack-tools.out 2>/dev/null
-            grep -qE "slack-tools +inbound-slack +$ev +(completed|failed) " inbound-slack-tools.out && break
-            sleep 5
-          done
-          cat inbound-slack-tools.out
-          # The trail names the person the signature vouched for — the
-          # approver vocabulary, reused for a requester.
-          grep -E "slack-tools +inbound-slack +$ev +completed .*slack:U0CIPERSON *$" inbound-slack-tools.out
-          # The SPEND names them, under the agent's budget credential...
-          bin/kmx ledger hello-world | tee ledger-slack-tools.out
-          grep -E 'hello-world +ollama .*slack:U0CIPERSON *$' ledger-slack-tools.out
-          # The spend trail records the caller too, and on a cluster this
-          # young no row may say it predates the column.
-          ! grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' ledger-slack-tools.out
-          # ...and so does the TOOL call, under a DIFFERENT credential.
-          # The tool and the decision are deliberately not pinned: the
-          # claim under test is the attribution, not which tool a model
-          # chose.
-          bin/kmx audit tool hello-tools | tee tool-audit-slack-tools.out
-          grep -E 'hello-tools +kagent-tools +tools/call .*slack:U0CIPERSON *$' tool-audit-slack-tools.out
-          # The run is CLOSED when the turn ends: a call after it reads
-          # 'none' again, not the person who has gone home.
-          bash scripts/tool-call-probe.sh k8s_get_resources '{"resource_type": "ConfigMap", "namespace": "default"}'
-          bin/kmx audit tool hello-tools | tee tool-audit-after-run.out
-          head -2 tool-audit-after-run.out
-          test "$(sed -n '2p' tool-audit-after-run.out | grep -c 'none *$')" = 1
-          # And the row SAYS it was not an agent that made it. This is the
-          # whole point of the caller columns: the line above and the
-          # attributed lines before it both end in a word from the same
-          # closed vocabulary, and only these two columns tell a client the
-          # plane deployed from a shell script holding its token.
-          # That row is the PROBE's, and it says so: curl, from the
-          # port-forward's loopback. Pinned to the same line the assertion
-          # above pins, so this cannot pass on some other row's caller.
-          sed -n '2p' tool-audit-after-run.out | grep -qE 'ua:curl/[0-9]'
-          sed -n '2p' tool-audit-after-run.out | grep -qE ' 127\.0\.0\.1 +none *$'
-          # The agent's own calls are NOT curl. Its user agent is a library
-          # version and is deliberately not pinned; "not the probe" is the
-          # claim, and it is the one that would break if the gateway ever
-          # stamped the wrong request's caller onto a row.
-          grep -E 'tools/call .*slack:U0CIPERSON *$' tool-audit-slack-tools.out > agent-rows.out
+          # Read the existing verified governed-chat row. The real agent's
+          # tool caller was checked immediately after its ConfigMap probe.
+          bin/kmx ledger hello-world | tee ledger-callers.out
+          grep -E 'hello-world +ollama .*none *$' ledger-callers.out
+          if grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' ledger-callers.out; then
+            echo 'a new ledger row lost its caller fields' >&2; exit 1
+          fi
           test -s agent-rows.out
-          ! grep -qE 'ua:curl/' agent-rows.out
-          # Nothing written on this cluster predates the columns, so no row
-          # may claim it does. Checked per FIELD, not as a pair: a check
-          # that only fires when BOTH went sentinel would pass while one of
-          # them silently stopped recording, which is the failure this class
-          # of check exists to catch.
+          bash scripts/tool-call-probe.sh k8s_get_resources '{"resource_type": "ConfigMap", "namespace": "default"}'
+          bin/kmx audit tool hello-tools | tee tool-audit-probe.out
+          sed -n '2p' tool-audit-probe.out | grep -qE 'ua:curl/[0-9]'
+          sed -n '2p' tool-audit-probe.out | grep -qE ' 127\.0\.0\.1 +none *$'
+          # Check each caller field independently, not only a sentinel pair.
           actedfor='(none|unknown|legacy|slack:[A-Z0-9]+)'
-          ! grep -qE " (legacy|unrecorded) +$actedfor *\$" tool-audit-after-run.out
-          ! grep -qE " (legacy|unrecorded) +[^ ]+ +$actedfor *\$" tool-audit-after-run.out
+          if grep -qE " (legacy|unrecorded) +$actedfor *\$" tool-audit-probe.out \
+            || grep -qE " (legacy|unrecorded) +[^ ]+ +$actedfor *\$" tool-audit-probe.out; then
+            echo 'a new tool row lost a caller field' >&2; exit 1
+          fi
       # Keyless: run it for real. Every step below drives the plane's
       # two replicas directly (a port-forward per POD, so both are in
       # every race by construction) rather than through kagent, whose
@@ -2963,7 +2633,7 @@ jobs:
           bin/kmx metrics | tee metrics.out
           grep -q '^# TYPE kaimahi_decisions_total counter' metrics.out
           for m in kaimahi_decisions_total kaimahi_ledger_month_tokens kaimahi_ledger_month_cents kaimahi_live_grants \
-                   kaimahi_open_reservations kaimahi_upstream_latency_seconds_bucket kaimahi_queue_depth \
+                   kaimahi_open_reservations kaimahi_upstream_latency_seconds_bucket \
                    kaimahi_seam_degraded kaimahi_build_info kaimahi_store_up go_goroutines; do
             grep -q "^$m" metrics.out || { echo "metric $m missing" >&2; exit 1; }
           done
@@ -3666,12 +3336,8 @@ jobs:
   # response and a completed task, never prose. A model that words things
   # differently, or reaches the wrong number, cannot redden this job.
   #
-  # Approvals go through `scripts/slack-mention-probe.sh`: the synthetic, correctly
-  # signed app_mention that is already CI's stand-in for a person typing in
-  # the channel, so the AP scenario proves the Slack approver-identity path
-  # and not just the admin one. CI never reaches a real Slack workspace —
-  # delivery, and how the approval renders to a human, are manual-run
-  # coverage only (docs/ap-demo.md).
+  # Approvals use the admin bearer. CI proves argument binding and grant
+  # enforcement, not a named human's identity or notification delivery.
   e2e-ap:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -3805,36 +3471,15 @@ jobs:
             grep -qE "ap-agent +erp +tools/call +$tool +allowed +200" ap-reads.out \
               || { echo "$tool did not audit as allowed" >&2; exit 1; }
           done
-      # The Slack approver path, so this scenario's approvals carry a person's
-      # identity and not the admin bearer's. The same setup e2e-tools does:
-      # this shard has its own cluster and none of that state. No Slack
-      # workspace is reached and no bot token exists.
-      - name: "AP: the approver path (approver file, the plane's own credential, a signed hook)"
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx credential issue inbound-slack --discard
-          make inbound-secret HOOK=slack-events GENERATE=1
-          kubectl --context kind-kaimahi-p1 -n kaimahi create secret generic kaimahi-slack-bot \
-            --from-literal=SLACK_MCP_ADD_MESSAGE_TOOL=C0CIONLY \
-            --dry-run=client -o yaml | kubectl --context kind-kaimahi-p1 apply -f -
-          printf 'U0CIAPPROVER\n' | make slack-approvers
-          make notify-slack
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
-          kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
-          for _ in $(seq 1 60); do
-            EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve 00000000" >/dev/null 2>&1 && break
-            sleep 3
-          done
-          EXPECT=403 bash scripts/slack-mention-probe.sh U0NOBODY "approve 00000000"
       # The scenario itself, driven with fixed arguments and no model in
       # the loop. The script asserts as it goes — the constraint admitting
       # the routine payment with no request filed, each consequential call
       # denied and filed under its own summary, each approval minting a
       # grant welded to one call. The step after it asserts the rows that
       # make those claims checkable by a person.
-      - name: "AP: routine pays itself, the exception needs a named human, each call its own approval"
+      - name: "AP: routine pays itself, the exception needs admin approval, each call its own approval"
         if: steps.changes.outputs.docs_only != 'true'
-        run: AP_AGENT_TURN=0 make ap-demo SLACK_USER=U0CIAPPROVER
+        run: AP_AGENT_TURN=0 make ap-demo
       - name: "AP: the audit and the approvals carry the transaction and the approver"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3842,8 +3487,8 @@ jobs:
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +within standing constraint .*amount_cents 412000, payee_id HAR-2088' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +denied +403 +tool call not permitted: outside the standing constraint .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +granted .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
-          # The denial and the admitted call share one digest: the call a
-          # human approved is provably the call that ran.
+          # The denial and the admitted call share one digest: the
+          # admin-approved fixture call is provably the call that ran.
           python3 - <<'EOF'
           import re
           rows = [l for l in open("ap-audit.out") if "payment_schedule" in l and "3255000" in l]
@@ -3856,24 +3501,23 @@ jobs:
           grep -E 'ap-agent +erp +tools/call +dispute_open +allowed +200 +granted' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +vendor_notify +denied +403' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +vendor_notify +allowed +200 +granted' ap-audit.out
-          # Three grants, each welded to a call, each decided by the SLACK
-          # approver — the Slack identity path, not the admin bearer.
+          # Three grants, each welded to a call, each decided by admin.
           bin/kmx grants | tee ap-grants.out
           for tool in payment_schedule dispute_open vendor_notify; do
-            grep -qE "ap-agent +tool +$tool .*slack:U0CIAPPROVER +call [0-9a-f]{12}" ap-grants.out \
-              || { echo "no slack-decided, call-bound grant for $tool" >&2; exit 1; }
+            grep -qE "ap-agent +tool +$tool .*admin +call [0-9a-f]{12}" ap-grants.out \
+              || { echo "no admin-decided, call-bound grant for $tool" >&2; exit 1; }
           done
           bin/kmx audit approval | tee ap-approval-audit.out
-          grep -E 'ap-agent +tool +payment_schedule +approved +slack:U0CIAPPROVER .*payment_schedule: invoice_id INV-88134, amount_cents 3255000, payee_id MER-4471' ap-approval-audit.out
-          grep -E 'ap-agent +tool +dispute_open +approved +slack:U0CIAPPROVER .*dispute_open: invoice_id INV-88134, amount_cents 600000' ap-approval-audit.out
-          grep -E 'ap-agent +tool +vendor_notify +approved +slack:U0CIAPPROVER .*vendor_notify: vendor_id MER-4471' ap-approval-audit.out
+          grep -E 'ap-agent +tool +payment_schedule +approved +admin .*payment_schedule: invoice_id INV-88134, amount_cents 3255000, payee_id MER-4471' ap-approval-audit.out
+          grep -E 'ap-agent +tool +dispute_open +approved +admin .*dispute_open: invoice_id INV-88134, amount_cents 600000' ap-approval-audit.out
+          grep -E 'ap-agent +tool +vendor_notify +approved +admin .*vendor_notify: vendor_id MER-4471' ap-approval-audit.out
       # The manipulated invoice. The model is not in the loop here either:
       # the injected call is driven directly, deliberately, so the
       # guarantee holds whether or not a model complies.
       - name: "AP: the injected call is denied, audited with its changed payee, and spends no approval"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          AP_AGENT_TURN=0 make ap-injection SLACK_USER=U0CIAPPROVER
+          AP_AGENT_TURN=0 make ap-injection
           bin/kmx audit tool ap-agent | tee ap-audit-2.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +denied +403 .*amount_cents 4800000, payee_id MER-9911' ap-audit-2.out
           if grep -E 'payment_schedule +allowed' ap-audit-2.out | grep -q 'MER-9911'; then
@@ -3882,7 +3526,7 @@ jobs:
           bin/kmx approvals | tee ap-approvals-2.out
           grep -E 'ap-agent +tool +payment_schedule .*amount_cents 4800000, payee_id MER-9911' ap-approvals-2.out
           bin/kmx grants | tee ap-grants-2.out
-          grep -E 'ap-agent +tool +payment_schedule +yes .* 1/2 .*slack:U0CIAPPROVER +call [0-9a-f]{12}' ap-grants-2.out
+          grep -E 'ap-agent +tool +payment_schedule +yes .* 1/2 .*admin +call [0-9a-f]{12}' ap-grants-2.out
       # KEPT SEPARATE, and last: the only step where a model runs. It proves
       # the agent can reach the ERP through the gateway and produce a turn —
       # a function_call, a successful function_response carrying payload

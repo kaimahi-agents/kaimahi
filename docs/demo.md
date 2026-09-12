@@ -54,19 +54,23 @@ For the fixture business scenario, follow [accounts payable](ap-demo.md):
 approval binds the transaction; a persuaded model cannot spend it on a different
 payee. Keep fixture claims separate from a real ERP integration.
 
-## Managed/Slack demonstration
+## Managed demonstration
 
 Follow [AKS](aks.md), rather than replaying the kind setup on a remote context.
-The full lift is still Copilot/kagent-shaped and bills money. The optional
-[inbound edge](inbound.md) and [Slack connector](slack.md) add public exposure and
-real credentials; they are not needed for a local proof. For real AP approvals
-use `AP_HUMAN=1`, not synthetic signed mentions as somebody else's identity.
+The full lift is still Copilot/kagent-shaped and bills money. The inbound edge,
+Slack approval commands and notifier are removed; [Slack MCP posting](slack.md)
+remains separate. The AP fixture driver approves through admin itself and
+establishes no verified human identity. The old `AP_HUMAN=1` wait mode is
+rejected before the scenario starts; use the separate approval CLI for manual
+operations, not this automatically approved fixture.
 
 ## Teardown and evidence
 
 Local: `kmx down` deletes everything, including the ledger. Managed:
 [AKS teardown](aks.md#teardown) distinguishes created-group deletion from BYO
-monitoring cleanup. Remove a Slack Request URL/subscription before releasing its
-public DNS label. Verify owned cloud resources are gone, not merely that a delete
-was submitted. Scan transcripts with `scripts/check-no-azure-ids.sh` and manually
-redact bare infrastructure/workspace names before sharing.
+monitoring cleanup. Older public-edge installations also need the
+[retirement cleanup](operations.md#upgrading-after-inbound-retirement), including
+disabling external subscriptions before releasing the DNS name. Verify owned
+cloud resources are gone, not merely that a delete was submitted. Scan transcripts
+with `scripts/check-no-azure-ids.sh` and manually redact bare infrastructure/workspace
+names before sharing.

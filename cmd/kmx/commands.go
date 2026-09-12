@@ -203,23 +203,34 @@ func newGrantsCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-// newFlowCommand merges the four audit trails into one chronological reading.
+// newFlowCommand merges the three audit trails into one chronological reading.
 //
 // It defaults to ALL credentials, like grants and unlike the ledger: the
 // question a flow answers is "what has been going on", and an operator who
 // does not yet know which credential misbehaved cannot be asked to name it
 // first. Every row is attributed, so a merged reading stays readable.
 func newFlowCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge the four audit trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
+	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge the three audit trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
 	return cmd
 }
 
 func newAuditCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "audit <tool|approval|inbound> [credential|hook]", Short: "Show enforcement audit trails", Args: usageArgs(1, 2, "kmx audit tool|approval [<credential>] | kmx audit inbound [<hook>]")}
+	cmd := &cobra.Command{
+		Use: "audit <tool|approval> [credential]", Short: "Show enforcement audit trails",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := usageArgs(1, 2, "kmx audit tool|approval [<credential>]")(cmd, args); err != nil {
+				return err
+			}
+			if args[0] != "tool" && args[0] != "approval" {
+				return fmt.Errorf("usage: kmx audit tool|approval [<credential>]")
+			}
+			return nil
+		},
+	}
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return filterCompletions([]string{"tool", "approval", "inbound"}, toComplete), cobra.ShellCompDirectiveNoFileComp
+			return filterCompletions([]string{"tool", "approval"}, toComplete), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -281,7 +292,7 @@ func newDenyCommand(state *commandState) *cobra.Command {
 
 func newRequestCommand(state *commandState) *cobra.Command {
 	var credential, argsJSON string
-	cmd := &cobra.Command{Use: "request <tool|budget|inbound> <subject>", Short: "File an approval request", Args: usageArgs(2, 2, "kmx request <tool|budget|inbound> <subject> [--credential <name>] [--args <json>]")}
+	cmd := &cobra.Command{Use: "request <tool|budget> <subject>", Short: "File an approval request", Args: usageArgs(2, 2, "kmx request <tool|budget> <subject> [--credential <name>] [--args <json>]")}
 	cmd.Flags().StringVar(&credential, "credential", "", "credential the request is filed against")
 	cmd.Flags().StringVar(&argsJSON, "args", "", "tool call arguments as one JSON object")
 	cmd.RunE = appRun(state, func(a *app.App) error {

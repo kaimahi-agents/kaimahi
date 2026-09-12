@@ -29,9 +29,10 @@ reference material, not evidence of present adoption or dependency.
 paths, membership lists, embedded boundaries, and the caller claims below.
 It checks coverage of tracked files under `cmd/`, `internal/`, `k8s/`,
 `scripts/`, `docs/`, `brand/` and the root, plus top-level section coverage.
-These existing mechanical checks are retained; this is not a new code-removal
-inventory. The checker does not decide product status, require historical
-quotations, or require documents to remain hard to find. Open questions may
+These existing mechanical checks are retained; the pre-deletion package
+inventory below is a separately reviewable judgment. The checker does not decide
+product status, require historical quotations, or require documents to remain
+hard to find. Open questions may
 change or resolve; their declared count must match their list.
 
 The checker uses `git ls-files`: additions and deletions must be staged
@@ -45,7 +46,7 @@ before its counts describe the intended tree.
 | `internal/` | `kmx/` (17 packages), plus embedded schema fixtures | `demo/erp` | — |
 | `plane/` | legacy governance module, not the Orka platform | — | test fakes inside packages |
 | `k8s/` | embedded artifacts and checkout wiring; includes legacy plane manifests | AP and connector scenarios | — |
-| `scripts/` | 13 (6 embedded in the binary, 7 operator) | 4 | 53 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 9 (6 embedded in the binary, 3 operator) | 3 | 52 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 37 tracked files; guides, direction, legacy references and assets | scenario material | maintainer and process docs |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -103,7 +104,7 @@ module, is not embedded in `kmx`, and ships no supported authoring interface.
 ## `plane/` — legacy governance module
 
 A separate Go module remains in the tree: the former custom governance proxy.
-Fourteen internal packages and one binary. This is installed legacy code,
+Twelve internal packages and one binary. This is installed legacy code,
 not the definition of Orka or a current product recommendation.
 
 The existing compile-time boundary remains: no `require`, and no `plane/...`
@@ -111,19 +112,150 @@ import anywhere in root `cmd/` or `internal/`. The coupling instead runs
 through `internal/kmx/planebuild`, which holds the module path and fetches
 source at the CLI's revision. Documentation retirement does not change it.
 
-The existing packages cover the LLM proxy and admin API, MCP gateway,
-inbound webhooks, egress, budgets, pricing, storage and the database
-(Postgres and twelve migrations), configuration, redaction, metrics,
-notifications and operations. This description records the existing module;
-its disposition belongs to the separate code lane.
+The remaining packages cover the model proxy and admin API, MCP gateway,
+egress, budgets, pricing, storage and the database (Postgres and twelve migrations),
+configuration, redaction, metrics and operations. Inbound connectors and
+approval notifications are removed. Historical migration SQL is unchanged;
+retired tables are inert compatibility history, not active connector support.
+
+### Pre-deletion inventory — governance code retirement
+
+**Original inventory: fourteen packages, published before deletion** in commit
+`1868732`, inspected against main `47e71e843560c280ef380a1716c1cb331087aa4d`
+(PR #182), after documentation retirement in PR #178. The table records the
+whole retirement direction, not a claim that it has all been implemented.
+**This first runtime slice removes inbound/notify only.** Gateway/argument-bound
+and budget approvals remain functional pending their own removal slices.
+
+The decisions driving it are settled: Orka owns the platform; migrated
+applications retain their owner-managed Deployment; governance for migration
+means model traffic only; the seam is a temporary bridge whose disappearance
+would be success. The custom approval path leaves this repository, including
+argument-bound tool permits **and budget approvals**. Its possible upstream
+value is not a reason to retain it. Agent authoring is not being decided here.
+
+| Package under plane/internal | Disposition | Decision and source evidence |
+|---|---|---|
+| proxy | **Shrinks; model seam survives** | Migration still needs model authentication, credential custody, protocol translation, usage recording and admin credential/budget/ledger operations. Keep the model handlers, protocol/translation and validation. Remove tool/inbound admin routes, approval routes and deny-and-pend filing from `plane/internal/proxy/admin.go`, `plane/internal/proxy/admin_approvals.go`, `plane/internal/proxy/handler.go` and the Store interface. |
+| store | **Shrinks** | The seam needs credential hashes/expiry, ledger, attribution and exact spend reservations. Remove allowlists, tool/inbound audit access, request/grant operations and grant-derived headroom from `plane/internal/store/store.go`, `plane/internal/store/approvals.go`, [the retired inbound store](https://github.com/kaimahi-agents/kaimahi/blob/d036b30/plane/internal/store/inbound.go), `plane/internal/store/spend.go` and `plane/internal/store/metrics.go`. Keep database-backed model accounting, not a second governance platform. |
+| meter | **Shrinks** | Ordinary token/cents caps and fail-closed reservation admission protect model traffic. Remove grant headroom, granted verdicts and inbound-only Preview from `plane/internal/meter/meter.go`; exceeding a cap must deny, not create an approval request. Reservation atomicity across replicas must survive. |
+| pricing | **Survives** | `plane/internal/pricing/pricing.go` computes model cost used by the proxy ledger. Orka traffic currently has token usage without configured money prices; retaining accounting does not claim zero-cost inference or create prices. |
+| redact | **Survives** | `plane/internal/redact/redact.go` and `plane/internal/redact/slog.go` protect model credential/log custody independently of the retired connectors. Only connector secret collection in main wiring goes. |
+| metrics | **Shrinks** | Keep proxy outcomes/latency, ledger totals, credential deadlines, reservations, build identity and certificate expiry. Remove gateway/inbound labels, queue/notifier metrics and live-grant collection in `plane/internal/metrics/metrics.go`, together with their store queries. Orka's OTLP is not missing functionality to recreate here. |
+| gateway | **Goes** | Orka owns the platform and migration does not govern application tools. Remove the entire MCP relay, tool capability filtering, argument canonicalization/digests, constraints and grant enforcement in `plane/internal/gateway/`, plus its listener and deployment/caller wiring. |
+| inbound | **Removed in this slice** | Orka replaces the plane's connector orchestration. Removed webhook verification, queues, dedupe/invocation and approval commands in [the former package](https://github.com/kaimahi-agents/kaimahi/tree/d036b30/plane/internal/inbound), plus its listener, ingress and caller wiring. |
+| notify | **Removed in this slice** | Notifications and replies existed to operate the retired approvals/connectors. Removed [the former package](https://github.com/kaimahi-agents/kaimahi/tree/d036b30/plane/internal/notify), its filing wrapper, poster worker and configuration. |
+| config | **Shrinks** | Model routes, credential-file/header handling, protocol pairing, pricing and validated model overlays still serve migration. Remove tool upstreams, tool headers, argument policy/constraints, inbound hooks and notifier configuration from `plane/internal/config/config.go`, `plane/internal/config/overlay.go` and `plane/internal/config/policy.go`. Remove corresponding committed config and callers together; do not silently accept configuration for deleted enforcement. |
+| egress | **Survives** | `plane/internal/egress/egress.go` also serves hosted model upstreams: vetted DNS/IP dialing, TLS and redirect restrictions protect upstream credentials. Remove tool-host aggregation in main wiring, not the model transport's protections. |
+| seamtls | **Survives** | `plane/internal/seamtls/seamtls.go` serves the model certificate and builds verified transports. Migration mounts its CA in the owner's pod. Gateway names/callers can shrink only where compatible with protected scaffolding and existing model certificates. |
+| ops | **Survives; listener wiring shrinks** | `plane/internal/ops/ops.go` provides model-seam metrics/readiness/liveness, including DB readiness without turning an upstream outage into a restart. Main must stop probing listeners that are removed; deleting probes or the ops port would break the retained Deployment. |
+| db | **Shrinks in schema scope; migration engine survives** | `plane/internal/db/pool.go` and `plane/internal/db/migrate.go` remain necessary for the seam's Postgres ledger and replica-safe startup. Retiring tool/approval/inbound schema is a separate compatibility-bearing step, not permission to reset the database or rewrite applied migration history; see below. |
+
+**The module boundary is runtime, not a Go import.** There is no plane import in
+`internal/kmx/scaffold/migrate.go`: it generates identity, model-only ingress and
+an owner-applied patch. `internal/kmx/planebuild/planebuild.go` names the separate
+module for building/fetching the binary. The actual migration contract includes
+admin credential issuance/reconciliation, the model Service/port, CA publication,
+Orka token mount, model upstream/header/translation configuration and proxy
+rollout. A green root build cannot prove those contracts survived.
+
+### Protected surface — narrow exception authorized
+
+The instruction to leave all of `internal/kmx/scaffold/` unchanged conflicts
+with removing every remaining reference to the retired gateway/approvals:
+
+- `internal/kmx/scaffold/upstream.go` declares the gateway address and contains
+  argument-binding/approval guidance. `internal/kmx/scaffold/upstream_yaml.go`
+  generates gateway overlays, policy fields and a gateway-backed RemoteMCPServer.
+- `internal/kmx/scaffold/sidecar.go` generates a credential shim for that gateway.
+  These are active generators, not only historical comments.
+- `internal/kmx/scaffold/upstream_pin_test.go` contains
+  TestTheDerivedGatewayURLMatchesTheCommittedSeam, which reads
+  `k8s/kaimahi-tools.yaml` and requires its gateway URL. Deleting the manifest
+  breaks a protected test; leaving a dummy manifest would conceal the conflict.
+
+Removing callers cannot make these references disappear. The owner authorized
+option 1: narrow the directory protection solely to remove legacy gateway/approval
+generators and their tests, **without changing either agent-authoring path or
+model migration**. Shared helpers needed by surviving model code stay. This is
+not permission to delete the directory wholesale or settle the authoring format.
+`cmd/kmx/agent_commands.go` and `docs/orka.md` remain protected unchanged.
+
+### Database and review boundaries
+
+Versions 00009 and 00011 mix surviving ledger changes with retiring tool/inbound
+changes. Versions 00007, 00010 and 00012 support retained reservations,
+credential expiry and model accounting. Editing or removing historical SQL is
+not an upgrade for a database already at version 12; removing creation migrations
+also breaks a fresh database while mixed ALTER statements remain.
+
+Separate runtime removal from destructive schema retirement. Do not implicitly
+drop historical audit records or reset credentials/ledger. A schema change needs
+fresh-install and version-12 upgrade tests against Postgres, a documented data
+retention decision, and a deployment sequence that does not break old replicas
+still querying grant tables during the current two-replica rolling update.
+
+The code removal reaches beyond these fourteen packages: main wiring, kmx admin
+client/commands and flow/watch trails, tool/workflow orchestration, manifests,
+Make targets, embedded/operator scripts, probes, observability and CI all have
+callers of the retiring endpoints. Removing three package directories alone
+would leave an unusable installation and tests for a nonexistent product.
+
+Review order, with the protected boundary resolved:
+
+1. This inventory, independently published with no deletion.
+2. Inbound and notification removal: webhook/command listeners and workers,
+   connector configuration, audit views, deployment wiring and obsolete probes.
+   Gateway and budget approvals remain functional until their own removal slice.
+3. Gateway removal: relay, argument-bound approvals, tool/workflow callers and
+   the now-authorized legacy scaffold portions, with their manifests and checks.
+4. Seam-adjacent removal last: remaining proxy/budget approval filing and grants,
+   store/meter/metrics reduction, then schema retirement under an explicit
+   compatibility/data plan. Retain ordinary model budgets and reservations.
+
+The first runtime PR stops after inbound/notification removal for reviewability.
+Subsequent dependent slices must branch from main after preceding work is
+integrated by its owner; do not merge this lane or stack PR bases to accelerate it.
+
+Each removal commit must pass builds and the full test suite in **both** Go
+modules, with a disposable Postgres DSN so store tests do not skip. Keep test
+coverage for surviving behavior; adjust checks only when their checked feature
+is actually removed. If these slices still produce an unreviewable PR, split
+into independently based main-targeting PRs rather than stacked bases.
+
+For the retained bridge, document the model/admin/config/ops contract rather
+than resurrecting platform guidance. Update [migration verification](migrate.md#verify-the-migration),
+the map, CLI references and deployment guidance to match the result. Exercise
+`kmx migrate` on a dedicated kind cluster, apply the generated patch as the
+workload owner, send model traffic through the seam to Orka and inspect the
+ledger; repeat migration to verify the bound credential and owner Deployment
+are preserved. Fake-kubectl tests cover orchestration but are not this live proof.
+Run doc-link and repository-map checks after staging each changed inventory.
+
+**Recovery record.** The last commit carrying the removed inbound approval
+commands and notification path is `d036b30d2ceb228ca39b88750d606d635e00a2a1`.
+The later-removed AP human-wait helper was last carried by
+`0b0ce38cb2c362940b8c75a70c198452968939fb`; review found that matching clipped
+summaries and unrelated new grants could falsely report a human approval.
+It is retired, not rebuilt around machinery scheduled to leave next.
+The original inspected source baseline is
+`47e71e843560c280ef380a1716c1cb331087aa4d`. Argument-binding enforcement remains in
+`plane/internal/gateway/digest.go` and `plane/internal/gateway/canon.go`, policy
+in `plane/internal/config/policy.go`, persistence in
+`plane/internal/store/approvals.go`, admin decisions in
+`plane/internal/proxy/admin_approvals.go`, and budget grants in
+`plane/internal/meter/meter.go` and `plane/internal/store/spend.go`.
+For each actual removal, record its parent as the last-carrying commit in the
+PR body, with a one-line reason grouped by package. That recovery route is for
+possible upstream reuse, not a reason to keep the implementation here.
 
 ## `k8s/` — embedded artifacts and checkout scenarios
 
 The packaging boundary is mechanically recorded by
 `TestTheConnectorFamiliesAreNotEmbedded` in
 `internal/kmx/app/manifests_test.go`. Its exclusion list also checks that
-each named manifest exists. Twenty-six of `k8s/`'s 39 files are embedded,
-twelve are named by that test, and the remaining non-manifest is
+each named manifest exists. Twenty-six of `k8s/`'s 38 files are embedded,
+eleven are named by that test, and the remaining non-manifest is
 `k8s/erp-fixtures.json`.
 
 **Embedded in `kmx` (26):** `ollama.yaml`, `kagent-values.yaml`,
@@ -131,7 +263,7 @@ twelve are named by that test, and the remaining non-manifest is
 `egress-hosted.yaml`, `egress-copilot.yaml`, `wasm/runtime.yaml`,
 all five of `plane/`, all nine of `models/`, and all four of `observability/`.
 
-**Checkout — legacy connectors (6):** `inbound-edge.yaml`, `slack-mcp.yaml`,
+**Checkout — legacy connectors (5):** `slack-mcp.yaml`,
 `kaimahi-slack.yaml`, `kaimahi-github.yaml`, `kaimahi-release-github.yaml`
 and `kaimahi-release-ado.yaml`.
 
@@ -145,9 +277,9 @@ Embedding explains what the existing binary can apply without a checkout.
 It does not establish a future authoring format, current platform support,
 or whether anyone depends on a particular scenario.
 
-## `scripts/` — 70 tracked files, three different jobs
+## `scripts/` — 64 tracked files, three different jobs
 
-**Reference coverage:** 58 of the 70 are named by something outside themselves,
+**Reference coverage:** 52 of the 64 are named by something outside themselves,
 and the twelve `scripts/mutations/*.json` are named by nothing at all —
 `check-mutations.py` discovers them by globbing. Map, checker, mutation-fixture
 and coordination-board mentions are not caller evidence. A textual reference
@@ -160,18 +292,20 @@ role is counted once, in the first matching bucket.
 | Class | Count | Files |
 |---|---|---|
 | **Installed** — embedded in the kmx binary, including legacy wiring | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
-| **Checkout** — existing operator scripts, including legacy integrations | 7 | `plane-pods.sh`, `slack-secret.sh`, `slack-approvers.sh`, `copilot-secret.sh`, `inbound-secret.sh`, `inbound-expose.sh`, `exposure-scan.sh` |
-| **Demonstration** | 4 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
-| **Scaffolding** — checkers and their self-tests | 16 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py` |
-| **Scaffolding** — live-cluster probes | 16 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` |
+| **Checkout** — existing operator scripts, including legacy integrations | 3 | `plane-pods.sh`, `slack-secret.sh`, `copilot-secret.sh` |
+| **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
+| **Scaffolding** — checkers and their self-tests | 17 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_ap_approval.py` |
+| **Scaffolding** — live-cluster probes | 14 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 8 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `plain-model.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `plain-model-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
 | **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker |
 | **Scaffolding** — board checker's recorded findings | 1 | `board-open-drift.json` |
 
-**Existing callers, not product authority.** `await-approval.sh` waits for
-the human decision in the accounts-payable demonstration.
-Both `ap-demo.sh` and `ap-injection.sh` call it.
-`scripts/exposure-scan.sh`: one make recipe.
+**Existing callers, not product authority.** The accounts-payable demonstrations
+are automatically admin-approved fixtures, not human decision flows.
+Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly.
+The removed human-wait helper is not replaced; `AP_HUMAN=1` fails before the
+scenario rather than silently falling back to automated approval.
+`scripts/slack-secret.sh`: one make recipe.
 
 `kube-guard.sh` has a second role but is counted once above: it is embedded
 and is one of the twelve checkers the mutation harness breaks on purpose.
@@ -247,10 +381,11 @@ The latter is not a brand asset or the current architecture diagram.
 
 ## Existing layout
 
-No runtime files are moved or removed by documentation retirement. The fixture
-ERP already lives under `internal/demo/erp` and `cmd/demo/kaimahi-erp`.
+The first code-retirement slice removes inbound/notify and their wiring, without
+moving the surviving packages. The fixture ERP still lives under
+`internal/demo/erp` and `cmd/demo/kaimahi-erp`.
 The embedded and checkout manifests remain interleaved under `k8s/`;
-eleven tracked files under `scripts/` contain the literal `k8s/`.
+ten tracked files under `scripts/` contain the literal `k8s/`.
 Embedded scripts remain at the paths named by `embed.go`. These are existing
 layout facts, not a proposed removal order or an argument to retain the plane
 as the product. Code disposition is separate work.

@@ -23,6 +23,9 @@ this migration does not settle it. `orka.harness.v2` is outside the direction.
   `kmx orka install` / `kmx orka status` and [the Orka guide](orka.md).
   Installing Orka alone does not enable this model governance.
 - The Kaimahi plane deployed (`kmx plane` on kind; [AKS phases](aks.md) on AKS).
+  Upgrading an older plane requires the [inbound retirement steps](operations.md#upgrading-after-inbound-retirement);
+  stale inbound/notifier configuration is rejected, and apply does not prune
+  the former public edge.
 - An existing Deployment whose model base URL is configurable through its
   environment, and an application that can trust the mounted CA. The default
   variables target the OpenAI Python client shape; they are not proof that an
@@ -124,8 +127,9 @@ multi-turn/tool-calling conversations too, including the continuation limit belo
 - `orka` is `metered` without configured prices. Tokens are counted, but `0 cents`
   is not evidence of free inference. A cents budget denies an unpriced pair;
   configure reviewed prices or use the appropriate token budget.
-- `flow` is chronological, not causal: credential and timestamp join four trails,
-  not a correlation ID. Concurrent turns can interleave.
+- `flow` and `watch` read three trails: model, tool and approval. Credential and
+  timestamp form a chronological view, not a causal correlation ID. Concurrent
+  turns can interleave; this migration still governs only model traffic.
 - The generated ingress rule admits the application's namespace to the model
   port only. Tool access is a separate decision. On an enforcing CNI, removing
   this allowance blocked the measured probe; merely applying a NetworkPolicy
@@ -253,6 +257,32 @@ is [here](reviews/2026-09-09-orka-composition.md).
 - A full `kmx lift` still installs kagent/Copilot demo agents and obtains a
   Copilot credential by device login if absent. Orka migration uses selected phases;
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
+
+## Retirement regression evidence
+
+The inbound/notification retirement was exercised on a dedicated kind cluster
+with Orka `v0.1.3`, Ollama `qwen2.5:3b` and an owner-managed Python 3.12
+standard-library HTTP client fixture. This is a controlled model-route smoke
+check, not a claim about every SDK or an already-operating source provider.
+
+- The original-main migration left the Deployment unpatched. Applying its
+  generated patch as the owner enabled a real Responses request through the TLS
+  seam to Orka: `BRIDGE WORKS`, with 39 input and 5 output tokens in the ledger.
+- After upgrading the same plane/database to the reduced runtime, repeating
+  migration preserved Deployment UID, generation and specification, the bound
+  application credential, original ConfigMap and application source. A new
+  request returned the same answer and another 44-token model ledger row;
+  the pre-upgrade row survived.
+- A fresh Deployment migrated against the reduced runtime received a new
+  credential, remained unpatched until owner application, then produced a real
+  answer and its own 44-token ledger row.
+
+Both proxy replicas became Ready. The old inbound Service remained after apply,
+as expected, and was explicitly deleted in the disposable cluster. This smoke
+check does not certify network-policy enforcement, arbitrary framework
+continuations, tool governance or AKS. See the
+[retirement upgrade steps](operations.md#upgrading-after-inbound-retirement) and
+retain the translation/ownership limits above.
 
 ## Teardown
 

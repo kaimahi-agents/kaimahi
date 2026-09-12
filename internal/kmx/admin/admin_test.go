@@ -371,27 +371,6 @@ func TestGrantsAndAuditsRenderTheirContracts(t *testing.T) {
 	}
 }
 
-func TestInboundAuditRenderingContract(t *testing.T) {
-	var query url.Values
-	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
-		query = r.URL.Query()
-		w.Write([]byte(`{"entries":[{"created_at":"2026-09-03T01:52:00.123Z","hook":"demo","credential":"inbound-demo","delivery_id":"delivery-12345678901234567890","decision":"completed","status":200,"input_tokens":41,"output_tokens":17,"detail":"line1\nline2","acted_for":"slack:U123"}]}`))
-	}))
-
-	var out bytes.Buffer
-	if err := c.InboundAudit(&out, "demo"); err != nil {
-		t.Fatal(err)
-	}
-	if query.Get("hook") != "demo" || query.Get("limit") != "50" {
-		t.Errorf("query = %v", query)
-	}
-	want := fmt.Sprintf("%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s\n", "created (UTC)", "hook", "credential", "delivery", "decision", "status", "in", "out", "detail", "acted for") +
-		fmt.Sprintf("%-19s %-12s %-14s %-20s %-9s %6s %6s %6s %-40s %s\n", "2026-09-03T01:52:00", "demo", "inbound-demo", "delivery-12345678901", "completed", "200", "41", "17", `"line1\nline2"`, "slack:U123")
-	if out.String() != want {
-		t.Errorf("inbound audit table differs from its contract:\n got: %q\nwant: %q", out.String(), want)
-	}
-}
-
 // An empty grants list says so in words. "no grants" is what `make grants`
 // prints, and a bare header would read as a fetch that failed.
 func TestEmptyGrantsSaysSo(t *testing.T) {

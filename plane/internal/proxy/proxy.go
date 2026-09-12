@@ -55,9 +55,6 @@ type Store interface {
 	DenyApprovalRequest(ctx context.Context, id string, decidedBy string) error
 	Grants(ctx context.Context, credential string, limit int) ([]store.Grant, []bool, error)
 	ApprovalAudit(ctx context.Context, credential string, limit int) ([]store.ApprovalAuditEntry, error)
-	// Inbound: the audit trail read (admin); the bridge's own data
-	// path uses the narrower inbound.Store.
-	InboundAudit(ctx context.Context, hook string, limit int) ([]store.InboundAuditEntry, error)
 	// Identity on the call: who the run this call falls inside is being
 	// made for. Resolution only — never enforcement.
 	ActorFor(ctx context.Context, credential string) (store.Attribution, error)

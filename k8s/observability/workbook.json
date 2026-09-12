@@ -116,20 +116,6 @@
         },
         {
           "type": 3,
-          "name": "queue-headroom",
-          "content": {
-            "version": "KqlItem/1.0",
-            "query": "sum by (queue, pod) (kaimahi_queue_depth) / sum by (queue, pod) (kaimahi_queue_capacity)",
-            "size": 0,
-            "title": "Bounded queue occupancy (1.0 = full, and new work is refused)",
-            "queryType": 21,
-            "resourceType": "microsoft.monitor/accounts",
-            "visualization": "timechart",
-            "crossComponentResources": ["[parameters('azureMonitorWorkspaceResourceId')]"]
-          }
-        },
-        {
-          "type": 3,
           "name": "build",
           "content": {
             "version": "KqlItem/1.0",

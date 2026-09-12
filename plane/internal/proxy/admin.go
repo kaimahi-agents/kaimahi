@@ -64,7 +64,6 @@ func NewAdminMux(d Deps, adminTokenFile string) *http.ServeMux {
 	mux.HandleFunc("POST /admin/approvals/{id}/deny", auth(h.denyRequest))
 	mux.HandleFunc("GET /admin/grants", auth(h.listGrants))
 	mux.HandleFunc("GET /admin/approval-audit", auth(h.approvalAudit))
-	mux.HandleFunc("GET /admin/inbound-audit", auth(h.inboundAudit))
 	// A read that decides whether an overlay would load, using
 	// the same config.Parse this binary boots with (validate.go).
 	mux.HandleFunc("POST /admin/config/validate", auth(h.validateConfig))
@@ -319,28 +318,6 @@ func (h *handler) toolAudit(w http.ResponseWriter, r *http.Request) {
 		slog.Error("admin: tool audit read", "err", err)
 		http.Error(w, "store error", http.StatusInternalServerError)
 		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"entries": entries})
-}
-
-// inboundAudit reads the inbound trail: every decision about an
-// attributable event, and each admitted event's outcome.
-func (h *handler) inboundAudit(w http.ResponseWriter, r *http.Request) {
-	hook := r.URL.Query().Get("hook")
-	if hook != "" && !credentialName.MatchString(hook) {
-		http.Error(w, "hook must be a lowercase DNS label", http.StatusBadRequest)
-		return
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	entries, err := h.d.Store.InboundAudit(r.Context(), hook, limit)
-	if err != nil {
-		slog.Error("admin: inbound audit read", "err", err)
-		http.Error(w, "store error", http.StatusInternalServerError)
-		return
-	}
-	if entries == nil {
-		entries = []store.InboundAuditEntry{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"entries": entries})

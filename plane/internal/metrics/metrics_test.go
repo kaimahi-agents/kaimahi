@@ -55,7 +55,6 @@ var allowed = map[string]*regexp.Regexp{
 	"decision":   nil,
 	"reason":     nil,
 	"kind":       nil,
-	"queue":      nil,
 	"credential": regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$|^other$`),
 	"upstream":   regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$|^other$`),
 	// kaimahi_build_info's VCS revision, or go_info's Go version.
@@ -70,7 +69,7 @@ var allowed = map[string]*regexp.Regexp{
 
 func TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape(t *testing.T) {
 	// Exercise every path so the series exist.
-	for _, seam := range []metrics.Seam{metrics.SeamProxy, metrics.SeamGateway, metrics.SeamInbound} {
+	for _, seam := range []metrics.Seam{metrics.SeamProxy, metrics.SeamGateway} {
 		for _, r := range metrics.Vocabulary["reason"] {
 			metrics.Decide(seam, metrics.Denied, metrics.Reason(r))
 		}
@@ -81,8 +80,6 @@ func TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape(t *testing.T) {
 		metrics.ObserveUpstream(seam, "https://evil.example/?token=kmh_abc", time.Millisecond)
 		metrics.SetDegraded(seam, false)
 	}
-	metrics.SetQueue(metrics.QueueInbound, 1, 16)
-	metrics.SetQueue(metrics.QueueNotifier, 0, 32)
 
 	families, err := metrics.Registry().Gather()
 	require.NoError(t, err)
@@ -131,8 +128,8 @@ func labels(m *dto.Metric) map[string]string {
 
 func TestExpectedMetricsAreExposed(t *testing.T) {
 	for _, name := range []string{
-		"kaimahi_decisions_total", "kaimahi_upstream_latency_seconds", "kaimahi_queue_depth",
-		"kaimahi_queue_capacity", "kaimahi_seam_degraded", "kaimahi_build_info",
+		"kaimahi_decisions_total", "kaimahi_upstream_latency_seconds",
+		"kaimahi_seam_degraded", "kaimahi_build_info",
 		"kaimahi_ledger_month_cents", "kaimahi_ledger_month_tokens", "kaimahi_live_grants",
 		"kaimahi_open_reservations", "kaimahi_store_up",
 		"go_goroutines", "process_resident_memory_bytes",
@@ -154,7 +151,7 @@ func TestStoreDerivedSeriesCarryCredentialNamesOnly(t *testing.T) {
 	for _, m := range grants.GetMetric() {
 		byKind[labels(m)["kind"]] = m.GetGauge().GetValue()
 	}
-	require.Equal(t, map[string]float64{"tool": 2, "budget": 1, "inbound": 0}, byKind)
+	require.Equal(t, map[string]float64{"tool": 2, "budget": 1}, byKind)
 	require.EqualValues(t, 3, find(t, "kaimahi_open_reservations").GetMetric()[0].GetGauge().GetValue())
 	require.EqualValues(t, 1, find(t, "kaimahi_store_up").GetMetric()[0].GetGauge().GetValue())
 }
