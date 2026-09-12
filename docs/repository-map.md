@@ -159,6 +159,62 @@ admin credential issuance/reconciliation, the model Service/port, CA publication
 Orka token mount, model upstream/header/translation configuration and proxy
 rollout. A green root build cannot prove those contracts survived.
 
+### Gateway retirement slice — inventory before deletion
+
+Baseline: `a8694b813a79a406b3fee7fd897ecea71baa85c0` (merged PR #183).
+This supplement is published before the next deletion commit. Inbound/notify
+are already removed; the following gateway slice is not implemented by this
+inventory-only commit.
+
+- Remove the gateway package and MCP listener, tool-policy configuration,
+  tool allowlist/audit APIs and executable argument-bound grants. Contract 4
+  will mark the deliberate API removal; it cannot protect old CLI binaries
+  that accept higher contract numbers. Upgrade CLI and plane together.
+- Remove tool-governance and workflow commands, the blueprint package and
+  bundled release blueprint, tool credential capture, gateway-specific
+  scaffolding, and the ERP/connector demonstrations and probes that exist
+  to exercise them. Neither native Orka tools nor direct kagent MCP authoring
+  is the custom gateway: retain both agent-authoring paths and their helpers.
+- Retain model switching and namespace checks from the tool orchestration
+  file; Service resolution, model overlay/concurrency and rollout helpers
+  from tool onboarding; the Orka install connectivity helper from sandbox
+  code; status condition-age formatting from seam-verdict code.
+- Retain shared namespace/object/upstream validation, plane/overlay/selector
+  constants and model YAML selector rendering from gateway scaffold files.
+  Remove full tool specs rather than leaving dummy types to carry model data.
+  Preserve model overlay/selector tests and fixtures used by migration tests.
+- Remove managed-tool status counts/readiness/credential implications, not
+  kagent's raw tool inventory or editor validation. Do not report obsolete
+  gateway URLs as healthy direct routing. Flow/watch retain model and
+  approval-history trails; tool-audit reads go with the removed endpoint.
+- Keep budget filing, approval/denial, grants and exact spend reservations
+  until the final seam-adjacent slice. Tool filings and new tool approvals
+  must fail; historical tool requests remain readable/deniable and historical
+  grants remain readable but inactive. Retain historical argument fields;
+  no SQL migration, audit record, credential or ledger reset is authorized.
+- Remove MCP Services/ports, tool-only custody mounts, manifests, policies,
+  CI scenarios and check assumptions with their runtime. Preserve model
+  overlay, provider/Orka credentials, CA, operations, budget, hosted model
+  egress, upgrade and resilience checks. `kubectl apply` will not remove
+  older Services or owner-managed gateway references: document deliberate
+  retirement and stale-overlay cleanup instead of widening network access
+  or silently stripping configuration.
+
+The current concrete shared dependencies are `UseOptions`/`Use`/preset helpers,
+`requireNamespace`, `resolveService`, `readOverlay`, `refuseOnOverlayDrift`,
+`quoteVersion`, `rollProxy`, `unreachable`, `age`, and `matchLabels`.
+Some supporting test helpers are shared too; preserve those tests' real
+model/migration coverage rather than merely removing failing test files.
+
+Expected verification: full build/tests in both modules after each coherent
+removal, disposable Postgres with no store skips, negative tool-retirement and
+positive budget/model regressions, unchanged authoring/migration behavior,
+staged map/link/checker self-tests and mutations, and a dedicated live kind
+migration with real Orka/model traffic and owner-state preservation on rerun.
+If the dependency-closed removal is still too broad to review, split additional
+cleanup rather than stack PR bases. Record the actual parent of each removal
+as its last-carrying commit in the PR body for possible upstream recovery.
+
 ### Protected surface — narrow exception authorized
 
 The instruction to leave all of `internal/kmx/scaffold/` unchanged conflicts
