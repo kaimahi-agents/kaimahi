@@ -313,8 +313,8 @@ The CI fixtures are synthetic systems for verification, not deployed services.
 
 `verify-chat.py` is a checker, not part of the make chat recipe:
 every occurrence in the Makefile is a comment line rather than a recipe.
-Its existing callers include `.github/workflows/ci.yml` (fifteen invocations
-among twenty mentions — five are comments).
+Its existing callers include `.github/workflows/ci.yml` (fourteen invocations
+among nineteen mentions — five are comments).
 
 ## `docs/` — 37 tracked files, current direction and legacy references
 

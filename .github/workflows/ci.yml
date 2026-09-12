@@ -2223,6 +2223,13 @@ jobs:
         run: |
           bin/kmx audit tool hello-tools | tee tool-audit.out
           grep -E 'hello-tools +kagent-tools +tools/call +k8s_get_resources +allowed +200' tool-audit.out
+          # Attribute the real call just verified in gw-chat.out, before
+          # direct probes add their own rows. No second model task is needed.
+          grep -E 'tools/call +k8s_get_resources +allowed +200 .*none *$' tool-audit.out > agent-rows.out
+          test -s agent-rows.out
+          if grep -qE 'ua:curl/' agent-rows.out; then
+            echo 'an agent row inherited the probe caller' >&2; exit 1
+          fi
       - name: Non-allowlisted tool call denied fail-closed and audited
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2520,28 +2527,17 @@ jobs:
           case "$ports" in
             *9091*|*9092*) echo 'admin/ops port exposed by a Service' >&2; exit 1 ;;
           esac
-      - name: "Caller attribution: direct agent and probe calls record their own callers"
+      - name: "Caller attribution: model and probe calls retain their own callers"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The tools agent uses distinct model and gateway credentials.
-          probe="caller-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
-          kubectl --context kind-kaimahi-p1 -n default create configmap "$probe" \
-            --from-literal=owner=kaimahi-caller-ci
-          KIND_CLUSTER=kaimahi-p1 bin/kmx use governed-ollama --agent hello-tools
-          bin/kmx agent chat hello-tools 'List the configmaps in the default namespace.' | tee caller-chat.out
-          python3 scripts/verify-chat.py caller-chat.out k8s_get_resources "$probe"
+          # Read the existing verified governed-chat row. The real agent's
+          # tool caller was checked immediately after its ConfigMap probe.
           bin/kmx ledger hello-world | tee ledger-callers.out
           grep -E 'hello-world +ollama .*none *$' ledger-callers.out
           if grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' ledger-callers.out; then
             echo 'a new ledger row lost its caller fields' >&2; exit 1
           fi
-          bin/kmx audit tool hello-tools | tee tool-audit-agent.out
-          # Real agent rows must exist and must not inherit curl's caller.
-          grep -E 'tools/call +k8s_get_resources +allowed +200 .*none *$' tool-audit-agent.out > agent-rows.out
           test -s agent-rows.out
-          if grep -qE 'ua:curl/' agent-rows.out; then
-            echo 'an agent row inherited the probe caller' >&2; exit 1
-          fi
           bash scripts/tool-call-probe.sh k8s_get_resources '{"resource_type": "ConfigMap", "namespace": "default"}'
           bin/kmx audit tool hello-tools | tee tool-audit-probe.out
           sed -n '2p' tool-audit-probe.out | grep -qE 'ua:curl/[0-9]'
