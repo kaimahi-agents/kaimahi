@@ -283,67 +283,6 @@ func TestConcurrentToolCallsAgainstGrantUsesAdmitExactlyThatMany(t *testing.T) {
 	}
 }
 
-func TestConcurrentInboundEventsReplayAndGrantAreExact(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "hook")
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "inbound", Subject: "demo", Detail: "test"})
-	require.NoError(t, err)
-	_, err = s.ApproveRequest(ctx, id, nil, i32(2), nil, store.DecidedByAdmin)
-	require.NoError(t, err)
-
-	// The SAME delivery ten times at once: admitted once, replayed nine
-	// times, one use burned. Delivery ids carry the credential's unique
-	// name: the replay index is per (hook, delivery), so a persistent
-	// test database must not remember an earlier run's admission.
-	errs := race(10, func(int) error {
-		_, _, err := s.AdmitInboundEvent(ctx, "demo", name, name+"-d1", "kagent/hello", store.ActedForNone)
-		return err
-	})
-	var admitted, replays int
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			admitted++
-		case errors.Is(err, store.ErrReplay):
-			replays++
-		default:
-			require.NoError(t, err)
-		}
-	}
-	require.Equal(t, 1, admitted)
-	require.Equal(t, 9, replays)
-
-	// Distinct deliveries against the one remaining use: exactly one more.
-	errs = race(10, func(i int) error {
-		_, _, err := s.AdmitInboundEvent(ctx, "demo", name, fmt.Sprintf("%s-d%d", name, 100+i), "kagent/hello", store.ActedForNone)
-		return err
-	})
-	admitted = 0
-	var nogrant int
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			admitted++
-		case errors.Is(err, store.ErrNoGrant):
-			nogrant++
-		default:
-			require.NoError(t, err)
-		}
-	}
-	require.Equal(t, 1, admitted)
-	require.Equal(t, 9, nogrant)
-	rows, err := s.InboundAudit(ctx, "demo", 100)
-	require.NoError(t, err)
-	var admittedRows int
-	for _, r := range rows {
-		if r.CredentialName == name && r.Decision == "admitted" {
-			admittedRows++
-		}
-	}
-	require.Equal(t, 2, admittedRows, "no event is admitted without its row, and no row without its use")
-}
-
 func TestConcurrentDecisionsOnOneRequestDecideItOnce(t *testing.T) {
 	s, _ := pgStore(t)
 	ctx := context.Background()
@@ -387,8 +326,8 @@ func TestConcurrentFilingsOfOneSubjectFileOnce(t *testing.T) {
 	s, _ := pgStore(t)
 	ctx := context.Background()
 	name := fresh(t, s, "file")
-	// Every replica's denial files: exactly one filing is fresh (the one
-	// that notifies), the rest are deduped.
+	// Every replica's denial files: exactly one filing is fresh,
+	// the rest are deduped.
 	fileds := race(10, func(int) bool {
 		_, filed, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "k8s_get_events", Detail: "denied", ArgDigest: digestOf("k8s_get_events")})
 		require.NoError(t, err)
@@ -546,10 +485,10 @@ func TestAToolRequestWithNoCallCannotBeApproved(t *testing.T) {
 	_, err = s.ApproveRequest(ctx, id, nil, i32(1), nil, store.DecidedByAdmin)
 	require.ErrorIs(t, err, store.ErrBounds)
 
-	// Budget and inbound grants are unaffected: they have no arguments.
-	bid, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "inbound", Subject: "demo"})
+	// Budget grants are unaffected: they have no arguments.
+	bid, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens"})
 	require.NoError(t, err)
-	bg, err := s.ApproveRequest(ctx, bid, nil, i32(1), nil, store.DecidedByAdmin)
+	bg, err := s.ApproveRequest(ctx, bid, nil, i32(1), i64(10), store.DecidedByAdmin)
 	require.NoError(t, err)
 	require.Nil(t, bg.ArgDigest)
 }

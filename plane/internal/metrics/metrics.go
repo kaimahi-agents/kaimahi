@@ -2,7 +2,7 @@
 // operator watches, on its own cluster-internal listener, with NO
 // identifier as a label value. Every label is drawn from a fixed
 // vocabulary — the seams, the decisions, the refusal reasons, the grant
-// kinds, the queues — or from two operator-chosen names that are
+// kinds — or from two operator-chosen names that are
 // already public in the repo and printed by every audit command: a
 // credential's NAME (never its token) and an upstream's name. A channel
 // id, a user id, a request id, a delivery id, a model string, or any
@@ -27,7 +27,6 @@ type Seam string
 const (
 	SeamProxy   Seam = "proxy"
 	SeamGateway Seam = "gateway"
-	SeamInbound Seam = "inbound"
 )
 
 // Decision is what the seam did with the call.
@@ -71,21 +70,11 @@ const (
 	// ReasonConstraint: a standing constraint decided the call —
 	// admitted because it was inside its declared bounds, or denied
 	// because it was outside them.
-	ReasonConstraint  Reason = "constraint"
-	ReasonRateLimit   Reason = "rate_limit"
-	ReasonTooLarge    Reason = "too_large"
-	ReasonReplay      Reason = "replay"
-	ReasonQueueFull   Reason = "queue_full"
-	ReasonHookConfig  Reason = "hook_config"
-	ReasonAdmission   Reason = "admission"
-	ReasonNotApprover Reason = "not_approver"
-	ReasonIgnored     Reason = "ignored"
-	ReasonChallenge   Reason = "challenge"
+	ReasonConstraint Reason = "constraint"
 	// ReasonCredentialExpired: the credential authenticated, but its
 	// time was up. A refusal about a REAL credential, so it is audited
 	// and counted separately from an unknown token.
 	ReasonCredentialExpired Reason = "credential_expired"
-	ReasonCommand           Reason = "command"
 	// ReasonUnmetered: the upstream answered, and the plane could not
 	// read the token counts out of it. Counted apart from every other
 	// outcome because it is the one that used to be invisible — a
@@ -95,30 +84,17 @@ const (
 	ReasonOther     Reason = "other"
 )
 
-// Queue names a bounded per-replica queue.
-type Queue string
-
-const (
-	QueueInbound  Queue = "inbound_jobs"
-	QueueNotifier Queue = "notifier"
-)
-
-// Vocabulary is the complete set of allowed values per fixed label; the
-// test walks the registry against it, and Decide/SetQueue refuse
-// anything outside it at the type level.
+// Vocabulary is the complete set of allowed values per fixed label;
+// the test walks the registry against it.
 var Vocabulary = map[string][]string{
-	"seam":     {string(SeamProxy), string(SeamGateway), string(SeamInbound)},
+	"seam":     {string(SeamProxy), string(SeamGateway)},
 	"decision": {string(Allowed), string(Granted), string(Denied)},
 	"reason": {string(ReasonOK), string(ReasonBudget), string(ReasonAllowlist), string(ReasonGrant),
 		string(ReasonUnauthorized), string(ReasonCredentialStore), string(ReasonRoute), string(ReasonBadRequest),
 		string(ReasonUnpricedModel), string(ReasonAuditDegraded), string(ReasonMetering), string(ReasonUpstreamCredential),
 		string(ReasonUpstreamError), string(ReasonUpstreamUnreachable), string(ReasonEgressRefused), string(ReasonMethod), string(ReasonGrantCheck), string(ReasonConstraint),
-		string(ReasonRateLimit), string(ReasonTooLarge), string(ReasonReplay), string(ReasonQueueFull),
-		string(ReasonHookConfig), string(ReasonAdmission), string(ReasonNotApprover), string(ReasonIgnored),
-		string(ReasonChallenge), string(ReasonCommand), string(ReasonCredentialExpired), string(ReasonUnmetered),
-		string(ReasonOther)},
-	"kind":  {"tool", "budget", "inbound"},
-	"queue": {string(QueueInbound), string(QueueNotifier)},
+		string(ReasonCredentialExpired), string(ReasonUnmetered), string(ReasonOther)},
+	"kind": {"tool", "budget"},
 }
 
 // Name shapes for the two operator-chosen labels. A credential name is
@@ -142,7 +118,7 @@ var (
 
 	decisions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kaimahi_decisions_total",
-		Help: "Governance decisions by seam (proxy, gateway, inbound), decision (allowed, granted, denied) and reason.",
+		Help: "Governance decisions by seam (proxy, gateway), decision (allowed, granted, denied) and reason.",
 	}, []string{"seam", "decision", "reason"})
 
 	upstreamLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -150,16 +126,6 @@ var (
 		Help:    "Time an admitted call spent at its upstream, by seam and upstream name.",
 		Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300},
 	}, []string{"seam", "upstream"})
-
-	queueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kaimahi_queue_depth",
-		Help: "Items in a bounded per-replica queue (queued plus in flight).",
-	}, []string{"queue"})
-
-	queueCapacity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "kaimahi_queue_capacity",
-		Help: "Capacity of a bounded per-replica queue.",
-	}, []string{"queue"})
 
 	degraded = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kaimahi_seam_degraded",
@@ -173,12 +139,12 @@ var (
 )
 
 func init() {
-	registry.MustRegister(decisions, upstreamLatency, queueDepth, queueCapacity, degraded, buildInfo,
+	registry.MustRegister(decisions, upstreamLatency, degraded, buildInfo,
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	buildInfo.WithLabelValues(Version(), goVersion()).Set(1)
 	// Pre-create the series operators alert on, so an idle plane exposes
 	// zeros rather than nothing.
-	for _, s := range []Seam{SeamProxy, SeamGateway, SeamInbound} {
+	for _, s := range []Seam{SeamProxy, SeamGateway} {
 		degraded.WithLabelValues(string(s)).Set(0)
 		decisions.WithLabelValues(string(s), string(Denied), string(ReasonBudget)).Add(0)
 		decisions.WithLabelValues(string(s), string(Allowed), string(ReasonOK)).Add(0)
@@ -219,12 +185,6 @@ func PrimeUpstreams(seam Seam, upstreams []string) {
 // ObserveUpstream records how long an admitted call spent upstream.
 func ObserveUpstream(seam Seam, upstream string, d time.Duration) {
 	upstreamLatency.WithLabelValues(string(seam), shaped(upstreamShape, upstream)).Observe(d.Seconds())
-}
-
-// SetQueue publishes a bounded queue's depth and capacity.
-func SetQueue(q Queue, depth, capacity int) {
-	queueDepth.WithLabelValues(string(q)).Set(float64(depth))
-	queueCapacity.WithLabelValues(string(q)).Set(float64(capacity))
 }
 
 // SetDegraded publishes a seam's fail-closed breaker state.

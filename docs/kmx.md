@@ -73,22 +73,27 @@ These are the present seam implementation, including the bridge used by migrate.
 | `kmx plane` | image, secrets, certificate, deployment; `--step` runs one of those steps; `--source` selects checkout or fetch |
 | `kmx credentials` / `kmx credential renew <name>` | list expiries / extend deadline without changing token material. [Identity](identity.md) |
 | `kmx credential capture <upstream> <repository\|organization>` | terminal-only verified tool credential capture; see custody below |
-| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` for signed-hook identity; never print the bearer |
+| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` to discard the one-time bearer; never print the bearer |
 | `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
 | `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
-| `kmx flow [credential]` | model/tool/approval/inbound trails, oldest first; all credentials by default; **timeline, not causal trace** |
-| `kmx watch [credential]` | the same four trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
+| `kmx flow [credential]` | model/tool/approval trails, oldest first; all credentials by default; **timeline, not causal trace** |
+| `kmx watch [credential]` | the same three trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
 | `kmx audit tool\|approval [credential]` / `kmx grants [credential]` | trails / grant liveness; all credentials by default |
-| `kmx audit inbound [hook]` | inbound audit, optionally filtered by hook rather than credential |
 | `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |
 | `kmx approvals` / `kmx approve <id>` / `kmx deny <id>` | inspect exact calls; grant bounded authority or refuse. [Approvals](approvals.md) |
-| `kmx request <tool\|budget\|inbound> <subject>` | file a request; omitted tool `--args` means the argument-less call, not any call |
+| `kmx request <tool\|budget> <subject>` | file a request; omitted tool `--args` means the argument-less call, not any call |
 | `kmx tools add <name>` / `kmx models add <name>` | reviewable upstream/NetworkPolicy onboarding; contracts below |
 | `kmx tools sidecar <upstream>` | credential-presenting loopback shim; owner applies the Deployment patch |
 | `kmx tools allow <tool,tool\|->` / `kmx tools allowlist [credential]` | replace/read allowlist; `-` allows nothing without a live grant |
 | `kmx backup [file]` / `kmx restore <file>` / `kmx metrics` | database backup/replacement / one replica's counters; contracts below |
 | `kmx workflow list\|show\|govern\|refresh\|run` | discover/govern/run blueprints or refresh declared seam credentials; [workflows](workflows.md) |
 | `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary and dependency versions |
+
+Inbound audit/request commands, webhooks and Slack approval notifications are
+removed. Historical inbound rows remain in the database; `flow`/`watch` no longer
+read them. Tool and budget approvals remain admin-operated. See the
+[upgrade procedure](operations.md#upgrading-after-inbound-retirement) before
+redeploying an older plane.
 
 Approval TTL is 1 second–30 days, uses 1–1,000,000, amount
 1–1,000,000,000,000 when set; at least TTL or uses is required. Credential
@@ -420,8 +425,8 @@ GitHub device login, a private 0600 OAuth cache, and short-lived token exchange
 without reading credential material from stdin. It applies egress and restarts
 an existing proxy. [AKS](aks.md#the-credential-handoff) gives the explicit-context
 command. Other model-key capture and the separate direct-kagent Copilot capture
-remain `make model-secret` and `make copilot-secret`; Slack/inbound keys retain
-their checkout helpers.
+remain `make model-secret` and `make copilot-secret`; Slack MCP keys retain
+their checkout helper.
 
 ## Backup, restore, and metrics
 
@@ -439,10 +444,10 @@ It does not invent a sum across replicas. See [operations](operations.md).
 
 ## What is NOT in `kmx`
 
-Non-native model-key capture, direct-kagent Copilot capture, Slack/inbound keys,
+Non-native model-key capture, direct-kagent Copilot capture, Slack MCP keys,
 connector-specific helpers, committed demo/first-user agents and network probes
 retain checkout paths in [models](models.md), [workflows](workflows.md),
-[Slack](slack.md), [inbound](inbound.md), and [hosted upstreams](hosted-upstreams.md).
+[Slack](slack.md), and [hosted upstreams](hosted-upstreams.md).
 Plane-side Copilot capture and the full lift no longer need a checkout handoff.
 Superseded runtime/admin make shims and shell wrappers have been removed;
 use native kmx, with the Makefile only for retained repository helpers.

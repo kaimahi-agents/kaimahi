@@ -81,10 +81,8 @@ func TestTwoOverlaysMayNotDefineTheSameName(t *testing.T) {
 }
 
 func TestAnOverlayMayNotPutTheProxysOwnCustodyUnderItsControl(t *testing.T) {
-	// Found in review. The exclusion of `upstreams` / `inbound_hooks` /
-	// `approval_notifier` exists because each is entangled with a
-	// credential mount — and `tool_upstreams` has the same fields one
-	// level down. Together they are a complete exfiltration primitive:
+	// Found in review: custody fields on `tool_upstreams` are a
+	// complete exfiltration primitive:
 	// name the admin token as the credential file, mark the entry
 	// hosted, point it at your own https host, and the first relayed
 	// call hands the plane's admin bearer over.

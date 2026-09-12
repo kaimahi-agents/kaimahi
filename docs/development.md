@@ -17,9 +17,10 @@ successful outcome.
 
 The tree still contains the **legacy kagent/plane implementation** pending code
 retirement: kagent Agent/ModelConfig/RemoteMCPServer wiring; a model proxy and MCP
-gateway; operator APIs, inbound connectors and demos. Document these as present
-implementation, not the long-term platform boundary. Do not imply the docs have
-removed runtime code or that legacy authoring is already forbidden.
+gateway; operator APIs, tool/budget approvals and demos. The first retirement
+slice removes inbound webhooks and notifications only. Document the remaining
+code as present implementation, not the long-term platform boundary; neither
+authoring path is removed by this slice.
 
 ## Repository layout
 
@@ -28,9 +29,9 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 | Path | Responsibility |
 |---|---|
 | `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, orchestration, scaffolding, embedded manifests |
-| `plane/` | separate Go module: proxy/gateway/inbound, policy, durable governance |
+| `plane/` | separate Go module: proxy/gateway, policy, durable governance |
 | `plane/cmd/kaimahi-proxy/` | process/listener wiring |
-| `plane/internal/` | proxy, gateway, inbound, meter/pricing, config, store/db, redaction, metrics/ops |
+| `plane/internal/` | proxy, gateway, meter/pricing, config, store/db, redaction, metrics/ops |
 | `cmd/demo/`, `internal/demo/` | fixture ERP, not a production ERP connector |
 | `k8s/` | committed agents, presets, plane, network policies and fixtures |
 | `scripts/`, `Makefile` | checks, probes, remaining key capture and repository demos/connectors |
@@ -113,13 +114,12 @@ in fork-exposed CI. A docs-only shortcut is not an end-to-end rerun.
 
 ## How the existing plane works
 
-One process, normally two replicas, one Postgres, five listeners:
+One process, normally two replicas, one Postgres, four listeners:
 
 | Port | Boundary |
 |---|---|
 | 8080 | model data, TLS under plane CA |
 | 8081 | MCP data, same TLS certificate |
-| 8082 | inbound webhooks; optional public edge terminates TLS |
 | 9091 | admin bearer API; no Service, reached by pod port-forward |
 | 9092 | metrics/readiness/liveness, unauthenticated; no Service |
 
@@ -127,15 +127,17 @@ The two data seams authenticate opaque `kmh_` credentials; upstream keys remain
 in proxy custody and only hashes of issued tokens are persisted. Do not confuse
 agent identity, caller claims, observed source and acted-for attribution.
 [Identity](identity.md) defines them; [operations](operations.md) defines the
-per-replica queues, rate limits, breakers and single-database availability limit.
+per-replica breakers, single-database availability limit and
+[inbound retirement upgrade](operations.md#upgrading-after-inbound-retirement).
 
 Exact governance decisions are Postgres transactions under the credential-row
-lock: budget admission, grant consumption, replay checks, requests and approvals.
+lock: budget admission, grant consumption, requests and approvals.
 Never replace them with an unlocked Go read-then-act. `spend_reservation` holds
 admitted spend until ledger settlement. Other durable tables cover credentials,
-ledger, allowlists/tool audit, approval requests/grants/audit, inbound replay/audit
-and agent-run attribution; [migrations](../plane/internal/db/migrations) are the
-schema source, not a duplicated table definition in this guide.
+ledger, allowlists/tool audit and approval requests/grants/audit. Historical
+inbound replay/audit and agent-run attribution data remain stored. The
+[migrations](../plane/internal/db/migrations) are the schema source: retain
+applied SQL history; runtime retirement does not drop tables or reset data.
 
 The upstream table constrains destination **and exact forwarded path**; network
 policy constrains reachable pods/namespaces/IPs/ports. Neither replaces the other.

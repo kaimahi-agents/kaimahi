@@ -130,7 +130,7 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 }
 
 // What kmx carries is still a decision, not a directory listing. The Slack,
-// GitHub, inbound, accounts-payable and release families must NOT ride
+// GitHub, accounts-payable and release families must NOT ride
 // along: their targets are the Makefile's, and a manifest in the binary
 // that no kmx command applies is a claim kmx cannot honour.
 //
@@ -146,7 +146,6 @@ func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
 	for _, name := range []string{
 		"kaimahi-slack.yaml", "slack-agent.yaml", "slack-mcp.yaml",
 		"kaimahi-github.yaml", "github-agent.yaml",
-		"inbound-edge.yaml",
 		"ap-agent.yaml", "kaimahi-erp.yaml", "erp-mcp.yaml",
 		"release-agent.yaml", "kaimahi-release-github.yaml", "kaimahi-release-ado.yaml",
 	} {

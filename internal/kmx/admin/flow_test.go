@@ -35,32 +35,33 @@ func at(t *testing.T, s string) time.Time {
 	return ts.UTC()
 }
 
-// The point of the whole view: four trails, one reading, in the order the
-// events actually happened — not grouped by which table recorded them.
-func TestFlowInterleavesTheFourTrailsByTime(t *testing.T) {
-	var events []flowEvent
-	for _, e := range rows(doc(t, `{"entries":[
-		{"created_at":"2026-09-04T14:22:02Z","model":"gpt-4o","status":"priced",
-		 "cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai"}]}`), "entries") {
-		events = append(events, flowEventFrom(e, "model"))
+// The three surviving trails form one reading, ordered by time rather than
+// grouped by source. A removed endpoint must not prevent that reading.
+func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
+	replies := map[string]string{
+		"/admin/ledger": `{"entries":[
+			{"created_at":"2026-09-04T14:22:02Z","credential":"agent-1","model":"gpt-4o","status":200,
+			 "cost_source":"priced","cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai"}]}`,
+		"/admin/tool-audit": `{"entries":[
+			{"created_at":"2026-09-04T14:22:04Z","credential":"agent-1","tool":"delete_ns","decision":"denied","status":403},
+			{"created_at":"2026-09-04T14:22:01Z","credential":"agent-1","tool":"get_pods","decision":"allowed","status":200}]}`,
+		"/admin/approval-audit": `{"entries":[
+			{"created_at":"2026-09-04T14:22:03Z","credential":"agent-1","kind":"tool","subject":"delete_ns",
+			 "action":"approved","decided_by":"alice","bounds":"uses=1"}]}`,
 	}
-	for _, e := range rows(doc(t, `{"entries":[
-		{"created_at":"2026-09-04T14:22:04Z","tool":"delete_ns","decision":"denied","status":403},
-		{"created_at":"2026-09-04T14:22:03Z","tool":"get_pods","decision":"allowed","status":200}]}`), "entries") {
-		events = append(events, flowEventFrom(e, "tool"))
-	}
-	for _, e := range rows(doc(t, `{"entries":[
-		{"created_at":"2026-09-04T14:22:05Z","kind":"tool","subject":"delete_ns",
-		 "action":"approved","decided_by":"alice","bounds":"uses=1"}]}`), "entries") {
-		events = append(events, flowEventFrom(e, "approval"))
-	}
-	for _, e := range rows(doc(t, `{"entries":[
-		{"created_at":"2026-09-04T14:22:01Z","hook":"slack","agent":"triage",
-		 "decision":"admitted","delivery_id":"Ev093"}]}`), "entries") {
-		events = append(events, flowEventFrom(e, "inbound"))
-	}
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := replies[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if q := r.URL.Query(); q.Get("credential") != "agent-1" || q.Get("limit") != "50" {
+			t.Errorf("%s lost its credential filter or page limit: %v", r.URL.Path, q)
+		}
+		io.WriteString(w, body)
+	}))
 
-	merged, notes, err := trimToComplete(events, nil)
+	merged, notes, err := c.flowEvents("agent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +73,7 @@ func TestFlowInterleavesTheFourTrailsByTime(t *testing.T) {
 	for _, e := range merged {
 		got = append(got, e.kind+":"+e.what)
 	}
-	want := []string{"inbound:slack -> triage", "model:gpt-4o", "tool:get_pods",
-		"tool:delete_ns", "approval:tool:delete_ns"}
+	want := []string{"tool:get_pods", "model:gpt-4o", "approval:tool:delete_ns", "tool:delete_ns"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d events, want %d: %v", len(got), len(want), got)
 	}
@@ -112,50 +112,34 @@ func TestFlowWindowIsBoundedByTheShallowestTrail(t *testing.T) {
 	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 	_, notes, err := trimToComplete([]flowEvent{e},
 		[]cutoff{{at: at(t, "2026-09-04T08:00:00Z"), limit: flowLimit},
-			{at: at(t, "2026-09-04T09:00:00Z"), limit: inboundFlowLimit}})
+			{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "09:00:00") {
 		t.Fatalf("want the later watermark (09:00), got %v", notes)
 	}
-	// And the note names THAT trail's limit. The inbound page is 200 rows;
-	// reporting the 50-row limit sent an operator looking for a page size
-	// that was never involved in the cut.
-	if !strings.Contains(notes[0], "200-row") {
-		t.Fatalf("the window was cut by the 200-row inbound trail, so the note must say 200: %v", notes)
+	if !strings.Contains(notes[0], "50-row") {
+		t.Fatalf("the note must name the fetched page limit: %v", notes)
 	}
 }
 
-// TestTheNoteNamesTheLimitOfTheTrailThatCutTheWindow.
-//
-// The four trails are fetched with different limits, so "a trail hit its
-// N-row limit" is only true of one of them — the one whose evidence reaches
-// back least far. Printing a constant here was right exactly half the time
-// and wrong in the direction that matters, because the trail with the larger
-// page is the one whose saturation is most surprising.
-func TestTheNoteNamesTheLimitOfTheTrailThatCutTheWindow(t *testing.T) {
-	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"m"}}`)["e"].(map[string]any), "model")
-	for _, tc := range []struct {
-		name  string
-		cuts  []cutoff
-		wants string
-	}{
-		{"the shallow inbound page wins", []cutoff{
-			{at: at(t, "2026-09-04T08:00:00Z"), limit: flowLimit},
-			{at: at(t, "2026-09-04T09:00:00Z"), limit: inboundFlowLimit},
-		}, "200-row"},
-		{"a per-source trail wins", []cutoff{
-			{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit},
-			{at: at(t, "2026-09-04T08:00:00Z"), limit: inboundFlowLimit},
-		}, "50-row"},
+// A trail's position in the fetch order must not decide the watermark.
+func TestFlowWatermarkDoesNotDependOnSourceOrder(t *testing.T) {
+	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T08:30:00Z","model":"m"}}`)["e"].(map[string]any), "model")
+	for _, times := range [][]string{
+		{"2026-09-04T08:00:00Z", "2026-09-04T09:00:00Z"},
+		{"2026-09-04T09:00:00Z", "2026-09-04T08:00:00Z"},
 	} {
-		_, notes, err := trimToComplete([]flowEvent{e}, tc.cuts)
+		kept, notes, err := trimToComplete([]flowEvent{e}, []cutoff{
+			{at: at(t, times[0]), limit: flowLimit},
+			{at: at(t, times[1]), limit: flowLimit},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(notes) != 1 || !strings.Contains(notes[0], tc.wants) {
-			t.Errorf("%s: want a note naming %s, got %v", tc.name, tc.wants, notes)
+		if len(kept) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "09:00:00") {
+			t.Errorf("source order %v kept %d incomplete events; notes: %v", times, len(kept), notes)
 		}
 	}
 }
@@ -174,16 +158,14 @@ func TestFlowSaysItIsNotACausalTrace(t *testing.T) {
 	}
 }
 
-// Totals count refusals across all four vocabularies — the ledger says
-// 'denied', the gateway says 'denied', an approval says 'denied', an inbound
-// event says 'denied' or 'failed'.
+// Totals count refusals across model, tool and approval trails.
 func TestFlowTotalsCountRefusalsAndCents(t *testing.T) {
 	var out bytes.Buffer
 	renderFlow(&out, []flowEvent{
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m","status":200,"cost_source":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","model":"m","status":403,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","tool":"t","decision":"denied"}}`)["e"].(map[string]any), "tool"),
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","hook":"h","decision":"failed"}}`)["e"].(map[string]any), "inbound"),
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","kind":"tool","subject":"t","action":"denied"}}`)["e"].(map[string]any), "approval"),
 	}, nil)
 	if !strings.Contains(out.String(), "4 events, 14 cents, 3 refused") {
 		t.Errorf("totals wrong:\n%s", out.String())
@@ -247,9 +229,9 @@ func TestFlowDoesNotCountNonMonetaryRowsAsZeroCents(t *testing.T) {
 func TestFlowLinesCarryNoTrailingWhitespace(t *testing.T) {
 	var out bytes.Buffer
 	renderFlow(&out, []flowEvent{
-		// an inbound row with a delivery id but no detail
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","hook":"slack",
-			"decision":"admitted","delivery_id":"Ev093","detail":""}}`)["e"].(map[string]any), "inbound"),
+		// a model row with no caller attribution
+		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m",
+			"status":200,"input_tokens":1,"output_tokens":2,"upstream":"openai"}}`)["e"].(map[string]any), "model"),
 		// a tool row with no upstream status
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","tool":"t",
 			"decision":"allowed","arg_summary":"ns=prod"}}`)["e"].(map[string]any), "tool"),
@@ -333,75 +315,68 @@ func flowCredentialColumn(t *testing.T, rendered string) []string {
 	return got
 }
 
-// Saturation is judged against the limit a source was ACTUALLY asked for. The
-// inbound endpoint is asked for 200 rows because it filters by hook rather
-// than credential; comparing its page against flowLimit would call any page of
-// 50 or more "full" and cut the window short on evidence that was never
-// missing.
-func TestFlowJudgesSaturationAgainstEachSourcesOwnLimit(t *testing.T) {
-	if inboundFlowLimit <= flowLimit {
-		t.Fatal("this test only means something while the two limits differ")
-	}
-	for _, tc := range []struct {
-		name string
-		// inboundRows is how big a page the inbound endpoint answers with.
-		inboundRows int
-		// The 07:00 model call is older than every inbound row. It survives
-		// only while the inbound trail is not judged saturated.
-		wantEarlyCall bool
-		wantNote      bool
-	}{
-		// Full by flowLimit's standard, nowhere near full by its own. Judging
-		// it against the wrong limit cuts the window at 10:00 and hides the
-		// 07:00 model call on evidence that was never missing.
-		{"a page that is only full by another source's limit", 60, true, false},
-		// Genuinely full: older inbound rows really were never fetched.
-		{"a page that is full by its own limit", inboundFlowLimit, false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			inbound := make([]string, 0, tc.inboundRows)
-			for i := 0; i < tc.inboundRows; i++ {
-				inbound = append(inbound, `{"created_at":"2026-09-04T10:00:00Z","hook":"h","credential":"agent-1"}`)
-			}
-			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case strings.HasPrefix(r.URL.Path, "/admin/inbound-audit"):
-					fmt.Fprintf(w, `{"entries":[%s]}`, strings.Join(inbound, ","))
-				case strings.HasPrefix(r.URL.Path, "/admin/ledger"):
-					io.WriteString(w, `{"entries":[{"created_at":"2026-09-04T07:00:00Z","credential":"agent-1","model":"an-early-call"}]}`)
-				default:
-					io.WriteString(w, `{"entries": []}`)
+// A full tool or approval page bounds the reading; a partial page must not
+// hide older model activity.
+func TestFlowJudgesSaturationAtTheFetchedLimit(t *testing.T) {
+	for _, trail := range []string{"tool-audit", "approval-audit"} {
+		for _, tc := range []struct {
+			name          string
+			pageRows      int
+			wantEarlyCall bool
+			wantNote      bool
+		}{
+			{"partial", 49, true, false},
+			{"full", 50, false, true},
+		} {
+			t.Run(trail+"/"+tc.name, func(t *testing.T) {
+				page := make([]string, 0, tc.pageRows)
+				row := `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","tool":"get_pods","decision":"allowed"}`
+				if trail == "approval-audit" {
+					row = `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","kind":"tool","subject":"get_pods","action":"approved"}`
 				}
-			}))
-			var out bytes.Buffer
-			if err := c.Flow(&out, "agent-1"); err != nil {
-				t.Fatal(err)
-			}
-			if got := strings.Contains(out.String(), "an-early-call"); got != tc.wantEarlyCall {
-				t.Errorf("the 07:00 model call present=%v, want %v:\n%s", got, tc.wantEarlyCall, out.String())
-			}
-			if got := strings.Contains(out.String(), "hit its"); got != tc.wantNote {
-				t.Errorf("window-was-cut note present=%v, want %v:\n%s", got, tc.wantNote, out.String())
-			}
-		})
+				for i := 0; i < tc.pageRows; i++ {
+					page = append(page, row)
+				}
+				c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Query().Get("limit") != "50" {
+						t.Errorf("%s requested an unexpected page limit: %v", r.URL.Path, r.URL.Query())
+					}
+					switch r.URL.Path {
+					case "/admin/" + trail:
+						fmt.Fprintf(w, `{"entries":[%s]}`, strings.Join(page, ","))
+					case "/admin/ledger":
+						io.WriteString(w, `{"entries":[{"created_at":"2026-09-04T07:00:00Z","credential":"agent-1","model":"an-early-call"}]}`)
+					default:
+						io.WriteString(w, `{"entries": []}`)
+					}
+				}))
+				var out bytes.Buffer
+				if err := c.Flow(&out, "agent-1"); err != nil {
+					t.Fatal(err)
+				}
+				if got := strings.Contains(out.String(), "an-early-call"); got != tc.wantEarlyCall {
+					t.Errorf("the 07:00 model call present=%v, want %v:\n%s", got, tc.wantEarlyCall, out.String())
+				}
+				if got := strings.Contains(out.String(), "hit its 50-row limit"); got != tc.wantNote {
+					t.Errorf("window-was-cut note present=%v, want %v:\n%s", got, tc.wantNote, out.String())
+				}
+			})
+		}
 	}
 }
 
-// A full inbound page can contain no rows at all for the selected credential.
-// The page still proves older inbound rows for that credential were never
-// fetched, so coverage must be measured before filtering — otherwise the
-// window silently keeps older events from the other three trails.
-func TestFlowBoundsTheWindowEvenWhenTheFullPageIsOtherCredentials(t *testing.T) {
-	page := make([]map[string]any, 0, 3)
-	for _, ts := range []string{"2026-09-04T09:00:00Z", "2026-09-04T10:00:00Z", "2026-09-04T11:00:00Z"} {
-		page = append(page, map[string]any{"created_at": ts, "credential": "someone-else"})
+// Coverage follows the oldest parseable timestamp, not the row order.
+func TestFlowFindsCoverageAcrossUnorderedAndMalformedTimestamps(t *testing.T) {
+	page := make([]map[string]any, 0, 4)
+	for _, ts := range []string{"2026-09-04T11:00:00Z", "not-a-time", "2026-09-04T09:00:00Z", "2026-09-04T10:00:00Z"} {
+		page = append(page, map[string]any{"created_at": ts, "credential": "agent-1"})
 	}
 	oldest, ok := oldestRow(page)
 	if !ok {
-		t.Fatal("a page of other credentials still bounds coverage")
+		t.Fatal("parseable rows must bound coverage")
 	}
 	if want := at(t, "2026-09-04T09:00:00Z"); !oldest.Equal(want) {
-		t.Errorf("got %v, want %v — the oldest row of the RAW page", oldest, want)
+		t.Errorf("got %v, want %v — the oldest parseable row", oldest, want)
 	}
 }
 
@@ -470,10 +445,10 @@ func TestFlowDoesNotReportATrimmedWindowAsSilence(t *testing.T) {
 // It already behaves this way, because every trail is fetched through Get and
 // Get fails on a non-200. That is worth pinning rather than leaving to hold by
 // construction: the tempting change is to let one absent trail contribute
-// nothing so the other three still render, and that is exactly the change this
+// nothing so the other two still render, and that is exactly the change this
 // forbids.
 func TestFlowRefusesToRenderAnUnreadableTrailAsSilence(t *testing.T) {
-	for _, trail := range []string{"ledger", "tool-audit", "approval-audit", "inbound-audit"} {
+	for _, trail := range []string{"ledger", "tool-audit", "approval-audit"} {
 		t.Run(trail, func(t *testing.T) {
 			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(r.URL.Path, "/admin/"+trail) {

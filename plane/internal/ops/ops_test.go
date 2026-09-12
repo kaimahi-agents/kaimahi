@@ -92,8 +92,8 @@ func TestLivenessChecksTheDataListenersOnLoopback(t *testing.T) {
 	require.Contains(t, w.Body.String(), "not answering")
 }
 
-// The two seams serve TLS and the inbound bridge does not, so liveness has to
-// check a mixed set. It also has to VERIFY the seam it dials: a probe that
+// Liveness checks each listener using its declared scheme. It must
+// VERIFY a seam it dials over TLS: a probe that
 // skipped verification would keep reporting the plane live on the day its own
 // certificate expired, which is the failure this is here to catch.
 func TestLivenessVerifiesTheSeamsItDialsOverTLS(t *testing.T) {

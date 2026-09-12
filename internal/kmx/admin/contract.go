@@ -29,20 +29,18 @@ import (
 //
 // The compatibility policy, which is the part meant to outlive the fix:
 //
-//   - **Per operation, never global.** kmx refuses only what this plane
-//     cannot serve, and refuses it BEFORE sending it. Everything else works
-//     normally. A blanket refusal on any skew would strand a working cluster
-//     over one unreachable feature; a blanket warning is the 404 again with
-//     extra words in front of it.
-//   - **A plane NEWER than kmx proceeds**, with one line saying so. The
-//     state lives in the plane — the ledger, the grants, the approvals — and
-//     stranding it because the CLI is behind would be the more expensive
-//     mistake. This is safe because the plane promises it: within a major
-//     version the admin surface only grows, so every route this kmx knows is
-//     still there and still shaped the same way.
-//   - **A plane OLDER than kmx proceeds too**, for everything it can serve.
-//     Only the operations above its contract are refused, and the refusal
-//     names both versions and the one command that fixes it.
+//   - **Per operation, never global.** Require checks the introduction
+//     revision of a surviving capability before sending the operation. It
+//     does not prove that an arbitrary route survives a later retirement.
+//   - **A plane NEWER than kmx proceeds**, with a compatibility warning.
+//     Refusing every operation would strand usable state because the CLI is
+//     behind. Proceeding is not a guarantee: contract 3 deliberately retires
+//     inbound, breaking the former grow-only promise. Older clients still
+//     accept higher numbers, so the marker cannot protect their calls to
+//     retired routes; those clients need a matching CLI upgrade.
+//   - **A plane OLDER than kmx proceeds too**, for surviving capabilities
+//     introduced at or below its contract. Higher capability requirements
+//     are refused with both versions and the command that upgrades the plane.
 const (
 	// ContractUnreported is what a plane that does not serve /admin/version
 	// is: everything up to and including v0.1.0.
@@ -61,16 +59,21 @@ const (
 	// error, so `kmx models add` requires this before it sends.
 	ContractModelOverlay = 2
 
-	// Speaks is the highest contract this kmx knows about. A plane reporting
-	// more than this is newer than kmx, which is allowed.
-	Speaks = ContractModelOverlay
+	// ContractInboundRetired removes /admin/inbound-audit and inbound
+	// approval requests. It records a retirement, not a higher requirement
+	// for the surviving model, tool or approval operations.
+	ContractInboundRetired = 3
+
+	// Speaks is the highest contract revision this kmx knows about. A plane
+	// reporting more is allowed, but compatibility is not guaranteed.
+	Speaks = ContractInboundRetired
 )
 
 // PlaneVersion is what the handshake learned.
 type PlaneVersion struct {
 	// Version is the plane's own version string, empty when it served none.
 	Version string
-	// Contract is the admin surface it reports, or ContractUnreported.
+	// Contract is the admin revision it reports, or ContractUnreported.
 	Contract int
 	// Reported distinguishes a plane that answered from one that 404'd.
 	// Without it, "contract 0" would read as a plane claiming 0 rather than
@@ -138,7 +141,8 @@ func (c *Client) handshake() error {
 // Plane returns what the handshake learned.
 func (c *Client) Plane() PlaneVersion { return c.plane }
 
-// Require refuses an operation this plane cannot serve, before it is sent.
+// Require checks the introduction revision of a surviving capability before
+// sending the operation. It is not a guarantee against later retirements.
 //
 // what is the thing the operator asked for, in their words, because the
 // message has to say what did not happen and not which route was skipped.
@@ -157,15 +161,14 @@ func (c *Client) Require(contract int, what string) error {
 // SkewNote is the one line a session prints about a plane newer than this
 // kmx, or "" when there is nothing to say.
 //
-// It is a note and not a refusal on purpose: the plane holds the state, its
-// surface only grows, and refusing here would strand a working cluster
-// because the CLI is behind.
+// It is a note and not a refusal so a CLI behind the plane can still reach
+// usable state. The warning must not promise that retired routes survive.
 func (c *Client) SkewNote() string {
 	if c.plane.Contract <= Speaks {
 		return ""
 	}
 	return fmt.Sprintf("note: this plane is newer than kmx (%s; kmx %s speaks admin contract %d).\n"+
-		"  Everything kmx knows about still works — the plane's admin surface only grows.\n"+
-		"  Upgrade kmx to reach what was added: go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest",
+		"  Proceeding, but compatibility is not guaranteed; admin routes may have been retired.\n"+
+		"  Upgrade kmx: go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest",
 		c.plane.Describe(), c.kmxVersion, Speaks)
 }

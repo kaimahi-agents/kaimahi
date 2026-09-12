@@ -2,9 +2,9 @@
 
 > **Legacy Kaimahi plane, not an Orka guarantee.** Orka is the platform;
 > Kaimahi helps people get agents onto it. The Slack governance demo is
-> retired as an onboarding story; its connector, configuration and tests
-> remain. Use the [documentation index](README.md) for the current path.
-> This page retains the boundaries existing deployments must not lose.
+> retired as an onboarding story. Its MCP posting connector remains in this
+> slice; inbound mentions, Slack approvals and the notifier are removed.
+> Use the [documentation index](README.md) for the current path.
 
 ## The boundary that actually holds
 
@@ -24,8 +24,8 @@ See [egress](egress.md) for the probe and remaining network limitations.
 ## Custody and existing operation
 
 - `kaimahi-slack-bot` holds the bot token and posting-channel restriction.
-  Only the MCP server receives the token; the proxy also mounts the channel
-  value. Agents hold only an opaque Kaimahi credential.
+  Only the MCP server receives those values; the proxy retains its separate
+  MCP credential mount. Agents hold only an opaque Kaimahi credential.
 - [slack-secret.sh](../scripts/slack-secret.sh) captures on stdin into
   restricted temporary files, requires an `xoxb` bot token, checks
   `auth.test`, and refuses a channel unless it is private and the bot is a
@@ -35,8 +35,9 @@ See [egress](egress.md) for the probe and remaining network limitations.
 - The server runs without its optional workspace directory cache.
   It reads its Secret-backed environment at startup: after rotating the
   bot Secret, restart `deployment/kaimahi-slack-mcp` in `kaimahi`.
-- Removing workloads is not revoking a credential. Delete unused Secrets
-  and revoke the workspace token at its issuer when retiring an installation.
+- Removing inbound does not revoke credentials or retire this posting
+  connector. Review Secret/token custody separately; do not delete material
+  still used by the MCP server.
 
 ## Permissions and discovery
 
@@ -55,9 +56,10 @@ Inspect `kmx audit tool hello-slack` and the actual response before retrying.
 
 ## Related legacy paths and evidence
 
-[Inbound](inbound.md) admits mentions; [approvals](approvals.md#deciding-from-slack)
-checks who may decide them. Those are separate permissions from posting.
-The notifier posts through the gateway under its own credential.
+[Inbound](inbound.md), its public edge and the notifier are removed. No Slack
+approver path remains; use `kmx approvals` and `kmx approve`/`kmx deny` for
+retained tool/budget requests. Old edge deployments require explicit
+[upgrade cleanup](operations.md#upgrading-after-inbound-retirement).
 
 Keyless CI tests gateway decisions without deploying a live Slack server.
 An admitted 502 there proves a forward was attempted, **not** that Slack

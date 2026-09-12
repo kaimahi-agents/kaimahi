@@ -233,6 +233,24 @@ func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
 	}
 }
 
+func TestAuditInboundIsRejectedBeforeLoadingConfig(t *testing.T) {
+	for _, args := range [][]string{{"audit", "inbound"}, {"audit", "inbound", "demo"}} {
+		var out, errOut bytes.Buffer
+		deps, loads := testDependencies(&out, &errOut)
+		deps.loadConfig = func(string) (*config.Config, error) {
+			*loads++
+			return nil, errors.New("operational config must not be loaded")
+		}
+		err := execute(args, deps)
+		if err == nil || !strings.Contains(err.Error(), "usage: kmx audit tool|approval") {
+			t.Fatalf("%v must be rejected as an unsupported audit kind: %v", args, err)
+		}
+		if *loads != 0 {
+			t.Fatalf("%v loaded config for a retired audit trail", args)
+		}
+	}
+}
+
 func TestCredentialIssueRequiresExactlyOneDestination(t *testing.T) {
 	for _, args := range [][]string{
 		{"credential", "issue", "inbound-demo"},

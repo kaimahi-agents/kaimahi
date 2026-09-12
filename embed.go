@@ -18,7 +18,7 @@ import "embed"
 //
 // The files are named individually rather than embedding `k8s` wholesale, so
 // that what kmx carries is a decision rather than a side effect of a
-// directory listing: the Slack, GitHub, inbound, accounts-payable and
+// directory listing: the Slack, GitHub, accounts-payable and
 // release manifests belong to families kmx does not own and must not ride
 // along.
 //

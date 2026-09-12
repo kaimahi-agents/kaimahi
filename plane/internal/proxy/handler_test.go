@@ -44,8 +44,6 @@ type fakeStore struct {
 	grants         []store.Grant
 	approvalAudits []store.ApprovalAuditEntry
 	fileErr        error
-	// The inbound audit trail (admin read only in this package).
-	inboundAudits []store.InboundAuditEntry
 	// Reservations: open holds and the ids RecordLedger consumed.
 	open     map[string]store.SpendHold
 	consumed []string
@@ -123,21 +121,6 @@ func (f *fakeStore) AdmitSpend(_ context.Context, credential string, hold store.
 	id := fmt.Sprintf("res-%d", f.nextRes)
 	f.open[id] = hold
 	return store.Admission{ReservationID: id, Granted: len(needs) > 0}, nil
-}
-
-func (f *fakeStore) MonthCommitted(_ context.Context, _ string, _ time.Time) (int64, int64, error) {
-	return f.monthCents, f.monthToks, f.monthErr
-}
-
-func (f *fakeStore) LiveBudgetGrantSum(_ context.Context, credential, subject string) (int64, error) {
-	var sum int64
-	for _, g := range f.grants {
-		if g.CredentialName == credential && g.Kind == "budget" && g.Subject == subject && g.Amount != nil &&
-			(g.MaxUses == nil || g.Uses < *g.MaxUses) {
-			sum += *g.Amount
-		}
-	}
-	return sum, nil
 }
 
 func (f *fakeStore) addToken(token string, c store.Credential) {
@@ -375,16 +358,6 @@ func (f *fakeStore) Grants(_ context.Context, name string, _ int) ([]store.Grant
 		}
 	}
 	return out, live, nil
-}
-
-func (f *fakeStore) InboundAudit(_ context.Context, hook string, _ int) ([]store.InboundAuditEntry, error) {
-	var out []store.InboundAuditEntry
-	for _, e := range f.inboundAudits {
-		if hook == "" || e.Hook == hook {
-			out = append(out, e)
-		}
-	}
-	return out, nil
 }
 
 func (f *fakeStore) ApprovalAudit(_ context.Context, name string, _ int) ([]store.ApprovalAuditEntry, error) {

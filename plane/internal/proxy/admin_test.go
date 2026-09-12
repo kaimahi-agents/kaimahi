@@ -242,33 +242,6 @@ func TestToolAuditRead(t *testing.T) {
 	require.Equal(t, "allowed", auditResp.Entries[0].Decision)
 }
 
-func TestInboundAuditReadAndInboundRequestKind(t *testing.T) {
-	f := newFakeStore()
-	f.addToken("kmh_x", store.Credential{Name: "inbound-demo"})
-	f.inboundAudits = []store.InboundAuditEntry{
-		{Hook: "demo", CredentialName: "inbound-demo", DeliveryID: "d1", Decision: "admitted", Status: 202},
-		{Hook: "other", CredentialName: "inbound-demo", DeliveryID: "d2", Decision: "denied", Status: 403},
-	}
-	mux, tok := adminMux(t, f)
-	require.Equal(t, 401, adminDo(mux, "GET", "/admin/inbound-audit", "", "").Code)
-	require.Equal(t, 400, adminDo(mux, "GET", "/admin/inbound-audit?hook=Not%20A%20Hook", tok, "").Code)
-	w := adminDo(mux, "GET", "/admin/inbound-audit?hook=demo", tok, "")
-	require.Equal(t, 200, w.Code)
-	var resp struct{ Entries []store.InboundAuditEntry }
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Len(t, resp.Entries, 1)
-	require.Equal(t, "admitted", resp.Entries[0].Decision)
-	// An empty trail is an empty list, not null.
-	w = adminDo(mux, "GET", "/admin/inbound-audit?hook=nothing", tok, "")
-	require.JSONEq(t, `{"entries": []}`, w.Body.String())
-
-	// Explicit filing of an inbound request names a hook as its subject.
-	w = adminDo(mux, "POST", "/admin/requests", tok, `{"credential": "inbound-demo", "kind": "inbound", "subject": "demo"}`)
-	require.Equal(t, 201, w.Code, w.Body.String())
-	w = adminDo(mux, "POST", "/admin/requests", tok, `{"credential": "inbound-demo", "kind": "inbound", "subject": "Not a hook"}`)
-	require.Equal(t, 400, w.Code)
-}
-
 // Issuing, renewing and listing the deadline: the operator surface for
 // credentials that expire. The token is minted once and never shown
 // again; only names, caps and deadlines are readable afterwards.

@@ -46,8 +46,8 @@ spec:
   podMetricsEndpoints:
     # By NAME, and the name is the one thing that keeps this pointed at the
     # operations port. Pod discovery would otherwise yield one target per
-    # declared container port: the two data ports, the inbound port and the
-    # admin port, none of which serve metrics and one of which should never be
+    # declared container port: the two data ports and the admin port,
+    # none of which serve metrics and one of which should never be
     # dialled by anything but a port-forward. `ops` is 9092 in
     # k8s/plane/proxy.yaml.
     - port: ops

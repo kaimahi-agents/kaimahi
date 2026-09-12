@@ -8,12 +8,14 @@
 
 ## Identity on the call
 
-The ledger, tool audit and inbound audit carry `acted_for`. The inbound
-bridge can verify a Slack signature and record the event's user identifier;
-it opens run windows around the kagent turn it invokes. It does not obtain
-a verified human identity from an arbitrary model or MCP client.
+The ledger, tool audit and historical inbound audit carry `acted_for`.
+The retired inbound bridge recorded signed Slack event user identifiers and
+opened run windows around kagent turns. That producer is removed; its stored
+records are history. Retirement adds no verified human identity for model or
+MCP clients.
 
-[store/identity.go](../plane/internal/store/identity.go) resolves the window:
+The retained [store lookup](../plane/internal/store/identity.go) interprets
+existing run windows as follows:
 
 | State | Stored result |
 |---|---|
@@ -31,20 +33,21 @@ it cannot be excused by assuming such clients never reach the seam.
 
 ## Correlation is a window, not caller identity
 
-The bridge opens a run for the hook's `budget_credential` and, when set,
-`tool_credential`, all-or-nothing, then closes them after A2A returns.
-Runs expire a minute past the invoke timeout so a crashed worker cannot
-leave an unlimited window. No public/admin endpoint or `kmx` command opens
-such a run for arbitrary clients.
+Historically, the bridge opened runs for the hook's budget and tool credentials,
+then closed them after A2A returned. Runs expired a minute past the invoke timeout.
+The remaining process opens no inbound runs; any still-live window from an old
+replica is bounded by that expiry. No public/admin endpoint or `kmx` command
+opens such a run for arbitrary clients.
 
-A call is correlated by **credential and time**, not by a unique invocation
-token. A separate caller sharing that credential during the window can be
-associated with it too. Calls after closure resolve without that run, and
-concurrent windows resolve `unknown`. Attribution failure alone neither
-admits nor denies traffic; budget and tool policy are separate decisions.
+Those calls were correlated by **credential and time**, not by a unique
+invocation token. A separate caller sharing the credential during the window
+could be associated with it too. Calls without a live run resolve `none`, and
+concurrent windows resolve `unknown`. Attribution failure alone neither admits
+nor denies traffic; budget and tool policy are separate decisions.
 
-An approver is different from a requester: approvals record `decided_by`
-as `admin` or `slack:<user id>`. An approval does not retrospectively prove
+An approver is different from a requester: new approvals record `decided_by`
+as `admin`, not a person. Historical `slack:<user id>` decisions remain stored;
+the Slack decision path is removed. An approval does not retrospectively prove
 who initiated all calls using the grant.
 
 ## Who called
@@ -76,8 +79,8 @@ loopback peer. These columns aid investigation, not identity verification.
 New plane credentials have an expiry, default 30 days. Issuance offers no
 “never expires” option. NULL expiry is the compatibility class issued before
 expiry existed, and remains valid until changed. Credential expiry applies
-at model, MCP and inbound authentication, including the inbound target's
-budget credential, before burning an unusable trigger grant.
+at model and MCP authentication. Removing inbound does not invalidate
+previously issued tokens or reset their stored expiry.
 
 Expired credentials still resolve by hash so the refusal can name the
 credential and deadline, rather than misleadingly report an unknown token.
@@ -114,14 +117,13 @@ as a generic connection failure; see [certificate renewal](operations.md#the-sea
 
 ## Privacy and evidence
 
-The attribution path stores Slack IDs, not profiles, names or emails;
+Historical attribution records contain Slack IDs, not profiles, names or emails;
 caller strings and observed addresses also enter the database and backups.
 Treat dumps as sensitive even though opaque tokens and upstream keys are
 not included. There are no per-person budgets, per-person policy, workload
 identity or OIDC guarantees in this legacy mechanism.
 
-[Identity store tests](../plane/internal/store/identity_pg_test.go),
-[caller tests](../plane/internal/store/caller_test.go) and
-[inbound identity tests](../plane/internal/inbound/identity_test.go) retain
-behavioral evidence. Historical transcripts and arguments for accepting an
-overclaim have been removed; no schema or runtime behavior changes here.
+[Identity store tests](../plane/internal/store/identity_pg_test.go) and
+[caller tests](../plane/internal/store/caller_test.go) retain behavioral evidence.
+Historical SQL migrations and stored audit/attribution data remain intact;
+retiring the inbound producer is not destructive schema cleanup.

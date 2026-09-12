@@ -23,7 +23,7 @@ var ErrNotPending = errors.New("store: request is not pending")
 
 // ErrBounds marks an approval whose bounds are invalid for the request:
 // no bound at all (an unbounded grant is a config change, not an
-// approval), or an amount mismatched to the kind.
+// approval), an amount mismatched to the kind, or a retired kind.
 var ErrBounds = errors.New("store: invalid grant bounds")
 
 type ApprovalRequest struct {
@@ -42,7 +42,7 @@ type ApprovalRequest struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	DecidedAt  *time.Time `json:"decided_at,omitempty"`
 	// DecidedBy names who decided: DecidedByAdmin for the admin
-	// bearer, "slack:<user id>" for a Slack command; empty while pending.
+	// bearer, "slack:<user id>" on historical Slack decisions; empty while pending.
 	DecidedBy string `json:"decided_by"`
 }
 
@@ -80,10 +80,6 @@ type ApprovalAuditEntry struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// ErrAmbiguous marks a request-id prefix that matches more than one
-// request.
-var ErrAmbiguous = errors.New("store: request id prefix is ambiguous")
-
 // DecidedByAdmin is the identity the admin path records: the admin
 // bearer is the only writer that port admits, and it is not a person.
 const DecidedByAdmin = "admin"
@@ -118,8 +114,11 @@ func (s *Store) FileApprovalRequest(ctx context.Context, f Filing) (filed bool, 
 }
 
 // FileRequest is FileApprovalRequest returning the fresh request's id as
-// well (the notifier names it). id is empty when deduped.
+// well. id is empty when deduped.
 func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed bool, err error) {
+	if f.Kind != "tool" && f.Kind != "budget" {
+		return "", false, fmt.Errorf("%w: approval kind %q is not supported", ErrBounds, f.Kind)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", false, err
@@ -153,31 +152,6 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 	return id, true, nil
 }
 
-// RequestByPrefix resolves a request by a prefix of its id (what a
-// human types in Slack). Among ALL requests, not only pending ones, so a
-// decided request resolves and is reported as decided rather than as
-// unknown. prefix must be hex and dashes only (the caller's parser
-// guarantees it; LIKE then has no metacharacters to escape).
-func (s *Store) RequestByPrefix(ctx context.Context, prefix string) (ApprovalRequest, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, credential_name, kind, subject, status, detail, arg_digest, arg_summary, created_at, decided_at, decided_by
-		 FROM approval_request WHERE id::text LIKE $1 || '%' ORDER BY created_at LIMIT 2`, prefix)
-	if err != nil {
-		return ApprovalRequest{}, err
-	}
-	out, err := scanRequests(rows)
-	if err != nil {
-		return ApprovalRequest{}, err
-	}
-	switch len(out) {
-	case 0:
-		return ApprovalRequest{}, ErrNotFound
-	case 1:
-		return out[0], nil
-	}
-	return ApprovalRequest{}, ErrAmbiguous
-}
-
 // PendingApprovals lists pending requests, oldest first (the queue).
 func (s *Store) PendingApprovals(ctx context.Context) ([]ApprovalRequest, error) {
 	rows, err := s.pool.Query(ctx,
@@ -209,7 +183,7 @@ func scanRequests(rows pgx.Rows) ([]ApprovalRequest, error) {
 // the approval (fail closed, stronger than the breaker contract).
 // Bound validation (at least one of expiresAt/maxUses; amount exactly
 // on budget kinds) is the caller's job and the schema's backstop.
-// decidedBy names the approver (DecidedByAdmin, or "slack:<user id>")
+// decidedBy names the approver (DecidedByAdmin for current decisions)
 // and is written onto the request, the grant and the audit row alike.
 func (s *Store) ApproveRequest(ctx context.Context, id string,
 	expiresAt *time.Time, maxUses *int32, amount *int64, decidedBy string) (Grant, error) {
@@ -235,6 +209,11 @@ func (s *Store) ApproveRequest(ctx context.Context, id string,
 	}
 	if r.Status != "pending" {
 		return Grant{}, ErrNotPending
+	}
+	// Historical inbound requests remain readable and deniable, but no
+	// dispatcher remains to execute them. Never mint another such grant.
+	if r.Kind != "tool" && r.Kind != "budget" {
+		return Grant{}, fmt.Errorf("%w: approval kind %q is not supported", ErrBounds, r.Kind)
 	}
 	// Ported permit discipline: a grant allowing everything forever is
 	// an error, not a wide grant — at least one bound REQUIRED; budget
@@ -445,14 +424,15 @@ type BudgetNeed struct {
 
 // Grants lists a credential's grants (all credentials when empty),
 // newest first, with liveness computed by the same predicate consumers
-// use.
+// use. Historical inbound grants remain visible but are never live:
+// their dispatcher has been retired, regardless of expiry or uses.
 func (s *Store) Grants(ctx context.Context, credential string, limit int) ([]Grant, []bool, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, request_id, credential_name, kind, subject, expires_at, max_uses, uses, amount, created_at, decided_by, arg_digest,
-		        `+grantLive+` AS live
+		        (kind IN ('tool', 'budget') AND `+grantLive+`) AS live
 		 FROM permit_grant
 		 WHERE ($1 = '' OR credential_name = $1)
 		 ORDER BY created_at DESC LIMIT $2`,

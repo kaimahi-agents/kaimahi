@@ -13,17 +13,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
+
+// historicalRun seeds a row left by the retired inbound writer. Readers
+// must still resolve existing windows during an upgrade; new runtimes
+// never open or close these windows.
+func historicalRun(t *testing.T, pool *pgxpool.Pool, credential, actor, source, delivery string, ttl time.Duration) string {
+	t.Helper()
+	var id string
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`INSERT INTO agent_run (credential_name, acted_for, source, delivery_id, expires_at)
+		 VALUES ($1, $2, $3, $4, now() + $5) RETURNING id`,
+		credential, actor, source, delivery, ttl).Scan(&id))
+	return id
+}
 
 // The three attribution outcomes are DIFFERENT answers and must stay
 // distinguishable: no run open is "there is no person" ('none'); one
 // run open is that run's actor; two runs open at once is "the plane
 // cannot say" ('unknown') — never "nobody was there".
 func TestAttributionSaysNoneUnknownOrThePersonAndNeverConfusesThem(t *testing.T) {
-	s, _ := pgStore(t)
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	cred := fresh(t, s, "attrib")
 
@@ -34,8 +48,7 @@ func TestAttributionSaysNoneUnknownOrThePersonAndNeverConfusesThem(t *testing.T)
 	require.Empty(t, att.RunID, "no run means no provenance id, and acted_for already said so")
 
 	// One run, triggered by a person.
-	runA, err := s.OpenRun(ctx, cred, "slack:U0CIPERSON", "inbound:slack-events", "Ev1", "", time.Minute)
-	require.NoError(t, err)
+	runA := historicalRun(t, pool, cred, "slack:U0CIPERSON", "inbound:slack-events", "Ev1", time.Minute)
 	att, err = s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, "slack:U0CIPERSON", att.ActedFor)
@@ -43,21 +56,22 @@ func TestAttributionSaysNoneUnknownOrThePersonAndNeverConfusesThem(t *testing.T)
 
 	// Two runs at once: the plane refuses to guess which person a call
 	// belongs to.
-	runB, err := s.OpenRun(ctx, cred, "slack:U0OTHER", "inbound:slack-events", "Ev2", "", time.Minute)
-	require.NoError(t, err)
+	runB := historicalRun(t, pool, cred, "slack:U0OTHER", "inbound:slack-events", "Ev2", time.Minute)
 	att, err = s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, store.ActedForUnknown, att.ActedFor, "overlapping runs are a LOST attribution, not an absent one")
 	require.Empty(t, att.RunID)
 
 	// Close one and the other is nameable again.
-	require.NoError(t, s.CloseRun(ctx, runB))
+	_, err = pool.Exec(ctx, `UPDATE agent_run SET ended_at = now() WHERE id = $1`, runB)
+	require.NoError(t, err)
 	att, err = s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, "slack:U0CIPERSON", att.ActedFor)
 
 	// Close the last and we are back to "there is no person".
-	require.NoError(t, s.CloseRun(ctx, runA))
+	_, err = pool.Exec(ctx, `UPDATE agent_run SET ended_at = now() WHERE id = $1`, runA)
+	require.NoError(t, err)
 	att, err = s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, store.ActedForNone, att.ActedFor)
@@ -66,12 +80,11 @@ func TestAttributionSaysNoneUnknownOrThePersonAndNeverConfusesThem(t *testing.T)
 // A run a crashed replica never closed must not poison every later call
 // for that credential: past its expiry it stops counting.
 func TestAttributionIgnoresARunThatWasNeverClosed(t *testing.T) {
-	s, _ := pgStore(t)
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	cred := fresh(t, s, "attrib-stale")
 
-	_, err := s.OpenRun(ctx, cred, "slack:U0GHOST", "inbound:demo", "Ev9", "", -time.Second)
-	require.NoError(t, err)
+	historicalRun(t, pool, cred, "slack:U0GHOST", "inbound:demo", "Ev9", -time.Second)
 	att, err := s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, store.ActedForNone, att.ActedFor,
@@ -81,12 +94,11 @@ func TestAttributionIgnoresARunThatWasNeverClosed(t *testing.T) {
 // A webhook the plane authenticated but that names no human is 'none' —
 // a complete answer — and it must not read as a lost attribution.
 func TestARunWithNoPersonIsValidAndDistinguishableFromALostOne(t *testing.T) {
-	s, _ := pgStore(t)
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	cred := fresh(t, s, "attrib-nobody")
 
-	run, err := s.OpenRun(ctx, cred, store.ActedForNone, "inbound:demo-bearer", "d-1", "", time.Minute)
-	require.NoError(t, err)
+	run := historicalRun(t, pool, cred, store.ActedForNone, "inbound:demo-bearer", "d-1", time.Minute)
 	att, err := s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 	require.Equal(t, store.ActedForNone, att.ActedFor)
@@ -105,12 +117,11 @@ func TestARunWithNoPersonIsValidAndDistinguishableFromALostOne(t *testing.T) {
 // The identity reaches BOTH trails, and a writer that resolved nothing
 // gets 'unknown' rather than a false claim that nobody was there.
 func TestTheLedgerAndTheToolAuditBothCarryWhoTheCallWasFor(t *testing.T) {
-	s, _ := pgStore(t)
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	cred := fresh(t, s, "attrib-both")
 
-	run, err := s.OpenRun(ctx, cred, "slack:U0CIPERSON", "inbound:slack-events", "Ev7", "", time.Minute)
-	require.NoError(t, err)
+	run := historicalRun(t, pool, cred, "slack:U0CIPERSON", "inbound:slack-events", "Ev7", time.Minute)
 	att, err := s.ActorFor(ctx, cred)
 	require.NoError(t, err)
 

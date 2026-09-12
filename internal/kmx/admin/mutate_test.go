@@ -327,8 +327,21 @@ func TestRequestArgumentsAreToolOnly(t *testing.T) {
 	if _, err := c.Request("hello-world", "budget", "tokens", map[string]any{"x": 1}); err == nil {
 		t.Error("a budget request accepted arguments")
 	}
-	if _, err := c.Request("hello-world", "nonsense", "tokens", nil); err == nil {
-		t.Error("an unknown request kind was accepted")
+	for _, kind := range []string{"inbound", "nonsense"} {
+		body = nil
+		if _, err := c.Request("hello-world", kind, "tokens", nil); err == nil {
+			t.Errorf("unsupported request kind %q was accepted", kind)
+		}
+		if body != nil {
+			t.Errorf("unsupported request kind %q reached the API: %v", kind, body)
+		}
+	}
+	body = nil
+	if _, err := c.Request("hello-world", "budget", "tokens", nil); err != nil {
+		t.Fatal(err)
+	}
+	if body["kind"] != "budget" || body["subject"] != "tokens" || body["credential"] != "hello-world" {
+		t.Errorf("budget request did not travel: %v", body)
 	}
 	// Omitting the arguments must OMIT the key, not send null: on a tool
 	// request the absent key means the ARGUMENT-LESS call, never "any call".

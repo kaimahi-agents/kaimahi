@@ -143,7 +143,7 @@ CNI or reimaging node pools is not hidden behind a create operation.
 Use native `kmx lift` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
 [Makefile](../Makefile) retains repository demos/connectors and probes such as
-`make netpol-verify` and `make exposure-scan`. For those helpers, set `TARGET=aks`,
+`make netpol-verify`. For those helpers, set `TARGET=aks`,
 `KUBE_CTX=<cluster>` and confirmation explicitly; do not infer the target from
 kubectl's current-context. Read ledger/audit/approvals/metrics through native kmx.
 
@@ -233,13 +233,19 @@ another recorded monitoring group. Check those too, along with the node resource
 group, registry and kubeconfig. Deleting one named group is not a subscription
 billing audit. Use current Azure prices; historical run estimates are not quotes.
 
-## Optional public edge and concurrent checks
+## Retired public edge and concurrent checks
 
-Slack/inbound remains an opt-in legacy demonstration; use [inbound](inbound.md),
-[Slack](slack.md), and [accounts payable](ap-demo.md) for the existing procedures.
-A real workspace requires real human approval (`AP_HUMAN=1` in AP scenarios),
-not a synthetic signed mention posing as that person. Before teardown remove
-the Slack Request URL/subscription: a deleted public DNS label can be reclaimed.
+The inbound listener, public edge, Slack approval commands and notifier are
+removed. The plane retains model, MCP, admin and ops listeners. Upgrading an
+existing AKS installation requires the [explicit retirement steps](operations.md#upgrading-after-inbound-retirement):
+remove rejected inbound/notifier configuration, disable external webhooks and
+Slack subscriptions before releasing the DNS name, and review/delete obsolete
+owned edge resources. **Applying the new manifests does not prune them.**
+This is not automatic cloud deletion, credential revocation or database cleanup.
+
+[Slack MCP posting](slack.md) and [accounts-payable fixtures](ap-demo.md) remain;
+tool and budget approvals use the admin API/CLI, not Slack. `AP_HUMAN=1` waits
+for an operator's admin approval without establishing their human identity.
 
 Chat allocates a free loopback port by default. Fixed-port legacy helpers still
 need distinct `CHAT_PORT`, `ADMIN_PORT`, or probe `GATEWAY_PORT` values when
@@ -250,8 +256,8 @@ than silently selecting another cluster's forward.
 
 Recorded single-node runs in September 2026 demonstrated private ACR builds,
 default-storage PVC binding, Copilot model rows and budget denial, MCP audit,
-Cilium enforcement, an opt-in Slack edge, and the AP fixture path. The AP
-injection scenario's reachable assertions were checked manually on AKS; its
+Cilium enforcement, the now-retired opt-in Slack edge, and the AP fixture path.
+The AP injection scenario's reachable assertions were checked manually on AKS; its
 opening denial was obscured by an existing grant, so that run did not prove the
 script end to end. The kind CI scenario supplies that separate evidence.
 
@@ -263,10 +269,10 @@ selected infrastructure phases and observed PodMonitor target allocation.
 
 Not established: current end-to-end cloud correctness on every PR, workbook
 panel rendering in a browser, Azure/Calico engine enforcement, multi-node
-scheduling, durability, upgrades, node replacement, or public-edge certificate
-renewal. The legacy default is ephemeral, with default node SSH and no claim of
-production hardening; the legacy agent namespaces remain outside the plane's
-default-deny boundary. Orka+Ollama was demonstrated in a separate migration, not
+scheduling, durability, upgrades or node replacement. Historical edge runs also
+did not establish certificate renewal; the edge is no longer shipped. The legacy
+default is ephemeral, with default node SSH and no claim of production hardening;
+the legacy agent namespaces remain outside the plane's default-deny boundary. Orka+Ollama was demonstrated in a separate migration, not
 provisioned by the full Copilot lift. The checkout ACR plane build currently
 omits the version build argument and can report `unknown`; inspect rather than
 infer the running revision.

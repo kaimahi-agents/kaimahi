@@ -1114,10 +1114,7 @@ func (h *handler) do(r *http.Request, up config.ToolUpstream, body []byte) (*htt
 }
 
 // MsgUpstreamRedirected is the 502 body for a redirect the gateway
-// refused to follow — a 502 issued before any byte of the message reached
-// the upstream, which the notifier may therefore retry. (The hosted
-// dialer's MsgUpstreamRefused is the other such 502; the notifier's upstream is
-// in-cluster, so it never sees that one.)
+// refused to follow.
 const MsgUpstreamRedirected = "tool upstream redirected (refused)"
 
 // errCredentialUnavailable marks a tool upstream whose own credential

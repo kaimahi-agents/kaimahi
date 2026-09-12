@@ -346,15 +346,15 @@ func ValidRequest(credential, kind, subject string, args map[string]any) error {
 		return err
 	}
 	switch kind {
-	case "tool", "budget", "inbound":
+	case "tool", "budget":
 	default:
-		return fmt.Errorf("kind must be tool, budget or inbound")
+		return fmt.Errorf("kind must be tool or budget")
 	}
 	if err := namePart("subject", subject); err != nil {
 		return err
 	}
-	// The arguments name the CALL a TOOL request is about. On a budget or
-	// inbound request there is no call to name, so accepting them would be
+	// The arguments name the CALL a TOOL request is about. On a budget
+	// request there is no call to name, so accepting them would be
 	// accepting something the plane cannot act on.
 	if args != nil && kind != "tool" {
 		return fmt.Errorf("--args is meaningful only on tool requests")

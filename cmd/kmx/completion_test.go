@@ -72,7 +72,7 @@ func TestAuditCompletionIsPositionAware(t *testing.T) {
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", "audit", ""}, []string{"tool", "approval", "inbound"}, nil},
+		{[]string{"__complete", "audit", ""}, []string{"tool", "approval"}, []string{"inbound"}},
 		{[]string{"__complete", "audit", "tool", ""}, []string{":4"}, []string{"tool", "approval", "inbound"}},
 	} {
 		var out, errOut bytes.Buffer

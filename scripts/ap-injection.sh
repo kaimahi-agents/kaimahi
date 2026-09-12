@@ -24,10 +24,10 @@
 #     grant is welded to that call's digest, and it is still live with its
 #     use unspent afterwards.
 #
-# Usage:  make ap-injection [SLACK_USER=U0EXAMPLE]
+# Usage:  make ap-injection [AP_HUMAN=1]
 #   AP_AGENT_TURN=0 skips the agent's turn.
-#   AP_HUMAN=1      with SLACK_USER, wait for that person to approve in a
-#                   real Slack rather than synthesising the mention — see
+#   AP_HUMAN=1      wait for an operator to run the admin approval command;
+#                   otherwise approve with the demo's admin bearer. See
 #                   scripts/await-approval.sh and scripts/ap-demo.sh.
 set -euo pipefail
 umask 077
@@ -36,7 +36,6 @@ KUBECTL="${KUBECTL:-kubectl}"
 here="$(cd "$(dirname "$0")" && pwd)"
 KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED_AP:-ap-agent}"
-SLACK_USER="${SLACK_USER:-}"
 AP_HUMAN="${AP_HUMAN:-0}"
 AP_AGENT_TURN="${AP_AGENT_TURN:-1}"
 # KUBE_CTX is exported by the Makefile so this direct kmx call lands on the
@@ -103,12 +102,9 @@ request_id() {
     '$3==cred && $4=="tool" && $5==tool && index($0, want) {print $1; exit}' "$work/approvals.out"
 }
 
-approve() { # <id> <uses> — see scripts/ap-demo.sh for the three paths
-  if [ -n "$SLACK_USER" ] && [ "$AP_HUMAN" = 1 ]; then
-    CRED_AP="$CRED_AP" bash "$here/await-approval.sh" "$1" "$SLACK_USER" "$2"
-  elif [ -n "$SLACK_USER" ]; then
-    WANT="approved request $1" bash "$here/slack-mention-probe.sh" \
-      "$SLACK_USER" "approve ${1%%-*} uses=$2 ttl=10m"
+approve() { # <id> <uses> — see scripts/ap-demo.sh for the two paths
+  if [ "$AP_HUMAN" = 1 ]; then
+    CRED="$CRED_AP" bash "$here/await-approval.sh" "$1" "$2"
   else
     admin approve "$1" --ttl 10m --uses "$2"
   fi

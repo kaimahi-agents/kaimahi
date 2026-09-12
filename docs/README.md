@@ -31,9 +31,12 @@ supported translation layer.
 ## References for legacy code still present
 
 These documents describe the existing Kaimahi plane and kagent wiring.
-They are not Orka documentation, a current platform roadmap, or a claim
-that the corresponding services have been removed. The code inventory and
-retirement decisions belong to a separate lane.
+They are not Orka documentation or a current platform roadmap. The first
+retirement slice removes inbound webhooks, Slack approval commands and
+notifications. The plane still has four listeners (model, MCP, admin, ops),
+and tool/argument-bound/budget approvals remain functional through admin.
+Existing installations need the [retirement upgrade steps](operations.md#upgrading-after-inbound-retirement);
+historical SQL and stored audit data are retained.
 
 | Area | Reference |
 |---|---|
@@ -50,14 +53,15 @@ retirement decisions belong to a separate lane.
 | Plane operations, database recovery and metrics | [Operations](operations.md) |
 | Existing isolation mechanisms and limits | [Isolation](isolation.md) |
 | Existing blueprint runner | [Workflows](workflows.md) |
-| Retained webhook bridge | [Inbound](inbound.md) |
-| Retained Slack connector | [Slack](slack.md) |
+| Retired webhook bridge and public-edge cleanup | [Inbound](inbound.md) |
+| Retained Slack MCP posting connector; no Slack approvals | [Slack](slack.md) |
 | Retained release driver | [Release agent](release-agent.md) |
 | Retained fixture demonstrations | [Demo](demo.md), [accounts payable](ap-demo.md) |
 
 The [legacy plane diagram](assets/architecture.svg), with
-[Mermaid source](assets/architecture.mmd), depicts that retained
-implementation, **not the Orka architecture or the project's future shape**.
+[Mermaid source](assets/architecture.mmd), is a **historical pre-retirement**
+view, including the removed inbound path. It is not the current
+listener inventory, Orka architecture or the project's future shape.
 
 ## Maintainer references
 

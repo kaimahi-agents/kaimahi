@@ -128,10 +128,10 @@ func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHol
 }
 
 // MonthCommitted is the unlocked read of committed spend: the ledger
-// since monthStart plus the holds of every open reservation. What the
-// inbound door previews against, consuming nothing; the admin
-// ledger's month-to-date shows MonthUsage (rows only) so an in-flight
-// call is never displayed as spend.
+// since monthStart plus the holds of every open reservation. Retained
+// for the Postgres-backed reservation proof; admission uses the same
+// query under the credential lock. The admin ledger shows MonthUsage
+// (rows only), so an in-flight call is never displayed as spend.
 func (s *Store) MonthCommitted(ctx context.Context, credential string, monthStart time.Time) (cents, tokens int64, err error) {
 	return monthCommitted(ctx, s.pool, credential, monthStart)
 }

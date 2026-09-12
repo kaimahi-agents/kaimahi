@@ -44,6 +44,58 @@ func toolRow(at, tool, decision string) string {
 	  "detail":"outside the standing constraint","upstream":"erp"}`, at, tool, decision)
 }
 
+// All surviving sources must contribute on each poll; the retired inbound
+// endpoint returns 404 and must not interrupt the feed.
+func TestWatchCombinesSurvivingTrails(t *testing.T) {
+	replies := map[string]string{
+		"/admin/ledger":         `{"created_at":"2026-09-04T14:00:03Z","credential":"agent-1","model":"gpt-4o","status":200,"cost_source":"priced","cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai","caller_claim":"ua:client","caller_addr":"10.0.0.1"}`,
+		"/admin/tool-audit":     `{"created_at":"2026-09-04T14:00:01Z","credential":"agent-1","tool":"delete_ns","decision":"denied","status":403,"arg_summary":"delete_ns: namespace prod","arg_digest":"abcdef1234567890"}`,
+		"/admin/approval-audit": `{"created_at":"2026-09-04T14:00:02Z","credential":"agent-1","kind":"tool","subject":"delete_ns","action":"approved","decided_by":"alice","bounds":"uses=1"}`,
+	}
+	polls := map[string]int{}
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		row, ok := replies[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if q := r.URL.Query(); q.Get("credential") != "agent-1" || q.Get("limit") != "50" {
+			t.Errorf("%s lost its credential filter or page limit: %v", r.URL.Path, q)
+		}
+		polls[r.URL.Path]++
+		if polls[r.URL.Path] == 1 {
+			row = ""
+		}
+		fmt.Fprintf(w, `{"entries":[%s]}`, row)
+	}))
+	var out bytes.Buffer
+	if err := c.Watch(&out, make(chan struct{}), WatchOptions{
+		Credential: "agent-1", Interval: time.Millisecond, Limit: 3, For: time.Second, JSON: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want all three events once, got:\n%s", out.String())
+	}
+	for i, want := range []struct {
+		kind, what, detail string
+		denied             bool
+	}{
+		{"tool", "delete_ns", "delete_ns: namespace prod [abcdef123456]", true},
+		{"approval", "tool:delete_ns", "by alice uses=1", false},
+		{"model", "gpt-4o", `called by claimed "ua:client" from 10.0.0.1`, false},
+	} {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(lines[i]), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event["kind"] != want.kind || event["what"] != want.what || event["credential"] != "agent-1" || event["denied"] != want.denied || !strings.Contains(event["detail"].(string), want.detail) {
+			t.Errorf("event %d lost ordering, attribution or decision detail: %v", i, event)
+		}
+	}
+}
+
 // The first poll is the baseline. Printing it would bury the event the
 // operator started the watch to see under everything that already happened.
 func TestWatchDoesNotPrintTheHistoryItStartedFrom(t *testing.T) {

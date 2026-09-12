@@ -82,13 +82,36 @@ func TestAPlaneNewerThanKmxProceedsAndSaysSo(t *testing.T) {
 		t.Errorf("a newer plane was refused: %v", err)
 	}
 	note := c.SkewNote()
-	for _, want := range []string{"newer than kmx", "v9.0.0", "only grows", "go install"} {
+	for _, want := range []string{"newer than kmx", "v9.0.0", "compatibility is not guaranteed", "go install"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("the note does not say %q:\n%s", want, note)
 		}
 	}
-	if !strings.Contains(log.String(), "newer than kmx") {
-		t.Errorf("the note never reached the session's output:\n%s", log.String())
+	for _, unsafe := range []string{"only grows", "Everything kmx knows about still works", "reach what was added"} {
+		if strings.Contains(note, unsafe) {
+			t.Errorf("the note promises compatibility across a possible retirement:\n%s", note)
+		}
+	}
+	if !strings.Contains(log.String(), "compatibility is not guaranteed") {
+		t.Errorf("the compatibility warning never reached the session's output:\n%s", log.String())
+	}
+}
+
+// Retirement is a known revision, not a higher capability floor for the
+// surviving operations. Both sides of the retirement must still pass them.
+func TestInboundRetirementKeepsSurvivingCapabilityFloors(t *testing.T) {
+	for _, contract := range []int{2, 3} {
+		t.Run(fmt.Sprintf("contract-%d", contract), func(t *testing.T) {
+			c, _ := openAt(t, contract, "v2.0.0", nothing)
+			if note := c.SkewNote(); note != "" {
+				t.Errorf("known contract %d was treated as a newer plane: %s", contract, note)
+			}
+			for _, capability := range []int{ContractTableDeclared, ContractModelOverlay} {
+				if err := c.Require(capability, "use a surviving capability"); err != nil {
+					t.Errorf("contract %d refused capability %d: %v", contract, capability, err)
+				}
+			}
+		})
 	}
 }
 

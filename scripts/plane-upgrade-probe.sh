@@ -74,7 +74,6 @@ work=$(mktemp -d)
 stub_port=18179
 data_port=18180
 mcp_port=18181
-inbound_port=18182
 admin_port=19191
 ops_port=19192
 
@@ -196,14 +195,18 @@ proxy_pid=""
 seam_scheme="https"
 start_proxy() { # start_proxy <binary> <database> <logfile>
   case "$1" in
-    (*/oldbin/*) seam_scheme="http" ;;
-    (*) seam_scheme="https" ;;
+    (*/oldbin/*)
+      seam_scheme="http"
+      # Only the historical binary has this listener. Keep it on loopback
+      # and an ephemeral port; the current plane has no inbound listener.
+      export INBOUND_ADDR="127.0.0.1:0"
+      ;;
+    (*) seam_scheme="https"; unset INBOUND_ADDR ;;
   esac
   PGDATABASE="$2" \
   SEAM_TLS_DIR="$work/seam-tls" \
   DATA_ADDR="127.0.0.1:$data_port" \
   MCP_ADDR="127.0.0.1:$mcp_port" \
-  INBOUND_ADDR="127.0.0.1:$inbound_port" \
   ADMIN_ADDR="127.0.0.1:$admin_port" \
   OPS_ADDR="127.0.0.1:$ops_port" \
   CONFIG_FILE="$work/upstreams.json" \

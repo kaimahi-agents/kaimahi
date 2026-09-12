@@ -11,7 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// The flow view: one credential's four audit trails merged into a single
+// The flow view: one credential's three audit trails merged into a single
 // chronological reading.
 //
 // Nothing here is new evidence. The plane already records every one of these
@@ -21,7 +21,7 @@ import (
 // interleaving them by eye.
 //
 // It is a TIMELINE, NOT A TRACE, and the distinction is the whole reason this
-// file is careful. The four tables share exactly two columns: credential_name
+// file is careful. The three tables share exactly two columns: credential_name
 // and created_at. There is no correlation id, so nothing links a model call to
 // the tool calls that followed from it. Drawing that link from timestamp
 // adjacency would be right for a single sequential agent and confidently wrong
@@ -35,35 +35,25 @@ import (
 // causal-linking note warns about, one level up.
 const flowFmt = "%-19s %-12s %-8s %-28s %-10s %6s %s\n"
 
-// flowLimit is per source, matching the other views. Four sources at fifty
+// flowLimit is per source, matching the other views. Three sources at fifty
 // rows each is a generous window for one agent's recent life.
 const flowLimit = 50
 
-// inboundFlowLimit is larger because the inbound endpoint filters by HOOK, not
-// by credential, so a page of it may be mostly other credentials' events. It
-// is a named constant because saturation is judged against the limit a source
-// was ACTUALLY asked for — comparing a 200-row page against flowLimit would
-// call any page of 50 or more "full" and cut the window short on evidence that
-// was never missing.
-const inboundFlowLimit = 200
-
 // cutoff is how far back one saturated source's evidence reaches, and the
-// limit it was asked for. Both travel together because the trails are
-// fetched with different limits: the window is cut by whichever saturated
-// source reaches back LEAST far, and the note has to name that source's
-// limit rather than a constant chosen at the point of printing.
+// limit it was asked for. The window is cut by whichever saturated source
+// reaches back LEAST far.
 type cutoff struct {
 	at    time.Time
 	limit int
 }
 
 // flowEvent is one thing that happened, flattened out of whichever trail
-// recorded it so the four can be sorted together.
+// recorded it so the three can be sorted together.
 type flowEvent struct {
 	at          time.Time // parsed for ordering
 	raw         string    // as the plane sent it, for printing
 	cred        string    // which identity did this; every trail records it
-	kind        string    // inbound | model | tool | approval
+	kind        string    // model | tool | approval
 	what        string
 	outcome     string
 	cents       string
@@ -87,10 +77,9 @@ func (c *Client) Flow(out io.Writer, credential string) error {
 	return nil
 }
 
-// flowEvents gathers the four trails. Each is fetched through the same admin
-// session; a missing or empty trail contributes nothing rather than failing
-// the whole reading, because a credential that has never been approved for
-// anything is a perfectly ordinary credential.
+// flowEvents gathers the three trails through the same admin session.
+// An empty trail contributes nothing; an unreadable one fails the reading
+// rather than passing for no activity.
 func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 	cred := url.QueryEscape(credential)
 	limit := fmt.Sprintf("&limit=%d", flowLimit)
@@ -107,42 +96,25 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// The inbound trail filters by HOOK, not by credential — a hook's
-	// credential is config-bound, so the plane never needed the other index.
-	// Filtering here keeps the view honest without asking the plane to grow
-	// a query for one caller.
-	inbound, err := c.Get("inbound-audit", fmt.Sprintf("/admin/inbound-audit?limit=%d", inboundFlowLimit))
-	if err != nil {
-		return nil, nil, err
-	}
 
 	var events []flowEvent
 	var saturated []cutoff
-	collect := func(doc map[string]any, kind string, limit int, filter bool) {
+	collect := func(doc map[string]any, kind string) {
 		list := rows(doc, "entries")
 		for _, r := range list {
-			if filter && credential != "" && str(r["credential"]) != credential {
-				continue
-			}
 			events = append(events, flowEventFrom(r, kind))
 		}
-		// A source that returned a full page is a source we may have cut
-		// off. How far back its evidence reaches is a property of the PAGE,
-		// not of the rows that survived the credential filter: a full
-		// inbound page containing no rows for the selected credential still
-		// means older inbound rows for that credential were never fetched.
-		// Measuring the filtered batch would find nothing to bound, and the
-		// window would silently keep older events from the other trails.
-		if len(list) >= limit {
+		// A full page may omit older events. Its oldest timestamp bounds
+		// how far back the merged reading can claim to be complete.
+		if len(list) >= flowLimit {
 			if oldest, ok := oldestRow(list); ok {
-				saturated = append(saturated, cutoff{at: oldest, limit: limit})
+				saturated = append(saturated, cutoff{at: oldest, limit: flowLimit})
 			}
 		}
 	}
-	collect(ledger, "model", flowLimit, false)
-	collect(tool, "tool", flowLimit, false)
-	collect(approval, "approval", flowLimit, false)
-	collect(inbound, "inbound", inboundFlowLimit, true)
+	collect(ledger, "model")
+	collect(tool, "tool")
+	collect(approval, "approval")
 
 	return trimToComplete(events, saturated)
 }
@@ -155,12 +127,6 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 // missing — a picture that reads like a well-behaved agent precisely where the
 // evidence is thinnest. The window therefore starts at the latest point every
 // saturated source still covers, and the caller is told the window was cut.
-//
-// The note names the limit belonging to the trail whose watermark WON,
-// which is why each cutoff carries its own: the trails are fetched with
-// different limits, and reporting the 50-row one for a window cut by the
-// 200-row inbound page told an operator to look for a page size that was
-// never involved.
 func trimToComplete(events []flowEvent, saturated []cutoff) ([]flowEvent, []string, error) {
 	sort.SliceStable(events, func(i, j int) bool { return events[i].at.Before(events[j].at) })
 	if len(saturated) == 0 {
@@ -234,17 +200,6 @@ func flowEventFrom(r map[string]any, kind string) flowEvent {
 			e.detail = joinDetail("by "+by, e.detail)
 		}
 		e.denied = str(r["action"]) == "denied"
-
-	case "inbound":
-		what := str(r["hook"])
-		if agent := str(r["agent"]); agent != "" {
-			what += " -> " + agent
-		}
-		e.what = what
-		e.outcome = str(r["decision"])
-		e.plainDetail = joinDetail(trunc(str(r["delivery_id"]), 24), str(r["detail"]))
-		e.detail = joinDetail(str(r["delivery_id"]), str(r["detail"]))
-		e.denied = str(r["decision"]) == "denied" || str(r["decision"]) == "failed"
 	}
 
 	if e.detail == "" {
@@ -378,8 +333,7 @@ func calledBy(r map[string]any) string {
 	return parts
 }
 
-// oldestRow finds how far back a raw page of audit rows reaches, before any
-// credential filtering has been applied.
+// oldestRow finds how far back a page of audit rows reaches.
 func oldestRow(list []map[string]any) (time.Time, bool) {
 	var oldest time.Time
 	found := false

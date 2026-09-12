@@ -29,7 +29,6 @@ in its own namespace keeps its owner's network responsibilities.
 | proxy | kagent tool server | 8084 |
 | proxy | Slack MCP server | 13080 |
 | proxy | fixture ERP | 8085 |
-| proxy | kagent controller for inbound A2A | 8083 |
 | proxy and Slack MCP server | CoreDNS | UDP/TCP 53 |
 | Slack MCP server | public addresses excluding listed ranges | TCP 443 |
 | Prometheus-labeled pods in `monitoring` | proxy ops listener | 9092 |
@@ -45,14 +44,16 @@ Additional configured allowances are separate objects:
 - [Copilot](../k8s/egress-copilot.yaml) and
   [hosted tools](../k8s/egress-hosted.yaml): proxy to public TCP 443.
   They select the same pod; either can keep that port reachable.
-- [Inbound edge](../k8s/inbound-edge.yaml): optional public 443 maps to
-  edge 8443; edge reaches only bridge 8082, DNS and public 443 for ACME.
-  Only its configured Slack route is forwarded, not the other data ports.
 - [Managed metrics](../k8s/observability/network-policy.yaml): the selected
   Azure metrics replica in `kube-system` reaches proxy 9092, not every
   metrics DaemonSet pod or another application's metrics port.
 - Operator-added tool/model upstream policies use live Service pod selectors
   and container ports. They must be reviewed alongside existing policies.
+
+The inbound A2A allowance and public edge are removed. **Apply does not prune
+old edge objects**; upgraded installations must follow the
+[retirement cleanup](operations.md#upgrading-after-inbound-retirement), not infer
+absence of public exposure from the new policy files.
 
 ## Admin and monitoring are different doors
 
@@ -116,5 +117,5 @@ an egress gateway, FQDN filtering or tool-result redaction.
   changing an upstream, controller chart, labels or networking engine.
 
 Historical one-cluster matrices are removed rather than presented as
-current proof for every deployment. No policy or runtime code changes in
-this documentation retirement.
+current proof for every deployment. Retest the remaining boundaries after
+retirement; old probe results do not verify the new deployment.

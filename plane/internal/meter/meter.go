@@ -40,10 +40,6 @@ func (d Denial) Error() string { return d.Msg }
 type Store interface {
 	// AdmitSpend is the locked, exact decision (store/spend.go).
 	AdmitSpend(ctx context.Context, credential string, hold store.SpendHold, monthStart time.Time, ttl time.Duration) (store.Admission, error)
-	// MonthCommitted and LiveBudgetGrantSum are the unlocked reads a
-	// preview is made of.
-	MonthCommitted(ctx context.Context, credential string, monthStart time.Time) (cents, tokens int64, err error)
-	LiveBudgetGrantSum(ctx context.Context, credential, subject string) (int64, error)
 }
 
 // Reservation is what an admitted call carries to its ledger write. ID
@@ -118,44 +114,6 @@ func (m *Meter) Reserve(ctx context.Context, cred store.Credential, priced bool)
 		return Reservation{}, capDenial(a.Subject)
 	}
 	return Reservation{ID: a.ReservationID, Granted: a.Granted}, nil
-}
-
-// Preview answers "would Reserve admit a call right now?" WITHOUT
-// consuming a grant use or holding anything (the inbound door
-// refuses an event whose spend the proxy could not admit, and leaves
-// the actual admission to the proxy — one use per admitted call, never
-// two per event). Same fail-closed contract as Reserve. Unlocked and
-// therefore advisory: the proxy's own admission is the decision.
-func (m *Meter) Preview(ctx context.Context, cred store.Credential) error {
-	if cred.CapCents == nil && cred.CapTokens == nil {
-		return nil
-	}
-	cents, tokens, err := m.Store.MonthCommitted(ctx, cred.Name, MonthStartUTC(m.now()))
-	if err != nil {
-		slog.Error("meter: spend check failed, denying request", "credential", cred.Name, "err", err)
-		return Denial{Status: http.StatusForbidden, Msg: "metering unavailable"}
-	}
-	var needs []store.BudgetNeed
-	if cred.CapCents != nil && cents >= *cred.CapCents {
-		needs = append(needs, store.BudgetNeed{Subject: "cents", Used: cents, Cap: *cred.CapCents})
-	}
-	if cred.CapTokens != nil && tokens >= *cred.CapTokens {
-		needs = append(needs, store.BudgetNeed{Subject: "tokens", Used: tokens, Cap: *cred.CapTokens})
-	}
-	for _, n := range needs {
-		extra, err := m.Store.LiveBudgetGrantSum(ctx, cred.Name, n.Subject)
-		if err != nil {
-			// A store outage, not a cap: the same classification Reserve
-			// gives a failed admission (no BudgetSubject, so the caller
-			// files no budget request for what is not a budget event).
-			slog.Error("meter: budget headroom check failed, denying", "credential", cred.Name, "err", err)
-			return Denial{Status: http.StatusForbidden, Msg: "metering unavailable"}
-		}
-		if extra <= 0 || n.Used >= n.Cap+extra {
-			return capDenial(n.Subject)
-		}
-	}
-	return nil
 }
 
 func capDenial(subject string) Denial {

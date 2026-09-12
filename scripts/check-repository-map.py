@@ -927,14 +927,14 @@ def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list
 
 
 @claim
-def exposure_scan_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
+def slack_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
     """Count make recipes without freezing an interpretation of ownership."""
     _, body = doc.section("`scripts/`")
-    m = once(phrase("`scripts/exposure-scan.sh`: {n} make recipe"), body,
-             "the exposure-scan make caller")
+    m = once(phrase("`scripts/slack-secret.sh`: {n} make recipe"), body,
+             "the slack-secret make caller")
     recipes = [line for line in tree.read("Makefile").splitlines()
-               if line.startswith("\t") and "scripts/exposure-scan.sh" in line]
-    return compare_count(number(m.group(1)), len(recipes), "exposure-scan make recipes")
+               if line.startswith("\t") and "scripts/slack-secret.sh" in line]
+    return compare_count(number(m.group(1)), len(recipes), "slack-secret make recipes")
 
 
 @claim
@@ -1036,7 +1036,7 @@ def main(argv) -> int:
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![hero](brand/hero.png)\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/ap-demo.sh\n\t./scripts/ap-injection.sh\n"
-                "\t./scripts/exposure-scan.sh\n# scripts/verify-chat.py\n"
+                "\t./scripts/slack-secret.sh\n# scripts/verify-chat.py\n"
                 "# scripts/check-example.py\n",
     "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
@@ -1060,7 +1060,7 @@ SELFTEST_FILES = {
     "scripts/ap-demo.sh": "./await-approval.sh\n",
     "scripts/ap-injection.sh": "./await-approval.sh\n",
     "scripts/await-approval.sh": "true\n",
-    "scripts/exposure-scan.sh": "true\n",
+    "scripts/slack-secret.sh": "true\n",
     "scripts/verify-chat.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
@@ -1115,7 +1115,7 @@ and the remaining non-manifest is `k8s/erp-fixtures.json`.
 7 of the 8 are named by something outside themselves, and the one
 `scripts/mutations/*.json` are named by nothing.
 | **Installed** | 1 | `embedded.sh` |
-| **Checkout** | 1 | `exposure-scan.sh` |
+| **Checkout** | 1 | `slack-secret.sh` |
 | **Demonstration** | 3 | `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
 | **Scaffolding** | 2 | the one `check-*` files, `verify-chat.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
@@ -1123,7 +1123,7 @@ and the remaining non-manifest is `k8s/erp-fixtures.json`.
 Both `ap-demo.sh` and `ap-injection.sh` call it.
 `.github/workflows/ci.yml` (one invocations among two mentions).
 every occurrence in the Makefile is a comment line rather than a recipe.
-`scripts/exposure-scan.sh`: one make recipe.
+`scripts/slack-secret.sh`: one make recipe.
 
 ## `docs/` — 6 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
@@ -1207,8 +1207,8 @@ MAP_EDITS = [
     ("The comment at the top of `internal/demo/erp/server.go`",
      "The comment at the bottom of `internal/demo/erp/server.go`",
      "no longer makes the ERP-evidence claim"),
-    ("`scripts/exposure-scan.sh`: one make recipe", "`scripts/exposure-scan.sh`: two make recipes",
-     "miscounts the exposure-scan make recipes"),
+    ("`scripts/slack-secret.sh`: one make recipe", "`scripts/slack-secret.sh`: two make recipes",
+     "miscounts the slack-secret make recipes"),
 ]
 
 

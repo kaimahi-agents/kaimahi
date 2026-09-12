@@ -1,9 +1,8 @@
 // kaimahi-proxy is the Kaimahi governance plane: the metering and
 // enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam, the
-// enforcing MCP gateway mounted at the tool-server seam, and the
-// inbound bridge (the plane's one ingress: webhook → governed A2A
-// invoke). Five listeners: the LLM data plane, the MCP gateway (own
-// Service), the inbound bridge (own Service), the admin plane
+// enforcing MCP gateway mounted at the tool-server seam.
+// Four listeners: the LLM data plane, the MCP gateway (own
+// Service), the admin plane
 // (credentials, budgets, allowlists, ledger, audits) on a port no data
 // Service exposes, and the operations listener — Prometheus
 // metrics and the readiness/liveness probes — on a port no Service
@@ -37,10 +36,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/db"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/gateway"
-	"github.com/kaimahi-agents/kaimahi/plane/internal/inbound"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/meter"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/metrics"
-	"github.com/kaimahi-agents/kaimahi/plane/internal/notify"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/ops"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/proxy"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/redact"
@@ -68,14 +65,10 @@ func mustReadSecretFile(path, what string) string {
 func main() {
 	dataAddr := env("DATA_ADDR", ":8080")
 	mcpAddr := env("MCP_ADDR", ":8081")
-	inboundAddr := env("INBOUND_ADDR", ":8082")
 	adminAddr := env("ADMIN_ADDR", ":9091")
 	// The operations listener — Prometheus metrics and the two
 	// probes — on a port of its own that no Service exposes.
 	opsAddr := env("OPS_ADDR", ":9092")
-	// The kagent controller's origin: the ONLY place the inbound bridge
-	// dials (per-agent A2A endpoints live under it).
-	a2aBase := env("A2A_BASE", inbound.DefaultA2ABase)
 	configFile := env("CONFIG_FILE", "/etc/kaimahi/upstreams.json")
 	// The operator overlay. Fragments an operator added by
 	// onboarding their own MCP server (`kmx tools add`) live in their
@@ -88,8 +81,7 @@ func main() {
 	pgPasswordFile := env("PGPASSWORD_FILE", "/etc/kaimahi/pg/password")
 	// The certificate the two DATA seams serve with, projected from the
 	// Secret `kmx plane` mints. The admin and ops listeners are on no
-	// Service and are unchanged; the inbound bridge's public path already
-	// terminates TLS at an edge.
+	// Service and are unchanged.
 	seamTLSDir := env("SEAM_TLS_DIR", "/etc/kaimahi/seam-tls")
 
 	pgPassword := mustReadSecretFile(pgPasswordFile, "postgres password")
@@ -157,17 +149,6 @@ func main() {
 				"upstream", name, "file", t.CredentialFile, "err", err)
 		}
 	}
-	for name, h := range cfg.InboundHooks {
-		if h.SigningSecretFile == "" {
-			continue
-		}
-		if raw, err := os.ReadFile(h.SigningSecretFile); err == nil {
-			secrets = append(secrets, strings.TrimSpace(string(raw)))
-		} else {
-			slog.Warn("inbound signing secret unreadable at boot; value not redacted in logs",
-				"hook", name, "file", h.SigningSecretFile, "err", err)
-		}
-	}
 	slog.SetDefault(slog.New(redact.Handler{
 		Inner: slog.NewTextHandler(os.Stderr, nil),
 		R:     redact.New(secrets),
@@ -198,29 +179,8 @@ func main() {
 	metrics.PrimeUpstreams(metrics.SeamProxy, slices.Sorted(maps.Keys(cfg.Upstreams)))
 	metrics.PrimeUpstreams(metrics.SeamGateway, slices.Sorted(maps.Keys(cfg.ToolUpstreams)))
 
-	// The approval notifier and the Slack command replier are one
-	// poster: a governed post through the plane's OWN gateway listener
-	// (loopback) under the plane's own credential. Optional — without
-	// the config block nobody is told, exactly as before. Every data
-	// path gets the store wrapped so the ONE filing function notifies
-	// once per fresh filing, whichever site filed it; with no notifier
-	// the wrapper is the store.
-	filing := notify.Store{Store: st, Filer: st}
-	var poster *notify.Poster
-	gatewayURL := "https://127.0.0.1" + portOf(mcpAddr)
-	if n := cfg.ApprovalNotifier; n != nil {
-		poster = notify.New(notify.Deps{
-			GatewayURL:     gatewayURL,
-			Transport:      seamMaterial.Transport(),
-			Upstream:       n.ToolUpstream,
-			Tool:           n.Tool,
-			CredentialFile: n.CredentialFile,
-			ChannelFile:    n.ChannelFile,
-		})
-		filing.N = poster
-	}
 	deps := proxy.Deps{
-		Store:      filing,
+		Store:      st,
 		Meter:      mtr,
 		Config:     cfg,
 		ConfigBase: configBase,
@@ -241,38 +201,13 @@ func main() {
 	// The MCP gateway shares this process (and its pool, redactor,
 	// and fail-closed machinery); its listener gets its own Service so
 	// the tool seam has its own address.
-	gwDeps := gateway.Deps{Store: filing, Upstreams: cfg.ToolUpstreams, Policy: cfg.Policy()}
+	gwDeps := gateway.Deps{Store: st, Upstreams: cfg.ToolUpstreams, Policy: cfg.Policy()}
 	deps, gwDeps = wireInternet(deps, gwDeps, internetClient)
-	// The inbound bridge: same process, same pool and fail-closed
-	// machinery, its own Service. Its workers invoke agents asynchronously
-	// and run until shutdown.
-	bridgeDeps := inbound.Deps{Store: filing, Meter: mtr, Hooks: cfg.InboundHooks, A2ABase: a2aBase}
-	if poster != nil {
-		bridgeDeps.Replier = poster
-	}
-	bridge := inbound.New(bridgeDeps)
-	bridgeCtx, stopBridge := context.WithCancel(context.Background())
-	bridgeDone := make(chan struct{})
-	go func() { bridge.Run(bridgeCtx); close(bridgeDone) }()
-	// The poster outlives the bridge: a filing during the servers' drain
-	// still gets its post, and shutdown then bounds the poster like it
-	// bounds the bridge.
-	posterCtx, stopPoster := context.WithCancel(context.Background())
-	posterDone := make(chan struct{})
-	if poster != nil {
-		go func() { poster.Run(posterCtx); close(posterDone) }()
-	} else {
-		close(posterDone)
-	}
 
 	dataSrv := &http.Server{Addr: dataAddr, Handler: proxy.NewDataMux(deps), TLSConfig: seamMaterial.ServerConfig(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	mcpSrv := &http.Server{Addr: mcpAddr, Handler: gateway.NewMux(gwDeps), TLSConfig: seamMaterial.ServerConfig(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
-	// Webhook payloads are small and bounded per hook; a slow writer gets
-	// 30 seconds, not two minutes.
-	inboundSrv := &http.Server{Addr: inboundAddr, Handler: bridge.Mux(),
-		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 	adminSrv := &http.Server{Addr: adminAddr, Handler: proxy.NewAdminMux(deps, adminTokenFile),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 
@@ -289,31 +224,27 @@ func main() {
 			s := pool.Stat()
 			return ops.PoolStats{Acquired: s.AcquiredConns(), Max: s.MaxConns(), AcquireCount: s.AcquireCount()}
 		},
-		// The two seams are dialled over TLS and VERIFIED, like any other
-		// client; the inbound bridge is not a TLS listener. The client
+		// The two seams are dialled over TLS and VERIFIED. The client
 		// carries the plane's own authority, so this probe fails on the
 		// day the seam certificate expires rather than reporting a live
 		// plane nothing can talk to.
 		Listeners: []string{
 			"https://127.0.0.1" + portOf(dataAddr),
 			"https://127.0.0.1" + portOf(mcpAddr),
-			"http://127.0.0.1" + portOf(inboundAddr),
 		},
 		Client: seamMaterial.LoopbackClient(),
 	}), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 
-	errCh := make(chan error, 5)
+	errCh := make(chan error, 4)
 	// The certificate and key are on the server's TLSConfig already.
 	go func() { errCh <- dataSrv.ListenAndServeTLS("", "") }()
 	go func() { errCh <- mcpSrv.ListenAndServeTLS("", "") }()
-	go func() { errCh <- inboundSrv.ListenAndServe() }()
 	go func() { errCh <- adminSrv.ListenAndServe() }()
 	go func() { errCh <- opsSrv.ListenAndServe() }()
-	slog.Info("kaimahi-proxy up", "data", dataAddr, "mcp", mcpAddr, "inbound", inboundAddr, "admin", adminAddr, "ops", opsAddr,
+	slog.Info("kaimahi-proxy up", "data", dataAddr, "mcp", mcpAddr, "admin", adminAddr, "ops", opsAddr,
 		"version", metrics.Version(),
-		"upstreams", len(cfg.Upstreams), "tool_upstreams", len(cfg.ToolUpstreams), "inbound_hooks", len(cfg.InboundHooks),
+		"upstreams", len(cfg.Upstreams), "tool_upstreams", len(cfg.ToolUpstreams),
 		"hosted_upstreams", len(cfg.InternetHosts()),
-		"approval_notifier", cfg.ApprovalNotifier != nil, "notifier_gateway", gatewayURL,
 		// Named, not merely "tls=true": the first thing anybody debugging a
 		// refused handshake needs is which certificate this replica is
 		// presenting and when it stops being valid.
@@ -327,28 +258,11 @@ func main() {
 		// listeners drain; the ops listener itself stays up through the
 		// drain so the probe keeps answering (503) until the end.
 		draining.Store(true)
-		// Stop accepting events first, then let workers finish the
-		// event they are on (bounded by the shutdown budget).
-		_ = inboundSrv.Shutdown(shutdownCtx)
-		stopBridge()
 		_ = dataSrv.Shutdown(shutdownCtx)
 		_ = mcpSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
-		// The ops listener closes last (a deferred call runs after the
-		// drain below), so the probes answer throughout.
-		defer func() { _ = opsSrv.Shutdown(shutdownCtx) }()
-		select {
-		case <-bridgeDone:
-		case <-shutdownCtx.Done():
-			slog.Warn("inbound workers did not drain before shutdown; queued events are lost (their admitted rows stand without an outcome)")
-		}
-		if poster != nil {
-			if n := poster.Drain(shutdownCtx); n > 0 {
-				slog.Warn("notifier did not drain before shutdown; queued posts are lost (the requests stay filed)", "queued", n)
-			}
-		}
-		stopPoster()
-		<-posterDone
+		// The ops listener closes last, so probes answer throughout the drain.
+		_ = opsSrv.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		// Any listener stopping before a shutdown signal is abnormal —
 		// even ErrServerClosed — so exit nonzero and let Kubernetes
@@ -391,7 +305,7 @@ func connectOnce(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 }
 
 // portOf returns the ":port" part of a listen address such as ":8081" or
-// "0.0.0.0:8081" — the loopback origin the notifier dials.
+// "0.0.0.0:8081" — the loopback origin the liveness probe dials.
 func portOf(addr string) string {
 	if i := strings.LastIndex(addr, ":"); i >= 0 {
 		return addr[i:]

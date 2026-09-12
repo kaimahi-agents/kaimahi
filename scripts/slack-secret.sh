@@ -6,12 +6,9 @@
 # Two Secrets, deliberately split so no pod holds more than its job needs:
 #   kaimahi-slack-bot      SLACK_MCP_XOXB_TOKEN + SLACK_MCP_ADD_MESSAGE_TOOL
 #                          -> the whole Secret to the MCP server pod
-#                             (kagent renders secretRefs as envFrom); the
-#                             CHANNEL key alone is projected by name into
-#                             the proxy too, so the posting restriction and
-#                             the inbound hook's channel allowlist have one
-#                             source of truth. The workspace token itself
-#                             never reaches the proxy or any agent.
+#                             (kagent renders secretRefs as envFrom).
+#                             No key from this Secret reaches the proxy
+#                             or any agent.
 #   kaimahi-slack-mcp-key  SLACK_MCP_API_KEY
 #                          -> the MCP server pod AND the proxy (which
 #                             injects it upstream from plane custody).

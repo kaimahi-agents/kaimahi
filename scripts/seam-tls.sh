@@ -19,8 +19,7 @@
 # A probe reaches a seam through `kubectl port-forward` to 127.0.0.1, so it
 # verifies against the certificate's loopback address rather than a Service
 # name. That is a real SAN on a real certificate, not a relaxation: the plane
-# dials its own seams the same way, for its liveness probe and its approval
-# notifier.
+# dials its own seams the same way for its liveness probe.
 
 # seam_ca <path> [namespace]
 #

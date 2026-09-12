@@ -11,11 +11,7 @@ package config
 // uses (Parse). The merge is deliberately narrow and fail-closed:
 //
 //   - a fragment may carry `upstreams`, `tool_upstreams` and
-//     `standing_constraints`, and nothing else. The inbound hooks and the
-//     approval notifier are the plane's own seams, each entangled with a
-//     credential mount or a signing secret; a generic onboarding path
-//     that could rewrite them would be a much larger blast radius than
-//     the one this exists for.
+//     `standing_constraints`, and nothing else.
 //   - `upstreams` — the MODEL seam — was in that excluded list until an
 //     adopter's framework needed a path the committed table had no entry
 //     for, and the only route was to edit the committed table, which the

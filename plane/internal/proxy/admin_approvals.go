@@ -69,14 +69,11 @@ func (h *handler) fileRequest(w http.ResponseWriter, r *http.Request) {
 	if !decodeStrict(w, r, &req) {
 		return
 	}
-	// 'inbound' requests name a hook (a lowercase DNS label, like a
-	// credential) — the grant a human approves admits events on it.
 	if !credentialName.MatchString(req.Credential) ||
-		(req.Kind != "tool" && req.Kind != "budget" && req.Kind != "inbound") ||
+		(req.Kind != "tool" && req.Kind != "budget") ||
 		!subjectRe.MatchString(req.Subject) ||
-		(req.Kind == "budget" && req.Subject != "tokens" && req.Subject != "cents") ||
-		(req.Kind == "inbound" && !credentialName.MatchString(req.Subject)) {
-		http.Error(w, "body must be {\"credential\": ..., \"kind\": \"tool\"|\"budget\"|\"inbound\", \"subject\": ...} (budget subjects: tokens|cents; inbound subject: hook name)", http.StatusBadRequest)
+		(req.Kind == "budget" && req.Subject != "tokens" && req.Subject != "cents") {
+		http.Error(w, "body must be {\"credential\": ..., \"kind\": \"tool\"|\"budget\", \"subject\": ...} (budget subjects: tokens|cents)", http.StatusBadRequest)
 		return
 	}
 	if req.Kind != "tool" && len(req.Arguments) > 0 {
@@ -159,8 +156,7 @@ func (h *handler) approve(w http.ResponseWriter, r *http.Request) {
 		t := time.Now().Add(time.Duration(*req.TTLSeconds) * time.Second)
 		expiresAt = &t
 	}
-	// The admin bearer is the identity this port admits (a decision made
-	// in Slack records the person instead).
+	// The admin bearer is the identity this port admits.
 	g, err := h.d.Store.ApproveRequest(r.Context(), id, expiresAt, req.MaxUses, req.Amount, store.DecidedByAdmin)
 	switch {
 	case errors.Is(err, store.ErrNotFound):

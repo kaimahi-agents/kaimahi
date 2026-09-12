@@ -12,10 +12,8 @@
 # every budget, grant use, dedupe and decision is exact in Postgres
 # under the credential's row lock, so the replicas agree by
 # construction and a Service round-robin is safe. What stays per
-# replica is stated in docs/operations.md: the inbound token bucket (a
-# flood guard, so the effective ceiling is replicas × the configured
-# rate), the bounded inbound and notifier queues, and the fail-closed
-# breakers. Postgres stays ONE replica (postgres.yaml) — this is a
+# replica is stated in docs/operations.md: the fail-closed breakers.
+# Postgres stays ONE replica (postgres.yaml) — this is a
 # stateless plane, not a highly available database.
 apiVersion: apps/v1
 kind: Deployment
@@ -103,8 +101,6 @@ spec:
               containerPort: 8080
             - name: mcp
               containerPort: 8081
-            - name: inbound
-              containerPort: 8082
             - name: admin
               containerPort: 9091
             - name: ops
@@ -138,15 +134,6 @@ spec:
               readOnly: true
             - name: slack-mcp-cred
               mountPath: /etc/kaimahi/upstream-creds/slack
-              readOnly: true
-            - name: inbound-signing
-              mountPath: /etc/kaimahi/inbound
-              readOnly: true
-            - name: slack-channel
-              mountPath: /etc/kaimahi/slack
-              readOnly: true
-            - name: notifier-cred
-              mountPath: /etc/kaimahi/notifier
               readOnly: true
             - name: github-cred
               mountPath: /etc/kaimahi/upstream-creds/github
@@ -254,62 +241,12 @@ spec:
         # The Slack MCP server's OWN bearer credential — the gateway
         # injects it upstream (plane custody, like the Copilot key). The
         # Slack workspace token belongs to the MCP server pod alone: the
-        # only key of kaimahi-slack-bot this pod projects is the channel
-        # restriction below, never SLACK_MCP_XOXB_TOKEN.
+        # proxy projects no keys from kaimahi-slack-bot.
         - name: slack-mcp-cred
           secret:
             secretName: kaimahi-slack-mcp-key
             # Optional, same contract: with no Secret the slack upstream
             # fails closed (503) and every other path is unaffected.
-            optional: true
-        # Signing secrets for HMAC-authenticated inbound hooks, one
-        # key per hook name (scripts/inbound-secret.sh). Plane custody
-        # only — the caller holds its own copy, nothing agent-side does.
-        # Optional: a signed hook whose secret is absent fails closed
-        # (503 "hook signing secret unavailable"); bearer hooks and every
-        # other listener are unaffected.
-        - name: inbound-signing
-          secret:
-            secretName: kaimahi-inbound-signing
-            optional: true
-        # The channel the Slack Events hook may be triggered from —
-        # ONE key of the Slack bot Secret (the same value that restricts
-        # the MCP server's posting), projected by name so the workspace
-        # token in that Secret never reaches this pod. Optional: without
-        # it the slack-events hook fails closed (503 "hook channel
-        # allowlist unavailable"); nothing else is affected.
-        #
-        # Next to it, the APPROVERS — the Slack user ids who may
-        # approve or deny a request by mentioning the bot — from their
-        # own Secret (scripts/slack-approvers.sh), so the id list never
-        # rides the bot Secret into the MCP server's environment. A
-        # projected volume puts both files in one directory. Optional:
-        # without it a command fails closed (503 "hook approver list
-        # unavailable") and a question is answered as before.
-        - name: slack-channel
-          projected:
-            sources:
-              - secret:
-                  name: kaimahi-slack-bot
-                  optional: true
-                  items:
-                    - key: SLACK_MCP_ADD_MESSAGE_TOOL
-                      path: channel
-              - secret:
-                  name: kaimahi-slack-approvers
-                  optional: true
-                  items:
-                    - key: approvers
-                      path: approvers
-        # The plane's OWN gateway credential, for telling the
-        # channel a request is waiting and replying to commands — a kmh_
-        # token issued to credential "kaimahi-plane" by `make notify-slack`
-        # and allowlisted to the posting tool only. Plane custody like the
-        # rest; read per post. Optional: without it nothing is posted and
-        # `make approvals` is still the queue.
-        - name: notifier-cred
-          secret:
-            secretName: kaimahi-notifier-token
             optional: true
         # The GitHub hosted MCP server's credential — a fine-grained,
         # read-only, one-repository token (`kmx credential capture github`) —
@@ -421,24 +358,3 @@ spec:
     - name: mcp
       port: 8081
       targetPort: mcp
----
-# The inbound bridge's own address: where external events are
-# delivered. Same pod (a fourth listener in the kaimahi-proxy process —
-# zero extra CPU requests), its own Service so the ingress seam is
-# addressable on its own name and can be exposed on its own terms. It is
-# a ClusterIP: on kind the demo reaches it via port-forward; exposing it
-# beyond the cluster is an opt-in step, `make inbound-expose` on
-# TARGET=aks (k8s/inbound-edge.yaml), never a side effect of `make plane`.
-# The admin port stays off it.
-apiVersion: v1
-kind: Service
-metadata:
-  name: kaimahi-inbound
-  namespace: kaimahi
-spec:
-  selector:
-    app: kaimahi-proxy
-  ports:
-    - name: inbound
-      port: 8082
-      targetPort: inbound

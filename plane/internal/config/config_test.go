@@ -3,7 +3,6 @@ package config_test
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -95,117 +94,6 @@ func TestParseKeyedToolUpstreams(t *testing.T) {
 	} {
 		_, err := config.Parse([]byte(base + bad + `}`))
 		require.Error(t, err, name)
-	}
-}
-
-const inboundBase = `"upstreams": {"ollama": {"base_url": "http://x", "path": "v1/chat/completions", "classification": "free"}}`
-
-func TestParseInboundHooks(t *testing.T) {
-	c, err := config.Parse([]byte(`{` + inboundBase + `, "inbound_hooks": {
-	  "demo": {"credential": "inbound-demo", "auth": "kaimahi-hmac", "signing_secret_file": "/etc/kaimahi/inbound/demo",
-	           "agent_namespace": "kagent", "agent": "hello-world", "budget_credential": "hello-world"},
-	  "slack": {"credential": "inbound-slack", "auth": "slack", "signing_secret_file": "/etc/kaimahi/inbound/slack-events",
-	            "slack_channels_file": "/etc/kaimahi/slack/channel", "slack_approvers_file": "/etc/kaimahi/slack/approvers",
-	            "agent_namespace": "kagent", "agent": "hello-slack", "budget_credential": "hello-world"},
-	  "slack2": {"credential": "inbound-slack", "auth": "slack", "signing_secret_file": "/etc/kaimahi/inbound/slack-events",
-	            "slack_channels_file": "/etc/kaimahi/slack/channel", "slack_approvers_file": "/etc/kaimahi/slack/approvers",
-	            "slack_default_uses": 3, "slack_default_ttl": "2h",
-	            "agent_namespace": "kagent", "agent": "hello-slack", "budget_credential": "hello-world"},
-	  "plain": {"credential": "inbound-plain", "auth": "bearer",
-	            "agent_namespace": "kagent", "agent": "hello-world", "budget_credential": "hello-world",
-	            "max_body_bytes": 1024, "rate_per_minute": 5, "burst": 2}
-	}}`))
-	require.NoError(t, err)
-	require.Len(t, c.InboundHooks, 4)
-	require.Equal(t, "/etc/kaimahi/slack/channel", c.InboundHooks["slack"].SlackChannelsFile)
-	require.Equal(t, "/etc/kaimahi/slack/approvers", c.InboundHooks["slack"].SlackApproversFile)
-	// A Slack approval that names no bounds gets the hook's
-	// defaults — one use, 15 minutes unless the table says otherwise.
-	slack := c.InboundHooks["slack"].Bounded()
-	require.Equal(t, config.DefaultSlackUses, slack.SlackDefaultUses)
-	require.Equal(t, config.DefaultSlackTTL, slack.SlackDefaultTTL)
-	slack2 := c.InboundHooks["slack2"].Bounded()
-	require.Equal(t, 3, slack2.SlackDefaultUses)
-	require.Equal(t, "2h", slack2.SlackDefaultTTL)
-	demo := c.InboundHooks["demo"].Bounded()
-	require.Equal(t, int64(config.DefaultInboundMaxBody), demo.MaxBodyBytes)
-	require.Equal(t, config.DefaultInboundRate, demo.RatePerMinute)
-	require.Equal(t, config.DefaultInboundBurst, demo.Burst)
-	plain := c.InboundHooks["plain"].Bounded()
-	require.Equal(t, int64(1024), plain.MaxBodyBytes)
-	require.Equal(t, 5, plain.RatePerMinute)
-	require.Equal(t, 2, plain.Burst)
-}
-
-func TestParseInboundHooksRejects(t *testing.T) {
-	hook := func(fields string) string {
-		return `{` + inboundBase + `, "inbound_hooks": {"demo": {` + fields + `}}}`
-	}
-	good := `"credential": "c", "auth": "bearer", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`
-	cases := map[string]string{
-		"unknown auth":               hook(`"credential": "c", "auth": "basic", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"hmac without secret file":   hook(`"credential": "c", "auth": "kaimahi-hmac", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"slack without secret file":  hook(`"credential": "c", "auth": "slack", "slack_channels_file": "/y", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"slack without channels":     hook(`"credential": "c", "auth": "slack", "signing_secret_file": "/x", "slack_approvers_file": "/z", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"slack without approvers":    hook(`"credential": "c", "auth": "slack", "signing_secret_file": "/x", "slack_channels_file": "/y", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"approvers file off slack":   hook(good + `, "slack_approvers_file": "/x"`),
-		"slack defaults off slack":   hook(good + `, "slack_default_uses": 2`),
-		"bad slack default ttl":      hook(`"credential": "c", "auth": "slack", "signing_secret_file": "/x", "slack_channels_file": "/y", "slack_approvers_file": "/z", "slack_default_ttl": "soon", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"slack default ttl too long": hook(`"credential": "c", "auth": "slack", "signing_secret_file": "/x", "slack_channels_file": "/y", "slack_approvers_file": "/z", "slack_default_ttl": "31d", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"bearer with secret file":    hook(good + `, "signing_secret_file": "/x"`),
-		"channels file off slack":    hook(good + `, "slack_channels_file": "/x"`),
-		"missing credential":         hook(`"auth": "bearer", "agent_namespace": "kagent", "agent": "a", "budget_credential": "b"`),
-		"missing agent":              hook(`"credential": "c", "auth": "bearer", "agent_namespace": "kagent", "budget_credential": "b"`),
-		"uppercase agent":            hook(`"credential": "c", "auth": "bearer", "agent_namespace": "kagent", "agent": "Hello", "budget_credential": "b"`),
-		"body bound too large":       hook(good + `, "max_body_bytes": 99999999`),
-		"negative rate":              hook(good + `, "rate_per_minute": -1`),
-		"unknown field (typo)":       hook(good + `, "signing_secret": "x"`),
-		"bad hook name":              `{` + inboundBase + `, "inbound_hooks": {"Demo Hook": {` + good + `}}}`,
-	}
-	for name, raw := range cases {
-		_, err := config.Parse([]byte(raw))
-		require.Error(t, err, name)
-	}
-}
-
-func TestParseApprovalNotifier(t *testing.T) {
-	base := `"upstreams": {"ollama": {"base_url": "http://x", "path": "v1/chat/completions", "classification": "free"}},
-	  "tool_upstreams": {"slack": {"url": "http://kaimahi-slack-mcp.kaimahi:13080/mcp"}}`
-	c, err := config.Parse([]byte(`{` + base + `, "approval_notifier": {"tool_upstream": "slack",
-	  "tool": "conversations_add_message", "credential_file": "/etc/kaimahi/notifier/api-key",
-	  "channel_file": "/etc/kaimahi/slack/channel"}}`))
-	require.NoError(t, err)
-	require.NotNil(t, c.ApprovalNotifier)
-	require.Equal(t, "conversations_add_message", c.ApprovalNotifier.Tool)
-
-	// Absent is fine (nobody is told, as before).
-	c, err = config.Parse([]byte(`{` + base + `}`))
-	require.NoError(t, err)
-	require.Nil(t, c.ApprovalNotifier)
-
-	for name, raw := range map[string]string{
-		"upstream not in table": `{` + base + `, "approval_notifier": {"tool_upstream": "discord", "tool": "t", "credential_file": "/a", "channel_file": "/b"}}`,
-		"no credential file":    `{` + base + `, "approval_notifier": {"tool_upstream": "slack", "tool": "t", "channel_file": "/b"}}`,
-		"no channel file":       `{` + base + `, "approval_notifier": {"tool_upstream": "slack", "tool": "t", "credential_file": "/a"}}`,
-		"bad tool name":         `{` + base + `, "approval_notifier": {"tool_upstream": "slack", "tool": "no spaces", "credential_file": "/a", "channel_file": "/b"}}`,
-		"unknown field (typo)":  `{` + base + `, "approval_notifier": {"tool_upstream": "slack", "tool": "t", "credential_file": "/a", "channel_file": "/b", "token": "x"}}`,
-	} {
-		_, err := config.Parse([]byte(raw))
-		require.Error(t, err, name)
-	}
-}
-
-func TestParseTTL(t *testing.T) {
-	for in, want := range map[string]time.Duration{
-		"90": 90 * time.Second, "90s": 90 * time.Second, "5m": 5 * time.Minute, "2h": 2 * time.Hour, "1d": 24 * time.Hour, "30d": 30 * 24 * time.Hour,
-	} {
-		got, err := config.ParseTTL(in)
-		require.NoError(t, err, in)
-		require.Equal(t, want, got, in)
-	}
-	for _, in := range []string{"", "m", "5x", "-5m", "0", "31d", "1.5h", "5 m", "9999999999s", "999999999d", "999999999h"} {
-		_, err := config.ParseTTL(in)
-		require.Error(t, err, in)
 	}
 }
 

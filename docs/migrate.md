@@ -23,6 +23,9 @@ this migration does not settle it. `orka.harness.v2` is outside the direction.
   `kmx orka install` / `kmx orka status` and [the Orka guide](orka.md).
   Installing Orka alone does not enable this model governance.
 - The Kaimahi plane deployed (`kmx plane` on kind; [AKS phases](aks.md) on AKS).
+  Upgrading an older plane requires the [inbound retirement steps](operations.md#upgrading-after-inbound-retirement);
+  stale inbound/notifier configuration is rejected, and apply does not prune
+  the former public edge.
 - An existing Deployment whose model base URL is configurable through its
   environment, and an application that can trust the mounted CA. The default
   variables target the OpenAI Python client shape; they are not proof that an
@@ -124,8 +127,9 @@ multi-turn/tool-calling conversations too, including the continuation limit belo
 - `orka` is `metered` without configured prices. Tokens are counted, but `0 cents`
   is not evidence of free inference. A cents budget denies an unpriced pair;
   configure reviewed prices or use the appropriate token budget.
-- `flow` is chronological, not causal: credential and timestamp join four trails,
-  not a correlation ID. Concurrent turns can interleave.
+- `flow` and `watch` read three trails: model, tool and approval. Credential and
+  timestamp form a chronological view, not a causal correlation ID. Concurrent
+  turns can interleave; this migration still governs only model traffic.
 - The generated ingress rule admits the application's namespace to the model
   port only. Tool access is a separate decision. On an enforcing CNI, removing
   this allowance blocked the measured probe; merely applying a NetworkPolicy
