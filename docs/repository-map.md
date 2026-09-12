@@ -157,7 +157,7 @@ admin credential issuance/reconciliation, the model Service/port, CA publication
 Orka token mount, model upstream/header/translation configuration and proxy
 rollout. A green root build cannot prove those contracts survived.
 
-### Protected-surface conflict — resolve before deletion
+### Protected surface — narrow exception authorized
 
 The instruction to leave all of `internal/kmx/scaffold/` unchanged conflicts
 with removing every remaining reference to the retired gateway/approvals:
@@ -172,12 +172,12 @@ with removing every remaining reference to the retired gateway/approvals:
   `k8s/kaimahi-tools.yaml` and requires its gateway URL. Deleting the manifest
   breaks a protected test; leaving a dummy manifest would conceal the conflict.
 
-Removing callers cannot make these references disappear. Before deletion, obtain
-an explicit ruling: either narrow protection solely for legacy gateway/approval
-generators and their tests, **without changing Orka authoring or migration**, or
-exempt the protected legacy surface and its pinned manifest from complete
-reference removal. Until then, keep the directory, `cmd/kmx/agent_commands.go`
-and `docs/orka.md` untouched. This is a scope conflict, not an authoring decision.
+Removing callers cannot make these references disappear. The owner authorized
+option 1: narrow the directory protection solely to remove legacy gateway/approval
+generators and their tests, **without changing either agent-authoring path or
+model migration**. Shared helpers needed by surviving model code stay. This is
+not permission to delete the directory wholesale or settle the authoring format.
+`cmd/kmx/agent_commands.go` and `docs/orka.md` remain protected unchanged.
 
 ### Database and review boundaries
 
@@ -199,15 +199,21 @@ Make targets, embedded/operator scripts, probes, observability and CI all have
 callers of the retiring endpoints. Removing three package directories alone
 would leave an unusable installation and tests for a nonexistent product.
 
-Proposed review order, after resolving the protected boundary:
+Review order, with the protected boundary resolved:
 
 1. This inventory, independently published with no deletion.
-2. Connector-facing removal: gateway/inbound/notify, their callers, listeners,
-   configuration, manifests and obsolete checks as one coherent runtime slice.
-   Do not leave the approval CLI claiming an enforcement path still exists.
-3. Seam-adjacent removal last: remaining proxy/budget approval filing and grants,
+2. Inbound and notification removal: webhook/command listeners and workers,
+   connector configuration, audit views, deployment wiring and obsolete probes.
+   Gateway and budget approvals remain functional until their own removal slice.
+3. Gateway removal: relay, argument-bound approvals, tool/workflow callers and
+   the now-authorized legacy scaffold portions, with their manifests and checks.
+4. Seam-adjacent removal last: remaining proxy/budget approval filing and grants,
    store/meter/metrics reduction, then schema retirement under an explicit
    compatibility/data plan. Retain ordinary model budgets and reservations.
+
+The first runtime PR stops after inbound/notification removal for reviewability.
+Subsequent dependent slices must branch from main after preceding work is
+integrated by its owner; do not merge this lane or stack PR bases to accelerate it.
 
 Each removal commit must pass builds and the full test suite in **both** Go
 modules, with a disposable Postgres DSN so store tests do not skip. Keep test
