@@ -3,8 +3,8 @@ package store
 // Exact budgets: the one transaction that admits spend. Every
 // budget decision for a credential runs under a lock on that
 // credential's row, reads the caps from the locked row, counts the
-// ledger PLUS the open reservations, consumes grant uses if a cap is
-// exceeded, and leaves a reservation the ledger write later consumes.
+// ledger PLUS the open reservations, denies when a cap is reached,
+// and leaves a reservation the ledger write later consumes.
 // Serial per credential by construction, so N replicas admit exactly
 // what one replica admitting one call at a time would.
 
@@ -26,20 +26,16 @@ type SpendHold struct {
 // Admission is AdmitSpend's verdict. ReservationID is set when the call
 // is admitted under a cap (empty when the credential has no caps —
 // nothing to reserve against); Subject names the exceeded cap when
-// Denied; Granted says a live budget grant admitted an over-cap call
-// (one use consumed per exceeded cap, all in this transaction).
+// Denied.
 type Admission struct {
 	ReservationID string
 	Denied        bool
 	Subject       string
-	Granted       bool
 }
 
-// lockCredential serializes every governance decision for one
-// credential: FOR NO KEY UPDATE is exclusive against itself (two
-// admissions, a grant consume and an admission) but does not block the
-// KEY SHARE locks that inserting a grant or a request for the
-// credential takes, so an approval never waits on the data path.
+// lockCredential serializes admissions for one credential. FOR NO KEY
+// UPDATE is exclusive against itself but permits the KEY SHARE locks
+// taken by inserts referencing the credential.
 // ErrNotFound when the credential does not exist.
 func lockCredential(ctx context.Context, tx pgx.Tx, name string) (Credential, error) {
 	var c Credential
@@ -55,9 +51,8 @@ func lockCredential(ctx context.Context, tx pgx.Tx, name string) (Credential, er
 // AdmitSpend decides one call against the credential's monthly caps,
 // exactly. Under the credential lock: expired reservations are swept,
 // committed spend (ledger since monthStart + open holds) is compared
-// with the caps read from the locked row, an exceeded cap is covered by
-// live budget grants or the call is denied (a denial consumes nothing),
-// and an admitted call under caps leaves a reservation of hold that
+// with the caps read from the locked row, a reached cap denies the call
+// (a denial consumes nothing), and an admitted call leaves a reservation that
 // expires after ttl. Fail closed is the caller's job on error.
 func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHold,
 	monthStart time.Time, ttl time.Duration) (Admission, error) {
@@ -89,32 +84,11 @@ func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHol
 		return Admission{}, err
 	}
 
-	var needs []BudgetNeed
 	if cred.CapCents != nil && cents >= *cred.CapCents {
-		needs = append(needs, BudgetNeed{Subject: "cents", Used: cents, Cap: *cred.CapCents})
+		return Admission{Denied: true, Subject: "cents"}, nil
 	}
 	if cred.CapTokens != nil && tokens >= *cred.CapTokens {
-		needs = append(needs, BudgetNeed{Subject: "tokens", Used: tokens, Cap: *cred.CapTokens})
-	}
-	// Every exceeded cap must be covered by live grants, or the call is
-	// denied and no use is consumed (the rollback undoes any consumed
-	// before the uncovered one).
-	for _, n := range needs {
-		var extra int64
-		if err := tx.QueryRow(ctx,
-			`SELECT COALESCE(SUM(amount), 0) FROM permit_grant
-			 WHERE credential_name = $1 AND kind = 'budget' AND subject = $2 AND `+grantLive,
-			credential, n.Subject).Scan(&extra); err != nil {
-			return Admission{}, err
-		}
-		if extra <= 0 || n.Used >= n.Cap+extra {
-			return Admission{Denied: true, Subject: n.Subject}, nil
-		}
-		if _, ok, err := consumeGrantLocked(ctx, tx, credential, "budget", n.Subject); err != nil {
-			return Admission{}, err
-		} else if !ok {
-			return Admission{Denied: true, Subject: n.Subject}, nil
-		}
+		return Admission{Denied: true, Subject: "tokens"}, nil
 	}
 
 	var id string
@@ -124,7 +98,7 @@ func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHol
 		credential, hold.Cents, hold.Tokens, ttl).Scan(&id); err != nil {
 		return Admission{}, err
 	}
-	return Admission{ReservationID: id, Granted: len(needs) > 0}, tx.Commit(ctx)
+	return Admission{ReservationID: id}, tx.Commit(ctx)
 }
 
 // MonthCommitted is the unlocked read of committed spend: the ledger
@@ -134,6 +108,12 @@ func (s *Store) AdmitSpend(ctx context.Context, credential string, hold SpendHol
 // (rows only), so an in-flight call is never displayed as spend.
 func (s *Store) MonthCommitted(ctx context.Context, credential string, monthStart time.Time) (cents, tokens int64, err error) {
 	return monthCommitted(ctx, s.pool, credential, monthStart)
+}
+
+// rowQuerier is the one method the shared queries need, satisfied by
+// both the pool and a transaction.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 func monthCommitted(ctx context.Context, q rowQuerier, credential string, monthStart time.Time) (cents, tokens int64, err error) {

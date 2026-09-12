@@ -8,15 +8,15 @@
 
 There is no inbound listener on 8082, webhook delivery interface, inbound
 request filing or inbound audit API/CLI view. `kmx flow` and `kmx watch` read
-only model and approval-history trails. Historical SQL migrations and stored
+only the model ledger. Historical SQL migrations and stored
 inbound audit/replay/attribution records remain; no database cleanup is implied.
 
 ## Slack and the public edge
 
 Slack approval commands, notifications and the [posting fixture](slack.md) are
-removed. Only [budget approvals](approvals.md) still grant authority through
-admin. Historical tool/inbound requests remain readable/deniable, not
-approvable; their grants are inactive.
+removed. The remaining [custom approvals/grants](approvals.md), including budget
+exceptions, are also retired. Historical requests/grants/audits remain unchanged
+in SQL/backups, not readable or deniable through the removed APIs.
 
 Existing installations must follow the [retirement upgrade procedure](operations.md#upgrading-after-inbound-retirement):
 old inbound/notifier configuration is rejected, and applying new manifests does

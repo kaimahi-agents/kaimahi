@@ -10,7 +10,6 @@ package store_test
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +52,6 @@ func fresh(t *testing.T, s *store.Store, prefix string) string {
 }
 
 func i64(v int64) *int64 { return &v }
-func i32(v int32) *int32 { return &v }
 
 // race runs fn n times concurrently, released together, and returns
 // each call's result.
@@ -183,7 +181,7 @@ func TestReservationIsConsumedByTheLedgerWriteAndCountsUntilThen(t *testing.T) {
 }
 
 func TestExpiredReservationStopsCountingAndIsSwept(t *testing.T) {
-	s, _ := pgStore(t)
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	name := fresh(t, s, "expire")
 	require.NoError(t, s.SetBudget(ctx, name, nil, i64(1)))
@@ -192,6 +190,7 @@ func TestExpiredReservationStopsCountingAndIsSwept(t *testing.T) {
 	a, err := s.AdmitSpend(ctx, name, meter.Hold(false), month, time.Millisecond)
 	require.NoError(t, err)
 	require.False(t, a.Denied)
+	expiredID := a.ReservationID
 	time.Sleep(20 * time.Millisecond)
 	open, err := s.OpenReservations(ctx, name)
 	require.NoError(t, err)
@@ -200,6 +199,62 @@ func TestExpiredReservationStopsCountingAndIsSwept(t *testing.T) {
 	a, err = s.AdmitSpend(ctx, name, meter.Hold(false), month, time.Minute)
 	require.NoError(t, err)
 	require.False(t, a.Denied)
+	var remaining int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM spend_reservation WHERE id = $1`, expiredID).Scan(&remaining))
+	require.Zero(t, remaining, "expiry is swept, not only ignored")
+	// A late settlement still lands after its hold was swept, without
+	// consuming the new call's reservation.
+	require.NoError(t, s.RecordLedger(ctx, store.LedgerEntry{CredentialName: name, Upstream: "u", Model: "m",
+		InputTokens: 2, CostSource: "free", Status: 200}, expiredID))
+	_, tokens, err := s.MonthCommitted(ctx, name, month)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, tokens)
+	open, err = s.OpenReservations(ctx, name)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, open)
+}
+
+func TestFailedAdmissionRollsBackItsReservationSweep(t *testing.T) {
+	s, pool := pgStore(t)
+	ctx := context.Background()
+	name := fresh(t, s, "rollback-admit")
+	require.NoError(t, s.SetBudget(ctx, name, nil, i64(1)))
+	month := meter.MonthStartUTC(time.Now())
+	a, err := s.AdmitSpend(ctx, name, meter.Hold(false), month, -time.Second)
+	require.NoError(t, err)
+	_, err = s.AdmitSpend(ctx, name, store.SpendHold{Tokens: -1}, month, time.Minute)
+	require.Error(t, err, "a rejected reservation insert must abort the whole transaction")
+	var remaining int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM spend_reservation WHERE id = $1`, a.ReservationID).Scan(&remaining))
+	require.Equal(t, 1, remaining, "the earlier sweep must roll back too")
+	open, err := s.OpenReservations(ctx, name)
+	require.NoError(t, err)
+	require.Zero(t, open)
+}
+
+func TestFailedSettlementKeepsHoldAndRollsBackLedgerInsert(t *testing.T) {
+	s, _ := pgStore(t)
+	ctx := context.Background()
+	name := fresh(t, s, "rollback-ledger")
+	require.NoError(t, s.SetBudget(ctx, name, nil, i64(1)))
+	month := meter.MonthStartUTC(time.Now())
+	a, err := s.AdmitSpend(ctx, name, meter.Hold(false), month, time.Minute)
+	require.NoError(t, err)
+	e := store.LedgerEntry{CredentialName: name, Upstream: "u", Model: "m", InputTokens: 1, CostSource: "free", Status: 200}
+	require.Error(t, s.RecordLedger(ctx, e, "not-a-uuid"), "failure after the insert must roll it back")
+	rows, err := s.Ledger(ctx, name, 10)
+	require.NoError(t, err)
+	require.Empty(t, rows)
+	open, err := s.OpenReservations(ctx, name)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, open)
+	denied, err := s.AdmitSpend(ctx, name, meter.Hold(false), month, time.Minute)
+	require.NoError(t, err)
+	require.True(t, denied.Denied, "the failed settlement cannot reopen headroom")
+	require.NoError(t, s.RecordLedger(ctx, e, a.ReservationID))
+	open, err = s.OpenReservations(ctx, name)
+	require.NoError(t, err)
+	require.Zero(t, open)
 }
 
 func TestNoCapsHoldsNothing(t *testing.T) {
@@ -214,107 +269,37 @@ func TestNoCapsHoldsNothing(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrNotFound)
 }
 
-func TestConcurrentOverCapCallsAgainstAOneUseBudgetGrantAdmitExactlyOne(t *testing.T) {
-	s, _ := pgStore(t)
+func TestConcurrentOverCapCallsCannotConsumeHistoricalBudgetGrant(t *testing.T) {
+	s, pool := pgStore(t)
 	ctx := context.Background()
 	name := fresh(t, s, "bgrant")
 	require.NoError(t, s.SetBudget(ctx, name, nil, i64(1)))
 	month := meter.MonthStartUTC(time.Now())
-	// Cap reached already.
 	require.NoError(t, s.RecordLedger(ctx, store.LedgerEntry{CredentialName: name, Upstream: "u", Model: "m",
 		InputTokens: 1, CostSource: "free", Status: 200}, ""))
-	id, filed, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens", Detail: "test"})
+	var id string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO approval_request (credential_name,kind,subject,status) VALUES ($1,'budget','tokens','approved') RETURNING id`, name).Scan(&id))
+	_, err := pool.Exec(ctx,
+		`INSERT INTO permit_grant (request_id,credential_name,kind,subject,expires_at,max_uses,amount)
+		 VALUES ($1,$2,'budget','tokens',now() + interval '1 hour',1,1000)`, id, name)
 	require.NoError(t, err)
-	require.True(t, filed)
-	_, err = s.ApproveRequest(ctx, id, nil, i32(1), i64(1000), store.DecidedByAdmin)
-	require.NoError(t, err)
+	before := approvalHistory(t, pool, name)
 
-	results := race(10, func(int) store.Admission {
+	results := race(20, func(int) store.Admission {
 		a, err := s.AdmitSpend(ctx, name, meter.Hold(false), month, time.Minute)
 		require.NoError(t, err)
 		return a
 	})
-	var granted int
 	for _, a := range results {
-		if !a.Denied {
-			granted++
-			require.True(t, a.Granted)
-		}
+		require.True(t, a.Denied)
+		require.Equal(t, "tokens", a.Subject)
+		require.Empty(t, a.ReservationID)
 	}
-	require.Equal(t, 1, granted, "one use, one admission")
-	grants, live, err := s.Grants(ctx, name, 10)
+	require.Equal(t, before, approvalHistory(t, pool, name))
+	open, err := s.OpenReservations(ctx, name)
 	require.NoError(t, err)
-	require.Len(t, grants, 1)
-	require.EqualValues(t, 1, grants[0].Uses)
-	require.False(t, live[0])
-}
-
-func TestConcurrentDecisionsOnOneRequestDecideItOnce(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "decide")
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens", Detail: "test"})
-	require.NoError(t, err)
-	// Ten approvers and deniers at once: one decision lands, the rest
-	// find the request already decided; one grant, one decision audit row.
-	errs := race(10, func(i int) error {
-		if i%2 == 0 {
-			_, err := s.ApproveRequest(ctx, id, nil, i32(1), i64(10), store.DecidedByAdmin)
-			return err
-		}
-		return s.DenyApprovalRequest(ctx, id, store.DecidedByAdmin)
-	})
-	var decided, notPending int
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			decided++
-		case errors.Is(err, store.ErrNotPending):
-			notPending++
-		default:
-			require.NoError(t, err)
-		}
-	}
-	require.Equal(t, 1, decided)
-	require.Equal(t, 9, notPending)
-	audit, err := s.ApprovalAudit(ctx, name, 100)
-	require.NoError(t, err)
-	var decisions int
-	for _, e := range audit {
-		if e.Action != "requested" {
-			decisions++
-		}
-	}
-	require.Equal(t, 1, decisions)
-}
-
-func TestConcurrentFilingsOfOneSubjectFileOnce(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "file")
-	// Every replica's denial files: exactly one filing is fresh,
-	// the rest are deduped.
-	fileds := race(10, func(int) bool {
-		_, filed, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens", Detail: "denied"})
-		require.NoError(t, err)
-		return filed
-	})
-	var fresh int
-	for _, f := range fileds {
-		if f {
-			fresh++
-		}
-	}
-	require.Equal(t, 1, fresh)
-	pending, err := s.PendingApprovals(ctx)
-	require.NoError(t, err)
-	var mine int
-	for _, p := range pending {
-		if p.CredentialName == name {
-			mine++
-		}
-	}
-	require.Equal(t, 1, mine)
+	require.Zero(t, open)
 }
 
 // TestAdmissionHotPathCost measures the locked admission's cost so the

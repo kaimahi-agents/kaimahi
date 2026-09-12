@@ -55,12 +55,6 @@ func NewAdminMux(d Deps, adminTokenFile string) *http.ServeMux {
 	mux.HandleFunc("POST /admin/credentials/{name}/renew", auth(h.renewCredential))
 	mux.HandleFunc("PUT /admin/budgets", auth(h.setBudget))
 	mux.HandleFunc("GET /admin/ledger", auth(h.ledger))
-	mux.HandleFunc("POST /admin/requests", auth(h.fileRequest))
-	mux.HandleFunc("GET /admin/approvals", auth(h.listApprovals))
-	mux.HandleFunc("POST /admin/approvals/{id}/approve", auth(h.approve))
-	mux.HandleFunc("POST /admin/approvals/{id}/deny", auth(h.denyRequest))
-	mux.HandleFunc("GET /admin/grants", auth(h.listGrants))
-	mux.HandleFunc("GET /admin/approval-audit", auth(h.approvalAudit))
 	// A read that decides whether an overlay would load, using
 	// the same config.Parse this binary boots with (validate.go).
 	mux.HandleFunc("POST /admin/config/validate", auth(h.validateConfig))

@@ -1,7 +1,7 @@
 // kaimahi-proxy is the Kaimahi governance plane: the metering and
 // enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam.
 // Three listeners: the LLM data plane, the admin plane
-// (credentials, budgets, ledger, approval history) on a port no data
+// (credentials, budgets, ledger) on a port no data
 // Service exposes, and the operations listener — Prometheus
 // metrics and the readiness/liveness probes — on a port no Service
 // exposes at all.
@@ -10,7 +10,7 @@
 // values); non-secret wiring is env. Migrations run at startup under a
 // Postgres advisory lock — idempotent and replica-safe, so a rollout of
 // N replicas is its own migration step. The process holds no
-// governance state: every budget, grant, dedupe and decision is exact
+// governance state: every budget and spend reservation is exact
 // in Postgres, so any number of replicas agree.
 package main
 
@@ -154,8 +154,8 @@ func main() {
 
 	st := store.New(pool)
 	mtr := &meter.Meter{Store: st}
-	// The store-derived metrics (ledger totals by credential name, live
-	// grants, open holds) are read at scrape time — replica-independent
+	// The store-derived metrics (ledger totals by credential name and
+	// open holds) are read at scrape time — replica-independent
 	// truths that live in Postgres, not in this process.
 	metrics.RegisterStore(st, func() time.Time { return meter.MonthStartUTC(time.Now()) })
 	metrics.PrimeUpstreams(metrics.SeamProxy, slices.Sorted(maps.Keys(cfg.Upstreams)))

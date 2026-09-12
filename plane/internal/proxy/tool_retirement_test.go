@@ -33,9 +33,9 @@ func TestRetiredToolAdminRoutesAndFilingsAreRejected(t *testing.T) {
 		`{"credential":"model","kind":"tool","subject":"tokens","arguments":{}}`,
 		`{"credential":"model","kind":"budget","subject":"tokens","arguments":null}`,
 	} {
-		require.Equal(t, http.StatusBadRequest, adminDo(mux, "POST", "/admin/requests", token, body).Code, body)
+		require.Equal(t, http.StatusNotFound, adminDo(mux, "POST", "/admin/requests", token, body).Code, body)
 	}
-	require.JSONEq(t, `{"pending":[]}`, adminDo(mux, "GET", "/admin/approvals", token, "").Body.String())
+	require.Equal(t, http.StatusNotFound, adminDo(mux, "GET", "/admin/approvals", token, "").Code)
 }
 
 // Exercise the API over real historical rows, not a fake's kind validation.
@@ -60,13 +60,19 @@ func TestAdminCannotApproveHistoricalToolRequests(t *testing.T) {
 		var id string
 		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO approval_request (credential_name,kind,subject,arg_digest,arg_summary) VALUES ($1,'tool','tokens',$2,'historical call') RETURNING id`, name, digest).Scan(&id))
 		w := adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", "admin", `{"max_uses":1}`)
-		require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
-		w = adminDo(mux, "GET", "/admin/approvals", "admin", "")
-		require.Contains(t, w.Body.String(), id)
-		require.Contains(t, w.Body.String(), "historical call")
-		require.Equal(t, http.StatusNoContent, adminDo(mux, "POST", "/admin/approvals/"+id+"/deny", "admin", "").Code)
+		require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+		require.Equal(t, http.StatusNotFound, adminDo(mux, "GET", "/admin/approvals", "admin", "").Code)
+		require.Equal(t, http.StatusNotFound, adminDo(mux, "POST", "/admin/approvals/"+id+"/deny", "admin", "").Code)
+		var status, gotDigest, summary string
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT status,arg_digest,arg_summary FROM approval_request WHERE id = $1`, id).Scan(&status, &gotDigest, &summary))
+		require.Equal(t, "pending", status)
+		require.Equal(t, digest, gotDigest)
+		require.Equal(t, "historical call", summary)
 	}
-	grants, _, err := s.Grants(ctx, name, 10)
-	require.NoError(t, err)
-	require.Empty(t, grants)
+	var grants, audit int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM permit_grant WHERE credential_name = $1`, name).Scan(&grants))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM approval_audit WHERE credential_name = $1`, name).Scan(&audit))
+	require.Zero(t, grants)
+	require.Zero(t, audit)
 }

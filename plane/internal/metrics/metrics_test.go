@@ -20,22 +20,23 @@ import (
 )
 
 type fakeSource struct {
-	totals    []metrics.LedgerTotal
-	deadlines []metrics.CredentialDeadline
-	err       error
+	totals      []metrics.LedgerTotal
+	deadlines   []metrics.CredentialDeadline
+	err         error
+	holdsErr    error
+	deadlineErr error
 }
 
 func (f *fakeSource) CredentialDeadlines(context.Context, time.Time) ([]metrics.CredentialDeadline, error) {
-	return f.deadlines, f.err
+	return f.deadlines, f.deadlineErr
 }
 
 func (f *fakeSource) LedgerMonthTotals(_ context.Context, _ time.Time) ([]metrics.LedgerTotal, error) {
 	return f.totals, f.err
 }
-func (f *fakeSource) LiveGrantCounts(_ context.Context) (map[string]int64, error) {
-	return map[string]int64{"budget": 1}, f.err
+func (f *fakeSource) OpenReservations(_ context.Context, _ string) (int64, error) {
+	return 3, f.holdsErr
 }
-func (f *fakeSource) OpenReservations(_ context.Context, _ string) (int64, error) { return 3, f.err }
 
 var src = &fakeSource{totals: []metrics.LedgerTotal{
 	{Credential: "hello-world", Cents: 12, Tokens: 3400},
@@ -54,7 +55,6 @@ var allowed = map[string]*regexp.Regexp{
 	"seam":       nil, // vocabulary
 	"decision":   nil,
 	"reason":     nil,
-	"kind":       nil,
 	"credential": regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$|^other$`),
 	"upstream":   regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$|^other$`),
 	// kaimahi_build_info's VCS revision, or go_info's Go version.
@@ -74,7 +74,6 @@ func TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape(t *testing.T) {
 			metrics.Decide(seam, metrics.Denied, metrics.Reason(r))
 		}
 		metrics.Decide(seam, metrics.Allowed, metrics.ReasonOK)
-		metrics.Decide(seam, metrics.Granted, metrics.ReasonBudget)
 		metrics.ObserveUpstream(seam, "ollama", 10*time.Millisecond)
 		// Free text as an upstream name is coerced to "other", never admitted.
 		metrics.ObserveUpstream(seam, "https://evil.example/?token=kmh_abc", time.Millisecond)
@@ -102,7 +101,7 @@ func TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape(t *testing.T) {
 			}
 		}
 	}
-	require.GreaterOrEqual(t, kaimahi, 10)
+	require.GreaterOrEqual(t, kaimahi, 9)
 }
 
 func find(t *testing.T, name string) *dto.MetricFamily {
@@ -126,11 +125,26 @@ func labels(m *dto.Metric) map[string]string {
 	return out
 }
 
+func TestRetiredGrantMetricsAreNotExposed(t *testing.T) {
+	families, err := metrics.Registry().Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		require.NotEqual(t, "kaimahi_live_grants", family.GetName())
+		for _, metric := range family.GetMetric() {
+			require.NotEqual(t, "granted", labels(metric)["decision"])
+			require.NotContains(t, labels(metric), "kind")
+		}
+	}
+	require.NotContains(t, metrics.Vocabulary["decision"], "granted")
+	require.NotContains(t, metrics.Vocabulary, "kind")
+}
+
 func TestExpectedMetricsAreExposed(t *testing.T) {
 	for _, name := range []string{
 		"kaimahi_decisions_total", "kaimahi_upstream_latency_seconds",
 		"kaimahi_seam_degraded", "kaimahi_build_info",
-		"kaimahi_ledger_month_cents", "kaimahi_ledger_month_tokens", "kaimahi_live_grants",
+		"kaimahi_ledger_month_cents", "kaimahi_ledger_month_tokens",
+		"kaimahi_credentials_without_expiry",
 		"kaimahi_open_reservations", "kaimahi_store_up",
 		"go_goroutines", "process_resident_memory_bytes",
 	} {
@@ -146,27 +160,42 @@ func TestStoreDerivedSeriesCarryCredentialNamesOnly(t *testing.T) {
 		got[labels(m)["credential"]] = m.GetGauge().GetValue()
 	}
 	require.Equal(t, map[string]float64{"hello-world": 3400, "kaimahi-plane": 10, "other": 1}, got)
-	grants := find(t, "kaimahi_live_grants")
-	byKind := map[string]float64{}
-	for _, m := range grants.GetMetric() {
-		byKind[labels(m)["kind"]] = m.GetGauge().GetValue()
-	}
-	require.Equal(t, map[string]float64{"budget": 1}, byKind)
 	require.EqualValues(t, 3, find(t, "kaimahi_open_reservations").GetMetric()[0].GetGauge().GetValue())
 	require.EqualValues(t, 1, find(t, "kaimahi_store_up").GetMetric()[0].GetGauge().GetValue())
 }
 
 func TestStoreOutageDropsDerivedSeriesAndReportsDown(t *testing.T) {
-	src.err = errors.New("db down")
-	defer func() { src.err = nil }()
-	families, err := metrics.Registry().Gather()
-	require.NoError(t, err)
-	names := map[string]bool{}
-	for _, mf := range families {
-		names[mf.GetName()] = true
+	for _, field := range []*error{&src.err, &src.holdsErr, &src.deadlineErr} {
+		func() {
+			*field = errors.New("db down")
+			defer func() { *field = nil }()
+			families, err := metrics.Registry().Gather()
+			require.NoError(t, err)
+			names := map[string]bool{}
+			for _, mf := range families {
+				names[mf.GetName()] = true
+			}
+			for _, name := range []string{"kaimahi_ledger_month_tokens", "kaimahi_ledger_month_cents", "kaimahi_open_reservations", "kaimahi_credential_expires_in_seconds", "kaimahi_credentials_without_expiry"} {
+				require.False(t, names[name], "no stale or invented series while any store read fails: %s", name)
+			}
+			require.EqualValues(t, 0, find(t, "kaimahi_store_up").GetMetric()[0].GetGauge().GetValue())
+		}()
 	}
-	require.False(t, names["kaimahi_ledger_month_tokens"], "no stale or invented totals while the store is down")
-	require.EqualValues(t, 0, find(t, "kaimahi_store_up").GetMetric()[0].GetGauge().GetValue())
+}
+
+func TestCredentialExpiryMetricsPreserveDeadlinesAndLegacyCount(t *testing.T) {
+	src.deadlines = []metrics.CredentialDeadline{
+		{Credential: "soon", Seconds: 3600},
+		{Credential: "expired", Seconds: -60},
+		{Credential: "legacy", Legacy: true},
+	}
+	defer func() { src.deadlines = nil }()
+	got := map[string]float64{}
+	for _, metric := range find(t, "kaimahi_credential_expires_in_seconds").GetMetric() {
+		got[labels(metric)["credential"]] = metric.GetGauge().GetValue()
+	}
+	require.Equal(t, map[string]float64{"soon": 3600, "expired": -60}, got)
+	require.EqualValues(t, 1, find(t, "kaimahi_credentials_without_expiry").GetMetric()[0].GetGauge().GetValue())
 }
 
 func TestPrimedUpstreamsExposeEmptyHistograms(t *testing.T) {

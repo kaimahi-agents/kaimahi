@@ -38,14 +38,6 @@ type Store interface {
 	SetBudget(ctx context.Context, name string, capCents, capTokens *int64) error
 	Ledger(ctx context.Context, credentialName string, limit int) ([]store.LedgerEntry, error)
 	MonthUsage(ctx context.Context, credentialName string, monthStart time.Time) (cents, tokens int64, err error)
-	// Approvals: deny-and-pend filing (data path) and the decision
-	// surface (admin).
-	FileApprovalRequest(ctx context.Context, f store.Filing) (filed bool, err error)
-	PendingApprovals(ctx context.Context) ([]store.ApprovalRequest, error)
-	ApproveRequest(ctx context.Context, id string, expiresAt *time.Time, maxUses *int32, amount *int64, decidedBy string) (store.Grant, error)
-	DenyApprovalRequest(ctx context.Context, id string, decidedBy string) error
-	Grants(ctx context.Context, credential string, limit int) ([]store.Grant, []bool, error)
-	ApprovalAudit(ctx context.Context, credential string, limit int) ([]store.ApprovalAuditEntry, error)
 	// Identity on the call: who the run this call falls inside is being
 	// made for. Resolution only — never enforcement.
 	ActorFor(ctx context.Context, credential string) (store.Attribution, error)

@@ -85,10 +85,12 @@ boundary. Installing Orka alone enables none of this routing.
   resources; it does not convert kagent YAML, ModelConfigs, MCP wiring or BYO
   images. The isolated conversion spike is not a supported CLI interface.
 - **The bridge is shrinking:** the model seam, budgets/ledger and existing
-  kagent commands remain. The custom MCP gateway, tool approvals, workflows
-  and connector fixtures are retired; native Orka tools and direct kagent MCP
-  are not. Existing installations need [deliberate upgrade cleanup](docs/operations.md#upgrading-after-gateway-retirement).
-  Historical SQL and stored data remain intact.
+  kagent commands remain. The custom MCP gateway, all custom approvals/grants,
+  workflows and connector fixtures are retired; native Orka tools and direct
+  kagent MCP/HITL are not. Existing installations need
+  [deliberate upgrade review](docs/operations.md#upgrading-after-approval-retirement),
+  including old-replica and rollback risks. Historical SQL and stored data remain
+  intact, accessible through SQL/backups rather than removed approval APIs.
 - **Upstream first:** do not rebuild what Orka supplies. `orka.harness.v2`
   is not a direction for this project. OTLP with GenAI conventions ships
   in Orka; it is not an outstanding Kaimahi upstream candidate.

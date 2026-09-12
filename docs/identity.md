@@ -45,10 +45,10 @@ could be associated with it too. Calls without a live run resolve `none`, and
 concurrent windows resolve `unknown`. Attribution failure alone neither admits
 nor denies model traffic; budget admission is a separate decision.
 
-An approver is different from a requester: new approvals record `decided_by`
-as `admin`, not a person. Historical `slack:<user id>` decisions remain stored;
-the Slack decision path is removed. An approval does not retrospectively prove
-who initiated all calls using the grant.
+Historical approval rows distinguish a requester from `decided_by`: `admin`
+was not a verified person, and older `slack:<user id>` decisions remain stored.
+The approval subsystem and its history API are removed; SQL/backups retain those
+rows. A historical approval does not prove who initiated calls using its grant.
 
 ## Who called
 
@@ -83,12 +83,11 @@ issued model credentials or reset their stored expiry.
 
 Expired credentials still resolve by hash so the refusal can name the
 credential and deadline, rather than misleadingly report an unknown token.
-Expiry refusals are recorded on the corresponding trail. A live grant does
-not override expiry of its credential.
+Expiry refusals are recorded in the model ledger. Historical grants have no
+authority on this build; credential expiry remains an independent boundary.
 
 ```sh
 kmx credentials
-kmx grants
 kmx credential renew hello-world --ttl 720h
 kmx ledger hello-world
 ```
@@ -102,9 +101,8 @@ and stored in the database only as hashes.
 ## Recognizing stale credentials and certificates
 
 `kmx credentials` shows deadlines, the one-week `EXPIRING` warning and the
-legacy no-expiry class. Budget grants display the credential deadline alongside
-permission lifetime; historical tool/inbound grants remain inactive even when
-neither deadline has passed. [Metrics](operations.md#metrics) expose expiry gauges.
+legacy no-expiry class. The retired grant view is not an expiry inspection path.
+[Metrics](operations.md#metrics) retain credential and certificate expiry gauges.
 
 A kagent `Accepted` condition is a cached reconcile verdict, not a live
 credential check. Secret projection is asynchronous. `kmx status` reports cached

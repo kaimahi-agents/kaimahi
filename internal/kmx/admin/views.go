@@ -21,14 +21,6 @@ func renderTable(out io.Writer, headers []string, rows [][]string, format string
 		case ledgerFmt:
 			title = "Ledger"
 			roles[4], roles[5], roles[6], roles[7], roles[8] = number, number, number, state, state
-		case grantsFmt:
-			title = "Grants"
-			roles[4], roles[6], roles[7] = state, number, number
-		case approvalFmt:
-			title = "Approval audit"
-			roles[4] = state
-		case pendingFmt:
-			title = "Pending approvals"
 		case credentialsFmt:
 			title = "Credentials"
 			roles[1], roles[2], roles[4] = number, number, state
@@ -60,7 +52,7 @@ func renderTable(out io.Writer, headers []string, rows [][]string, format string
 // and one reading it from `make` must see the same table.
 
 const (
-	// The trailing column on the two enforcement trails is "acted for":
+	// The trailing column on the ledger is "acted for":
 	// who the call was made for. It is LAST on purpose — every existing
 	// CI grep and doc example anchors on the columns before it, and a
 	// widened column mid-table is a broken pipeline. The two caller
@@ -68,10 +60,7 @@ const (
 	// sit after every column an existing grep names, and "acted for"
 	// stays where the end-anchored ones ('none *$') expect it.
 	ledgerFmt      = "%-19s %-12s %-9s %-16s %6s %6s %6s %-8s %-6s %-28s %-16s %s\n"
-	grantsFmt      = "%-36s %-12s %-8s %-18s %-6s %-22s %-9s %-8s %-19s %-18s %-20s %s\n"
 	credentialsFmt = "%-16s %-10s %-12s %-22s %-9s %s\n"
-	approvalFmt    = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s\n"
-	pendingFmt     = "%-36s %-19s %-12s %-8s %-18s %-34s %s\n"
 )
 
 // Ledger prints the spend ledger, newest first, plus month-to-date totals.
@@ -99,86 +88,6 @@ func (c *Client) Ledger(out io.Writer, credential string) error {
 		fmt.Fprintf(out, "-- month to date: %s cents, %s tokens\n",
 			str(doc["month_cents"]), str(doc["month_tokens"]))
 	}
-	return nil
-}
-
-// Grants lists grants with liveness — an expired grant is not a grant.
-func (c *Client) Grants(out io.Writer, credential string) error {
-	doc, err := c.Get("grants", "/admin/grants?credential="+url.QueryEscape(credential)+"&limit=50")
-	if err != nil {
-		return err
-	}
-	list := rows(doc, "grants")
-	if len(list) == 0 && !cliui.New(out).Rich() {
-		fmt.Fprintln(out, "no grants")
-		return nil
-	}
-	var viewRows [][]string
-	for _, g := range list {
-		uses := str(g["uses"])
-		if max, ok := g["max_uses"]; ok && max != nil {
-			uses += "/" + str(max)
-		}
-		viewRows = append(viewRows, []string{
-			str(g["id"]), str(g["credential"]), str(g["kind"]), str(g["subject"]),
-			yesno(g["live"]),
-			// [:19] inside a 22-wide column: an expiry is printed to the
-			// second, and the extra width
-			// is the gap before the next column.
-			trunc(dash(g["expires_at"]), 19), uses, dash(g["amount"]),
-			trunc(str(g["created_at"]), 19), dash(g["decided_by"]), binds(g, cliui.New(out).Rich()),
-			// A grant that outlives the credential it was given on is a
-			// promise the plane cannot keep, so the two deadlines are
-			// read side by side.
-			trunc(dash(g["credential_expires_at"]), 19)})
-	}
-	renderTable(out, []string{"id", "credential", "kind", "subject", "live", "expires (UTC)", "uses", "amount", "created (UTC)", "decided by", "binds", "cred expires (UTC)"}, viewRows, grantsFmt)
-	return nil
-}
-
-// Approvals lists the requests waiting for a human decision.
-//
-// The CALL column is not decoration: a tool grant is welded to one
-// call, so an approver who can see only the verb is being asked to approve
-// something they cannot see. That is the whole problem restated.
-//
-// The columns are stable to the character. CI does not grep this
-// table, it AWKs it — `$1` is the id an approval is then issued against —
-// so a widened column is a broken pipeline, not a cosmetic change.
-func (c *Client) Approvals(out io.Writer) error {
-	doc, err := c.Get("approvals", "/admin/approvals")
-	if err != nil {
-		return err
-	}
-	list := rows(doc, "pending")
-	if len(list) == 0 && !cliui.New(out).Rich() {
-		fmt.Fprintln(out, "no pending approval requests")
-		return nil
-	}
-	var viewRows [][]string
-	for _, r := range list {
-		viewRows = append(viewRows, []string{
-			str(r["id"]), trunc(str(r["created_at"]), 19), str(r["credential"]),
-			str(r["kind"]), str(r["subject"]), str(r["detail"]), dash(r["arg_summary"])})
-	}
-	renderTable(out, []string{"id", "created (UTC)", "credential", "kind", "subject", "detail", "call"}, viewRows, pendingFmt)
-	return nil
-}
-
-// ApprovalAudit prints the approvals' own trail: filed, approved, denied.
-func (c *Client) ApprovalAudit(out io.Writer, credential string) error {
-	doc, err := c.Get("approval-audit", "/admin/approval-audit?credential="+url.QueryEscape(credential)+"&limit=50")
-	if err != nil {
-		return err
-	}
-	var viewRows [][]string
-	for _, e := range rows(doc, "entries") {
-		viewRows = append(viewRows, []string{
-			trunc(str(e["created_at"]), 19), str(e["credential"]), str(e["kind"]),
-			str(e["subject"]), str(e["action"]), dash(e["decided_by"]), str(e["bounds"]),
-			dash(e["arg_summary"])})
-	}
-	renderTable(out, []string{"created (UTC)", "credential", "kind", "subject", "action", "decided by", "bounds", "call"}, viewRows, approvalFmt)
 	return nil
 }
 
@@ -281,23 +190,6 @@ func orUnrecorded(v string) string {
 	return v
 }
 
-// binds says what a tool grant admits: one CALL, named by the
-// digest of its policy-relevant arguments. A tool grant with no digest is
-// the closed legacy class — minted before argument binding, so it admits
-// any arguments and says so; other kinds have no arguments at all.
-func binds(g map[string]any, rich ...bool) string {
-	if str(g["kind"]) != "tool" {
-		return "-"
-	}
-	if d := str(g["arg_digest"]); d != "" {
-		if len(rich) > 0 && rich[0] {
-			return "call " + d
-		}
-		return "call " + trunc(d, 12)
-	}
-	return "verb-level (legacy)"
-}
-
 // rows returns a document's list of records, tolerating a null or absent
 // key because an empty result is a valid response.
 func rows(doc map[string]any, key string) []map[string]any {
@@ -339,7 +231,7 @@ func str(v any) string {
 }
 
 // dash renders an absent optional as "-", which is what the columns for
-// expiry, amount and the approver mean by "not set".
+// expiry and caps mean by "not set".
 func dash(v any) string {
 	if s := str(v); s != "" {
 		return s

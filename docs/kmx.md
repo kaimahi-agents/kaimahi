@@ -75,27 +75,23 @@ These are the present seam implementation, including the bridge used by migrate.
 | `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` to discard the one-time bearer; never print the bearer |
 | `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
 | `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
-| `kmx flow [credential]` | model and approval-history trails, oldest first; all credentials by default; **timeline, not causal trace** |
-| `kmx watch [credential]` | the same two trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
-| `kmx audit approval [credential]` / `kmx grants [credential]` | approval history / budget-grant liveness and inactive historical tool/inbound grants; all credentials by default |
+| `kmx flow [credential]` | model ledger, oldest first; all credentials by default; **timeline, not causal trace** |
+| `kmx watch [credential]` | model ledger rows **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
 | `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |
-| `kmx approvals` / `kmx approve <id>` / `kmx deny <id>` | inspect requests; approve bounded budget overage or deny. Historical tool/inbound requests can be denied, not approved. [Approvals](approvals.md) |
-| `kmx request budget <tokens\|cents>` | file a budget request; tool/inbound filing is refused |
 | `kmx models add <name>` | reviewable model upstream/NetworkPolicy onboarding; contract below |
 | `kmx backup [file]` / `kmx restore <file>` / `kmx metrics` | database backup/replacement / one replica's counters; contracts below |
 | `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary and dependency versions |
 
-The tool-governance commands, tool credential capture, workflow runner, tool
-and inbound audit APIs, webhooks and Slack notifications are removed. Historical
-SQL/data remain; `flow`/`watch` no longer read tool/inbound audit. Only budget
-approvals still grant authority. Admin contract 4 marks this breaking removal,
-not compatibility negotiation: **upgrade CLI and plane together**. See the
-[upgrade procedure](operations.md#upgrading-after-gateway-retirement) for stale
-overlays, Services, credentials and owner-managed application references.
+Custom request/approval/grant commands and APIs, including approval audit, are
+removed, following tool-governance/capture, workflow, inbound and notification
+retirement. Historical SQL/data remain accessible through SQL/backups, not those
+APIs. `flow`/`watch` read only the model ledger. Ordinary `budget` and credential
+operations remain. Admin contract 5 marks this breaking removal, not compatibility
+negotiation: **upgrade CLI and plane together**. See the
+[upgrade procedure](operations.md#upgrading-after-approval-retirement), including
+old-replica and rollback risks; older installations also need gateway cleanup.
 
-Approval TTL is 1 second–30 days, uses 1–1,000,000, amount
-1–1,000,000,000,000 when set; at least TTL or uses is required. Credential
-issuance/renewal TTL is 60 seconds–365 days. An unbounded approval is not allowed.
+Credential issuance/renewal TTL remains 60 seconds–365 days.
 
 ### Existing legacy kagent commands
 
@@ -186,7 +182,7 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   are removed. Old gateway URLs are not evidence of healthy direct routing.
   Unready installed planes or missing/unreadable required model governance
   prevent a human ready verdict.
-- Ledger/audit caller claims are unverified client assertions; observed source
+- Ledger caller claims are unverified client assertions; observed source
   addresses and `acted for` are separate fields. Flow counts model refusals from
   `cost_source: denied`, not from any upstream HTTP error. Configuration posture
   is not proof a specific request crossed a seam.
@@ -294,12 +290,13 @@ A failed Secret write after one-time token issuance needs operator recovery.
 Trusted actor/action labels and indented payloads prevent tool/model prose from
 impersonating controls. `[KAIMAHI ROUTE]` shows verified startup configuration,
 not an allowed/ledgered receipt: kagent streams do not carry those receipts.
-Possible denial text has unverified provenance; confirm model-budget requests
-with `kmx approvals`. Direct tool activity has no Kaimahi approval path.
+Possible denial text has unverified provenance; inspect `kmx ledger` for model
+refusals. Cap denials file no approval request; recovery is an operator's deliberate
+budget change or the UTC month reset. Direct tool activity has no Kaimahi approval path.
 These records remain visible with `/tools off`.
 
-Native kagent approvals/questions are a **different boundary**: chat may submit
-a structured native decision but cannot approve its own Kaimahi request. It
+Native kagent approvals/questions are a **different boundary**: chat may still
+submit a structured native decision, not a retired Kaimahi approval. It
 refuses malformed, duplicate-ID, mixed or incomplete batches before submission;
 every call needs explicit consent. Arguments above the 16 KiB inspection limit
 are refused, not truncated. Choices are validated; free text preserves commas.

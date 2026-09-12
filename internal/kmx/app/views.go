@@ -6,42 +6,23 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 )
 
-// The read-only views of the plane: what it has spent, what has been
-// granted, and what the enforcement points decided.
+// The model-plane views: what it has spent and what the model proxy decided.
 //
-// The views are UNGUARDED, exactly like `make ledger` and the audit
-// targets: they reach the cluster only through kubectl carrying an explicit
+// The views are UNGUARDED, exactly like `make ledger`:
+// they reach the cluster only through kubectl carrying an explicit
 // --context, so they land wherever the rest of the invocation was already
 // going to land, and they change nothing when they get there.
 //
-// RenewCredential at the bottom of this file is the one that does change
-// something, and it is guarded.
+// Budget and credential mutations below do change state and are guarded.
 
 // Ledger prints the spend ledger and the month-to-date totals.
 func (a *App) Ledger(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.Ledger(a.Out, credential) })
 }
 
-// Grants lists grants with liveness — an expired grant is not a grant.
-func (a *App) Grants(credential string) error {
-	return a.session(func(c *admin.Client) error { return c.Grants(a.Out, credential) })
-}
-
-// Flow prints one credential's model and approval trails merged into a single
-// chronological reading — what it spent, what it called,
-// what it was refused, and what a human let through.
+// Flow prints the model ledger chronologically: spend, calls and refusals.
 func (a *App) Flow(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.Flow(a.Out, credential) })
-}
-
-// Audit prints one of the plane's audit trails.
-func (a *App) Audit(kind, credential string) error {
-	switch kind {
-	case "approval":
-		return a.session(func(c *admin.Client) error { return c.ApprovalAudit(a.Out, credential) })
-	default:
-		return fmt.Errorf("usage: kmx audit approval [<credential>]")
-	}
 }
 
 // session opens an admin session for one command and closes it again. Each
@@ -65,6 +46,49 @@ func (a *App) session(do func(*admin.Client) error) error {
 // than diagnoses at 3am.
 func (a *App) Credentials() error {
 	return a.session(func(c *admin.Client) error { return c.Credentials(a.Out) })
+}
+
+// Budget replaces a credential's monthly caps. A nil cap is "no cap" — and
+// `kmx budget` with no flags therefore CLEARS both, which is what
+// `make budget` with no CAP_* does and what CI relies on.
+func (a *App) Budget(credential string, capCents, capTokens *int64) error {
+	if err := admin.ValidCredentialName(credential); err != nil {
+		return err
+	}
+	if err := admin.CheckCap("cap_cents", capCents); err != nil {
+		return err
+	}
+	if err := admin.CheckCap("cap_tokens", capTokens); err != nil {
+		return err
+	}
+	args := []string{"budget", credential}
+	if capCents != nil {
+		args = append(args, "--cents", fmt.Sprint(*capCents))
+	}
+	if capTokens != nil {
+		args = append(args, "--tokens", fmt.Sprint(*capTokens))
+	}
+	if err := a.Guard(fmt.Sprintf("replace monthly caps for credential %q: cents=%s tokens=%s (null clears the cap)", credential, capOrNone(capCents), capOrNone(capTokens)),
+		a.operationCommand(args...)); err != nil {
+		return err
+	}
+	return a.session(func(c *admin.Client) error {
+		if err := c.SetBudget(credential, capCents, capTokens); err != nil {
+			return err
+		}
+		a.notef("Budget for %q: cap_cents=%s cap_tokens=%s (monthly, UTC).",
+			credential, capOrNone(capCents), capOrNone(capTokens))
+		return nil
+	})
+}
+
+// capOrNone renders a cap for the operator note:
+// the number, or `null` for "no cap".
+func capOrNone(v *int64) string {
+	if v == nil {
+		return "null"
+	}
+	return fmt.Sprint(*v)
 }
 
 // RenewCredential extends a credential's deadline. Unlike the views above

@@ -48,7 +48,7 @@ func TestContract4ReportsToolRetirement(t *testing.T) {
 		AdminContract int `json:"admin_contract"`
 	}
 	require.NoError(t, json.Unmarshal(res.Body.Bytes(), &doc))
-	require.Equal(t, 4, doc.AdminContract, "tool retirement must not report the older tool-governance contract")
+	require.Equal(t, 5, doc.AdminContract, "approval retirement must not report an approval-capable contract")
 }
 
 // The build is not the one thing on this surface that answers without a

@@ -104,89 +104,25 @@ func TestSetBudgetAndLedger(t *testing.T) {
 	require.NotNil(t, resp.MonthTokens)
 }
 
-func TestApprovalLifecycle(t *testing.T) {
-	f := newFakeStore()
-	f.addToken("kmh_a", store.Credential{Name: "hello-model"})
-	mux, tok := adminMux(t, f)
-
-	// A request must bind to a REAL credential (the FK): unknown 404s.
-	require.Equal(t, 404, adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "ghost", "kind": "budget", "subject": "tokens"}`).Code)
-
-	// Explicit filing (`make request`), deduped on refile.
-	w := adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-model", "kind": "budget", "subject": "tokens"}`)
-	require.Equal(t, 201, w.Code)
-	require.Contains(t, w.Body.String(), `"filed":true`)
-	w = adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-model", "kind": "budget", "subject": "tokens"}`)
-	require.Equal(t, 201, w.Code)
-	require.Contains(t, w.Body.String(), `"deduped":true`)
-
-	// The queue lists it.
-	w = adminDo(mux, "GET", "/admin/approvals", tok, "")
-	require.Equal(t, 200, w.Code)
-	var list struct{ Pending []store.ApprovalRequest }
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
-	require.Len(t, list.Pending, 1)
-	id := list.Pending[0].ID
-
-	// Bound validation, ported permit discipline: an unbounded grant is
-	// refused; a budget grant without an amount is refused.
-	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{}`).Code)
-	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok,
-		`{"max_uses": 1}`).Code)
-	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok,
-		`{"max_uses": 1, "unknown_field": true}`).Code, "unknown fields rejected")
-	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/not-a-uuid/approve", tok,
-		`{"max_uses": 1}`).Code)
-
-	// A bounded approval mints the grant; deciding again conflicts.
-	w = adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{"max_uses": 1, "ttl_seconds": 60, "amount": 1000}`)
-	require.Equal(t, 201, w.Code)
-	require.Equal(t, 409, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{"max_uses": 1}`).Code)
-	require.Equal(t, 409, adminDo(mux, "POST", "/admin/approvals/"+id+"/deny", tok, "").Code)
-	require.Equal(t, 404, adminDo(mux, "POST",
-		"/admin/approvals/00000000-0000-0000-0000-000000000099/deny", tok, "").Code)
-
-	// Grants and the approvals' own audit trail list the history.
-	w = adminDo(mux, "GET", "/admin/grants?credential=hello-model", tok, "")
-	require.Equal(t, 200, w.Code)
-	require.Contains(t, w.Body.String(), "tokens")
-	w = adminDo(mux, "GET", "/admin/approval-audit?credential=hello-model", tok, "")
-	require.Equal(t, 200, w.Code)
-	require.Contains(t, w.Body.String(), `"requested"`)
-	require.Contains(t, w.Body.String(), `"approved"`)
-
-	// A budget request requires an amount to approve.
-	w = adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-model", "kind": "budget", "subject": "cents"}`)
-	require.Equal(t, 201, w.Code)
-	w = adminDo(mux, "GET", "/admin/approvals", tok, "")
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
-	require.Len(t, list.Pending, 1)
-	bid := list.Pending[0].ID
-	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+bid+"/approve", tok,
-		`{"max_uses": 1}`).Code, "budget approvals require an amount")
-	require.Equal(t, 201, adminDo(mux, "POST", "/admin/approvals/"+bid+"/approve", tok,
-		`{"max_uses": 1, "amount": 1000}`).Code)
-}
-
-func TestApprovalRequestValidation(t *testing.T) {
-	mux, tok := adminMux(t, newFakeStore())
-	for _, body := range []string{
-		`{"credential": "x", "kind": "nope", "subject": "a"}`,
-		`{"credential": "UPPER", "kind": "tool", "subject": "a"}`,
-		`{"credential": "x", "kind": "budget", "subject": "gold"}`,
-		`{"credential": "x", "kind": "tool", "subject": "bad subject"}`,
-		`{"credential": "x", "kind": "tool", "subject": "a"} trailing`,
-		`not json`,
+func TestRetiredApprovalRoutesReturn404(t *testing.T) {
+	mux, token := adminMux(t, newFakeStore())
+	for _, tc := range []struct{ method, path, body string }{
+		{"POST", "/admin/requests", `{"credential":"model","kind":"budget","subject":"tokens"}`},
+		{"GET", "/admin/approvals", ""},
+		{"POST", "/admin/approvals/00000000-0000-0000-0000-000000000001/approve", `{"max_uses":1,"amount":100}`},
+		{"POST", "/admin/approvals/00000000-0000-0000-0000-000000000001/deny", ""},
+		{"GET", "/admin/grants", ""},
+		{"GET", "/admin/approval-audit", ""},
 	} {
-		require.Equal(t, 400, adminDo(mux, "POST", "/admin/requests", tok, body).Code, body)
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			require.Equal(t, http.StatusNotFound, adminDo(mux, tc.method, tc.path, token, tc.body).Code)
+		})
 	}
-	require.Equal(t, 401, adminDo(mux, "GET", "/admin/approvals", "", "").Code)
-	require.Equal(t, 401, adminDo(mux, "GET", "/admin/grants", "", "").Code)
-	require.Equal(t, 401, adminDo(mux, "GET", "/admin/approval-audit", "", "").Code)
+	// Authentication remains required on the surviving control surface.
+	for _, path := range []string{"/admin/credentials", "/admin/ledger", "/admin/version"} {
+		require.Equal(t, http.StatusUnauthorized, adminDo(mux, "GET", path, "", "").Code)
+		require.Equal(t, http.StatusUnauthorized, adminDo(mux, "GET", path, "wrong", "").Code)
+	}
 }
 
 // Issuing, renewing and listing the deadline: the operator surface for

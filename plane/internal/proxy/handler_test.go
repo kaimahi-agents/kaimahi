@@ -36,11 +36,6 @@ type fakeStore struct {
 	monthCents int64
 	monthToks  int64
 	monthErr   error
-	// Approvals, in memory.
-	requests       []*store.ApprovalRequest
-	grants         []store.Grant
-	approvalAudits []store.ApprovalAuditEntry
-	fileErr        error
 	// Reservations: open holds and the ids RecordLedger consumed.
 	open     map[string]store.SpendHold
 	consumed []string
@@ -63,8 +58,8 @@ func (f *fakeStore) credByName(name string) (store.Credential, bool) {
 }
 
 // AdmitSpend mirrors the store's locked admission in memory: committed
-// = month sums + open holds; an exceeded cap is covered by a live
-// budget grant (one use) or denied; an admitted call under a cap holds.
+// = month sums + open holds; a reached cap denies; an admitted call
+// under a cap holds.
 func (f *fakeStore) AdmitSpend(_ context.Context, credential string, hold store.SpendHold, _ time.Time, _ time.Duration) (store.Admission, error) {
 	if f.admitErr != nil {
 		return store.Admission{}, f.admitErr
@@ -84,40 +79,16 @@ func (f *fakeStore) AdmitSpend(_ context.Context, credential string, hold store.
 		cents += h.Cents
 		tokens += h.Tokens
 	}
-	var needs []store.BudgetNeed
 	if c.CapCents != nil && cents >= *c.CapCents {
-		needs = append(needs, store.BudgetNeed{Subject: "cents", Used: cents, Cap: *c.CapCents})
+		return store.Admission{Denied: true, Subject: "cents"}, nil
 	}
 	if c.CapTokens != nil && tokens >= *c.CapTokens {
-		needs = append(needs, store.BudgetNeed{Subject: "tokens", Used: tokens, Cap: *c.CapTokens})
-	}
-	var picked []int
-	for _, n := range needs {
-		found := -1
-		for i, g := range f.grants {
-			if g.CredentialName != credential || g.Kind != "budget" || g.Subject != n.Subject || g.Amount == nil {
-				continue
-			}
-			if g.MaxUses != nil && g.Uses >= *g.MaxUses {
-				continue
-			}
-			if n.Used < n.Cap+*g.Amount {
-				found = i
-				break
-			}
-		}
-		if found < 0 {
-			return store.Admission{Denied: true, Subject: n.Subject}, nil
-		}
-		picked = append(picked, found)
-	}
-	for _, i := range picked {
-		f.grants[i].Uses++
+		return store.Admission{Denied: true, Subject: "tokens"}, nil
 	}
 	f.nextRes++
 	id := fmt.Sprintf("res-%d", f.nextRes)
 	f.open[id] = hold
-	return store.Admission{ReservationID: id, Granted: len(needs) > 0}, nil
+	return store.Admission{ReservationID: id}, nil
 }
 
 func (f *fakeStore) addToken(token string, c store.Credential) {
@@ -211,118 +182,6 @@ func (f *fakeStore) Ledger(_ context.Context, name string, _ int) ([]store.Ledge
 
 func (f *fakeStore) MonthUsage(_ context.Context, _ string, _ time.Time) (int64, int64, error) {
 	return f.monthCents, f.monthToks, f.monthErr
-}
-
-func (f *fakeStore) FileApprovalRequest(_ context.Context, fl store.Filing) (bool, error) {
-	credential, kind, subject, detail := fl.Credential, fl.Kind, fl.Subject, fl.Detail
-	if f.fileErr != nil {
-		return false, f.fileErr
-	}
-	exists := false
-	for _, c := range f.creds {
-		if c.Name == credential {
-			exists = true
-		}
-	}
-	if !exists { // mirrors the FK: requests bind to real credentials
-		return false, store.ErrNotFound
-	}
-	for _, r := range f.requests {
-		if r.Status == "pending" && r.CredentialName == credential && r.Kind == kind && r.Subject == subject {
-			return false, nil // deduped
-		}
-	}
-	id := fmt.Sprintf("00000000-0000-0000-0000-%012d", len(f.requests)+1)
-	f.requests = append(f.requests, &store.ApprovalRequest{ID: id, CredentialName: credential,
-		Kind: kind, Subject: subject, Status: "pending", Detail: detail, CreatedAt: time.Now()})
-	f.approvalAudits = append(f.approvalAudits, store.ApprovalAuditEntry{RequestID: id,
-		CredentialName: credential, Kind: kind, Subject: subject, Action: "requested"})
-	return true, nil
-}
-
-func (f *fakeStore) PendingApprovals(_ context.Context) ([]store.ApprovalRequest, error) {
-	var out []store.ApprovalRequest
-	for _, r := range f.requests {
-		if r.Status == "pending" {
-			out = append(out, *r)
-		}
-	}
-	return out, nil
-}
-
-func (f *fakeStore) findRequest(id string) *store.ApprovalRequest {
-	for _, r := range f.requests {
-		if r.ID == id {
-			return r
-		}
-	}
-	return nil
-}
-
-func (f *fakeStore) ApproveRequest(_ context.Context, id string,
-	expiresAt *time.Time, maxUses *int32, amount *int64, decidedBy string) (store.Grant, error) {
-	if decidedBy == "" {
-		return store.Grant{}, store.ErrBounds
-	}
-	r := f.findRequest(id)
-	if r == nil {
-		return store.Grant{}, store.ErrNotFound
-	}
-	if r.Status != "pending" {
-		return store.Grant{}, store.ErrNotPending
-	}
-	if expiresAt == nil && maxUses == nil {
-		return store.Grant{}, store.ErrBounds
-	}
-	if r.Kind != "budget" || amount == nil {
-		return store.Grant{}, store.ErrBounds
-	}
-	r.Status, r.DecidedBy = "approved", decidedBy
-	g := store.Grant{ID: "g-" + r.ID, RequestID: r.ID, CredentialName: r.CredentialName,
-		Kind: r.Kind, Subject: r.Subject, ExpiresAt: expiresAt, MaxUses: maxUses, Amount: amount, DecidedBy: decidedBy}
-	f.grants = append(f.grants, g)
-	f.approvalAudits = append(f.approvalAudits, store.ApprovalAuditEntry{RequestID: r.ID,
-		CredentialName: r.CredentialName, Kind: r.Kind, Subject: r.Subject, Action: "approved", DecidedBy: decidedBy})
-	return g, nil
-}
-
-func (f *fakeStore) DenyApprovalRequest(_ context.Context, id string, decidedBy string) error {
-	if decidedBy == "" {
-		return store.ErrBounds
-	}
-	r := f.findRequest(id)
-	if r == nil {
-		return store.ErrNotFound
-	}
-	if r.Status != "pending" {
-		return store.ErrNotPending
-	}
-	r.Status, r.DecidedBy = "denied", decidedBy
-	f.approvalAudits = append(f.approvalAudits, store.ApprovalAuditEntry{RequestID: r.ID,
-		CredentialName: r.CredentialName, Kind: r.Kind, Subject: r.Subject, Action: "denied", DecidedBy: decidedBy})
-	return nil
-}
-
-func (f *fakeStore) Grants(_ context.Context, name string, _ int) ([]store.Grant, []bool, error) {
-	var out []store.Grant
-	var live []bool
-	for _, g := range f.grants {
-		if name == "" || g.CredentialName == name {
-			out = append(out, g)
-			live = append(live, true)
-		}
-	}
-	return out, live, nil
-}
-
-func (f *fakeStore) ApprovalAudit(_ context.Context, name string, _ int) ([]store.ApprovalAuditEntry, error) {
-	var out []store.ApprovalAuditEntry
-	for _, e := range f.approvalAudits {
-		if name == "" || e.CredentialName == name {
-			out = append(out, e)
-		}
-	}
-	return out, nil
 }
 
 func i64(v int64) *int64 { return &v }
@@ -583,60 +442,22 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 	require.False(t, followed, "a keyed call must never follow a redirect")
 }
 
-func TestBudgetDenialFilesApprovalRequestDeduped(t *testing.T) {
+func TestBudgetDenialHasNoApprovalAdvice(t *testing.T) {
 	f := newFakeStore()
-	f.addToken("tok", store.Credential{Name: "hello", CapTokens: i64(10)})
-	f.monthToks = 10
-	up, _, _ := newUpstream(t)
-	deps := testDeps(f, map[string]config.Upstream{
+	f.addToken("tok", store.Credential{Name: "hello", CapTokens: i64(0)})
+	up, got, _ := newUpstream(t)
+	mux := proxy.NewDataMux(testDeps(f, map[string]config.Upstream{
 		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
-	})
-	deps.Meter = &meter.Meter{Store: f}
-	mux := proxy.NewDataMux(deps)
-
-	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
-	require.Equal(t, 429, w.Code)
-	require.Contains(t, w.Body.String(), "approval request filed")
-	require.Len(t, f.requests, 1)
-	require.Equal(t, "budget", f.requests[0].Kind)
-	require.Equal(t, "tokens", f.requests[0].Subject)
-
-	// A retry loop must not spam the queue: still one pending request,
-	// and the message still points at the pending one.
-	w = doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
-	require.Equal(t, 429, w.Code)
-	require.Contains(t, w.Body.String(), "approval request filed")
-	require.Len(t, f.requests, 1)
-	// The enforcement audit is never suppressed: both denials ledgered.
-	require.Len(t, f.ledger, 2)
+	}))
+	for range 3 {
+		w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
+		require.Equal(t, http.StatusTooManyRequests, w.Code)
+		require.Equal(t, "monthly token budget reached\n", w.Body.String())
+	}
+	require.Empty(t, got.Method, "denials never reach the upstream")
+	require.Len(t, f.ledger, 3, "denials still belong in the spend ledger")
+	require.Empty(t, f.open)
 }
-
-func TestBudgetGrantAdmitsOverCapChat(t *testing.T) {
-	f := newFakeStore()
-	f.addToken("tok", store.Credential{Name: "hello", CapTokens: i64(10)})
-	f.monthToks = 10
-	f.grants = []store.Grant{{CredentialName: "hello", Kind: "budget", Subject: "tokens",
-		Amount: i64(100), MaxUses: i32(1)}}
-	up, _, _ := newUpstream(t)
-	deps := testDeps(f, map[string]config.Upstream{
-		"ollama": {Protocol: config.ProtocolChatCompletions, BaseURL: up.URL, Path: "v1/chat/completions", Classification: config.ClassFree},
-	})
-	deps.Meter = &meter.Meter{Store: f}
-	mux := proxy.NewDataMux(deps)
-
-	// The grant covers the overage: the chat is admitted and the use
-	// consumed...
-	w := doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
-	require.Equal(t, 200, w.Code)
-	require.Equal(t, int32(1), f.grants[0].Uses)
-
-	// ...and once exhausted, the cap denies again (deny-and-pend).
-	w = doChat(t, mux, "tok", "/upstream/ollama/v1/chat/completions", chatBody)
-	require.Equal(t, 429, w.Code)
-	require.Len(t, f.requests, 1)
-}
-
-func i32(v int32) *int32 { return &v }
 
 func TestOnlyPostChatRouteExists(t *testing.T) {
 	f := newFakeStore()

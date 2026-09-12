@@ -45,9 +45,9 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	deps.loadConfig = func(string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"request", "budget", "tokens", "--credential", "a'b; $(bad)"}}
+	state := &commandState{deps: deps, argv: []string{"budget", "a'b; $(bad)", "--cents", "0", "--tokens", "300"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"request"})
+	cmd, _, err := root.Find([]string{"budget"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance kmx --context kind-other request budget tokens --credential 'a'\"'\"'b; $(bad)'"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance kmx --context kind-other budget 'a'\"'\"'b; $(bad)' --cents 0 --tokens 300"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
@@ -114,12 +114,12 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent list", "agent show",
-		"approvals", "approve", "audit", "backup", "budget", "completion",
+		"backup", "budget", "completion",
 		"credential", "credential issue", "credential renew", "credentials",
-		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
+		"ctx", "down", "flow", "govern", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
-		"plane", "quickstart", "request",
+		"plane", "quickstart",
 		"restore", "status",
 		"up", "use", "version", "watch",
 	}
@@ -166,7 +166,8 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 	}{
 		{[]string{"agent", "chat", "hello", "who", "--json"}, []string{"hello", "who"}},
 		{[]string{"budget", "demo", "--tokens", "1"}, []string{"demo"}},
-		{[]string{"approve", "abc", "--uses", "1"}, []string{"abc"}},
+		{[]string{"credential", "renew", "demo", "--ttl", "1d"}, []string{"demo"}},
+		{[]string{"credential", "issue", "demo", "--discard", "--ttl", "1d"}, []string{"demo"}},
 	} {
 		cmd, args, err := root.Find(tc.path)
 		if err != nil {
@@ -221,8 +222,8 @@ func TestAuditInboundIsRejectedBeforeLoadingConfig(t *testing.T) {
 			return nil, errors.New("operational config must not be loaded")
 		}
 		err := execute(args, deps)
-		if err == nil || !strings.Contains(err.Error(), "usage: kmx audit approval") {
-			t.Fatalf("%v must be rejected as an unsupported audit kind: %v", args, err)
+		if err == nil || !strings.Contains(err.Error(), "unknown command \"audit\"") {
+			t.Fatalf("%v must be rejected as a retired audit command: %v", args, err)
 		}
 		if *loads != 0 {
 			t.Fatalf("%v loaded config for a retired audit trail", args)

@@ -1,8 +1,8 @@
 // Package metrics is the plane's Prometheus surface: what an
 // operator watches, on its own cluster-internal listener, with NO
 // identifier as a label value. Every label is drawn from a fixed
-// vocabulary — the seams, the decisions, the refusal reasons, the grant
-// kinds — or from two operator-chosen names that are
+// vocabulary — the seams, the decisions, the refusal reasons — or from
+// two operator-chosen names that are
 // already public in the repo and printed by every audit command: a
 // credential's NAME (never its token) and an upstream's name. A channel
 // id, a user id, a request id, a delivery id, a model string, or any
@@ -32,14 +32,11 @@ type Decision string
 const (
 	// Allowed: admitted by configuration (a cap with room).
 	Allowed Decision = "allowed"
-	// Granted: admitted by a live time-boxed grant (a use consumed).
-	Granted Decision = "granted"
 	Denied  Decision = "denied"
 )
 
-// Reason says why, from a fixed list. Allowed and granted decisions
-// carry the mechanism ("ok", "budget");
-// denials carry the refusal class.
+// Reason says why, from a fixed list. Allowed decisions carry the
+// upstream outcome; denials carry the refusal class.
 type Reason string
 
 const (
@@ -77,13 +74,12 @@ const (
 // the test walks the registry against it.
 var Vocabulary = map[string][]string{
 	"seam":     {string(SeamProxy)},
-	"decision": {string(Allowed), string(Granted), string(Denied)},
+	"decision": {string(Allowed), string(Denied)},
 	"reason": {string(ReasonOK), string(ReasonBudget),
 		string(ReasonUnauthorized), string(ReasonCredentialStore), string(ReasonRoute), string(ReasonBadRequest),
 		string(ReasonUnpricedModel), string(ReasonAuditDegraded), string(ReasonMetering), string(ReasonUpstreamCredential),
 		string(ReasonUpstreamError), string(ReasonUpstreamUnreachable), string(ReasonEgressRefused),
 		string(ReasonCredentialExpired), string(ReasonUnmetered), string(ReasonOther)},
-	"kind": {"budget"},
 }
 
 // Name shapes for the two operator-chosen labels. A credential name is
@@ -107,7 +103,7 @@ var (
 
 	decisions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kaimahi_decisions_total",
-		Help: "Model governance decisions by seam, decision (allowed, granted, denied) and reason.",
+		Help: "Model governance decisions by seam, decision (allowed, denied) and reason.",
 	}, []string{"seam", "decision", "reason"})
 
 	upstreamLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -307,7 +303,6 @@ type CredentialDeadline struct {
 // replica-independent truths: they live in Postgres, not in a process).
 type Source interface {
 	LedgerMonthTotals(ctx context.Context, monthStart time.Time) ([]LedgerTotal, error)
-	LiveGrantCounts(ctx context.Context) (map[string]int64, error)
 	OpenReservations(ctx context.Context, credential string) (int64, error)
 	// CredentialDeadlines is how an operator sees an expiry COMING
 	// rather than discovering it at 3am.
@@ -322,7 +317,6 @@ type storeCollector struct {
 	monthStart func() time.Time
 	cents      *prometheus.Desc
 	tokens     *prometheus.Desc
-	grants     *prometheus.Desc
 	holds      *prometheus.Desc
 	expiry     *prometheus.Desc
 	legacy     *prometheus.Desc
@@ -337,8 +331,6 @@ func RegisterStore(src Source, monthStart func() time.Time) {
 			"Month-to-date ledgered cost per credential name (calendar month, UTC).", []string{"credential"}, nil),
 		tokens: prometheus.NewDesc("kaimahi_ledger_month_tokens",
 			"Month-to-date ledgered tokens (input plus output) per credential name.", []string{"credential"}, nil),
-		grants: prometheus.NewDesc("kaimahi_live_grants",
-			"Time-boxed grants currently live (not expired, not exhausted), by kind.", []string{"kind"}, nil),
 		holds: prometheus.NewDesc("kaimahi_open_reservations",
 			"Admitted calls whose ledger row has not landed yet (spend holds), across all replicas.", nil, nil),
 		expiry: prometheus.NewDesc("kaimahi_credential_expires_in_seconds",
@@ -353,7 +345,6 @@ func RegisterStore(src Source, monthStart func() time.Time) {
 func (c *storeCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.cents
 	ch <- c.tokens
-	ch <- c.grants
 	ch <- c.holds
 	ch <- c.expiry
 	ch <- c.legacy
@@ -365,36 +356,29 @@ func (c *storeCollector) Collect(ch chan<- prometheus.Metric) {
 	defer cancel()
 	totals, err := c.src.LedgerMonthTotals(ctx, c.monthStart())
 	if err == nil {
-		var counts map[string]int64
-		counts, err = c.src.LiveGrantCounts(ctx)
+		var open int64
+		open, err = c.src.OpenReservations(ctx, "")
+		var deadlines []CredentialDeadline
 		if err == nil {
-			var open int64
-			open, err = c.src.OpenReservations(ctx, "")
-			var deadlines []CredentialDeadline
-			if err == nil {
-				deadlines, err = c.src.CredentialDeadlines(ctx, time.Now())
+			deadlines, err = c.src.CredentialDeadlines(ctx, time.Now())
+		}
+		if err == nil {
+			var legacy float64
+			for _, d := range deadlines {
+				if d.Legacy {
+					legacy++
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(c.expiry, prometheus.GaugeValue, d.Seconds,
+					shaped(credentialShape, d.Credential))
 			}
-			if err == nil {
-				var legacy float64
-				for _, d := range deadlines {
-					if d.Legacy {
-						legacy++
-						continue
-					}
-					ch <- prometheus.MustNewConstMetric(c.expiry, prometheus.GaugeValue, d.Seconds,
-						shaped(credentialShape, d.Credential))
-				}
-				ch <- prometheus.MustNewConstMetric(c.legacy, prometheus.GaugeValue, legacy)
-				for _, t := range totals {
-					name := shaped(credentialShape, t.Credential)
-					ch <- prometheus.MustNewConstMetric(c.cents, prometheus.GaugeValue, float64(t.Cents), name)
-					ch <- prometheus.MustNewConstMetric(c.tokens, prometheus.GaugeValue, float64(t.Tokens), name)
-				}
-				for _, kind := range Vocabulary["kind"] {
-					ch <- prometheus.MustNewConstMetric(c.grants, prometheus.GaugeValue, float64(counts[kind]), kind)
-				}
-				ch <- prometheus.MustNewConstMetric(c.holds, prometheus.GaugeValue, float64(open))
+			ch <- prometheus.MustNewConstMetric(c.legacy, prometheus.GaugeValue, legacy)
+			for _, t := range totals {
+				name := shaped(credentialShape, t.Credential)
+				ch <- prometheus.MustNewConstMetric(c.cents, prometheus.GaugeValue, float64(t.Cents), name)
+				ch <- prometheus.MustNewConstMetric(c.tokens, prometheus.GaugeValue, float64(t.Tokens), name)
 			}
+			ch <- prometheus.MustNewConstMetric(c.holds, prometheus.GaugeValue, float64(open))
 		}
 	}
 	up := 1.0

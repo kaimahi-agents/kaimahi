@@ -7,7 +7,7 @@
 //
 // The decision itself lives in the store. Reserve is one
 // transaction under the credential's row lock that counts the ledger
-// plus the calls already in flight, consumes grant uses, and leaves a
+// plus the calls already in flight and leaves a
 // reservation the ledger write consumes — exact across replicas. This
 // package keeps the policy edges: what a call holds, the month window,
 // and how a verdict maps onto the wire.
@@ -25,13 +25,9 @@ import (
 
 // Denial is a typed refusal the proxy maps onto the HTTP response.
 // 429 = budget reached; 403 = metering unavailable (fail closed).
-// BudgetSubject names the exceeded cap ('cents' or 'tokens') on a
-// budget denial so the caller can file the approval request;
-// empty on other denials.
 type Denial struct {
-	Status        int
-	Msg           string
-	BudgetSubject string
+	Status int
+	Msg    string
 }
 
 func (d Denial) Error() string { return d.Msg }
@@ -43,11 +39,9 @@ type Store interface {
 }
 
 // Reservation is what an admitted call carries to its ledger write. ID
-// is empty when the credential has no caps (nothing was held); Granted
-// says a live budget grant admitted an over-cap call.
+// is empty when the credential has no caps (nothing was held).
 type Reservation struct {
-	ID      string
-	Granted bool
+	ID string
 }
 
 // DefaultHoldTTL bounds a reservation a crashed replica never consumed.
@@ -113,7 +107,7 @@ func (m *Meter) Reserve(ctx context.Context, cred store.Credential, priced bool)
 	if a.Denied {
 		return Reservation{}, capDenial(a.Subject)
 	}
-	return Reservation{ID: a.ReservationID, Granted: a.Granted}, nil
+	return Reservation{ID: a.ReservationID}, nil
 }
 
 func capDenial(subject string) Denial {
@@ -121,5 +115,5 @@ func capDenial(subject string) Denial {
 	if subject == "tokens" {
 		msg = "monthly token budget reached"
 	}
-	return Denial{Status: http.StatusTooManyRequests, Msg: msg, BudgetSubject: subject}
+	return Denial{Status: http.StatusTooManyRequests, Msg: msg}
 }

@@ -92,13 +92,15 @@ cent until recording finishes; abandoned holds stop counting after ten minutes.
 
 This is an exact admission check but a **soft stop on final spend**: admitted
 calls can each finish above the cap by their eventual usage. Reservations
-are not estimates or hard maximum-cost guarantees. Live bounded
-[budget grants](approvals.md) add headroom; under-cap calls do not burn uses.
+are not estimates or hard maximum-cost guarantees. [Budget grants](approvals.md)
+are retired: stored grants add no headroom on this build.
 
-Exhausted budgets return 429 before forwarding. An unreadable admission
-store returns 403 `metering unavailable`; a failed ledger write trips the
-replica to 503 until another write succeeds. Rows for forwarded calls land
-after the response; a crash can lose that record. Unknown-token failures
+Exhausted budgets return 429 before forwarding, without automatic request filing
+or approval advice. The operator may deliberately change the monthly caps with
+`kmx budget`, or wait for the calendar-month reset in UTC; no approval override
+remains. An unreadable admission store still returns 403 `metering unavailable`;
+a failed ledger write still trips the replica to 503 until another write succeeds.
+Rows for forwarded calls land after the response; a crash can lose that record. Unknown-token failures
 cannot be attributed. See [meter](../plane/internal/meter/meter.go),
 [spend transactions](../plane/internal/store/spend.go) and
 [handler](../plane/internal/proxy/handler.go).

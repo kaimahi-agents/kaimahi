@@ -16,8 +16,8 @@ the direction. The seam bridge shrinking as upstream capabilities arrive is a
 successful outcome.
 
 The tree retains kagent Agent/ModelConfig/direct RemoteMCPServer wiring and the
-model proxy with its operator APIs, budget approvals and ledger. The custom MCP
-gateway, tool policy/approvals, workflow runner and connector fixtures are
+model proxy with its operator APIs, ordinary budgets and ledger. The custom MCP
+gateway, all custom approvals/grants, workflow runner and connector fixtures are
 removed, following inbound/notification retirement. Neither agent-authoring
 path is removed; the original direct `hello-tools` example remains. Document
 the bridge as present implementation, not the long-term platform boundary.
@@ -127,19 +127,22 @@ in proxy custody and only hashes of issued tokens are persisted. Do not confuse
 agent identity, caller claims, observed source and acted-for attribution.
 [Identity](identity.md) defines them; [operations](operations.md) defines the
 per-replica breakers, single-database availability limit and
-[retirement upgrade](operations.md#upgrading-after-gateway-retirement).
+[retirement upgrade](operations.md#upgrading-after-approval-retirement).
 
-Exact budget decisions are Postgres transactions under the credential-row lock:
-admission, budget-grant consumption, requests and approvals. Never replace them
-with an unlocked Go read-then-act. `spend_reservation` holds admitted spend until
-ledger settlement. Credentials, ledger and approval history remain live storage;
-retired allowlists/tool audit, inbound replay/audit and agent-run attribution
-data remain stored. Historical tool/inbound grants are inactive; their requests
-are readable/deniable but cannot be approved. The
-[migrations](../plane/internal/db/migrations) are the schema source: retain
-all twelve applied SQL migrations; runtime retirement does not drop tables or
-reset data. The migration app/scaffold implementations remain byte-identical
-for generated-artifact and rerun compatibility; old generated tool comments are
+Exact budget admission is a Postgres transaction under the credential-row lock;
+never replace it with an unlocked Go read-then-act. `spend_reservation` holds
+admitted spend until ledger settlement. Ordinary caps/accounting and credential
+lifecycle remain live. Custom requests/grants/audits, retired allowlists/tool
+audit, inbound replay/audit and agent-run attribution remain stored. There is
+no custom approval API, automatic request filing or grant override; flow/watch
+read only the model ledger. Historical data is accessible through SQL/backups,
+not a new archive interface. The [migrations](../plane/internal/db/migrations)
+are the schema source: retain all twelve applied SQL migrations; do not drop
+tables, reset data, normalize pending requests or exhaust/rewrite grants.
+Old replicas or a rollback can still consume grants: retirement becomes effective
+only when every replica reports the new build. The migration app/scaffold
+implementations remain byte-identical for generated-artifact and rerun
+compatibility; old generated tool comments are
 not evidence of surviving runtime tool governance.
 
 The upstream table constrains destination **and exact forwarded path**; network
@@ -180,7 +183,7 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
 - A Service port-forward selects one pod. Use separate pod forwards for claims
   about both replicas; use distinct fixed admin/probe ports across clusters.
 - One-shot ambiguous-disconnect retries can repeat effects; [retry limits](kmx.md#retry-limits).
-  Check ledger/audit before assuming a timed-out model call never happened.
+  Check the ledger before assuming a timed-out model call never happened.
 - A bare shell `wait` waits on long-running forwards too; collect worker PIDs.
 - On macOS, fetched plane builds can fail on Go's persisted `GOBIN`; clear it
   deliberately with `go env -u GOBIN` or build from a checkout.
@@ -190,7 +193,7 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
   using PEP 604 annotations. Ignore rules such as `bin/` match at every depth;
   verify tracked membership, and beware newly unignored files entering `stash -u`.
 
-Use `kmx ledger`, `kmx audit approval`, `kmx flow`, `kmx metrics`, Agent conditions and
+Use `kmx ledger`, `kmx flow`, `kmx metrics`, Agent conditions and
 proxy logs on the **explicit context**. A seam receipt is evidence for that seam,
 not for all execution inside an agent. Never paste live infrastructure IDs into
 evidence: scan shapes and manually redact names too.

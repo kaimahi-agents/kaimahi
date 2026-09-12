@@ -33,10 +33,12 @@ supported translation layer.
 These documents distinguish the surviving model seam and direct kagent wiring
 from retirement pointers. They are not Orka documentation or a platform roadmap.
 The plane has three listeners (model 8080, admin 9091, ops 9092); the MCP gateway,
-tool/argument-bound approvals, workflows and connector fixtures are removed.
-Budget approvals remain admin-operated. Historical tool/inbound requests are
-readable and deniable, not approvable; their grants are inactive. Existing
-installations need the [retirement upgrade steps](operations.md#upgrading-after-gateway-retirement).
+workflows, connector fixtures and all custom approvals/grants are removed.
+Ordinary model caps, accounting and reservations remain; `flow`/`watch` read only
+the model ledger. Historical requests/grants/audits remain in SQL/backups, not
+through the removed APIs. Existing installations need the
+[retirement upgrade steps](operations.md#upgrading-after-approval-retirement),
+including the all-replica build check and rollback warning.
 All twelve SQL migrations and stored data are retained.
 
 | Area | Reference |
@@ -45,7 +47,7 @@ All twelve SQL migrations and stored data are retained.
 | Existing MCP tools agent | [Tools](tools.md) |
 | Plane model proxy, metering and budget limits | [Spend](spend.md) |
 | Retired gateway and tool onboarding | [Tool governance](tool-governance.md), [govern your agent](govern-your-agent.md), [foreign runtime](foreign-runtime.md) |
-| Budget approvals and inactive historical tool/inbound grants | [Approvals](approvals.md) |
+| Retired custom approvals/grants and preserved history | [Approvals](approvals.md) |
 | Attribution and expiring credentials | [Identity](identity.md) |
 | Plane NetworkPolicy and residual exposure | [Egress](egress.md) |
 | Hosted model dialing and credential custody | [Hosted upstreams](hosted-upstreams.md) |

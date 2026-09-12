@@ -15,9 +15,9 @@ func TestRetiredInboundRequestKindIsRejected(t *testing.T) {
 	mux, token := adminMux(t, f)
 	w := adminDo(mux, "POST", "/admin/requests", token,
 		`{"credential":"hook","kind":"inbound","subject":"demo"}`)
-	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
 	w = adminDo(mux, "GET", "/admin/approvals", token, "")
-	require.JSONEq(t, `{"pending":[]}`, w.Body.String(), "a retired kind must not file a request")
+	require.Equal(t, http.StatusNotFound, w.Code, "approval history is SQL-only")
 }
 
 func TestRetiredInboundAuditIsNotServed(t *testing.T) {

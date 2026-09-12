@@ -66,20 +66,23 @@ func TestContextFlagCompletionAcceptsIncompleteValues(t *testing.T) {
 	}
 }
 
-func TestAuditCompletionIsPositionAware(t *testing.T) {
+func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args      []string
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", "audit", ""}, []string{"approval"}, []string{"tool", "inbound"}},
-		{[]string{"__complete", "audit", "approval", ""}, []string{":4"}, []string{"tool", "approval", "inbound"}},
+		{[]string{"__complete", ""}, []string{"budget", "credential", "flow", "watch", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit"}},
+		{[]string{"__complete", "ap"}, []string{":4"}, []string{"approve", "approvals"}},
+		{[]string{"__complete", "au"}, []string{":4"}, []string{"audit"}},
 	} {
 		var out, errOut bytes.Buffer
-		deps := productionDependencies()
-		deps.stdout, deps.stderr = &out, &errOut
+		deps, loads := testDependencies(&out, &errOut)
 		if err := execute(tc.args, deps); err != nil {
 			t.Fatal(err)
+		}
+		if *loads != 0 {
+			t.Fatalf("completion loaded operational configuration: %v", tc.args)
 		}
 		for _, want := range tc.want {
 			if !strings.Contains(out.String(), want) {

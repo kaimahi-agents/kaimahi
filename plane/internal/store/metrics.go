@@ -33,27 +33,6 @@ func (s *Store) LedgerMonthTotals(ctx context.Context, monthStart time.Time) ([]
 	return out, rows.Err()
 }
 
-// LiveGrantCounts counts grants that are live right now, by kind, with
-// the same predicate every consumer uses.
-func (s *Store) LiveGrantCounts(ctx context.Context) (map[string]int64, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT kind, COUNT(*) FROM permit_grant WHERE kind = 'budget' AND `+grantLive+` GROUP BY kind`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var kind string
-		var n int64
-		if err := rows.Scan(&kind, &n); err != nil {
-			return nil, err
-		}
-		out[kind] = n
-	}
-	return out, rows.Err()
-}
-
 // CredentialDeadlines reports how long each governed credential has
 // left. A legacy credential (no expiry) is counted as such rather than
 // given an invented deadline — an operator must be able to see the

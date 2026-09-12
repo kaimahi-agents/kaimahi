@@ -536,7 +536,6 @@ type streamView struct {
 	messageText                          map[string]string
 	toolMode                             string
 	denied                               bool
-	requestFiled                         bool
 	approval                             *hitlRequest
 	partials                             string
 	approvalErr                          error
@@ -1033,11 +1032,8 @@ func (v *streamView) consume(event streamEvent, out io.Writer) {
 			v.state = status.State
 			for _, part := range status.Message.Parts {
 				if status.State == "failed" && status.Message.Role == "agent" && part.Kind == "text" && v.modelGoverned && !v.modelDenialShown {
-					if reason, filed, ok := modelGovernanceDenial(part.Text); ok {
+					if reason, ok := modelGovernanceDenial(part.Text); ok {
 						payload := "Seam: model proxy\nSignal: response text matches a Kaimahi denial\nProvenance: unverified; kagent exposes no plane receipt\nReason: " + reason
-						if filed {
-							payload += "\nApproval request: reported in response text\nNext: run `make approvals` and verify the request"
-						}
 						if v.renderer != nil {
 							v.renderer.assistantOperation(v.agent, "POSSIBLE KAIMAHI DENIAL", "", colorYellow, payload)
 						}
@@ -1239,9 +1235,8 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 	}
 }
 
-func modelGovernanceDenial(message string) (reason string, requestFiled, ok bool) {
+func modelGovernanceDenial(message string) (reason string, ok bool) {
 	lower := strings.ToLower(message)
-	filed := strings.Contains(lower, "approval request filed")
 	for _, signature := range []string{
 		"monthly token budget reached",
 		"monthly budget reached",
@@ -1250,10 +1245,10 @@ func modelGovernanceDenial(message string) (reason string, requestFiled, ok bool
 		"model has no configured price",
 	} {
 		if strings.Contains(lower, signature) {
-			return signature, filed, true
+			return signature, true
 		}
 	}
-	return "", false, false
+	return "", false
 }
 
 func truncatePayload(value string, limit int) string {

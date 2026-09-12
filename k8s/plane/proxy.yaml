@@ -9,7 +9,7 @@
 # the explicit NetworkPolicy allowance in network-policy.yaml.
 #
 # TWO replicas, and the process holds no governance state —
-# every budget, grant use, dedupe and decision is exact in Postgres
+# budget admission and spend reservation are exact in Postgres
 # under the credential's row lock, so the replicas agree by
 # construction and a Service round-robin is safe. What stays per
 # replica is stated in docs/operations.md: the fail-closed breakers.

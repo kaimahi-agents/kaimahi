@@ -14,8 +14,8 @@ an endorsement of every retained legacy installation path.
   inside kmx, including five shell scripts. Embedding is not a support guarantee.
 - **Scaffolding** describes build, test, CI and synthetic model fixtures.
 - The gateway, inbound/notification runtime, tool workflows and their ERP/connector
-  demonstrations have been removed. Budget approvals remain pending the final
-  seam-adjacent retirement slice; ordinary model budgets and accounting survive.
+  demonstrations have been removed. Custom approvals and grants are retired;
+  ordinary model budgets and accounting survive.
 
 **What is checked.** `scripts/check-repository-map.py` checks counts, paths,
 membership, embedding, source-package coverage and the caller claims below.
@@ -31,7 +31,7 @@ checks.
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
-| `plane/` | model bridge and remaining budget administration | — | test fakes inside packages |
+| `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 7 (5 embedded in the binary, 2 operator) | 0 | 41 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 37 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
@@ -41,7 +41,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and approval history. |
+| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -53,8 +53,8 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 42 | Installed | Command orchestration, model/cluster operations, native Orka create/readiness/Task-result handling and retained kagent editing/chat. |
-| `kmx/admin` | 6 | Installed | Model-plane admin client, budget approvals and historical approval views. |
+| `kmx/app` | 41 | Installed | Command orchestration, model/cluster operations, native Orka create/readiness/Task-result handling and retained kagent editing/chat. |
+| `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
 | `kmx/orkaschema/fixtures/v0.1.3` | 3 | Installed | Embedded release Agent/Provider/Task CRDs for offline validation, not installation. |
@@ -97,11 +97,11 @@ A green root build alone cannot prove migration works.
 | Package under plane/internal | Retained responsibility |
 |---|---|
 | proxy | Authenticated model routing, strict Responses translation, usage recording and model/budget administration. |
-| store | Credential hashes/expiry, ledger, attribution, exact spend reservations and remaining budget/historical approval records. |
-| meter | Ordinary token/cents caps, reservations and budget grants pending the final removal slice. |
+| store | Credential hashes/expiry, ledger, attribution and exact spend reservations. |
+| meter | Ordinary token/cents caps, reservation policy and fail-closed denial mapping. |
 | pricing | Model cost calculation; an unpriced Orka route is not free inference. |
 | redact | Credential/log redaction. |
-| metrics | Model/accounting/expiry/build and remaining budget-grant metrics. |
+| metrics | Model/accounting/expiry/build metrics, without grant authority or decision labels. |
 | config | Model routes, protocol/pricing/header validation and model overlays; retired tool configuration is rejected, not ignored. |
 | egress | Hardened credential-bearing model transport, DNS/IP restrictions, TLS and redirect controls. |
 | seamtls | Model serving certificate and verified transports; existing model trust is preserved. |
@@ -109,61 +109,38 @@ A green root build alone cannot prove migration works.
 | db | Pool and replica-safe migration engine (Postgres and twelve migrations). |
 
 The runtime has three listeners: model 8080 (TLS), admin 9091 and operations 9092.
-Only the model listener has a Service. Budget approval execution is still live;
-tool and inbound requests/grants are historical data only. They remain readable,
-old pending requests can be denied but not approved, and retired grants are
-inactive. The twelve SQL migration files and stored history are unchanged.
-No reset, destructive schema cleanup or implicit credential revocation occurs.
+Only the model listener has a Service. No custom approval/grant execution or
+interfaces remain. Historical requests, grants and audit rows are retained in
+SQL and backups, not exposed through retired APIs. The twelve SQL migration
+files and stored history are unchanged. No reset, destructive schema cleanup,
+artificial grant exhaustion or implicit credential revocation occurs.
 
-### Final approval retirement — inventory before deletion
+The model path retains per-credential locking, UTC month accounting, open
+reservations and settlement. An exhausted cap returns 429 without filing an
+approval request; metering failure still returns 403 and the ledger breaker
+503. Flow/watch read only the model ledger. Native kagent HITL remains part of
+that runtime's interaction path, not this retired approval subsystem.
 
-Baseline: `87f75a2f3d39f71ae706ba5aa1765b51ea17e9bc` (merged PR #184).
-This inventory is published before any deletion in the final approval slice.
-The current counts and retained-budget descriptions elsewhere on this page
-still describe the pre-removal tree until implementation lands.
+### Final approval retirement
 
-- Delete the remaining store approval/grant implementation and proxy approval
-  handlers; remove automatic request filing, grant overrides, live-grant metrics
-  and granted-decision vocabulary. Remove approval/grant CLI mutations and
-  views, including the approval-only audit group; flow/watch become model-only.
-- Retain the shared `rowQuerier` interface with spend accounting. Keep
-  `App.Budget`, `capOrNone`, credential TTL/cap validation and guarded credential
-  operations with their surviving callers. Do not discard mixed model/admin
-  fakes, concurrency tests or flow/watch ordering, limit and failure behavior.
-- Preserve exact per-credential locking, cents-before-tokens denial precedence,
-  UTC month windows, ledger plus open holds, reservation expiry/settlement and
-  uncapped behavior. Preserve 429 cap refusals, 403 metering-unavailable refusals
-  and the separate 503 ledger-breaker path. No approval side effect or advice
-  should accompany a cap refusal.
-- Historical requests, grants and audit rows remain unchanged in the twelve
-  SQL migrations and backups. No new DDL, status normalization, artificial grant
-  exhaustion or expiry rewriting. Once no approval-capable replica remains,
-  stored grants confer no authority. Retired history is accessed via SQL/backups,
-  not compatibility stubs for removed APIs.
-- Contract 5 will mark intentional API retirement; it is not negotiation.
-  Existing capability floors, including model overlay floor 2, remain. Upgrade
-  matching CLI/plane revisions. Old rolling replicas and a rollback to an old
-  binary may still consume historical grants: verify every replica's build.
-- Keep model migration and both authoring paths unchanged, including protected
-  agent commands, Orka documentation and both migration implementation files.
-  Native kagent HITL is not this retired approval subsystem. Keep attribution
-  readers, credential custody/expiry, pricing, redaction, hardened egress, TLS,
-  certificate compatibility, operations and backup/restore.
+The [final approval inventory](https://github.com/kaimahi-agents/kaimahi/blob/5e7c5da/docs/repository-map.md#final-approval-retirement--inventory-before-deletion)
+was published before deletion, on main after PR #184. Shared `rowQuerier` stays
+with spend accounting; `App.Budget`, `capOrNone` and credential TTL/cap validation
+remain with their surviving callers. Mixed model/admin fixtures and accounting,
+flow/watch limit/order/error tests remain rather than being discarded with the
+approval-only cases.
 
-Expected core footprint: twenty production Go files, three deletions and
-seventeen edits. App non-test files become 41; store 6; proxy 7. Preserve all
-remaining packages unless a verified caller check demonstrates otherwise.
-Verification must include both full Go modules, vet/staticcheck, real Postgres
-and races, an actual old-schema upgrade with inert-but-intact grants, all model
-CI boundaries, and live migration with stable owner state and real model traffic.
-Publish the actual last-carrying commit for recovery with the removal PR.
+The remaining eleven packages all support the model bridge. Removing the
+approval branches is not permission to remove pricing, attribution readers,
+credential custody/expiry, redaction, hardened egress, TLS, operations or backup.
+Their eventual absorption upstream is a separate compatibility decision.
 
 ### Inventories, decisions and recovery
 
 The [original fourteen-package inventory](https://github.com/kaimahi-agents/kaimahi/blob/1868732/docs/repository-map.md#pre-deletion-inventory--governance-code-retirement)
 was published before PR #183 deleted inbound/notify. The
 [gateway inventory and shared-dependency plan](https://github.com/kaimahi-agents/kaimahi/blob/10c561d/docs/repository-map.md#gateway-retirement-slice--inventory-before-deletion)
-was published before this slice deleted any code. These immutable snapshots
+was published before PR #184 deleted any code. These immutable snapshots
 separate the removal reasoning from the diff.
 
 The owner authorized removing legacy gateway/approval scaffold portions and
@@ -179,16 +156,19 @@ Last-carrying commits:
 - AP human-wait helper: `0b0ce38cb2c362940b8c75a70c198452968939fb`.
 - Gateway, argument-bound approval execution, tool/workflow scaffolding and
   demonstrations: the inventory commit `10c561d` immediately before removal.
+- Remaining budget approvals/grants and their interfaces: `5e7c5da`, the
+  final inventory commit immediately before removal.
 
 Recover removed source from those commits if useful for an upstream contribution;
-possible reuse is not grounds for retaining the implementation here. The final
-budget-approval/seam-adjacent slice follows from main after this work is integrated
-by its owner, never from a stacked PR base. Ordinary model budgets/accounting
+possible reuse is not grounds for retaining the implementation here. These
+retirement slices are independently main-based. Ordinary model budgets/accounting
 remain necessary until Orka absorbs the bridge.
 
-Contract 4 marks deliberate tool API removal, not negotiation. Upgrade kmx and
-plane together. Existing capability floors still guard model operations on older
-planes. [Operations](operations.md) covers stale tool overlays, old Services and
+Contract 5 marks final approval API retirement (4 marked tool retirement), not
+negotiation. Upgrade kmx and plane together. Existing capability floors still
+guard model operations on older planes, including model overlay floor 2. Old
+rolling replicas and rollback to an approval-capable binary may still use
+preserved grants: verify every replica's build before declaring them inert. [Operations](operations.md) covers stale tool overlays, old Services and
 owner-managed workload references: applying the new manifests does not prune
 old resources or safely choose replacement tool routing for their owners.
 

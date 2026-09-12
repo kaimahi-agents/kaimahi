@@ -246,21 +246,6 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &d) && (d.Status == http.StatusForbidden || d.Status == http.StatusTooManyRequests) {
 			status = d.Status
 		}
-		// Deny-and-pend: a budget-cap denial files a pending
-		// approval request (deduped in the store). Filing failure never
-		// un-denies — the denial is the safe state.
-		if d.BudgetSubject != "" {
-			fctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
-			filing := store.Filing{Credential: cred.Name, Kind: "budget", Subject: d.BudgetSubject,
-				Detail: "denied " + req.Model + " via upstream " + name}
-			if _, ferr := h.d.Store.FileApprovalRequest(fctx, filing); ferr != nil {
-				slog.Error("proxy: filing approval request failed (denial stands)",
-					"credential", cred.Name, "subject", d.BudgetSubject, "err", ferr)
-			} else {
-				msg += "; approval request filed — run 'make approvals'"
-			}
-			cancel()
-		}
 		h.deny(w, r, cred, att, name, req.Model, status, msg, "")
 		return
 	}
@@ -337,9 +322,6 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 	// unreachable), and the latency is the upstream's, measured here.
 	admitted := metrics.Allowed
 	admittedBy := metrics.ReasonOK
-	if res.Granted {
-		admitted, admittedBy = metrics.Granted, metrics.ReasonBudget
-	}
 	started := time.Now()
 	var resp *http.Response
 	client, err := h.d.clientFor(up)

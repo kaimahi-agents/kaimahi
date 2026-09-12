@@ -13,9 +13,10 @@ func TestBudgetValuesPreserveNilAndZero(t *testing.T) {
 	}
 }
 
-func TestApprovalValuesPreserveAbsentBounds(t *testing.T) {
-	ttl, uses, amount, err := parseApprovalValues("-", "1", "-")
-	if err != nil || ttl != nil || uses == nil || *uses != 1 || amount != nil {
-		t.Fatalf("values: %v %v %v %v", ttl, uses, amount, err)
+func TestBudgetValuesRejectInvalidCaps(t *testing.T) {
+	for _, values := range [][2]string{{"-1", "-"}, {"-", "-1"}, {"1.5", "0"}, {"0", "9223372036854775808"}} {
+		if _, _, err := parseBudgetValues(values[0], values[1]); err == nil {
+			t.Fatalf("invalid caps accepted: %v", values)
+		}
 	}
 }
