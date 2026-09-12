@@ -115,6 +115,49 @@ old pending requests can be denied but not approved, and retired grants are
 inactive. The twelve SQL migration files and stored history are unchanged.
 No reset, destructive schema cleanup or implicit credential revocation occurs.
 
+### Final approval retirement — inventory before deletion
+
+Baseline: `87f75a2f3d39f71ae706ba5aa1765b51ea17e9bc` (merged PR #184).
+This inventory is published before any deletion in the final approval slice.
+The current counts and retained-budget descriptions elsewhere on this page
+still describe the pre-removal tree until implementation lands.
+
+- Delete the remaining store approval/grant implementation and proxy approval
+  handlers; remove automatic request filing, grant overrides, live-grant metrics
+  and granted-decision vocabulary. Remove approval/grant CLI mutations and
+  views, including the approval-only audit group; flow/watch become model-only.
+- Retain the shared `rowQuerier` interface with spend accounting. Keep
+  `App.Budget`, `capOrNone`, credential TTL/cap validation and guarded credential
+  operations with their surviving callers. Do not discard mixed model/admin
+  fakes, concurrency tests or flow/watch ordering, limit and failure behavior.
+- Preserve exact per-credential locking, cents-before-tokens denial precedence,
+  UTC month windows, ledger plus open holds, reservation expiry/settlement and
+  uncapped behavior. Preserve 429 cap refusals, 403 metering-unavailable refusals
+  and the separate 503 ledger-breaker path. No approval side effect or advice
+  should accompany a cap refusal.
+- Historical requests, grants and audit rows remain unchanged in the twelve
+  SQL migrations and backups. No new DDL, status normalization, artificial grant
+  exhaustion or expiry rewriting. Once no approval-capable replica remains,
+  stored grants confer no authority. Retired history is accessed via SQL/backups,
+  not compatibility stubs for removed APIs.
+- Contract 5 will mark intentional API retirement; it is not negotiation.
+  Existing capability floors, including model overlay floor 2, remain. Upgrade
+  matching CLI/plane revisions. Old rolling replicas and a rollback to an old
+  binary may still consume historical grants: verify every replica's build.
+- Keep model migration and both authoring paths unchanged, including protected
+  agent commands, Orka documentation and both migration implementation files.
+  Native kagent HITL is not this retired approval subsystem. Keep attribution
+  readers, credential custody/expiry, pricing, redaction, hardened egress, TLS,
+  certificate compatibility, operations and backup/restore.
+
+Expected core footprint: twenty production Go files, three deletions and
+seventeen edits. App non-test files become 41; store 6; proxy 7. Preserve all
+remaining packages unless a verified caller check demonstrates otherwise.
+Verification must include both full Go modules, vet/staticcheck, real Postgres
+and races, an actual old-schema upgrade with inert-but-intact grants, all model
+CI boundaries, and live migration with stable owner state and real model traffic.
+Publish the actual last-carrying commit for recovery with the removal PR.
+
 ### Inventories, decisions and recovery
 
 The [original fourteen-package inventory](https://github.com/kaimahi-agents/kaimahi/blob/1868732/docs/repository-map.md#pre-deletion-inventory--governance-code-retirement)
