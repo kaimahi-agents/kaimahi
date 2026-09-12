@@ -9,17 +9,14 @@
 #     locked down as far as its knobs go — k8s tools only, read-only RBAC
 #     with no Secrets access, writes disabled at the app layer too. The
 #     chart itself publishes it as the `kagent-tool-server` RemoteMCPServer.
-#     Even so: these tools are UNGOVERNED (no egress enforcement, no tool
-#     permits, no audit) until the Kaimahi governance plane is deployed.
+#     These tools remain direct kagent calls. The model plane adds no
+#     tool permits, tool audit, or tool egress enforcement.
 controller:
   # Pinned off, though it is also the chart's default. When true, kagent
   # rewrites every RemoteMCPServer URL and its own tool-discovery dial from
   # https back to http — for clusters where a sidecar proxy originates TLS
-  # instead. On this cluster there is no such proxy: the gateway itself is
-  # the TLS endpoint, so flipping this would send the tool seam back to
-  # plaintext while every RemoteMCPServer still carried a `tls:` block that
-  # is then never used. Nothing would fail and nothing would say so, which
-  # is the only reason a default is restated here.
+  # instead. Do not silently downgrade an operator's HTTPS tool endpoint
+  # while its RemoteMCPServer still carries an inert `tls:` block.
   mcpEgressPlaintext: false
 
 providers:

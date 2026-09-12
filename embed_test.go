@@ -7,9 +7,8 @@ import (
 
 func TestEmbeddedAssetsCanBeRead(t *testing.T) {
 	for name, assets := range map[string]fs.FS{
-		"Manifests":  Manifests,
-		"Blueprints": Blueprints,
-		"Managed":    Managed,
+		"Manifests": Manifests,
+		"Managed":   Managed,
 	} {
 		t.Run(name, func(t *testing.T) {
 			files := 0

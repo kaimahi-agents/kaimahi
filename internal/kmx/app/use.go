@@ -3,16 +3,84 @@ package app
 import (
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	kaimahi "github.com/kaimahi-agents/kaimahi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // The kagent namespace. Named here rather than reached for through config,
 // because it is not a setting: it is where the chart puts everything.
 const config_kagentNamespace = "kagent"
+
+// UseOptions selects the agent switched onto a model preset.
+type UseOptions struct{ Agent string }
+
+// Use switches an agent onto an embedded model preset.
+func (a *App) Use(preset string, opt UseOptions) error {
+	if opt.Agent == "" {
+		opt.Agent = config.DefaultAgent
+	}
+	name, err := presetManifest(preset)
+	if err != nil {
+		return err
+	}
+	if err := a.Guard(fmt.Sprintf("switch agent %q onto model preset %q", opt.Agent, preset),
+		a.operationCommand("use", preset, "--agent", opt.Agent)); err != nil {
+		return err
+	}
+	return a.UsePreset(opt.Agent, preset, []string{name})
+}
+
+func presetManifest(preset string) (string, error) {
+	if preset == "" {
+		return "", fmt.Errorf("usage: kmx use <preset> — one of: %s", strings.Join(presetNames(), ", "))
+	}
+	for _, name := range presetNames() {
+		if name == preset {
+			return "models/" + preset + ".yaml", nil
+		}
+	}
+	return "", fmt.Errorf("unknown model preset %q — kmx carries: %s", preset, strings.Join(presetNames(), ", "))
+}
+
+func presetNames() []string {
+	entries, err := fs.ReadDir(kaimahi.Manifests, "k8s/models")
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if name := strings.TrimSuffix(e.Name(), ".yaml"); name != e.Name() {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// PresetNames returns the embedded model preset names for CLI completion.
+func PresetNames() []string { return presetNames() }
+
+// requireNamespace refuses before minting a one-time credential that cannot
+// be stored in its destination namespace.
+func (a *App) requireNamespace(namespace, flag string) error {
+	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("namespace %q does not exist, and it is where the credential's Secret would go.\n"+
+				"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
+				"  Name the namespace your runtime reads its Secret from:\n"+
+				"    %s <your namespace>", namespace, flag)
+		}
+		return fmt.Errorf("cannot tell whether namespace %q exists (refusing to guess): %w", namespace, err)
+	}
+	return nil
+}
 
 // UsePreset switches an agent onto a ModelConfig and waits until that is
 // TRUE of the running pods rather than of the object.

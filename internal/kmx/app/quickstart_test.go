@@ -162,8 +162,8 @@ func TestQuickstartValidatesBeforeCompletingQuestionPhase(t *testing.T) {
 		{"json preserved", "completed", "Hi\x1b[2J\a there", "0", "json", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newDriverFixture(t, &fakePlane{})
-			f.reply(t, 0, tc.state, tc.answer)
+			f := newQuickstartFixture(t)
+			f.reply(t, tc.state, tc.answer)
 			t.Setenv("KMX_TEST_KAGENT_EXIT", tc.exit)
 			t.Setenv("KMX_TOOLCHAIN", "off")
 			bin := filepath.Dir(f.app.Cfg.KagentBin)
@@ -180,7 +180,7 @@ get) printf '{"kagent-tools":{"enabled":true},"kmcp":{"enabled":true},"ui":{"rep
 esac`)
 			}
 			// Only fake commands are reachable, including on a governance-preserving rerun.
-			kubectl := strings.Replace(fakeDriverKubectl, "case \"$*\" in", `case "$*" in
+			kubectl := strings.Replace(fakeQuickstartKubectl, "case \"$*\" in", `case "$*" in
   *"jsonpath={.spec.declarative.modelConfig}"*) printf 'governed-ollama'; exit 0 ;;`, 1)
 			if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(kubectl), 0o755); err != nil {
 				t.Fatal(err)

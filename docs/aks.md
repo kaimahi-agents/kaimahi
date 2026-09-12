@@ -22,7 +22,7 @@ it has no Azure credential and does not re-prove live cloud behavior.
 - A Copilot subscription for the **full legacy lift**, not for every possible
   Orka migration. The full lift deploys no Ollama. An independently provisioned
   model/Provider is the operator's responsibility on the Orka path.
-- A checkout for standalone probes and retained make demos, not for lift or
+- A checkout for standalone probes and model-key helpers, not for lift or
   Copilot capture. Images build in private ACR: no local Docker or push.
 
 ## One command: `kmx lift`
@@ -56,7 +56,7 @@ refuses to take over pre-existing Azure monitoring. Those are owner decisions.
 | `kagent` | install the legacy runtime |
 | `credential` | keep an existing Copilot Secret; otherwise run native device login and capture |
 | `plane` | build in ACR, create/renew data certificate, render registry image/pull policy, deploy |
-| `agents` | configure the two legacy demo agents for governed Copilot and governed tools |
+| `agents` | configure the retained legacy agents for governed Copilot; tool wiring stays direct kagent MCP or owner-selected, not gateway-governed |
 | `observability` | Azure monitoring, scrape allowance/PodMonitor, workbook |
 | `verify` | legacy agent answer and ledger; Azure metrics/logs when enabled |
 
@@ -142,7 +142,7 @@ CNI or reimaging node pools is not hidden behind a create operation.
 
 Use native `kmx lift` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
-[Makefile](../Makefile) retains repository demos/connectors and probes such as
+[Makefile](../Makefile) retains model credential helpers and probes such as
 `make netpol-verify`. For those helpers, set `TARGET=aks`,
 `KUBE_CTX=<cluster>` and confirmation explicitly; do not infer the target from
 kubectl's current-context. Read ledger/audit/approvals/metrics through native kmx.
@@ -235,32 +235,33 @@ billing audit. Use current Azure prices; historical run estimates are not quotes
 
 ## Retired public edge and concurrent checks
 
-The inbound listener, public edge, Slack approval commands and notifier are
-removed. The plane retains model, MCP, admin and ops listeners. Upgrading an
-existing AKS installation requires the [explicit retirement steps](operations.md#upgrading-after-inbound-retirement):
-remove rejected inbound/notifier configuration, disable external webhooks and
-Slack subscriptions before releasing the DNS name, and review/delete obsolete
-owned edge resources. **Applying the new manifests does not prune them.**
-This is not automatic cloud deletion, credential revocation or database cleanup.
+The gateway/MCP listener, public inbound edge, tool/workflow commands and
+Slack/ERP/AP fixtures are removed. The plane retains **model 8080, admin 9091
+and ops 9092**. Existing installations need the
+[explicit retirement steps](operations.md#upgrading-after-gateway-retirement):
+review rejected tool overlays, old Services/network allowances, credentials and
+owner-managed application references. **Applying the new manifests does not
+prune them or safely repoint tools.** For older inbound installations also disable
+external webhooks/Slack subscriptions before releasing their DNS name and remove
+obsolete owned edge resources. This is not automatic cloud deletion, credential
+revocation or database cleanup.
 
-[Slack MCP posting](slack.md) and [accounts-payable fixtures](ap-demo.md) remain;
-tool and budget approvals use the admin API/CLI, not Slack. The AP driver
-is an automatically admin-approved fixture, not a human decision flow;
-`AP_HUMAN=1` is explicitly refused rather than silently running automatically.
+Budget approvals remain admin-operated. Tool/inbound requests stay readable and
+deniable, not approvable; their grants are inactive. The original direct kagent
+MCP example remains, not the gateway-backed connector fixtures.
 
-Chat allocates a free loopback port by default. Fixed-port legacy helpers still
-need distinct `CHAT_PORT`, `ADMIN_PORT`, or probe `GATEWAY_PORT` values when
-checking two clusters concurrently. Explicit occupied chat ports fail rather
-than silently selecting another cluster's forward.
+Chat allocates a free loopback port by default. Fixed-port helpers need distinct
+`CHAT_PORT`, `ADMIN_PORT`, or `OPS_PORT` values when checking two clusters
+concurrently. Occupied chat ports fail rather than silently selecting another
+cluster's forward.
 
 ## What was verified, and what was not
 
 Recorded single-node runs in September 2026 demonstrated private ACR builds,
 default-storage PVC binding, Copilot model rows and budget denial, MCP audit,
 Cilium enforcement, the now-retired opt-in Slack edge, and the AP fixture path.
-The AP injection scenario's reachable assertions were checked manually on AKS; its
-opening denial was obscured by an existing grant, so that run did not prove the
-script end to end. The kind CI scenario supplies that separate evidence.
+Those gateway/AP measurements are historical: their fixtures and CI scenarios
+are now retired, not current verification of the reduced model plane.
 
 The September 6 lift runs exercised created and BYO clusters, refused a missing
 engine and missing pull rights, and queried metrics/log data. Those runs used

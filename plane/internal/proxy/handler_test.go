@@ -27,18 +27,15 @@ import (
 
 // fakeStore implements proxy.Store in memory.
 type fakeStore struct {
-	creds        map[string]store.Credential // key: hex-free string(token hash)
-	actor        store.Attribution
-	actorErr     error
-	ledger       []store.LedgerEntry
-	lookupErr    error
-	ledgerErr    error
-	monthCents   int64
-	monthToks    int64
-	monthErr     error
-	allowlists   map[string][]string
-	allowlistErr error
-	audits       []store.ToolAuditEntry
+	creds      map[string]store.Credential // key: hex-free string(token hash)
+	actor      store.Attribution
+	actorErr   error
+	ledger     []store.LedgerEntry
+	lookupErr  error
+	ledgerErr  error
+	monthCents int64
+	monthToks  int64
+	monthErr   error
 	// Approvals, in memory.
 	requests       []*store.ApprovalRequest
 	grants         []store.Grant
@@ -52,7 +49,7 @@ type fakeStore struct {
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{creds: map[string]store.Credential{}, allowlists: map[string][]string{},
+	return &fakeStore{creds: map[string]store.Credential{},
 		open: map[string]store.SpendHold{}}
 }
 
@@ -216,48 +213,6 @@ func (f *fakeStore) MonthUsage(_ context.Context, _ string, _ time.Time) (int64,
 	return f.monthCents, f.monthToks, f.monthErr
 }
 
-func (f *fakeStore) SetToolAllowlist(_ context.Context, name string, tools []string) error {
-	for _, c := range f.creds {
-		if c.Name == name {
-			f.allowlists[name] = tools
-			return nil
-		}
-	}
-	return store.ErrNotFound
-}
-
-func (f *fakeStore) ToolAllowlist(_ context.Context, name string) ([]string, error) {
-	return f.allowlists[name], nil
-}
-
-func (f *fakeStore) CredentialsAllowlisting(_ context.Context, tools []string) (map[string][]string, error) {
-	if f.allowlistErr != nil {
-		return nil, f.allowlistErr
-	}
-	out := map[string][]string{}
-	for _, want := range tools {
-		for cred, have := range f.allowlists {
-			for _, t := range have {
-				if t == want {
-					out[want] = append(out[want], cred)
-				}
-			}
-		}
-		sort.Strings(out[want])
-	}
-	return out, nil
-}
-
-func (f *fakeStore) ToolAudit(_ context.Context, name string, _ int) ([]store.ToolAuditEntry, error) {
-	var out []store.ToolAuditEntry
-	for _, e := range f.audits {
-		if name == "" || e.CredentialName == name {
-			out = append(out, e)
-		}
-	}
-	return out, nil
-}
-
 func (f *fakeStore) FileApprovalRequest(_ context.Context, fl store.Filing) (bool, error) {
 	credential, kind, subject, detail := fl.Credential, fl.Kind, fl.Subject, fl.Detail
 	if f.fileErr != nil {
@@ -319,7 +274,7 @@ func (f *fakeStore) ApproveRequest(_ context.Context, id string,
 	if expiresAt == nil && maxUses == nil {
 		return store.Grant{}, store.ErrBounds
 	}
-	if (r.Kind == "budget") != (amount != nil) {
+	if r.Kind != "budget" || amount == nil {
 		return store.Grant{}, store.ErrBounds
 	}
 	r.Status, r.DecidedBy = "approved", decidedBy

@@ -35,16 +35,13 @@ func at(t *testing.T, s string) time.Time {
 	return ts.UTC()
 }
 
-// The three surviving trails form one reading, ordered by time rather than
+// The two surviving trails form one reading, ordered by time rather than
 // grouped by source. A removed endpoint must not prevent that reading.
 func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
 	replies := map[string]string{
 		"/admin/ledger": `{"entries":[
 			{"created_at":"2026-09-04T14:22:02Z","credential":"agent-1","model":"gpt-4o","status":200,
 			 "cost_source":"priced","cost_cents":14,"input_tokens":1204,"output_tokens":88,"upstream":"openai"}]}`,
-		"/admin/tool-audit": `{"entries":[
-			{"created_at":"2026-09-04T14:22:04Z","credential":"agent-1","tool":"delete_ns","decision":"denied","status":403},
-			{"created_at":"2026-09-04T14:22:01Z","credential":"agent-1","tool":"get_pods","decision":"allowed","status":200}]}`,
 		"/admin/approval-audit": `{"entries":[
 			{"created_at":"2026-09-04T14:22:03Z","credential":"agent-1","kind":"tool","subject":"delete_ns",
 			 "action":"approved","decided_by":"alice","bounds":"uses=1"}]}`,
@@ -73,7 +70,7 @@ func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
 	for _, e := range merged {
 		got = append(got, e.kind+":"+e.what)
 	}
-	want := []string{"tool:get_pods", "model:gpt-4o", "approval:tool:delete_ns", "tool:delete_ns"}
+	want := []string{"model:gpt-4o", "approval:tool:delete_ns"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d events, want %d: %v", len(got), len(want), got)
 	}
@@ -91,9 +88,9 @@ func TestFlowInterleavesSurvivingTrailsByTime(t *testing.T) {
 func TestFlowRefusesToShowAWindowItCannotVouchFor(t *testing.T) {
 	old := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T07:00:00Z","model":"gpt-4o"}}`)["e"].(map[string]any), "model")
 	mid := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T09:30:00Z","model":"gpt-4o"}}`)["e"].(map[string]any), "model")
-	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","tool":"get_pods"}}`)["e"].(map[string]any), "tool")
+	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","kind":"budget","subject":"tokens"}}`)["e"].(map[string]any), "approval")
 
-	// The tool trail was saturated and reaches back only to 09:00.
+	// The approval trail was saturated and reaches back only to 09:00.
 	kept, notes, err := trimToComplete([]flowEvent{old, mid, newer}, []cutoff{{at: at(t, "2026-09-04T09:00:00Z"), limit: flowLimit}})
 	if err != nil {
 		t.Fatal(err)
@@ -158,16 +155,15 @@ func TestFlowSaysItIsNotACausalTrace(t *testing.T) {
 	}
 }
 
-// Totals count refusals across model, tool and approval trails.
+// Totals count refusals across model and approval trails.
 func TestFlowTotalsCountRefusalsAndCents(t *testing.T) {
 	var out bytes.Buffer
 	renderFlow(&out, []flowEvent{
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m","status":200,"cost_source":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","model":"m","status":403,"cost_source":"denied","cost_cents":0}}`)["e"].(map[string]any), "model"),
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","tool":"t","decision":"denied"}}`)["e"].(map[string]any), "tool"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:03Z","kind":"tool","subject":"t","action":"denied"}}`)["e"].(map[string]any), "approval"),
 	}, nil)
-	if !strings.Contains(out.String(), "4 events, 14 cents, 3 refused") {
+	if !strings.Contains(out.String(), "3 events, 14 cents, 2 refused") {
 		t.Errorf("totals wrong:\n%s", out.String())
 	}
 }
@@ -190,7 +186,7 @@ func TestFlowEmptyCaseDistinguishesNeverRanFromNotGoverned(t *testing.T) {
 // A row whose timestamp will not parse is still evidence the thing happened.
 // Dropping it would let a malformed row hide a call.
 func TestFlowKeepsRowsWithUnreadableTimestamps(t *testing.T) {
-	e := flowEventFrom(doc(t, `{"e":{"created_at":"not-a-time","tool":"get_pods","decision":"allowed"}}`)["e"].(map[string]any), "tool")
+	e := flowEventFrom(doc(t, `{"e":{"created_at":"not-a-time","model":"model","status":200}}`)["e"].(map[string]any), "model")
 	if !e.at.IsZero() {
 		t.Fatal("an unparseable time should sort to the beginning, not guess")
 	}
@@ -200,16 +196,6 @@ func TestFlowKeepsRowsWithUnreadableTimestamps(t *testing.T) {
 	}
 	if len(kept) != 1 {
 		t.Fatal("the row must survive: it is still evidence the call happened")
-	}
-}
-
-// A tools/list names no tool. Falling back to the method keeps the line
-// readable instead of printing an empty cell.
-func TestFlowNamesTheMethodWhenNoToolWasNamed(t *testing.T) {
-	e := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","tool":"",
-		"method":"tools/list","decision":"allowed"}}`)["e"].(map[string]any), "tool")
-	if e.what != "tools/list" {
-		t.Errorf("got %q, want the method", e.what)
 	}
 }
 
@@ -232,9 +218,6 @@ func TestFlowLinesCarryNoTrailingWhitespace(t *testing.T) {
 		// a model row with no caller attribution
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","model":"m",
 			"status":200,"input_tokens":1,"output_tokens":2,"upstream":"openai"}}`)["e"].(map[string]any), "model"),
-		// a tool row with no upstream status
-		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","tool":"t",
-			"decision":"allowed","arg_summary":"ns=prod"}}`)["e"].(map[string]any), "tool"),
 		// an approval with no approver yet
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:02Z","kind":"tool",
 			"subject":"s","action":"requested","bounds":""}}`)["e"].(map[string]any), "approval"),
@@ -256,7 +239,7 @@ func TestFlowAttributesEveryEventToItsCredential(t *testing.T) {
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:00Z","credential":"triage",
 			"model":"gpt-4o","status":"priced","cost_cents":14}}`)["e"].(map[string]any), "model"),
 		flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T14:00:01Z","credential":"payments",
-			"tool":"transfer","decision":"denied"}}`)["e"].(map[string]any), "tool"),
+			"kind":"budget","subject":"tokens","action":"denied"}}`)["e"].(map[string]any), "approval"),
 	}, nil)
 	got := out.String()
 	if !strings.Contains(got, "credential") {
@@ -315,10 +298,10 @@ func flowCredentialColumn(t *testing.T, rendered string) []string {
 	return got
 }
 
-// A full tool or approval page bounds the reading; a partial page must not
+// A full approval page bounds the reading; a partial page must not
 // hide older model activity.
 func TestFlowJudgesSaturationAtTheFetchedLimit(t *testing.T) {
-	for _, trail := range []string{"tool-audit", "approval-audit"} {
+	for _, trail := range []string{"approval-audit"} {
 		for _, tc := range []struct {
 			name          string
 			pageRows      int
@@ -330,10 +313,7 @@ func TestFlowJudgesSaturationAtTheFetchedLimit(t *testing.T) {
 		} {
 			t.Run(trail+"/"+tc.name, func(t *testing.T) {
 				page := make([]string, 0, tc.pageRows)
-				row := `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","tool":"get_pods","decision":"allowed"}`
-				if trail == "approval-audit" {
-					row = `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","kind":"tool","subject":"get_pods","action":"approved"}`
-				}
+				row := `{"created_at":"2026-09-04T10:00:00Z","credential":"agent-1","kind":"budget","subject":"tokens","action":"approved"}`
 				for i := 0; i < tc.pageRows; i++ {
 					page = append(page, row)
 				}
@@ -384,7 +364,7 @@ func TestFlowFindsCoverageAcrossUnorderedAndMalformedTimestamps(t *testing.T) {
 // it is still evidence the call happened. That has to hold when a source is
 // saturated too, or a malformed timestamp becomes a way to hide a call.
 func TestFlowKeepsUnreadableTimestampsEvenWhenTrimming(t *testing.T) {
-	bad := flowEventFrom(doc(t, `{"e":{"created_at":"not-a-time","tool":"delete_ns","decision":"allowed"}}`)["e"].(map[string]any), "tool")
+	bad := flowEventFrom(doc(t, `{"e":{"created_at":"not-a-time","model":"malformed-time-model","status":200}}`)["e"].(map[string]any), "model")
 	old := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T07:00:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 	newer := flowEventFrom(doc(t, `{"e":{"created_at":"2026-09-04T10:00:00Z","model":"m"}}`)["e"].(map[string]any), "model")
 
@@ -397,7 +377,7 @@ func TestFlowKeepsUnreadableTimestampsEvenWhenTrimming(t *testing.T) {
 	}
 	var sawBad bool
 	for _, e := range kept {
-		if e.what == "delete_ns" {
+		if e.what == "malformed-time-model" {
 			sawBad = true
 		}
 	}
@@ -448,7 +428,7 @@ func TestFlowDoesNotReportATrimmedWindowAsSilence(t *testing.T) {
 // nothing so the other two still render, and that is exactly the change this
 // forbids.
 func TestFlowRefusesToRenderAnUnreadableTrailAsSilence(t *testing.T) {
-	for _, trail := range []string{"ledger", "tool-audit", "approval-audit"} {
+	for _, trail := range []string{"ledger", "approval-audit"} {
 		t.Run(trail, func(t *testing.T) {
 			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(r.URL.Path, "/admin/"+trail) {

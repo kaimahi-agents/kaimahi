@@ -11,23 +11,10 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// The flow view: one credential's three audit trails merged into a single
-// chronological reading.
-//
-// Nothing here is new evidence. The plane already records every one of these
-// rows, and `kmx ledger`, `kmx audit tool`, `kmx audit approval` already print
-// them. What was missing was the reading an operator actually wants — "what
-// did this thing DO?" — which today means running three commands and
-// interleaving them by eye.
-//
-// It is a TIMELINE, NOT A TRACE, and the distinction is the whole reason this
-// file is careful. The three tables share exactly two columns: credential_name
-// and created_at. There is no correlation id, so nothing links a model call to
-// the tool calls that followed from it. Drawing that link from timestamp
-// adjacency would be right for a single sequential agent and confidently wrong
-// the moment two turns overlap — and a governance view that is subtly wrong is
-// worse than one that is honestly incomplete. So these rows are ordered, and
-// the footer says they are only ordered.
+// Flow merges the model ledger and approval history into one timeline.
+// These are the same records `kmx ledger` and `kmx audit approval` expose.
+// They share credential and timestamp, not a correlation id: ordering must
+// not imply causality when concurrent turns interleave.
 
 // The credential column is not decoration. `kmx flow` with no argument merges
 // EVERY credential, and without attribution two agents' events interleave into
@@ -35,8 +22,7 @@ import (
 // causal-linking note warns about, one level up.
 const flowFmt = "%-19s %-12s %-8s %-28s %-10s %6s %s\n"
 
-// flowLimit is per source, matching the other views. Three sources at fifty
-// rows each is a generous window for one agent's recent life.
+// flowLimit is per source, matching the other views.
 const flowLimit = 50
 
 // cutoff is how far back one saturated source's evidence reaches, and the
@@ -48,12 +34,12 @@ type cutoff struct {
 }
 
 // flowEvent is one thing that happened, flattened out of whichever trail
-// recorded it so the three can be sorted together.
+// recorded it so both can be sorted together.
 type flowEvent struct {
 	at          time.Time // parsed for ordering
 	raw         string    // as the plane sent it, for printing
 	cred        string    // which identity did this; every trail records it
-	kind        string    // model | tool | approval
+	kind        string    // model | approval
 	what        string
 	outcome     string
 	cents       string
@@ -77,7 +63,7 @@ func (c *Client) Flow(out io.Writer, credential string) error {
 	return nil
 }
 
-// flowEvents gathers the three trails through the same admin session.
+// flowEvents gathers both trails through the same admin session.
 // An empty trail contributes nothing; an unreadable one fails the reading
 // rather than passing for no activity.
 func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
@@ -85,10 +71,6 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 	limit := fmt.Sprintf("&limit=%d", flowLimit)
 
 	ledger, err := c.Get("ledger", "/admin/ledger?credential="+cred+limit)
-	if err != nil {
-		return nil, nil, err
-	}
-	tool, err := c.Get("tool-audit", "/admin/tool-audit?credential="+cred+limit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,7 +95,6 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 		}
 	}
 	collect(ledger, "model")
-	collect(tool, "tool")
 	collect(approval, "approval")
 
 	return trimToComplete(events, saturated)
@@ -122,9 +103,9 @@ func (c *Client) flowEvents(credential string) ([]flowEvent, []string, error) {
 // trimToComplete drops the part of the timeline we cannot vouch for.
 //
 // Each trail is fetched with its own limit, so they do not reach equally far
-// back. If the tool trail is saturated at 09:00 and the ledger reaches to
-// 07:00, then everything before 09:00 shows model calls with the tool calls
-// missing — a picture that reads like a well-behaved agent precisely where the
+// back. If approval history is saturated at 09:00 and the ledger reaches to
+// 07:00, then everything before 09:00 shows model calls with approval history
+// missing — a picture that reads like a complete account precisely where the
 // evidence is thinnest. The window therefore starts at the latest point every
 // saturated source still covers, and the caller is told the window was cut.
 func trimToComplete(events []flowEvent, saturated []cutoff) ([]flowEvent, []string, error) {
@@ -175,22 +156,6 @@ func flowEventFrom(r map[string]any, kind string) flowEvent {
 		e.denied = str(r["cost_source"]) == "denied"
 		e.plainDetail = base
 		e.detail = joinDetail(base, str(r["cost_source"]))
-
-	case "tool":
-		name := str(r["tool"])
-		if name == "" {
-			name = str(r["method"]) // tools/list and friends name no tool
-		}
-		e.what = name
-		e.outcome = str(r["decision"])
-		status := ""
-		if value := str(r["status"]); value != "" && value != "0" {
-			status = "upstream " + value
-		}
-		attribution := calledBy(r)
-		e.plainDetail = joinDetail(status, call(r), attribution)
-		e.detail = joinDetail(status, call(r, true), attribution)
-		e.denied = str(r["decision"]) == "denied"
 
 	case "approval":
 		e.what = str(r["kind"]) + ":" + str(r["subject"])

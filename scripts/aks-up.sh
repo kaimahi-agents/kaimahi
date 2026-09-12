@@ -402,13 +402,9 @@ aks-up: ready.
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
 Next (see docs/aks.md):
-  export TARGET=aks AKS_CLUSTER=$CLUSTER ACR_NAME=$ACR
-  export KAIMAHI_CONFIRM=$CLUSTER
-  make kagent plane-copilot-secret plane govern agent tools-agent govern-tools
-  make netpol-verify        # the boundary, ENFORCED — not merely present
+  kmx lift --resource-group $RG --cluster $CLUSTER --registry $ACR
 
-  (plane-copilot-secret comes BEFORE plane: the proxy mounts that Secret
-   optionally, so a pod started without it fails closed for minutes. Or
-   just run 'make up', which is these steps in this order.)
+  The managed path captures the model credential before deploying the plane
+  and proves the network boundary. Use 'kmx lift --help' for individual phases.
 EOF
 fi

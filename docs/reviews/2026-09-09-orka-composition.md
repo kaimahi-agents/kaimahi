@@ -10,6 +10,13 @@
 > present argument-bound approval as uniquely Kaimahi's. The OTLP candidate is
 > closed: Orka ships OTLP with GenAI conventions. Upstream filings and their
 > current states are in [COORDINATION.md](../COORDINATION.md).
+>
+> **Gateway retirement:** the tool gateway, argument-bound approval execution
+> and workflow/demo code discussed below are now removed. These are historical
+> findings, not current capabilities or instructions. The
+> [pre-retirement snapshot at `10c561d`](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/reviews/2026-09-09-orka-composition.md)
+> preserves their original context; use [migration](../migrate.md) for the
+> surviving model boundary.
 
 **Subject:** [`orka-agents/orka`](https://github.com/orka-agents/orka) —
 "Cloud and AI-native multi-agent orchestration platform for Kubernetes".

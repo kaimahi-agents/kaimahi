@@ -27,7 +27,7 @@ func (a *App) Grants(credential string) error {
 	return a.session(func(c *admin.Client) error { return c.Grants(a.Out, credential) })
 }
 
-// Flow prints one credential's three audit trails merged into a single
+// Flow prints one credential's model and approval trails merged into a single
 // chronological reading — what it spent, what it called,
 // what it was refused, and what a human let through.
 func (a *App) Flow(credential string) error {
@@ -37,12 +37,10 @@ func (a *App) Flow(credential string) error {
 // Audit prints one of the plane's audit trails.
 func (a *App) Audit(kind, credential string) error {
 	switch kind {
-	case "tool":
-		return a.session(func(c *admin.Client) error { return c.ToolAudit(a.Out, credential) })
 	case "approval":
 		return a.session(func(c *admin.Client) error { return c.ApprovalAudit(a.Out, credential) })
 	default:
-		return fmt.Errorf("usage: kmx audit tool|approval [<credential>]")
+		return fmt.Errorf("usage: kmx audit approval [<credential>]")
 	}
 }
 

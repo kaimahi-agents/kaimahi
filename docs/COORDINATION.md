@@ -147,7 +147,8 @@ not inferred assignments. Unknown remaining work is marked UNKNOWN.
 | Bubbles agent creation wizard | branch `feat/charm-cli-ux-followup` | PR #167 MERGED | — |
 | Orka agent creation | branch `feat/orka-agent-create` | LOCAL BRANCH EXISTS; disposition UNKNOWN | Branch `2267081`; no numbered lane or current assignment inferred |
 | Documentation retirement | coordinator; branch `docs/orka-documentation-retirement` | ACTIVE | Documentation and authorized documentation-checker changes only |
-| Plane/code retirement | worker session; branch `cleanup/retire-governance-plane` | PR #183 OPEN | Inventory published first; narrow legacy scaffold exception approved. First removal slice: inbound/notify. Gateway/approvals and seam-adjacent reduction follow in separate main-based slices; authoring remains unchanged. |
+| Plane/code retirement: inbound/notify | worker session; branch `cleanup/retire-governance-plane` | PR #183 MERGED | Inventory published before deletion; inbound/notify removed, live migration proved; no authoring changes. |
+| Plane/code retirement: gateway/tool approvals | worker session; branch `cleanup/retire-tool-governance` | PR #184 OPEN | Based on main after #183. Gateway/tool execution removed; shared model helpers retained. Both authoring paths unchanged; live migration, historical-grant inactivity and retained budget grants proved. Budget approvals/seam-adjacent cleanup follows last. |
 
 ## Upstream tracker
 

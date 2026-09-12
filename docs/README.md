@@ -30,37 +30,36 @@ supported translation layer.
 
 ## References for legacy code still present
 
-These documents describe the existing Kaimahi plane and kagent wiring.
-They are not Orka documentation or a current platform roadmap. The first
-retirement slice removes inbound webhooks, Slack approval commands and
-notifications. The plane still has four listeners (model, MCP, admin, ops),
-and tool/argument-bound/budget approvals remain functional through admin.
-Existing installations need the [retirement upgrade steps](operations.md#upgrading-after-inbound-retirement);
-historical SQL and stored audit data are retained.
+These documents distinguish the surviving model seam and direct kagent wiring
+from retirement pointers. They are not Orka documentation or a platform roadmap.
+The plane has three listeners (model 8080, admin 9091, ops 9092); the MCP gateway,
+tool/argument-bound approvals, workflows and connector fixtures are removed.
+Budget approvals remain admin-operated. Historical tool/inbound requests are
+readable and deniable, not approvable; their grants are inactive. Existing
+installations need the [retirement upgrade steps](operations.md#upgrading-after-gateway-retirement).
+All twelve SQL migrations and stored data are retained.
 
 | Area | Reference |
 |---|---|
 | kagent model presets and credential wiring | [Models](models.md) |
 | Existing MCP tools agent | [Tools](tools.md) |
 | Plane model proxy, metering and budget limits | [Spend](spend.md) |
-| Plane MCP gateway and policy | [Tool governance](tool-governance.md) |
-| Legacy MCP onboarding | [Govern your agent](govern-your-agent.md) |
-| Existing external-runtime seam constraints | [Foreign runtime](foreign-runtime.md) |
-| Call-bound grants and approval routing | [Approvals](approvals.md) |
+| Retired gateway and tool onboarding | [Tool governance](tool-governance.md), [govern your agent](govern-your-agent.md), [foreign runtime](foreign-runtime.md) |
+| Budget approvals and inactive historical tool/inbound grants | [Approvals](approvals.md) |
 | Attribution and expiring credentials | [Identity](identity.md) |
 | Plane NetworkPolicy and residual exposure | [Egress](egress.md) |
-| Hosted tool upstreams and credential custody | [Hosted upstreams](hosted-upstreams.md) |
+| Hosted model dialing and credential custody | [Hosted upstreams](hosted-upstreams.md) |
 | Plane operations, database recovery and metrics | [Operations](operations.md) |
 | Existing isolation mechanisms and limits | [Isolation](isolation.md) |
-| Existing blueprint runner | [Workflows](workflows.md) |
+| Retired blueprint runner | [Workflows](workflows.md) |
 | Retired webhook bridge and public-edge cleanup | [Inbound](inbound.md) |
-| Retained Slack MCP posting connector; no Slack approvals | [Slack](slack.md) |
-| Retained release driver | [Release agent](release-agent.md) |
-| Retained fixture demonstrations | [Demo](demo.md), [accounts payable](ap-demo.md) |
+| Retired Slack posting fixture | [Slack](slack.md) |
+| Retired release driver | [Release agent](release-agent.md) |
+| Retired gateway scenarios and current demo pointers | [Demo](demo.md), [accounts payable](ap-demo.md) |
 
 The [legacy plane diagram](assets/architecture.svg), with
 [Mermaid source](assets/architecture.mmd), is a **historical pre-retirement**
-view, including the removed inbound path. It is not the current
+view, including the removed gateway and inbound paths. It is not the current
 listener inventory, Orka architecture or the project's future shape.
 
 ## Maintainer references

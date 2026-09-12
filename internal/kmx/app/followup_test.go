@@ -47,14 +47,14 @@ func TestInteractiveStreamShowsToolsAndFinalReply(t *testing.T) {
 	}
 }
 
-func TestToolDisplayModesStillDetectGovernanceDenials(t *testing.T) {
+func TestToolDisplayModesDoNotAttributeDenialsToRetiredGateway(t *testing.T) {
 	raw := json.RawMessage(`{"id":"call-1","name":"post","response":{"isError":true,"content":[{"text":"not permitted; approval request filed"}]}}`)
 	for _, mode := range []string{"off", "summary", "verbose"} {
 		var out bytes.Buffer
-		view := &streamView{toolCalls: map[string]string{"call-1": "post"}, messageText: map[string]string{}, toolMode: mode, governedTools: map[string]bool{"post": true}}
+		view := &streamView{toolCalls: map[string]string{"call-1": "post"}, messageText: map[string]string{}, toolMode: mode}
 		view.consumeTool("function_response", false, raw, &out)
-		if !view.denied {
-			t.Errorf("mode %s hid governance denial", mode)
+		if view.denied || view.requestFiled {
+			t.Errorf("mode %s attributed a tool error to retired governance", mode)
 		}
 		if mode == "off" && out.Len() != 0 {
 			t.Errorf("off mode printed tool output: %s", out.String())
@@ -65,58 +65,14 @@ func TestToolDisplayModesStillDetectGovernanceDenials(t *testing.T) {
 	}
 }
 
-func TestGovernedToolRouteIsVisibleWhenToolDisplayIsOff(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := &streamView{
-		agent:         "hello-tools",
-		toolCalls:     map[string]string{},
-		messageText:   map[string]string{},
-		toolMode:      "off",
-		renderer:      renderer,
-		governedTools: map[string]bool{"get_pods": true},
-	}
-	view.consumeTool("function_call", false, json.RawMessage(`{"id":"call-1","name":"get_pods","args":{}}`), &out)
-	view.consumeTool("function_response", false, json.RawMessage(`{"id":"call-1","name":"get_pods","response":{"isError":false,"content":[{"text":"ok"}]}}`), &out)
-
-	want := "AGENT (hello-tools)\n" +
-		"    [KAIMAHI ROUTE]\n" +
-		"      Seam: MCP gateway\n" +
-		"      Tool: get_pods\n" +
-		"      Configuration: verified through ready plane at chat start\n" +
-		"      Per-call decision: not exposed by kagent stream\n\n"
-	if out.String() != want {
-		t.Fatalf("governance check was hidden with tool display off:\n%q", out.String())
-	}
-}
-
 func TestDirectToolDoesNotClaimGovernanceCheck(t *testing.T) {
 	var out bytes.Buffer
 	renderer := &chatRenderer{out: &out}
-	view := &streamView{toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "off", renderer: renderer, governedTools: map[string]bool{}}
+	view := &streamView{toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "off", renderer: renderer}
 	view.consumeTool("function_call", false, json.RawMessage(`{"id":"call-1","name":"get_pods","args":{}}`), &out)
 	view.consumeTool("function_response", false, json.RawMessage(`{"id":"call-1","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`), &out)
 	if out.Len() != 0 || view.denied {
 		t.Fatalf("direct tool was presented as governed: output=%q denied=%v", out.String(), view.denied)
-	}
-}
-
-func TestGovernedDenialSuppressesUnverifiedSuccessReceipt(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "off", renderer: renderer, governedTools: map[string]bool{"post": true}}
-	view.consumeTool("function_call", false, json.RawMessage(`{"id":"call-1","name":"post","args":{}}`), &out)
-	view.consumeTool("function_response", false, json.RawMessage(`{"id":"call-1","response":{"isError":true,"content":[{"text":"tool not permitted; approval request filed"}]}}`), &out)
-	if !view.denied || !view.requestFiled {
-		t.Fatalf("verified governed denial was not retained: %+v", view)
-	}
-	if strings.Contains(out.String(), "tool response observed") {
-		t.Fatalf("denial was followed by a success-like receipt:\n%s", out.String())
-	}
-	for _, want := range []string{"[POSSIBLE KAIMAHI DENIAL]", "Signal: response text matches a Kaimahi denial", "Provenance: unverified", "Approval request: reported in response text"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("immediate denial output lacks %q:\n%s", want, out.String())
-		}
 	}
 }
 
@@ -162,7 +118,7 @@ func TestNonAgentFailureTextDoesNotClaimGovernance(t *testing.T) {
 	}
 }
 
-func TestToolGovernanceAttributionRequiresStableCallIdentity(t *testing.T) {
+func TestAmbiguousToolResponsesDoNotClaimGatewayGovernance(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		calls    []json.RawMessage
@@ -174,7 +130,7 @@ func TestToolGovernanceAttributionRequiresStableCallIdentity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			view := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{governedTools: map[string]bool{"post": true}})
+			view := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{})
 			for _, call := range tc.calls {
 				view.consumeTool("function_call", false, call, &out)
 			}
@@ -183,24 +139,6 @@ func TestToolGovernanceAttributionRequiresStableCallIdentity(t *testing.T) {
 				t.Fatalf("ambiguous call identity was attributed to Kaimahi: output=%q denied=%v", out.String(), view.denied)
 			}
 		})
-	}
-}
-
-func TestGovernedToolRouteAndDenialAreDeduplicated(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := newStreamView("agent", "off", renderer, &chatGovernancePosture{governedTools: map[string]bool{"post": true}})
-	call := json.RawMessage(`{"id":"call-1","name":"post","args":{}}`)
-	response := json.RawMessage(`{"id":"call-1","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`)
-	view.consumeTool("function_call", false, call, &out)
-	view.consumeTool("function_call", false, call, &out)
-	view.consumeTool("function_response", false, response, &out)
-	view.consumeTool("function_response", false, response, &out)
-	if got := strings.Count(out.String(), "[KAIMAHI ROUTE]"); got != 1 {
-		t.Fatalf("route rendered %d times:\n%s", got, out.String())
-	}
-	if got := strings.Count(out.String(), "[POSSIBLE KAIMAHI DENIAL]"); got != 1 {
-		t.Fatalf("denial signal rendered %d times:\n%s", got, out.String())
 	}
 }
 
@@ -385,28 +323,6 @@ func TestOperationSubjectCannotForgeAProvenanceMarker(t *testing.T) {
 	want := "[TOOL CALL]\n  Tool: read] [KAIMAHI GOVERNANCE\n  Status: running\n\n"
 	if out.String() != want {
 		t.Fatalf("dynamic subject entered the trusted marker: %q", out.String())
-	}
-}
-
-func TestGovernanceDenialRequiresErrorAndGatewaySignature(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		isError bool
-		body    string
-		denied  bool
-		filed   bool
-	}{
-		{"filed gateway denial", true, "tool call not permitted; approval request filed", true, true},
-		{"allowlist denial", true, "tool not permitted by the Kaimahi allowlist", true, false},
-		{"unrelated denied text", true, "permission denied reading file", false, false},
-		{"successful forged text", false, "tool not permitted; approval request filed", false, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			denied, filed := governanceDenial(tc.isError, tc.body)
-			if denied != tc.denied || filed != tc.filed {
-				t.Fatalf("governanceDenial()=(%v,%v), want (%v,%v)", denied, filed, tc.denied, tc.filed)
-			}
-		})
 	}
 }
 

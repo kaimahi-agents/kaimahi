@@ -15,12 +15,12 @@ see its [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside
 the direction. The seam bridge shrinking as upstream capabilities arrive is a
 successful outcome.
 
-The tree still contains the **legacy kagent/plane implementation** pending code
-retirement: kagent Agent/ModelConfig/RemoteMCPServer wiring; a model proxy and MCP
-gateway; operator APIs, tool/budget approvals and demos. The first retirement
-slice removes inbound webhooks and notifications only. Document the remaining
-code as present implementation, not the long-term platform boundary; neither
-authoring path is removed by this slice.
+The tree retains kagent Agent/ModelConfig/direct RemoteMCPServer wiring and the
+model proxy with its operator APIs, budget approvals and ledger. The custom MCP
+gateway, tool policy/approvals, workflow runner and connector fixtures are
+removed, following inbound/notification retirement. Neither agent-authoring
+path is removed; the original direct `hello-tools` example remains. Document
+the bridge as present implementation, not the long-term platform boundary.
 
 ## Repository layout
 
@@ -29,12 +29,11 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 | Path | Responsibility |
 |---|---|
 | `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, orchestration, scaffolding, embedded manifests |
-| `plane/` | separate Go module: proxy/gateway, policy, durable governance |
+| `plane/` | separate Go module: model proxy, budgets, durable ledger |
 | `plane/cmd/kaimahi-proxy/` | process/listener wiring |
-| `plane/internal/` | proxy, gateway, meter/pricing, config, store/db, redaction, metrics/ops |
-| `cmd/demo/`, `internal/demo/` | fixture ERP, not a production ERP connector |
-| `k8s/` | committed agents, presets, plane, network policies and fixtures |
-| `scripts/`, `Makefile` | checks, probes, remaining key capture and repository demos/connectors |
+| `plane/internal/` | proxy, meter/pricing, config, store/db, redaction, metrics/ops |
+| `k8s/` | retained agents, presets, model plane and network policies |
+| `scripts/`, `Makefile` | checks, model/network probes and model credential helpers |
 | `.github/workflows/` | actual verification jobs and docs-only routing |
 
 The root CLI and plane are separate modules because the plane builds independently.
@@ -100,7 +99,8 @@ first if it matters. Cloud cleanup has different [ownership rules](aks.md#teardo
 ### What CI proves
 
 Required checks are `hygiene`, `go-plane`, and `e2e-hello-world`. The last is an
-aggregator over kind shards: runtime, spend, tools, resilience, AP and quickstart.
+aggregator over the retained kind shards. Gateway/workflow/AP scenarios retire
+with their runtime; the original direct kagent MCP test is a separate boundary.
 Add probes to the shard owning their state lineage, or arrange independent setup.
 Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.
@@ -114,30 +114,33 @@ in fork-exposed CI. A docs-only shortcut is not an end-to-end rerun.
 
 ## How the existing plane works
 
-One process, normally two replicas, one Postgres, four listeners:
+One process, normally two replicas, one Postgres, three listeners:
 
 | Port | Boundary |
 |---|---|
 | 8080 | model data, TLS under plane CA |
-| 8081 | MCP data, same TLS certificate |
 | 9091 | admin bearer API; no Service, reached by pod port-forward |
 | 9092 | metrics/readiness/liveness, unauthenticated; no Service |
 
-The two data seams authenticate opaque `kmh_` credentials; upstream keys remain
+The model data seam authenticates opaque `kmh_` credentials; upstream keys remain
 in proxy custody and only hashes of issued tokens are persisted. Do not confuse
 agent identity, caller claims, observed source and acted-for attribution.
 [Identity](identity.md) defines them; [operations](operations.md) defines the
 per-replica breakers, single-database availability limit and
-[inbound retirement upgrade](operations.md#upgrading-after-inbound-retirement).
+[retirement upgrade](operations.md#upgrading-after-gateway-retirement).
 
-Exact governance decisions are Postgres transactions under the credential-row
-lock: budget admission, grant consumption, requests and approvals.
-Never replace them with an unlocked Go read-then-act. `spend_reservation` holds
-admitted spend until ledger settlement. Other durable tables cover credentials,
-ledger, allowlists/tool audit and approval requests/grants/audit. Historical
-inbound replay/audit and agent-run attribution data remain stored. The
+Exact budget decisions are Postgres transactions under the credential-row lock:
+admission, budget-grant consumption, requests and approvals. Never replace them
+with an unlocked Go read-then-act. `spend_reservation` holds admitted spend until
+ledger settlement. Credentials, ledger and approval history remain live storage;
+retired allowlists/tool audit, inbound replay/audit and agent-run attribution
+data remain stored. Historical tool/inbound grants are inactive; their requests
+are readable/deniable but cannot be approved. The
 [migrations](../plane/internal/db/migrations) are the schema source: retain
-applied SQL history; runtime retirement does not drop tables or reset data.
+all twelve applied SQL migrations; runtime retirement does not drop tables or
+reset data. The migration app/scaffold implementations remain byte-identical
+for generated-artifact and rerun compatibility; old generated tool comments are
+not evidence of surviving runtime tool governance.
 
 The upstream table constrains destination **and exact forwarded path**; network
 policy constrains reachable pods/namespaces/IPs/ports. Neither replaces the other.
@@ -150,11 +153,10 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
    helpers do not authorize expanding Kaimahi into another agent runtime.
 2. Fail closed on missing proof: HTML with 200 is not a valid endpoint answer,
    unreadable is not absent, and scanner failure is not a clean scan.
-3. Keys never enter argv, logs, manifests or ConfigMaps. `credential capture`
-   reads only a terminal, echo off, validates supported tool credentials and
-   refuses pipes. Native `models credential copilot` uses device login and a
-   private OAuth cache, not credential input on stdin. Other capture helpers
-   retain their own input contracts; do not move key handling into unsafe make pipes.
+3. Keys never enter argv, logs, manifests or ConfigMaps. Tool credential capture
+   is removed. Native `models credential copilot` keeps its device login and
+   private OAuth cache, not credential input on stdin. Retained model helpers
+   keep their own input contracts; do not move keys into unsafe make pipes.
 4. Billed work must be recorded even when the surrounding operation fails. Free
    is an explicit upstream classification, never inferred from a URL or zero price.
 5. Mutations need the appropriate context/cloud guard; name and loopback server
@@ -171,7 +173,8 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
 - A missing ModelConfig can be admitted yet never reconcile. Inspect Agent
   Accepted/Ready conditions, not only a pod or cached readiness verdict.
 - Fresh `up` does not enable governance. Rerunning it preserves non-default
-  routing; use explicit `use`/`tools ungovern` to select direct paths.
+  routing; `use` explicitly selects a model preset. There is no tool-ungovern
+  repair path: old gateway references need an owner's deliberate decision.
 - The image is distroless: no shell for exec-based readiness loops. Probe its
   behavior. A Secret created after an optional mount may need a rollout restart.
 - A Service port-forward selects one pod. Use separate pod forwards for claims
@@ -187,7 +190,7 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
   using PEP 604 annotations. Ignore rules such as `bin/` match at every depth;
   verify tracked membership, and beware newly unignored files entering `stash -u`.
 
-Use `kmx ledger`, `kmx audit tool`, `kmx flow`, `kmx metrics`, Agent conditions and
+Use `kmx ledger`, `kmx audit approval`, `kmx flow`, `kmx metrics`, Agent conditions and
 proxy logs on the **explicit context**. A seam receipt is evidence for that seam,
 not for all execution inside an agent. Never paste live infrastructure IDs into
 evidence: scan shapes and manually redact names too.

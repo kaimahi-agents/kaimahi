@@ -31,8 +31,7 @@ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 
 DERIVED, NOT COPIED. The map is the claim and the tree is the truth, and
 no assertion here holds a third copy: the embedded manifest list comes out
-of embed.go's own patterns, the excluded list out of the Go test that
-names them, every count out of `git ls-files`. A guard that restates what
+of embed.go's own patterns, the non-embedded complement from that derived set, every count out of `git ls-files`. A guard that restates what
 it guards agrees with it forever.
 
 THE EMPTY CASE IS A FAILURE. Every claim below has an anchor in the map —
@@ -191,11 +190,6 @@ class Tree:
         if path not in self._text:
             self._text[path] = (self.root / path).read_text(encoding="utf-8", errors="replace")
         return self._text[path]
-
-
-def flat(text: str) -> str:
-    """One line, single-spaced — so a claim survives being re-wrapped."""
-    return " ".join(text.split())
 
 
 def non_test(paths: set[str]) -> set[str]:
@@ -589,14 +583,12 @@ def embedded(tree: Tree) -> set[str]:
 
 
 @claim
-def the_manifests_not_embedded_are_the_ones_the_go_test_names(doc: Doc, tree: Tree) -> list[str]:
-    """The map's checkout lists, against the tree and the test.
+def the_non_embedded_manifests_match_the_tree(doc: Doc, tree: Tree) -> list[str]:
+    """Checkout lists must exactly cover the complement of embed.go.
 
-    The repository already has a ledger for this — the Go test that names
-    every manifest which must NOT ride along — so this compares against
-    that rather than against a list of its own. The JSON corpus is the one
-    file in neither: not embedded, and not a manifest for the test to
-    exclude, which is exactly the kind of gap a count hides.
+    Empty is valid when every tracked manifest is embedded. The declared
+    zero and the checkout list still have to agree with that derived set.
+    No feature-specific exclusion ledger or special JSON fixture is needed.
     """
     _, body = doc.section("`k8s/`")
     lists = re.findall(r"^\*\*(Checkout[^*(]*) \(" + NUM + r"\):\*\*(.*?)\n\n",
@@ -616,30 +608,13 @@ def the_manifests_not_embedded_are_the_ones_the_go_test_names(doc: Doc, tree: Tr
     everything = tree.under("k8s")
     problems += compare_sets(named, everything - embedded_k8s(tree), "the non-embedded k8s files")
 
-    excluded = excluded_by_the_go_test(tree)
-    m = once(phrase("{n} of `k8s/`'s {n} files are embedded, {n} are named by that test"),
+    m = once(phrase("{n} of `k8s/`'s {n} files are embedded; {n} are not embedded"),
              body, "the k8s arithmetic")
     problems += compare_count(number(m.group(1)), len(embedded_k8s(tree)), "embedded k8s files")
     problems += compare_count(number(m.group(2)), len(everything), "files in k8s/")
-    problems += compare_count(number(m.group(3)), len(excluded), "manifests the Go test names")
-    remainder = once(phrase("the remaining non-manifest is ") + r"`([^`]+)`",
-                     body, "the file in neither list")
-    return problems + compare_sets(named - excluded, {remainder.group(1)},
-                                   "the non-embedded files the Go test does not name")
-
-
-def excluded_by_the_go_test(tree: Tree) -> set[str]:
-    """The manifests TestTheConnectorFamiliesAreNotEmbedded names."""
-    path = "internal/kmx/app/manifests_test.go"
-    m = re.search(r"func TestTheConnectorFamiliesAreNotEmbedded\(t \*testing\.T\) \{\s*"
-                  r"for _, name := range \[\]string\{(.*?)\}", tree.read(path), re.S)
-    if not m:
-        raise Anchor(f"{path} no longer has TestTheConnectorFamiliesAreNotEmbedded with a literal "
-                     "list — the map's ledger for the embedded boundary is gone")
-    names = re.findall(r'"([^"]+)"', m.group(1))
-    if not names:
-        raise Anchor("TestTheConnectorFamiliesAreNotEmbedded names no manifests")
-    return {"k8s/" + n for n in names}
+    problems += compare_count(number(m.group(3)), len(everything - embedded_k8s(tree)),
+                              "non-embedded k8s files")
+    return problems
 
 
 @claim
@@ -876,29 +851,14 @@ def the_scripts_that_name_a_k8s_path(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def the_erp_says_what_it_is(doc: Doc, tree: Tree) -> list[str]:
-    """The map files the ERP as a demonstration on the strength of a
-    comment in its own source. If that comment goes, the evidence goes."""
-    m = once(phrase("The comment at the top of ") + r"`(internal/demo/erp/server\.go)`"
-             + r"(?:.|\n)*?" + phrase(" says ") + r"\"([^\"]+)\"",
-             doc.text, "the ERP's own words")
-    if flat(m.group(2)) not in flat(tree.read(m.group(1)).replace("//", " ")):
-        return [f"{m.group(1)} no longer says \"{m.group(2)}\", which is the map's evidence "
-                "for filing the ERP as a demonstration"]
-    return []
-
-
-@claim
-def ap_demos_call_admin_approve_directly(doc: Doc, tree: Tree) -> list[str]:
-    """Both AP fixtures retain automated admin approval, not a human wait."""
+def model_probes_call_seam_ca_directly(doc: Doc, tree: Tree) -> list[str]:
+    """Both direct model probes obtain the CA rather than skipping verification."""
     _, body = doc.section("`scripts/`")
-    once(phrase("Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly"), body,
-         "the AP demos' direct admin approvals")
-    missing = [path for path in ("scripts/ap-demo.sh", "scripts/ap-injection.sh")
-               if not re.search(r"^\s*admin approve\b", tree.read(path), re.M)]
-    if not missing:
-        return []
-    return [f"{path} does not call admin approve directly as the map says" for path in missing]
+    once(phrase("Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly"), body,
+         "the model probes' authority helper")
+    missing = [path for path in ("scripts/model-seam-probe.sh", "scripts/spend-race-probe.sh")
+               if not re.search(r"^\s*seam_ca\b", tree.read(path), re.M)]
+    return [f"{path} does not call seam_ca directly as the map says" for path in missing]
 
 
 @claim
@@ -927,14 +887,14 @@ def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list
 
 
 @claim
-def slack_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
+def copilot_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
     """Count make recipes without freezing an interpretation of ownership."""
     _, body = doc.section("`scripts/`")
-    m = once(phrase("`scripts/slack-secret.sh`: {n} make recipe"), body,
-             "the slack-secret make caller")
+    m = once(phrase("`scripts/copilot-secret.sh`: {n} make recipe"), body,
+             "the copilot-secret make caller")
     recipes = [line for line in tree.read("Makefile").splitlines()
-               if line.startswith("\t") and "scripts/slack-secret.sh" in line]
-    return compare_count(number(m.group(1)), len(recipes), "slack-secret make recipes")
+               if line.startswith("\t") and "scripts/copilot-secret.sh" in line]
+    return compare_count(number(m.group(1)), len(recipes), "copilot-secret make recipes")
 
 
 @claim
@@ -1035,19 +995,15 @@ def main(argv) -> int:
 # manufacture its own expected answer. The real tree is checked separately.
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![hero](brand/hero.png)\n",
-    "Makefile": "\t./scripts/embedded.sh\n\t./scripts/ap-demo.sh\n\t./scripts/ap-injection.sh\n"
-                "\t./scripts/slack-secret.sh\n# scripts/verify-chat.py\n"
+    "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
+                "\t./scripts/copilot-secret.sh\n# scripts/verify-chat.py\n"
                 "# scripts/check-example.py\n",
     "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
     "staticcheck.conf": "checks = [\"all\"]\n",
     "cmd/kmx/main.go": "package main\n",
     "internal/kmx/app/lift.go": "package app\n",
-    "internal/kmx/app/manifests_test.go":
-        'func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {\n'
-        'for _, name := range []string{"checkout.yaml", "release.yaml", "demo.yaml"} {}\n}\n',
-    "internal/demo/erp/server.go": '// the gateway in front of it is what the demo is about\n',
-    "plane/internal/db/db.go": "package db\n",
+        "plane/internal/db/db.go": "package db\n",
     "plane/internal/db/migrations/001.sql": "SELECT 1;\n",
     "plane/cmd/proxy/main.go": "package main\n",
     "k8s/embedded.yaml": "kind: ConfigMap\n",
@@ -1055,11 +1011,11 @@ SELFTEST_FILES = {
     "k8s/checkout.yaml": "kind: ConfigMap\n",
     "k8s/release.yaml": "kind: ConfigMap\n",
     "k8s/demo.yaml": "kind: ConfigMap\n",
-    "k8s/erp-fixtures.json": "{}\n",
+    "k8s/checkout-data.json": "{}\n",
     "scripts/embedded.sh": "true\n",
-    "scripts/ap-demo.sh": 'admin approve "$id" --ttl 10m --uses "$uses"\n',
-    "scripts/ap-injection.sh": 'admin approve "$id" --ttl 10m --uses "$uses"\n',
-    "scripts/slack-secret.sh": "true\n",
+    "scripts/model-seam-probe.sh": 'seam_ca "$work/ca.crt"\n',
+    "scripts/spend-race-probe.sh": 'seam_ca "$work/ca.crt"\n',
+    "scripts/copilot-secret.sh": "true\n",
     "scripts/verify-chat.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
@@ -1077,8 +1033,6 @@ SELFTEST_FILES = {
 
 SELFTEST_MAP = """# Fixture repository map
 Installed does not mean current direction, including one shell scripts.
-The comment at the top of `internal/demo/erp/server.go` says
-"the gateway in front of it is what the demo is about".
 
 ## The short version
 | `internal/` | `kmx/` (one packages) |
@@ -1092,15 +1046,13 @@ The comment at the top of `internal/demo/erp/server.go` says
 ## `internal/` — installed packages
 `internal/kmx/` is one packages; the one `lift*.go` files in `app`.
 | `kmx/app` | 1 | Installed |
-| `demo/erp` | 1 | Demonstration |
 
 ## `plane/` — legacy module
 One internal packages and one binary (Postgres and one migrations).
 no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
 
 ## `k8s/` — installed and checkout artifacts
-Two of `k8s/`'s 6 files are embedded, three are named by that test,
-and the remaining non-manifest is `k8s/erp-fixtures.json`.
+Two of `k8s/`'s 6 files are embedded; four are not embedded.
 
 **Embedded in `kmx` (2):** `embedded.yaml`, all one of `plane/`.
 
@@ -1108,21 +1060,21 @@ and the remaining non-manifest is `k8s/erp-fixtures.json`.
 
 **Checkout — release scenario (1):** `release.yaml`.
 
-**Checkout — demonstrations (2):** `demo.yaml`, `erp-fixtures.json`.
+**Checkout — demonstrations (2):** `demo.yaml`, `checkout-data.json`.
 
 ## `scripts/` — 7 tracked files
 6 of the 7 are named by something outside themselves, and the one
 `scripts/mutations/*.json` are named by nothing.
 | **Installed** | 1 | `embedded.sh` |
-| **Checkout** | 1 | `slack-secret.sh` |
-| **Demonstration** | 2 | `ap-demo.sh`, `ap-injection.sh` |
+| **Checkout** | 1 | `copilot-secret.sh` |
+| **Demonstration** | 2 | `model-seam-probe.sh`, `spend-race-probe.sh` |
 | **Scaffolding** | 2 | the one `check-*` files, `verify-chat.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
 `embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
-Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly.
+Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 `.github/workflows/ci.yml` (one invocations among two mentions).
 every occurrence in the Makefile is a comment line rather than a recipe.
-`scripts/slack-secret.sh`: one make recipe.
+`scripts/copilot-secret.sh`: one make recipe.
 
 ## `docs/` — 6 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
@@ -1154,17 +1106,17 @@ One tracked files under `scripts/` contain the literal `k8s/`.
 # (search, replace, the disagreement introduced). These edit the independent
 # fixture, so live prose and counts can evolve without maintaining a snapshot.
 MAP_EDITS = [
-    ("`internal/demo/erp/server.go`", "`internal/demo/erp/absent.go`",
-     "names a source file that is not in the tree"),
+    ("`cmd/kmx` (1 files)", "`cmd/absent` (1 files)",
+     "names a source directory that is not in the tree"),
     ("Open questions — one", "Open questions — two",
      "miscounts its open questions"),
     ("| `kmx/app` | 1 |", "| `kmx/app` | 2 |",
      "gets a package's source-file count wrong"),
     ("`embedded.yaml`, all one", "all one",
      "drops a manifest from the embedded list that embed.go embeds"),
-    ("`demo.yaml`, `erp-fixtures.json`", "`demo.yaml`, `erp-fixtures.json`, `embedded.yaml`",
+    ("`demo.yaml`, `checkout-data.json`", "`demo.yaml`, `checkout-data.json`, `embedded.yaml`",
      "files an embedded manifest under checkout as well"),
-    ("`ap-demo.sh`, `ap-injection.sh`", "`ap-demo.sh`",
+    ("`model-seam-probe.sh`, `spend-race-probe.sh`", "`model-seam-probe.sh`",
      "leaves a script out of every bucket"),
     ("`README.md`, `getting-started.md`", "`README.md`",
      "leaves a doc out of every list"),
@@ -1172,9 +1124,9 @@ MAP_EDITS = [
      "miscounts the plane's packages"),
     ("Postgres and one migrations", "Postgres and two migrations",
      "miscounts the plane's migrations"),
-    ("Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly",
-     "Only `ap-demo.sh` calls `kmx approve` directly",
-     "no longer names both direct admin approval callers"),
+    ("Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly",
+     "Only `model-seam-probe.sh` calls `seam_ca` directly",
+     "no longer names both direct authority-helper callers"),
     ("no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`",
      "the root module imports it freely", "no longer makes the module-boundary claim"),
     ("| `cmd/kmx` (1 files)", "| `cmd/kmx` (2 files)",
@@ -1204,11 +1156,8 @@ MAP_EDITS = [
      "miscounts how often CI runs the chat verifier"),
     ("`wc -l` reports it as 0", "`wc -l` reports it as 1",
      "gets the architecture asset's line count wrong"),
-    ("The comment at the top of `internal/demo/erp/server.go`",
-     "The comment at the bottom of `internal/demo/erp/server.go`",
-     "no longer makes the ERP-evidence claim"),
-    ("`scripts/slack-secret.sh`: one make recipe", "`scripts/slack-secret.sh`: two make recipes",
-     "miscounts the slack-secret make recipes"),
+    ("`scripts/copilot-secret.sh`: one make recipe", "`scripts/copilot-secret.sh`: two make recipes",
+     "miscounts the copilot-secret make recipes"),
 ]
 
 
@@ -1230,6 +1179,41 @@ def selftest_fixture(tree: Tree) -> int:
     import copy
 
     failed = 0
+
+    # A fully embedded tree needs no invented checkout fixture or exclusion
+    # ledger. The same claim must still reject an unclassified new manifest.
+    all_embedded = Tree(tree.root, files=["embed.go", "k8s/one.yaml"])
+    all_embedded._text = {"embed.go": "//go:embed k8s/one.yaml\n"}
+    boundary_map = Doc("## `k8s/`\n"
+                       "One of `k8s/`'s one files are embedded; zero are not embedded.\n\n"
+                       "**Checkout (0):** None.\n\n")
+    for extra, want, label in [([], False, "all manifests embedded needs no exclusions"),
+                               (["k8s/new.yaml"], True, "a new unembedded manifest needs classification")]:
+        variant = copy.copy(all_embedded)
+        variant.files = all_embedded.files + extra
+        try:
+            findings = the_non_embedded_manifests_match_the_tree(boundary_map, variant)
+        except Anchor as exc:
+            findings = [str(exc)]
+        if bool(findings) != want:
+            print(f"FAIL {label}: {findings}")
+            failed += 1
+        else:
+            print(f"ok   {label}")
+
+    # Equal-size lists can still name the WRONG file. Counts must not be
+    # allowed to stand in for the complement-membership assertion.
+    swapped = Tree(tree.root, files=["embed.go", "k8s/one.yaml", "k8s/two.yaml"])
+    swapped._text = {"embed.go": "//go:embed k8s/one.yaml\n"}
+    for member, want in [("two.yaml", False), ("one.yaml", True)]:
+        text = ("## `k8s/`\nOne of `k8s/`'s two files are embedded; one are not embedded.\n\n"
+                f"**Checkout (1):** `{member}`.\n\n")
+        findings = the_non_embedded_manifests_match_the_tree(Doc(text), swapped)
+        if bool(findings) != want:
+            print(f"FAIL checkout membership for {member}: {findings}")
+            failed += 1
+        else:
+            print(f"ok   checkout membership for {member}, independently of counts")
 
     # Versioned fixture directories are data, not Go packages, but still
     # require exact coverage and counts. Keep this independent of live prose.
@@ -1285,9 +1269,9 @@ def selftest_fixture(tree: Tree) -> int:
     regrouped = real.replace(
         "**Checkout — connectors (1):** `checkout.yaml`.\n\n"
         "**Checkout — release scenario (1):** `release.yaml`.\n\n"
-        "**Checkout — demonstrations (2):** `demo.yaml`, `erp-fixtures.json`.",
+        "**Checkout — demonstrations (2):** `demo.yaml`, `checkout-data.json`.",
         "**Checkout — retained examples (4):** `checkout.yaml`, `release.yaml`, "
-        "`demo.yaml`, `erp-fixtures.json`.",
+        "`demo.yaml`, `checkout-data.json`.",
     ).replace("**Guidance (2):**", "**Operator references (2):**")
     problems, _ = check(tree, regrouped)
     if problems:
@@ -1362,17 +1346,17 @@ def selftest_fixture(tree: Tree) -> int:
             print(f"FAIL a new file in {where} was not noticed by any claim")
             failed += 1
 
-    # Each demo's actual command must be checked, not a comment or just the first file.
-    for caller in ("scripts/ap-demo.sh", "scripts/ap-injection.sh"):
-        for replacement in ("true\n", '# admin approve "$id" --ttl 10m --uses "$uses"\n'):
+    # Each probe's actual command must be checked, not a comment or just the first file.
+    for caller in ("scripts/model-seam-probe.sh", "scripts/spend-race-probe.sh"):
+        for replacement in ("true\n", '# seam_ca "$work/ca.crt"\n'):
             changed = copy.copy(tree)
             changed._text = {**tree._text, caller: replacement}
             problems, _ = check(changed, real)
             note(problems)
-            if any(p.startswith("[ap_demos_call_admin_approve_directly]") for p in problems):
-                print(f"ok   replacing admin approve in {caller} with {replacement.strip()!r} is caught")
+            if any(p.startswith("[model_probes_call_seam_ca_directly]") for p in problems):
+                print(f"ok   replacing seam_ca in {caller} with {replacement.strip()!r} is caught")
             else:
-                print(f"FAIL replacing admin approve in {caller} with {replacement.strip()!r} went unnoticed")
+                print(f"FAIL replacing seam_ca in {caller} with {replacement.strip()!r} went unnoticed")
                 failed += 1
 
     # And the empty case, from both ends.

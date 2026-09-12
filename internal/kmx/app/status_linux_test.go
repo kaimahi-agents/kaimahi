@@ -163,14 +163,11 @@ func TestReadCommandsRichAndPlain(t *testing.T) {
 		t.Run(fmt.Sprint(rich), func(t *testing.T) {
 			t.Setenv("TERM", "xterm")
 			t.Setenv("NO_COLOR", "1")
-			for _, command := range []string{"agents", "context", "sandbox"} {
+			for _, command := range []string{"agents", "context"} {
 				out, text := reportOutput(t, rich, 32)
 				a := reportApp(t, out, `case "$*" in
 *"config view"*) printf '%s' '{"clusters":[{"name":"c","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"c"}}]}';;
 *"get agents.kagent.dev"*) printf '%s' '{"items":[]}';;
-*"get runtimeclass"*) printf 'spin';;
-*"get ds"*) printf '2/3';;
-*"get pods"*) printf 'ns/workload';;
 esac
 `)
 				var err error
@@ -180,8 +177,6 @@ esac
 					err, want = a.ListAgents(""), "none"
 				case "context":
 					err, want = a.Ctx(""), "kind-test"
-				case "sandbox":
-					err, want = a.ToolSandboxStatus(), "2/3"
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -195,46 +190,9 @@ esac
 						if text() != "Agents\n  none\n" {
 							t.Fatalf("changed redirected agents: %q", text())
 						}
-					case "sandbox":
-						expected := fmt.Sprintf("%-22s %s\n%-22s %s\n%-22s %s\n", "runtimeClass", "spin", "node installer", "2/3", "sandboxed workloads", "ns/workload")
-						if text() != expected {
-							t.Fatalf("changed redirected sandbox: %q", text())
-						}
 					}
 				}
 			}
 		})
-	}
-}
-
-func TestSandboxPreservesPartialOutputOnFailure(t *testing.T) {
-	for _, rich := range []bool{false, true} {
-		for _, failed := range []string{"runtimeclass", "ds", "pods"} {
-			for _, reason := range []string{"Forbidden", "unexpected failure", "connection refused"} {
-				t.Run(fmt.Sprintf("%v/%s/%s", rich, failed, reason), func(t *testing.T) {
-					t.Setenv("TERM", "xterm")
-					t.Setenv("NO_COLOR", "1")
-					out, text := reportOutput(t, rich, 40)
-					a := reportApp(t, out, fmt.Sprintf(`case "$*" in
-*"get %s"*) printf '%%s' '%s' >&2; exit 1;;
-*"get runtimeclass"*) printf 'spin';;
-*"get ds"*) printf '2/3';;
-esac
-`, failed, reason))
-					if err := a.ToolSandboxStatus(); err == nil || !strings.Contains(err.Error(), reason) {
-						t.Fatalf("lost failure: %v", err)
-					}
-					if strings.Contains(text(), "not installed") || strings.Contains(text(), "none") {
-						t.Fatalf("false absence: %s", text())
-					}
-					if failed != "runtimeclass" && !strings.Contains(text(), "spin") {
-						t.Fatalf("lost runtimeClass: %s", text())
-					}
-					if failed == "pods" && !strings.Contains(text(), "2/3") {
-						t.Fatalf("lost installer: %s", text())
-					}
-				})
-			}
-		}
 	}
 }

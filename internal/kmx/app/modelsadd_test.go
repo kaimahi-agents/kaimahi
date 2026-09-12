@@ -157,8 +157,7 @@ func TestTheScaffoldedModelManifestIsThreeReviewableDocuments(t *testing.T) {
 	if !strings.Contains(f.out.String()+f.errOut.String(), scaffold.SeamBaseURL("house")) {
 		t.Fatalf("the seam's base URL was never printed:\n%s%s", f.out.String(), f.errOut.String())
 	}
-	// And what an operator coming from `kmx tools add` would otherwise
-	// assume: there is no allowlist on this seam.
+	// Adding a model widens every credential's reach, so say so.
 	if !strings.Contains(f.out.String()+f.errOut.String(), "no allowlist") {
 		t.Fatalf("the absence of an allowlist was never stated:\n%s%s", f.out.String(), f.errOut.String())
 	}
@@ -202,11 +201,10 @@ func TestClassifyingAnUpstreamMeteredCarriesNoFreeWarning(t *testing.T) {
 
 // The overlay is emitted WHOLE. A map missing a key somebody else's
 // onboarding put there would be pruned by `kubectl apply`, silently
-// un-onboarding their upstream — and the two seams share one ConfigMap,
-// so a model onboarding can prune a tool one.
-func TestOnboardingAModelCarriesEveryExistingFragmentIncludingToolOnes(t *testing.T) {
+// un-onboarding their model endpoint.
+func TestOnboardingAModelCarriesEveryExistingFragment(t *testing.T) {
 	f := newModelFixture(t, vllmService,
-		`{"warehouse.json":"{\"tool_upstreams\":{\"warehouse\":{\"url\":\"http://w.acme:80/mcp\"}}}"}`, nil)
+		`{"model-depot.json":"{\"upstreams\":{\"depot\":{\"base_url\":\"http://depot.acme:8000\",\"path\":\"v1/responses\",\"protocol\":\"responses\",\"classification\":\"free\"}}}"}`, nil)
 	opt := modelOpts(f.dir)
 	opt.NoApply = true
 	if err := f.app.AddModel(opt); err != nil {
@@ -217,8 +215,8 @@ func TestOnboardingAModelCarriesEveryExistingFragmentIncludingToolOnes(t *testin
 		t.Fatal(err)
 	}
 	doc := string(raw)
-	if !strings.Contains(doc, "warehouse.json") {
-		t.Fatalf("an existing tool fragment was dropped from the emitted overlay:\n%s", doc)
+	if !strings.Contains(doc, "model-depot.json") {
+		t.Fatalf("an existing model fragment was dropped from the emitted overlay:\n%s", doc)
 	}
 	if !strings.Contains(doc, "model-house.json") {
 		t.Fatalf("the new model fragment is not in the emitted overlay:\n%s", doc)
@@ -246,10 +244,7 @@ func TestAPlaneRefusalLeavesNothingWritten(t *testing.T) {
 	}
 }
 
-// The apply precondition, from THIS command. It is one guard shared with
-// `kmx tools add` — the two write the same overlay — and a shared guard
-// still has to be reached from both call sites: deleting the call here
-// left every other test passing.
+// The apply precondition must be reached before a multi-document apply.
 func TestAddModelRefusesAStaleOverlay(t *testing.T) {
 	t.Setenv("KMX_TEST_RV", "4711")
 	f := newModelFixture(t, vllmService, `{"other.json":"{}"}`, nil)
@@ -270,6 +265,63 @@ func TestAddModelRefusesAStaleOverlay(t *testing.T) {
 	}
 	if _, statErr := os.Stat(stdin); statErr == nil {
 		t.Fatal("documents were applied despite the refusal")
+	}
+}
+
+// These Service/overlay cases were shared with tool onboarding before its
+// retirement. Keep their fail-closed model coverage on the surviving caller.
+func TestModelServiceResolutionPreservesNetworkPolicyBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name, svc          string
+		override, wantPort int
+		wantErr            string
+	}{
+		{"container port", vllmService, 0, 9000, ""},
+		{"default target", `{"spec":{"selector":{"app":"vllm"},"ports":[{"port":8000}]}}`, 0, 8000, ""},
+		{"named target", `{"spec":{"selector":{"app":"vllm"},"ports":[{"port":8000,"targetPort":"http"}]}}`, 0, 0, "--pod-port"},
+		{"explicit target", `{"spec":{"selector":{"app":"vllm"},"ports":[{"port":8000,"targetPort":"http"}]}}`, 9001, 9001, ""},
+		{"no selector", `{"spec":{"ports":[{"port":8000}]}}`, 0, 0, "no selector"},
+		{"absent Service", "notfound", 0, 0, "no Service"},
+		{"wrong port", `{"spec":{"selector":{"app":"vllm"},"ports":[{"port":7000}]}}`, 9001, 0, "publishes no port 8000"},
+		{"UDP is not TCP", `{"spec":{"selector":{"app":"vllm"},"ports":[{"port":8000,"protocol":"UDP"}]}}`, 9001, 0, "model seam is TCP"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newModelFixture(t, tc.svc, "notfound", nil)
+			spec := scaffold.ModelSpec{Service: "vllm", ServiceNamespace: "demo"}
+			err := f.app.resolveService(&spec, tc.override, 8000)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want %s", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || spec.PodPort != tc.wantPort || spec.PodLabels["app"] != "vllm" {
+				t.Fatalf("resolution = %+v, %v", spec, err)
+			}
+		})
+	}
+}
+
+func TestModelOnboardingRefusesAnUnreadableOrUnversionedOverlay(t *testing.T) {
+	for _, tc := range []struct{ name, overlay, version, want string }{
+		{"unreadable", "boom", "4711", "reading the overlay"},
+		{"unversioned", "{}", "none", "no resourceVersion"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KMX_TEST_RV", tc.version)
+			f := newModelFixture(t, vllmService, tc.overlay, nil)
+			opt := modelOpts(f.dir)
+			err := f.app.AddModel(opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v", err)
+			}
+			if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
+				t.Fatalf("refused overlay left a file: %v", err)
+			}
+			if strings.Contains(readFile(t, f.argsLog), "apply") {
+				t.Fatal("refused overlay was applied")
+			}
+		})
 	}
 }
 

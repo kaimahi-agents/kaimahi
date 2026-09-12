@@ -14,7 +14,7 @@ import (
 )
 
 // planeCertificate mints, renews and publishes the certificate the plane's
-// two data seams serve with.
+// model seam serves with.
 //
 // The shape, and why it is three Secrets rather than one:
 //
@@ -324,24 +324,6 @@ func (a *App) seamCertificate() SeamCertificate {
 	}
 	report := seamcert.Expiry(cert, a.timeNow())
 	return SeamCertificate{State: report.State.String(), Line: report.Line()}
-}
-
-// certificateNote turns a refusal that is about trust into one that names the
-// certificate, and adds nothing to a refusal that is about anything else.
-//
-// It reads the certificate rather than describing the problem in the
-// abstract, because the two questions an operator has at this moment are "is
-// this certificate the one my agents were told to trust" and "has it
-// expired", and both are answered by the line below.
-func (a *App) certificateNote(message string) string {
-	if !certificateFailure(message) {
-		return ""
-	}
-	return fmt.Sprintf("\n  This is a TRUST failure, not an unreachable seam. The plane is serving:\n"+
-		"    %s\n"+
-		"  Agents verify it against Secret %s/%s. `kmx plane --step certificate` re-signs it\n"+
-		"  and republishes the authority.",
-		a.seamCertificate().Line, config_kagentNamespace, config.PlaneCASecret)
 }
 
 // certificateFailure recognises a refusal that is about TRUST rather than

@@ -12,16 +12,16 @@ func TestLifecycleValidationPrecedesGuard(t *testing.T) {
 	const id = "00000000-0000-4000-8000-000000000001"
 	a := &App{} // Any cluster access or guard call would panic.
 	for name, call := range map[string]func() error{
-		"negative budget":  func() error { return a.Budget("demo", lifecycleInt(-1), nil) },
-		"zero ttl":         func() error { return a.Approve(id, lifecycleInt(0), nil, nil) },
-		"excessive ttl":    func() error { return a.Approve(id, lifecycleInt(math.MaxInt64), nil, nil) },
-		"zero uses":        func() error { return a.Approve(id, nil, lifecycleInt(0), nil) },
-		"excessive uses":   func() error { return a.Approve(id, nil, lifecycleInt(1_000_001), nil) },
-		"zero amount":      func() error { return a.Approve(id, nil, lifecycleInt(1), lifecycleInt(0)) },
-		"excessive amount": func() error { return a.Approve(id, nil, lifecycleInt(1), lifecycleInt(1_000_000_000_001)) },
-		"renew name":       func() error { return a.RenewCredential("bad name", nil) },
-		"renew ttl":        func() error { return a.RenewCredential("demo", lifecycleInt(59)) },
-		"request args":     func() error { return a.Request("demo", "tool", "call", map[string]any{"invalid": math.NaN()}) },
+		"negative budget":      func() error { return a.Budget("demo", lifecycleInt(-1), nil) },
+		"zero ttl":             func() error { return a.Approve(id, lifecycleInt(0), nil, nil) },
+		"excessive ttl":        func() error { return a.Approve(id, lifecycleInt(math.MaxInt64), nil, nil) },
+		"zero uses":            func() error { return a.Approve(id, nil, lifecycleInt(0), nil) },
+		"excessive uses":       func() error { return a.Approve(id, nil, lifecycleInt(1_000_001), nil) },
+		"zero amount":          func() error { return a.Approve(id, nil, lifecycleInt(1), lifecycleInt(0)) },
+		"excessive amount":     func() error { return a.Approve(id, nil, lifecycleInt(1), lifecycleInt(1_000_000_000_001)) },
+		"renew name":           func() error { return a.RenewCredential("bad name", nil) },
+		"renew ttl":            func() error { return a.RenewCredential("demo", lifecycleInt(59)) },
+		"retired tool request": func() error { return a.Request("demo", "tool", "call") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := call(); err == nil {
@@ -41,10 +41,7 @@ func TestLifecycleGuardDescribesLimitsAndFaithfulCommand(t *testing.T) {
 		{"budget", func(a *App) error { return a.Budget("demo", lifecycleInt(0), lifecycleInt(300)) }, []string{"cents=0 tokens=300", "budget demo --cents 0 --tokens 300"}},
 		{"clear caps", func(a *App) error { return a.Budget("demo", nil, nil) }, []string{"cents=null tokens=null", "null clears the cap", "budget demo"}},
 		{"approval", func(a *App) error { return a.Approve(id, lifecycleInt(600), lifecycleInt(1), lifecycleInt(100)) }, []string{"ttl_seconds=600 uses=1 amount=100", "approve " + id + " --ttl 600 --uses 1 --amount 100"}},
-		{"tool call", func(a *App) error {
-			return a.Request("demo", "tool", "call", map[string]any{"message": "it's $(unsafe)"})
-		}, []string{"arguments=", "--credential demo --args " + shellArg(`{"message":"it's $(unsafe)"}`)}},
-		{"argument-less", func(a *App) error { return a.Request("demo", "tool", "call", nil) }, []string{"argument-less call (not any call)", "request tool call --credential demo"}},
+		{"budget request", func(a *App) error { return a.Request("demo", "budget", "tokens") }, []string{"file a budget approval request", "request budget tokens --credential demo"}},
 		{"renew", func(a *App) error { return a.RenewCredential("demo", lifecycleInt(3600)) }, []string{"renewing for 3600 seconds", "credential renew demo --ttl 3600"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

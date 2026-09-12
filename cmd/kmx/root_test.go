@@ -20,7 +20,7 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	deps.stdout, deps.stderr = out, errOut
 	deps.loadConfig = func(context string) (*config.Config, error) {
 		loads++
-		return &config.Config{KubeContext: context, Credential: "default-cred", ToolsCredential: "tools-cred"}, nil
+		return &config.Config{KubeContext: context, Credential: "default-cred"}, nil
 	}
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
 	return deps, &loads
@@ -43,9 +43,9 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	deps.loadConfig = func(string) (*config.Config, error) {
-		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance", ToolsCredential: "finance-tools"}, nil
+		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"request", "tool", "example", "--credential", "billing", "--args", `{"text":"a'b; $(bad)"}`}}
+	state := &commandState{deps: deps, argv: []string{"request", "budget", "tokens", "--credential", "a'b; $(bad)"}}
 	root := newRootCommand(state)
 	cmd, _, err := root.Find([]string{"request"})
 	if err != nil {
@@ -60,14 +60,14 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance CRED_TOOLS=finance-tools kmx --context kind-other request tool example --credential billing --args '{\"text\":\"a'\"'\"'b; $(bad)\"}'"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance kmx --context kind-other request budget tokens --credential 'a'\"'\"'b; $(bad)'"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"agent", "tools", "models", "credential"} {
+	for _, group := range []string{"agent", "models", "credential"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string) (*config.Config, error) {
@@ -115,16 +115,13 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent list", "agent show",
 		"approvals", "approve", "audit", "backup", "budget", "completion",
-		"credential", "credential capture", "credential issue", "credential renew", "credentials",
+		"credential", "credential issue", "credential renew", "credentials",
 		"ctx", "deny", "down", "flow", "govern", "grants", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
 		"plane", "quickstart", "request",
 		"restore", "status",
-		"tools", "tools add", "tools allow", "tools allowlist", "tools govern",
-		"tools sandbox", "tools sandbox status", "tools sidecar", "tools ungovern",
 		"up", "use", "version", "watch",
-		"workflow", "workflow govern", "workflow list", "workflow refresh", "workflow run", "workflow show",
 	}
 	sort.Strings(want)
 
@@ -184,24 +181,6 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 	}
 }
 
-func TestRepeatedToolFlagPreservesValuesAndCommas(t *testing.T) {
-	root := newRootCommand(&commandState{deps: productionDependencies()})
-	cmd, args, err := root.Find([]string{"tools", "add", "demo", "--url", "http://demo.ns:8080/mcp", "--tool", "get:a,b", "--tool", "post:"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.ParseFlags(args); err != nil {
-		t.Fatal(err)
-	}
-	got, err := cmd.Flags().GetStringArray("tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, []string{"get:a,b", "post:"}) {
-		t.Fatalf("repeated tools=%v", got)
-	}
-}
-
 func TestErrorsAreReturnedWithoutAutomaticUsage(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
@@ -224,7 +203,7 @@ func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 }
 
 func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
-	for _, args := range [][]string{{"credential", "frob"}, {"tools", "frob"}, {"agent", "frob"}} {
+	for _, args := range [][]string{{"credential", "frob"}, {"models", "frob"}, {"agent", "frob"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		if err := execute(args, deps); err == nil {
@@ -242,7 +221,7 @@ func TestAuditInboundIsRejectedBeforeLoadingConfig(t *testing.T) {
 			return nil, errors.New("operational config must not be loaded")
 		}
 		err := execute(args, deps)
-		if err == nil || !strings.Contains(err.Error(), "usage: kmx audit tool|approval") {
+		if err == nil || !strings.Contains(err.Error(), "usage: kmx audit approval") {
 			t.Fatalf("%v must be rejected as an unsupported audit kind: %v", args, err)
 		}
 		if *loads != 0 {
@@ -276,47 +255,5 @@ func TestCredentialIssueSecretDefaultsToKagentNamespace(t *testing.T) {
 	}
 	if got := issue.Flag("namespace").DefValue; got != config.DefaultNamespace {
 		t.Fatalf("--namespace default=%q, want %q", got, config.DefaultNamespace)
-	}
-}
-
-// The sandbox installs a privileged DaemonSet, so what it will and will not
-// accept is a safety property, not a style one. Cobra enforces all three now,
-// but the contract is pinned here so a later refactor cannot loosen it
-// silently.
-func TestToolsSandboxRefusesWhatItCannotHonour(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		argv []string
-	}{
-		// A stray word must not be shrugged off into an install.
-		{"a trailing word", []string{"tools", "sandbox", "unexpected"}},
-		{"a word after status", []string{"tools", "sandbox", "status", "extra"}},
-		// The sandbox is node-level: installed once per cluster, and every
-		// governed tool call lands on it whatever credential made it. A
-		// --credential accepted and then ignored is how an operator comes
-		// to believe they scoped something they did not.
-		{"a credential it cannot scope to", []string{"tools", "sandbox", "--credential", "demo"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var out, errOut bytes.Buffer
-			deps, _ := testDependencies(&out, &errOut)
-			if err := execute(tc.argv, deps); err == nil {
-				t.Fatalf("%v was accepted; it must be refused", tc.argv)
-			}
-		})
-	}
-}
-
-// The two spellings that must keep working.
-func TestToolsSandboxResolvesInstallAndStatus(t *testing.T) {
-	root := newRootCommand(&commandState{deps: productionDependencies()})
-	for _, path := range [][]string{{"tools", "sandbox"}, {"tools", "sandbox", "status"}} {
-		command, remaining, err := root.Find(path)
-		if err != nil || len(remaining) != 0 {
-			t.Errorf("%v did not resolve: remaining=%v err=%v", path, remaining, err)
-		}
-		if command.RunE == nil {
-			t.Errorf("%v resolved to a command that does nothing", path)
-		}
 	}
 }

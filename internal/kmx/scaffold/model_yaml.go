@@ -6,6 +6,41 @@ import (
 	"strings"
 )
 
+// Server egress postures for an onboarded model endpoint.
+const (
+	EgressNone = "none"
+	EgressDNS  = "dns"
+	EgressKeep = "keep"
+)
+
+var ServerEgressModes = []string{EgressNone, EgressDNS, EgressKeep}
+
+// matchLabels quotes cluster-supplied keys and values, in stable order.
+func matchLabels(labels map[string]string, indent int) (string, error) {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pad := strings.Repeat(" ", indent)
+	var b strings.Builder
+	for i, k := range keys {
+		qk, err := quote(k)
+		if err != nil {
+			return "", err
+		}
+		qv, err := quote(labels[k])
+		if err != nil {
+			return "", err
+		}
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%s%s: %s", pad, qk, qv)
+	}
+	return b.String(), nil
+}
+
 // GenerateModel renders the three documents that make a model endpoint a
 // governed upstream, in the order they must be applied:
 //
@@ -13,8 +48,7 @@ import (
 //  2. the proxy's egress allowance to it,
 //  3. the endpoint's ingress allowance from the proxy — and nothing else.
 //
-// There is no fourth. See the header of model.go for why the tool seam's
-// RemoteMCPServer has no analogue here.
+// Client wiring is printed separately rather than requiring a kagent CRD.
 func GenerateModel(spec ModelSpec) (string, error) {
 	if err := ValidateModelName(spec.Name); err != nil {
 		return "", err
@@ -87,7 +121,7 @@ metadata:
 		}
 		b.WriteString(`  # The version this overlay was READ at. It makes the apply
   # conditional: if anyone has changed the overlay since — another
-  # onboarding, a hand-added standing constraint — kubectl refuses this
+  # onboarding or a reviewed fragment edit — kubectl refuses this
   # with a Conflict and changes nothing, rather than replacing their
   # work with a snapshot taken before it existed. Scaffold again to
   # pick their change up.

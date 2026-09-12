@@ -148,10 +148,11 @@ kagent chart and the agents.
 
 ## Upgrading the plane
 
-The retained governance plane stores its ledger, budgets,
-allowlists, approvals and grants in Postgres. This is not Orka's storage
+The retained model plane stores its ledger, budgets, approvals and grants in
+Postgres, alongside historical tool/inbound data. This is not Orka's storage
 or upgrade contract. Upgrading the legacy plane is
-`kmx plane` again with the newer kmx:
+`kmx plane` again with the newer kmx, **after** the
+[retirement cleanup review](operations.md#upgrading-after-gateway-retirement):
 
 ```bash
 kmx backup plane-before-upgrade.sql   # take one; it is one command
@@ -170,67 +171,42 @@ What happens under that:
 - A rollout is a Kubernetes rolling update: a new pod does not take traffic
   until it is ready, and it is not ready until its migrations have applied.
 
-**Proven, not asserted.** CI's `plane-upgrade` job
+CI's `plane-upgrade` job
 ([scripts/plane-upgrade-probe.sh](../scripts/plane-upgrade-probe.sh)) installs
-a plane several migrations old straight from the module proxy, seeds it through
-its own admin API with a credential, a budget, a tool allowlist, an
-admin-approved fixture grant and a priced ledger row, then starts the current plane on the
-same database and asserts every one of those survived and that the upgraded
-plane serves a fresh governed call.
+a plane several migrations old from the module proxy, seeds it through its admin
+API with a credential, budget, bounded budget grant and priced ledger row, then
+starts the current plane on the same database. It checks that state survived
+and that the old budget grant admits a fresh model call over the cap. Historical
+tool data is retained, not served through removed allowlist/tool-audit APIs or
+live tool authority. All twelve SQL migrations remain unchanged.
 
 ## When kmx and the plane are different versions
 
-They are different versions more often than not: `go install …@latest` upgrades
-kmx and touches nothing in your cluster, so anyone who upgrades one and not the
-other has skew. kmx asks the plane what it is before asking it for anything —
-`GET /admin/version`, once per command, on the admin port — and says so:
+Installing kmx changes no running plane. Admin commands read
+`GET /admin/version`, once per command, before their operation. The reported
+**admin contract** marks API revisions; it is not release-version ordering or
+compatibility negotiation.
 
-```console
-$ kmx tools allowlist warehouse
-kubectl -n kaimahi port-forward deploy/kaimahi-proxy 19091:9091 # (the admin port is on no Service)
-plane v0.2.0 (admin contract 1)
-…
-```
+Contract **4** removes the gateway/tool-policy API and executable tool approvals;
+contract 3 previously removed inbound interfaces. Lower-bound checks remain
+useful for surviving operations, such as model-table validation, without making
+an older plane unusable for every model operation. They cannot prove that every
+route used by an older CLI still exists on a newer plane.
 
-The version string is for you. The **admin contract** is the number kmx
-compares: a version string cannot be ordered across releases and development
-builds. The contract marks admin-surface revisions; lower-bound capability checks
-remain useful for retained features, but the number alone cannot prove every old
-route still exists. Contract **3** marks intentional inbound retirement, not an
-additive feature.
-
-**Skew is decided per operation, not once for the whole session.** An older
-plane is not a broken one, so kmx keeps working against everything that plane
-can serve and refuses only what it cannot — before sending it:
-
-```console
-$ kmx workflow govern --file release.yaml
-this plane is too old to check a workflow's `requires` against its upstream table — nothing has been applied.
-  plane: a plane too old to report its version (v0.1.0 or earlier; admin contract 0)
-  kmx:   v0.2.0, and this needs admin contract 1
-  Upgrade the plane with the kmx you are already running:
-    kmx plane
-```
-
-A blanket refusal on any skew would strand a working cluster over one feature
-it does not have; a blanket warning would be the same bare `404 page not found`
-with more words in front of it.
-
-**A plane NEWER than kmx proceeds**, with one note saying so. The state lives in
-the plane — the ledger, the grants, the approvals — and stranding it because the
-CLI is behind would be the more expensive mistake. This is not a compatibility
-guarantee: an intentional retirement can remove a route an older CLI still calls.
+A newer plane can pass an older CLI's numeric check while its removed endpoints
+return errors. Upgrading one side alone therefore does not establish a working
+operator path. Use matched CLI and plane revisions.
 
 ### The promise the contract rests on
 
 The original grow-only promise no longer applies across governance retirement.
-**Upgrade kmx and the plane together.** Contract 3 removes inbound audit and
-inbound approval filing. Older CLI binaries accept higher numbers and may still
-print their compiled-in grow-only reassurance; their four-trail flow/watch and
-inbound audit commands fail against this plane. The current CLI uses three
-trails and warns that compatibility with a newer plane is not guaranteed.
-See the [retirement upgrade procedure](operations.md#upgrading-after-inbound-retirement)
-for external endpoints, configuration and retained data.
+**Upgrade kmx and the plane together.** Older binaries may still print their
+compiled-in grow-only reassurance. Their tool commands and three-/four-trail
+flow/watch calls fail against this plane. The current CLI uses **two trails:
+model and approval history**, and warns that a newer contract is not a
+compatibility guarantee. See the [retirement upgrade procedure](operations.md#upgrading-after-gateway-retirement)
+for rejected configuration, stale Services/policies, owner-managed references,
+credential cleanup and retained data.
 
 Two consequences worth stating:
 
@@ -247,14 +223,13 @@ against the genuinely old plane it already has running, and asserts the version
 gap is named rather than reported as a 404 — and, at the other end, that a plane
 built from the checkout reports a usable contract.
 
-### One behaviour change worth knowing: grants minted before argument binding
+### One behaviour change worth knowing: historical tool grants
 
-Migration `00008` welded tool approvals to the exact call. Grants minted
-before it carry no argument digest, and that class is **closed**: those grants
-keep their old verb-level meaning — still bounded by the expiry and use count
-their approver set — and the store will not mint another one. So an upgrade
-neither widens an old grant nor silently voids it. Every grant minted after
-the upgrade admits exactly one call.
+All tool grants are now **inactive**, including grants predating argument binding
+in migration `00008`. Their digests, summaries, expiry and use counts are
+preserved as history, not executable authority. New tool/inbound requests and
+approvals are refused; old pending requests remain readable and deniable.
+Budget requests, approvals and grant headroom remain until the final slice.
 
 ### And one more: credentials that already exist keep working
 
@@ -265,11 +240,10 @@ shrink: every credential issued afterwards has a deadline, and
 `kaimahi_credentials_without_expiry` is the gauge whose job is to trend to
 zero. Renew or re-issue at your own pace ([identity.md](identity.md)).
 
-Both preserve surviving model/tool capabilities without widening their authority.
-Retired inbound grants are a separate, explicit exception: their rows remain
-readable but are reported inactive and have no dispatcher. Old pending inbound
-requests can be denied, not approved into new grants. Retirement does not drop
-stored audit data or revoke credentials used by surviving seams.
+Credential compatibility preserves the model seam; it does not restore retired
+tool authority. Retirement does not drop stored audit data or revoke credentials
+used by surviving model routes. Review obsolete tool-only Secrets and external
+revocation separately rather than resetting the database.
 
 ### When a migration fails halfway
 

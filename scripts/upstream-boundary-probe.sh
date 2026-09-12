@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Prove that ONLY the plane's proxy can reach an onboarded MCP server
-# (docs/govern-your-agent.md) — the half of the scaffolded
-# NetworkPolicy pair that makes governance a boundary rather than a
-# convention. Without it any pod in the cluster could call the server
-# directly, around the allowlist, the constraints, the grants and the
-# audit, and every claim the plane makes about that tool would hold only
-# for callers who chose to come through the front door.
+# Prove that ONLY the plane's proxy can reach an onboarded model endpoint.
+# Without the scaffolded NetworkPolicy pair, a pod could bypass model
+# budgets and metering by calling the endpoint directly.
 #
 # It asserts a NEGATIVE against a CONTROL, because a "blocked" result
 # means nothing on its own: a policy the CNI ignores, a dead target, a
@@ -22,20 +18,20 @@
 # one) and if a future image dropped it, EVERY probe would report
 # "blocked". The control is what makes that a loud failure rather than a
 # false pass. The other direction — the proxy CAN reach
-# the server — is proven by the governed tool call itself
-# (scripts/tool-call-probe.sh), which is a stronger positive than
+# the endpoint — is proven by the governed model call itself
+# (scripts/model-seam-probe.sh), which is a stronger positive than
 # anything this script could open.
 #
 # Env:
 #   KUBECTL      kubectl invocation incl. --context
-#   TARGET       host:port that must be unreachable (default acme-warehouse.acme:8090)
+#   TARGET       host:port that must be unreachable (default acme-model.acme-model:8000)
 #   CONTROL      host:port that must be reachable  (default kagent-tools.kagent:8084)
 #   PROBE_NS     where the probe pod runs (default kagent — where agents live)
 #   PROBE_IMAGE  default busybox:1.36
 set -euo pipefail
 
 KUBECTL="${KUBECTL:-kubectl}"
-TARGET="${TARGET:-acme-warehouse.acme:8090}"
+TARGET="${TARGET:-acme-model.acme-model:8000}"
 CONTROL="${CONTROL:-kagent-tools.kagent:8084}"
 PROBE_NS="${PROBE_NS:-kagent}"
 PROBE_IMAGE="${PROBE_IMAGE:-busybox:1.36}"
@@ -72,8 +68,7 @@ echo "control ok: $PROBE_NS/$pod reaches $CONTROL"
 
 if reach "$TARGET"; then
   echo "BOUNDARY FAILED: $PROBE_NS/$pod reached $TARGET directly." >&2
-  echo "A pod that is not the proxy can call this server around the gateway —" >&2
-  echo "around the allowlist, the standing constraints, the grants and the audit." >&2
+  echo "A pod that is not the proxy can bypass model budgets and metering." >&2
   exit 1
 fi
 echo "boundary holds: $PROBE_NS/$pod cannot reach $TARGET; only the proxy may."

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prove the cannot-tell branch of `kmx status` on a real cluster.
 #
-# A reader that cannot LIST the tool seams or the Secret names must produce
+# A reader that cannot LIST Secret names must produce
 # a stated `unknown` carrying kubectl's own reason, and must publish no
 # counts at all — never "0 governed", which is the false zero this whole
 # change exists to prevent. The half that CAN be read stays counted.
@@ -23,8 +23,8 @@ cleanup() {
 trap cleanup EXIT
 
 kubectl --context "$ctx" create sa kmx-narrow -n default
-# Everything status reads EXCEPT remotemcpservers and secrets.
-kubectl --context "$ctx" create clusterrole kmx-narrow-reader --verb=get,list --resource=pods,namespaces,deployments,agents.kagent.dev,modelconfigs.kagent.dev
+# Model configurations and raw MCP inventory remain readable; secrets do not.
+kubectl --context "$ctx" create clusterrole kmx-narrow-reader --verb=get,list --resource=pods,namespaces,deployments,agents.kagent.dev,modelconfigs.kagent.dev,remotemcpservers.kagent.dev
 kubectl --context "$ctx" create clusterrolebinding kmx-narrow-reader --clusterrole=kmx-narrow-reader --serviceaccount=default:kmx-narrow
 
 server="$(kubectl --context "$ctx" config view -o "jsonpath={.clusters[?(@.name=='$ctx')].cluster.server}")"
@@ -42,7 +42,6 @@ current-context: $ctx
 EOF
 
 KUBECONFIG="$work/kubeconfig" "$kmx" status | tee "$work/status.out"
-grep -E 'tool seams: +unknown — .*remotemcpservers' "$work/status.out"
 grep -E 'credentials: +unknown — .*secrets' "$work/status.out"
 
 KUBECONFIG="$work/kubeconfig" "$kmx" status -o json > "$work/status.json"
@@ -50,7 +49,8 @@ python3 - "$work/status.json" <<'PY'
 import json, sys
 
 governance = json.load(open(sys.argv[1]))["governance"]
-for name in ("toolSeams", "credentials"):
+assert "toolSeams" not in governance, governance
+for name in ("credentials",):
     population = governance[name]
     assert population["state"] == "unknown", (name, population)
     assert population["reason"], (name, population)

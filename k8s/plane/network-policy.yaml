@@ -1,56 +1,14 @@
-# The network boundary around the governance plane.
+# The model plane's network boundary ships with the plane on every target.
+# Policies are additive: default-deny both ways, then exact workload paths.
+# Enforcement is not a given; scripts/netpol-probe.sh proves blocked paths
+# against a reachable control. IPv6 needs matching dual-stack rules.
 #
-# Everything in the kaimahi namespace is default-deny, ingress AND egress,
-# and each workload gets back exactly the paths it needs to work. Policies are additive, so every allowance below is readable on
-# its own as "this pod may talk to that pod on that port" — and anything
-# not written here does not happen. This file ships WITH the plane
-# (kubectl apply -f k8s/plane/ on kind; scripts/plane-deploy.sh applies
-# the same directory on a registry-backed cluster), so the boundary is
-# never a separate step someone forgets.
-#
-# ENFORCEMENT IS NOT A GIVEN. NetworkPolicy is an API; the CNI enforces
-# it, and a cluster whose CNI ignores it reports these objects as
-# present while blocking nothing — which reads as protection and is
-# worse than none. kind's default CNI (kindnetd) enforces it via
-# kube-network-policies (verified 2026-09-01 on the netpol-verify
-# cluster: a deny-all made pod→pod and pod→internet time out). Every
-# other cluster must PROVE it: `make netpol-verify` runs the probe in
-# scripts/netpol-probe.sh, which asserts the NEGATIVE (a policed pod
-# cannot reach what it must not) against a control that can. CI runs it
-# on every PR. AKS enforces only when the cluster was created with a
-# network-policy engine (docs/egress.md).
-#
-# What is deliberately NOT here:
-#   - The admin port (9091) has no ingress rule. It is reached only by
-#     kubectl port-forward, which is NODE-originated traffic (kubelet →
-#     pod), and NetworkPolicy governs pod traffic; node-originated
-#     connections — port-forward, kubelet probes — are unaffected on
-#     kind (measured) and on every CNI this repo knows of. So the admin
-#     plane keeps its existing gate: cluster credentials, then the
-#     bearer token. Nothing in the pod network can reach 9091.
-#   - Copilot, and hosted tool upstreams. The proxy's committed upstream
-#     table names api.githubcopilot.com three times (the Copilot LLM path,
-#     GitHub's hosted MCP server, and the release driver's own entry
-#     against it) and mcp.dev.azure.com once, but nothing in THIS file
-#     lets the proxy leave the cluster. Those allowances are
-#     k8s/egress-copilot.yaml (applied by `kmx models credential copilot`) and
-#     k8s/egress-hosted.yaml (applied by `make github-secret`) — the
-#     moment a hosted upstream is enabled is the moment the proxy needs
-#     the internet, and not before.
-#     Both are the same shape (443 to public addresses) and CI refuses
-#     either under k8s/plane/. On kind and in CI the proxy is provably
-#     internet-free, and the hosted path is proven with a synthetic
-#     stand-in (docs/hosted-upstreams.md).
-#   - IPv6. kind is IPv4-only by default; the ipBlock rules are IPv4.
-#     A dual-stack cluster needs a matching ::/0-with-exceptions rule.
-#   - The kagent and ollama namespaces. This boundary is the plane's.
-#     Agents on UNGOVERNED hosted presets (make use PRESET=anthropic)
-#     still reach the internet directly, and `make model` needs the
-#     ollama pod to reach registry.ollama.ai. docs/egress.md is honest
-#     about that residual.
+# Admin 9091 has no pod ingress. kubectl port-forward is node-originated
+# and still requires cluster credentials, then the admin bearer.
+# Hosted model egress is opt-in: k8s/egress-copilot.yaml and
+# k8s/egress-hosted.yaml both allow only public TCP 443. Neither ships here.
+# The kagent and ollama namespaces are outside this plane's boundary.
 ---
-# 1. Nothing in, nothing out, for every pod in the namespace — including
-#    pods that do not exist yet. The allowances below punch exact holes.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -60,32 +18,9 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# 2. The proxy / MCP gateway (one pod, two listeners).
-#
-# In: the agent namespace, on the two data ports only — agents call the
-# LLM seam (8080) and the tool seam (8081); kagent's controller
-# discovers tools through 8081. The whole kagent namespace rather than
-# named pods: kagent generates the agent Deployments and their labels,
-# and a policy keyed on a label kagent might rename would fail OPEN by
-# blocking nothing new — it would fail CLOSED by blocking every agent,
-# which is at least visible, but the seam is authenticated by the
-# credential anyway; the network's job here is "only from where agents
-# live".
-#
-# A workload in ANY OTHER namespace — an application this project did not
-# write, migrated onto a seam — is not admitted by this rule and must not
-# be: the namespace it runs in is the adopter's, not this repository's.
-# `kmx migrate` writes that allowance as a separate object in the
-# adopter's own namespace, named and reviewable there (docs/migrate.md).
-#
-# Out: the ledger, the five in-cluster upstreams the committed table
-# names (ollama, Orka's OpenAI-compatible endpoint, kagent's tool server,
-# the Slack MCP server, the fixture ERP), and DNS. Each upstream is pinned to its POD
-# by label, in its namespace, on its port — not to the Service, because
-# policy is evaluated on the post-NAT pod address. A new in-cluster entry in
-# k8s/plane/upstreams.yaml needs a matching rule here, or the gateway's
-# 502 will say so; a hosted entry (`internet: true`) needs the opt-in
-# allowance instead (see above).
+# Authenticated model calls from kagent, and nothing on admin/ops.
+# Other application namespaces require their own additive allowance.
+# Egress selects the actual pods/target ports, not pre-NAT Service ports.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -104,8 +39,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-        - protocol: TCP
-          port: 8081
   egress:
     - to:
         - podSelector:
@@ -124,12 +57,8 @@ spec:
       ports:
         - protocol: TCP
           port: 11434
-    # Orka's OpenAI-compatible endpoint, for the two orka upstreams in the
-    # committed table (docs/migrate.md). The pod selector is the one the
-    # orka-api Service itself uses, and 8080 is the CONTAINER port, which
-    # is what a NetworkPolicy is evaluated against — a Service port would
-    # match nothing. On a cluster with no Orka this rule selects no pod
-    # and permits nothing.
+    # Orka's model endpoint, using the same selectors as its Service.
+    # With no Orka installed this selects no pod and permits nothing.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -144,34 +73,6 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kagent
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: kagent-tools
-      ports:
-        - protocol: TCP
-          port: 8084
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: kaimahi-slack-mcp
-      ports:
-        - protocol: TCP
-          port: 13080
-    # The demo's fixture ERP (k8s/erp-mcp.yaml), the fourth
-    # in-cluster tool upstream. Pinned to its pod by label, on its port.
-    # Present whether or not the ERP is deployed: an allowance to a pod
-    # that does not exist opens nothing.
-    - to:
-        - podSelector:
-            matchLabels:
-              app: kaimahi-erp
-      ports:
-        - protocol: TCP
-          port: 8085
-    - to:
-        - namespaceSelector:
-            matchLabels:
               kubernetes.io/metadata.name: kube-system
           podSelector:
             matchLabels:
@@ -182,17 +83,8 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# 2b. The operations port. The proxy's metrics, readiness and
-#     liveness live on 9092, on NO Service: kubelet's probes are
-#     node-originated and need no rule, and nothing in the agent
-#     namespace can reach it (rule 2 opens 8080 and
-#     8081 to agents and nothing else). A scraper gets exactly this:
-#     pods labelled as Prometheus in a namespace called `monitoring`,
-#     on 9092, nothing more. Nothing scrapes in CI and no such namespace
-#     exists on kind — the rule matches nothing until an operator
-#     creates one, and an operator with a different scraper edits the
-#     two selectors here (docs/operations.md). No auth on the port, so
-#     the allowance IS the access control.
+# Ops has no Service and no authentication. The scraper selectors are
+# the access control; kubelet probes are node-originated and need no rule.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -215,11 +107,8 @@ spec:
         - protocol: TCP
           port: 9092
 ---
-# 3. The ledger. In: the proxy, on 5432. Out: NOTHING — Egress is listed
-#    with no rules on purpose, so this pod's zero egress is stated here
-#    and not merely inherited. It does not even get DNS: it has no one
-#    to look up. This is the pod scripts/netpol-probe.sh execs into for
-#    the negative — a real workload, not a stand-in.
+# The ledger accepts only the proxy, and needs no egress, including DNS.
+# The probe execs into this real pod to prove the negative.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -238,107 +127,3 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
----
-# 4. The Slack MCP server — the one pod here that legitimately
-#    needs the internet. Labels are what kagent's kmcp controller puts on
-#    the MCPServer's pods (read from a live cluster, 2026-09-01).
-#
-# In: the proxy only, on 13080. This CLOSES a measured and documented
-# bypass: slack-mcp-server v1.3.0 ignores its API key on the http
-# transport, so until now any pod in the cluster could call it directly
-# and post as the bot, around the gateway's allowlist and audit. Now
-# the only route to it is through the gateway.
-#
-# Out: DNS, and TCP 443 to addresses that are not private. That is the
-# whole allowance, and it is important to be precise about what it is:
-# an IP/port rule, not a URL allowlist. It lets this pod open a TLS
-# connection to ANY public host on 443 — api.slack.com, or anywhere a
-# compromised server, a poisoned image, or a malicious tool argument
-# would rather send the workspace token. NetworkPolicy cannot express
-# "only slack.com" (no DNS-name selectors in the core API), so what
-# bounds the destination is still the server's own code plus the three
-# non-network layers around it (gateway allowlist, channel restriction,
-# Slack scopes). What this DOES guarantee: no plaintext ports, no other
-# in-cluster pod (the private ranges are excluded — the ledger, ollama,
-# the tool server and the proxy's admin port are all unreachable from
-# here), no non-443 exfiltration, and nothing at all if the pod is
-# replaced by one without these labels.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: kaimahi-slack-mcp
-  namespace: kaimahi
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: kaimahi-slack-mcp
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: kaimahi-proxy
-      ports:
-        - protocol: TCP
-          port: 13080
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8 # pod + service CIDRs on kind and AKS
-              - 172.16.0.0/12 # kind node (docker bridge) addresses
-              - 192.168.0.0/16
-              - 169.254.0.0/16 # link-local incl. cloud metadata endpoints
-              - 100.64.0.0/10 # carrier-grade NAT
-              - 127.0.0.0/8
-      ports:
-        - protocol: TCP
-          port: 443
----
-# 5. The demo's fixture ERP (k8s/erp-mcp.yaml). The mirror image of
-#    the Slack server: that pod needs the internet, this one needs
-#    nothing at all.
-#
-# In: the proxy only, on 8085. So the ONLY route to the invoices, the
-# purchase orders and — the part that matters — `payment_schedule` is
-# through the gateway, where the allowlist, the standing constraint, the
-# call-bound grants and the audit are. A pod that could reach 8085
-# directly could schedule any payment it liked, and the demo's whole
-# claim would be a convention.
-#
-# Out: NOTHING. Egress is listed with no rules on purpose, the way the
-# ledger's is: this server answers from a ConfigMap it read at boot, so
-# it has nobody to look up and nowhere to go. It is the strongest
-# statement available that the ERP holds no credential and reaches no
-# real system — there is no path for one to be used.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: kaimahi-erp
-  namespace: kaimahi
-spec:
-  podSelector:
-    matchLabels:
-      app: kaimahi-erp
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: kaimahi-proxy
-      ports:
-        - protocol: TCP
-          port: 8085

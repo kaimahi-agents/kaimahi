@@ -1,13 +1,7 @@
-// Package seamtls loads the certificate the plane serves its two data seams
-// with, and builds the client the plane dials its own seams by.
-//
-// What crosses those seams is why they are encrypted. The model seam carries
-// the full text of what an agent was asked and what it answered; the tool
-// seam carries the full body of what a tool returned. Neither is written to
-// any artifact the plane keeps — the ledger holds identifiers, token counts
-// and cost, and the tool audit holds a capped summary of declared argument
-// fields — so that content exists in no other record and capture is the only
-// way to obtain it.
+// Package seamtls loads the certificate the plane serves its model seam
+// with, and builds the client the plane uses to verify its own listener.
+// Model prompts and responses cross this seam; the ledger records only
+// identifiers, usage and cost, not the content.
 //
 // The material is minted by `kmx plane` and arrives as a projected Secret.
 // The plane never mints and never holds the authority's private key: it has
@@ -109,7 +103,7 @@ func Load(dir string) (*Material, error) {
 	return &Material{Leaf: leaf, certificate: certificate, roots: roots}, nil
 }
 
-// ServerConfig is what the two seam listeners serve with.
+// ServerConfig is what the model listener serves with.
 func (m *Material) ServerConfig() *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{m.certificate},

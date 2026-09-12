@@ -21,14 +21,6 @@ func TestRetryClassesMatchTheControllersErrors(t *testing.T) {
 	if ChatRetryable.MatchString(unrelatedLine) {
 		t.Error("an unrelated transport error must NOT be retried")
 	}
-	// The narrow class is what a non-idempotent action must use: an
-	// ambiguous failure may already have been acted on.
-	if !ChatRetryableSafe.MatchString(refusedLine) {
-		t.Error("the safe class must still retry a refused dial")
-	}
-	if ChatRetryableSafe.MatchString(eofLine) || ChatRetryableSafe.MatchString(resetLine) {
-		t.Error("the safe class must NOT retry an ambiguous failure")
-	}
 }
 
 // The output being matched is stdout+stderr, and stdout carries the A2A task

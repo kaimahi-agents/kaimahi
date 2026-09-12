@@ -2,8 +2,7 @@
 # Deploy the PLAIN, non-Kaimahi model endpoint the model-seam onboarding
 # path is proven against (docs/govern-your-agent.md, docs/spend.md).
 #
-# It is the model seam's counterpart to `plain-upstream.sh`, and it exists
-# for the same reason: nothing about this endpoint is Kaimahi's. It has no
+# Nothing about this endpoint is Kaimahi's. It has no
 # upstream-table entry, no NetworkPolicy and no ModelConfig committed
 # anywhere in this repo, and it speaks the OpenAI **Responses API** —
 # which the committed model upstreams do not, and which the bundled Ollama
@@ -12,7 +11,7 @@
 # did.
 #
 # The Service publishes 8000 while the container listens on 9000, on
-# purpose and for the same reason as the tool fixture's mismatch: it is
+# purpose: it is
 # the mistake a hand-written NetworkPolicy makes, and the one
 # `kmx models add` cannot make because it reads the Service's resolved
 # targetPort rather than its published port.

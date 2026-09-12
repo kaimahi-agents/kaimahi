@@ -10,7 +10,6 @@ package store_test
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -250,53 +249,20 @@ func TestConcurrentOverCapCallsAgainstAOneUseBudgetGrantAdmitExactlyOne(t *testi
 	require.False(t, live[0])
 }
 
-func TestConcurrentToolCallsAgainstGrantUsesAdmitExactlyThatMany(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	for _, uses := range []int32{1, 3} {
-		t.Run(fmt.Sprintf("uses=%d", uses), func(t *testing.T) {
-			name := fresh(t, s, "tgrant")
-			id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "k8s_get_events", Detail: "test", ArgDigest: digestOf("k8s_get_events")})
-			require.NoError(t, err)
-			_, err = s.ApproveRequest(ctx, id, nil, i32(uses), nil, store.DecidedByAdmin)
-			require.NoError(t, err)
-			// The FOR UPDATE SKIP LOCKED this replaced never double-spent
-			// but could deny a call
-			// while uses remained; under the credential lock the count is
-			// exact in both directions.
-			oks := race(12, func(int) bool {
-				_, ok, err := s.ConsumeToolGrant(ctx, name, "k8s_get_events", digestOf("k8s_get_events"))
-				require.NoError(t, err)
-				return ok
-			})
-			var admitted int
-			for _, ok := range oks {
-				if ok {
-					admitted++
-				}
-			}
-			require.EqualValues(t, uses, admitted)
-			_, ok, err := s.ConsumeToolGrant(ctx, name, "k8s_get_events", digestOf("k8s_get_events"))
-			require.NoError(t, err)
-			require.False(t, ok, "exhausted")
-		})
-	}
-}
-
 func TestConcurrentDecisionsOnOneRequestDecideItOnce(t *testing.T) {
 	s, _ := pgStore(t)
 	ctx := context.Background()
 	name := fresh(t, s, "decide")
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "k8s_get_pods", Detail: "test", ArgDigest: digestOf("k8s_get_pods")})
+	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens", Detail: "test"})
 	require.NoError(t, err)
 	// Ten approvers and deniers at once: one decision lands, the rest
 	// find the request already decided; one grant, one decision audit row.
 	errs := race(10, func(i int) error {
 		if i%2 == 0 {
-			_, err := s.ApproveRequest(ctx, id, nil, i32(1), nil, fmt.Sprintf("slack:U%d", i))
+			_, err := s.ApproveRequest(ctx, id, nil, i32(1), i64(10), store.DecidedByAdmin)
 			return err
 		}
-		return s.DenyApprovalRequest(ctx, id, fmt.Sprintf("slack:U%d", i))
+		return s.DenyApprovalRequest(ctx, id, store.DecidedByAdmin)
 	})
 	var decided, notPending int
 	for _, err := range errs {
@@ -329,7 +295,7 @@ func TestConcurrentFilingsOfOneSubjectFileOnce(t *testing.T) {
 	// Every replica's denial files: exactly one filing is fresh,
 	// the rest are deduped.
 	fileds := race(10, func(int) bool {
-		_, filed, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "k8s_get_events", Detail: "denied", ArgDigest: digestOf("k8s_get_events")})
+		_, filed, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens", Detail: "denied"})
 		require.NoError(t, err)
 		return filed
 	})
@@ -384,174 +350,6 @@ func TestAdmissionHotPathCost(t *testing.T) {
 		require.NoError(t, err)
 	}
 	t.Logf("admit+record per call: serial %v, %d-way concurrent (amortised) %v", serial, n, concurrent)
-}
-
-// digestOf stands in for the gateway's call digest (a 64-hex sha256):
-// what matters to the store is that a tool grant is welded to one value
-// and admits only calls carrying it.
-func digestOf(call string) string {
-	sum := sha256.Sum256([]byte(call))
-	return hex.EncodeToString(sum[:])
-}
-
-// Against real Postgres: the pending-request dedup key carries the
-// digest, so two attempts at the SAME tool with DIFFERENT
-// policy-relevant arguments are two requests — before argument binding
-// they collapsed into one and a single approval covered both — while a
-// genuine repeat of the same call still dedupes.
-func TestPendingRequestsDedupePerCallNotPerVerb(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "dedupe")
-
-	pay := func(amount string) store.Filing {
-		return store.Filing{Credential: name, Kind: "tool", Subject: "payment_schedule",
-			Detail: "denied tools/call", ArgDigest: digestOf(amount),
-			ArgSummary: "payment_schedule: amount_cents " + amount}
-	}
-	first, filed, err := s.FileRequest(ctx, pay("3255000"))
-	require.NoError(t, err)
-	require.True(t, filed)
-
-	_, filed, err = s.FileRequest(ctx, pay("3255000"))
-	require.NoError(t, err)
-	require.False(t, filed, "an identical call is one pending request")
-
-	second, filed, err := s.FileRequest(ctx, pay("4800000"))
-	require.NoError(t, err)
-	require.True(t, filed, "a different amount is a different request")
-	require.NotEqual(t, first, second)
-
-	pending, err := s.PendingApprovals(ctx)
-	require.NoError(t, err)
-	var mine []store.ApprovalRequest
-	for _, p := range pending {
-		if p.CredentialName == name {
-			mine = append(mine, p)
-		}
-	}
-	require.Len(t, mine, 2)
-	require.Equal(t, "payment_schedule: amount_cents 3255000", mine[0].ArgSummary)
-	require.Equal(t, digestOf("4800000"), mine[1].ArgDigest)
-}
-
-// The grant is welded to the digest: approving one call admits that call
-// and denies every other, and the approvals trail records which call was
-// approved.
-func TestToolGrantAdmitsOnlyItsOwnCall(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "welded")
-
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "payment_schedule",
-		ArgDigest: digestOf("approved"), ArgSummary: "payment_schedule: amount_cents 3255000"})
-	require.NoError(t, err)
-	g, err := s.ApproveRequest(ctx, id, nil, i32(2), nil, store.DecidedByAdmin)
-	require.NoError(t, err)
-	require.NotNil(t, g.ArgDigest)
-	require.Equal(t, digestOf("approved"), *g.ArgDigest)
-
-	_, ok, err := s.ConsumeToolGrant(ctx, name, "payment_schedule", digestOf("another call"))
-	require.NoError(t, err)
-	require.False(t, ok, "a grant must not admit a call it was not minted for")
-
-	_, ok, err = s.ConsumeToolGrant(ctx, name, "payment_schedule", digestOf("approved"))
-	require.NoError(t, err)
-	require.True(t, ok)
-
-	// The mismatch above burned nothing: one use of two is left.
-	grants, _, err := s.Grants(ctx, name, 10)
-	require.NoError(t, err)
-	require.Len(t, grants, 1)
-	require.EqualValues(t, 1, grants[0].Uses)
-
-	trail, err := s.ApprovalAudit(ctx, name, 10)
-	require.NoError(t, err)
-	require.Len(t, trail, 2) // requested, approved
-	require.Equal(t, "approved", trail[0].Action)
-	require.Equal(t, "payment_schedule: amount_cents 3255000", trail[0].ArgSummary)
-	require.Equal(t, digestOf("approved"), trail[0].ArgDigest)
-}
-
-// A tool request that carries no call cannot mint a verb-level grant:
-// the NULL/absent-digest class is closed at the migration, so nothing
-// created from here on binds "any arguments".
-func TestAToolRequestWithNoCallCannotBeApproved(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "nocall")
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool", Subject: "payment_schedule"})
-	require.NoError(t, err)
-	_, err = s.ApproveRequest(ctx, id, nil, i32(1), nil, store.DecidedByAdmin)
-	require.ErrorIs(t, err, store.ErrBounds)
-
-	// Budget grants are unaffected: they have no arguments.
-	bid, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "budget", Subject: "tokens"})
-	require.NoError(t, err)
-	bg, err := s.ApproveRequest(ctx, bid, nil, i32(1), i64(10), store.DecidedByAdmin)
-	require.NoError(t, err)
-	require.Nil(t, bg.ArgDigest)
-}
-
-// The audit records the call on BOTH the denial and the admitted call,
-// so the approved call and the call that ran are provably the same one.
-func TestToolAuditCarriesTheCall(t *testing.T) {
-	s, _ := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "audit")
-	for _, e := range []store.ToolAuditEntry{
-		{CredentialName: name, Upstream: "erp", Method: "tools/call", Tool: "payment_schedule",
-			Decision: "denied", Status: 403, Detail: "outside the standing constraint",
-			ArgDigest: digestOf("call"), ArgSummary: "payment_schedule: amount_cents 4800000"},
-		{CredentialName: name, Upstream: "erp", Method: "tools/call", Tool: "payment_schedule",
-			Decision: "allowed", Status: 200, Detail: "granted g1",
-			ArgDigest: digestOf("call"), ArgSummary: "payment_schedule: amount_cents 4800000"},
-	} {
-		require.NoError(t, s.RecordToolAudit(ctx, e))
-	}
-	rows, err := s.ToolAudit(ctx, name, 10)
-	require.NoError(t, err)
-	require.Len(t, rows, 2)
-	require.Equal(t, rows[0].ArgDigest, rows[1].ArgDigest)
-	require.Equal(t, "payment_schedule: amount_cents 4800000", rows[0].ArgSummary)
-}
-
-// The legacy class, closed by migration 00008: a tool grant with a NULL
-// digest predates argument binding and is still honoured verb-level (it
-// was already bounded by expiry and uses when a human approved it), and
-// nothing can create another — ApproveRequest refuses, which the test
-// above proves. An exact match is always burned before a legacy grant.
-func TestLegacyVerbLevelGrantIsHonouredAndComesLast(t *testing.T) {
-	s, pool := pgStore(t)
-	ctx := context.Background()
-	name := fresh(t, s, "legacy")
-
-	id, _, err := s.FileRequest(ctx, store.Filing{Credential: name, Kind: "tool",
-		Subject: "payment_schedule", ArgDigest: digestOf("bound call")})
-	require.NoError(t, err)
-	_, err = s.ApproveRequest(ctx, id, nil, i32(1), nil, store.DecidedByAdmin)
-	require.NoError(t, err)
-	// A pre-migration row, written the way 00007 would have left it.
-	_, err = pool.Exec(ctx,
-		`INSERT INTO permit_grant (request_id, credential_name, kind, subject, max_uses, decided_by, arg_digest)
-		 VALUES ($1, $2, 'tool', 'payment_schedule', 5, 'admin', NULL)`, id, name)
-	require.NoError(t, err)
-
-	// The bound grant is preferred for the call it was minted for.
-	gid, ok, err := s.ConsumeToolGrant(ctx, name, "payment_schedule", digestOf("bound call"))
-	require.NoError(t, err)
-	require.True(t, ok)
-	grants, _, err := s.Grants(ctx, name, 10)
-	require.NoError(t, err)
-	for _, g := range grants {
-		if g.ID == gid {
-			require.NotNil(t, g.ArgDigest, "the exact match is burned first")
-		}
-	}
-	// Any other call falls to the legacy grant, which still admits.
-	_, ok, err = s.ConsumeToolGrant(ctx, name, "payment_schedule", digestOf("some other call"))
-	require.NoError(t, err)
-	require.True(t, ok)
 }
 
 // committedMigrations counts the migration files the plane embeds, so the

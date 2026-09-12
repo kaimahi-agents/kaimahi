@@ -28,7 +28,7 @@ spec:
     # The agent pod runs model output; it is the LEAST trusted workload here
     # and was, until now, the least constrained. kagent exposes the fields
     # (spec.declarative.deployment, v1alpha2) — we simply were not setting
-    # them. Same posture as k8s/plane/proxy.yaml and k8s/erp-mcp.yaml.
+    # them. Same posture as k8s/plane/proxy.yaml.
     # A read-only root filesystem needs somewhere to write: the runtime uses
     # /tmp, mounted here as an emptyDir rather than left writable everywhere.
     deployment:

@@ -84,12 +84,8 @@ spec:
             - name: PGUSER
               value: kaimahi
             # How long a hosted upstream may take to START answering.
-            # The dialer's default is 60s, which is generous for a tool
-            # call and for a short completion. Drafting release notes
-            # over a large pull-request listing is neither: a reasoning
-            # model can take longer than a minute to its first token, and
-            # the 60s bound turned a legitimate call into a 502
-            # (docs/release-agent.md). This raises PATIENCE only —
+            # A reasoning model can take longer than a minute to its first
+            # token. This raises PATIENCE only —
             # every other bound the hardened dialer enforces, and every
             # address it refuses, is unchanged.
             - name: EGRESS_HEADER_TIMEOUT
@@ -99,8 +95,6 @@ spec:
           ports:
             - name: data
               containerPort: 8080
-            - name: mcp
-              containerPort: 8081
             - name: admin
               containerPort: 9091
             - name: ops
@@ -111,8 +105,7 @@ spec:
               subPath: upstreams.json
               readOnly: true
             # The operator overlay — one JSON fragment per upstream
-            # somebody onboarded, tool servers with `kmx tools add` and
-            # model endpoints with `kmx models add`, merged over the
+            # somebody onboarded with `kmx models add`, merged over the
             # committed table above at boot. A whole-directory mount,
             # not subPath: the ConfigMap grows a key per onboarded
             # upstream and subPath would pin this pod to the keys that
@@ -132,22 +125,10 @@ spec:
             - name: orka-cred
               mountPath: /etc/kaimahi/upstream-creds/orka
               readOnly: true
-            - name: slack-mcp-cred
-              mountPath: /etc/kaimahi/upstream-creds/slack
-              readOnly: true
-            - name: github-cred
-              mountPath: /etc/kaimahi/upstream-creds/github
-              readOnly: true
-            - name: github-release-cred
-              mountPath: /etc/kaimahi/upstream-creds/github-release
-              readOnly: true
-            - name: ado-cred
-              mountPath: /etc/kaimahi/upstream-creds/ado
-              readOnly: true
             - name: upstream-ca
               mountPath: /etc/kaimahi/upstream-ca
               readOnly: true
-            # The certificate the two DATA seams serve with. There is no
+            # The certificate the MODEL seam serves with. There is no
             # fallback: a seam that quietly served in the clear would look
             # governed to everything that checks and be readable by anything
             # that captures, so the process refuses to start rather than
@@ -202,9 +183,9 @@ spec:
           configMap:
             name: kaimahi-upstreams
         # Optional, and on most clusters absent — an empty overlay
-        # is every cluster where nobody has onboarded their own MCP
-        # server. `kmx tools add` creates and grows it; this repo's six
-        # tool upstreams stay in the committed ConfigMap above, untouched, so
+        # is every cluster where nobody has onboarded their own model
+        # endpoint. `kmx models add` creates and grows it; the built-in
+        # model upstreams stay in the committed ConfigMap above, untouched, so
         # the next `kmx plane` cannot discard an operator's entry.
         - name: upstreams-overlay
           configMap:
@@ -238,50 +219,9 @@ spec:
             # with no Secret the orka upstreams fail closed (503 upstream
             # credential unavailable) and nothing else is affected.
             optional: true
-        # The Slack MCP server's OWN bearer credential — the gateway
-        # injects it upstream (plane custody, like the Copilot key). The
-        # Slack workspace token belongs to the MCP server pod alone: the
-        # proxy projects no keys from kaimahi-slack-bot.
-        - name: slack-mcp-cred
-          secret:
-            secretName: kaimahi-slack-mcp-key
-            # Optional, same contract: with no Secret the slack upstream
-            # fails closed (503) and every other path is unaffected.
-            optional: true
-        # The GitHub hosted MCP server's credential — a fine-grained,
-        # read-only, one-repository token (`kmx credential capture github`) —
-        # plane custody like the Copilot key: the gateway injects it, the
-        # agent never sees it. Optional, same contract: without it the
-        # github upstream fails closed (503) and nothing else is affected.
-        - name: github-cred
-          secret:
-            secretName: kaimahi-github-pat
-            optional: true
-        # The release agent's GitHub credential — a fine-grained,
-        # one-repository token that, unlike the read-only one above, can WRITE
-        # (Contents: write, the smallest scope that can create a branch;
-        # see docs/release-agent.md on why it necessarily also permits
-        # deleting one). Separate Secret, separate upstream entry and
-        # separate allowlist, so the read-only GitHub seam keeps exactly the
-        # blast radius it was reviewed with. Optional, same contract.
-        - name: github-release-cred
-          secret:
-            secretName: kaimahi-release-pat
-            optional: true
-        # The Azure DevOps credential — a Microsoft Entra ACCESS
-        # TOKEN, not a PAT: the hosted ADO MCP server authenticates with
-        # Entra only (its own metadata says so). An access token lives
-        # about an hour, which is why `kmx credential capture ado` both
-        # stores it and reports when it dies. Optional, same contract: without
-        # it the ado upstream fails closed (503) and nothing else is
-        # affected.
-        - name: ado-cred
-          secret:
-            secretName: kaimahi-ado-token
-            optional: true
         # Trust anchors for hosted upstreams that name a ca_file in
         # the table (one PEM per file). Nothing committed uses one — the
-        # GitHub server is verified against the system roots — so the
+        # Copilot endpoint is verified against the system roots — so the
         # mount is empty unless an operator (or CI, for its synthetic
         # stand-in with a throwaway certificate) creates the ConfigMap.
         # A ca_file the table names but the mount lacks refuses the whole
@@ -339,22 +279,3 @@ spec:
     - name: data
       port: 8080
       targetPort: data
----
-# The MCP gateway's own address: the URL the Kaimahi-owned
-# RemoteMCPServer (k8s/kaimahi-tools.yaml) points kagent at. Same pod as
-# the proxy (the gateway is a second data listener in the kaimahi-proxy
-# process — zero extra CPU requests on the full CI node); a separate
-# Service keeps the tool seam addressable on its own name, and neither
-# Service exposes the admin port.
-apiVersion: v1
-kind: Service
-metadata:
-  name: kaimahi-mcp-gateway
-  namespace: kaimahi
-spec:
-  selector:
-    app: kaimahi-proxy
-  ports:
-    - name: mcp
-      port: 8081
-      targetPort: mcp

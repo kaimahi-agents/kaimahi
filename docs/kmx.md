@@ -72,36 +72,30 @@ These are the present seam implementation, including the bridge used by migrate.
 |---|---|
 | `kmx plane` | image, secrets, certificate, deployment; `--step` runs one of those steps; `--source` selects checkout or fetch |
 | `kmx credentials` / `kmx credential renew <name>` | list expiries / extend deadline without changing token material. [Identity](identity.md) |
-| `kmx credential capture <upstream> <repository\|organization>` | terminal-only verified tool credential capture; see custody below |
 | `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` to discard the one-time bearer; never print the bearer |
 | `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
 | `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
-| `kmx flow [credential]` | model/tool/approval trails, oldest first; all credentials by default; **timeline, not causal trace** |
-| `kmx watch [credential]` | the same three trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
-| `kmx audit tool\|approval [credential]` / `kmx grants [credential]` | trails / grant liveness; all credentials by default |
+| `kmx flow [credential]` | model and approval-history trails, oldest first; all credentials by default; **timeline, not causal trace** |
+| `kmx watch [credential]` | the same two trails **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
+| `kmx audit approval [credential]` / `kmx grants [credential]` | approval history / budget-grant liveness and inactive historical tool/inbound grants; all credentials by default |
 | `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |
-| `kmx approvals` / `kmx approve <id>` / `kmx deny <id>` | inspect exact calls; grant bounded authority or refuse. [Approvals](approvals.md) |
-| `kmx request <tool\|budget> <subject>` | file a request; omitted tool `--args` means the argument-less call, not any call |
-| `kmx tools add <name>` / `kmx models add <name>` | reviewable upstream/NetworkPolicy onboarding; contracts below |
-| `kmx tools sidecar <upstream>` | credential-presenting loopback shim; owner applies the Deployment patch |
-| `kmx tools allow <tool,tool\|->` / `kmx tools allowlist [credential]` | replace/read allowlist; `-` allows nothing without a live grant |
+| `kmx approvals` / `kmx approve <id>` / `kmx deny <id>` | inspect requests; approve bounded budget overage or deny. Historical tool/inbound requests can be denied, not approved. [Approvals](approvals.md) |
+| `kmx request budget <tokens\|cents>` | file a budget request; tool/inbound filing is refused |
+| `kmx models add <name>` | reviewable model upstream/NetworkPolicy onboarding; contract below |
 | `kmx backup [file]` / `kmx restore <file>` / `kmx metrics` | database backup/replacement / one replica's counters; contracts below |
-| `kmx workflow list\|show\|govern\|refresh\|run` | discover/govern/run blueprints or refresh declared seam credentials; [workflows](workflows.md) |
 | `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary and dependency versions |
 
-Inbound audit/request commands, webhooks and Slack approval notifications are
-removed. Historical inbound rows remain in the database; `flow`/`watch` no longer
-read them. Tool and budget approvals remain admin-operated. See the
-[upgrade procedure](operations.md#upgrading-after-inbound-retirement) before
-redeploying an older plane.
+The tool-governance commands, tool credential capture, workflow runner, tool
+and inbound audit APIs, webhooks and Slack notifications are removed. Historical
+SQL/data remain; `flow`/`watch` no longer read tool/inbound audit. Only budget
+approvals still grant authority. Admin contract 4 marks this breaking removal,
+not compatibility negotiation: **upgrade CLI and plane together**. See the
+[upgrade procedure](operations.md#upgrading-after-gateway-retirement) for stale
+overlays, Services, credentials and owner-managed application references.
 
 Approval TTL is 1 second–30 days, uses 1–1,000,000, amount
 1–1,000,000,000,000 when set; at least TTL or uses is required. Credential
 issuance/renewal TTL is 60 seconds–365 days. An unbounded approval is not allowed.
-`workflow show` treats only missing bindings as exploratory success; unknown keys,
-invalid typed/pattern values or computed defaults fail even with other values
-missing. It has no structured show mode. `workflow run --step <name>` is
-repeatable to select multiple steps.
 
 ### Existing legacy kagent commands
 
@@ -115,7 +109,6 @@ repeatable to select multiple steps.
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
 | `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` for sessions, `--json` for raw one-shot task |
 | `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |
-| `kmx tools govern` / `kmx tools ungovern` | credential, allowlist and kagent tool routing / restore hello-tools' direct tools |
 | `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
@@ -125,8 +118,10 @@ recognized first-answer profile; deployed full/custom profiles are preserved and
 the controller checked. Unreadable/malformed or non-deployed state refuses. `up` explicitly
 upgrades/installs the full profile. Helm waits cover release workloads/jobs, not
 all pods in a namespace. These are not read-only operations: other setup steps
-still reconcile. Existing non-default model and governed tool routing are
-preserved by agent reconciliation; direct routing requires an explicit switch.
+still reconcile. Existing non-default routing is preserved by agent
+reconciliation; old gateway tool references require an explicit owner decision,
+not a silent switch to direct access. The original direct kagent MCP example
+remains.
 
 ## Settings
 
@@ -137,7 +132,7 @@ preserved by agent reconciliation; direct routing requires an explicit switch.
 | `CONTAINER_ENGINE` | `docker` or `podman`; keep consistent for every operation on a cluster |
 | `KAGENT_VERSION`, `MODEL` | defaults `0.9.12`, `qwen2.5:3b` for legacy setup |
 | `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
-| `CRED`, `CRED_TOOLS` | default model/operator credential `hello-world`, tool credential `hello-tools` |
+| `CRED` | default model/operator credential `hello-world` |
 | `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
 | `KMX_HOME` | kmx state/cache location; otherwise user config directory (`~/.config/kmx` on Linux) |
 
@@ -186,9 +181,11 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
 - `status -o json|yaml` carries `context`, `contextSource`, `governance`, and raw
   kubectl objects under `items`, **not** a Kubernetes List you can apply. Read
   population `state` before counts: unknown reads publish no invented zeroes.
-  Model seams count agents; tool seams count RemoteMCPServers; credentials count
-  Secret references, not Secret values. Unready installed planes or missing/
-  unreadable required governance prevent a human ready verdict.
+  Model seams count agents; credential evidence is Secret references, not Secret
+  values. Raw kagent tool inventory remains, but managed-tool counts/readiness
+  are removed. Old gateway URLs are not evidence of healthy direct routing.
+  Unready installed planes or missing/unreadable required model governance
+  prevent a human ready verdict.
 - Ledger/audit caller claims are unverified client assertions; observed source
   addresses and `acted for` are separate fields. Flow counts model refusals from
   `cost_source: denied`, not from any upstream HTTP error. Configuration posture
@@ -297,7 +294,8 @@ A failed Secret write after one-time token issuance needs operator recovery.
 Trusted actor/action labels and indented payloads prevent tool/model prose from
 impersonating controls. `[KAIMAHI ROUTE]` shows verified startup configuration,
 not an allowed/ledgered receipt: kagent streams do not carry those receipts.
-Possible denial text has unverified provenance; confirm with `kmx approvals`.
+Possible denial text has unverified provenance; confirm model-budget requests
+with `kmx approvals`. Direct tool activity has no Kaimahi approval path.
 These records remain visible with `/tools off`.
 
 Native kagent approvals/questions are a **different boundary**: chat may submit
@@ -316,10 +314,9 @@ and stop uncertain animation after resize.
 
 One-shot chat/quickstart still retry matching connection-refused, EOF and reset
 errors up to three times, **even with an explicit session**. Ambiguous disconnects
-can follow an effect: retries may duplicate tools/spend. Bounded/consequential
-workflow turns retry only connection-refused; read/draft turns use the broader
-policy. Question-only `ask_user` resampling is at most twice without an explicit
-session, recorded tool response or another pending confirmation. Interactive
+can follow an effect: retries may duplicate tools/spend. Question-only `ask_user`
+resampling is at most twice without an explicit session, recorded tool response
+or another pending confirmation. Interactive
 `/retry` explicitly resends; none of this promises exactly-once execution.
 
 ## How the plane gets there without a clone
@@ -335,98 +332,62 @@ The fetched plane build targets Linux. kmx removes shell `GOBIN` for cross-build
 if Go's environment file still sets it, use `go env -u GOBIN` or a checkout build.
 AKS uses ACR instead; see [managed-cluster limitations](aks.md).
 
-## `kmx tools add`
-
-```bash
-kmx tools add warehouse --url http://warehouse.demo:8090/mcp \
-  --tool stock_get:sku --tool stock_adjust:sku,delta
-```
-
-Writes an overlay ConfigMap, proxy egress, server ingress and kagent
-RemoteMCPServer, validates the table with the running plane, then applies.
-Without kagent, it skips only that fourth document (the file retains it), restarts
-the proxy and reports the skip. An unreadable CRD query is not absence.
-See [govern your agent](govern-your-agent.md) and `kmx tools add --help`.
-
-Each `--tool` must declare policy fields: `tool:a,b` binds those fields,
-`tool:` is the weakest verb-only binding (warned in the artifact), `tool:*`
-binds the whole argument object. Service selectors and post-NAT pod ports come
-from the live Service; selector-less Services refuse and named target ports need
-`--pod-port`. Shared selectors affect every matching pod, which kmx names.
-`--server-egress none|dns|keep` defaults to none; choose deliberately.
-
-Overlay safety: generated credentials are references, key shapes refuse,
-files use exclusive create. The whole existing overlay is emitted with its
-`resourceVersion` so stale apply conflicts instead of pruning concurrent work.
-Only genuine NotFound means no overlay. Committed entries cannot be overridden;
-`credential_file`, `credential_header`, `internet`, `ca_file`, and `extra_headers`
-are forbidden in overlays. These custody-affecting entries remain reviewed code.
-
-The plane validates the **table**, not the generated policies/seam; Kubernetes
-checks those at apply/server dry-run. `--out -` mutates nothing but still validates.
-`--no-apply` writes only. Multi-document apply is not transactional: a failure
-can leave some objects changed. Review output and selectors before trusting it.
-
 ## `kmx models add`
 
 ```bash
 kmx models add house --url http://vllm.demo:8000/v1/responses --classification free
 ```
 
-The same overlay/live-Service safety applies, but there are three documents and
-no kagent ModelConfig: kmx prints the seam address/CA requirements. Supply the
+Writes three documents: an overlay ConfigMap, proxy egress and server ingress;
+no kagent ModelConfig. kmx prints the seam address/CA requirements. Supply the
 **whole POST URL**, including path, over in-cluster HTTP. TLS/keyed endpoints
 need reviewed committed custody configuration. Explicit `free|metered` is
 required; protocol is inferred only from recognized paths, otherwise declared,
 and conflicting declarations refuse. Models pulling weights may need deliberate
 server egress rather than default none.
 
-Model overlays cannot carry `prices`; cents budgets refuse unpriced pairs while
-token budgets can meter them. Admin contract 2 is required. **Every plane
-credential can access a configured model upstream**: there is no per-credential
-model allowlist. Tool allowlist intuition does not apply here.
+Service selectors and post-NAT pod ports come from the live Service;
+selector-less Services refuse, and named target ports need `--pod-port`.
+Shared selectors affect every matching pod. `--server-egress none|dns|keep`
+defaults to none; choose deliberately.
 
-## `kmx tools sidecar`
+Files use exclusive create and reject credential shapes. The whole existing
+overlay carries `resourceVersion` so stale apply conflicts instead of pruning
+concurrent work. Only genuine NotFound means no overlay. Committed entries
+cannot be overridden. Overlays refuse `credential_file`, `credential_header`,
+`internet`, `ca_file`, `extra_headers` and `prices`; these remain reviewed code.
+Retired `tool_upstreams` and `standing_constraints` keys refuse even if empty or
+null; clean old fragments up deliberately, not by silently discarding them.
 
-```bash
-kmx tools sidecar warehouse --deployment client --namespace demo
-```
+The plane validates the table, not the generated policies; Kubernetes checks
+those on apply/server dry-run. `--out -` mutates nothing but still validates;
+`--no-apply` writes only. Multi-document apply is not transactional and can leave
+partial changes. Review selectors and output before trusting the boundary.
 
-For URL-only MCP clients, generates a loopback reverse proxy that presents the
-Secret token over TLS to one gateway path, verifies the plane CA, does not buffer
-SSE and returns 404 elsewhere. No token is embedded in YAML or a query string.
-kmx applies config/CA; **the owner applies the strategic-merge Deployment patch**.
-`--out -` prints both documents without mutation; `--no-apply` writes only.
-The patch prepends its container: use `-c` for application logs/exec afterwards.
-Deploy plane and tool credential first; nginx resolves its upstream at startup.
+Cents budgets refuse unpriced pairs while token budgets can meter them. Admin
+contract 2 is required. **Every plane credential can access a configured model
+upstream**: there is no per-credential model allowlist.
 
 ## Governing an agent
 
 `kmx govern` remains the legacy kagent model-preset switch. It supports the
 committed governed Ollama/Copilot presets and their fixed Secret reference,
-refusing incompatible overrides before issuance. `tools govern` separately
-changes tool authority/routing; without kagent it creates credential/allowlist/CA
-and stops. A custom kagent seam must already exist with one matching
-Authorization Secret reference; kmx does not reapply the operator's scaffold.
-`tools ungovern` restores only hello-tools' direct tool selection.
+refusing incompatible overrides before issuance. It does not change tool
+authority or routing; the tool-governance commands are removed.
 
-Both use cluster access plus the admin bearer on a pod port-forward, not a
+It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued
 credentials are reconciled, not overwritten; wrong/missing bindings refuse.
 An existing Secret with no credential-binding annotation also refuses before issuance.
 Only genuine Agent NotFound skips a switch, and switches wait for exactly one
 pod on the new template rather than allowing old pods to answer unnoticed.
 
-`credential capture` accepts `github`, `github-release` (owner/repository), and
-`ado` (organization): terminal input with echo off, no argv/env/file/pipe input,
-upstream validation before storage, and `--replace` required over an existing
-Secret. Plane-side Copilot capture instead uses `kmx models credential copilot`:
-GitHub device login, a private 0600 OAuth cache, and short-lived token exchange
-without reading credential material from stdin. It applies egress and restarts
-an existing proxy. [AKS](aks.md#the-credential-handoff) gives the explicit-context
-command. Other model-key capture and the separate direct-kagent Copilot capture
-remain `make model-secret` and `make copilot-secret`; Slack MCP keys retain
-their checkout helper.
+Tool credential capture is removed. Plane-side model Copilot capture remains
+`kmx models credential copilot`: GitHub device login, a private 0600 OAuth cache
+and short-lived token exchange without reading credential material from stdin.
+It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
+gives the explicit-context command. Other model-key capture and the separate
+direct-kagent Copilot capture remain `make model-secret` and `make copilot-secret`.
 
 ## Backup, restore, and metrics
 
@@ -444,10 +405,9 @@ It does not invent a sum across replicas. See [operations](operations.md).
 
 ## What is NOT in `kmx`
 
-Non-native model-key capture, direct-kagent Copilot capture, Slack MCP keys,
-connector-specific helpers, committed demo/first-user agents and network probes
-retain checkout paths in [models](models.md), [workflows](workflows.md),
-[Slack](slack.md), and [hosted upstreams](hosted-upstreams.md).
-Plane-side Copilot capture and the full lift no longer need a checkout handoff.
-Superseded runtime/admin make shims and shell wrappers have been removed;
-use native kmx, with the Makefile only for retained repository helpers.
+Non-native model-key capture, direct-kagent Copilot capture and standalone
+network probes retain checkout paths in [models](models.md) and [egress](egress.md).
+Plane-side Copilot capture and the full lift do not need a checkout handoff.
+The tool gateway, tool-governance/capture commands and [workflow runner](workflows.md)
+are retired, not checkout alternatives. Use native kmx, with the Makefile only
+for retained repository helpers.

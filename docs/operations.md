@@ -10,7 +10,8 @@
 ## Shape and state
 
 [proxy.yaml](../k8s/plane/proxy.yaml) runs two proxy replicas, containing
-four listeners: model (8080), MCP (8081), admin (9091) and ops (9092).
+three listeners: model (8080), admin (9091) and ops (9092). The MCP listener
+on 8081 is removed.
 [postgres.yaml](../k8s/plane/postgres.yaml) runs one Postgres instance on
 a PVC. Credentials, budgets, grants, request deduplication and audit
 history live in Postgres; it is **not highly available**. Historical inbound
@@ -21,26 +22,77 @@ preference, so two replicas can still share a single node. Migrations run
 under a database advisory lock at startup. A new replica with invalid
 configuration cannot replace the healthy old replica automatically.
 
-Ledger/audit-write breakers still trip and recover independently on each
+The model ledger-write breaker still trips and recovers independently on each
 replica. Inspect individual replica metrics, not just a Service average.
-Inbound and notifier queues/workers are removed.
+Gateway, inbound and notifier workers are removed.
 
 Shutdown drops readiness first and waits within a **20-second process
 budget**; it is not a guarantee to finish every in-flight request or
 post-response audit. Source: [main.go](../plane/cmd/kaimahi-proxy/main.go).
 
+## Upgrading after gateway retirement
+
+Upgrade kmx and the plane together from the same revision. Admin contract **4**
+marks a deliberate breaking removal, **not compatibility negotiation**. Old CLI
+binaries can accept higher numbers while still calling removed tool/workflow
+routes. The surviving model operations retain lower capability checks; those
+checks do not make retired routes work.
+
+1. Back up the database and stop jobs relying on the gateway or workflow runner.
+   Inventory owner-managed Agents, RemoteMCPServers, Deployment sidecars, URLs,
+   Secret references and Helm/GitOps source before rollout. Decide with each
+   application owner whether to stop or replace its tool integration. **Do not
+   automatically repoint tools to direct access or widen their network reach.**
+2. Review the committed table and ConfigMap `kaimahi-upstreams-extra` in
+   `kaimahi`, including each saved/generated overlay. Remove retired
+   `tool_upstreams` and `standing_constraints` entries deliberately, preserving
+   model entries. Both keys are refused **even when empty or null**; they are
+   not silently stripped. Existing `inbound_hooks` and `approval_notifier` keys
+   are likewise rejected. Deploy reviewed config and plane together; invalid
+   config can leave old replicas serving during a blocked rollout.
+3. **`kubectl apply` does not prune omitted objects.** On the explicit context,
+   review ownership and explicitly remove obsolete resources. Stop owned retired
+   workloads before removing their protective policies. The names below
+   come from the [pre-retirement manifests at `10c561d`](https://github.com/kaimahi-agents/kaimahi/tree/10c561d4a890244e240d9d223d20059b1464e957/k8s),
+   not a wildcard deletion list:
+   - In `kaimahi`: Service `kaimahi-mcp-gateway`; tool-only NetworkPolicies
+     `kaimahi-proxy-egress-hosted`, `kaimahi-slack-mcp` and `kaimahi-erp`.
+     Applying the updated **retained** `kaimahi-proxy` NetworkPolicy removes its
+     8081 ingress and tool egress, but separately generated tool policies remain
+     additive until reviewed/removed.
+   - Retired fixtures in `kaimahi`: MCPServer `kaimahi-slack-mcp`, Deployment
+     `kaimahi-erp`, Service `kaimahi-erp-mcp` and ConfigMap `kaimahi-erp-fixtures`.
+     Review controller-owned children rather than assuming apply removed them.
+   - In `kagent`: gateway RemoteMCPServers `kaimahi-tools`, `kaimahi-slack`,
+     `kaimahi-github`, `kaimahi-erp`, `kaimahi-release-github` and
+     `kaimahi-release-ado`; fixture Agents `hello-slack`, `hello-github`,
+     `ap-agent` and `release-agent`. Review operator-created equivalents too.
+     **Keep the direct `hello-tools` Agent and chart-managed `kagent-tool-server`**;
+     if an owner repointed them at the old gateway, that owner must resolve it.
+4. Review tool-only custody separately: plane Secrets `kaimahi-slack-bot`,
+   `kaimahi-slack-mcp-key`, `kaimahi-github-pat`, `kaimahi-release-pat` and
+   `kaimahi-ado-token`; old client Secrets such as `kaimahi-tools-token`,
+   `kaimahi-slack-token`, `kaimahi-github-token`, `kaimahi-ap-token` and
+   `kaimahi-release-token`. Remove only unused owned material after checking
+   application references. External revocation is a separate owner action;
+   deleting a Secret or mount does not revoke the issuer's token. Keep model/
+   Copilot/Orka credentials, the plane CA/serving Secrets and Postgres state.
+5. Check every replica is on the new build, all three surviving listeners,
+   model authentication/ledger, credential expiry and budget approvals. Verify
+   the gateway is no longer served and old network allowances/references are
+   resolved; apply success alone is not that proof. Update dashboards/alerts
+   for removed tool metrics. `flow`/`watch` now read **model and approval history**,
+   not tool/inbound audit. Old tool/inbound requests remain readable/deniable,
+   not approvable; their grants are inactive. **All twelve SQL migrations and
+   stored data remain intact**; no destructive database cleanup is required.
+
 ## Upgrading after inbound retirement
 
-This slice removes inbound webhooks, Slack approval commands and notifications,
-not the MCP gateway or tool/budget approvals. Use `kmx approvals`, `kmx approve`
-and `kmx deny`; there is no Slack approver path or notification fallback.
-
-Upgrade kmx and the plane from the same revision. Admin contract **3** marks
-this intentional removal; it is not backward-compatibility negotiation. Old
-kmx binaries accept higher contract numbers and may still promise compatibility,
-but their inbound audit and four-trail flow/watch calls will fail. The current
-CLI keeps lower capability checks for surviving operations, so a model-only
-operation does not require a plane upgrade merely to reach its existing API.
+For installations predating the earlier inbound removal, these additional
+public-edge steps still apply. Inbound webhooks, Slack approval commands and
+notifications are removed. [Budget approvals](approvals.md) remain admin-operated;
+there is no Slack approver path or notification fallback. Contract 3 marked that
+earlier removal; contract 4 additionally retires the gateway as described above.
 
 1. Back up the database. Disable external webhook producers and Slack event
    subscriptions/Request URLs **before releasing the old public DNS name**;
@@ -58,7 +110,7 @@ operation does not require a plane upgrade merely to reach its existing API.
    manifests. They defined no Ingress object: inspect any operator-added ingress
    separately and remove only the route owned by this retired integration.
    Review PVC `kaimahi-inbound-edge-data` separately before deleting its stored
-   certificate/ACME data. Do not delete `kaimahi-proxy`, its model/MCP Services,
+   certificate/ACME data. Do not delete `kaimahi-proxy`, its model Service,
    or the Postgres PVC. Verify the old endpoint is no longer exposed; a completed
    apply or proxy rollout alone is not that proof.
 4. Review obsolete signing/approver/notifier Secrets and monitoring rules
@@ -66,10 +118,10 @@ operation does not require a plane upgrade merely to reach its existing API.
    cloud resources, or clean up the database. Keep historical SQL migrations and
    stored audit/attribution data; no destructive schema cleanup is required.
 
-After rollout, check all replicas, the four listeners, model ledger and retained
-MCP/approval behavior. `kmx flow` and `kmx watch` now read three trails:
-model, tool and approval. The inbound audit API and CLI view are removed;
-old rows remain database history, not an active delivery/replay interface.
+After rollout, verify the old public endpoint is no longer exposed. The inbound
+audit API and CLI view are removed; old rows remain database history, not an
+active delivery/replay interface. The gateway checklist above covers current
+listener and retained model/budget verification.
 
 ## Probes
 
@@ -77,9 +129,9 @@ On ops port 9092:
 
 - `/readyz` checks Postgres and the draining flag. A database outage removes
   replicas from Service routing; recovery restores readiness.
-- `/livez` checks local data listeners and a pool saturated without progress
+- `/livez` checks the local model listener and a pool saturated without progress
   for a minute. It does not query an external database/upstream for health.
-- `/healthz` on data listeners only says that listener answers; it is not
+- `/healthz` on the model listener only says that listener answers; it is not
   proof that authenticated traffic, the ledger or an upstream works.
 
 [ops.go](../plane/internal/ops/ops.go) defines the checks. TLS listener
@@ -89,7 +141,7 @@ that every externally visible failure leaves the process running.
 
 ## The seam certificate
 
-Model 8080 and MCP 8081 serve TLS. Existing custody is split:
+Model 8080 serves TLS. Existing custody is split:
 
 | Secret | Namespace | Material |
 |---|---|---|
@@ -154,14 +206,14 @@ Key series in [metrics.go](../plane/internal/metrics/metrics.go):
 
 - `kaimahi_decisions_total`, `kaimahi_upstream_latency_seconds`;
 - `kaimahi_ledger_month_cents`, `kaimahi_ledger_month_tokens`,
-  `kaimahi_live_grants`, `kaimahi_open_reservations`;
+  `kaimahi_live_grants` (budget only), `kaimahi_open_reservations`;
 - `kaimahi_credential_expires_in_seconds`,
   `kaimahi_credentials_without_expiry`,
   `kaimahi_seam_certificate_expires_in_seconds`;
 - `kaimahi_seam_degraded`, `kaimahi_store_up`, `kaimahi_build_info`.
 
-Inbound/notifier queue series are removed; update dashboards and alerts that
-expected them.
+Gateway/tool and inbound/notifier series are removed, including live tool-grant
+collection; update dashboards and alerts that expected them.
 
 A failed store scrape omits store-derived series rather than returning stale
 values. Labels include credential/upstream **names**, not bearer tokens,

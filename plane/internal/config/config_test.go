@@ -42,61 +42,6 @@ func TestParseRejects(t *testing.T) {
 	}
 }
 
-func TestParseToolUpstreams(t *testing.T) {
-	c, err := config.Parse([]byte(`{
-	  "upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}},
-	  "tool_upstreams": {"kagent-tools": {"url": "http://kagent-tools.kagent:8084/mcp"}}
-	}`))
-	require.NoError(t, err)
-	require.Equal(t, "http://kagent-tools.kagent:8084/mcp", c.ToolUpstreams["kagent-tools"].URL)
-
-	// Optional: a config with only LLM upstreams still parses.
-	c, err = config.Parse([]byte(`{"upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}}}`))
-	require.NoError(t, err)
-	require.Empty(t, c.ToolUpstreams)
-
-	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}}, "tool_upstreams": `
-	for name, bad := range map[string]string{
-		"empty url":     `{"t": {"url": ""}}`,
-		"relative url":  `{"t": {"url": "not-a-url"}}`,
-		"non-http":      `{"t": {"url": "ftp://x/mcp"}}`,
-		"unknown field": `{"t": {"url": "http://x/mcp", "extra": true}}`,
-	} {
-		_, err := config.Parse([]byte(base + bad + `}`))
-		require.Error(t, err, name)
-	}
-}
-
-// A tool upstream may carry its OWN credential (the Slack MCP
-// server's SLACK_MCP_API_KEY), named — never valued — in the committed
-// table, exactly like the LLM upstreams' credential_file.
-func TestParseKeyedToolUpstreams(t *testing.T) {
-	c, err := config.Parse([]byte(`{
-	  "upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}},
-	  "tool_upstreams": {"slack": {
-	    "url": "http://kaimahi-slack-mcp.kaimahi:13080/mcp",
-	    "credential_file": "/etc/kaimahi/upstream-creds/slack/mcp-api-key",
-	    "credential_header": "Authorization"
-	  }}
-	}`))
-	require.NoError(t, err)
-	require.Equal(t, "/etc/kaimahi/upstream-creds/slack/mcp-api-key", c.ToolUpstreams["slack"].CredentialFile)
-	require.Equal(t, "Authorization", c.ToolUpstreams["slack"].CredentialHeader)
-
-	base := `{"upstreams": {"o": {"base_url": "http://o", "path": "v1/chat/completions", "classification": "free"}}, "tool_upstreams": `
-	for name, bad := range map[string]string{
-		// A header with no file would silently forward bare — the
-		// confusing direction of fail-open. Reject at load.
-		"header without file": `{"t": {"url": "http://x/mcp", "credential_header": "Authorization"}}`,
-		"malformed header":    `{"t": {"url": "http://x/mcp", "credential_file": "/f", "credential_header": "X Api Key"}}`,
-		// Key material never belongs in the committed table.
-		"inline credential": `{"t": {"url": "http://x/mcp", "credential": "xoxb-secret"}}`,
-	} {
-		_, err := config.Parse([]byte(base + bad + `}`))
-		require.Error(t, err, name)
-	}
-}
-
 // PathProtocol matches whole segments. A suffix match would read
 // `v1/xresponses` as the Responses API — guessing a protocol for a path
 // that names none, which is the one thing it exists to stop. The

@@ -49,7 +49,8 @@ meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
 
 Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
-`plane/` is the governance plane's.
+`plane/` is the retained model seam's. Gateway/tool-governance runtime is
+retired; historical SQL migrations and stored data are not cleanup targets.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name when another lane owns the shared cluster. See

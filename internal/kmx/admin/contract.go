@@ -64,9 +64,13 @@ const (
 	// for the surviving model, tool or approval operations.
 	ContractInboundRetired = 3
 
+	// ContractGatewayRetired removes tool allowlist/audit APIs and tool
+	// requests. Budget approvals and model overlay capabilities survive.
+	ContractGatewayRetired = 4
+
 	// Speaks is the highest contract revision this kmx knows about. A plane
 	// reporting more is allowed, but compatibility is not guaranteed.
-	Speaks = ContractInboundRetired
+	Speaks = ContractGatewayRetired
 )
 
 // PlaneVersion is what the handshake learned.

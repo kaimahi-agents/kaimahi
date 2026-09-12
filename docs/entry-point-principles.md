@@ -49,8 +49,8 @@ whether resources are accepted, not whether the resulting pods work.
 
 Generated files contain Secret references, not values. Never add a token
 flag, print a credential, or tell a user to commit one. The existing
-capture paths are deliberately separate from scaffolding; their input,
-expiry and custody limits are in [identity.md](identity.md),
+model credential paths remain separate from scaffolding; tool capture is
+retired. Input, expiry and custody limits are in [identity.md](identity.md),
 [models.md](models.md) and [hosted-upstreams.md](hosted-upstreams.md).
 A capture exception is not permission to accept arbitrary secrets in YAML.
 
@@ -58,8 +58,8 @@ A capture exception is not permission to accept arbitrary secrets in YAML.
 
 Use the native command instead of maintaining a parallel shell workflow.
 A Make target may delegate, but must not quietly own a competing version
-of the same operation. Existing checkout-only connectors are documented
-as such until their code lane resolves them.
+of the same operation. Retired gateway/workflow connectors must not survive
+as undocumented checkout-only alternatives.
 
 Distinguish unit and fake-service tests, continuously exercised cluster
 paths, one-off cloud measurements, schema validation and proposals.

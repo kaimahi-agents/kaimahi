@@ -14,46 +14,42 @@ can widen access, and an installed object proves nothing if the CNI ignores
 it. Pod/node identity and Kubernetes API authority are separate boundaries.
 
 The base policy does not isolate the `kagent` or `ollama` namespaces.
-A direct-provider agent, or a client connecting around the gateway, is not
-made governed by the existence of plane policies. An application migrated
+A direct-provider agent or direct MCP client is not made governed by the
+existence of plane policies. An application migrated
 in its own namespace keeps its owner's network responsibilities.
 
 ## Connections in the committed policy
 
 | From | To | Port |
 |---|---|---|
-| `kagent` namespace | proxy's model and MCP seams | 8080, 8081 |
+| `kagent` namespace | proxy's model seam | 8080 |
 | proxy | Postgres | 5432 |
 | proxy | ollama | 11434 |
 | proxy | Orka API pods selected in `orka-system` | 8080 |
-| proxy | kagent tool server | 8084 |
-| proxy | Slack MCP server | 13080 |
-| proxy | fixture ERP | 8085 |
-| proxy and Slack MCP server | CoreDNS | UDP/TCP 53 |
-| Slack MCP server | public addresses excluding listed ranges | TCP 443 |
+| proxy | CoreDNS | UDP/TCP 53 |
 | Prometheus-labeled pods in `monitoring` | proxy ops listener | 9092 |
 
-Postgres and the fixture ERP have no granted egress. Their ingress admits
-the proxy alone on their serving ports. Slack likewise admits only the
-proxy. This matters because the [pinned Slack server](slack.md) ignores
-its HTTP API key: that key is not a fallback boundary if policy is widened.
-The default seam ingress matches a namespace, not a verified agent runtime.
+Postgres has no granted egress; its ingress admits the proxy alone on 5432.
+The default model-seam ingress matches a namespace, not a verified agent runtime.
+The gateway, Slack and ERP fixture allowances are removed from the shipped
+policy; existing clusters still require deliberate cleanup.
 
 Additional configured allowances are separate objects:
 
-- [Copilot](../k8s/egress-copilot.yaml) and
-  [hosted tools](../k8s/egress-hosted.yaml): proxy to public TCP 443.
-  They select the same pod; either can keep that port reachable.
+- [Copilot](../k8s/egress-copilot.yaml): proxy to public TCP 443.
+  Old hosted-tool policies selected the same pod; if left behind, they can
+  independently keep that port reachable.
 - [Managed metrics](../k8s/observability/network-policy.yaml): the selected
   Azure metrics replica in `kube-system` reaches proxy 9092, not every
   metrics DaemonSet pod or another application's metrics port.
-- Operator-added tool/model upstream policies use live Service pod selectors
-  and container ports. They must be reviewed alongside existing policies.
+- Operator-added model upstream policies use live Service pod selectors and
+  container ports. Review them alongside existing policies and any retired
+  tool-generated allowances.
 
-The inbound A2A allowance and public edge are removed. **Apply does not prune
-old edge objects**; upgraded installations must follow the
-[retirement cleanup](operations.md#upgrading-after-inbound-retirement), not infer
-absence of public exposure from the new policy files.
+Gateway/tool, inbound A2A and public-edge allowances are retired. **Apply does
+not prune omitted objects**; upgraded installations must follow the
+[retirement cleanup](operations.md#upgrading-after-gateway-retirement), not infer
+absence of old reach or exposure from the new policy files.
 
 ## Admin and monitoring are different doors
 
@@ -78,21 +74,19 @@ bash scripts/netpol-probe.sh
 ```
 
 Review the script's `KUBECTL` and `COPILOT_EGRESS` settings for your
-context and deployed allowances before running it. It tests unlabeled
-plane pods, proxy-shaped pods, Slack-shaped pods and the real Postgres pod.
-Proxy/Slack stand-ins carry the real labels because NetworkPolicy selects
-labels; the probe is not testing their application implementations.
+context and deployed allowances before running it. Its stand-ins use workload
+labels because NetworkPolicy selects labels; it does not test the application
+implementation or an arbitrary owner's tool boundary.
 
-For a newly onboarded server use
-[upstream-boundary-probe.sh](../scripts/upstream-boundary-probe.sh), with
-the governed successful call as the other direction's positive evidence.
-A new upstream entry without matching egress normally fails on connection;
-a gateway 502 is not proof that the whole new boundary is correct.
+For a newly onboarded model server, test actual traffic plus denied connections
+against an allowed control. The old tool-upstream probe is retired. A model
+upstream entry without matching egress normally fails on connection; a 502 is
+not proof that the whole boundary is correct.
 
 ## What public TCP 443 does not guarantee
 
 It is an IP/port allowance, **not a hostname or TLS-content rule**. A
-compromised Slack server or proxy can send data to another public host on
+compromised proxy can send data to another public host on
 443. The proxy's [hardened dialer](hosted-upstreams.md) adds HTTPS, configured
 hosts, checked DNS answers and redirect refusal for requests made through
 that client. It does not constrain arbitrary code running in the pod.

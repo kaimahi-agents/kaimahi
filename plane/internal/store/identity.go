@@ -6,7 +6,7 @@ package store
 // and tool-audit rows keep their historical attribution and back-references.
 //
 // That window is the only correlation the plane can SUBSTANTIATE. The
-// agent pod authenticates to the proxy and the gateway with its
+// agent pod authenticates to the model proxy with its
 // credential and nothing else; a header the agent set would be a claim
 // by the thing being governed, and forking kagent to add a trusted one
 // is exactly what the prime directive exists to stop. So the plane
@@ -157,27 +157,4 @@ func nullableUUID(id string) *string {
 		return nil
 	}
 	return &id
-}
-
-// Attribution travels on the request context at seams whose audit rows
-// are written from many places (the MCP gateway has four). Stamping in
-// the one write point beats threading a parameter through the three
-// deny helpers, and it makes it impossible for an audit row to escape
-// unstamped.
-type attributionKey struct{}
-
-// WithAttribution returns a context carrying att.
-func WithAttribution(ctx context.Context, att Attribution) context.Context {
-	return context.WithValue(ctx, attributionKey{}, att)
-}
-
-// AttributionFrom reads the attribution a seam resolved at its door. A
-// context that never carried one yields 'unknown' — "we cannot say" —
-// never 'none', because a missing stamp is a lost attribution, not
-// evidence that nobody was there.
-func AttributionFrom(ctx context.Context) Attribution {
-	if att, ok := ctx.Value(attributionKey{}).(Attribution); ok {
-		return att
-	}
-	return Lost
 }

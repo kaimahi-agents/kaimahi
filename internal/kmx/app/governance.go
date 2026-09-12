@@ -11,8 +11,7 @@ import (
 
 // What `kmx status` can say about governance, and how it refuses to guess.
 //
-// The ungoverned state is COUNTABLE rather than warned about once: "3 tool
-// servers, 0 governed" is harder to ignore than a message that scrolls past.
+// Model routing is counted rather than inferred from an installed plane.
 // The fast path — one command to a working agent — is ungoverned by design,
 // which makes the count matter more, not less: the ungoverned path is the
 // DEFAULT one and nothing else in the tree tells an operator how much of
@@ -34,14 +33,11 @@ import (
 //     not be read and a dangling ModelConfig reference each get counted as
 //     what they are — never folded into "0 governed" or into "direct".
 
-// The plane's in-cluster seams, mirrored from k8s/plane/proxy.yaml: the
-// model seam is the proxy, the tool seam is the MCP gateway. They are
-// constants rather than a lookup because status must classify wiring on a
-// cluster where the plane is not installed at all.
+// Model plane names mirror k8s/plane/proxy.yaml. Status must classify wiring
+// even on a cluster where the plane is not installed.
 const (
-	planeNamespace      = "kaimahi"
-	planeProxyService   = "kaimahi-proxy"
-	planeGatewayService = "kaimahi-mcp-gateway"
+	planeNamespace    = "kaimahi"
+	planeProxyService = "kaimahi-proxy"
 	// planeWorkload is the Deployment k8s/plane/proxy.yaml creates. The
 	// plane is INSTALLED when this exists — not when a pod happens to be
 	// running, because a scaled-to-zero or mid-rollout plane is a plane
@@ -68,10 +64,7 @@ const (
 	seamUnresolved = "unresolved"
 )
 
-// seamPopulation counts one KIND of governable thing. Agents, tool servers
-// and credentials are three different populations and a single number that
-// mixed them would be worse than three honest ones, so each is counted and
-// printed on its own.
+// seamPopulation counts agents by their model routing.
 type seamPopulation struct {
 	// State is counted, none (nothing of this kind exists) or unknown.
 	State string `json:"state"`
@@ -112,13 +105,7 @@ type credentialPopulation struct {
 	Required int      `json:"required"`
 	Present  int      `json:"present"`
 	Missing  []string `json:"missing"`
-	// Partial marks a count taken over only part of the population — one
-	// half of the seams could not be listed, so what they require is not in
-	// Required. The count that WAS taken is still published, because
-	// throwing away a countable half to report `unknown` would hide a
-	// missing credential that is genuinely known to be missing.
-	Partial bool   `json:"partial,omitempty"`
-	Reason  string `json:"reason,omitempty"`
+	Reason   string   `json:"reason,omitempty"`
 }
 
 // planePresence is whether anything is in front of the governed seams.
@@ -139,9 +126,8 @@ type planePresence struct {
 type governance struct {
 	Plane       planePresence        `json:"plane"`
 	ModelSeams  seamPopulation       `json:"modelSeams"`
-	ToolSeams   seamPopulation       `json:"toolSeams"`
 	Credentials credentialPopulation `json:"credentials"`
-	// Certificate is the one the plane serves both seams with. It is
+	// Certificate is the one the plane serves the model seam with. It is
 	// reported here rather than left to a dashboard because it expires
 	// whether or not anyone is watching, and an expiry nobody is warned
 	// about is an outage scheduled in advance.
@@ -181,7 +167,6 @@ func (p credentialPopulation) MarshalJSON() ([]byte, error) {
 		Required int      `json:"required"`
 		Present  int      `json:"present"`
 		Missing  []string `json:"missing"`
-		Partial  bool     `json:"partial,omitempty"`
 		Reason   string   `json:"reason,omitempty"`
 	}
 	type bare struct {
@@ -196,7 +181,7 @@ func (p credentialPopulation) MarshalJSON() ([]byte, error) {
 		// Always a list, never null: `missing` is read by iterating it.
 		missing = []string{}
 	}
-	return json.Marshal(counted{p.State, p.Required, p.Present, missing, p.Partial, p.Reason})
+	return json.Marshal(counted{p.State, p.Required, p.Present, missing, p.Reason})
 }
 
 func (p planePresence) MarshalJSON() ([]byte, error) {
@@ -332,49 +317,14 @@ func modelSeams(agents []agentStatus, models []modelStatus) seamPopulation {
 	return population
 }
 
-// toolSeams counts tool servers by whether their URL is the MCP gateway.
-// A read that failed arrives as a reason and produces unknown.
-func toolSeams(servers []toolServerStatus, reason string) seamPopulation {
-	if reason != "" {
-		return seamPopulation{State: stateUnknown, Reason: reason}
-	}
-	population := seamPopulation{State: stateCounted, Total: len(servers)}
-	if len(servers) == 0 {
-		population.State = stateNone
-		return population
-	}
-	for _, server := range servers {
-		// A RemoteMCPServer with no URL is not a server pointing elsewhere;
-		// it is one whose destination cannot be read.
-		switch classifySeam(valueOr(server.Spec.URL, "-"), planeGatewayService) {
-		case seamGoverned:
-			population.Governed++
-			if seamPlaintext(server.Spec.URL) {
-				population.Plaintext++
-			}
-		case seamUnresolved:
-			population.Unresolved++
-			population.UnresolvedRefs = append(population.UnresolvedRefs,
-				server.Metadata.Name+" (unreadable url)")
-		default:
-			population.Direct++
-		}
-	}
-	sort.Strings(population.UnresolvedRefs)
-	return population
-}
-
 // credentialSeams checks that every Secret the governed seams name is
 // actually there. `present` is the list of Secret NAMES in the namespace —
 // no value is read, and none is needed to answer this.
 //
 // secretErr means the Secrets could not be listed at all, which makes the
 // whole answer unknown: an empty list would otherwise become a confident
-// accusation naming Secrets that may well exist. seamErr means one half of
-// the seams could not be listed, which makes the answer PARTIAL — what the
-// other half requires is still known, and a genuinely missing token is
-// worth more than a tidy `unknown`.
-func credentialSeams(models []modelStatus, servers []toolServerStatus, present []string, secretErr, seamErr string) credentialPopulation {
+// accusation naming Secrets that may well exist.
+func credentialSeams(models []modelStatus, present []string, secretErr string) credentialPopulation {
 	if secretErr != "" {
 		return credentialPopulation{State: stateUnknown, Reason: secretErr}
 	}
@@ -384,21 +334,8 @@ func credentialSeams(models []modelStatus, servers []toolServerStatus, present [
 			required[model.Spec.APIKeySecret] = true
 		}
 	}
-	for _, server := range servers {
-		if classifySeam(valueOr(server.Spec.URL, "-"), planeGatewayService) != seamGoverned {
-			continue
-		}
-		for _, header := range server.Spec.HeadersFrom {
-			if strings.EqualFold(header.ValueFrom.Type, "Secret") && header.ValueFrom.Name != "" {
-				required[header.ValueFrom.Name] = true
-			}
-		}
-	}
 	population := credentialPopulation{State: stateCounted, Required: len(required)}
-	if seamErr != "" {
-		population.Partial, population.Reason = true, seamErr
-	}
-	if len(required) == 0 && !population.Partial {
+	if len(required) == 0 {
 		// A known nothing: no governed seam names a credential. This is
 		// `none`, and it is not the same answer as `unknown`.
 		population.State = stateNone
@@ -426,7 +363,7 @@ func governanceReady(g governance) bool {
 	if len(g.Credentials.Missing) > 0 {
 		return false
 	}
-	required := g.ModelSeams.Governed > 0 || g.ToolSeams.Governed > 0 || g.Credentials.Required > 0
+	required := g.ModelSeams.Governed > 0 || g.Credentials.Required > 0
 	if g.Plane.State == stateInstalled {
 		if g.Plane.Desired == 0 || g.Plane.Ready < g.Plane.Desired {
 			return false
@@ -434,7 +371,7 @@ func governanceReady(g governance) bool {
 	} else if required {
 		return false
 	}
-	return !required || (g.Credentials.State != stateUnknown && !g.Credentials.Partial)
+	return !required || g.Credentials.State != stateUnknown
 }
 
 // writeGovernance prints the same counts and unknown states as the rich view.
@@ -456,11 +393,10 @@ func writeGovernance(out io.Writer, g governance) {
 		fmt.Fprintln(out, "  plane:        not installed — nothing is enforced in front of these seams (`kmx plane`)")
 	}
 	fmt.Fprintf(out, "  model seams:  %s\n", seamLine(g.ModelSeams, "agents", "agent"))
-	fmt.Fprintf(out, "  tool seams:   %s\n", seamLine(g.ToolSeams, "tool servers", "tool server"))
 	fmt.Fprintf(out, "  credentials:  %s\n", credentialLine(g.Credentials))
 	fmt.Fprintf(out, "  certificate:  %s\n", g.Certificate.Line)
 	if g.Certificate.State == "expiring" || g.Certificate.State == "expired" {
-		fmt.Fprintln(out, "                Both seams stop answering when it does; `kmx plane --step certificate` renews it.")
+		fmt.Fprintln(out, "                The model seam stops answering when it does; `kmx plane --step certificate` renews it.")
 	}
 	fmt.Fprintln(out, "  Governed = the seam points at the plane, read from the cluster objects — no")
 	fmt.Fprintln(out, "  plane, credential or internet needed. The plane line says whether one is there.")
@@ -500,9 +436,6 @@ func credentialLine(p credentialPopulation) string {
 	line := fmt.Sprintf("%d of %d present", p.Present, p.Required)
 	if len(p.Missing) > 0 {
 		line += ", missing: " + strings.Join(p.Missing, ", ")
-	}
-	if p.Partial {
-		line += " (partial — " + p.Reason + ")"
 	}
 	return line
 }

@@ -38,15 +38,6 @@ type Store interface {
 	SetBudget(ctx context.Context, name string, capCents, capTokens *int64) error
 	Ledger(ctx context.Context, credentialName string, limit int) ([]store.LedgerEntry, error)
 	MonthUsage(ctx context.Context, credentialName string, monthStart time.Time) (cents, tokens int64, err error)
-	// Tool governance (admin surface; the gateway's own data path
-	// uses the narrower gateway.Store).
-	SetToolAllowlist(ctx context.Context, credentialName string, tools []string) error
-	ToolAllowlist(ctx context.Context, credentialName string) ([]string, error)
-	ToolAudit(ctx context.Context, credentialName string, limit int) ([]store.ToolAuditEntry, error)
-	// Which credentials already allowlist a tool NAME, so onboarding
-	// an upstream that offers one can say so instead of claiming nothing
-	// can call it yet.
-	CredentialsAllowlisting(ctx context.Context, tools []string) (map[string][]string, error)
 	// Approvals: deny-and-pend filing (data path) and the decision
 	// surface (admin).
 	FileApprovalRequest(ctx context.Context, f store.Filing) (filed bool, err error)
@@ -84,7 +75,7 @@ type Deps struct {
 	Client *http.Client
 	// InternetClient makes every call to an upstream marked
 	// `internet: true` — Copilot: the ONE hardened client main builds
-	// (internal/egress) and shares with the MCP gateway. Nil means no
+	// (internal/egress). Nil means no
 	// hosted upstream can be reached — such a call fails closed (502,
 	// ledgered) rather than falling back to the plain client.
 	InternetClient *http.Client

@@ -97,15 +97,10 @@ type Serving struct {
 	KeyPEM  []byte
 }
 
-// SeamNames returns every DNS name the two seams are reached by, in the
-// forms this repository actually writes.
-//
-// All four forms of each Service, not just the fully qualified one: a
-// RemoteMCPServer in this repository points at `kaimahi-mcp-gateway.kaimahi`
-// while the governed ModelConfig presets point at
-// `kaimahi-proxy.kaimahi.svc.cluster.local`. A certificate carrying only one
-// of those fails the other with a hostname error that reads like a network
-// fault.
+// SeamNames preserves the existing serving certificate's DNS coverage.
+// Model clients use multiple Service-name forms. Historical gateway SANs
+// remain for certificate compatibility; they do not imply a live listener
+// or make owner-managed gateway routes usable after retirement.
 func SeamNames() []string {
 	var names []string
 	for _, service := range []string{modelSeamName, toolSeamName} {
@@ -116,17 +111,8 @@ func SeamNames() []string {
 			service+"."+namespace+".svc.cluster.local",
 		)
 	}
-	// The plane dials its own seams over loopback — the liveness probe asks
-	// each data listener whether it is answering, and the approval notifier
-	// posts through its own gateway. Those are clients like any other and
-	// they verify like any other; without a loopback name on the
-	// certificate they would be the one place tempted to skip verification.
-	//
-	// Both of them dial by ADDRESS, so it is the IP SANs in Sign that carry
-	// them. `localhost` is here for a caller that reaches a port-forward by
-	// name rather than by address — nothing in this repository does today,
-	// and a certificate that refused it would be a trap for the first one
-	// that tries.
+	// The plane verifies its model listener over loopback. Sign supplies IP
+	// SANs; localhost also preserves verification for named port-forwards.
 	return append(names, loopbackDNSName)
 }
 
@@ -225,7 +211,7 @@ func (a Authority) Sign(names []string, now time.Time) (Serving, error) {
 	// a window that has already closed. Clamping alone would mint a
 	// certificate whose NotAfter is in the PAST, apply it, restart the plane
 	// into material nothing accepts, and exit 0 — a reported success that
-	// leaves both seams unusable. Reachable by clock skew or a restored old
+	// leaves the model seam unusable. Reachable by clock skew or a restored old
 	// authority Secret long before it is reachable by the calendar.
 	if !now.Before(a.cert.NotAfter) {
 		return Serving{}, fmt.Errorf(

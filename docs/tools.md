@@ -15,9 +15,9 @@ tool, `k8s_get_resources`, from the chart-managed `kagent-tool-server`
 RemoteMCPServer. The hello-world Agent remains tool-free in its own file.
 
 The direct path is agent → RemoteMCPServer URL → kagent tool server.
-**It bypasses the Kaimahi MCP gateway**, so the plane's tool allowlist,
-argument policy, grants and audit do not apply. Agent `toolNames` is a
-selection for the runtime, not an independent external enforcement point.
+**It is independent of the retired Kaimahi MCP gateway.** The plane no longer
+provides tool allowlists, argument policy, tool grants or tool audit. Agent
+`toolNames` is a selection for the runtime, not an independent external enforcement point.
 Model routing is separate: a governed model does not govern tool traffic.
 
 [k8s/kagent-values.yaml](../k8s/kagent-values.yaml) enables the bundled
@@ -49,16 +49,12 @@ workloads and `RemoteMCPServer` for endpoints. The Agent selects tools from
 what the controller discovered. A declared `toolNames` entry does not make
 an undiscovered tool available or grant remote authorization.
 
-In the legacy governed alternative,
-[kaimahi-tools.yaml](../k8s/kaimahi-tools.yaml) points a separate seam at the
-TLS gateway and resolves the opaque credential from a Secret. The gateway
-projects discovery and checks every actual call; see
-[tool governance](tool-governance.md). A permission change may require
-rediscovery and an agent restart before the runtime sees the new list.
-
-An agent unable to see a posting/payment tool may never call it, so it
-may file no approval request. Direct MCP clients still encounter the
-per-call gate. Discovery is not a substitute for testing admission.
+The separate gateway-backed RemoteMCPServer is removed; its former wiring is
+[historical source](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/k8s/kaimahi-tools.yaml),
+not a supported alternative. Existing owner-selected tool wiring is not silently
+changed to direct access. Review stale references during
+[upgrade cleanup](operations.md#upgrading-after-gateway-retirement).
+Discovery and Agent selection do not establish a server's authorization boundary.
 
 ## Inspecting an existing deployment
 
@@ -71,8 +67,8 @@ kmx agent chat hello-tools "What ConfigMaps are in the default namespace?"
 Chat is not a pure status read: it can spend model tokens and invoke the
 tools currently wired to that agent. Check the model and tool URLs first;
 a running deployment may have been repointed since the committed example.
-The native governance commands and their side effects are documented in
-[tool governance](tool-governance.md#existing-operator-commands).
+The retired gateway commands are not a way to repair stale wiring; that is an
+owner decision. [Tool governance](tool-governance.md) is a retirement pointer.
 
 ## Evidence of an actual call
 
@@ -99,7 +95,7 @@ current guarantee for another model or deployment.
 
 Direct tool traffic has no plane audit. [Network policy](egress.md) covers
 specific plane workloads, not the entire agent namespace. Tool results are
-not filtered or redacted by adding the legacy gateway. Retained
-[approvals](approvals.md) bind only declared policy fields, not every effect.
-The [bring-your-own stub](govern-your-agent.md) preserves custom-server
-scaffolding limitations without duplicating its old end-to-end tutorial.
+not filtered or redacted by the model seam. Retained [budget approvals](approvals.md)
+limit model spend, not tool effects. This example remains direct kagent MCP;
+retiring the custom gateway does not remove native Orka tools or settle the
+open agent-authoring decision.

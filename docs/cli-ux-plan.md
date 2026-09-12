@@ -25,11 +25,8 @@ requested data:         stdout
 
 Much of `kmx`'s readable output is also an interface consumed by the project:
 
-- CI greps status governance lines and workflow headings;
-- shell drivers use positional `awk` fields from approvals and grants;
+- CI checks status governance lines and approval/grant output;
 - release jobs parse `kmx version` exactly;
-- workflow tests split `STANDING BOUNDS` from `STEPS` and parse the JSON
-  between them;
 - quickstart JSON, status JSON/YAML, manifests, completion, metrics, and raw
   chat output are machine formats.
 
@@ -43,19 +40,17 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | Surface | Default human format | Machine/raw format | Compatibility rule |
 |---|---|---|---|
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
-| `status` | grouped sections, fields and tables | `-o json\|yaml` | Structured envelope and exact numbers stay unchanged; plain table remains the redirected format. |
+| `status` | grouped sections, fields and tables | `-o json\|yaml` | Raw tool inventory remains; the retired managed-tool governance fields are removed. Plain table remains the redirected format. |
 | `agent list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
 | `agent create` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
-| `tools add` | validation/progress on stderr | `--out -` YAML | Four-document manifest bundle remains exact and ANSI-free. |
+| `models add` | validation/progress on stderr | `--out -` YAML | Model overlay/policy bundle remains exact and ANSI-free. |
 | `metrics` | none on stdout beyond metrics | Prometheus text | Exposition is permanently raw; replica evidence stays on stderr. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
 | one-shot chat | parsed human reply on a TTY | pipe or `--json` A2A bytes | Raw branch remains byte-for-byte upstream output. |
 | interactive chat | streamed human transcript | none | Enhanced input requires capable input/output terminals; scanner fallback is supported. `--interactive --json` is refused. |
-| context and sandbox status | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
+| context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
-| workflow run | headings and approval callouts | plain redirected transcript | Parser headings remain; approval evidence, safety wording, and recovery commands include the audit fixes below. |
-| workflow show | fixed prose and embedded JSON | none yet | No layout redesign until structured output exists and CI migrates. |
-| ledger, credentials, approvals, grants, audits, flow, allowlist | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Rich views are implemented; redirected columns and legacy truncation remain exact. Flow's corrected refusal total is a safety-semantic exception. |
+| ledger, credentials, approvals, grants, approval audit, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns and historical argument fields; flow now reads model and approval history only. |
 | version | fixed prose | release parser input | Keep exact plain format; only TTY token styling is safe. |
 | backup | result line plus SQL file | SQL artifact | Dump bytes are permanently raw and mode 0600. |
 | lift record | none | JSON recovery state | Permanently raw internal artifact. |
@@ -99,7 +94,7 @@ patterns for `kmx` are narrower than the full demonstration application.
 
 The color and layout examples compose small styled fragments into ordinary
 text. That matches commands whose native subprocess output must keep streaming:
-style `PHASE`, `FAILED`, `WARNING`, or a workflow heading, then write the rest
+style `PHASE`, `FAILED`, `WARNING`, or an operation heading, then write the rest
 of the existing line unchanged.
 
 This is the implemented default. It adds hierarchy without clearing lines,
@@ -112,7 +107,7 @@ The standalone example combines `RoundedBorder`, padding, and
 where the operator must stop and decide:
 
 - a remote-context confirmation;
-- a consequential workflow call awaiting approval;
+- a native kagent decision awaiting explicit consent;
 - a destructive restore or teardown summary.
 
 Keep these blocks compact and left-aligned. The command a user copies must stay
@@ -124,8 +119,7 @@ text rather than render border characters.
 The tree and list examples make parent/child relationships legible without a
 grid. Strong candidates are:
 
-- workflow → steps → authority posture;
-- agent → model seam and tool seams;
+- agent → model route and raw tool inventory;
 - next action → command → consequence;
 - quickstart/up plan → pending, active, and completed phases.
 
@@ -155,11 +149,12 @@ squeezed or horizontally stretched grid.
 
 ### Styled tables — implemented for modeled reports
 
-Status, agent list, ledger, credentials, pending approvals, grants, tool and
-approval audits, and flow use titled, counted reports with explicit state and
-numeric column roles. Tool allowlists use fields. Narrow tables become labeled
-records; rich admin views retain full model names, call digests, and flow
-identifiers where the plain format historically truncates them. Numbers are not
+Status, agent list, ledger, credentials, pending approvals, grants, approval
+audit and flow use titled, counted reports with explicit state and numeric
+column roles. Tool audit/allowlists and managed-tool status counts are removed.
+Narrow tables become labeled records; rich admin views retain full model names,
+historical call digests and flow identifiers where the plain format historically
+truncates them. Numbers are not
 abbreviated. State styling never guesses from an identifier's spelling.
 
 These TTY views do not require migrating redirected consumers: the plain table
@@ -260,11 +255,11 @@ Guard vocabulary is safety behavior and remains asserted without ANSI.
 
 Semantic styles now cover selected stderr messages:
 
-- warnings, governance notes, and next actions in agent creation, quickstart,
-  and plane;
-- workflow identity, step headings, proposals, approval callouts, and success.
+- warnings, governance notes and next actions in agent creation, quickstart
+  and plane.
 
-Credential capture and less common operator journeys remain candidates.
+Less common surviving operator journeys remain candidates. Tool credential
+capture and workflow presentation are retired with those commands.
 
 Do not mechanically style every `notef` call. Many include multiline native
 output, errors, or commands that users copy.
@@ -272,26 +267,21 @@ output, errors, or commands that users copy.
 ### 4. Status and agent list — modeled reports implemented
 
 Status has grouped fields, counted tables, and explicit state/number styling;
-agent list uses the same report renderer. Redirected table geometry and
-structured envelopes remain unchanged. Unknown conditions and readiness verdicts
-are corrected in both human modes, as detailed below.
+agent list uses the same report renderer. Retained reports keep their redirected
+table geometry; managed-tool governance fields are explicitly retired. Unknown
+conditions and readiness verdicts are corrected in both human modes, as detailed
+below.
 
-### 5. Workflow views — run hierarchy implemented, show layout deferred
+### 5. Workflow views — retired
 
-Workflow execution now emphasizes its identity, step boundaries, proposals,
-approval decisions, and successful continuation. Add a structured
-`workflow show` format and migrate CI away from splitting human prose before
-changing that command's layout. Its `STANDING BOUNDS`, `STEPS`, and embedded JSON
-remain structurally unchanged; run-time remediation incorporates the audit fixes.
-Typed binding errors now distinguish invalid input from missing-only exploration:
-`show` returns an error for unknown keys, invalid values/patterns/defaults, even
-alongside missing values. Missing-only help still succeeds, including valid
-partial input. This changes validation outcomes, not the successful show layout.
+The blueprint runner and its commands are removed. Their former presentation
+contract is [historical source at `10c561d`](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/cli-ux-plan.md),
+not a structured-output feature to finish.
 
 ### 6. Admin reports — implemented with plain compatibility
 
-Rich reports preserve safety fields, exact totals, expiry/liveness, call binding,
-and flow's timeline-not-trace warning. Redirected reports retain the fixed-width
+Rich reports preserve safety fields, exact totals, expiry/liveness, historical
+argument fields and flow's timeline-not-trace warning. Redirected reports retain the fixed-width
 formatter. JSON/YAML admin modes and migration away from scraped columns remain
 future work, not prerequisites for the implemented TTY-only layouts.
 
@@ -302,8 +292,8 @@ These are safety-semantic and format fixes, not merely color changes:
 - Status preserves `unknown` conditions and does not report ready when required
   governance is unavailable, required credentials are missing/unreadable, an installed
   plane has zero or insufficient ready replicas, or Ollama could not be read.
-  A supported direct route alone is not a fault. Sandbox reads distinguish
-  absence from unknown/error and retain partial evidence in both modes.
+  A supported direct route alone is not a fault. An obsolete gateway URL must
+  not be reported as healthy direct routing; raw kagent tool inventory remains.
 - Flow counts model refusals from `cost_source: denied`, not numeric HTTP status;
   an upstream HTTP error alone is not a plane refusal. The corrected summary
   total is intentional in redirected text too.
@@ -321,10 +311,9 @@ These are safety-semantic and format fixes, not merely color changes:
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
   and context names. Approval/credential bounds and incompatible Secret/preset
-  wiring are rejected before issuance; tools ungovern changes only tool wiring.
-- Workflow continuation checks nonempty matching request/grant/audit digests;
-  admission is not downstream completion. A denial of a pending request cannot
-  revoke an existing live grant. Nonzero subprocess exits are not success.
+  wiring are rejected before issuance. Retired tool/inbound requests remain
+  readable/deniable, not approvable; their grants are inactive. A denial of a
+  pending budget request does not revoke an existing budget grant.
 - Backup uses an exclusive unique 0600 temporary file and warns before replacing
   an existing destination. Restore attempts replica recovery on failures and
   reports recovery errors; an initially stopped plane stays stopped. Lift
@@ -344,17 +333,15 @@ These are safety-semantic and format fixes, not merely color changes:
   IDs remain visible. The uncolored startup header includes the selected context
   and groups commands on capable terminals.
 
-Still unimplemented: a comprehensive presentation pass over credential
-capture and uncommon operator paths, structured admin/workflow-show
-formats, side-by-side status panels, and positive per-call governance receipts in
-chat. Existing chat route labels attest startup configuration, not enforcement
+Still unimplemented: a comprehensive presentation pass over uncommon surviving
+operator paths, structured admin formats, side-by-side status panels, and
+positive per-call governance receipts in chat. Existing chat route labels attest startup configuration, not enforcement
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.
 
 Residual policies: broad one-shot chat/quickstart transport retries are unchanged
 (up to three retries for matching connection refusal, EOF, or reset). Ambiguous
-disconnects can repeat effects, including with an explicit one-shot session;
-workflow bounded/consequential turns retain their narrower refused-only policy.
+disconnects can repeat effects, including with an explicit one-shot session.
 Question-only resampling remains at most twice under its existing exclusions.
 Interactive `/retry` resends a message explicitly, not exactly once. History still
 skips malformed event data and limits verbose payload display; replay deduplication

@@ -13,7 +13,6 @@
 #   who                               dns  ollama  postgres  net:443  net:80
 #   control (default ns, unpoliced)    ok    ok     BLOCKED    ok       ok
 #   proxy-shaped (kaimahi)             ok    ok       ok     BLOCKED  BLOCKED
-#   slack-shaped (kaimahi)             ok  BLOCKED  BLOCKED    ok     BLOCKED
 #   unlabeled (kaimahi)             BLOCKED BLOCKED  BLOCKED  BLOCKED  BLOCKED
 #   kaimahi-postgres (the real pod) BLOCKED BLOCKED    -     BLOCKED  BLOCKED
 #
@@ -22,10 +21,9 @@
 # namespace. The unlabeled pod reaching nothing proves default-deny is
 # enforced at all — if the CNI ignored policy, that row would read
 # "ok" across and this script fails with a message saying exactly that.
-# The shaped pods carry the same labels the real proxy and Slack MCP
-# pods carry, so they are evaluated by the same rules; the real proxy
-# is distroless (nothing to exec), and CI deploys no Slack pod (no
-# token, no CPU). The real Postgres pod IS exec'd: it is the negative on
+# The proxy-shaped pod carries the real proxy's labels and is evaluated
+# by the same rules; the real proxy is distroless (nothing to exec).
+# The real Postgres pod IS exec'd: it is the negative on
 # a live workload, not a stand-in. Every probe pod is BestEffort (no
 # requests) so it schedules on the full CI node, runs as non-root, and
 # is deleted on exit.
@@ -50,7 +48,7 @@ SETTLE_SECONDS="${SETTLE_SECONDS:-5}"
 
 # Context safety: run directly, so nothing has resolved a context
 # for us — derive it from $KUBECTL, never from an inherited KUBE_CTX
-# (see scripts/tool-denial-probe.sh for why).
+# rather than trusting a different shell's selected cluster.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')
 KUBE_NS="$NAMESPACE, default" KUBE_CTX="$probe_ctx" \
@@ -246,15 +244,13 @@ echo "== starting every probe at once (results are asserted in order below)"
 start_probe default "netpol-control-$suffix" '{}'
 start_probe "$NAMESPACE" "netpol-unlabeled-$suffix" '{}'
 start_probe "$NAMESPACE" "netpol-proxy-$suffix" '{"app": "kaimahi-proxy"}'
-start_probe "$NAMESPACE" "netpol-slack-$suffix" '{"app.kubernetes.io/name": "kaimahi-slack-mcp"}'
 in_background control collect_probe default "netpol-control-$suffix"
 in_background unlabeled collect_probe "$NAMESPACE" "netpol-unlabeled-$suffix"
 in_background proxy collect_probe "$NAMESPACE" "netpol-proxy-$suffix"
-in_background slack collect_probe "$NAMESPACE" "netpol-slack-$suffix"
 # The real Postgres pod is exec'd at the same time — it is already running,
 # so it has nothing to wait for but its own checks.
 in_background postgres exec_probe "$NAMESPACE" kaimahi-postgres 5432
-await_probes control unlabeled proxy slack postgres
+await_probes control unlabeled proxy postgres
 
 echo "== control: unpoliced pod in namespace default"
 expect control "$work/control" dns=reachable ollama=reachable postgres=blocked net443=reachable net80=reachable
@@ -275,9 +271,6 @@ expect unlabeled "$work/unlabeled" dns=blocked ollama=blocked postgres=blocked n
 echo "== proxy-shaped pod (labels of kaimahi-proxy)"
 if [ "$COPILOT_EGRESS" = 1 ]; then proxy_net=reachable; else proxy_net=blocked; fi
 expect proxy "$work/proxy" dns=reachable ollama=reachable postgres=reachable net443=$proxy_net net80=blocked
-
-echo "== slack-shaped pod (labels of the Slack MCP server)"
-expect slack "$work/slack" dns=reachable ollama=blocked postgres=blocked net443=reachable net80=blocked
 
 echo "== kaimahi-postgres (exec into the real pod)"
 # loopback is the row's positive (see exec_probe). The postgres column

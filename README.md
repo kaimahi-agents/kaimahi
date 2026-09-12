@@ -84,11 +84,11 @@ boundary. Installing Orka alone enables none of this routing.
   recommendation, not a ruling. Today's `kmx agent create` emits native Orka
   resources; it does not convert kagent YAML, ModelConfigs, MCP wiring or BYO
   images. The isolated conversion spike is not a supported CLI interface.
-- **Legacy implementation remains:** the governance plane, its connectors,
-  demonstrations and kagent commands still exist. Their documentation is
-  labelled as legacy reference, not a list of Orka capabilities or a
-  promise that Kaimahi will continue as a platform. Code retirement is a
-  separate decision and lane.
+- **The bridge is shrinking:** the model seam, budgets/ledger and existing
+  kagent commands remain. The custom MCP gateway, tool approvals, workflows
+  and connector fixtures are retired; native Orka tools and direct kagent MCP
+  are not. Existing installations need [deliberate upgrade cleanup](docs/operations.md#upgrading-after-gateway-retirement).
+  Historical SQL and stored data remain intact.
 - **Upstream first:** do not rebuild what Orka supplies. `orka.harness.v2`
   is not a direction for this project. OTLP with GenAI conventions ships
   in Orka; it is not an outstanding Kaimahi upstream candidate.

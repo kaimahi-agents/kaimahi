@@ -33,10 +33,8 @@ type ApprovalRequest struct {
 	Subject        string `json:"subject"`
 	Status         string `json:"status"`
 	Detail         string `json:"detail"`
-	// ArgDigest/ArgSummary carry the exact CALL a tool request is
-	// about: the digest a grant is welded to, and the transaction line an
-	// approver reads. Empty on budget and inbound requests, which have no
-	// arguments, and on tool requests filed before argument binding.
+	// Historical tool-call fields remain readable after retirement.
+	// Budget requests have no arguments.
 	ArgDigest  string     `json:"arg_digest,omitempty"`
 	ArgSummary string     `json:"arg_summary,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -60,10 +58,8 @@ type Grant struct {
 	Amount         *int64     `json:"amount,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	DecidedBy      string     `json:"decided_by"`
-	// ArgDigest is the call this tool grant admits — and only that
-	// call. NULL means a verb-level grant, a closed class: only grants
-	// that predate migration 00008 carry it (ApproveRequest refuses to
-	// mint another), and the gateway honours those unchanged.
+	// Historical tool binding, including NULL on pre-binding grants.
+	// Tool grants are readable but never executable.
 	ArgDigest *string `json:"arg_digest,omitempty"`
 }
 
@@ -90,24 +86,18 @@ const DecidedByAdmin = "admin"
 const grantLive = `(expires_at IS NULL OR expires_at > now())
 	AND (max_uses IS NULL OR uses < max_uses)`
 
-// Filing is one approval request to file. ArgDigest/ArgSummary are set
-// on tool requests and empty everywhere else.
+// Filing is one budget approval request; tool filings are retired.
 type Filing struct {
 	Credential string
 	Kind       string
 	Subject    string
 	Detail     string
-	ArgDigest  string
-	ArgSummary string
 }
 
 // FileApprovalRequest files a pending request, deduplicated per
-// (credential, kind, subject, arg_digest) among pending rows: refiling
-// while an identical one is pending is a no-op (filed=false), but two
-// attempts at the SAME tool with DIFFERENT policy-relevant arguments are
-// two different requests (before argument binding they collapsed into
-// one, and one approval covered both). A fresh filing also writes
-// the 'requested' audit row in the same transaction.
+// (credential, kind, subject, arg_digest) among pending rows. Refiling
+// while an identical one is pending is a no-op (filed=false). A fresh
+// filing also writes the 'requested' audit row in the same transaction.
 func (s *Store) FileApprovalRequest(ctx context.Context, f Filing) (filed bool, err error) {
 	_, filed, err = s.FileRequest(ctx, f)
 	return filed, err
@@ -116,7 +106,7 @@ func (s *Store) FileApprovalRequest(ctx context.Context, f Filing) (filed bool, 
 // FileRequest is FileApprovalRequest returning the fresh request's id as
 // well. id is empty when deduped.
 func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed bool, err error) {
-	if f.Kind != "tool" && f.Kind != "budget" {
+	if f.Kind != "budget" {
 		return "", false, fmt.Errorf("%w: approval kind %q is not supported", ErrBounds, f.Kind)
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -125,11 +115,11 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	err = tx.QueryRow(ctx,
-		`INSERT INTO approval_request (credential_name, kind, subject, detail, arg_digest, arg_summary)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO approval_request (credential_name, kind, subject, detail)
+		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (credential_name, kind, subject, arg_digest) WHERE status = 'pending' DO NOTHING
 		 RETURNING id`,
-		f.Credential, f.Kind, f.Subject, auditText(f.Detail), f.ArgDigest, auditText(f.ArgSummary)).Scan(&id)
+		f.Credential, f.Kind, f.Subject, auditText(f.Detail)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil // an identical request is already pending — deduped
 	}
@@ -141,9 +131,9 @@ func (s *Store) FileRequest(ctx context.Context, f Filing) (id string, filed boo
 		return "", false, err
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO approval_audit (request_id, credential_name, kind, subject, action, arg_digest, arg_summary)
-		 VALUES ($1, $2, $3, $4, 'requested', $5, $6)`,
-		id, f.Credential, f.Kind, f.Subject, f.ArgDigest, auditText(f.ArgSummary)); err != nil {
+		`INSERT INTO approval_audit (request_id, credential_name, kind, subject, action)
+		 VALUES ($1, $2, $3, $4, 'requested')`,
+		id, f.Credential, f.Kind, f.Subject); err != nil {
 		return "", false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -210,40 +200,26 @@ func (s *Store) ApproveRequest(ctx context.Context, id string,
 	if r.Status != "pending" {
 		return Grant{}, ErrNotPending
 	}
-	// Historical inbound requests remain readable and deniable, but no
-	// dispatcher remains to execute them. Never mint another such grant.
-	if r.Kind != "tool" && r.Kind != "budget" {
+	// Historical tool/inbound requests remain readable and deniable,
+	// but no executor remains. Never mint another such grant.
+	if r.Kind != "budget" {
 		return Grant{}, fmt.Errorf("%w: approval kind %q is not supported", ErrBounds, r.Kind)
 	}
 	// Ported permit discipline: a grant allowing everything forever is
 	// an error, not a wide grant — at least one bound REQUIRED; budget
-	// grants carry exactly one amount, tool grants none.
+	// grants carry exactly one amount.
 	if expiresAt == nil && maxUses == nil {
 		return Grant{}, fmt.Errorf("%w: at least one of TTL and USES is required", ErrBounds)
 	}
-	if (r.Kind == "budget") != (amount != nil) {
-		return Grant{}, fmt.Errorf("%w: AMOUNT is required for budget grants and forbidden otherwise", ErrBounds)
+	if amount == nil {
+		return Grant{}, fmt.Errorf("%w: AMOUNT is required for budget grants", ErrBounds)
 	}
-	// A tool grant is welded to the CALL its request carries. A tool
-	// request with no digest predates argument binding (or was filed by a
-	// path that named no call), and minting a verb-level grant from it
-	// would re-open exactly the hole argument binding closes — so it is refused,
-	// with the two honest ways forward named.
-	var argDigest *string
-	if r.Kind == "tool" {
-		if r.ArgDigest == "" {
-			return Grant{}, fmt.Errorf("%w: this tool request carries no call to bind (filed before argument binding); let the agent retry so a bound request is filed, or widen the allowlist with 'make tool-allow'", ErrBounds)
-		}
-		d := r.ArgDigest
-		argDigest = &d
-	}
-
 	g := Grant{RequestID: r.ID, CredentialName: r.CredentialName, Kind: r.Kind, Subject: r.Subject,
-		ExpiresAt: expiresAt, MaxUses: maxUses, Amount: amount, DecidedBy: decidedBy, ArgDigest: argDigest}
+		ExpiresAt: expiresAt, MaxUses: maxUses, Amount: amount, DecidedBy: decidedBy}
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO permit_grant (request_id, credential_name, kind, subject, expires_at, max_uses, amount, decided_by, arg_digest)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at`,
-		r.ID, r.CredentialName, r.Kind, r.Subject, expiresAt, maxUses, amount, decidedBy, argDigest).Scan(&g.ID, &g.CreatedAt); err != nil {
+		`INSERT INTO permit_grant (request_id, credential_name, kind, subject, expires_at, max_uses, amount, decided_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+		r.ID, r.CredentialName, r.Kind, r.Subject, expiresAt, maxUses, amount, decidedBy).Scan(&g.ID, &g.CreatedAt); err != nil {
 		return Grant{}, err
 	}
 	if _, err := tx.Exec(ctx,
@@ -311,29 +287,6 @@ func (s *Store) DenyApprovalRequest(ctx context.Context, id string, decidedBy st
 	return tx.Commit(ctx)
 }
 
-// ConsumeToolGrant admits one tool call under a live grant, consuming
-// one use atomically: the consume runs under the credential's row
-// lock (lockCredential), so concurrent consumers — on one replica or
-// across replicas — take turns and each sees the previous one's commit:
-// a grant with N uses left admits exactly N concurrent calls, never
-// N+1 and (unlike the FOR UPDATE SKIP LOCKED it replaces) never
-// fewer. ok=false means no consumable grant — the caller denies.
-func (s *Store) ConsumeToolGrant(ctx context.Context, credential, tool, argDigest string) (grantID string, ok bool, err error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := lockCredential(ctx, tx, credential); err != nil {
-		return "", false, err
-	}
-	grantID, ok, err = consumeToolGrantLocked(ctx, tx, credential, tool, argDigest)
-	if err != nil {
-		return "", false, err
-	}
-	return grantID, ok, tx.Commit(ctx)
-}
-
 // rowQuerier is the one method the shared queries need, satisfied by
 // both the pool and a transaction.
 type rowQuerier interface {
@@ -364,56 +317,6 @@ func consumeGrantLocked(ctx context.Context, tx pgx.Tx, credential, kind, subjec
 	return grantID, true, nil
 }
 
-// consumeToolGrantLocked is consumeGrantLocked for tool grants, which
-// admit ONE CALL: the grant's digest must equal the digest of
-// the call being made. A mismatch consumes nothing, so the caller denies
-// and files a request for the call actually attempted — an approval can
-// never be spent on a different transaction. The one exception is the
-// closed legacy class (arg_digest IS NULL, migration 00008): those
-// verb-level grants are honoured, and preferred LAST, so an exact match
-// is always burned first.
-func consumeToolGrantLocked(ctx context.Context, tx pgx.Tx, credential, tool, argDigest string) (grantID string, ok bool, err error) {
-	err = tx.QueryRow(ctx,
-		`UPDATE permit_grant SET uses = uses + 1
-		 WHERE id = (
-		   SELECT id FROM permit_grant
-		   WHERE credential_name = $1 AND kind = 'tool' AND subject = $2
-		     AND (arg_digest = $3 OR arg_digest IS NULL) AND `+grantLive+`
-		   ORDER BY (arg_digest IS NULL), created_at LIMIT 1
-		 ) RETURNING id`,
-		credential, tool, argDigest).Scan(&grantID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	return grantID, true, nil
-}
-
-// LiveToolGrantSubjects lists the tools a credential can currently call
-// via grants — for the tools/list projection (read-only: listing burns
-// no uses).
-func (s *Store) LiveToolGrantSubjects(ctx context.Context, credential string) ([]string, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT DISTINCT subject FROM permit_grant
-		 WHERE credential_name = $1 AND kind = 'tool' AND `+grantLive+`
-		 ORDER BY subject`, credential)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
 // BudgetNeed is one exceeded cap an admission must cover via grants
 // (AdmitSpend, spend.go).
 type BudgetNeed struct {
@@ -424,15 +327,15 @@ type BudgetNeed struct {
 
 // Grants lists a credential's grants (all credentials when empty),
 // newest first, with liveness computed by the same predicate consumers
-// use. Historical inbound grants remain visible but are never live:
-// their dispatcher has been retired, regardless of expiry or uses.
+// use. Historical tool/inbound grants remain visible but never live,
+// regardless of expiry or uses.
 func (s *Store) Grants(ctx context.Context, credential string, limit int) ([]Grant, []bool, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, request_id, credential_name, kind, subject, expires_at, max_uses, uses, amount, created_at, decided_by, arg_digest,
-		        (kind IN ('tool', 'budget') AND `+grantLive+`) AS live
+		        (kind = 'budget' AND `+grantLive+`) AS live
 		 FROM permit_grant
 		 WHERE ($1 = '' OR credential_name = $1)
 		 ORDER BY created_at DESC LIMIT $2`,

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,15 +57,9 @@ func TestThePlanesManifestsTravelInTheBinary(t *testing.T) {
 	}
 }
 
-// Milestone 3 adds two things to the binary, and each is there because a
-// kmx command applies it: the governed RemoteMCPServer `kmx tools govern`
-// puts the tools agent behind, and EVERY model preset, because `kmx use` is
-// `make use` and `make use PRESET=anthropic` has always been a documented
-// flow. A preset NAMES a Secret; it never carries a key, so this puts no
-// credential anywhere near kmx — minting that Secret is still
-// `make model-secret` and the scripts.
-func TestMilestoneThreesManifestsTravelInTheBinary(t *testing.T) {
-	names := []string{"kaimahi-tools.yaml"}
+// Every model preset names a Secret without embedding its credential value.
+func TestModelPresetsTravelInTheBinary(t *testing.T) {
+	var names []string
 	presets, err := os.ReadDir(filepath.Join("..", "..", "..", "k8s", "models"))
 	if err != nil {
 		t.Fatal(err)
@@ -129,51 +124,46 @@ func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
 	}
 }
 
-// What kmx carries is still a decision, not a directory listing. The Slack,
-// GitHub, accounts-payable and release families must NOT ride
-// along: their targets are the Makefile's, and a manifest in the binary
-// that no kmx command applies is a claim kmx cannot honour.
-//
-// `egress-hosted.yaml` left this list when a kmx command started applying it
-// — the credential capture, whose whole point is that an operator with no
-// checkout can hand the plane a token for an upstream on the internet. Which
-// is the rule working, not an exception to it: the test below is what keeps
-// the list honest in the other direction. `egress-copilot.yaml` left it for
-// the same reason: `kmx lift` applies it, so claiming nothing did was simply
-// false — and it stayed false unnoticed because kmx has TWO embedded
-// filesystems and this only ever looked in one of them.
-func TestTheConnectorFamiliesAreNotEmbedded(t *testing.T) {
-	for _, name := range []string{
-		"kaimahi-slack.yaml", "slack-agent.yaml", "slack-mcp.yaml",
-		"kaimahi-github.yaml", "github-agent.yaml",
-		"ap-agent.yaml", "kaimahi-erp.yaml", "erp-mcp.yaml",
-		"release-agent.yaml", "kaimahi-release-github.yaml", "kaimahi-release-ado.yaml",
-	} {
-		// The premise first: this asserts an EXCLUSION, and an exclusion
-		// passes for free once the thing it excludes stops existing. If a
-		// manifest moves, this test must fail and be rewritten against
-		// wherever it went — not quietly keep passing.
-		if _, err := os.Stat(filepath.Join("..", "..", "..", "k8s", filepath.FromSlash(name))); err != nil {
-			t.Fatalf("k8s/%s is gone, so this exclusion no longer proves anything: %v", name, err)
+// Gateway/scenario retirement leaves no unembedded manifests. Check the
+// positive boundary across both filesystems rather than retaining exclusions
+// for files that no longer exist.
+func TestAllRetainedManifestsTravelInTheBinary(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "k8s")
+	files := 0
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if _, err := manifest(name); err == nil {
-			t.Errorf("k8s/%s is embedded in kmx's manifest filesystem, but no kmx command applies it", name)
+		if entry.IsDir() {
+			return nil
 		}
-		// The managed path carries its own embedded filesystem. Checking only
-		// the first one is how a manifest can be in the binary while a test
-		// says it is not.
-		if _, err := kaimahi.Managed.ReadFile("k8s/" + name); err == nil {
-			t.Errorf("k8s/%s is embedded in kmx's managed filesystem, but no kmx command applies it", name)
+		name, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
 		}
+		name = filepath.ToSlash(name)
+		embedded, err := kaimahi.Manifests.ReadFile("k8s/" + name)
+		if err != nil {
+			embedded, err = kaimahi.Managed.ReadFile("k8s/" + name)
+		}
+		if err != nil {
+			t.Errorf("k8s/%s is not embedded: %v", name, err)
+			return nil
+		}
+		onDisk, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if string(embedded) != string(onDisk) {
+			t.Errorf("k8s/%s differs from its embedded copy", name)
+		}
+		files++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-// And the inverse of that list: a manifest a kmx command DOES apply has to be
-// in the binary, or the command works in a clone and fails everywhere else —
-// which is the failure mode that is invisible to everyone who develops here.
-func TestTheHostedEgressAllowanceTravelsInTheBinary(t *testing.T) {
-	if _, err := manifest("egress-hosted.yaml"); err != nil {
-		t.Fatalf("kmx applies k8s/egress-hosted.yaml when it captures a credential for a "+
-			"hosted upstream, but it is not embedded: %v", err)
+	if files == 0 {
+		t.Fatal("no retained manifests were checked")
 	}
 }

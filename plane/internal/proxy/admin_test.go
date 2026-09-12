@@ -104,57 +104,22 @@ func TestSetBudgetAndLedger(t *testing.T) {
 	require.NotNil(t, resp.MonthTokens)
 }
 
-func TestToolAllowlistRoundTrip(t *testing.T) {
-	f := newFakeStore()
-	f.addToken("kmh_x", store.Credential{Name: "hello-tools"})
-	mux, tok := adminMux(t, f)
-
-	// Unknown credential 404s; bad credential and tool names 400.
-	require.Equal(t, 404, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "ghost", "tools": ["a"]}`).Code)
-	require.Equal(t, 400, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "UPPER", "tools": []}`).Code)
-	require.Equal(t, 400, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "hello-tools", "tools": ["bad tool name"]}`).Code)
-	// An ABSENT tools field must be a 400, never a silent clear.
-	require.Equal(t, 400, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "hello-tools"}`).Code)
-	require.Equal(t, 400, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "hello-tools", "tools": null}`).Code)
-
-	require.Equal(t, 204, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "hello-tools", "tools": ["k8s_get_resources", "k8s_get_events"]}`).Code)
-
-	w := adminDo(mux, "GET", "/admin/tool-allowlist?credential=hello-tools", tok, "")
-	require.Equal(t, 200, w.Code)
-	var listResp struct{ Tools []string }
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listResp))
-	require.ElementsMatch(t, []string{"k8s_get_resources", "k8s_get_events"}, listResp.Tools)
-
-	// Clearing to empty is valid (nothing callable) and reads back as [].
-	require.Equal(t, 204, adminDo(mux, "PUT", "/admin/tool-allowlist", tok,
-		`{"credential": "hello-tools", "tools": []}`).Code)
-	w = adminDo(mux, "GET", "/admin/tool-allowlist?credential=hello-tools", tok, "")
-	require.Equal(t, 200, w.Code)
-	require.Contains(t, w.Body.String(), `"tools":[]`)
-}
-
 func TestApprovalLifecycle(t *testing.T) {
 	f := newFakeStore()
-	f.addToken("kmh_a", store.Credential{Name: "hello-tools"})
+	f.addToken("kmh_a", store.Credential{Name: "hello-model"})
 	mux, tok := adminMux(t, f)
 
 	// A request must bind to a REAL credential (the FK): unknown 404s.
 	require.Equal(t, 404, adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "ghost", "kind": "tool", "subject": "k8s_get_events"}`).Code)
+		`{"credential": "ghost", "kind": "budget", "subject": "tokens"}`).Code)
 
 	// Explicit filing (`make request`), deduped on refile.
 	w := adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-tools", "kind": "tool", "subject": "k8s_get_events"}`)
+		`{"credential": "hello-model", "kind": "budget", "subject": "tokens"}`)
 	require.Equal(t, 201, w.Code)
 	require.Contains(t, w.Body.String(), `"filed":true`)
 	w = adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-tools", "kind": "tool", "subject": "k8s_get_events"}`)
+		`{"credential": "hello-model", "kind": "budget", "subject": "tokens"}`)
 	require.Equal(t, 201, w.Code)
 	require.Contains(t, w.Body.String(), `"deduped":true`)
 
@@ -167,17 +132,17 @@ func TestApprovalLifecycle(t *testing.T) {
 	id := list.Pending[0].ID
 
 	// Bound validation, ported permit discipline: an unbounded grant is
-	// refused; a tool grant with an amount is refused.
+	// refused; a budget grant without an amount is refused.
 	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{}`).Code)
 	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok,
-		`{"max_uses": 1, "amount": 5}`).Code)
+		`{"max_uses": 1}`).Code)
 	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok,
 		`{"max_uses": 1, "unknown_field": true}`).Code, "unknown fields rejected")
 	require.Equal(t, 400, adminDo(mux, "POST", "/admin/approvals/not-a-uuid/approve", tok,
 		`{"max_uses": 1}`).Code)
 
 	// A bounded approval mints the grant; deciding again conflicts.
-	w = adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{"max_uses": 1, "ttl_seconds": 60}`)
+	w = adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{"max_uses": 1, "ttl_seconds": 60, "amount": 1000}`)
 	require.Equal(t, 201, w.Code)
 	require.Equal(t, 409, adminDo(mux, "POST", "/admin/approvals/"+id+"/approve", tok, `{"max_uses": 1}`).Code)
 	require.Equal(t, 409, adminDo(mux, "POST", "/admin/approvals/"+id+"/deny", tok, "").Code)
@@ -185,17 +150,17 @@ func TestApprovalLifecycle(t *testing.T) {
 		"/admin/approvals/00000000-0000-0000-0000-000000000099/deny", tok, "").Code)
 
 	// Grants and the approvals' own audit trail list the history.
-	w = adminDo(mux, "GET", "/admin/grants?credential=hello-tools", tok, "")
+	w = adminDo(mux, "GET", "/admin/grants?credential=hello-model", tok, "")
 	require.Equal(t, 200, w.Code)
-	require.Contains(t, w.Body.String(), "k8s_get_events")
-	w = adminDo(mux, "GET", "/admin/approval-audit?credential=hello-tools", tok, "")
+	require.Contains(t, w.Body.String(), "tokens")
+	w = adminDo(mux, "GET", "/admin/approval-audit?credential=hello-model", tok, "")
 	require.Equal(t, 200, w.Code)
 	require.Contains(t, w.Body.String(), `"requested"`)
 	require.Contains(t, w.Body.String(), `"approved"`)
 
 	// A budget request requires an amount to approve.
 	w = adminDo(mux, "POST", "/admin/requests", tok,
-		`{"credential": "hello-tools", "kind": "budget", "subject": "tokens"}`)
+		`{"credential": "hello-model", "kind": "budget", "subject": "cents"}`)
 	require.Equal(t, 201, w.Code)
 	w = adminDo(mux, "GET", "/admin/approvals", tok, "")
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
@@ -222,24 +187,6 @@ func TestApprovalRequestValidation(t *testing.T) {
 	require.Equal(t, 401, adminDo(mux, "GET", "/admin/approvals", "", "").Code)
 	require.Equal(t, 401, adminDo(mux, "GET", "/admin/grants", "", "").Code)
 	require.Equal(t, 401, adminDo(mux, "GET", "/admin/approval-audit", "", "").Code)
-}
-
-func TestToolAuditRead(t *testing.T) {
-	f := newFakeStore()
-	f.audits = []store.ToolAuditEntry{
-		{CredentialName: "hello-tools", Upstream: "kagent-tools", Method: "tools/call",
-			Tool: "k8s_get_resources", Decision: "allowed", Status: 200},
-		{CredentialName: "other", Upstream: "kagent-tools", Method: "tools/call",
-			Tool: "x", Decision: "denied", Status: 403},
-	}
-	mux, tok := adminMux(t, f)
-	require.Equal(t, 401, adminDo(mux, "GET", "/admin/tool-audit", "", "").Code)
-	w := adminDo(mux, "GET", "/admin/tool-audit?credential=hello-tools", tok, "")
-	require.Equal(t, 200, w.Code)
-	var auditResp struct{ Entries []store.ToolAuditEntry }
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &auditResp))
-	require.Len(t, auditResp.Entries, 1)
-	require.Equal(t, "allowed", auditResp.Entries[0].Decision)
 }
 
 // Issuing, renewing and listing the deadline: the operator surface for

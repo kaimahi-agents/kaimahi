@@ -72,22 +72,6 @@ type modelStatus struct {
 	Status struct{ Conditions []statusCondition } `json:"status"`
 }
 
-// toolServerStatus is the tool seam: a RemoteMCPServer's URL is either the
-// plane's MCP gateway or it is not, and headersFrom names the Secret the
-// governed one authenticates with.
-type toolServerStatus struct {
-	Metadata struct{ Name string } `json:"metadata"`
-	Spec     struct {
-		URL         string `json:"url"`
-		HeadersFrom []struct {
-			ValueFrom struct {
-				Type string `json:"type"`
-				Name string `json:"name"`
-			} `json:"valueFrom"`
-		} `json:"headersFrom"`
-	} `json:"spec"`
-}
-
 // planeDeployment is the proxy workload: its existence is what "installed"
 // means, and its replicas are what "ready" means.
 type planeDeployment struct {
@@ -139,6 +123,17 @@ func condition(conditions []statusCondition, name string) string {
 // one — that is what let a credential written minutes ago show as working
 // when it could not be used at all. A pod's Ready condition is genuinely
 // live and gets plain condition(); these do not.
+func age(now, then time.Time) string {
+	if then.IsZero() {
+		return "an unknown time"
+	}
+	d := now.Sub(then).Round(time.Second)
+	if d < 0 {
+		d = 0
+	}
+	return d.String()
+}
+
 func conditionAged(conditions []statusCondition, name string, now time.Time) string {
 	answer := condition(conditions, name)
 	for _, value := range conditions {
@@ -388,7 +383,7 @@ func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
 type statusData struct {
 	agents     objectList[agentStatus]
 	models     objectList[modelStatus]
-	servers    objectList[toolServerStatus]
+	servers    objectList[json.RawMessage]
 	kagentPods objectList[podStatus]
 	ollamaPods objectList[podStatus]
 	planePods  objectList[podStatus]
@@ -402,7 +397,7 @@ type statusData struct {
 	// proxy scaled to zero beside a running Postgres is not reported ready.
 	planeDesired int
 	planeReady   int
-	// certificate is what the plane serves both seams with. Read
+	// certificate is what the plane serves the model seam with. Read
 	// tolerantly like everything else here: an absent one is a plane that
 	// has not been deployed, not a reason for status to fail.
 	certificate SeamCertificate
@@ -487,12 +482,18 @@ func (a *App) collectStatus() (*statusData, error) {
 		d.planeErr = a.statusTolerant(planeNamespace, "pods", &d.planePods)
 	}
 	d.serverErr = a.statusTolerant(config_kagentNamespace, "remotemcpservers", &d.servers)
+	if d.serverErr != "" {
+		a.notef("RemoteMCPServer inventory unavailable: %s (not model readiness evidence)", d.serverErr)
+	}
+	// Inventory only: preserve owner URLs verbatim, without treating old
+	// gateway references as either managed or healthy direct routing.
+	d.items = append(d.items, d.servers.Items...)
 	d.secrets, d.secretErr = a.secretNames(config_kagentNamespace)
 	d.certificate = a.seamCertificate()
 	return d, nil
 }
 
-// governanceOf assembles the three counts and the plane's presence.
+// governanceOf assembles model routing, credential evidence and plane presence.
 func (d *statusData) governanceOf() governance {
 	plane := planePresence{State: stateNone}
 	switch {
@@ -505,16 +506,11 @@ func (d *statusData) governanceOf() governance {
 		// and the wrong instruction.
 		plane = planePresence{State: stateInstalled, Ready: d.planeReady, Desired: d.planeDesired}
 	}
-	seamErr := ""
-	if d.serverErr != "" {
-		seamErr = "the tool seams could not be read, so what they require is not counted here"
-	}
 	return governance{
 		Plane:       plane,
 		Certificate: d.certificate,
 		ModelSeams:  modelSeams(d.agents.Items, d.models.Items),
-		ToolSeams:   toolSeams(d.servers.Items, d.serverErr),
-		Credentials: credentialSeams(d.models.Items, d.servers.Items, d.secrets, d.secretErr, seamErr),
+		Credentials: credentialSeams(d.models.Items, d.secrets, d.secretErr),
 	}
 }
 
@@ -695,7 +691,6 @@ func governanceFields(g governance) []cliui.Field {
 	return []cliui.Field{
 		{Label: "plane", Value: plane},
 		{Label: "model seams", Value: seamLine(g.ModelSeams, "agents", "agent")},
-		{Label: "tool seams", Value: seamLine(g.ToolSeams, "tool servers", "tool server")},
 		{Label: "credentials", Value: credentialLine(g.Credentials)},
 	}
 }

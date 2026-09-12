@@ -176,8 +176,8 @@ func (h *handler) forward(w http.ResponseWriter, r *http.Request) {
 
 	name := r.PathValue("name")
 
-	// Credentials expire. A token bounded by allowlist, budget and
-	// constraint but not by TIME lives until someone deletes its row,
+	// Credentials expire. A token bounded by budget but not by TIME
+	// lives until someone deletes its row,
 	// which is the one thing nobody does. Checked here rather than
 	// filtered out of the lookup above, so an operator is told what is
 	// actually wrong instead of hunting an "unknown token".

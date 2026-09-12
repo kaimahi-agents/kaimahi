@@ -32,7 +32,7 @@ BASE_PORT="${BASE_PORT:-18180}"
 n="${1:-8}"
 
 # Context safety: run directly, so guard the effective context of
-# $KUBECTL (see scripts/tool-call-probe.sh for why not an ambient KUBE_CTX).
+# $KUBECTL rather than trusting an ambient KUBE_CTX.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')
 KUBE_NS="$NAMESPACE, $SECRET_NAMESPACE" KUBE_CTX="$probe_ctx" \

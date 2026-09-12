@@ -13,25 +13,22 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/egress"
-	"github.com/kaimahi-agents/kaimahi/plane/internal/gateway"
-	"github.com/kaimahi-agents/kaimahi/plane/internal/proxy"
 )
 
 // hardenedClient builds the ONE hardened client over every
-// upstream marked `internet: true` in both tables, and vets each host at
+// model upstream marked `internet: true`, and vets each host at
 // boot: a host that resolves to a private, link-local, loopback,
 // carrier-NAT, multicast or metadata address refuses the config LOUDLY
 // here, not at first use. A host that cannot be resolved at boot is a
 // warning, not a refusal: the per-call check is the real gate (a record
 // can change after boot anyway — DNS rebinding — which is why every call
 // re-resolves), and a kind cluster with no route to the internet must
-// still boot the keyless in-cluster path. The same client goes to the
-// LLM proxy and the MCP gateway (wireInternet), so nothing about the
-// Copilot path's hardening is implicit.
+// still boot the keyless in-cluster path. Nothing about the Copilot
+// path's hardening is implicit.
 //
 // One bound is operator-adjustable: how long an upstream may take to
 // START answering (EGRESS_HEADER_TIMEOUT). The default stays 60 s, which
-// is generous for a tool call and for a short completion — but a real
+// is generous for a short completion — but a real
 // workload exceeds it, and surfaces as a 502 with a stack trace
 // pointing at http2 rather than at the cause: asking a reasoning
 // model to draft release notes over ~9k tokens of pull-request listing
@@ -107,13 +104,4 @@ func trustOf(h egress.Host) string {
 		return "system roots"
 	}
 	return "ca_file " + h.CAFile
-}
-
-// wireInternet injects the one hardened client into BOTH seams. Kept as
-// a function so a test can assert the two handlers share the very same
-// client: one hardening decision for both seams, not two that can drift.
-func wireInternet(pd proxy.Deps, gd gateway.Deps, client *http.Client) (proxy.Deps, gateway.Deps) {
-	pd.InternetClient = client
-	gd.InternetClient = client
-	return pd, gd
 }

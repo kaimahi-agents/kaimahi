@@ -22,6 +22,31 @@ const (
 	testCopilotToken = "copilot_" + "short-lived-not-real"
 )
 
+func TestTheRenderedSecretIsWellFormedAndBase64(t *testing.T) {
+	body := credentialSecretManifest("kaimahi-copilot-token", "kaimahi", "api-key", []byte("a value"))
+	want := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: kaimahi-copilot-token\n  namespace: kaimahi\ntype: Opaque\ndata:\n  api-key: YSB2YWx1ZQ==\n"
+	if string(body) != want {
+		t.Fatalf("rendered: %s", body)
+	}
+	body = credentialSecretManifest("n", "ns", "k", []byte("line\n\"quoted\": value"))
+	if strings.Contains(string(body), "quoted") {
+		t.Fatalf("value was not encoded: %s", body)
+	}
+}
+
+func TestTheBuffersAreCleared(t *testing.T) {
+	b := []byte(testCopilotToken)
+	zeroBytes(b)
+	for i, c := range b {
+		if c != 0 {
+			t.Fatalf("byte %d survived: %q", i, c)
+		}
+	}
+	if got := string(trimSpaceBytes([]byte("  " + testCopilotToken + " \r\n"))); got != testCopilotToken {
+		t.Fatalf("token was not trimmed: %q", got)
+	}
+}
+
 func TestCopilotCredentialUsesDeviceLoginAndStoresOnlyTheExchange(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake kubectl is a shell script")
