@@ -173,8 +173,8 @@ What happens under that:
 **Proven, not asserted.** CI's `plane-upgrade` job
 ([scripts/plane-upgrade-probe.sh](../scripts/plane-upgrade-probe.sh)) installs
 a plane several migrations old straight from the module proxy, seeds it through
-its own admin API with a credential, a budget, a tool allowlist, a grant a
-human approved and a priced ledger row, then starts the current plane on the
+its own admin API with a credential, a budget, a tool allowlist, an
+admin-approved fixture grant and a priced ledger row, then starts the current plane on the
 same database and asserts every one of those survived and that the upgraded
 plane serves a fresh governed call.
 

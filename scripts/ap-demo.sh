@@ -25,19 +25,20 @@
 # does attempt a consequential call simply files the same request first;
 # the filing dedupes on the call.)
 #
-# Usage:  make ap-demo [AP_HUMAN=1]
-#   AP_HUMAN=1      print the admin approval command and wait for an
-#                   operator to run it (scripts/await-approval.sh).
-#                   By default the demo approves with its admin bearer.
-#   AP_AGENT_TURN=0 skip the agent's investigation entirely.
+# Usage:  make ap-demo
+#   Approvals use the demo's admin bearer, not a verified human decision.
+#   AP_AGENT_TURN=0 skips the agent's investigation entirely.
 set -euo pipefail
+if [ "${AP_HUMAN:-0}" != 0 ]; then
+  printf 'ap-demo: AP_HUMAN is retired; refusing to run. Unset it or use AP_HUMAN=0 only for automated admin approvals.\n' >&2
+  exit 2
+fi
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 here="$(cd "$(dirname "$0")" && pwd)"
 KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED_AP:-ap-agent}"
-AP_HUMAN="${AP_HUMAN:-0}"
 AP_AGENT_TURN="${AP_AGENT_TURN:-1}"
 # KUBE_CTX is exported by the Makefile so this direct kmx call lands on the
 # same cluster as the rest of the scenario. Word splitting is deliberate.
@@ -109,15 +110,10 @@ request_id() {
     '$3==cred && $4=="tool" && $5==tool && index($0, want) {print $1; exit}' "$work/approvals.out"
 }
 
-# approve <id> [uses] — both paths mint the same call-bound admin grant.
-# AP_HUMAN=1 waits for an operator; the default drives the demo directly.
+# approve <id> [uses] — mint a call-bound admin grant for the fixture.
 approve() {
   local id=$1 uses=${2:-1}
-  if [ "$AP_HUMAN" = 1 ]; then
-    CRED="$CRED_AP" bash "$here/await-approval.sh" "$id" "$uses"
-  else
-    admin approve "$id" --ttl 10m --uses "$uses"
-  fi
+  admin approve "$id" --ttl 10m --uses "$uses"
 }
 
 # --- 0. the arithmetic, stated before anything runs ----------------------
@@ -186,8 +182,8 @@ audit > "$work/audit-pay.out"
 grep -E "$CRED_AP +erp +tools/call +payment_schedule +allowed +200 +granted .*amount_cents $EXC_PAY_CENTS" \
   "$work/audit-pay.out" \
   || { cat "$work/audit-pay.out" >&2; fail "the approved payment was not admitted under its grant"; }
-note "The denial row and this row carry the same digest: the call a human"
-note "approved is provably the call that ran."
+note "The denial row and this row carry the same digest: the admin-approved"
+note "fixture call is provably the call that ran."
 
 # --- 4. the dispute needs its own approval ------------------------------
 step "The \$6,000.00 fee: dispute_open is on no allowlist, so it is denied too"
@@ -221,5 +217,5 @@ admin audit approval "$CRED_AP" >&2
 step "The tool audit — every decision this credential got"
 audit >&2
 
-printf '\n\033[1map-demo: the routine invoice paid itself; the exception needed a named human;\n' >&2
+printf '\n\033[1map-demo: the routine invoice paid itself; the exception needed admin approval;\n' >&2
 printf 'each consequential call needed its own approval. Nothing was reconfigured.\033[0m\n' >&2

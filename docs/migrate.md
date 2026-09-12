@@ -258,6 +258,32 @@ is [here](reviews/2026-09-09-orka-composition.md).
   Copilot credential by device login if absent. Orka migration uses selected phases;
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
 
+## Retirement regression evidence
+
+The inbound/notification retirement was exercised on a dedicated kind cluster
+with Orka `v0.1.3`, Ollama `qwen2.5:3b` and an owner-managed Python 3.12
+standard-library HTTP client fixture. This is a controlled model-route smoke
+check, not a claim about every SDK or an already-operating source provider.
+
+- The original-main migration left the Deployment unpatched. Applying its
+  generated patch as the owner enabled a real Responses request through the TLS
+  seam to Orka: `BRIDGE WORKS`, with 39 input and 5 output tokens in the ledger.
+- After upgrading the same plane/database to the reduced runtime, repeating
+  migration preserved Deployment UID, generation and specification, the bound
+  application credential, original ConfigMap and application source. A new
+  request returned the same answer and another 44-token model ledger row;
+  the pre-upgrade row survived.
+- A fresh Deployment migrated against the reduced runtime received a new
+  credential, remained unpatched until owner application, then produced a real
+  answer and its own 44-token ledger row.
+
+Both proxy replicas became Ready. The old inbound Service remained after apply,
+as expected, and was explicitly deleted in the disposable cluster. This smoke
+check does not certify network-policy enforcement, arbitrary framework
+continuations, tool governance or AKS. See the
+[retirement upgrade steps](operations.md#upgrading-after-inbound-retirement) and
+retain the translation/ownership limits above.
+
 ## Teardown
 
 For an owner-managed workload, restore its release configuration deliberately;

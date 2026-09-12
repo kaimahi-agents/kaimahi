@@ -107,8 +107,11 @@ loaded table may differ until a successful restart. Implementation:
 requests from the explicit call, rejects riding a pre-existing live grant,
 waits for a decision, and checks the admitted tool-audit row's grant/digest.
 The driver uses admin port-forward 19291 so a separate `kmx approve` can
-use the normal admin port. `--wait` bounds the human wait; `--approver`
-requires the recorded identity, rather than accepting any grant.
+use the normal admin port. `--wait` bounds the wait; `--approver`
+requires the recorded `decided_by` value, rather than accepting any grant.
+Current CLI decisions record `admin`, not a verified person. Requiring another
+value cannot be satisfied by that path now that the inbound approver is retired;
+the runner does not silently relax the constraint.
 
 The live runner can refresh configured expiring upstream credentials and
 ask kagent to rediscover; dry-run uses current custody instead. An expired

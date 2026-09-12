@@ -281,8 +281,8 @@ seed() { # seed <database> — the state an upgrade must not lose
   [ -n "$token" ] || fail "no credential token"
   admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":5000,"cap_tokens":null}'
   admin PUT /admin/tool-allowlist '{"credential":"upgrade-probe","tools":["k8s_get_resources","k8s_get_pod_logs"]}'
-  # A human-approved, bounded grant: the row whose meaning the argument-
-  # binding migration changes, and therefore the one worth carrying across.
+  # An admin-approved fixture grant: bounded, and worth carrying across
+  # because the argument-binding migration changes this row's meaning.
   admin POST /admin/requests '{"credential":"upgrade-probe","kind":"tool","subject":"k8s_get_resources"}' >/dev/null
   request_id=$(admin GET /admin/approvals |
     python3 -c 'import json,sys; p=json.load(sys.stdin)["pending"]; print(p[0]["id"] if p else "")')
@@ -369,8 +369,8 @@ assert sorted(tools) == ["k8s_get_pod_logs", "k8s_get_resources"], tools
 print("allowlist intact:", tools)
 PY
 
-# The grant a human approved before argument binding existed: still there,
-# still live, and still bounded by what the approver said. Its arg_digest is
+# The admin-approved fixture grant from before argument binding: still there,
+# still live, and still bounded by the admin's parameters. Its arg_digest is
 # NULL — the closed legacy class 00008 documents — so it keeps its old
 # verb-level meaning rather than being silently widened or silently voided.
 admin GET '/admin/grants?credential=upgrade-probe' > "$work/grants.json"

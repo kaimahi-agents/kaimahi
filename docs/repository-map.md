@@ -46,7 +46,7 @@ before its counts describe the intended tree.
 | `internal/` | `kmx/` (17 packages), plus embedded schema fixtures | `demo/erp` | — |
 | `plane/` | legacy governance module, not the Orka platform | — | test fakes inside packages |
 | `k8s/` | embedded artifacts and checkout wiring; includes legacy plane manifests | AP and connector scenarios | — |
-| `scripts/` | 9 (6 embedded in the binary, 3 operator) | 4 | 52 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 9 (6 embedded in the binary, 3 operator) | 3 | 52 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 37 tracked files; guides, direction, legacy references and assets | scenario material | maintainer and process docs |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -234,6 +234,10 @@ Run doc-link and repository-map checks after staging each changed inventory.
 
 **Recovery record.** The last commit carrying the removed inbound approval
 commands and notification path is `d036b30d2ceb228ca39b88750d606d635e00a2a1`.
+The later-removed AP human-wait helper was last carried by
+`0b0ce38cb2c362940b8c75a70c198452968939fb`; review found that matching clipped
+summaries and unrelated new grants could falsely report a human approval.
+It is retired, not rebuilt around machinery scheduled to leave next.
 The original inspected source baseline is
 `47e71e843560c280ef380a1716c1cb331087aa4d`. Argument-binding enforcement remains in
 `plane/internal/gateway/digest.go` and `plane/internal/gateway/canon.go`, policy
@@ -273,9 +277,9 @@ Embedding explains what the existing binary can apply without a checkout.
 It does not establish a future authoring format, current platform support,
 or whether anyone depends on a particular scenario.
 
-## `scripts/` — 65 tracked files, three different jobs
+## `scripts/` — 64 tracked files, three different jobs
 
-**Reference coverage:** 53 of the 65 are named by something outside themselves,
+**Reference coverage:** 52 of the 64 are named by something outside themselves,
 and the twelve `scripts/mutations/*.json` are named by nothing at all —
 `check-mutations.py` discovers them by globbing. Map, checker, mutation-fixture
 and coordination-board mentions are not caller evidence. A textual reference
@@ -289,16 +293,18 @@ role is counted once, in the first matching bucket.
 |---|---|---|
 | **Installed** — embedded in the kmx binary, including legacy wiring | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `release-publish.sh` |
 | **Checkout** — existing operator scripts, including legacy integrations | 3 | `plane-pods.sh`, `slack-secret.sh`, `copilot-secret.sh` |
-| **Demonstration** | 4 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh`, `await-approval.sh` |
-| **Scaffolding** — checkers and their self-tests | 17 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_await_approval.py` |
+| **Demonstration** | 3 | `erp-deploy.sh`, `ap-demo.sh`, `ap-injection.sh` |
+| **Scaffolding** — checkers and their self-tests | 17 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_ap_approval.py` |
 | **Scaffolding** — live-cluster probes | 14 | `*-probe.sh`, minus the one that is embedded, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures and synthetic upstreams | 8 | `scripts/ci/`: `synthetic-upstream.sh`, `plain-upstream.sh`, `plain-model.sh`, `mcp-echo-server.py`, `plain-mcp-server.py`, `plain-model-server.py`, `status-unknown-probe.sh`, `workflow-fixture.yaml` |
 | **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json`, one per checker |
 | **Scaffolding** — board checker's recorded findings | 1 | `board-open-drift.json` |
 
-**Existing callers, not product authority.** `await-approval.sh` waits for
-the human decision in the accounts-payable demonstration.
-Both `ap-demo.sh` and `ap-injection.sh` call it.
+**Existing callers, not product authority.** The accounts-payable demonstrations
+are automatically admin-approved fixtures, not human decision flows.
+Both `ap-demo.sh` and `ap-injection.sh` call `kmx approve` directly.
+The removed human-wait helper is not replaced; `AP_HUMAN=1` fails before the
+scenario rather than silently falling back to automated approval.
 `scripts/slack-secret.sh`: one make recipe.
 
 `kube-guard.sh` has a second role but is counted once above: it is embedded

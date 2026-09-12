@@ -50,10 +50,11 @@ no new human decision, and the rules only cover fields they name.
   or that the payee owns it. Those relationships need separate controls.
 - Tool responses are not redacted; readable fixture data is visible to
   the agent. This demo proves no confidentiality property.
-- The default driver approves through the admin path for the fixture test;
-  that is not a human decision. `AP_HUMAN=1` instead waits for an operator
-  to run `kmx approve`. The recorded `admin` actor is not a verified person;
-  no Slack approval path remains. See [approvals](approvals.md).
+- The driver approves through the admin path for the fixture test;
+  that is not a human decision. `AP_HUMAN=1` is rejected before the scenario
+  starts: the old human-wait helper retired with the connector path. The
+  recorded `admin` actor is not a verified person. Operators may use the
+  separate [approval CLI](approvals.md); no Slack approval path remains.
 - An admitted audit row is not proof of downstream completion or money
   movement. Read the response and the system of record.
 

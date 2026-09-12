@@ -235,8 +235,8 @@ jobs:
       # different context are all refused.
       - name: Context guard fails closed
         run: bash scripts/kube-guard-test.sh
-      - name: Human approval wait requires the exact call and a new live grant
-        run: python3 scripts/test_await_approval.py
+      - name: AP fixtures refuse retired human mode and retain exact-request admin approvals
+        run: python3 scripts/test_ap_approval.py
       # kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
       # local tag must never fall back to pulling a squattable public name),
       # so a registry-backed cluster needs both the image and the policy
@@ -3491,8 +3491,8 @@ jobs:
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +within standing constraint .*amount_cents 412000, payee_id HAR-2088' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +denied +403 +tool call not permitted: outside the standing constraint .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
           grep -E 'ap-agent +erp +tools/call +payment_schedule +allowed +200 +granted .*amount_cents 3255000, payee_id MER-4471' ap-audit.out
-          # The denial and the admitted call share one digest: the call a
-          # human approved is provably the call that ran.
+          # The denial and the admitted call share one digest: the
+          # admin-approved fixture call is provably the call that ran.
           python3 - <<'EOF'
           import re
           rows = [l for l in open("ap-audit.out") if "payment_schedule" in l and "3255000" in l]

@@ -182,8 +182,8 @@ AP_ACT_TOOLS   := payment_schedule,dispute_open,vendor_notify
 AP_AGENT_TOOLS ?= $(AP_TOOLS),$(AP_ACT_TOOLS)
 AP_TOOLNAMES_JSON = $(if $(filter -,$(AP_AGENT_TOOLS)),,"$(subst $(comma),"$(comma)",$(AP_AGENT_TOOLS))")
 AP_INVOICE     ?= INV-88134
-# 1 = the approvals in `make ap-demo` / `make ap-injection` wait for an
-# operator to run `kmx approve`. The default uses the demo's admin bearer.
+# Forward the retired flag so old invocations fail closed in both AP scripts.
+# Only 0/default permits automated fixture approvals with the admin bearer.
 AP_HUMAN       ?= 0
 
 .PHONY: build guard model-secret copilot-secret \
@@ -736,11 +736,9 @@ ap-ask: $(KMX)
 ## itself under the standing constraint, the exception is denied, filed,
 ## approved through the admin path and only then paid, and the dispute
 ## and the vendor notice need an approval each of their own.
-##   make ap-demo [AP_HUMAN=1]
+##   make ap-demo
 ##
-## AP_HUMAN=1 prints each approval command and WAITS for an operator to
-## run it. The default drives approvals with the demo's admin bearer.
-## See scripts/await-approval.sh.
+## Approvals are automated fixture decisions using the demo's admin bearer.
 ap-demo: guard $(KMX)
 	@$(KMX_ENV) KUBECTL="$(KUBECTL)" KMX='$(abspath $(KMX))' \
 		CRED_AP=$(CRED_AP) \

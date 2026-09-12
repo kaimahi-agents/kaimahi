@@ -244,8 +244,9 @@ owned edge resources. **Applying the new manifests does not prune them.**
 This is not automatic cloud deletion, credential revocation or database cleanup.
 
 [Slack MCP posting](slack.md) and [accounts-payable fixtures](ap-demo.md) remain;
-tool and budget approvals use the admin API/CLI, not Slack. `AP_HUMAN=1` waits
-for an operator's admin approval without establishing their human identity.
+tool and budget approvals use the admin API/CLI, not Slack. The AP driver
+is an automatically admin-approved fixture, not a human decision flow;
+`AP_HUMAN=1` is explicitly refused rather than silently running automatically.
 
 Chat allocates a free loopback port by default. Fixed-port legacy helpers still
 need distinct `CHAT_PORT`, `ADMIN_PORT`, or probe `GATEWAY_PORT` values when

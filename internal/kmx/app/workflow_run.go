@@ -68,7 +68,8 @@ type RunOptions struct {
 	// which is why a dry run rides whatever is already in custody.
 	DryRun bool
 	// Approver requires the identity recorded in the approval trail.
-	// Empty means anyone the plane admits; CLI approvals carry no identity.
+	// Empty means anyone the plane admits; CLI approvals record "admin",
+	// not a verified person's identity.
 	Approver string
 	// AdminPort is the driver's own port-forward.
 	AdminPort string
@@ -605,7 +606,7 @@ func (r *workflowRun) consequentialStep(s blueprint.RenderedStep) error {
 	if r.opt.Approver == "" {
 		r.app.notef("%s  %s", r.app.presenter().Accent("Approve it with:"), r.app.operationCommand("approve", id, "--uses", "1", "--ttl", "10m"))
 	} else {
-		r.app.notef("Required approver: %s. CLI approval does not record this identity and cannot satisfy this constraint.", r.opt.Approver)
+		r.app.notef("Required approver: %s. CLI approvals record admin, not a verified person's identity.", r.opt.Approver)
 	}
 
 	permit, err := r.awaitApproval(id, s.Tool)

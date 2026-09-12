@@ -59,9 +59,10 @@ payee. Keep fixture claims separate from a real ERP integration.
 Follow [AKS](aks.md), rather than replaying the kind setup on a remote context.
 The full lift is still Copilot/kagent-shaped and bills money. The inbound edge,
 Slack approval commands and notifier are removed; [Slack MCP posting](slack.md)
-remains separate. For operator-driven AP approvals use `AP_HUMAN=1`, which waits
-for `kmx approve`; the default fixture driver approves through admin itself.
-Neither path establishes a verified human identity.
+remains separate. The AP fixture driver approves through admin itself and
+establishes no verified human identity. The old `AP_HUMAN=1` wait mode is
+rejected before the scenario starts; use the separate approval CLI for manual
+operations, not this automatically approved fixture.
 
 ## Teardown and evidence
 

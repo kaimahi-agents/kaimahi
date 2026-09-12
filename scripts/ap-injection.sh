@@ -24,19 +24,20 @@
 #     grant is welded to that call's digest, and it is still live with its
 #     use unspent afterwards.
 #
-# Usage:  make ap-injection [AP_HUMAN=1]
+# Usage:  make ap-injection
+#   Approvals use the demo's admin bearer, not a verified human decision.
 #   AP_AGENT_TURN=0 skips the agent's turn.
-#   AP_HUMAN=1      wait for an operator to run the admin approval command;
-#                   otherwise approve with the demo's admin bearer. See
-#                   scripts/await-approval.sh and scripts/ap-demo.sh.
 set -euo pipefail
+if [ "${AP_HUMAN:-0}" != 0 ]; then
+  printf 'ap-injection: AP_HUMAN is retired; refusing to run. Unset it or use AP_HUMAN=0 only for automated admin approvals.\n' >&2
+  exit 2
+fi
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 here="$(cd "$(dirname "$0")" && pwd)"
 KMX="${KMX:-$here/../bin/kmx}"
 CRED_AP="${CRED_AP:-ap-agent}"
-AP_HUMAN="${AP_HUMAN:-0}"
 AP_AGENT_TURN="${AP_AGENT_TURN:-1}"
 # KUBE_CTX is exported by the Makefile so this direct kmx call lands on the
 # same cluster as the rest of the scenario. Word splitting is deliberate.
@@ -102,12 +103,8 @@ request_id() {
     '$3==cred && $4=="tool" && $5==tool && index($0, want) {print $1; exit}' "$work/approvals.out"
 }
 
-approve() { # <id> <uses> — see scripts/ap-demo.sh for the two paths
-  if [ "$AP_HUMAN" = 1 ]; then
-    CRED="$CRED_AP" bash "$here/await-approval.sh" "$1" "$2"
-  else
-    admin approve "$1" --ttl 10m --uses "$2"
-  fi
+approve() { # <id> <uses> — call-bound admin grant for the fixture
+  admin approve "$1" --ttl 10m --uses "$2"
 }
 
 # --- 0. what the invoice says --------------------------------------------
