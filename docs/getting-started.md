@@ -4,7 +4,8 @@
 Agents and get an existing application's model traffic onto it. Start with the
 [Orka guide](orka.md), including [native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer),
 or [migration](migrate.md); a migrated application's Deployment stays owner-managed.
-Tool governance is separate.
+Tool traffic remains the application owner's responsibility; the Kaimahi tool
+gateway is retired.
 
 The local kagent quickstart below is the **existing legacy implementation**,
 pending the code transition, not an Orka-native authoring tutorial. Native Orka
@@ -56,7 +57,7 @@ Then install Orka on that selected cluster. Its default Provider points at this
 Ollama server; for an existing cluster use your own model/Provider configuration
 as described in [Orka](orka.md). Installation alone does not govern model traffic.
 For a new native Agent, use [agent create](#an-agent-of-your-own); the kagent
-quickstart/chat/governance sections below are a separate legacy path.
+quickstart/chat/model-governance sections below are a separate legacy path.
 
 For an existing application on kind, deploy the plane and follow the owner-reviewed
 [migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
@@ -103,8 +104,11 @@ kmx status
 ```
 
 `up` explicitly upgrades/installs the full kagent application profile, including
-the tool server and second agent. Both setup paths preserve existing non-default
-model/governed tool routing rather than making setup an implicit ungovern action.
+the tool server and original `hello-tools` agent from
+[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Its MCP wiring is direct to the
+kagent tool server, not the retired Kaimahi gateway. Both setup paths preserve
+existing non-default routing rather than silently repointing an owner's tools.
+An old gateway reference needs [explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
 Interactive `/help` lists local controls; [retry limits](kmx.md#retry-limits)
 explain why an ambiguous one-shot disconnect can repeat effects or spend.
 
@@ -118,8 +122,9 @@ kmx ledger hello-world
 ```
 
 This existing model-seam path switches the kagent Agent's preset and gives it an
-opaque plane token, never the real upstream key. Tool routing is separate;
-[kmx](kmx.md#governing-an-agent) and [tool governance](tool-governance.md) describe it.
+opaque plane token, never the real upstream key. It changes model routing only;
+see [kmx](kmx.md#governing-an-agent). The [direct MCP example](tools.md) remains
+available without Kaimahi tool policy, grants or tool audit.
 
 ## An agent of your own
 
@@ -164,4 +169,4 @@ leave nodes stopped; the cluster step starts the named nodes and checks API/DNS.
   Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
 
 Next: [CLI reference](kmx.md), [migration](migrate.md), [operations](operations.md),
-and the [legacy demo checklist](demo.md).
+and the [direct MCP example](tools.md).

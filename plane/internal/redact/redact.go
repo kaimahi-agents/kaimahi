@@ -13,7 +13,7 @@ const placeholder = "[REDACTED]"
 // Callers must funnel any string through Redact before it reaches a log sink;
 // the redactor cannot intercept logs it never sees. The proxy builds one at
 // boot from every secret it holds — the Postgres password, the admin token,
-// each model and tool upstream's credential file — and installs it as
+// each model upstream's credential file — and installs it as
 // the process-wide slog handler: one Redactor
 // per run, one log-formatting choke point.
 type Redactor struct {

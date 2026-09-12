@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Every COMMITTED manifest that points at one of the plane's data seams must
-use https AND name the authority to verify it against.
+"""Every COMMITTED ModelConfig pointing at the model seam must use https
+AND name the authority to verify it against.
 
-Committed is the honest scope, and it is not the whole set. Two seam
-manifests are GENERATED rather than committed — the interactive ModelConfig
-`kmx govern` applies, and the RemoteMCPServer `kmx tools add` writes — and
-they are outside a tree scan by construction. Those are held to the same rule
-by Go tests in their own packages; this checks what is in the tree, which is
-what a reviewer reads and what an adopter forks.
+The interactive ModelConfig `kmx govern` applies is generated rather than
+committed and is held to the same rule by Go tests. Raw MCP inventory is
+outside this model-only check.
 
 Why this check exists rather than trusting admission. kagent refuses neither
 mistake:
@@ -22,9 +19,7 @@ mistake:
     plaintext, and the manifest looks exactly like one that is not.
 
 The second is the dangerous one: it is a silent downgrade that reads as
-configured. A RemoteMCPServer has a CEL rule against that pairing; a
-ModelConfig does not, and both halves are checked here so neither depends on
-which kind happens to carry the rule.
+configured. Both halves are checked here rather than relying on admission.
 
 Run with --selftest to check the checker against deliberately broken input.
 """
@@ -39,9 +34,8 @@ except ImportError:  # pragma: no cover - CI installs PyYAML
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# The two Services the plane publishes its data seams on. A URL naming either
-# of these is a seam URL, whichever of the four DNS forms it uses.
-SEAM_SERVICES = ("kaimahi-proxy", "kaimahi-mcp-gateway")
+# The model Service, whichever of the four DNS forms a client uses.
+SEAM_SERVICES = ("kaimahi-proxy",)
 
 # The namespace the plane's Services live in. A host whose first label
 # matches but whose namespace does not is a different endpoint.
@@ -97,7 +91,7 @@ def check_document(where, doc):
     if not isinstance(doc, dict):
         return []
     kind = doc.get("kind")
-    if kind not in ("ModelConfig", "RemoteMCPServer"):
+    if kind != "ModelConfig":
         return []
     spec = doc.get("spec") or {}
     name = (doc.get("metadata") or {}).get("name", "?")
@@ -164,7 +158,8 @@ def scan(root):
             problems.append(f"{path}: cannot parse: {exc}")
             continue
         for doc in documents:
-            if isinstance(doc, dict) and doc.get("kind") in ("ModelConfig", "RemoteMCPServer"):
+            if (isinstance(doc, dict) and doc.get("kind") == "ModelConfig"
+                    and any(seam_url(u) for u in urls_in(doc.get("spec") or {}))):
                 checked += 1
             problems.extend(check_document(path.relative_to(root), doc))
     return problems, checked
@@ -195,10 +190,10 @@ spec:
     (
         "verification disabled",
         """
-kind: RemoteMCPServer
+kind: ModelConfig
 metadata: {name: bad}
 spec:
-  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  openAI: {baseUrl: "https://kaimahi-proxy.kaimahi:8080/upstream/x/v1"}
   tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: ca.crt, disableVerify: true}
 """,
         "disableVerify",
@@ -206,10 +201,10 @@ spec:
     (
         "wrong authority",
         """
-kind: RemoteMCPServer
+kind: ModelConfig
 metadata: {name: bad}
 spec:
-  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  openAI: {baseUrl: "https://kaimahi-proxy.kaimahi:8080/upstream/x/v1"}
   tls: {caCertSecretRef: somebody-elses-ca, caCertSecretKey: ca.crt}
 """,
         "not the plane's authority",
@@ -217,10 +212,10 @@ spec:
     (
         "wrong key",
         """
-kind: RemoteMCPServer
+kind: ModelConfig
 metadata: {name: bad}
 spec:
-  url: "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp"
+  openAI: {baseUrl: "https://kaimahi-proxy.kaimahi:8080/upstream/x/v1"}
   tls: {caCertSecretRef: kaimahi-plane-ca, caCertSecretKey: tls.crt}
 """,
         "names key",
@@ -228,10 +223,10 @@ spec:
     (
         "the one-label service name is still a seam",
         """
-kind: RemoteMCPServer
+kind: ModelConfig
 metadata: {name: bad}
 spec:
-  url: "http://kaimahi-mcp-gateway:8081/upstream/x/mcp"
+  openAI: {baseUrl: "http://kaimahi-proxy:8080/upstream/x/v1"}
 """,
         "plaintext",
     ),
@@ -309,7 +304,7 @@ def exit_code_failures():
 def total_cases():
     """Every case the self-test runs: the deliberate breakages, the two
     manifests that must be left alone, and the four exit-code checks."""
-    return len(SELF_TEST_CASES) + 6
+    return len(SELF_TEST_CASES) + 9
 
 
 def self_test():
@@ -328,6 +323,25 @@ def self_test():
     if unrelated:
         failures.append(f"an unrelated manifest was flagged: {unrelated}")
 
+    # Raw MCP inventory is not the retired model seam. A third-party tool
+    # manifest must neither count toward the floor nor acquire model TLS rules.
+    raw_mcp = yaml.safe_load('''
+kind: RemoteMCPServer
+spec:
+  url: http://kaimahi-proxy.kaimahi:8080/raw
+''')
+    if check_document("raw-mcp", raw_mcp):
+        failures.append("raw MCP inventory was treated as a model seam")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "raw.yaml").write_text(yaml.safe_dump(raw_mcp))
+        if scan(root) != ([], 0):
+            failures.append("raw MCP inventory counted toward the model scan floor")
+        (root / "direct.yaml").write_text(SELF_TEST_UNRELATED)
+        if scan(root) != ([], 0):
+            failures.append("direct models counted toward the governed-model floor")
+
     # The verdict has to reach the exit code, so the real entry point is run
     # over a broken tree and a clean one. A checker that finds every problem,
     # prints it, and exits 0 is a checker nothing is gated on, and that is
@@ -343,20 +357,16 @@ def self_test():
     return 0
 
 
-# The tree carries at least the two governed model presets and the six
-# committed RemoteMCPServers. The floor is deliberately well below that: it
-# exists to catch a scan that read NOTHING — a renamed directory, a manifest
-# moved, a `.yml` extension, a glob that stopped matching — not to freeze the
-# current count. A checker that examines zero files and prints its clean
-# verdict is the exact shape of a passing condition looser than its claim.
-MINIMUM_SEAM_MANIFESTS = 8
+# Both committed governed model presets must be examined. Direct model
+# presets and raw MCP inventory cannot satisfy this nonvacuous floor.
+MINIMUM_SEAM_MANIFESTS = 2
 
 
 def report(problems, checked, minimum=0):
     """Print the verdict and return the exit code that carries it.
 
     `minimum` is the floor for a REAL run; the self-test's fixture trees pass
-    0 because they are two files by construction.
+    0 because their size is deliberately independent of the live tree.
     """
     if not problems and checked < minimum:
         print(f"seam TLS: only {checked} seam-capable manifest(s) found, expected at least "

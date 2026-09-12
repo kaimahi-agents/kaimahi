@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -89,10 +88,10 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newWatchCommand(state),
 		newUseCommand(state),
 		newBudgetCommand(state), newApprovalsCommand(state), newApproveCommand(state), newDenyCommand(state),
-		newRequestCommand(state), newToolsCommand(state), newModelsCommand(state), newMigrateCommand(state),
+		newRequestCommand(state), newModelsCommand(state), newMigrateCommand(state),
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
-		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newWorkflowCommand(state),
+		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state),
 	)
 	return root
 }
@@ -107,7 +106,7 @@ func appRun(state *commandState, fn func(*app.App) error) func(*cobra.Command, [
 		// command would not repeat the mutation they are asking to confirm.
 		if cmd.Name() != "chat" && len(state.argv) > 0 {
 			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
-				"CRED=" + quoteShell(a.Cfg.Credential), "CRED_TOOLS=" + quoteShell(a.Cfg.ToolsCredential),
+				"CRED=" + quoteShell(a.Cfg.Credential),
 				"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
 			for _, arg := range state.argv {
 				parts = append(parts, quoteShell(arg))
@@ -172,21 +171,4 @@ func parseOptionalCredential(args []string, fallback string) string {
 		return args[0]
 	}
 	return fallback
-}
-
-func parseJSONArgs(value string) (map[string]any, error) {
-	if strings.TrimSpace(value) == "" {
-		return nil, nil
-	}
-	var result map[string]any
-	decoder := json.NewDecoder(strings.NewReader(value))
-	decoder.UseNumber()
-	if err := decoder.Decode(&result); err != nil || result == nil {
-		return nil, fmt.Errorf("invalid --args (want a JSON object): %s", value)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return nil, fmt.Errorf("invalid --args (want ONE JSON object): %s", value)
-	}
-	return result, nil
 }

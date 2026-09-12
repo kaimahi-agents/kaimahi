@@ -9,7 +9,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/seam"
 )
 
 func newCtxCommand(state *commandState) *cobra.Command {
@@ -142,53 +141,8 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 		}
 		return a.RenewCredential(renew.Flags().Arg(0), parsed)
 	})
-	group.AddCommand(issue, renew, newCaptureCommand(state))
+	group.AddCommand(issue, renew)
 	return group
-}
-
-// newCaptureCommand is the one command in kmx that accepts credential
-// material, and it takes it from a terminal or not at all.
-//
-// One command with a SUBJECT, rather than one command per upstream: three
-// upstreams take a credential today, they differ only in which token they
-// want and what can be proven about it, and both of those are a row in
-// internal/kmx/seam's table. A fourth upstream should be a row too, not a
-// fourth command shape to learn.
-func newCaptureCommand(state *commandState) *cobra.Command {
-	var replace bool
-	cmd := &cobra.Command{
-		Use:   "capture <upstream> <repository|organization>",
-		Short: "Store an upstream credential in plane custody, read from the terminal",
-		Long: "Store an upstream credential in plane custody, read from the terminal.\n\n" +
-			"The value is typed at a prompt with the echo off. There is deliberately no\n" +
-			"flag, environment variable or file that takes it instead, and a piped or\n" +
-			"redirected stdin is refused rather than read: a credential that can arrive\n" +
-			"through a pipe can arrive from a shell history or a CI log. It is checked\n" +
-			"against the upstream before anything is stored, and it goes into a Kubernetes\n" +
-			"Secret the gateway reads — never into a manifest, a file or a command line.\n\n" +
-			"Upstreams:\n" + captureUpstreams(),
-		Args:      usageArgs(2, 2, "kmx credential capture <upstream> <repository|organization> [--replace]"),
-		ValidArgs: seam.Names(),
-	}
-	cmd.Flags().BoolVar(&replace, "replace", false,
-		"overwrite a credential this upstream already has (it is refused otherwise)")
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		return a.CaptureCredential(app.CaptureOptions{
-			Seam:    cmd.Flags().Arg(0),
-			Subject: cmd.Flags().Arg(1),
-			Replace: replace,
-		})
-	})
-	return cmd
-}
-
-func captureUpstreams() string {
-	var b strings.Builder
-	for _, s := range seam.All() {
-		fmt.Fprintf(&b, "  kmx credential capture %s %s\n      %s; stored as Secret %s\n",
-			s.Name, s.SubjectHint, s.Summary, s.Secret)
-	}
-	return b.String()
 }
 
 func newLedgerCommand(state *commandState) *cobra.Command {
@@ -203,34 +157,34 @@ func newGrantsCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-// newFlowCommand merges the three audit trails into one chronological reading.
+// newFlowCommand merges model and approval trails into one chronological reading.
 //
 // It defaults to ALL credentials, like grants and unlike the ledger: the
 // question a flow answers is "what has been going on", and an operator who
 // does not yet know which credential misbehaved cannot be asked to name it
 // first. Every row is attributed, so a merged reading stays readable.
 func newFlowCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge the three audit trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
+	cmd := &cobra.Command{Use: "flow [credential]", Short: "Merge model and approval trails into one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
 	return cmd
 }
 
 func newAuditCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "audit <tool|approval> [credential]", Short: "Show enforcement audit trails",
+		Use: "audit approval [credential]", Short: "Show enforcement audit trails",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if err := usageArgs(1, 2, "kmx audit tool|approval [<credential>]")(cmd, args); err != nil {
+			if err := usageArgs(1, 2, "kmx audit approval [<credential>]")(cmd, args); err != nil {
 				return err
 			}
-			if args[0] != "tool" && args[0] != "approval" {
-				return fmt.Errorf("usage: kmx audit tool|approval [<credential>]")
+			if args[0] != "approval" {
+				return fmt.Errorf("usage: kmx audit approval [<credential>]")
 			}
 			return nil
 		},
 	}
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
-			return filterCompletions([]string{"tool", "approval"}, toComplete), cobra.ShellCompDirectiveNoFileComp
+			return filterCompletions([]string{"approval"}, toComplete), cobra.ShellCompDirectiveNoFileComp
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -291,18 +245,23 @@ func newDenyCommand(state *commandState) *cobra.Command {
 }
 
 func newRequestCommand(state *commandState) *cobra.Command {
-	var credential, argsJSON string
-	cmd := &cobra.Command{Use: "request <tool|budget> <subject>", Short: "File an approval request", Args: usageArgs(2, 2, "kmx request <tool|budget> <subject> [--credential <name>] [--args <json>]")}
-	cmd.Flags().StringVar(&credential, "credential", "", "credential the request is filed against")
-	cmd.Flags().StringVar(&argsJSON, "args", "", "tool call arguments as one JSON object")
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		kind := cmd.Flags().Arg(0)
-		name := requestCredential(credential, kind, a.Cfg.Credential, a.Cfg.ToolsCredential)
-		parsed, err := parseJSONArgs(argsJSON)
-		if err != nil {
+	var credential string
+	cmd := &cobra.Command{Use: "request budget <subject>", Short: "File a budget approval request", Args: func(cmd *cobra.Command, args []string) error {
+		if err := usageArgs(2, 2, "kmx request budget <subject> [--credential <name>]")(cmd, args); err != nil {
 			return err
 		}
-		return a.Request(name, kind, cmd.Flags().Arg(1), parsed)
+		if args[0] != "budget" {
+			return fmt.Errorf("kind must be budget; tool requests are retired")
+		}
+		return nil
+	}}
+	cmd.Flags().StringVar(&credential, "credential", "", "credential the request is filed against")
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		name := strings.TrimSpace(credential)
+		if name == "" {
+			name = a.Cfg.Credential
+		}
+		return a.Request(name, "budget", cmd.Flags().Arg(1))
 	})
 	return cmd
 }

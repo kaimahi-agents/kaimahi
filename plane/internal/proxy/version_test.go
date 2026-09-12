@@ -34,11 +34,13 @@ func TestThePlaneReportsItsVersionAndContract(t *testing.T) {
 		"the contract a plane reports must be one a client can act on; 0 means 'did not report'")
 }
 
-// The removed route must be distinguishable from the contract-2 surface.
-// This marker records a break; older clients still accept higher numbers.
-func TestContract3ReportsInboundRetirement(t *testing.T) {
+// The removed routes must be distinguishable from the tool-governance
+// surface. Older clients still need a matching CLI upgrade.
+func TestContract4ReportsToolRetirement(t *testing.T) {
 	mux, token := adminMux(t, newFakeStore())
-	require.Equal(t, 404, adminDo(mux, "GET", "/admin/inbound-audit", token, "").Code)
+	for _, path := range []string{"/admin/inbound-audit", "/admin/tool-audit", "/admin/tool-allowlist"} {
+		require.Equal(t, 404, adminDo(mux, "GET", path, token, "").Code)
+	}
 
 	res := adminDo(mux, "GET", "/admin/version", token, "")
 	require.Equal(t, 200, res.Code, res.Body.String())
@@ -46,7 +48,7 @@ func TestContract3ReportsInboundRetirement(t *testing.T) {
 		AdminContract int `json:"admin_contract"`
 	}
 	require.NoError(t, json.Unmarshal(res.Body.Bytes(), &doc))
-	require.Equal(t, 3, doc.AdminContract, "the retired inbound surface must not still report contract 2")
+	require.Equal(t, 4, doc.AdminContract, "tool retirement must not report the older tool-governance contract")
 }
 
 // The build is not the one thing on this surface that answers without a

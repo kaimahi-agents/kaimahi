@@ -2,53 +2,76 @@ package scaffold
 
 // Scaffolding the MODEL seam for an endpoint this repo did not deploy.
 //
-// `kmx tools add` solved this problem once, for tool servers, and this
-// is deliberately the same shape rather than a second one: an overlay
-// fragment merged over the committed table, a NetworkPolicy pair pinned
-// to the live Service's own selector and container port, one reviewable
-// YAML file, applied behind the guard. Where it diverges from the tool
-// seam it is because the seams genuinely differ, and each divergence is
-// named at the place it happens:
+// The reviewable artifact contains an overlay fragment and a NetworkPolicy
+// pair pinned to the live Service's selector and container port. Client wiring
+// is printed separately: the owner's runtime need not use kagent resources.
 //
-//  1. THREE documents, not four. The tool seam's fourth is a
-//     RemoteMCPServer — a kagent CRD. A model seam's equivalent would be
-//     a ModelConfig, also a kagent CRD, and a foreign runtime has
-//     neither. The agent-side wiring for a model is one base URL in
-//     whatever the adopter's framework reads, so kmx PRINTS it instead
-//     of emitting a custom resource that half its users cannot apply.
-//
-//  2. A protocol, and a classification. A tool upstream is one URL. A
-//     model upstream is a base URL, exactly one forwarded path, the wire
-//     protocol that path speaks (where the meter reads token counts) and
-//     an explicit free/metered classification. The first three come out
-//     of one --url; the classification is the operator's and is never
-//     inferred, because a $0 by inference is a budget that cannot be
-//     exhausted.
-//
-//  3. No policy_fields, and therefore no allowlist. This is the
-//     uncomfortable one and it is stated rather than glossed: the model
-//     seam has no per-credential allowlist at all. Every credential the
-//     plane has issued can call every upstream in the table, so adding
-//     one WIDENS what existing credentials reach. Budgets still bound
-//     them, and the overlay ENTRY is keyless — though that says nothing
-//     about whether the endpoint behind the URL holds a key, which is
-//     why `--classification free` carries a warning of its own. The
-//     command says both out loud before it applies anything.
+// A model route names one origin, one forwarded path, its wire protocol and
+// an explicit free/metered classification. Cost is never inferred. Every
+// existing credential can reach a newly onboarded model, bounded by budgets;
+// a keyless overlay does not prove the endpoint behind it holds no paid key.
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
 // ProxyHost is the in-cluster address of the metering model proxy —
 // the value an adopter's OPENAI_BASE_URL becomes, plus the upstream's
-// name. https for the same reason the gateway is: the prompt and the
-// completion cross this wire and are recorded in no other place (the
+// name. HTTPS protects prompts and completions on the wire (the
 // ledger holds counts and a cost, never content).
 const ProxyHost = "https://kaimahi-proxy.kaimahi.svc.cluster.local:8080"
+
+// Shared model/owner-migration names, pinned to the committed manifests.
+const (
+	OverlayConfigMap   = "kaimahi-upstreams-extra"
+	PlaneNamespace     = "kaimahi"
+	ProxySelectorKey   = "app"
+	ProxySelectorValue = "kaimahi-proxy"
+)
+
+var (
+	upstreamNameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	objectNameRE   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+)
+
+// ValidateUpstreamName preserves migration's existing name validation.
+// Reserved names remain part of that compatibility contract even though
+// their former tool generators have been retired.
+func ValidateUpstreamName(name string) error {
+	if !upstreamNameRE.MatchString(name) || len(name) > 40 {
+		return fmt.Errorf("%q is not a usable upstream name: lowercase letters, digits and dashes, "+
+			"starting and ending alphanumeric, at most 40 characters — it becomes a URL path segment, "+
+			"a ConfigMap key and part of three object names", name)
+	}
+	for _, committed := range []string{"kagent-tools", "slack", "github", "erp"} {
+		if name == committed {
+			return fmt.Errorf("%q is one of this repo's committed upstreams — an overlay may not redefine it. Choose another name", name)
+		}
+	}
+	return nil
+}
+
+// ValidateNamespace checks the Kubernetes RFC 1123 label shape.
+func ValidateNamespace(ns string) error {
+	if !upstreamNameRE.MatchString(ns) || len(ns) > 63 {
+		return fmt.Errorf("%q is not a Kubernetes namespace name (RFC 1123 label)", ns)
+	}
+	return nil
+}
+
+// ValidateObjectName checks referenced Secret, Deployment and ConfigMap names.
+func ValidateObjectName(name string) error {
+	if !objectNameRE.MatchString(name) || len(name) > 253 {
+		return fmt.Errorf("%q is not a Kubernetes object name (RFC 1123 subdomain: "+
+			"lowercase letters, digits, dashes and dots, starting and ending alphanumeric)", name)
+	}
+	return nil
+}
 
 // SeamBaseURL is what a client is pointed at. The client appends the
 // protocol's own path — `v1/responses` or `v1/chat/completions` — which
@@ -77,22 +100,17 @@ type ModelSpec struct {
 	ServiceNamespace string
 	PodPort          int
 	PodLabels        map[string]string
-	// ServerDNS / ServerEgressKeep are the same postures the tool seam
-	// names, and mean the same things.
+	// ServerDNS / ServerEgressKeep control the endpoint's own egress.
 	ServerDNS        bool
 	ServerEgressKeep bool
-	// OverlayVersion and Fragments: exactly as UpstreamSpec's, and for
-	// the same reason — the emitted ConfigMap is WHOLE, and carries the
+	// The emitted ConfigMap is WHOLE, and carries the
 	// version it was read at as an apply precondition, so a file
 	// scaffolded on Monday cannot prune a fragment added on Tuesday.
 	OverlayVersion string
 	Fragments      map[string]string
 }
 
-// FragmentKey is this upstream's key in the overlay ConfigMap. Model and
-// tool upstreams share one ConfigMap, so the key carries which seam it
-// is — `model-house.json` beside `warehouse.json` — and two upstreams of
-// different kinds may share a name without colliding on a key.
+// FragmentKey preserves the existing model overlay key shape.
 func (s ModelSpec) FragmentKey() string { return "model-" + s.Name + ".json" }
 
 func (s ModelSpec) EgressPolicyName() string  { return "kaimahi-model-" + s.Name + "-egress" }

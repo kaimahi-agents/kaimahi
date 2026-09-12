@@ -6,15 +6,9 @@ package app
 // framework that posts to `/v1/responses`, the committed table had no
 // entry for it, and the ONLY route was to edit
 // `k8s/plane/upstreams.yaml` — a file the next `kmx plane` re-applies,
-// discarding the edit. The tool seam had solved this a week earlier with
-// an overlay ConfigMap and `kmx tools add`. This is that same solution
-// on the other seam, and it reuses the machinery rather than inventing a
-// second shape: the same overlay, the same resourceVersion precondition,
-// the same live-Service read for the NetworkPolicy pair, the same
-// validate-against-the-running-plane before anything is written.
-//
-// Where it differs from `kmx tools add`, and why, is in the header of
-// internal/kmx/scaffold/model.go.
+// discarding the edit. The operator overlay instead preserves existing
+// fragments, pins its apply to their resourceVersion, and validates against
+// the running plane before anything is written.
 
 import (
 	"encoding/json"
@@ -27,11 +21,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-// AddModelOptions is `kmx models add`'s surface. As with `kmx tools
-// add`, there is deliberately no flag, environment variable or file here
-// that can carry a credential: an overlay upstream is keyless by the
-// plane's own rule, and the one path in kmx that accepts credential
-// material is the ruled terminal prompt (`kmx credential capture`).
+// AddModelOptions cannot carry credential material: model overlay entries
+// are keyless by the plane's own rule.
 type AddModelOptions struct {
 	Name string
 	// URL is the endpoint's own in-cluster URL, INCLUDING the path its
@@ -77,7 +68,7 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	// cannot check it. The in-cluster shape for a paid model is a router
 	// that holds the key itself, so this is not a hypothetical: it is the
 	// one setting here that can make real spend invisible. Named at the
-	// point of choosing, the way a verb-level tool binding is.
+	// point of choosing.
 	if opt.Classification == "free" {
 		a.notef("WARNING: %q is classified free — an EXPLICIT $0, not an observation.", opt.Name)
 		a.notef("  No cents budget can ever bind it, and every call through it is ledgered as costing")
@@ -119,16 +110,10 @@ func (a *App) AddModel(opt AddModelOptions) error {
 		ServerEgressKeep: opt.ServerEgress == scaffold.EgressKeep,
 	}
 	// The pod selector and the container port come from the LIVE
-	// Service, never from its name — the same read `kmx tools add` does,
-	// and for the same reason: a guess that is wrong fails silently in
-	// the direction of blocking everything.
-	upstreamSpec := scaffold.UpstreamSpec{
-		Name: spec.Name, Service: svc, ServiceNamespace: ns,
-	}
-	if err := a.resolveService(&upstreamSpec, opt.PodPort, port); err != nil {
+	// Service, never from its name: a wrong guess silently blocks traffic.
+	if err := a.resolveService(&spec, opt.PodPort, port); err != nil {
 		return err
 	}
-	spec.PodLabels, spec.PodPort = upstreamSpec.PodLabels, upstreamSpec.PodPort
 	if err := a.showModelPolicyBlastRadius(spec); err != nil {
 		return err
 	}
@@ -141,7 +126,7 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	// the cluster plus this one — because `kubectl apply` prunes a key
 	// that was in the last applied configuration and is absent from the
 	// new one. An emitted map missing an existing key would silently
-	// un-onboard somebody else's upstream, model or tool.
+	// un-onboard somebody else's model endpoint.
 	spec.Fragments, spec.OverlayVersion, err = a.readOverlay()
 	if err != nil {
 		return err
@@ -169,12 +154,9 @@ func (a *App) AddModel(opt AddModelOptions) error {
 		return err
 	}
 
-	// The model seam has no allowlist. Saying so here is not a
-	// formality: on the tool seam an onboarded server is unreachable
-	// until a credential allowlists a tool on it, and an operator who
-	// has used `kmx tools add` will carry that expectation across.
+	// Onboarding widens every existing credential's reach, so say so.
 	a.notef("")
-	a.notef("NOTE: the model seam has no allowlist. Unlike a tool upstream, %q is reachable by EVERY", opt.Name)
+	a.notef("NOTE: the model seam has no allowlist. %q is reachable by EVERY", opt.Name)
 	a.notef("  credential the plane has issued, the moment it is in the table — there is no per-credential")
 	a.notef("  scope on this seam at all. What still bounds them is the budget each credential carries,")
 	a.notef("  and the fact that the ENTRY is keyless — the plane holds no credential for it. Whether the")
@@ -212,8 +194,7 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	// `kubectl apply -f` applies each document independently and does not
 	// roll back, so a ConfigMap refused on a stale resourceVersion would
 	// still leave the two NetworkPolicies behind. Re-read the version
-	// here, where nothing has happened yet. Shared with `kmx tools add`,
-	// which writes the same overlay under the same precondition.
+	// here, where nothing has happened yet.
 	if err := a.refuseOnOverlayDrift(spec.OverlayVersion, path, "kmx models add", opt.Name); err != nil {
 		return err
 	}
@@ -231,13 +212,8 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	return nil
 }
 
-// seamAddress is the model seam's answer to the tool seam's fourth
-// document. A governed tool server gets a RemoteMCPServer whose URL kmx
-// derives, because getting that string wrong points an agent at a 404
-// and says nothing. A model has the same hazard and no custom resource
-// to put it in — a ModelConfig is a kagent CRD, and the adopter this
-// command exists for has no kagent — so the string is PRINTED, with
-// everything a client needs beside it.
+// seamAddress prints client wiring rather than generating a kagent resource:
+// the owner's runtime may not use kagent.
 func (a *App) seamAddress(spec scaffold.ModelSpec) {
 	a.notef("Point a client at it:")
 	a.notef("  base URL:   %s", scaffold.SeamBaseURL(spec.Name))
@@ -361,6 +337,126 @@ func (a *App) validateModelOverlay(spec scaffold.ModelSpec) error {
 
 // tokenFieldsOf names the fields the meter will read, so the line above
 // says what was actually decided rather than repeating the flag back.
+// resolveService reads the actual selector and post-NAT container port.
+// Neither can safely be inferred from a Service's name.
+func (a *App) resolveService(spec *scaffold.ModelSpec, override, urlPort int) error {
+	out, err := a.kubectlCapture("-n", spec.ServiceNamespace, "get", "service", spec.Service, "-o", "json")
+	if err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("no Service %q in namespace %q.\n"+
+				"  kmx reads the Service to learn which pods the NetworkPolicy must name and which port they listen on;\n"+
+				"  neither can be guessed from a URL. Deploy the server first, then onboard it.", spec.Service, spec.ServiceNamespace)
+		}
+		return err
+	}
+	var svc struct {
+		Spec struct {
+			Selector map[string]string `json:"selector"`
+			Ports    []struct {
+				Port       int             `json:"port"`
+				TargetPort json.RawMessage `json:"targetPort"`
+				Protocol   string          `json:"protocol"`
+			} `json:"ports"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal([]byte(out), &svc); err != nil {
+		return fmt.Errorf("reading Service %s/%s: %w", spec.ServiceNamespace, spec.Service, err)
+	}
+	if len(svc.Spec.Selector) == 0 {
+		return fmt.Errorf("Service %s/%s has no selector.\n"+
+			"  A NetworkPolicy pinned to no labels selects every pod in the namespace, which is not a boundary.\n"+
+			"  Onboard a Service that selects its own pods, or write the pair by hand.", spec.ServiceNamespace, spec.Service)
+	}
+	spec.PodLabels = svc.Spec.Selector
+	for _, p := range svc.Spec.Ports {
+		if p.Port != urlPort {
+			continue
+		}
+		if p.Protocol != "" && p.Protocol != "TCP" {
+			return fmt.Errorf("Service %s/%s port %d is %s; the model seam is TCP", spec.ServiceNamespace, spec.Service, urlPort, p.Protocol)
+		}
+		if override > 0 {
+			spec.PodPort = override
+			return nil
+		}
+		var num int
+		if len(p.TargetPort) > 0 && string(p.TargetPort) != "null" {
+			if err := json.Unmarshal(p.TargetPort, &num); err != nil {
+				var name string
+				_ = json.Unmarshal(p.TargetPort, &name)
+				return fmt.Errorf("Service %s/%s port %d targets the NAMED port %q.\n"+
+					"  A NetworkPolicy needs the number the container listens on; kmx will not guess it.\n"+
+					"  Name it: kmx models add … --pod-port <number>", spec.ServiceNamespace, spec.Service, urlPort, name)
+			}
+		}
+		if num == 0 {
+			num = p.Port
+		}
+		spec.PodPort = num
+		return nil
+	}
+	return fmt.Errorf("Service %s/%s publishes no port %d (the port in --url)", spec.ServiceNamespace, spec.Service, urlPort)
+}
+
+// readOverlay preserves every existing fragment and its apply precondition.
+// Only genuine NotFound means an empty overlay; ambiguous reads fail closed.
+func (a *App) readOverlay() (map[string]string, string, error) {
+	out, err := a.kubectlCapture("-n", scaffold.PlaneNamespace, "get", "configmap", scaffold.OverlayConfigMap, "-o", "json")
+	if err != nil {
+		if isNotFound(err) {
+			return map[string]string{}, "", nil
+		}
+		return nil, "", fmt.Errorf("reading the overlay ConfigMap %s: %w", scaffold.OverlayConfigMap, err)
+	}
+	var cm struct {
+		Metadata struct {
+			ResourceVersion string `json:"resourceVersion"`
+		} `json:"metadata"`
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &cm); err != nil {
+		return nil, "", fmt.Errorf("reading the overlay ConfigMap %s: %w", scaffold.OverlayConfigMap, err)
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	if cm.Metadata.ResourceVersion == "" {
+		return nil, "", fmt.Errorf("the overlay ConfigMap %s has no resourceVersion; refusing to emit an apply that could silently replace another operator's fragments", scaffold.OverlayConfigMap)
+	}
+	return cm.Data, cm.Metadata.ResourceVersion, nil
+}
+
+// refuseOnOverlayDrift checks before the multi-document apply, which cannot
+// roll back policies if its ConfigMap conflicts.
+func (a *App) refuseOnOverlayDrift(readVersion, path, command, name string) error {
+	_, version, err := a.readOverlay()
+	if err != nil {
+		return err
+	}
+	if version != readVersion {
+		return fmt.Errorf("the overlay changed while this was being scaffolded "+
+			"(read at version %s, now %s) — nothing has been applied.\n"+
+			"  Somebody else onboarded an upstream or edited a fragment. Run the same command again "+
+			"to build on their change:\n    rm %s && %s %s …", quoteVersion(readVersion), quoteVersion(version), path, command, name)
+	}
+	return nil
+}
+
+func quoteVersion(v string) string {
+	if v == "" {
+		return "(absent)"
+	}
+	return v
+}
+
+// rollProxy loads the validated model table into the serving replicas.
+func (a *App) rollProxy() error {
+	if err := a.kubectlRun("-n", scaffold.PlaneNamespace, "rollout", "restart", "deploy/kaimahi-proxy"); err != nil {
+		return err
+	}
+	return a.kubectlRun("-n", scaffold.PlaneNamespace, "rollout", "status", "deploy/kaimahi-proxy", "--timeout=300s")
+}
+
 func tokenFieldsOf(protocol string) string {
 	if protocol == "responses" {
 		return "input_tokens / output_tokens"

@@ -721,14 +721,9 @@ type agentJSON struct {
 	} `json:"spec"`
 }
 
-// stepToolsAgent applies the tools agent, preserving both a non-default
-// modelConfig and a live gateway wiring.
-//
-// The gateway restore preserves governance: once
-// `make govern-tools` has pointed hello-tools at the kaimahi-tools seam,
-// re-applying the committed YAML would point it back at the ungoverned
-// server. Re-applying a manifest must never be the thing that un-governs an
-// agent.
+// stepToolsAgent preserves the non-default model and existing owner tool
+// wiring. A retired gateway reference still belongs to the owner: applying
+// the default manifest must not silently repoint it at a direct server.
 func (a *App) stepToolsAgent() error {
 	// The RemoteMCPServer the chart publishes has to be accepted before an
 	// Agent can wire to it.
@@ -785,7 +780,7 @@ func (a *App) stepToolsAgent() error {
 		}
 	}
 	if governedByGateway {
-		a.notef("NOTE: hello-tools was governed via kaimahi-tools — restoring gateway wiring ('make ungovern-tools' opts out)")
+		a.notef("NOTE: preserving hello-tools' existing kaimahi-tools wiring. The gateway is retired; review and replace this owner-managed route deliberately.")
 		patch := fmt.Sprintf(`{"spec":{"declarative":{"tools":%s}}}`, string(live.Spec.Declarative.Tools))
 		if err := a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", "hello-tools", "--type", "merge", "-p", patch); err != nil {
 			return err

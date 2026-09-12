@@ -303,8 +303,8 @@ func PolicyEngineVerdict(engine string, readable bool) error {
 
   AKS clusters created without one ACCEPT every NetworkPolicy and enforce
   none of them. The plane's boundary would be present and inert, which reads
-  as protection and is worse than having none — you would believe the ledger,
-  the gateway and the fixture servers were unreachable when they are not.
+  as protection and is worse than having none — you would believe the model
+  seam and its database were isolated when they are not.
 
   Refusing to install. To fix it you must re-create the cluster with an
   engine (az aks create --network-policy cilium ...); an existing cluster

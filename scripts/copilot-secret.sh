@@ -103,8 +103,8 @@ json_field "$workdir/exchange.json" token > "$workdir/copilot-token"
 # Allow this to run BEFORE the plane is deployed, so the proxy pod
 # mounts the credential at start rather than waiting on kubelet to project
 # a Secret that appeared later (see docs/aks.md — that lag is a
-# real first-run failure on a fresh cluster). Same create-if-missing
-# pattern as scripts/slack-secret.sh.
+# real first-run failure on a fresh cluster). Create the namespace first
+# if the plane has not done so yet.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 $KUBECTL get namespace "$NAMESPACE" >/dev/null 2>&1 || \
   $KUBECTL create namespace "$NAMESPACE"

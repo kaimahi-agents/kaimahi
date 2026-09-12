@@ -198,7 +198,7 @@ func TestAReloadedAuthoritySignsACertificateTheOldCAStillVerifies(t *testing.T) 
 // A spent authority must refuse rather than clamp. Clamping produced a
 // certificate whose NotAfter was already in the past, applied it, restarted
 // the plane into material nothing accepts, and exited 0 — a reported success
-// that leaves both seams unusable. The calendar reaches this in ten years;
+// that leaves the model seam unusable. The calendar reaches this in ten years;
 // a restored old authority Secret or a skewed clock reaches it today.
 func TestAnExpiredAuthorityRefusesToSignRatherThanMintingSomethingDead(t *testing.T) {
 	ca, err := MintAuthority(epoch)

@@ -144,24 +144,6 @@ func CheckCredentialTTL(ttl *int64) error {
 	return nil
 }
 
-// ParseToolList reads a comma-separated allowlist. "-" is the EMPTY
-// allowlist — a valid answer meaning nothing is callable without a live
-// grant — and is deliberately not an error; it returns an empty, non-nil
-// slice so it marshals as [] rather than null.
-func ParseToolList(list string) ([]string, error) {
-	tools := []string{}
-	if strings.TrimSpace(list) == "" || strings.TrimSpace(list) == "-" {
-		return tools, nil
-	}
-	for _, t := range strings.Split(list, ",") {
-		if err := namePart("tool name", t); err != nil {
-			return nil, err
-		}
-		tools = append(tools, t)
-	}
-	return tools, nil
-}
-
 // SetBudget replaces a credential's monthly caps. A nil cap is "no cap".
 func (c *Client) SetBudget(credential string, capCents, capTokens *int64) error {
 	if err := ValidCredentialName(credential); err != nil {
@@ -175,18 +157,6 @@ func (c *Client) SetBudget(credential string, capCents, capTokens *int64) error 
 	}
 	body := map[string]any{"credential": credential, "cap_cents": capCents, "cap_tokens": capTokens}
 	return c.expect(http.MethodPut, "/admin/budgets", body, http.StatusNoContent, "budget set")
-}
-
-// SetToolAllowlist replaces a credential's tool allowlist.
-func (c *Client) SetToolAllowlist(credential string, tools []string) error {
-	if err := ValidCredentialName(credential); err != nil {
-		return err
-	}
-	if tools == nil {
-		tools = []string{}
-	}
-	body := map[string]any{"credential": credential, "tools": tools}
-	return c.expect(http.MethodPut, "/admin/tool-allowlist", body, http.StatusNoContent, "tool-allow")
 }
 
 // RenewCredential extends a credential's deadline and returns the new
@@ -308,20 +278,12 @@ func (c *Client) Deny(id string) error {
 	return c.expect(http.MethodPost, "/admin/approvals/"+id+"/deny", nil, http.StatusNoContent, "deny")
 }
 
-// Request files an approval request explicitly.
-//
-// args names the CALL a tool request is about. It is meaningful only
-// on a tool request, and omitting it means the ARGUMENT-LESS call — never
-// "any call". The plane computes the digest with the gateway's own code, so
-// the request and the agent's retry are provably the same call.
-func (c *Client) Request(credential, kind, subject string, args map[string]any) (bool, error) {
-	if err := ValidRequest(credential, kind, subject, args); err != nil {
+// Request files a budget approval request explicitly.
+func (c *Client) Request(credential, kind, subject string) (bool, error) {
+	if err := ValidRequest(credential, kind, subject); err != nil {
 		return false, err
 	}
 	body := map[string]any{"credential": credential, "kind": kind, "subject": subject}
-	if args != nil {
-		body["arguments"] = args
-	}
 	status, out, err := c.Do(http.MethodPost, "/admin/requests", body)
 	if err != nil {
 		return false, err
@@ -341,23 +303,15 @@ func (c *Client) Request(credential, kind, subject string, args map[string]any) 
 // the command layer can run it BEFORE the guard and the port-forward: a
 // mistyped subject should fail on the spot, not after an operator has
 // confirmed a context for it.
-func ValidRequest(credential, kind, subject string, args map[string]any) error {
+func ValidRequest(credential, kind, subject string) error {
 	if err := ValidCredentialName(credential); err != nil {
 		return err
 	}
-	switch kind {
-	case "tool", "budget":
-	default:
-		return fmt.Errorf("kind must be tool or budget")
+	if kind != "budget" {
+		return fmt.Errorf("kind must be budget; tool requests are retired")
 	}
 	if err := namePart("subject", subject); err != nil {
 		return err
-	}
-	// The arguments name the CALL a TOOL request is about. On a budget
-	// request there is no call to name, so accepting them would be
-	// accepting something the plane cannot act on.
-	if args != nil && kind != "tool" {
-		return fmt.Errorf("--args is meaningful only on tool requests")
 	}
 	return nil
 }

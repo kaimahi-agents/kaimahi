@@ -99,8 +99,8 @@ func TestAPlaneNewerThanKmxProceedsAndSaysSo(t *testing.T) {
 
 // Retirement is a known revision, not a higher capability floor for the
 // surviving operations. Both sides of the retirement must still pass them.
-func TestInboundRetirementKeepsSurvivingCapabilityFloors(t *testing.T) {
-	for _, contract := range []int{2, 3} {
+func TestRetirementsKeepSurvivingCapabilityFloors(t *testing.T) {
+	for _, contract := range []int{2, 3, 4} {
 		t.Run(fmt.Sprintf("contract-%d", contract), func(t *testing.T) {
 			c, _ := openAt(t, contract, "v2.0.0", nothing)
 			if note := c.SkewNote(); note != "" {

@@ -1,68 +1,12 @@
 package config
 
-// The overlay. An adopter onboarding their OWN MCP server must not
-// have to edit the committed table — k8s/plane/upstreams.yaml is this
-// repo's own demo table (two LLM upstreams and six tool upstreams), and
-// `kmx plane` re-applies it, so an entry added there is an entry the next
-// deploy silently discards.
-//
-// So the proxy reads a base file AND a directory of operator fragments,
-// merges them, and parses the result with the ONE parser everything else
-// uses (Parse). The merge is deliberately narrow and fail-closed:
-//
-//   - a fragment may carry `upstreams`, `tool_upstreams` and
-//     `standing_constraints`, and nothing else.
-//   - `upstreams` — the MODEL seam — was in that excluded list until an
-//     adopter's framework needed a path the committed table had no entry
-//     for, and the only route was to edit the committed table, which the
-//     next `kmx plane` re-applies and discards. So it is mergeable now,
-//     under exactly the tool seam's rule rather than a second one: the
-//     ENTRY names no credential and no host outside the cluster, because
-//     the custody fields are refused (below). What that excludes is a
-//     hosted model endpoint, which still belongs in the reviewed table.
-//
-//     Be precise about what that does NOT establish, because the obvious
-//     inference is false and was written here before it was caught: an
-//     overlay entry being keyless does not make the ENDPOINT keyless.
-//     The ordinary in-cluster shape for a paid model is a router
-//     (LiteLLM, an OpenAI-compatible gateway) that holds the key itself,
-//     and `classification` is mergeable — so an operator can declare a
-//     paid endpoint `free`, and every call through it is ledgered as
-//     costing nothing with no cents budget able to bind it. That is not
-//     a hole to be closed here: `free` is a CLAIM the operator makes
-//     about their own endpoint, exactly as it is in the committed table,
-//     and the plane has never been able to check it. What was wrong was
-//     leaving it unsaid. `kmx models add` now names the consequence at
-//     the point of choosing, and docs/spend.md states it.
-//   - and within `upstreams` and `tool_upstreams` alike, an overlay entry may not carry the
-//     CUSTODY fields. This is the same rule as the bullet above, applied
-//     one level down, and it was missed once: `credential_file` names a
-//     path the proxy reads and sends upstream, and `internet` plus
-//     `ca_file` decide which host it may be sent to. Together they are a
-//     complete exfiltration primitive — an entry naming
-//     /etc/kaimahi/admin/token against an attacker's https host would
-//     hand the plane's admin bearer to it on the first relayed call.
-//     Excluding them costs the overlay exactly the two upstreams
-//     docs/govern-your-agent.md already says it cannot express (a keyed
-//     server and a hosted one), and both remain available by editing the
-//     committed table, which is a deliberate act on a reviewed file.
-//   - a model upstream additionally may not carry `prices`. A price is
-//     the multiplier a cents budget is measured with, and it is the one
-//     number in the table the plane can never check — so it stays on the
-//     reviewed file. Nothing is lost that the plane will not tell you
-//     about: a metered overlay upstream with no price is refused under a
-//     cents budget by the priced-pair gate, exactly as it should be, and
-//     works normally under a token budget.
-//   - a name defined twice is REFUSED, naming both sources, rather than
-//     resolved by precedence. Silent precedence is how an operator ends
-//     up reviewing one entry and running another.
-//   - a duplicated JSON key at any depth is refused, not collapsed —
-//     the same argument the gateway makes about `arguments` (canon.go),
-//     applied to config: Go reads last-wins, a reviewer reads first.
-//
-// Everything else — every URL shape, every hosted-vetting rule, every
-// policy_fields and constraint rule — is Parse's job, unchanged, over
-// the merged bytes. There is no second validator.
+// The operator overlay adds model endpoints without changing the committed
+// table that kmx plane reapplies. Fragments may carry only upstreams;
+// custody fields and prices belong in the reviewed base table. A keyless
+// entry does not establish that the endpoint is free: classification is
+// still the operator's claim, and an unpriced metered pair is refused under
+// a cents budget. Duplicate names and JSON keys are refused, not resolved
+// by precedence. Parse remains the one validator of the merged table.
 
 import (
 	"bytes"
@@ -81,30 +25,12 @@ import (
 const DefaultConfigDir = "/etc/kaimahi/upstreams.d"
 
 // mergeableBlocks are the top-level keys a fragment may carry.
-var mergeableBlocks = []string{"upstreams", "tool_upstreams", "standing_constraints"}
+var mergeableBlocks = []string{"upstreams"}
 
-// custodyFields are the tool_upstreams keys an OVERLAY entry may not set.
-// The list exists so a field added to ToolUpstream must be classified
-// deliberately (TestEveryToolUpstreamFieldIsClassifiedAsSafeOrDenied) —
-// a denial that drifts open is worse than none.
-//
-// extra_headers is DENIED, not safe. An overlay is a
-// hand-edited ConfigMap; extra_headers decides what the proxy SENDS on a
-// call it makes under a credential the proxy holds. On a keyed upstream
-// that is credential-adjacent (Load already refuses a header naming the
-// credential slot, but "safe" here means a field that says nothing about
-// the proxy's custody or reach, and this one is entirely about what the
-// proxy sends). On a keyless in-cluster one it would let an overlay
-// forge whatever header that server trusts. Narrowing a hosted server is
-// an operator decision that belongs in the committed table.
-var custodyFields = []string{"credential_file", "credential_header", "internet", "ca_file", "extra_headers"}
-
-// modelCustodyFields is the same list for the MODEL seam, plus prices.
-// Kept as its own list rather than shared, so that a field added to
-// Upstream must be classified deliberately for THIS seam
-// (TestEveryUpstreamFieldIsClassifiedAsSafeOrDenied) — the two types do
-// not have the same fields and a shared list would silently pass the
-// ones only one of them has.
+// modelCustodyFields cannot be set by an overlay. Extra headers can forge
+// the identity a keyless server trusts; custody paths and hosted reach can
+// exfiltrate plane secrets; prices decide what a cents budget measures.
+// TestEveryUpstreamFieldIsClassifiedAsSafeOrDenied guards new fields.
 var modelCustodyFields = []string{"credential_file", "credential_header", "internet", "ca_file", "extra_headers", "prices"}
 
 // Fragment is one operator-added overlay file: its name (for error
@@ -153,8 +79,8 @@ func Read(path, dir string) ([]byte, []Fragment, error) {
 // FragmentName reports whether a ConfigMap key is one the boot path will
 // actually read. It is exported because the admin validator has to apply
 // the SAME rule: a key this returns false for is silently ignored at
-// boot, and a validator that accepted one would tell an operator their
-// standing constraint was fine when the plane will never see it.
+// boot, and a validator that accepted one would validate an endpoint the
+// plane will never see.
 func FragmentName(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".json")
 }
@@ -210,15 +136,8 @@ func Merge(base []byte, frags []Fragment) ([]byte, error) {
 				return nil, fmt.Errorf("config: %q: %w", block, err)
 			}
 			for name, raw := range add {
-				switch block {
-				case "tool_upstreams":
-					if err := refuseCustodyFields(f.Name, name, raw); err != nil {
-						return nil, err
-					}
-				case "upstreams":
-					if err := refuseModelCustodyFields(f.Name, name, raw); err != nil {
-						return nil, err
-					}
+				if err := refuseModelCustodyFields(f.Name, name, raw); err != nil {
+					return nil, err
 				}
 				if from, ok := origin[block][name]; ok {
 					return nil, fmt.Errorf("config: overlay %s redefines %s %q, already defined by %s — refused rather than resolved by precedence",
@@ -237,81 +156,9 @@ func Merge(base []byte, frags []Fragment) ([]byte, error) {
 	return marshalSorted(merged)
 }
 
-// refuseCustodyFields rejects an overlay entry that tries to put the
-// proxy's own custody, or its reach outside the cluster, under the
-// control of a ConfigMap that exists to be edited.
-//
-// It checks the DECODED entry, not the key names, and that distinction
-// is the whole correctness of this function. Go's decoder matches object
-// keys to struct tags case-INSENSITIVELY, so a name-only denylist is
-// bypassed by "Credential_File" or "INTERNET": the key misses the list,
-// `DisallowUnknownFields` accepts it because it does match a field, and
-// the proxy then reads the admin token and sends it wherever the entry
-// says. (Confirmed against the decoder, not reasoned about.) Decoding
-// through the same type the proxy uses cannot disagree with the proxy.
-//
-// The key scan is kept as a second gate — case-insensitively — so the
-// message names the spelling the operator actually wrote.
-func refuseCustodyFields(fragment, upstream string, raw json.RawMessage) error {
-	refuse := func(field string) error {
-		return fmt.Errorf("config: overlay %s: tool upstream %q sets %q, which an overlay may not set. "+
-			"An overlay describes an in-cluster, keyless tool server; %s decide what credential the proxy "+
-			"reads and which host outside the cluster it may be sent to, and belong in the committed table "+
-			"(k8s/plane/upstreams.yaml) where they are reviewed as part of this repository",
-			fragment, upstream, field, strings.Join(custodyFields, ", "))
-	}
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		return fmt.Errorf("config: overlay %s: tool upstream %q: want an object, got %s",
-			fragment, upstream, firstBytes(raw))
-	}
-	for key := range keys {
-		for _, field := range custodyFields {
-			if strings.EqualFold(key, field) {
-				return refuse(key)
-			}
-		}
-	}
-	// The authoritative check: whatever spelling got through above, this
-	// is what the proxy would actually act on.
-	var entry ToolUpstream
-	if err := json.Unmarshal(raw, &entry); err != nil {
-		return fmt.Errorf("config: overlay %s: tool upstream %q: %w", fragment, upstream, err)
-	}
-	switch {
-	case entry.CredentialFile != "":
-		return refuse("credential_file")
-	case entry.CredentialHeader != "":
-		return refuse("credential_header")
-	case entry.Internet:
-		return refuse("internet")
-	case entry.CAFile != "":
-		return refuse("ca_file")
-	case len(entry.ExtraHeaders) > 0:
-		// Found while reviewing the model seam's copy, and true of this
-		// one since it was written: the paragraph above calls the decoded
-		// entry "the authoritative check", and it was authoritative for
-		// four of the five fields. The key scan does hold — Go's field
-		// folding and strings.EqualFold agree, so no spelling slipped
-		// past — but a denial that rests on one gate while claiming two
-		// is a denial nobody can reason about.
-		return refuse("extra_headers")
-	}
-	return nil
-}
-
-// refuseModelCustodyFields is refuseCustodyFields for the model seam,
-// and the same two gates for the same two reasons: a case-insensitive
-// key scan so the message names the spelling the operator wrote, then
-// the DECODED entry, because Go's decoder matches keys case-insensitively
-// and a name-only denylist is bypassed by "Credential_File".
-//
-// The exposure it closes is the larger of the two. A tool upstream's
-// credential is a bearer for one MCP server; a model upstream's is
-// whatever the plane holds for a paid API, and an entry naming
-// /etc/kaimahi/upstream-creds/copilot/api-key against an attacker's
-// https host would hand it over on the first forwarded call. `prices`
-// joins the list on a different argument — see the header.
+// refuseModelCustodyFields checks keys case-insensitively and the decoded
+// entry itself: encoding/json folds field names, so a case-sensitive
+// denylist would let Credential_File exfiltrate a custody-held secret.
 func refuseModelCustodyFields(fragment, upstream string, raw json.RawMessage) error {
 	refuse := func(field string) error {
 		return fmt.Errorf("config: overlay %s: upstream %q sets %q, which an overlay may not set. "+
@@ -347,11 +194,6 @@ func refuseModelCustodyFields(fragment, upstream string, raw json.RawMessage) er
 	case entry.CAFile != "":
 		return refuse("ca_file")
 	case len(entry.ExtraHeaders) > 0:
-		// The model seam applies ExtraHeaders AFTER injecting the
-		// credential, so a header here can overwrite the Authorization
-		// slot — the opposite of the tool seam's ordering, and load-time
-		// has no check against it on this type. An overlay must not be
-		// able to reach that.
 		return refuse("extra_headers")
 	case len(entry.Prices) > 0:
 		return refuse("prices")
@@ -371,11 +213,8 @@ func mergeable(key string) bool {
 // namesIn decodes one top-level block into name -> raw value. An absent
 // or null block is an empty map — that is a table with nothing in that
 // block, which is legal. Anything else that is not an object IS an
-// error: a hand-edited fragment whose `tool_upstreams` is a list or a
-// string would otherwise merge nothing, reach Parse never, and leave the
-// operator with a command that reported success and an upstream that
-// does not exist. The overlay is meant to be hand-edited (standing
-// constraints are added that way), so this is a real shape to refuse.
+// error: a hand-edited fragment whose upstreams is a list or string must
+// not merge nothing and report success for an endpoint that does not exist.
 func namesIn(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	out := map[string]json.RawMessage{}
 	if len(raw) == 0 || string(raw) == "null" {
@@ -445,10 +284,7 @@ func refuseDuplicateKeys(raw []byte, what string) error {
 	return nil
 }
 
-// maxConfigDepth bounds the walk. The table's own deepest value (a
-// constraint literal inside a constraint object, inside a list, inside a
-// tool, inside a credential, inside standing_constraints) is reached at
-// depth 5; 32 is the same bound the gateway's canonicaliser uses.
+// maxConfigDepth bounds the duplicate-key walk for untrusted config input.
 const maxConfigDepth = 32
 
 func walkDuplicates(dec *json.Decoder, what string, depth int) error {

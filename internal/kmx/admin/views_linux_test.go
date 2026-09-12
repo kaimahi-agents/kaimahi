@@ -21,7 +21,6 @@ func (w *reportTerminal) Fd() uintptr { return uintptr(w.fd) }
 
 func TestAdminReportsRichPlainAndNumericParity(t *testing.T) {
 	identifier := "model-with-an-identifier-longer-than-twenty-eight-bytes"
-	digest := strings.Repeat("abcdef12", 8)
 	for _, mode := range []string{"plain", "rich", "no-color"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("TERM", "xterm-256color")
@@ -48,8 +47,6 @@ func TestAdminReportsRichPlainAndNumericParity(t *testing.T) {
 				switch r.URL.Path {
 				case "/admin/ledger":
 					fmt.Fprintf(w, `{"entries":[{"model":%q,"status":403,"cost_source":"denied","cost_cents":0,"input_tokens":0,"output_tokens":0},{"model":"successful","status":200,"cost_source":"priced","cost_cents":1234567},{"model":"upstream-error","status":403,"cost_source":"free","cost_cents":0}],"month_cents":1234567,"month_tokens":9007199254740993}`, identifier)
-				case "/admin/tool-audit":
-					fmt.Fprintf(w, `{"entries":[{"tool":"get_pods","arg_digest":%q,"decision":"allowed","status":200}]}`, digest)
 				default:
 					io.WriteString(w, `{"entries":[]}`)
 				}
@@ -58,16 +55,16 @@ func TestAdminReportsRichPlainAndNumericParity(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := ansi.Strip(text())
-			if !strings.Contains(got, "4 events, 1234567 cents, 1 refused") || !strings.Contains(got, "403") || !strings.Contains(got, "200") {
+			if !strings.Contains(got, "3 events, 1234567 cents, 1 refused") || !strings.Contains(got, "403") || !strings.Contains(got, "200") {
 				t.Fatalf("numeric/state mismatch: %s", got)
 			}
 			if mode == "plain" {
-				if strings.Contains(got, identifier) || strings.Contains(got, digest) {
+				if strings.Contains(got, identifier) {
 					t.Fatalf("changed redirected truncation: %s", got)
 				}
 			} else {
 				compact := strings.Join(strings.Fields(got), "")
-				for _, want := range []string{identifier, digest, "Flow(4)", "denied"} {
+				for _, want := range []string{identifier, "Flow(3)", "denied"} {
 					if !strings.Contains(compact, want) {
 						t.Errorf("rich report lost %q: %s", want, got)
 					}
@@ -78,9 +75,6 @@ func TestAdminReportsRichPlainAndNumericParity(t *testing.T) {
 			}
 			if !strings.Contains(text(), "9007199254740993") {
 				t.Fatal("large token count rounded")
-			}
-			if err := c.ToolAudit(out, ""); err != nil {
-				t.Fatal(err)
 			}
 			if err := c.ApprovalAudit(out, ""); err != nil {
 				t.Fatal(err)

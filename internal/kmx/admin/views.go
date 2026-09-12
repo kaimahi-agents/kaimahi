@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"sort"
 	"strings"
 	"unicode"
 
@@ -25,9 +24,6 @@ func renderTable(out io.Writer, headers []string, rows [][]string, format string
 		case grantsFmt:
 			title = "Grants"
 			roles[4], roles[6], roles[7] = state, number, number
-		case toolFmt:
-			title = "Tool audit"
-			roles[5], roles[6] = state, state
 		case approvalFmt:
 			title = "Approval audit"
 			roles[4] = state
@@ -73,7 +69,6 @@ const (
 	// stays where the end-anchored ones ('none *$') expect it.
 	ledgerFmt      = "%-19s %-12s %-9s %-16s %6s %6s %6s %-8s %-6s %-28s %-16s %s\n"
 	grantsFmt      = "%-36s %-12s %-8s %-18s %-6s %-22s %-9s %-8s %-19s %-18s %-20s %s\n"
-	toolFmt        = "%-19s %-12s %-12s %-12s %-24s %-8s %6s %-44s %-44s %-28s %-16s %s\n"
 	credentialsFmt = "%-16s %-10s %-12s %-22s %-9s %s\n"
 	approvalFmt    = "%-19s %-12s %-8s %-18s %-10s %-18s %-40s %s\n"
 	pendingFmt     = "%-36s %-19s %-12s %-8s %-18s %-34s %s\n"
@@ -170,55 +165,6 @@ func (c *Client) Approvals(out io.Writer) error {
 	return nil
 }
 
-// ToolAllowlist prints what a credential may call without a live grant.
-//
-// An EMPTY allowlist is an answer, not an error: it means nothing is
-// callable unless an approval grants it.
-func (c *Client) ToolAllowlist(out io.Writer, credential string) error {
-	if err := ValidCredentialName(credential); err != nil {
-		return err
-	}
-	doc, err := c.Get("tool-allowlist", "/admin/tool-allowlist?credential="+url.QueryEscape(credential))
-	if err != nil {
-		return err
-	}
-	tools := []string{}
-	list, _ := doc["tools"].([]any)
-	for _, t := range list {
-		tools = append(tools, str(t))
-	}
-	joined := strings.Join(tools, ", ")
-	if joined == "" {
-		joined = "(empty — nothing callable)"
-	}
-	ui := cliui.New(out)
-	if ui.Rich() {
-		fmt.Fprintln(out, ui.Heading("Tool allowlist"))
-		fmt.Fprintln(out, ui.Fields([]cliui.Field{{Label: str(doc["credential"]), Value: joined}}))
-	} else {
-		fmt.Fprintf(out, "%s: %s\n", str(doc["credential"]), joined)
-	}
-	return nil
-}
-
-// ToolAudit prints the tool-call audit trail, newest first.
-func (c *Client) ToolAudit(out io.Writer, credential string) error {
-	doc, err := c.Get("tool-audit", "/admin/tool-audit?credential="+url.QueryEscape(credential)+"&limit=50")
-	if err != nil {
-		return err
-	}
-	var viewRows [][]string
-	rich := cliui.New(out).Rich()
-	for _, e := range rows(doc, "entries") {
-		viewRows = append(viewRows, []string{
-			trunc(str(e["created_at"]), 19), str(e["credential"]), str(e["upstream"]),
-			str(e["method"]), str(e["tool"]), str(e["decision"]), str(e["status"]), str(e["detail"]),
-			call(e, rich), callerClaim(e, rich), callerAddr(e, rich), actedFor(e)})
-	}
-	renderTable(out, []string{"created (UTC)", "credential", "upstream", "method", "tool", "decision", "status", "detail", "call", "caller (claimed)", "from (observed)", "acted for"}, viewRows, toolFmt)
-	return nil
-}
-
 // ApprovalAudit prints the approvals' own trail: filed, approved, denied.
 func (c *Client) ApprovalAudit(out io.Writer, credential string) error {
 	doc, err := c.Get("approval-audit", "/admin/approval-audit?credential="+url.QueryEscape(credential)+"&limit=50")
@@ -259,27 +205,6 @@ func (c *Client) Credentials(out io.Writer) error {
 	}
 	renderTable(out, []string{"credential", "cap cents", "cap tokens", "expires (UTC)", "state", "created (UTC)"}, viewRows, credentialsFmt)
 	return nil
-}
-
-// CredentialNames is the governed credentials, by name — the read a
-// PRECHECK makes. `kmx workflow govern` writes an overlay fragment and
-// rolls the proxy before it sets the allowlist, and the allowlist is the
-// only one of the two the plane refuses for an unknown credential. Asking
-// first is what turns "HTTP 404: no such credential" after a mutation
-// into a refusal before one.
-func (c *Client) CredentialNames() ([]string, error) {
-	doc, err := c.Get("credentials", "/admin/credentials")
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, row := range rows(doc, "credentials") {
-		if name := str(row["credential"]); name != "" {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 // expiryState is the word an operator scans the column for. "no expiry"
@@ -371,23 +296,6 @@ func binds(g map[string]any, rich ...bool) string {
 		return "call " + trunc(d, 12)
 	}
 	return "verb-level (legacy)"
-}
-
-// call renders the audited call: the human-readable summary built from the
-// tool's declared policy fields, plus the digest prefix that ties a denial,
-// its approval and the admitted call together.
-func call(e map[string]any, rich ...bool) string {
-	summary, digest := str(e["arg_summary"]), str(e["arg_digest"])
-	if digest == "" {
-		return dash(summary)
-	}
-	if summary != "" {
-		summary += " "
-	}
-	if len(rich) == 0 || !rich[0] {
-		digest = trunc(digest, 12)
-	}
-	return summary + "[" + digest + "]"
 }
 
 // rows returns a document's list of records, tolerating a null or absent

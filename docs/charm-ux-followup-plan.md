@@ -66,15 +66,17 @@ Do not extend this prototype to these surfaces:
   create two renderers and two terminal owners.
 - **Approvals:** keep the native, fail-closed confirmation whose exact context
   and default are security behavior, not presentation.
-- **Credential capture:** never put secret material in a Tea model, message,
-  view, or transcript. Keep the dedicated no-echo terminal path.
+- **Model credentials:** never put secret material in a Tea model, message,
+  view, or transcript. Preserve the existing model credential paths; tool
+  capture is retired.
 - **Guards:** context guards are mutation boundaries and must remain available
   to non-TTY and redirected callers with their current refusal semantics.
 - **Progress, status, and reports:** these already have destination-aware plain,
   rich, and structured output. A Tea renderer would weaken pipelines and saved
   transcripts rather than improve them.
-- **Workflow execution:** it spans guards, progress, subprocesses, and durable
-  output. Do not move that orchestration inside an event-loop model.
+- **Runtime orchestration:** keep guards, progress, subprocesses and durable
+  output outside the form. The retired blueprint runner is not a UI extension
+  candidate.
 
 Glamour may be useful later for trusted, local Markdown help or previews. Do
 not render model output, remote content, instructions, or other untrusted text

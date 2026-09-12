@@ -114,9 +114,8 @@ func TestARunWithNoPersonIsValidAndDistinguishableFromALostOne(t *testing.T) {
 	require.Equal(t, run, rows[0].RunID)
 }
 
-// The identity reaches BOTH trails, and a writer that resolved nothing
-// gets 'unknown' rather than a false claim that nobody was there.
-func TestTheLedgerAndTheToolAuditBothCarryWhoTheCallWasFor(t *testing.T) {
+// The model ledger preserves historical attribution and delivery provenance.
+func TestTheLedgerCarriesWhoTheCallWasFor(t *testing.T) {
 	s, pool := pgStore(t)
 	ctx := context.Background()
 	cred := fresh(t, s, "attrib-both")
@@ -128,15 +127,6 @@ func TestTheLedgerAndTheToolAuditBothCarryWhoTheCallWasFor(t *testing.T) {
 	require.NoError(t, s.RecordLedger(ctx, store.LedgerEntry{
 		CredentialName: cred, Upstream: "ollama", Model: "qwen2.5:3b",
 		CostSource: "free", Status: 200, ActedFor: att.ActedFor, RunID: att.RunID}, ""))
-	require.NoError(t, s.RecordToolAudit(ctx, store.ToolAuditEntry{
-		CredentialName: cred, Upstream: "kagent-tools", Method: "tools/call",
-		Tool: "k8s_get_resources", Decision: "allowed", Status: 200,
-		ActedFor: att.ActedFor, RunID: att.RunID}))
-	// A writer that stamped nothing: recorded as unresolved, never as
-	// "nobody".
-	require.NoError(t, s.RecordToolAudit(ctx, store.ToolAuditEntry{
-		CredentialName: cred, Upstream: "kagent-tools", Method: "tools/list",
-		Decision: "allowed", Status: 200}))
 
 	ledger, err := s.Ledger(ctx, cred, 10)
 	require.NoError(t, err)
@@ -144,17 +134,13 @@ func TestTheLedgerAndTheToolAuditBothCarryWhoTheCallWasFor(t *testing.T) {
 	require.Equal(t, "slack:U0CIPERSON", ledger[0].ActedFor)
 	require.Equal(t, run, ledger[0].RunID)
 
-	audit, err := s.ToolAudit(ctx, cred, 10)
+	// A writer that resolved nothing cannot claim nobody was there.
+	require.NoError(t, s.RecordLedger(ctx, store.LedgerEntry{
+		CredentialName: cred, Upstream: "ollama", Model: "m", CostSource: "free", Status: 200}, ""))
+	ledger, err = s.Ledger(ctx, cred, 10)
 	require.NoError(t, err)
-	require.Len(t, audit, 2)
-	byMethod := map[string]store.ToolAuditEntry{}
-	for _, e := range audit {
-		byMethod[e.Method] = e
-	}
-	require.Equal(t, "slack:U0CIPERSON", byMethod["tools/call"].ActedFor)
-	require.Equal(t, run, byMethod["tools/call"].RunID)
-	require.Equal(t, store.ActedForUnknown, byMethod["tools/list"].ActedFor)
-	require.Empty(t, byMethod["tools/list"].RunID)
+	require.Equal(t, store.ActedForUnknown, ledger[0].ActedFor)
+	require.Empty(t, ledger[0].RunID)
 
 	// And the row points back at the delivery that caused it.
 	got, err := s.RunByID(ctx, run)

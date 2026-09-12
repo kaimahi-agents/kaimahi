@@ -8,11 +8,11 @@
 
 ## Identity on the call
 
-The ledger, tool audit and historical inbound audit carry `acted_for`.
+The ledger and historical tool/inbound audit carry `acted_for`.
 The retired inbound bridge recorded signed Slack event user identifiers and
 opened run windows around kagent turns. That producer is removed; its stored
-records are history. Retirement adds no verified human identity for model or
-MCP clients.
+records are history. Retirement adds no verified human identity for model
+clients; the gateway no longer accepts MCP traffic.
 
 The retained [store lookup](../plane/internal/store/identity.go) interprets
 existing run windows as follows:
@@ -43,7 +43,7 @@ Those calls were correlated by **credential and time**, not by a unique
 invocation token. A separate caller sharing the credential during the window
 could be associated with it too. Calls without a live run resolve `none`, and
 concurrent windows resolve `unknown`. Attribution failure alone neither admits
-nor denies traffic; budget and tool policy are separate decisions.
+nor denies model traffic; budget admission is a separate decision.
 
 An approver is different from a requester: new approvals record `decided_by`
 as `admin`, not a person. Historical `slack:<user id>` decisions remain stored;
@@ -52,7 +52,7 @@ who initiated all calls using the grant.
 
 ## Who called
 
-The ledger and tool audit also carry two deliberately different columns:
+The ledger and historical tool audit carry two deliberately different columns:
 
 | Column/value | What can be concluded |
 |---|---|
@@ -65,9 +65,8 @@ The ledger and tool audit also carry two deliberately different columns:
 
 Source: [store/caller.go](../plane/internal/store/caller.go). Claims are
 bounded to 160 bytes and reduced to printable single-line text; renderers
-sanitize cells too. `X-Forwarded-For` is ignored. MCP `clientInfo.name` is
-not carried across requests because the gateway maintains no session state
-and clients may skip the handshake.
+sanitize cells too. `X-Forwarded-For` is ignored. The retired gateway did not
+carry MCP `clientInfo.name` across calls; historical rows do not establish it.
 
 Neither column controls authorization or actor attribution. A User-Agent
 that says kagent does **not** distinguish a genuine agent from a script
@@ -79,8 +78,8 @@ loopback peer. These columns aid investigation, not identity verification.
 New plane credentials have an expiry, default 30 days. Issuance offers no
 “never expires” option. NULL expiry is the compatibility class issued before
 expiry existed, and remains valid until changed. Credential expiry applies
-at model and MCP authentication. Removing inbound does not invalidate
-previously issued tokens or reset their stored expiry.
+at model authentication. Gateway retirement does not invalidate previously
+issued model credentials or reset their stored expiry.
 
 Expired credentials still resolve by hash so the refusal can name the
 credential and deadline, rather than misleadingly report an unknown token.
@@ -92,28 +91,26 @@ kmx credentials
 kmx grants
 kmx credential renew hello-world --ttl 720h
 kmx ledger hello-world
-kmx audit tool hello-tools
 ```
 
 Renewal moves a deadline **without changing token material**. For suspected
 compromise, reissue the credential and repoint its Secret; renewal is not
-rotation. `kmx govern --ttl` can set a lifetime at issuance, while
-`kmx tools govern` uses the default and renewal can change it afterward.
-Tokens are shown once and stored in the database only as hashes.
+rotation. `kmx govern --ttl` can set a lifetime at issuance. Model credentials
+are separate from the removed tool-governance commands. Tokens are shown once
+and stored in the database only as hashes.
 
 ## Recognizing stale credentials and certificates
 
 `kmx credentials` shows deadlines, the one-week `EXPIRING` warning and the
-legacy no-expiry class. Grants display the credential deadline alongside
-permission lifetime. [Metrics](operations.md#metrics) expose expiry gauges.
+legacy no-expiry class. Budget grants display the credential deadline alongside
+permission lifetime; historical tool/inbound grants remain inactive even when
+neither deadline has passed. [Metrics](operations.md#metrics) expose expiry gauges.
 
 A kagent `Accepted` condition is a cached reconcile verdict, not a live
-credential check. Secret projection is asynchronous. After writing a
-credential, kmx asks the seam to reconcile and requires a verdict newer
-than the pre-write baseline; failure to observe one is `unknown`, not
-accepted or rejected. `kmx status` reports the cached verdict and its age.
-Pod readiness is a separate signal. TLS certificate expiry can also surface
-as a generic connection failure; see [certificate renewal](operations.md#the-seam-certificate).
+credential check. Secret projection is asynchronous. `kmx status` reports cached
+conditions and their age; pod readiness is a separate signal. The retired
+RemoteMCPServer credential-acceptance flow is not a model authentication test.
+TLS certificate expiry can also surface as a generic connection failure; see [certificate renewal](operations.md#the-seam-certificate).
 
 ## Privacy and evidence
 
@@ -126,4 +123,4 @@ identity or OIDC guarantees in this legacy mechanism.
 [Identity store tests](../plane/internal/store/identity_pg_test.go) and
 [caller tests](../plane/internal/store/caller_test.go) retain behavioral evidence.
 Historical SQL migrations and stored audit/attribution data remain intact;
-retiring the inbound producer is not destructive schema cleanup.
+retiring gateway/inbound producers is not destructive schema cleanup.

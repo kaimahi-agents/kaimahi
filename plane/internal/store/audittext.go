@@ -2,23 +2,19 @@ package store
 
 // What may enter a free-text audit column.
 //
-// Every string a governed row carries — a tool name, a method, an
-// upstream name, a refusal detail, a model, the caller's own name —
-// arrives from outside the plane, and all of it is printed into
-// fixed-width tables that operators read and CI greps (`make tool-audit`,
-// `kmx audit tool`, `kmx flow`).
+// Free text a model ledger or approval row carries arrives from outside
+// the plane and is printed into fixed-width operator tables.
 //
 // The upstream name is worth spelling out because it looks safe and is
 // not: it is a URL path segment, and Go's mux UNESCAPES path values, so
-// `/upstream/foo%0A…/mcp` arrives as a name with a real newline in it.
+// `/upstream/foo%0A…/v1/responses` arrives with a real newline in its name.
 // The unknown-upstream refusal is audited before any table lookup, so
 // that name reaches a row.
 // An unbounded value pushes every column after it out of line; a value
 // with a newline in it renders as a SECOND LINE, which reads as a second
 // audit row that nobody wrote.
 //
-// So the bound lives here, at the store, and every write to the three
-// trails goes through it — the spend ledger, the tool audit, and the
+// So the bound lives here, at the store, for the spend ledger and the
 // approvals trail. Bounding at the seam would
 // leave it to be remembered once per caller; this way an audit column
 // cannot be written unbounded at all. It is not redaction —
@@ -102,11 +98,8 @@ func Clip(s string, n int) string {
 // auditText is what an ordinary free-text column gets on the way in.
 //
 // DESCRIPTIVE COLUMNS ONLY. Never a column anything filters, matches or
-// deduplicates on — a tool audit's `tool` and `detail`, yes; an approval
-// request's `subject`, no. A grant is read back out of
-// `approval_request.subject` and matched against the raw tool name the
-// gateway hands `ConsumeToolGrant`, so altering it on the way in would
-// mint grants that can never be consumed. Those columns stay exactly
+// deduplicates on — a request's detail, yes; its budget subject, no.
+// Subjects must match the cap being admitted. Those columns stay exactly
 // as they arrived, and the renderers keep them from breaking a table.
 //
 // A clean value — already one printable line, no leading or trailing

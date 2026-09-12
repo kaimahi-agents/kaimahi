@@ -1,8 +1,6 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 )
 
@@ -32,14 +30,4 @@ func parseApprovalValues(ttl, uses, amount string) (*int64, *int64, *int64, erro
 		return nil, nil, nil, err
 	}
 	return t, u, m, nil
-}
-
-func requestCredential(explicit, kind, normal, tools string) string {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return value
-	}
-	if kind == "tool" {
-		return tools
-	}
-	return normal
 }

@@ -16,15 +16,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/plane/internal/gateway"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/store"
 )
 
-var (
-	uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	// Grant subjects: a tool name, or a budget cap name.
-	subjectRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-)
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 const (
 	maxTTLSeconds = 30 * 24 * 60 * 60 // a month-long grant is a config change in disguise
@@ -60,40 +55,17 @@ func (h *handler) fileRequest(w http.ResponseWriter, r *http.Request) {
 		Credential string `json:"credential"`
 		Kind       string `json:"kind"`
 		Subject    string `json:"subject"`
-		// Arguments, tool requests only: the CALL the operator wants
-		// pre-approved, as a JSON object. Omitted means the argument-less
-		// call — never "any call": since argument binding, an approval is
-		// welded to one call's digest, so a request has to name one.
-		Arguments json.RawMessage `json:"arguments,omitempty"`
 	}
 	if !decodeStrict(w, r, &req) {
 		return
 	}
 	if !credentialName.MatchString(req.Credential) ||
-		(req.Kind != "tool" && req.Kind != "budget") ||
-		!subjectRe.MatchString(req.Subject) ||
-		(req.Kind == "budget" && req.Subject != "tokens" && req.Subject != "cents") {
-		http.Error(w, "body must be {\"credential\": ..., \"kind\": \"tool\"|\"budget\", \"subject\": ...} (budget subjects: tokens|cents)", http.StatusBadRequest)
-		return
-	}
-	if req.Kind != "tool" && len(req.Arguments) > 0 {
-		http.Error(w, "arguments are meaningful only on tool requests", http.StatusBadRequest)
+		req.Kind != "budget" || (req.Subject != "tokens" && req.Subject != "cents") {
+		http.Error(w, "body must be {\"credential\": ..., \"kind\": \"budget\", \"subject\": \"tokens\"|\"cents\"}", http.StatusBadRequest)
 		return
 	}
 	filing := store.Filing{Credential: req.Credential, Kind: req.Kind, Subject: req.Subject,
 		Detail: "filed explicitly via admin"}
-	if req.Kind == "tool" {
-		// The same binding the gateway computes for the same call, from
-		// the same declarations — one implementation, so an operator's
-		// pre-approval and the agent's retry cannot disagree.
-		fields, declared := h.d.Config.Policy().Declared(req.Subject)
-		bind, err := gateway.BindArguments(req.Subject, req.Arguments, fields, declared)
-		if err != nil {
-			http.Error(w, "invalid tool arguments: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		filing.ArgDigest, filing.ArgSummary = bind.Digest, bind.Summary
-	}
 	filed, err := h.d.Store.FileApprovalRequest(r.Context(), filing)
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such credential", http.StatusNotFound)

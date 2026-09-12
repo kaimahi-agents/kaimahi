@@ -24,7 +24,7 @@
 # substantive check is the API server address: kind publishes its API
 # server on loopback. Both must agree.
 #
-# Callers run directly, not through make (scripts/tool-*-probe.sh):
+# Callers run directly, not through make (scripts/model-seam-probe.sh):
 # those bypass the Makefile's `guard` prerequisite because CI and humans
 # invoke them as scripts. They matter because, left alone, they inherit
 # whatever `kubectl config current-context` happens to be — and

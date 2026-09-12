@@ -60,9 +60,14 @@ const (
 	// approval requests. Model overlays and tool/budget approvals remain.
 	AdminContractInboundRetired = 3
 
+	// AdminContractToolRetired removes tool allowlist/audit routes, tool
+	// policy validation fields and tool approvals. Budget approvals and
+	// model overlays remain; upgrade the CLI and plane together.
+	AdminContractToolRetired = 4
+
 	// AdminContract is what THIS plane serves. Record additions and deliberate
 	// retirements with a named revision so readers can see what changed.
-	AdminContract = AdminContractInboundRetired
+	AdminContract = AdminContractToolRetired
 )
 
 // version reports this plane's identity. It is authenticated like every other

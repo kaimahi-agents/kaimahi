@@ -11,7 +11,6 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -154,78 +153,9 @@ func (u Upstream) AcceptedPath() string {
 // translator never have to ask which one it is.
 func (u Upstream) Translates() bool { return u.ClientPath != "" }
 
-// ToolUpstream is one MCP tool server the gateway may relay to. The
-// committed table is the whole egress surface at this layer: the gateway
-// forwards nowhere it does not name (cluster-level NetworkPolicy is a
-// documented limitation of this table, not built here).
-type ToolUpstream struct {
-	// URL is the full MCP endpoint (e.g. the in-cluster
-	// http://kagent-tools.kagent:8084/mcp).
-	URL string `json:"url"`
-	// CredentialFile, when set, is a Secret-mounted file holding the
-	// tool server's OWN bearer credential — the same proxy-side custody
-	// the LLM upstreams use (Upstream.CredentialFile), applied to the
-	// tool seam: the gateway injects it, so a tool server can refuse
-	// every caller that did not come through the gateway. Read per
-	// request, so rotation needs no restart. Empty means the upstream
-	// is unauthenticated and requests are forwarded bare.
-	CredentialFile string `json:"credential_file,omitempty"`
-	// CredentialHeader is the header the credential is injected into.
-	// "authorization" (the default) sends "Authorization: Bearer <v>".
-	CredentialHeader string `json:"credential_header,omitempty"`
-	// Internet and CAFile: exactly as on Upstream. A hosted MCP
-	// server is reached only through the hardened dialer; an unmarked
-	// entry must be in-cluster-shaped.
-	Internet bool   `json:"internet,omitempty"`
-	CAFile   string `json:"ca_file,omitempty"`
-	// ExtraHeaders are set on every forwarded request to this tool
-	// server. Non-secret values only — this is committed config.
-	//
-	// Why the tool seam needs them: a HOSTED server we did not
-	// write decides for itself which tools it offers, and the good ones
-	// let a caller narrow that. GitHub's takes X-MCP-Toolsets,
-	// X-MCP-Tools and X-MCP-Exclude-Tools; Azure DevOps' takes
-	// X-MCP-Toolsets, X-MCP-Tools and X-MCP-Readonly. Setting them
-	// narrows the surface BEFORE discovery, so a tool the plane does not
-	// want is never offered, never projected onto tools/list, and never
-	// reachable even by an approval — which is a stronger guarantee than
-	// an allowlist, because it does not depend on the plane's own
-	// bookkeeping. The allowlist still applies underneath; this is the
-	// outer of the two, not a replacement.
-	//
-	// Deliberately UNLIKE Upstream.ExtraHeaders on the LLM seam, which
-	// is applied after the credential and could therefore overwrite it:
-	// here a header naming a credential slot is refused at LOAD (see
-	// Load), and the credential is injected last regardless. A committed
-	// header must never be able to displace a custody-held credential.
-	ExtraHeaders map[string]string `json:"extra_headers,omitempty"`
-	// Tools declares, per tool this server offers, which argument
-	// fields are policy-relevant: the fields an approval digest binds and
-	// the audit summary is built from. Optional — an undeclared
-	// tool's digest binds the whole canonical argument object, which is
-	// the brittle case (policy.go, docs/tool-governance.md).
-	Tools map[string]ToolPolicy `json:"tools,omitempty"`
-}
-
 type Config struct {
 	Upstreams map[string]Upstream `json:"upstreams"`
-	// ToolUpstreams is the MCP gateway's table. Optional: a config with
-	// only LLM upstreams still parses; an absent table relays nothing.
-	ToolUpstreams map[string]ToolUpstream `json:"tool_upstreams,omitempty"`
-	// StandingConstraints are declarative bounds a credential
-	// carries on a tool's declared policy fields: credential -> tool ->
-	// rules, ALL of which must hold. A call inside them proceeds with no
-	// approval; a call outside them is denied and files a request. Scoped
-	// per credential and tool rather than per upstream, so a constrained
-	// tool cannot be reached unconstrained through another route.
-	StandingConstraints map[string]map[string][]Constraint `json:"standing_constraints,omitempty"`
-	// policy is the flattened, validated view of the two declarations
-	// above, built by Parse.
-	policy PolicySet
 }
-
-// Policy is the argument-policy surface the gateway enforces on.
-func (c Config) Policy() PolicySet { return c.policy }
 
 func Load(path string) (Config, error) {
 	raw, err := os.ReadFile(path)
@@ -306,14 +236,8 @@ func Parse(raw []byte) (Config, error) {
 					u.ClientPath, clientProtocol, u.Path, u.Protocol)
 			}
 		}
-		// A committed extra header must not displace the credential the
-		// proxy injects from custody. The model seam sets ExtraHeaders
-		// AFTER the credential — the opposite of the gateway's ordering —
-		// so on this type the ordering itself is the exposure, and the
-		// gateway's own copy of this check has guarded the other seam
-		// since it was written. This one is late rather than new: the
-		// committed table has carried a keyed model upstream with headers
-		// (copilot) the whole time, on the strength of review alone.
+		// ExtraHeaders are applied after the custody-held credential;
+		// refuse any header that could displace it.
 		credSlot := u.CredentialHeader
 		if credSlot == "" {
 			credSlot = "authorization"
@@ -347,45 +271,6 @@ func Parse(raw []byte) (Config, error) {
 			}
 		}
 	}
-	for name, t := range c.ToolUpstreams {
-		parsed, err := url.Parse(t.URL)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return Config{}, fmt.Errorf("config: tool upstream %q: invalid url %q (want absolute http(s))", name, t.URL)
-		}
-		if err := hostedShape(parsed, t.Internet, t.CAFile); err != nil {
-			return Config{}, fmt.Errorf("config: tool upstream %q: %w", name, err)
-		}
-		// A credential header without a credential file (or the reverse
-		// via a bare header name) is a misconfiguration that would fail
-		// open in the confusing direction — reject it at load.
-		if t.CredentialHeader != "" && t.CredentialFile == "" {
-			return Config{}, fmt.Errorf("config: tool upstream %q: credential_header set without credential_file", name)
-		}
-		if !validHeaderName(t.CredentialHeader) {
-			return Config{}, fmt.Errorf("config: tool upstream %q: invalid credential_header %q", name, t.CredentialHeader)
-		}
-		// A committed extra header must not be able to displace the
-		// credential the gateway injects from custody, nor to smuggle a
-		// second authorization in. Both are refused at load rather than
-		// resolved by ordering, so the refusal is visible at rollout.
-		credSlot := t.CredentialHeader
-		if credSlot == "" {
-			credSlot = "authorization"
-		}
-		for k := range t.ExtraHeaders {
-			if !validHeaderName(k) || k == "" {
-				return Config{}, fmt.Errorf("config: tool upstream %q: invalid extra header name %q", name, k)
-			}
-			if strings.EqualFold(k, credSlot) || strings.EqualFold(k, "authorization") {
-				return Config{}, fmt.Errorf("config: tool upstream %q: extra header %q would displace the injected credential", name, k)
-			}
-		}
-	}
-	p, err := buildPolicy(c)
-	if err != nil {
-		return Config{}, err
-	}
-	c.policy = p
 	return c, nil
 }
 
@@ -455,7 +340,7 @@ func hostedShape(u *url.URL, internet bool, caFile string) error {
 	return fmt.Errorf("host %q does not look in-cluster (service, service.namespace, or a .svc.cluster.local name); a hosted upstream must be marked internet: true", host)
 }
 
-// InClusterHosts lists the hosts of every UNMARKED upstream, both tables,
+// InClusterHosts lists the hosts of every UNMARKED model upstream,
 // for the boot-time check that none of them resolves to a public address
 // (the second layer under hostedShape's static rule).
 func (c Config) InClusterHosts() []string {
@@ -478,16 +363,11 @@ func (c Config) InClusterHosts() []string {
 			add(u.BaseURL)
 		}
 	}
-	for _, t := range c.ToolUpstreams {
-		if !t.Internet {
-			add(t.URL)
-		}
-	}
 	return out
 }
 
-// InternetHosts lists every hostname the hardened dialer must know, LLM
-// and tool upstreams alike, with the trust anchor each configures. The
+// InternetHosts lists every model hostname the hardened dialer must know,
+// with the trust anchor each configures. The
 // same host under two different ca_files is a contradiction the client
 // refuses (duplicate host).
 func (c Config) InternetHosts() []egress.Host {
@@ -510,19 +390,8 @@ func (c Config) InternetHosts() []egress.Host {
 			add(u.BaseURL, u.CAFile)
 		}
 	}
-	for _, t := range c.ToolUpstreams {
-		if t.Internet {
-			add(t.URL, t.CAFile)
-		}
-	}
 	return out
 }
-
-// toolName bounds an MCP tool name as the admin surface does.
-var toolName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-
-// dnsLabel bounds credential names as the admin surface does.
-var dnsLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // validHeaderName accepts an empty name (the Authorization default) or a
 // well-formed RFC 7230 field-name token — the full tchar set, so a legal

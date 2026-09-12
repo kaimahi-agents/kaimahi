@@ -1,9 +1,7 @@
 // kaimahi-proxy is the Kaimahi governance plane: the metering and
-// enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam, the
-// enforcing MCP gateway mounted at the tool-server seam.
-// Four listeners: the LLM data plane, the MCP gateway (own
-// Service), the admin plane
-// (credentials, budgets, allowlists, ledger, audits) on a port no data
+// enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam.
+// Three listeners: the LLM data plane, the admin plane
+// (credentials, budgets, ledger, approval history) on a port no data
 // Service exposes, and the operations listener — Prometheus
 // metrics and the readiness/liveness probes — on a port no Service
 // exposes at all.
@@ -35,7 +33,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/plane/internal/config"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/db"
-	"github.com/kaimahi-agents/kaimahi/plane/internal/gateway"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/meter"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/metrics"
 	"github.com/kaimahi-agents/kaimahi/plane/internal/ops"
@@ -64,22 +61,20 @@ func mustReadSecretFile(path, what string) string {
 
 func main() {
 	dataAddr := env("DATA_ADDR", ":8080")
-	mcpAddr := env("MCP_ADDR", ":8081")
 	adminAddr := env("ADMIN_ADDR", ":9091")
 	// The operations listener — Prometheus metrics and the two
 	// probes — on a port of its own that no Service exposes.
 	opsAddr := env("OPS_ADDR", ":9092")
 	configFile := env("CONFIG_FILE", "/etc/kaimahi/upstreams.json")
-	// The operator overlay. Fragments an operator added by
-	// onboarding their own MCP server (`kmx tools add`) live in their
-	// own ConfigMap, mounted here, and are merged over the committed
+	// Operator model overlays live in their own ConfigMap,
+	// mounted here, and are merged over the committed
 	// table at boot. The volume is optional: an absent directory is an
 	// empty overlay, which is every cluster where nobody has onboarded
 	// anything. Set CONFIG_DIR="" to read the base table alone.
 	configDir := env("CONFIG_DIR", config.DefaultConfigDir)
 	adminTokenFile := env("ADMIN_TOKEN_FILE", "/etc/kaimahi/admin/token")
 	pgPasswordFile := env("PGPASSWORD_FILE", "/etc/kaimahi/pg/password")
-	// The certificate the two DATA seams serve with, projected from the
+	// The certificate the model seam serves with, projected from the
 	// Secret `kmx plane` mints. The admin and ops listeners are on no
 	// Service and are unchanged.
 	seamTLSDir := env("SEAM_TLS_DIR", "/etc/kaimahi/seam-tls")
@@ -136,19 +131,6 @@ func main() {
 				"file", u.CredentialFile, "err", err)
 		}
 	}
-	// Tool upstream credentials too: the GitHub token is plane
-	// custody exactly like the Copilot one, and must be redacted the same.
-	for name, t := range cfg.ToolUpstreams {
-		if t.CredentialFile == "" {
-			continue
-		}
-		if raw, err := os.ReadFile(t.CredentialFile); err == nil {
-			secrets = append(secrets, strings.TrimSpace(string(raw)))
-		} else {
-			slog.Warn("tool upstream credential unreadable at boot; value not redacted in logs",
-				"upstream", name, "file", t.CredentialFile, "err", err)
-		}
-	}
 	slog.SetDefault(slog.New(redact.Handler{
 		Inner: slog.NewTextHandler(os.Stderr, nil),
 		R:     redact.New(secrets),
@@ -177,7 +159,6 @@ func main() {
 	// truths that live in Postgres, not in this process.
 	metrics.RegisterStore(st, func() time.Time { return meter.MonthStartUTC(time.Now()) })
 	metrics.PrimeUpstreams(metrics.SeamProxy, slices.Sorted(maps.Keys(cfg.Upstreams)))
-	metrics.PrimeUpstreams(metrics.SeamGateway, slices.Sorted(maps.Keys(cfg.ToolUpstreams)))
 
 	deps := proxy.Deps{
 		Store:      st,
@@ -185,10 +166,8 @@ func main() {
 		Config:     cfg,
 		ConfigBase: configBase,
 	}
-	// The ONE hardened client for every upstream marked internet —
-	// Copilot on the LLM seam, the hosted MCP servers on the tool seam —
-	// built once, each host vetted now (a private answer refuses the
-	// config loudly here), and injected into BOTH seams below.
+	// The hardened client for every model upstream marked internet,
+	// built once and vetted at boot; each call vets its host again.
 	internetClient, err := hardenedClient(ctx, cfg)
 	if err != nil {
 		slog.Error("hosted upstream configuration refused", "err", err)
@@ -198,15 +177,9 @@ func main() {
 	// ReadTimeout bounds slow request-body writers (chat requests are
 	// small; streamed RESPONSES are unaffected — WriteTimeout stays 0 so
 	// long generations can flush indefinitely).
-	// The MCP gateway shares this process (and its pool, redactor,
-	// and fail-closed machinery); its listener gets its own Service so
-	// the tool seam has its own address.
-	gwDeps := gateway.Deps{Store: st, Upstreams: cfg.ToolUpstreams, Policy: cfg.Policy()}
-	deps, gwDeps = wireInternet(deps, gwDeps, internetClient)
+	deps.InternetClient = internetClient
 
 	dataSrv := &http.Server{Addr: dataAddr, Handler: proxy.NewDataMux(deps), TLSConfig: seamMaterial.ServerConfig(),
-		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
-	mcpSrv := &http.Server{Addr: mcpAddr, Handler: gateway.NewMux(gwDeps), TLSConfig: seamMaterial.ServerConfig(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	adminSrv := &http.Server{Addr: adminAddr, Handler: proxy.NewAdminMux(deps, adminTokenFile),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
@@ -224,26 +197,24 @@ func main() {
 			s := pool.Stat()
 			return ops.PoolStats{Acquired: s.AcquiredConns(), Max: s.MaxConns(), AcquireCount: s.AcquireCount()}
 		},
-		// The two seams are dialled over TLS and VERIFIED. The client
+		// The model seam is dialled over TLS and VERIFIED. The client
 		// carries the plane's own authority, so this probe fails on the
 		// day the seam certificate expires rather than reporting a live
 		// plane nothing can talk to.
 		Listeners: []string{
 			"https://127.0.0.1" + portOf(dataAddr),
-			"https://127.0.0.1" + portOf(mcpAddr),
 		},
 		Client: seamMaterial.LoopbackClient(),
 	}), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 3)
 	// The certificate and key are on the server's TLSConfig already.
 	go func() { errCh <- dataSrv.ListenAndServeTLS("", "") }()
-	go func() { errCh <- mcpSrv.ListenAndServeTLS("", "") }()
 	go func() { errCh <- adminSrv.ListenAndServe() }()
 	go func() { errCh <- opsSrv.ListenAndServe() }()
-	slog.Info("kaimahi-proxy up", "data", dataAddr, "mcp", mcpAddr, "admin", adminAddr, "ops", opsAddr,
+	slog.Info("kaimahi-proxy up", "data", dataAddr, "admin", adminAddr, "ops", opsAddr,
 		"version", metrics.Version(),
-		"upstreams", len(cfg.Upstreams), "tool_upstreams", len(cfg.ToolUpstreams),
+		"upstreams", len(cfg.Upstreams),
 		"hosted_upstreams", len(cfg.InternetHosts()),
 		// Named, not merely "tls=true": the first thing anybody debugging a
 		// refused handshake needs is which certificate this replica is
@@ -259,7 +230,6 @@ func main() {
 		// drain so the probe keeps answering (503) until the end.
 		draining.Store(true)
 		_ = dataSrv.Shutdown(shutdownCtx)
-		_ = mcpSrv.Shutdown(shutdownCtx)
 		_ = adminSrv.Shutdown(shutdownCtx)
 		// The ops listener closes last, so probes answer throughout the drain.
 		_ = opsSrv.Shutdown(shutdownCtx)
@@ -304,8 +274,8 @@ func connectOnce(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return db.NewPool(ctx, dsn)
 }
 
-// portOf returns the ":port" part of a listen address such as ":8081" or
-// "0.0.0.0:8081" — the loopback origin the liveness probe dials.
+// portOf returns the ":port" part of a listen address such as ":8080" or
+// "0.0.0.0:8080" — the loopback origin the liveness probe dials.
 func portOf(addr string) string {
 	if i := strings.LastIndex(addr, ":"); i >= 0 {
 		return addr[i:]

@@ -36,22 +36,8 @@ const (
 	// DefaultCredential is the Makefile's CRED: the credential `govern`
 	// issues and the ledger is read for by default.
 	DefaultCredential = "hello-world"
-	// DefaultToolsCredential is the Makefile's CRED_TOOLS: the credential
-	// the MCP gateway admits the tools agent by.
-	DefaultToolsCredential = "hello-tools"
-	// DefaultTools is the Makefile's TOOLS — the gateway allowlist
-	// `kmx tools govern` sets, and the agent's tool selection.
-	DefaultTools = "k8s_get_resources"
-	// DefaultToolsAgent is the agent `kmx tools govern` puts behind the
-	// gateway, and DefaultToolsSecret the agent-side Secret its kmh_ token
-	// is stored in (the Makefile's GOVERNED_SECRET for that target).
-	DefaultToolsAgent  = "hello-tools"
-	DefaultToolsSecret = "kaimahi-tools-token"
-	// DefaultToolServer is the committed governed seam — the one
-	// RemoteMCPServer kmx carries and applies (k8s/kaimahi-tools.yaml).
-	// `kmx tools govern --server` names another, scaffolded by
-	// `kmx tools add`.
-	DefaultToolServer = "kaimahi-tools"
+	// DefaultToolsAgent is the retained agent using direct kagent MCP tools.
+	DefaultToolsAgent = "hello-tools"
 	// GovernedSecret is the agent-side Secret the issued token is stored in,
 	// in the kagent namespace.
 	GovernedSecret = "kaimahi-governed-token"
@@ -109,8 +95,6 @@ type Config struct {
 	AdminPort       string
 	OpsPort         string
 	Credential      string
-	// ToolsCredential is the Makefile's CRED_TOOLS.
-	ToolsCredential string
 	Confirm         string
 	// KagentBin, when set, is an existing kagent binary to use instead of
 	// the cached download. The Makefile points it at bin/kagent so a
@@ -163,7 +147,6 @@ func Load(contextFlag string) (*Config, error) {
 		AdminPort:       env("ADMIN_PORT", DefaultAdminPort),
 		OpsPort:         env("OPS_PORT", DefaultOpsPort),
 		Credential:      env("CRED", DefaultCredential),
-		ToolsCredential: env("CRED_TOOLS", DefaultToolsCredential),
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
 		KagentBin:       strings.TrimSpace(os.Getenv("KAGENT")),
 	}

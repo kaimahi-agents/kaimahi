@@ -20,7 +20,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/seam"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
 
@@ -59,15 +58,6 @@ type App struct {
 	// machine.
 	provisioned []toolchain.Tool
 
-	// readSecret replaces the terminal read on the one path that accepts
-	// credential material, so the capture's checks and refusals can be
-	// exercised without a TTY. It is nil in every real invocation, and the
-	// nil case is what enforces the terminal-only rule — no flag,
-	// environment variable or file can set it.
-	readSecret func() ([]byte, error)
-	// seamEnv points the upstream checks at a test server instead of the
-	// real ones. Nil everywhere but in tests.
-	seamEnv *seam.Env
 	// copilotEnv replaces GitHub's endpoints, cache and poll delay in tests.
 	// Nil in production; no command-line or environment input can set it.
 	copilotEnv *copilotEnvironment

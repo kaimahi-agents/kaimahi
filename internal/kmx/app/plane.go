@@ -171,13 +171,14 @@ func (a *App) Plane(opt PlaneOptions) error {
 				"  %s  # what it has spent", a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("ledger", a.Cfg.Credential))
 		}
 		// Existing pre-TLS seams fail closed until re-applied with the authority.
-		a.notef("\nUPGRADING an existing cluster? The two data seams now serve TLS. Any seam\n"+
-			"  applied before this release still points at `http://` and names no\n"+
-			"  certificate authority, so its calls fail closed until it is re-applied:\n"+
+		a.notef("\nUPGRADING an existing cluster? The model seam serves TLS. Older model wiring\n"+
+			"  that points at `http://` and names no certificate authority fails closed\n"+
+			"  until it is re-applied:\n"+
 			"  %s  # the model seam\n"+
-			"  %s  # the tool seam\n"+
-			"  %s  # the certificate, and which seams are governed",
-			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("tools", "govern"), a.operationCommand("status"))
+			"  %s  # the certificate and model routing\n"+
+			"  The tool gateway is retired. Review owner-managed tool routes deliberately;\n"+
+			"  this command does not repoint them.",
+			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("status"))
 	}
 	return nil
 }

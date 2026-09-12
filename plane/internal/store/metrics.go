@@ -37,7 +37,7 @@ func (s *Store) LedgerMonthTotals(ctx context.Context, monthStart time.Time) ([]
 // the same predicate every consumer uses.
 func (s *Store) LiveGrantCounts(ctx context.Context) (map[string]int64, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT kind, COUNT(*) FROM permit_grant WHERE kind IN ('tool', 'budget') AND `+grantLive+` GROUP BY kind`)
+		`SELECT kind, COUNT(*) FROM permit_grant WHERE kind = 'budget' AND `+grantLive+` GROUP BY kind`)
 	if err != nil {
 		return nil, err
 	}

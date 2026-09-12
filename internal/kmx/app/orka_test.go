@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,6 +28,22 @@ import (
 // The fake answers only the reads this command makes. KMX_TEST_SECRET and
 // KMX_TEST_OLLAMA switch the two branches that decide whether anything is
 // written.
+func TestUnreachableIsNotTheSameAsAbsent(t *testing.T) {
+	for _, msg := range []string{"connection refused", "Unable to connect to the server", "no such host", "TLS handshake timeout", "context does not exist", "no configuration has been provided", "server has asked for the client to provide credentials"} {
+		if !unreachable(errors.New(msg)) {
+			t.Errorf("not classified unreachable: %s", msg)
+		}
+	}
+	for _, msg := range []string{"Error from server (NotFound): deployments.apps orka not found", "Error from server (Forbidden)", "something nobody predicted"} {
+		if unreachable(errors.New(msg)) {
+			t.Errorf("real answer classified unreachable: %s", msg)
+		}
+	}
+	if unreachable(nil) {
+		t.Fatal("nil is not unreachable")
+	}
+}
+
 const fakeOrkaKubectl = `#!/bin/sh
 printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in

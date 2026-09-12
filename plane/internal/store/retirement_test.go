@@ -3,6 +3,9 @@ package store_test
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/kaimahi-agents/kaimahi/plane/internal/meter"
 
 	"github.com/stretchr/testify/require"
 
@@ -78,7 +81,8 @@ func TestHistoricalInboundGrantIsInert(t *testing.T) {
 	counts, err := s.LiveGrantCounts(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, counts, "inbound", "retired grants are not reported as executable")
-	_, ok, err := s.ConsumeToolGrant(ctx, name, "demo", digestOf("demo"))
+	require.NoError(t, s.SetBudget(ctx, name, nil, i64(0)))
+	a, err := s.AdmitSpend(ctx, name, meter.Hold(false), meter.MonthStartUTC(time.Now()), time.Minute)
 	require.NoError(t, err)
-	require.False(t, ok, "an old inbound grant cannot become a tool grant")
+	require.True(t, a.Denied, "an old inbound grant cannot cover model spend")
 }

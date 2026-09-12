@@ -33,7 +33,7 @@ func (f *fakeSource) LedgerMonthTotals(_ context.Context, _ time.Time) ([]metric
 	return f.totals, f.err
 }
 func (f *fakeSource) LiveGrantCounts(_ context.Context) (map[string]int64, error) {
-	return map[string]int64{"tool": 2, "budget": 1}, f.err
+	return map[string]int64{"budget": 1}, f.err
 }
 func (f *fakeSource) OpenReservations(_ context.Context, _ string) (int64, error) { return 3, f.err }
 
@@ -69,12 +69,12 @@ var allowed = map[string]*regexp.Regexp{
 
 func TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape(t *testing.T) {
 	// Exercise every path so the series exist.
-	for _, seam := range []metrics.Seam{metrics.SeamProxy, metrics.SeamGateway} {
+	for _, seam := range []metrics.Seam{metrics.SeamProxy} {
 		for _, r := range metrics.Vocabulary["reason"] {
 			metrics.Decide(seam, metrics.Denied, metrics.Reason(r))
 		}
 		metrics.Decide(seam, metrics.Allowed, metrics.ReasonOK)
-		metrics.Decide(seam, metrics.Granted, metrics.ReasonGrant)
+		metrics.Decide(seam, metrics.Granted, metrics.ReasonBudget)
 		metrics.ObserveUpstream(seam, "ollama", 10*time.Millisecond)
 		// Free text as an upstream name is coerced to "other", never admitted.
 		metrics.ObserveUpstream(seam, "https://evil.example/?token=kmh_abc", time.Millisecond)
@@ -151,7 +151,7 @@ func TestStoreDerivedSeriesCarryCredentialNamesOnly(t *testing.T) {
 	for _, m := range grants.GetMetric() {
 		byKind[labels(m)["kind"]] = m.GetGauge().GetValue()
 	}
-	require.Equal(t, map[string]float64{"tool": 2, "budget": 1}, byKind)
+	require.Equal(t, map[string]float64{"budget": 1}, byKind)
 	require.EqualValues(t, 3, find(t, "kaimahi_open_reservations").GetMetric()[0].GetGauge().GetValue())
 	require.EqualValues(t, 1, find(t, "kaimahi_store_up").GetMetric()[0].GetGauge().GetValue())
 }
@@ -170,15 +170,15 @@ func TestStoreOutageDropsDerivedSeriesAndReportsDown(t *testing.T) {
 }
 
 func TestPrimedUpstreamsExposeEmptyHistograms(t *testing.T) {
-	metrics.PrimeUpstreams(metrics.SeamGateway, []string{"kagent-tools", "not a name!"})
+	metrics.PrimeUpstreams(metrics.SeamProxy, []string{"model-primed", "not a name!"})
 	seen := map[string]bool{}
 	for _, m := range find(t, "kaimahi_upstream_latency_seconds").GetMetric() {
 		l := labels(m)
-		if l["seam"] == "gateway" {
+		if l["seam"] == "proxy" {
 			seen[l["upstream"]] = true
 		}
 	}
-	require.True(t, seen["kagent-tools"], "primed series present before any observation")
+	require.True(t, seen["model-primed"], "primed series present before any observation")
 	require.True(t, seen["other"], "a name outside the shape primes as other")
 	require.False(t, seen["not a name!"])
 }

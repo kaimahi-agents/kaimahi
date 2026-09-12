@@ -41,8 +41,8 @@ func (a *App) liftCredentials(opt lift.Options) error {
 // NetworkPolicy is an API; the CNI enforces it. A cluster whose CNI ignores
 // it reports the plane's policies as present while blocking nothing, which
 // reads as protection and is worse than having none — an operator would
-// believe the ledger, the gateway and the fixture servers were unreachable
-// when every pod in the cluster can reach them.
+// believe the model seam and its database were isolated when every pod in
+// the cluster can reach them.
 //
 // So the boundary is proven before the plane is put behind it, in two gates
 // of escalating cost:
@@ -209,7 +209,7 @@ func (a *App) liftPlane(opt lift.Options, work string) error {
 		}
 	}
 
-	// The certificate the two data seams serve with, BEFORE the deploy that
+	// The certificate the model seam serves with, BEFORE the deploy that
 	// mounts it. The proxy's Secret volume is not optional and has no closed
 	// state to fall into — without this the kubelet cannot mount it, the pods
 	// never leave ContainerCreating, and the rollout below times out after
@@ -267,7 +267,7 @@ func (a *App) liftAgents(opt lift.Options) error {
 	if err := a.Guard("create the agents", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
-	for _, name := range []string{"hello-world.yaml", "tools-agent.yaml", "kaimahi-tools.yaml"} {
+	for _, name := range []string{"hello-world.yaml", "tools-agent.yaml"} {
 		if err := a.apply(name); err != nil {
 			return err
 		}
@@ -280,23 +280,9 @@ func (a *App) liftAgents(opt lift.Options) error {
 	}); err != nil {
 		return err
 	}
-	// The tools agent needs the same treatment in both dimensions, and they
-	// are separate: `GovernTools` puts it behind the MCP gateway but does not
-	// touch its model, and on a managed cluster the model it ships with does
-	// not exist. Switching the preset first means the agent is never briefly
-	// pointed at a ModelConfig that is not there, which on this cluster is
-	// not a degraded agent but one that never becomes Ready.
-	if err := a.UsePreset(config.DefaultToolsAgent, "governed-copilot", nil); err != nil {
-		return err
-	}
-	return a.GovernTools(ToolsOptions{
-		Credential:      a.Cfg.ToolsCredential,
-		Agent:           config.DefaultToolsAgent,
-		Secret:          config.DefaultToolsSecret,
-		SecretNamespace: "kagent",
-		Tools:           config.DefaultTools,
-		Server:          config.DefaultToolServer,
-	})
+	// The direct MCP agent still needs a hosted model on managed clusters.
+	// Its authored tool wiring is not changed.
+	return a.UsePreset(config.DefaultToolsAgent, "governed-copilot", nil)
 }
 
 // applyManaged applies one of the manifests carried for the managed path.

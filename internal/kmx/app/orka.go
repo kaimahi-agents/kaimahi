@@ -427,11 +427,32 @@ spec:
 	return nil
 }
 
+// unreachable conservatively distinguishes a missing object from an API
+// server that could not answer. Unknown errors remain real errors.
+func unreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, sign := range []string{
+		"connection refused", "could not be reached", "unable to connect to the server",
+		"couldn't get current server api group list", "no such host", "i/o timeout",
+		"connection timed out", "tls handshake timeout", "context does not exist",
+		"no configuration has been", "invalid configuration",
+		"server has asked for the client to provide credentials",
+	} {
+		if strings.Contains(msg, sign) {
+			return true
+		}
+	}
+	return false
+}
+
 // OrkaStatus reports what is installed and what it can resolve.
 //
 // Three facts, separately, because any one can be true while the others are
 // not — and an unreadable cluster is reported as unread rather than as
-// absent, which is the rule `kmx tools sandbox status` already follows.
+// absent.
 func (a *App) OrkaStatus() error {
 	if err := a.preflight(depKubectl); err != nil {
 		return err

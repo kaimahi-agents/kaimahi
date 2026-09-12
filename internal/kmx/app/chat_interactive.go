@@ -542,18 +542,12 @@ type streamView struct {
 	approvalErr                          error
 	renderer                             *chatRenderer
 	modelGoverned                        bool
-	governedTools                        map[string]bool
 	modelDenialShown                     bool
-	seenToolCalls                        map[string]bool
-	seenToolResponses                    map[string]bool
-	ambiguousToolCalls                   map[string]bool
 	toolEvents                           map[string]bool
 }
 
 type chatGovernancePosture struct {
 	modelGoverned bool
-	governedTools map[string]bool
-	toolRoutes    map[string]uint8
 }
 
 type hitlRequest struct {
@@ -844,7 +838,7 @@ func (a *App) interactiveChat(kagent, agent, initialTask, session string) error 
 }
 
 func (a *App) refreshChatPosture(agent string, renderer *chatRenderer) (*chatGovernancePosture, error) {
-	posture := &chatGovernancePosture{governedTools: map[string]bool{}, toolRoutes: map[string]uint8{}}
+	posture := &chatGovernancePosture{}
 	renderer.working("Checking model and tool posture")
 	renderer.statusStart(agent, a.Cfg.KubeContext)
 	if err := a.showChatPosture(agent, renderer, posture); err != nil {
@@ -979,11 +973,10 @@ func (a *App) invokeStream(ctx context.Context, kagent, base, agent, task, sessi
 func newStreamView(agent, toolMode string, renderer *chatRenderer, posture *chatGovernancePosture) *streamView {
 	view := &streamView{
 		agent: agent, toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: toolMode,
-		renderer: renderer, governedTools: map[string]bool{}, seenToolCalls: map[string]bool{}, seenToolResponses: map[string]bool{}, ambiguousToolCalls: map[string]bool{},
+		renderer: renderer,
 	}
 	if posture != nil {
 		view.modelGoverned = posture.modelGoverned
-		view.governedTools = posture.governedTools
 	}
 	return view
 }
@@ -1132,18 +1125,6 @@ func (v *streamView) consume(event streamEvent, out io.Writer) {
 }
 
 func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMessage, out io.Writer) {
-	if v.seenToolCalls == nil {
-		v.seenToolCalls = map[string]bool{}
-	}
-	if v.seenToolResponses == nil {
-		v.seenToolResponses = map[string]bool{}
-	}
-	if v.ambiguousToolCalls == nil {
-		v.ambiguousToolCalls = map[string]bool{}
-	}
-	if v.governedTools == nil {
-		v.governedTools = map[string]bool{}
-	}
 	var data struct {
 		ID       string          `json:"id"`
 		Name     string          `json:"name"`
@@ -1214,18 +1195,9 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 	switch kind {
 	case "function_call":
 		if data.ID != "" {
-			if previous, exists := v.toolCalls[data.ID]; exists && previous != data.Name {
-				v.ambiguousToolCalls[data.ID] = true
-			} else if !exists {
+			if _, exists := v.toolCalls[data.ID]; !exists {
 				v.toolCalls[data.ID] = data.Name
 			}
-		}
-		validID := data.ID != "" && !v.ambiguousToolCalls[data.ID]
-		if validID && v.governedTools[data.Name] && v.renderer != nil && !v.seenToolCalls[data.ID] {
-			v.renderer.assistantOperation(v.agent, "KAIMAHI ROUTE", "", colorYellow, "Seam: MCP gateway\nTool: "+safeTerminal(data.Name)+"\nConfiguration: verified through ready plane at chat start\nPer-call decision: not exposed by kagent stream")
-		}
-		if data.ID != "" {
-			v.seenToolCalls[data.ID] = true
 		}
 		if v.toolMode != "off" {
 			payload := "Status: running"
@@ -1241,32 +1213,15 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			v.renderer.assistantOperation(v.agent, "WORKING", "", colorBlue, "Waiting for tool activity")
 		}
 	case "function_response":
-		name, correlated := v.toolCalls[data.ID]
+		name := v.toolCalls[data.ID]
 		if name == "" {
 			name = data.Name
 		}
-		correlated = correlated && data.ID != "" && !v.ambiguousToolCalls[data.ID] && (data.Name == "" || data.Name == name)
 		state := "completed"
 		if data.Response.IsError {
 			state = "failed"
 		}
 		body := string(data.Response.Content)
-		governanceDenied, requestFiled := governanceDenial(data.Response.IsError, body)
-		if governanceDenied && correlated && v.governedTools[name] && !v.seenToolResponses[data.ID] {
-			v.denied, v.requestFiled = true, requestFiled
-			if v.renderer != nil {
-				payload := "Seam: MCP gateway\nSignal: response text matches a Kaimahi denial\nProvenance: unverified; kagent exposes no plane receipt"
-				if requestFiled {
-					payload += "\nApproval request: reported in response text\nNext: run `make approvals` and verify the request"
-				} else {
-					payload += "\nApproval request: not mentioned in response text"
-				}
-				v.renderer.assistantOperation(v.agent, "POSSIBLE KAIMAHI DENIAL", name, colorYellow, payload)
-			}
-		}
-		if data.ID != "" {
-			v.seenToolResponses[data.ID] = true
-		}
 		if v.toolMode != "off" {
 			payload := "Status: " + state
 			if v.toolMode == "verbose" {
@@ -1282,16 +1237,6 @@ func (v *streamView) consumeTool(kind string, longRunning bool, raw json.RawMess
 			}
 		}
 	}
-}
-
-func governanceDenial(isError bool, body string) (denied, requestFiled bool) {
-	if !isError {
-		return false, false
-	}
-	lower := strings.ToLower(body)
-	filed := strings.Contains(lower, "approval request filed")
-	denied = filed || strings.Contains(lower, "tool not permitted") || strings.Contains(lower, "tool call not permitted")
-	return denied, filed
 }
 
 func modelGovernanceDenial(message string) (reason string, requestFiled, ok bool) {
@@ -1565,9 +1510,6 @@ func (a *App) sendHITL(ctx context.Context, base, agent string, previous *stream
 	view := newStreamView(agent, toolMode, renderer, posture)
 	view.context, view.taskID = approval.ContextID, approval.TaskID
 	view.toolCalls = previous.toolCalls
-	view.seenToolCalls = previous.seenToolCalls
-	view.seenToolResponses = previous.seenToolResponses
-	view.ambiguousToolCalls = previous.ambiguousToolCalls
 	view.toolEvents = previous.toolEvents
 	view.modelDenialShown = previous.modelDenialShown
 	scanner := bufio.NewScanner(resp.Body)
@@ -1874,19 +1816,6 @@ func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *cha
 		for _, item := range server.Status.Discovered {
 			discovered[item.Name] = item.Description
 		}
-		serverPosture := "direct, not Kaimahi-governed"
-		governedServer := false
-		parsed, _ := url.Parse(server.Spec.URL)
-		gatewayHost := parsed != nil && (parsed.Host == "kaimahi-mcp-gateway.kaimahi:8081" || parsed.Host == "kaimahi-mcp-gateway.kaimahi.svc.cluster.local:8081")
-		if parsed != nil && seamScheme(parsed.Scheme) && gatewayHost && strings.HasPrefix(parsed.Path, "/upstream/") {
-			if !a.planeReady("kaimahi-mcp-gateway") {
-				return fmt.Errorf("RemoteMCPServer %q points at Kaimahi but the plane is not Ready", tool.MCPServer.Name)
-			}
-			serverPosture = "governed by Kaimahi; plane Ready"
-			governedServer = true
-		} else {
-			direct = true
-		}
 		selected := append([]string(nil), tool.MCPServer.ToolNames...)
 		if len(selected) == 0 {
 			for name := range discovered {
@@ -1902,16 +1831,8 @@ func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *cha
 		if err := validateToolServer(wiring, server.Metadata.Generation, server.Status.ObservedGeneration, server.Status.Conditions, discoveredSet); err != nil {
 			return err
 		}
-		for _, name := range selected {
-			if governedServer {
-				posture.toolRoutes[name] |= 1
-			} else {
-				posture.toolRoutes[name] |= 2
-			}
-			posture.governedTools[name] = posture.toolRoutes[name] == 1
-		}
 		var details strings.Builder
-		fmt.Fprintf(&details, "Server: %s\nPosture: %s\nAllowed:", safeTerminal(tool.MCPServer.Name), serverPosture)
+		fmt.Fprintf(&details, "Server: %s\nURL: %s\nKaimahi tool governance: retired; reachability not verified\nSelected:", safeTerminal(tool.MCPServer.Name), safeTerminal(server.Spec.URL))
 		for _, name := range selected {
 			if description, ok := discovered[name]; ok {
 				fmt.Fprintf(&details, "\n  - %s - %s", safeTerminal(name), safeTerminal(description))
@@ -1922,7 +1843,7 @@ func (a *App) showChatPosture(agent string, renderer *chatRenderer, posture *cha
 		renderer.statusSection("Tools", details.String())
 	}
 	if direct {
-		renderer.statusSection("Warning", "One or more seams are direct. Kaimahi budgets, gateway policy, or audit may not apply.")
+		renderer.statusSection("Warning", "Model is direct. Kaimahi budgets and spend ledger do not apply.")
 	}
 	return nil
 }

@@ -28,7 +28,8 @@ that chat-completions works.
 
 import json
 import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import ssl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ANSWER = "a governed answer from a fixture"
 
@@ -57,6 +58,13 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(raw or b"{}")
         except ValueError:
             self._send(400, {"error": {"message": "not JSON"}})
+            return
+        # Hosted-egress tests must observe a redirect rather than follow it.
+        if self.path.rstrip("/") == "/redirect":
+            self.send_response(307)
+            self.send_header("Location", "https://example.invalid/refused")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
         # `/v1/silent` is the deliberate bad case: a 200 with a real
         # answer in it and NO usage envelope at all. It is here because
@@ -102,4 +110,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "9000"))), Handler).serve_forever()
+    # A held keep-alive connection from one replica must not block another.
+    server = ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "9000"))), Handler)
+    cert, key = os.environ.get("TLS_CERT"), os.environ.get("TLS_KEY")
+    if bool(cert) != bool(key):
+        raise SystemExit("TLS_CERT and TLS_KEY must be supplied together")
+    if cert:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    print("serving " + ("https" if cert else "http"), flush=True)
+    server.serve_forever()

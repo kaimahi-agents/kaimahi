@@ -19,15 +19,3 @@ func TestApprovalValuesPreserveAbsentBounds(t *testing.T) {
 		t.Fatalf("values: %v %v %v %v", ttl, uses, amount, err)
 	}
 }
-
-func TestRequestCredentialDefaultsByKind(t *testing.T) {
-	if got := requestCredential("", "tool", "model", "tools"); got != "tools" {
-		t.Fatal(got)
-	}
-	if got := requestCredential(" ", "budget", "model", "tools"); got != "model" {
-		t.Fatal(got)
-	}
-	if got := requestCredential("explicit", "tool", "model", "tools"); got != "explicit" {
-		t.Fatal(got)
-	}
-}

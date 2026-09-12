@@ -7,15 +7,14 @@
 # k8s/kagent-values.yaml, locked to read-only k8s tools) is published by the
 # kagent chart as the `kagent-tool-server` RemoteMCPServer, and this Agent
 # wires to it via spec.declarative.tools — kagent's native MCP mechanism.
-# Kaimahi ships no MCP runtime, proxy, or gateway here; that seam is where
-# the governance gateway mounts.
+# Kaimahi ships no MCP gateway. This is direct kagent tool authoring.
 #
 # k8s/hello-world.yaml is deliberately never mutated: its
 # agent stays tool-free, and this file is the diff that "allows connectors".
 #
 # WARNING: these tools are UNGOVERNED. The single-tool allowlist below and the
-# tool server's read-only lockdown are the only limits — egress enforcement,
-# tool permits, and audit arrive with the Kaimahi governance plane.
+# tool server's read-only lockdown are the only tool limits. The model
+# plane does not add tool permits or tool auditing.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
@@ -33,7 +32,7 @@ spec:
     # The agent pod runs model output; it is the LEAST trusted workload here
     # and was, until now, the least constrained. kagent exposes the fields
     # (spec.declarative.deployment, v1alpha2) — we simply were not setting
-    # them. Same posture as k8s/plane/proxy.yaml and k8s/erp-mcp.yaml.
+    # them. Same posture as k8s/plane/proxy.yaml.
     # A read-only root filesystem needs somewhere to write: the runtime uses
     # /tmp, mounted here as an emptyDir rather than left writable everywhere.
     deployment:

@@ -302,14 +302,9 @@ func TestGrantsAndAuditsRenderTheirContracts(t *testing.T) {
 	replies := map[string]string{
 		"/admin/grants": `{"grants": [{"id": "00000000-0000-4000-8000-000000000001",
 		  "credential": "hello-tools", "kind": "tool", "subject": "k8s_get_events",
-		  "live": true, "expires_at": "2026-09-03T02:00:00.5Z", "uses": 0, "max_uses": 1,
+		  "live": false, "expires_at": "2026-09-03T02:00:00.5Z", "uses": 0, "max_uses": 1,
 		  "amount": null, "created_at": "2026-09-03T01:50:00Z", "decided_by": null,
 		  "arg_digest": "8f84e4e9f653abc0000000000000000000000000000000000000000000000000"}]}`,
-		"/admin/tool-audit": `{"entries": [{"created_at": "2026-09-03T01:51:00Z",
-		  "credential": "hello-tools", "upstream": "kagent-tools", "method": "tools/call",
-		  "tool": "k8s_get_resources", "decision": "allowed", "status": 200, "detail": "",
-		  "arg_digest": "77245d044835abc0000000000000000000000000000000000000000000000000",
-		  "arg_summary": "k8s_get_resources: namespace default"}]}`,
 		"/admin/approval-audit": `{"entries": [{"created_at": "2026-09-03T01:52:00Z",
 		  "credential": "hello-world", "kind": "budget", "subject": "tokens",
 		  "action": "approved", "decided_by": null, "bounds": "1 use(s)",
@@ -334,7 +329,7 @@ func TestGrantsAndAuditsRenderTheirContracts(t *testing.T) {
 		"hello-tools", "k8s_get_events",
 		// A tool grant admits ONE call, and the table says which.
 		"call 8f84e4e9f653",
-		" yes   ",              // liveness is a word, not a JSON bool
+		" no    ",              // historical tool grants are inactive
 		"0/1",                  // uses/max_uses
 		"2026-09-03T02:00:00 ", // expiry cut to the second, like every other timestamp
 	} {
@@ -345,21 +340,6 @@ func TestGrantsAndAuditsRenderTheirContracts(t *testing.T) {
 	// A null optional prints as "-", never as "<nil>" or "null".
 	if strings.Contains(grants.String(), "<nil>") || strings.Contains(grants.String(), "null") {
 		t.Errorf("a null rendered literally:\n%s", grants.String())
-	}
-
-	var tools bytes.Buffer
-	if err := c.ToolAudit(&tools, ""); err != nil {
-		t.Fatalf("ToolAudit: %v", err)
-	}
-	// The audited call travels with the row: the summary a human reads and
-	// the digest prefix that ties a denial, its approval and the admitted
-	// call together.
-	if !strings.Contains(tools.String(), "k8s_get_resources: namespace default [77245d044835]") {
-		t.Errorf("tool audit does not name the call:\n%s", tools.String())
-	}
-	if !regexp.MustCompile(`hello-tools +kagent-tools +tools/call +k8s_get_resources +allowed +200`).
-		MatchString(tools.String()) {
-		t.Errorf("tool audit does not match the pattern ci.yml greps:\n%s", tools.String())
 	}
 
 	var approvals bytes.Buffer

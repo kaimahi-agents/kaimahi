@@ -68,15 +68,6 @@ type Caller struct {
 
 // CallerOf reads the caller off one request.
 //
-// The MCP handshake's own `clientInfo.name` is deliberately NOT used, and
-// the reason is worth keeping: the gateway holds no session state, and a
-// client can skip `initialize` entirely and still be governed
-// (docs/foreign-runtime.md). Carrying a handshake name onto the rows that
-// matter would mean keeping per-session state the gateway refuses to keep,
-// to gain a value of exactly the same worth as the header — both are the
-// caller's own word for itself. The header is on every message; the
-// handshake is on one.
-//
 // X-Forwarded-For and friends are ignored on purpose. They are headers,
 // which puts them in the same class as the claim, and reading one here
 // would let a caller choose the value in the column that is supposed to

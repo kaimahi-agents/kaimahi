@@ -11,8 +11,7 @@ import (
 // A stale base table must stop rollout, not boot a plane that silently
 // ignores the connector or notification it still declares.
 func TestRetiredConnectorConfigIsRejected(t *testing.T) {
-	base := `"upstreams":{"o":{"base_url":"http://o","path":"v1/chat/completions","classification":"free"}},
-		"tool_upstreams":{"slack":{"url":"http://slack/mcp"}}`
+	base := `"upstreams":{"o":{"base_url":"http://o","path":"v1/chat/completions","classification":"free"}}`
 	for _, tc := range []struct{ name, field, value string }{
 		{"empty hooks", "inbound_hooks", `{}`},
 		{"null hooks", "inbound_hooks", `null`},

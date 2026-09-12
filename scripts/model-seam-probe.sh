@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One governed MODEL call, made directly at the seam, and the answer
-# printed — the model seam's counterpart to `tool-call-probe.sh`.
+# printed without an agent client's implicit retries.
 #
 # Why it exists as its own probe: the other way to make a governed model
 # call is `kmx agent chat`, which goes through an agent, and an agent's OpenAI
@@ -12,7 +12,7 @@
 # So this posts a body you give it to a path you give it, under the
 # governed kmh_ token, and prints what came back. Everything about which
 # protocol is being spoken lives in those two arguments, which is why one
-# probe covers both seams' protocols and will cover the next one.
+# probe covers the model protocols without guessing their envelopes.
 #
 # Custody rules (docs/COORDINATION.md): the token travels only through
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
@@ -37,7 +37,7 @@ PORT="${PORT:-18190}"
 body="${1:?usage: model-seam-probe.sh '<json body>'  (env: UPSTREAM, SEAM_PATH, EXPECT)}"
 
 # Context safety: run directly, so guard the effective context of
-# $KUBECTL (see scripts/tool-call-probe.sh for why not an ambient KUBE_CTX).
+# $KUBECTL rather than trusting an ambient KUBE_CTX.
 # shellcheck disable=SC2086 # KUBECTL deliberately carries --context args
 probe_ctx=$($KUBECTL config view --minify -o jsonpath='{.contexts[0].name}')
 KUBE_NS="$NAMESPACE, $SECRET_NAMESPACE" KUBE_CTX="$probe_ctx" \

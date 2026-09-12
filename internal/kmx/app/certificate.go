@@ -14,7 +14,7 @@ import (
 )
 
 // planeCertificate mints, renews and publishes the certificate the plane's
-// two data seams serve with.
+// model seam serves with.
 //
 // The shape, and why it is three Secrets rather than one:
 //

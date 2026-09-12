@@ -55,9 +55,6 @@ func NewAdminMux(d Deps, adminTokenFile string) *http.ServeMux {
 	mux.HandleFunc("POST /admin/credentials/{name}/renew", auth(h.renewCredential))
 	mux.HandleFunc("PUT /admin/budgets", auth(h.setBudget))
 	mux.HandleFunc("GET /admin/ledger", auth(h.ledger))
-	mux.HandleFunc("PUT /admin/tool-allowlist", auth(h.setToolAllowlist))
-	mux.HandleFunc("GET /admin/tool-allowlist", auth(h.toolAllowlist))
-	mux.HandleFunc("GET /admin/tool-audit", auth(h.toolAudit))
 	mux.HandleFunc("POST /admin/requests", auth(h.fileRequest))
 	mux.HandleFunc("GET /admin/approvals", auth(h.listApprovals))
 	mux.HandleFunc("POST /admin/approvals/{id}/approve", auth(h.approve))
@@ -252,75 +249,6 @@ func (h *handler) setBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// Tool names as MCP servers report them (kagent's are snake_case);
-// bounded so an allowlist entry is always a plain identifier.
-var toolName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-
-// setToolAllowlist replaces a credential's whole tool allowlist.
-// An empty list is valid and means nothing callable — fail closed is the
-// default state, not an error.
-func (h *handler) setToolAllowlist(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Credential string `json:"credential"`
-		// A pointer so an ABSENT tools field is a 400, never a silent
-		// clear — clearing the allowlist takes an explicit [].
-		Tools *[]string `json:"tools"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil ||
-		!credentialName.MatchString(req.Credential) || req.Tools == nil {
-		http.Error(w, "body must be {\"credential\": ..., \"tools\": [...]} (tools required; [] clears)", http.StatusBadRequest)
-		return
-	}
-	for _, t := range *req.Tools {
-		if !toolName.MatchString(t) {
-			http.Error(w, "invalid tool name "+strconv.Quote(t), http.StatusBadRequest)
-			return
-		}
-	}
-	if err := h.d.Store.SetToolAllowlist(r.Context(), req.Credential, *req.Tools); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "no such credential", http.StatusNotFound)
-			return
-		}
-		slog.Error("admin: set tool allowlist", "credential", req.Credential, "err", err)
-		http.Error(w, "store error", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *handler) toolAllowlist(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("credential")
-	if !credentialName.MatchString(name) {
-		http.Error(w, "credential query parameter required", http.StatusBadRequest)
-		return
-	}
-	tools, err := h.d.Store.ToolAllowlist(r.Context(), name)
-	if err != nil {
-		slog.Error("admin: tool allowlist read", "credential", name, "err", err)
-		http.Error(w, "store error", http.StatusInternalServerError)
-		return
-	}
-	if tools == nil {
-		tools = []string{}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"credential": name, "tools": tools})
-}
-
-func (h *handler) toolAudit(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("credential")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	entries, err := h.d.Store.ToolAudit(r.Context(), name, limit)
-	if err != nil {
-		slog.Error("admin: tool audit read", "err", err)
-		http.Error(w, "store error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"entries": entries})
 }
 
 func (h *handler) ledger(w http.ResponseWriter, r *http.Request) {

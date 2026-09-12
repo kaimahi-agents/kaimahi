@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,6 +95,53 @@ func (a *App) CaptureCopilotCredential() error {
 	}
 	a.notef("Copilot credential refreshed. It is short-lived; re-run `kmx models credential copilot` when authentication fails.")
 	return a.restartPlaneIfPresent()
+}
+
+// storeCredentialValue keeps credential material off argv and disk.
+func (a *App) storeCredentialValue(name, namespace, key string, token []byte) error {
+	body := credentialSecretManifest(name, namespace, key, token)
+	defer zeroBytes(body)
+	quiet := *a.Run
+	quiet.Echo = false
+	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s, key %s, credential on stdin)\n", a.Cfg.KubeContext, namespace, name, key)
+	if err := quiet.RunStdin(body, "kubectl", a.kubectl("-n", namespace, "apply", "-f", "-")...); err != nil {
+		return err
+	}
+	a.notef("Secret %s/%s stored.", namespace, name)
+	return nil
+}
+
+func credentialSecretManifest(name, namespace, key string, value []byte) []byte {
+	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(value)))
+	base64.StdEncoding.Encode(encoded, value)
+	defer zeroBytes(encoded)
+	var body []byte
+	body = append(body, "apiVersion: v1\nkind: Secret\nmetadata:\n"...)
+	body = append(body, "  name: "+name+"\n  namespace: "+namespace+"\ntype: Opaque\ndata:\n  "+key+": "...)
+	body = append(body, encoded...)
+	return append(body, '\n')
+}
+
+// zeroBytes promptly clears the credential buffers this process owns.
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func trimSpaceBytes(b []byte) []byte {
+	start, end := 0, len(b)
+	for start < end && isSpaceByte(b[start]) {
+		start++
+	}
+	for end > start && isSpaceByte(b[end-1]) {
+		end--
+	}
+	return b[start:end]
+}
+
+func isSpaceByte(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f'
 }
 
 func readPrivateToken(path string) ([]byte, error) {

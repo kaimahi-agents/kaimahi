@@ -24,16 +24,13 @@ import (
 // Seam is which enforcement point decided.
 type Seam string
 
-const (
-	SeamProxy   Seam = "proxy"
-	SeamGateway Seam = "gateway"
-)
+const SeamProxy Seam = "proxy"
 
 // Decision is what the seam did with the call.
 type Decision string
 
 const (
-	// Allowed: admitted by configuration (a cap with room, an allowlist).
+	// Allowed: admitted by configuration (a cap with room).
 	Allowed Decision = "allowed"
 	// Granted: admitted by a live time-boxed grant (a use consumed).
 	Granted Decision = "granted"
@@ -41,15 +38,13 @@ const (
 )
 
 // Reason says why, from a fixed list. Allowed and granted decisions
-// carry the mechanism ("ok", "budget", "allowlist", "grant", …);
+// carry the mechanism ("ok", "budget");
 // denials carry the refusal class.
 type Reason string
 
 const (
 	ReasonOK                  Reason = "ok"
 	ReasonBudget              Reason = "budget"
-	ReasonAllowlist           Reason = "allowlist"
-	ReasonGrant               Reason = "grant"
 	ReasonUnauthorized        Reason = "unauthorized"
 	ReasonCredentialStore     Reason = "credential_store"
 	ReasonRoute               Reason = "route"
@@ -65,12 +60,6 @@ const (
 	// or scheme, no hardened client — as distinct from an upstream that
 	// was dialed and did not answer (a cut body counts as upstream_error).
 	ReasonEgressRefused Reason = "egress_refused"
-	ReasonMethod        Reason = "method"
-	ReasonGrantCheck    Reason = "grant_check"
-	// ReasonConstraint: a standing constraint decided the call —
-	// admitted because it was inside its declared bounds, or denied
-	// because it was outside them.
-	ReasonConstraint Reason = "constraint"
 	// ReasonCredentialExpired: the credential authenticated, but its
 	// time was up. A refusal about a REAL credential, so it is audited
 	// and counted separately from an unknown token.
@@ -87,14 +76,14 @@ const (
 // Vocabulary is the complete set of allowed values per fixed label;
 // the test walks the registry against it.
 var Vocabulary = map[string][]string{
-	"seam":     {string(SeamProxy), string(SeamGateway)},
+	"seam":     {string(SeamProxy)},
 	"decision": {string(Allowed), string(Granted), string(Denied)},
-	"reason": {string(ReasonOK), string(ReasonBudget), string(ReasonAllowlist), string(ReasonGrant),
+	"reason": {string(ReasonOK), string(ReasonBudget),
 		string(ReasonUnauthorized), string(ReasonCredentialStore), string(ReasonRoute), string(ReasonBadRequest),
 		string(ReasonUnpricedModel), string(ReasonAuditDegraded), string(ReasonMetering), string(ReasonUpstreamCredential),
-		string(ReasonUpstreamError), string(ReasonUpstreamUnreachable), string(ReasonEgressRefused), string(ReasonMethod), string(ReasonGrantCheck), string(ReasonConstraint),
+		string(ReasonUpstreamError), string(ReasonUpstreamUnreachable), string(ReasonEgressRefused),
 		string(ReasonCredentialExpired), string(ReasonUnmetered), string(ReasonOther)},
-	"kind": {"tool", "budget"},
+	"kind": {"budget"},
 }
 
 // Name shapes for the two operator-chosen labels. A credential name is
@@ -118,7 +107,7 @@ var (
 
 	decisions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kaimahi_decisions_total",
-		Help: "Governance decisions by seam (proxy, gateway), decision (allowed, granted, denied) and reason.",
+		Help: "Model governance decisions by seam, decision (allowed, granted, denied) and reason.",
 	}, []string{"seam", "decision", "reason"})
 
 	upstreamLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -144,15 +133,15 @@ func init() {
 	buildInfo.WithLabelValues(Version(), goVersion()).Set(1)
 	// Pre-create the series operators alert on, so an idle plane exposes
 	// zeros rather than nothing.
-	for _, s := range []Seam{SeamProxy, SeamGateway} {
+	for _, s := range []Seam{SeamProxy} {
 		degraded.WithLabelValues(string(s)).Set(0)
 		decisions.WithLabelValues(string(s), string(Denied), string(ReasonBudget)).Add(0)
 		decisions.WithLabelValues(string(s), string(Allowed), string(ReasonOK)).Add(0)
 	}
 }
 
-// PublishSeamCertificate exposes how long the certificate the two data seams
-// serve with has left, as a gauge that counts down on its own.
+// PublishSeamCertificate exposes how long the model seam certificate has
+// left, as a gauge that counts down on its own.
 //
 // A certificate minted at deploy time expires whether or not anyone is
 // looking, and an expiry nobody is warned about is an outage scheduled in

@@ -15,9 +15,8 @@
 #      clone-free path `kmx plane` uses, so the old version needs no
 #      checkout and no image),
 #   2. puts real governance state in it through its OWN admin API: a
-#      credential, a budget, a tool allowlist, a live grant a human
-#      approved, and a ledger row from a metered call it actually
-#      forwarded,
+#      credential, a budget, an admin-approved fixture budget grant,
+#      and a ledger row from a metered call it actually forwarded,
 #   3. stops it, starts the NEW plane built from this checkout against
 #      the SAME database, and
 #   4. asserts every one of those survived, the schema moved, and the new
@@ -73,7 +72,6 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 stub_port=18179
 data_port=18180
-mcp_port=18181
 admin_port=19191
 ops_port=19192
 
@@ -200,13 +198,13 @@ start_proxy() { # start_proxy <binary> <database> <logfile>
       # Only the historical binary has this listener. Keep it on loopback
       # and an ephemeral port; the current plane has no inbound listener.
       export INBOUND_ADDR="127.0.0.1:0"
+      export MCP_ADDR="127.0.0.1:0"
       ;;
-    (*) seam_scheme="https"; unset INBOUND_ADDR ;;
+    (*) seam_scheme="https"; unset INBOUND_ADDR MCP_ADDR ;;
   esac
   PGDATABASE="$2" \
   SEAM_TLS_DIR="$work/seam-tls" \
   DATA_ADDR="127.0.0.1:$data_port" \
-  MCP_ADDR="127.0.0.1:$mcp_port" \
   ADMIN_ADDR="127.0.0.1:$admin_port" \
   OPS_ADDR="127.0.0.1:$ops_port" \
   CONFIG_FILE="$work/upstreams.json" \
@@ -252,12 +250,13 @@ wait_serving() { # wait_serving <logfile> — admin /healthz answers
 
 admin() { # admin <method> <path> [body]
   local method="$1" path="$2" body="${3:-}"
+  printf 'Authorization: Bearer %s\n' "$admin_token" > "$work/admin-header"
   if [ -n "$body" ]; then
-    curl -fsS -X "$method" -H "Authorization: Bearer $admin_token" \
+    curl -fsS -X "$method" -H "@$work/admin-header" \
       -H 'Content-Type: application/json' -d "$body" \
       "http://127.0.0.1:$admin_port$path"
   else
-    curl -fsS -X "$method" -H "Authorization: Bearer $admin_token" \
+    curl -fsS -X "$method" -H "@$work/admin-header" \
       "http://127.0.0.1:$admin_port$path"
   fi
 }
@@ -268,7 +267,8 @@ governed_call() { # governed_call <token> — one metered call through the plane
   # answers, and a client that did not verify would keep saying so after the
   # certificate stopped being usable by any real agent.
   [ "$seam_scheme" = https ] && trust=(--cacert "$work/seam-tls/ca.crt")
-  curl -fsS "${trust[@]}" -X POST -H "Authorization: Bearer $1" \
+  printf 'Authorization: Bearer %s\n' "$1" > "$work/governed-header"
+  curl -fsS "${trust[@]}" -X POST -H "@$work/governed-header" \
     -H 'Content-Type: application/json' \
     -d '{"model":"upgrade-probe-model","messages":[{"role":"user","content":"hi"}]}' \
     "$seam_scheme://127.0.0.1:$data_port/upstream/stub/v1/chat/completions"
@@ -280,21 +280,20 @@ seed() { # seed <database> — the state an upgrade must not lose
     python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
   [ -n "$token" ] || fail "no credential token"
   admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":5000,"cap_tokens":null}'
-  admin PUT /admin/tool-allowlist '{"credential":"upgrade-probe","tools":["k8s_get_resources","k8s_get_pod_logs"]}'
-  # An admin-approved fixture grant: bounded, and worth carrying across
-  # because the argument-binding migration changes this row's meaning.
-  admin POST /admin/requests '{"credential":"upgrade-probe","kind":"tool","subject":"k8s_get_resources"}' >/dev/null
+  # A live, bounded BUDGET grant must survive and remain usable. Retired
+  # tool authority is not evidence that the new plane serves its contract.
+  admin POST /admin/requests '{"credential":"upgrade-probe","kind":"budget","subject":"cents"}' >/dev/null
   request_id=$(admin GET /admin/approvals |
     python3 -c 'import json,sys; p=json.load(sys.stdin)["pending"]; print(p[0]["id"] if p else "")')
   [ -n "$request_id" ] || fail "the seeded approval request is not pending"
-  admin POST "/admin/approvals/$request_id/approve" '{"ttl_seconds":86400,"max_uses":5}' >/dev/null
+  admin POST "/admin/approvals/$request_id/approve" '{"ttl_seconds":86400,"max_uses":5,"amount":100}' >/dev/null
   # A real metered call: the ledger row, with a cost.
   governed_call "$token" >/dev/null
   seeded_cents=$(psql_q "$db" "select coalesce(sum(cost_cents),0) from ledger_entry")
   seeded_rows=$(psql_q "$db" "select count(*) from ledger_entry")
   [ "$seeded_rows" -ge 1 ] || fail "the seeded call left no ledger row"
   [ "$seeded_cents" -gt 0 ] || fail "the seeded call recorded no cost"
-  echo "seeded: $seeded_rows ledger row(s), ${seeded_cents}c, a grant, an allowlist, a budget" >&2
+  echo "seeded: $seeded_rows ledger row(s), ${seeded_cents}c, a budget grant, a budget" >&2
 }
 
 # ------------------------------------------------------- 1: the old version
@@ -361,18 +360,7 @@ after_cents=$(psql_q "$UPGRADE_DB" "select coalesce(sum(cost_cents),0) from ledg
 [ "$after_rows" = "$seeded_rows" ] || fail "ledger rows changed: $seeded_rows -> $after_rows"
 [ "$after_cents" = "$seeded_cents" ] || fail "ledger cost changed: $seeded_cents -> $after_cents"
 
-admin GET '/admin/tool-allowlist?credential=upgrade-probe' > "$work/allowlist.json"
-python3 - "$work/allowlist.json" <<'PY'
-import json, sys
-tools = json.load(open(sys.argv[1]))["tools"]
-assert sorted(tools) == ["k8s_get_pod_logs", "k8s_get_resources"], tools
-print("allowlist intact:", tools)
-PY
-
-# The admin-approved fixture grant from before argument binding: still there,
-# still live, and still bounded by the admin's parameters. Its arg_digest is
-# NULL — the closed legacy class 00008 documents — so it keeps its old
-# verb-level meaning rather than being silently widened or silently voided.
+# The budget grant stays live and bounded across the historical schema gap.
 admin GET '/admin/grants?credential=upgrade-probe' > "$work/grants.json"
 python3 - "$work/grants.json" <<'PY'
 import json, sys
@@ -380,13 +368,10 @@ grants = json.load(open(sys.argv[1]))["grants"]
 live = [g for g in grants if g.get("live")]
 assert len(live) == 1, grants
 g = live[0]
-assert g["subject"] == "k8s_get_resources", g
-assert g["max_uses"] == 5 and g["uses"] == 0, g
+assert g["kind"] == "budget" and g["subject"] == "cents", g
+assert g["max_uses"] == 5 and g["uses"] == 0 and g["amount"] == 100, g
 print("grant intact and live:", g["subject"], "uses", g["uses"], "of", g["max_uses"])
 PY
-legacy=$(psql_q "$UPGRADE_DB" "select count(*) from permit_grant where arg_digest is null")
-[ "$legacy" = "1" ] ||
-  fail "expected the pre-upgrade grant to keep a NULL arg_digest (the closed legacy class), found $legacy"
 
 # The same rule, one migration later: a credential issued before expiry
 # existed keeps a NULL expiry and KEEPS WORKING. Expiring a running estate at
@@ -402,8 +387,11 @@ budget=$(admin GET '/admin/ledger?credential=upgrade-probe' |
   python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["month_cents"])')
 [ "$budget" = "$seeded_cents" ] || fail "month-to-date changed: $seeded_cents -> $budget"
 
-say "the upgraded plane serves: a fresh governed call, on the migrated schema, with the legacy credential"
+say "the upgraded plane serves: the old budget grant admits a call over the cap"
+admin PUT /admin/budgets '{"credential":"upgrade-probe","cap_cents":0,"cap_tokens":null}'
 governed_call "$token" >/dev/null
+uses=$(psql_q "$UPGRADE_DB" "select uses from permit_grant where request_id = '$request_id' and kind = 'budget'")
+[ "$uses" = 1 ] || fail "the migrated budget grant was not consumed exactly once: $uses"
 final_rows=$(psql_q "$UPGRADE_DB" "select count(*) from ledger_entry")
 [ "$final_rows" -gt "$after_rows" ] || fail "the new plane recorded nothing: $after_rows -> $final_rows"
 echo "served: ledger $after_rows -> $final_rows rows" >&2

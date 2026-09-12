@@ -54,7 +54,7 @@ data:
             regex: kaimahi-proxy
           # And only the operations port. Pod discovery yields one target per
           # declared container port, so without this the scraper would also
-          # try the two data ports and the admin port —
+          # try the model data port and the admin port —
           # none of which serve metrics, and one of which should never be
           # dialled by anything but a port-forward.
           - source_labels: [__meta_kubernetes_pod_container_port_number]

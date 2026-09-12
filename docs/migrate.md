@@ -23,9 +23,9 @@ this migration does not settle it. `orka.harness.v2` is outside the direction.
   `kmx orka install` / `kmx orka status` and [the Orka guide](orka.md).
   Installing Orka alone does not enable this model governance.
 - The Kaimahi plane deployed (`kmx plane` on kind; [AKS phases](aks.md) on AKS).
-  Upgrading an older plane requires the [inbound retirement steps](operations.md#upgrading-after-inbound-retirement);
-  stale inbound/notifier configuration is rejected, and apply does not prune
-  the former public edge.
+  Upgrading an older plane requires the [retirement steps](operations.md#upgrading-after-gateway-retirement);
+  stale tool/inbound/notifier configuration is rejected, and apply does not
+  prune retired Services, network allowances or owner-managed references.
 - An existing Deployment whose model base URL is configurable through its
   environment, and an application that can trust the mounted CA. The default
   variables target the OpenAI Python client shape; they are not proof that an
@@ -127,7 +127,7 @@ multi-turn/tool-calling conversations too, including the continuation limit belo
 - `orka` is `metered` without configured prices. Tokens are counted, but `0 cents`
   is not evidence of free inference. A cents budget denies an unpriced pair;
   configure reviewed prices or use the appropriate token budget.
-- `flow` and `watch` read three trails: model, tool and approval. Credential and
+- `flow` and `watch` read two trails: model and approval history. Credential and
   timestamp form a chronological view, not a causal correlation ID. Concurrent
   turns can interleave; this migration still governs only model traffic.
 - The generated ingress rule admits the application's namespace to the model
@@ -252,13 +252,20 @@ is [here](reviews/2026-09-09-orka-composition.md).
   on 8080, including the ServiceAccount bearer, bounded by network policy.
 - Every plane credential can reach each configured model upstream; there is no
   model per-credential allowlist. Budgets bound spend, not destination choice.
-- Application tools remain outside this migration. Use [tool onboarding](kmx.md#kmx-tools-add)
-  separately; do not infer tool governance from a model ledger row.
+- Tool traffic remains the application owner's responsibility. The Kaimahi tool
+  gateway is retired; do not infer tool governance from a model ledger row or
+  silently repoint an application's tools during an upgrade.
 - A full `kmx lift` still installs kagent/Copilot demo agents and obtains a
   Copilot credential by device login if absent. Orka migration uses selected phases;
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
 
 ## Retirement regression evidence
+
+The evidence below is from the **earlier inbound/notification slice**, not a
+new gateway-retirement migration proof. The migration implementation in
+`internal/kmx/app/migrate.go` and `internal/kmx/scaffold/migrate.go` remains
+byte-identical for generated-artifact and rerun compatibility. Historical tool
+wording in generated comments does not restore runtime tool governance.
 
 The inbound/notification retirement was exercised on a dedicated kind cluster
 with Orka `v0.1.3`, Ollama `qwen2.5:3b` and an owner-managed Python 3.12

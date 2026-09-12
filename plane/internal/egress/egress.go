@@ -1,7 +1,6 @@
 // Package egress is the ONE hardened dialer for everything the plane
-// reaches on the internet: the LLM proxy's hosted upstreams
-// (Copilot) and the MCP gateway's hosted tool servers (GitHub) share the
-// client built here, so neither seam's hardening is implicit.
+// reaches on the internet: hosted model upstreams such as Copilot use
+// the client built here, so model hardening is explicit.
 //
 // The rules, all fail-closed:
 //
@@ -24,7 +23,7 @@
 //     without loosening anything for a real one.
 //
 // In-cluster upstreams never come here: they keep the plain in-cluster
-// dial (config.Upstream.Internet / config.ToolUpstream.Internet select).
+// dial (config.Upstream.Internet selects).
 package egress
 
 import (
@@ -44,8 +43,7 @@ import (
 
 // Defaults: connect and TLS handshake within 10 s; the upstream must start
 // answering within 60 s (a tool call or an LLM's first token); the whole
-// body — streamed or not — within 5 minutes (the bound both seams already
-// ran under); no response larger than 8 MiB (the gateway's buffer).
+// body — streamed or not — within 5 minutes; no response larger than 8 MiB.
 const (
 	DefaultConnectTimeout        = 10 * time.Second
 	DefaultResponseHeaderTimeout = 60 * time.Second

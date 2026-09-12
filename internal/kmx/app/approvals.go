@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
@@ -120,34 +119,18 @@ func (a *App) Deny(id string) error {
 	})
 }
 
-// Request files an approval request explicitly.
-//
-// args (tool requests only) names the CALL to pre-approve. Omitting it
-// means the ARGUMENT-LESS call, never "any call" — the distinction that
-// welding a grant to its arguments, and not just to the verb, exists to make.
-func (a *App) Request(credential, kind, subject string, args map[string]any) error {
-	if err := admin.ValidRequest(credential, kind, subject, args); err != nil {
+// Request files a budget approval request explicitly.
+func (a *App) Request(credential, kind, subject string) error {
+	if err := admin.ValidRequest(credential, kind, subject); err != nil {
 		return err
 	}
 	commandArgs := []string{"request", kind, subject, "--credential", credential}
 	action := fmt.Sprintf("file a %s approval request for %q (%s)", kind, credential, subject)
-	if kind == "tool" {
-		if args == nil {
-			action += ": argument-less call (not any call)"
-		} else {
-			body, err := json.Marshal(args)
-			if err != nil {
-				return fmt.Errorf("cannot encode tool call arguments: %w", err)
-			}
-			action += ": arguments=" + string(body)
-			commandArgs = append(commandArgs, "--args", string(body))
-		}
-	}
 	if err := a.Guard(action, a.operationCommand(commandArgs...)); err != nil {
 		return err
 	}
 	return a.session(func(c *admin.Client) error {
-		deduped, err := c.Request(credential, kind, subject, args)
+		deduped, err := c.Request(credential, kind, subject)
 		if err != nil {
 			return err
 		}

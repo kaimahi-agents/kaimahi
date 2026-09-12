@@ -47,12 +47,8 @@ func TestATranslatingUpstreamIsRefusedUnlessItIsThePairingThisPlaneCanTranslate(
 	require.Equal(t, "v1/chat/completions", plain.Upstreams["ollama"].AcceptedPath())
 }
 
-// The model seam sets its committed extra headers AFTER injecting the
-// credential — the opposite of the gateway's ordering — so on this type
-// the ordering itself is the exposure — and this seam had no load-time
-// check for it while the gateway's copy has had one since it was written.
-// The committed table has carried a keyed model upstream with headers
-// (copilot) the whole time, on the strength of review alone.
+// Model extra headers are applied after the custody-held credential;
+// the load-time check must prevent them from displacing it.
 func TestACommittedModelHeaderMayNotDisplaceTheInjectedCredential(t *testing.T) {
 	table := func(header string) []byte {
 		return []byte(`{"upstreams": {"orka": {"base_url": "http://orka-api.orka-system:8080/openai",` +

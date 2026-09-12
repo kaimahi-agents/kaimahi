@@ -133,17 +133,3 @@ func TestTheFragmentStatesEveryFieldTheTableRequires(t *testing.T) {
 		}
 	}
 }
-
-// A model upstream's key is prefixed, because both seams share one
-// overlay ConfigMap: a tool server and a model endpoint may carry the
-// same name without one silently replacing the other.
-func TestModelAndToolFragmentKeysCannotCollide(t *testing.T) {
-	model := ModelSpec{Name: "house"}.FragmentKey()
-	tool := UpstreamSpec{Name: "house"}.FragmentKey()
-	if model == tool {
-		t.Fatalf("a model and a tool upstream of the same name share the overlay key %q", model)
-	}
-	if !strings.HasSuffix(model, ".json") || !strings.HasPrefix(model, "model-") {
-		t.Fatalf("the model fragment key %q is not the documented shape", model)
-	}
-}

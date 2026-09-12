@@ -1,138 +1,18 @@
-# The proxy's upstream table: one base URL and EXACTLY ONE allowed
-# forwarded path per upstream — the whole blast radius a governed
-# credential buys. No key material here: credential_file names a
-# Secret-mounted path only the proxy pod can read.
+# The model proxy forwards exactly one configured path per upstream.
+# Credentials stay in plane custody; agents carry only opaque kmh_ tokens.
+# Hosted entries require internet: true and the hardened HTTPS dialer.
+# Network allowances remain opt-in, outside k8s/plane/.
 #
-# Classifications are explicit (standing guidance: no $0 by inference):
-#   - ollama:  free — the in-cluster demo tier costs nothing by
-#     classification, so only a token budget can exhaust it.
-#   - orka / orka-coordinator: metered, for the same reason as copilot —
-#     what is behind an Orka Provider is whatever key that Provider holds,
-#     and this table never assumes somebody else's endpoint is free.
-#   - copilot: metered — tokens are always counted; a cost applies only
-#     when a real price row is configured under "prices" (none are
-#     bundled: Copilot subscription usage has no per-token public price,
-#     and Kaimahi never invents one). Under a cents budget an unpriced
-#     model is denied (priced-pair gate); use a token budget instead.
+# Free is explicit, never inferred from missing prices. Orka and Copilot
+# are metered: a cents budget refuses an unpriced pair; use token budgets
+# unless the operator has configured actual prices.
 #
-# "internet": true marks an upstream that lives OUTSIDE the
-# cluster. Such an upstream is reached only through the plane's one
-# hardened dialer (plane/internal/egress, docs/hosted-upstreams.md):
-# https on 443 to the host this table names, every resolved address
-# checked against the private / link-local / loopback / carrier-NAT /
-# multicast / cloud-metadata ranges and the checked address dialed,
-# redirects refused, bounded and capped. An unmarked upstream must look
-# in-cluster (a Service name, service.namespace, or a .svc.cluster.local
-# name) or the config is refused at load — so a hosted upstream can
-# never take the plain in-cluster dial by omission. Copilot carries the
-# marker; the LLM proxy and the MCP gateway share the one client.
-#
-# The two orka entries are ONE endpoint, deliberately named twice, and
-# they are the model half of `kmx migrate` (docs/migrate.md).
-#
-# "client_path" is the path a CLIENT posts to, where "path" is the one
-# forwarded on. They differ here because the framework this seam was
-# pointed at speaks the Responses API by default and Orka's compatible
-# endpoint serves chat completions and has no Responses route — an
-# unrouted path there returns the dashboard's HTML under a 200. The plane
-# translates in both directions and meters the answer from the counts the
-# endpoint itself reported.
-#
-# "X-Orka-Tools: disabled" is the difference between the two entries, and
-# it is the whole reason the second exists. Orka's compatible endpoint is
-# not a proxy by default: it injects its own coordinator prompt and its
-# tool definitions and runs a server-side agentic loop, and that header is
-# the only switch — no Helm value, no CRD field. An application configured
-# by environment variables cannot send a header, so the seam sends it.
-#   - orka             sends it. This is what `kmx migrate` points an
-#                      application at.
-#   - orka-coordinator does not, so the same application through the same
-#                      credential can be pointed at Orka's DEFAULT
-#                      behaviour and what it costs read off the ledger
-#                      instead of argued about. It is a measuring
-#                      instrument, not a recommendation.
-#
-# Both are reachable by EVERY credential this plane has issued: the model
-# seam has no per-credential allowlist, so this table is the whole blast
-# radius and a budget is what bounds a credential on it. That is true of
-# every entry here; it is called out at these two because the second one
-# can hold a request for the full upstream timeout.
-#
-# credential_file names (never carries) a ServiceAccount token for the
-# Orka API. Custody is the point: the application holds a kmh_ credential
-# for this plane and never the token that opens Orka.
-#
-# A tool_upstreams entry's optional "tools" block is the argument-policy
-# declaration: which of a tool's argument fields are
-# POLICY-RELEVANT. One declaration serves two jobs — an approval's digest
-# binds those fields, so approving "k8s_get_events in default" cannot be
-# spent on another namespace, and the audit's human-readable summary is
-# built from them (and from nothing else: the audit is in every pg_dump).
-# A tool with no declaration binds the WHOLE canonical argument object,
-# which is exact but brittle; "policy_fields": [] declares that no
-# argument is policy-relevant, which is a verb-level binding. See
-# docs/tool-governance.md.
-#
-# standing_constraints are the other half: declarative bounds a
-# CREDENTIAL carries on a tool's declared fields — a call inside them
-# proceeds with no approval, a call outside them is denied and files a
-# request. ONE is configured here (docs/ap-demo.md): the
-# accounts-payable agent may schedule a payment at or under $10,000.00,
-# and only to one of two named payees, and never otherwise — the business
-# rule its brief states, as a rule the plane enforces rather than a
-# sentence the model is asked to respect.
-# Note what that buys and what it costs: `payment_schedule` is NOT on the
-# ap-agent allowlist and must not be, because where a constraint exists
-# it BINDS — it is a bound, not another way in.
-#
-# One declaration in the github-release entry is NOT a tool that server
-# offers: `release_publish`. It is the release driver's own publish step —
-# creating the release and moving the build artifacts onto it, which no
-# MCP tool can do and which the gateway is deliberately not in the path
-# of (300 MB assets; docs/release-agent.md). The declaration exists so
-# that the APPROVAL for it is bound and legible the same way every tool
-# call's is: owner, repo and tag, in the request, the grant and the audit.
-# The gateway will never see a call by this name; if it somehow did, no
-# allowlist admits it.
-#
-# tool_upstreams is the MCP gateway's table: the ONLY tool servers
-# the gateway will relay to — it forwards nowhere else, which is the
-# egress rule at this layer; k8s/plane/network-policy.yaml is the rule
-# at the network. Six entries, three in-cluster and three hosted
-# (github-release and ado are described at their entries below):
-#   - kagent-tools: kagent's chart-managed tool server.
-#   - slack:        the Slack MCP server this repo deploys
-#                   (k8s/slack-mcp.yaml). The gateway's reach to it is
-#                   in-cluster, but that POD talks to api.slack.com, the
-#                   first deliberate internet egress in this repo. See
-#                   docs/slack.md.
-#   - erp:          the accounts-payable demo's fixture ERP
-#                   (k8s/erp-mcp.yaml) — nine tools over a corpus in a
-#                   ConfigMap. Keyless: no credential_file, because there
-#                   is no credential; it reaches nothing and its
-#                   NetworkPolicy admits the proxy alone. Six read tools
-#                   are on the ap-agent allowlist; the three with
-#                   consequences are not, and one of those carries the
-#                   standing constraint. See docs/ap-demo.md.
-#   - github:       GitHub's HOSTED MCP server — the first upstream
-#                   the gateway itself reaches over the internet, through
-#                   the hardened dialer. credential_file names (never
-#                   carries) a fine-grained, read-only, one-repository
-#                   GitHub token in plane custody (kmx credential capture github
-#                   → Secret kaimahi-github-pat); the agent's own Secret
-#                   holds only its kmh_ token. The network allowance it
-#                   needs is opt-in (k8s/egress-hosted.yaml, applied by
-#                   `make github-secret`, removed by `make github-revoke`)
-#                   — never on kind by default, so CI's proxy stays
-#                   internet-free and proves this entry with a synthetic
-#                   stand-in instead. See docs/hosted-upstreams.md.
-#
-# credential_file names (never carries) a Secret-mounted file holding the
-# Slack MCP server's OWN bearer credential, injected by the gateway from
-# plane custody. Measured limitation: slack-mcp-server v1.3.0 does not
-# enforce it on its http transport, so it does not close the
-# direct-access bypass — the Slack pod's NetworkPolicy does (proxy-only
-# ingress).
+# The two Orka entries share one endpoint. client_path is what clients
+# send; path is what Orka accepts. The plane translates Responses requests
+# to chat completions and meters the upstream's reported usage.
+# orka disables Orka's server-side tools; orka-coordinator deliberately
+# measures the default coordinator behavior. Both retain model custody.
+# Every issued credential can reach these entries; budgets bound spend.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -174,82 +54,6 @@ data:
           "client_path": "v1/responses",
           "classification": "metered",
           "credential_file": "/etc/kaimahi/upstream-creds/orka/token"
-        }
-      },
-      "tool_upstreams": {
-        "kagent-tools": {
-          "url": "http://kagent-tools.kagent:8084/mcp",
-          "tools": {
-            "k8s_get_events": {"policy_fields": ["namespace"]}
-          }
-        },
-        "slack": {
-          "url": "http://kaimahi-slack-mcp.kaimahi:13080/mcp",
-          "credential_file": "/etc/kaimahi/upstream-creds/slack/SLACK_MCP_API_KEY"
-        },
-        "erp": {
-          "url": "http://kaimahi-erp-mcp.kaimahi:8085/mcp",
-          "tools": {
-            "invoice_get":        {"policy_fields": ["invoice_id"]},
-            "invoice_list":       {"policy_fields": ["vendor_id"]},
-            "po_get":             {"policy_fields": ["po_id"]},
-            "receiving_get":      {"policy_fields": ["po_id"]},
-            "contract_get":       {"policy_fields": ["vendor_id"]},
-            "payment_policy_get": {"policy_fields": []},
-            "payment_schedule":   {"policy_fields": ["invoice_id", "amount_cents", "payee_id"]},
-            "dispute_open":       {"policy_fields": ["invoice_id", "amount_cents"]},
-            "vendor_notify":      {"policy_fields": ["vendor_id"]}
-          }
-        },
-        "github": {
-          "url": "https://api.githubcopilot.com/mcp/",
-          "internet": true,
-          "credential_file": "/etc/kaimahi/upstream-creds/github/token"
-        },
-        "github-release": {
-          "url": "https://api.githubcopilot.com/mcp/",
-          "internet": true,
-          "credential_file": "/etc/kaimahi/upstream-creds/github-release/token",
-          "extra_headers": {
-            "X-MCP-Tools": "list_pull_requests,list_commits,list_tags,list_releases,get_latest_release,get_release_by_tag,actions_list,actions_get,create_branch,actions_run_trigger",
-            "X-MCP-Exclude-Tools": "delete_repository,delete_file,push_files,create_or_update_file,merge_pull_request,update_pull_request_branch,fork_repository,create_repository,create_repository_ruleset,custom_properties_write"
-          },
-          "tools": {
-            "list_pull_requests":  {"policy_fields": ["owner", "repo", "state", "base"]},
-            "list_commits":        {"policy_fields": ["owner", "repo", "sha"]},
-            "list_tags":           {"policy_fields": ["owner", "repo"]},
-            "list_releases":       {"policy_fields": ["owner", "repo"]},
-            "get_latest_release":  {"policy_fields": ["owner", "repo"]},
-            "get_release_by_tag":  {"policy_fields": ["owner", "repo", "tag"]},
-            "actions_list":        {"policy_fields": ["method", "owner", "repo", "resource_id"]},
-            "actions_get":         {"policy_fields": ["method", "owner", "repo", "resource_id"]},
-            "create_branch":       {"policy_fields": ["owner", "repo", "branch", "from_branch"]},
-            "actions_run_trigger": {"policy_fields": ["method", "owner", "repo", "workflow_id", "ref"]},
-            "release_publish":     {"policy_fields": ["owner", "repo", "tag"]}
-          }
-        },
-        "ado": {
-          "url": "https://mcp.dev.azure.com/",
-          "internet": true,
-          "credential_file": "/etc/kaimahi/upstream-creds/ado/token",
-          "extra_headers": {
-            "X-MCP-Toolsets": "pipelines"
-          },
-          "tools": {
-            "core_list_projects":   {"policy_fields": ["orgName"]},
-            "pipelines_definition": {"policy_fields": ["action", "orgName", "project"]},
-            "pipelines_build":      {"policy_fields": ["action", "orgName", "project", "buildId"]},
-            "pipelines_build_log":  {"policy_fields": ["action", "orgName", "project", "buildId"]},
-            "pipelines_write":      {"policy_fields": ["action", "orgName", "project", "pipelineId", "previewRun"]}
-          }
-        }
-      },
-      "standing_constraints": {
-        "ap-agent": {
-          "payment_schedule": [
-            {"field": "amount_cents", "op": "lte", "value": 1000000},
-            {"field": "payee_id", "op": "in", "values": ["MER-4471", "HAR-2088"]}
-          ]
         }
       }
     }

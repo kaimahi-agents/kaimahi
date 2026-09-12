@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Shared by the probes that reach one of the plane's two data seams on a
+# Shared by the probes that reach the plane's model seam on a
 # CLUSTER. plane-upgrade-probe.sh is the exception and always will be: it runs
 # the plane as a local process, so it mints its own material with openssl
 # rather than reading a Secret that does not exist.
 #
-# Both seams serve TLS under the plane's own certificate authority, which no
+# The model seam serves TLS under the plane's certificate authority, which no
 # system trust store has heard of, so a probe has to be told what to verify
 # against. This fetches the authority's CERTIFICATE — public material naming
 # who to trust, never the private key, which stays in the kaimahi namespace
@@ -19,7 +19,7 @@
 # A probe reaches a seam through `kubectl port-forward` to 127.0.0.1, so it
 # verifies against the certificate's loopback address rather than a Service
 # name. That is a real SAN on a real certificate, not a relaxation: the plane
-# dials its own seams the same way for its liveness probe.
+# dials its own model seam the same way for its liveness probe.
 
 # seam_ca <path> [namespace]
 #

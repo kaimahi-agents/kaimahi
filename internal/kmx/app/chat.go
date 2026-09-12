@@ -24,28 +24,10 @@ import (
 // ending in Go's net error; both ends are anchored so a line that starts with
 // `{` can never match.
 //
-// Two classes, because they are not equally safe to retry:
-//
-//	REFUSED   kube-proxy REJECTed; nothing reached the agent. Always safe.
-//	AMBIGUOUS EOF / connection reset: the request may have reached the agent
-//	          and been acted on before the connection dropped.
-//
-// `chat` retries both — re-asking a question is acceptable. A caller whose
-// turn can ACT retries only the refused class, because re-invoking after an
-// ambiguous drop can repeat something the agent already did.
-//
-// Which class applies is the caller's to state: askAgent takes the matcher
-// rather than choosing one. `chat` and `quickstart` pass ChatRetryable;
-// `kmx workflow run` passes ChatRetryableSafe for its bounded and
-// consequential steps, and ChatRetryable for the turns that only read and
-// draft.
-//
-// The step that made this matter is a BOUNDED one. A consequential step's
-// grant is USES-bounded, so a repeated call is refused and the run fails
-// rather than doing it twice; a bounded step has no use count — a standing
-// constraint admits repeatedly — so a retried build pipeline really would
-// run again. Failing the step is the safe direction: a stopped release is
-// recoverable and a doubled one is not.
+// Chat and quickstart retain their existing retry policy: refused dials,
+// EOF and connection resets. The latter two may follow an already-served
+// request; this policy is not a claim that arbitrary agent actions are safe
+// to repeat.
 const (
 	chatErrorLine = `^Error invoking session: .*failed to send HTTP request: Post "[^"]*": `
 	chatRefused   = `dial tcp [^ ]*: connect: connection refused`
@@ -54,11 +36,6 @@ const (
 
 // ChatRetryable matches the transport failures `chat` retries.
 var ChatRetryable = regexp.MustCompile(`(?m)` + chatErrorLine + `(` + chatRefused + `|` + chatAmbiguous + `)$`)
-
-// ChatRetryableSafe matches only the failures where nothing reached the
-// agent. Kept beside its sibling because the distinction is the point: it is
-// what a caller whose turn can act on the world must use.
-var ChatRetryableSafe = regexp.MustCompile(`(?m)` + chatErrorLine + `(` + chatRefused + `)$`)
 
 // ChatOptions selects one-shot or session-preserving chat behavior.
 type ChatOptions struct {
@@ -288,11 +265,7 @@ func forwardedPort(output string) (string, error) {
 // The interactive flag is handled here rather than by the caller so that the
 // kagent CLI is fetched once, in one place, whichever mode is asked for.
 //
-// retryable is the CALLER's transport-retry policy, because only the caller
-// knows whether repeating this task is safe: ChatRetryable for a question,
-// ChatRetryableSafe for anything whose turn can act on the world. Passing it
-// in rather than choosing here is what keeps the two classes from drifting
-// back together — a new caller has to state which it is.
+// retryable is the caller's transport-retry policy.
 func (a *App) askAgent(agent, task, session string, interactive bool, retryable *regexp.Regexp) (string, int, error) {
 	cache, err := config.CacheDir()
 	if err != nil {

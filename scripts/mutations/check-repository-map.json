@@ -34,7 +34,7 @@
     },
     {
       "name": "a claim that could not find what it checks is skipped in silence",
-      "breaks": "The same fail-open one level up. Every Anchor failure — a heading renamed, a table gone, a Go ledger deleted — becomes a claim that quietly does not run, and the summary line still counts it as checked.",
+      "breaks": "The same fail-open one level up. Every Anchor failure \u2014 a heading renamed, a table gone, a Go ledger deleted \u2014 becomes a claim that quietly does not run, and the summary line still counts it as checked.",
       "find": "        except Anchor as e:\n            problems.append(f\"[{fn.__name__}] {e}\")\n            continue",
       "replace": "        except Anchor:\n            continue"
     },
@@ -46,9 +46,9 @@
     },
     {
       "name": "an empty tree is checked against the map and found to agree",
-      "breaks": "The empty case. A `git ls-files` that failed, or a run from the wrong directory, produces no files — and every count claim then compares the map against zero rather than refusing.",
-      "find": "        if not self.files:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} — \"",
-      "replace": "        if False:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} — \""
+      "breaks": "The empty case. A `git ls-files` that failed, or a run from the wrong directory, produces no files \u2014 and every count claim then compares the map against zero rather than refusing.",
+      "find": "        if not self.files:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} \u2014 \"",
+      "replace": "        if False:\n            raise Anchor(f\"`git ls-files` listed nothing under {root} \u2014 \""
     },
     {
       "name": "no claim is registered and the run reports the map checked",
@@ -58,7 +58,7 @@
     },
     {
       "name": "the findings are collected and the exit code ignores them",
-      "breaks": "A checker that does all its work, prints every disagreement, and exits 0 — the failure an exit code alone cannot see, and the reason this file's mutations are verified by a self-test rather than by a return value.",
+      "breaks": "A checker that does all its work, prints every disagreement, and exits 0 \u2014 the failure an exit code alone cannot see, and the reason this file's mutations are verified by a self-test rather than by a return value.",
       "find": "def exit_code(problems: list[str]) -> int:\n    \"\"\"The verdict.",
       "replace": "def exit_code(problems: list[str]) -> int:\n    return 0\n    \"\"\"The verdict."
     },
@@ -70,7 +70,7 @@
     },
     {
       "name": "a glob crosses directories again",
-      "breaks": "`scripts/*-probe.sh` reaches into `scripts/ci/` and moves a file between two buckets, making both counts wrong in a way that cancels out — the shape of error a partition check exists to catch.",
+      "breaks": "`scripts/*-probe.sh` reaches into `scripts/ci/` and moves a file between two buckets, making both counts wrong in a way that cancels out \u2014 the shape of error a partition check exists to catch.",
       "find": "    return (path.count(\"/\") == pattern.count(\"/\")\n            and fnmatch.fnmatch(path, pattern))",
       "replace": "    return fnmatch.fnmatch(path, pattern)"
     },
@@ -81,28 +81,28 @@
       "replace": "    directives = re.findall(r\"^//go:embed (.+)$\", tree.read(MAP), re.M)"
     },
     {
-      "name": "the excluded manifests are no longer read from the Go test that names them",
-      "breaks": "The repository's own ledger for the embedded boundary. Without it the map's non-embedded lists are checked only against each other, and the file in neither list — the JSON corpus — stops being visible at all.",
-      "find": "    m = re.search(r\"func TestTheConnectorFamiliesAreNotEmbedded\\(t \\*testing\\.T\\) \\{\\s*\"\n                  r\"for _, name := range \\[\\]string\\{(.*?)\\}\", tree.read(path), re.S)",
-      "replace": "    m = re.search(r\"(k8s)\", tree.read(MAP), re.S)"
+      "name": "the non-embedded complement is no longer compared",
+      "breaks": "Every non-embedded file must have checkout coverage, including a newly added file when the live set was empty.",
+      "find": "    problems += compare_sets(named, everything - embedded_k8s(tree), \"the non-embedded k8s files\")",
+      "replace": "    problems += compare_sets(named, named, \"the non-embedded k8s files\")"
     },
     {
       "name": "a name the map uses resolves to anything at all",
-      "breaks": "The existence claim. Every path in the map reads as present whether or not the tree has it, which is the single most common way a map goes stale — a file that moved.",
+      "breaks": "The existence claim. Every path in the map reads as present whether or not the tree has it, which is the single most common way a map goes stale \u2014 a file that moved.",
       "find": "    hit = {p for p in scope if p == tail or p.startswith(tail + \"/\")\n           or p.endswith(\"/\" + tail) or (\"/\" + tail + \"/\") in p}\n    return hit",
       "replace": "    return scope"
     },
     {
-      "name": "only the first demo caller is checked",
-      "breaks": "Both AP demos must call admin approve directly. Checking only ap-demo.sh lets ap-injection.sh silently stop doing so while the map still claims both callers.",
-      "find": "    missing = [path for path in (\"scripts/ap-demo.sh\", \"scripts/ap-injection.sh\")",
-      "replace": "    missing = [path for path in (\"scripts/ap-demo.sh\",)"
+      "name": "only the first probe caller is checked",
+      "breaks": "Both model probes must call seam_ca directly. Checking only model-seam-probe.sh lets spend-race-probe.sh silently stop doing so while the map still claims both callers.",
+      "find": "    missing = [path for path in (\"scripts/model-seam-probe.sh\", \"scripts/spend-race-probe.sh\")",
+      "replace": "    missing = [path for path in (\"scripts/model-seam-probe.sh\",)"
     },
     {
-      "name": "commented admin approval counts as a direct call",
-      "breaks": "A comment mentioning admin approve is not an executed command. Both demo caller checks must reject a commented-out approval.",
-      "find": "               if not re.search(r\"^\\s*admin approve\\b\", tree.read(path), re.M)]",
-      "replace": "               if \"admin approve\" not in tree.read(path)]"
+      "name": "commented authority helper counts as a direct call",
+      "breaks": "A comment mentioning seam_ca is not an executed command. Both probe caller checks must reject a commented-out approval.",
+      "find": "               if not re.search(r\"^\\s*seam_ca\\b\", tree.read(path), re.M)]",
+      "replace": "               if \"seam_ca\" not in tree.read(path)]"
     },
     {
       "name": "the open-question count stops checking its list",
@@ -112,7 +112,7 @@
     },
     {
       "name": "a section's short names are read against the repository root",
-      "breaks": "`README.md` in the docs section becomes the front door instead of the documentation index, and `plane/` in the k8s section becomes the plane module instead of `k8s/plane/`. Both resolve to a real file, so nothing looks wrong — the lists are simply about different files than the map says.",
+      "breaks": "`README.md` in the docs section becomes the front door instead of the documentation index, and `plane/` in the k8s section becomes the plane module instead of `k8s/plane/`. Both resolve to a real file, so nothing looks wrong \u2014 the lists are simply about different files than the map says.",
       "find": "    candidates = []\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))\n    candidates.append(token.rstrip(\"/\"))",
       "replace": "    candidates = [token.rstrip(\"/\")]\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))"
     }

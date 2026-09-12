@@ -1,27 +1,19 @@
-# The gateway's internet allowance for HOSTED tool upstreams (the
-# GitHub MCP server).
-#
-# Deliberately NOT part of k8s/plane/ — the plane's own boundary
-# (k8s/plane/network-policy.yaml) lets the proxy pod reach nothing
-# outside the cluster, and CI refuses this file under k8s/plane/. A
-# hosted tool upstream is what needs it: `make github-secret` applies
-# this file right after storing the token, and `make github-revoke`
-# deletes it (with the token). On kind and in CI it is never applied by
-# default; CI's synthetic-upstream steps apply it for the positive proof,
-# remove it, and then prove the dial fails closed without it.
+# Opt-in internet allowance for hosted MODEL upstreams.
+# Never part of k8s/plane/: the plane deploys internet-free. Operators use
+# make egress-hosted / egress-hosted-off; CI's synthetic-model fixture
+# proves a call succeeds with it and fails closed after its removal.
 #
 # The exact shape of the Copilot allowance (k8s/egress-copilot.yaml), and
 # the same honest sentence: this is TCP 443 to ANY public host — not
 # "only api.githubcopilot.com". NetworkPolicy has no hostname selector.
-# What pins the destination is the committed upstream table (the gateway
+# What pins the destination is the committed upstream table (the proxy
 # forwards to exactly the URL each entry names, refuses redirects) and
 # the hardened dialer (it refuses every private, link-local, loopback,
 # carrier-NAT, multicast and metadata address, and connects only to the
 # address it checked). Private ranges are excluded here too, so the
-# allowance cannot be turned back into the cluster. The gateway and the
-# LLM proxy are one pod, so the two allowances select the same pod: a
-# proxy with Copilot enabled already has this reach; this file exists so
-# a hosted TOOL upstream is an opt-in of its own with its own inverse.
+# allowance cannot be turned back into the cluster. A proxy with Copilot
+# enabled already has this reach; this separate opt-in serves other hosted
+# model upstreams and has its own explicit inverse.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
