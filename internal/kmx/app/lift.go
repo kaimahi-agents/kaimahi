@@ -74,7 +74,8 @@ func (a *App) Lift(opt lift.Options) error {
 	// operator having asked for it.
 	banner := opt.Banner(acct.User.Name, acct.Name)
 	if !opt.Observability {
-		banner = strings.ReplaceAll(banner, lift.StepPurpose["verify"], "the agent answers through the plane, and its ledger can be read (Azure telemetry not checked)")
+		banner = strings.ReplaceAll(banner, lift.PurposeOf("verify", opt.Payload),
+			liftVerifyPurposeWithoutTelemetry(opt.Payload))
 	}
 	fmt.Fprint(a.Err, banner)
 	if opt.Plan {
@@ -194,6 +195,16 @@ func withLiftDefaults(opt lift.Options) lift.Options {
 	return opt
 }
 
+// liftVerifyPurposeWithoutTelemetry is what verify still proves when Azure
+// monitoring is off, which differs by payload for the same reason the phase
+// itself does.
+func liftVerifyPurposeWithoutTelemetry(payload string) string {
+	if payload == lift.PayloadOrka {
+		return "Orka is installed and ready (Azure telemetry not checked)"
+	}
+	return "the agent answers through the plane, and its ledger can be read (Azure telemetry not checked)"
+}
+
 func (a *App) liftDependencies(opt lift.Options) []dependency {
 	deps := []dependency{depAz}
 	for _, step := range opt.StepsToRun() {
@@ -207,6 +218,9 @@ func (a *App) liftDependencies(opt lift.Options) []dependency {
 			deps = append(deps, depBash, depPython3)
 		case "kagent":
 			deps = append(deps, depHelm)
+		case "orka":
+			// Orka's installer is applied with kubectl, which every phase
+			// already depends on, and fetched over HTTPS by kmx itself.
 		case "plane":
 			deps = append(deps, depBash, depGo)
 		case "verify":
@@ -404,6 +418,8 @@ func (a *App) liftStep(step string, opt lift.Options, record *lift.Record, save 
 		return a.liftPlane(opt, work)
 	case "agents":
 		return a.liftAgents(opt)
+	case "orka":
+		return a.liftOrka(opt)
 	case "observability":
 		return a.liftObservability(opt, record, save, work)
 	case "verify":

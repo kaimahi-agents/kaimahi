@@ -6,12 +6,12 @@ import (
 )
 
 func created() Options {
-	return Options{ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo",
+	return Options{Payload: PayloadOrka, ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo",
 		Location: "westus3", NodeSize: "Standard_B4ms", NodeCount: 1, NetworkPolicy: "cilium", Observability: true}
 }
 
 func byo() Options {
-	return Options{BringYourOwn: true, ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo", Observability: true}
+	return Options{Payload: PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo", Observability: true}
 }
 
 func TestAWellFormedRequestIsAccepted(t *testing.T) {
@@ -118,12 +118,17 @@ func TestBringYourOwnRefusesTheOnePhaseThatCreatesACluster(t *testing.T) {
 	if !strings.Contains(err.Error(), "never creates one") {
 		t.Fatalf("the refusal does not explain itself: %v", err)
 	}
-	// Every other phase stays available on this branch.
-	for _, step := range Steps[1:] {
-		ok := byo()
-		ok.Step = step
-		if err := ok.Validate(); err != nil {
-			t.Errorf("--byo --step %s was refused: %v", step, err)
+	// Every other phase stays available on this branch, for either payload:
+	// the cluster is the only phase --byo refuses, and which agents platform
+	// is being landed has nothing to do with that.
+	for _, payload := range Payloads {
+		for _, step := range stepsFor(payload)[1:] {
+			ok := byo()
+			ok.Payload = payload
+			ok.Step = step
+			if err := ok.Validate(); err != nil {
+				t.Errorf("--byo --payload %s --step %s was refused: %v", payload, step, err)
+			}
 		}
 	}
 }
@@ -152,15 +157,22 @@ func TestTheCreateBranchBuildsAClusterAndTheOtherDoesNot(t *testing.T) {
 }
 
 func TestObservabilityOffDropsOnlyThatPhase(t *testing.T) {
-	o := created()
-	o.Observability = false
-	steps := strings.Join(o.StepsToRun(), " ")
-	if strings.Contains(steps, "observability") {
-		t.Fatal("observability ran despite being switched off")
-	}
-	for _, want := range []string{"cluster", "boundary", "plane", "agents", "verify"} {
-		if !strings.Contains(steps, want) {
-			t.Fatalf("switching observability off also dropped %q: %v", want, steps)
+	for _, payload := range Payloads {
+		o := created()
+		o.Payload = payload
+		o.Observability = false
+		steps := strings.Join(o.StepsToRun(), " ")
+		if strings.Contains(steps, "observability") {
+			t.Fatalf("%s: observability ran despite being switched off", payload)
+		}
+		// Everything the payload asked for, minus the one phase switched off.
+		for _, want := range stepsFor(payload) {
+			if want == "observability" {
+				continue
+			}
+			if !strings.Contains(steps, want) {
+				t.Fatalf("%s: switching observability off also dropped %q: %v", payload, want, steps)
+			}
 		}
 	}
 }

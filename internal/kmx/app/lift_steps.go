@@ -285,6 +285,41 @@ func (a *App) liftAgents(opt lift.Options) error {
 	return a.UsePreset(config.DefaultToolsAgent, "governed-copilot", nil)
 }
 
+// liftOrka installs Orka on the cluster this lift provisioned.
+//
+// It reuses `kmx orka install` rather than re-implementing it: the pinned
+// digest, the wrapper Secret that must exist before the manifest, and the
+// readiness waits are the same facts on a managed cluster as on a local one,
+// and a second implementation would be a second place to get them wrong.
+//
+// The Provider is NOT created here, and that is the honest part. The local
+// installer wires a keyless Provider at the in-cluster model server, and a
+// managed cluster has none — this path deploys no Ollama. Inventing a Provider
+// would mean either shipping a credential this command has no business
+// holding, or creating one that resolves nothing. So the phase installs the
+// platform and names the step that is the operator's.
+func (a *App) liftOrka(opt lift.Options) error {
+	resume := opt
+	resume.Step = "orka"
+	if err := a.Guard("install Orka", a.liftCommand(resume, false)); err != nil {
+		return err
+	}
+	if err := a.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
+		return err
+	}
+	a.notef("\nNOTE  No Provider was created, because this cluster has no in-cluster model\n" +
+		"      server and kmx holds no credential for a hosted one. Orka refuses every\n" +
+		"      model call until one exists. Create it with a Secret you control:")
+	a.notef("  kubectl -n %s create secret generic <name> --from-literal=api-key=<key>", OrkaNamespace)
+	a.notef("  kmx agent create <agent> --namespace %s --provider-type openai \\\n"+
+		"      --model <model> --secret <name> --base-url <endpoint>", OrkaNamespace)
+	a.notef("\n  The plane's own model seam is NOT usable as that endpoint today: it serves\n" +
+		"  TLS under the plane's authority, and Orka's Provider has no field for a\n" +
+		"  certificate authority to trust. `kmx migrate` remains the governed path,\n" +
+		"  for an application's traffic rather than for Orka's own Provider.")
+	return nil
+}
+
 // applyManaged applies one of the manifests carried for the managed path.
 // They are not in the manifest set the local path applies, so they go through
 // the materialised working tree rather than through `apply`.

@@ -24,6 +24,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`kmx lift --payload orka` lands Orka on the managed cluster it provisions.**
+  The lift's cluster half is unchanged — resource group, private registry, an
+  AKS cluster with a policy engine, the proven network boundary, the plane and
+  Azure monitoring — but what runs agents is now a choice. `orka` installs the
+  same pinned Orka that `kmx orka install` puts on a local cluster, so the
+  Agent and Provider YAML authored locally is the YAML that runs there.
+  `kagent` keeps the legacy runtime and its two demo agents on governed
+  Copilot. The `orka` payload deliberately creates **no Provider**: a managed
+  cluster has no in-cluster model server and kmx holds no credential for a
+  hosted one, so the phase installs the platform and names the step that is
+  the operator's ([docs/aks.md](docs/aks.md)).
+
+### Breaking
+
+- **`kmx lift` now requires `--payload`, and has no default.** An existing
+  invocation fails with a refusal naming both choices; add `--payload kagent`
+  to keep exactly what it did before, or `--payload orka` for the current
+  direction. There is no default because this command bills money and installs
+  a platform: defaulting would mean a script quietly changing which platform it
+  deploys the day the project's direction moved. `--step` is validated against
+  the phases the chosen payload actually has, so `--step agents` is refused on
+  an `orka` lift and names the phases it does have.
+
+
+### Added
+
 - **`kmx orka install` installs Orka, from a cluster with nothing on it and
   with no API key anywhere.** Orka assumes a cluster, publishes no CLI binary
   and no GitHub Release, and asks an operator to create a shared bearer token

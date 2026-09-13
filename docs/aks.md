@@ -28,9 +28,43 @@ it has no Azure credential and does not re-prove live cloud behavior.
 ## One command: `kmx lift`
 
 ```bash
-kmx lift --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
-kmx lift --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx lift --payload orka --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx lift --payload orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
+
+### `--payload` is required, and has no default
+
+`lift` bills money and installs a platform, and there are two different things
+it can install:
+
+| payload | what lands | phases |
+|---|---|---|
+| `orka` | Orka at the pinned version — the same one `kmx orka install` puts on a local cluster | cluster, boundary, credential, plane, **orka**, observability, verify |
+| `kagent` | the legacy kagent runtime and its two demo agents on governed Copilot | cluster, boundary, **kagent**, credential, plane, **agents**, observability, verify |
+
+Everything about the **cluster** is shared: provisioning it, proving its
+network boundary, the plane that meters a model seam, Azure monitoring, and
+verification. The payloads differ only in what runs agents.
+
+There is no default because a default would mean an existing script quietly
+changed which platform it deploys the day this project's direction moved. A
+missing `--payload` refuses and names both.
+
+**The `orka` payload creates no Provider.** A managed cluster has no
+in-cluster model server — this path deploys no Ollama — and kmx holds no
+credential for a hosted one. Orka refuses every model call until a Provider
+exists, so the phase installs the platform and names the step that is yours:
+
+```bash
+kubectl -n orka-system create secret generic <name> --from-literal=api-key=<key>
+kmx agent create <agent> --namespace orka-system --provider-type openai \
+  --model <model> --secret <name> --base-url <endpoint>
+```
+
+The plane's own model seam is **not** usable as that endpoint today: it serves
+TLS under the plane's own authority, and Orka's `Provider` has no field for a
+certificate authority to trust. [`kmx migrate`](migrate.md) remains the
+governed path — for an application's traffic, not for Orka's own Provider.
 
 The banner names the account, subscription name and destination. `--plan` stops
 after preflight/account inspection, without creating cloud resources. A real
@@ -40,7 +74,7 @@ run requires the cluster name typed at a terminal or
 For an existing cluster, add `--byo` explicitly:
 
 ```bash
-kmx lift --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx lift --payload orka --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 **BYO never creates, deletes or adopts the cluster or resource group.** It checks

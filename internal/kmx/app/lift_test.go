@@ -416,7 +416,7 @@ func TestTheCarriedScriptsGetTheLayoutTheyExpect(t *testing.T) {
 // have not happened — and the resumable shape exists precisely so that a
 // half-finished lift is a normal state rather than one to paper over.
 func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
-	opt := lift.Options{ResourceGroup: "rg", Cluster: "c", Registry: "reg12345", Observability: true, Step: "cluster"}
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345", Observability: true, Step: "cluster"}
 	rest := remainingSteps(opt)
 	if len(rest) == 0 || rest[0] != "boundary" {
 		t.Fatalf("after the cluster phase the next is boundary, got %v", rest)
@@ -451,7 +451,7 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 // re-running a phase must not turn into a refusal.
 func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 	a := &App{}
-	opt := lift.Options{BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
+	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
 
 	for _, tc := range []struct {
 		name   string
@@ -553,7 +553,7 @@ func TestNothingTheLiftPrintsBeforeItActsCarriesTheSubscriptionID(t *testing.T) 
 		t.Fatalf("the account under test carries no subscription id (%q), so nothing here is being tested", acct.ID)
 	}
 
-	banner := lift.Options{ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo",
+	banner := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "rg", Registry: "kaimahidemo", Cluster: "kaimahi-demo",
 		Location: "westus3", NetworkPolicy: "cilium", Observability: true}.
 		Banner(acct.User.Name, acct.Name)
 	if banner == "" {

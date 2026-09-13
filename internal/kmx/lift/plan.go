@@ -44,6 +44,16 @@ type Options struct {
 	// unpicking the ones before it.
 	Step string
 
+	// Payload selects WHAT lands on the cluster this command provisions.
+	//
+	// There is deliberately no default. `lift` bills money and installs a
+	// platform, and the two payloads are different products: one lands Orka,
+	// the other lands the legacy kagent runtime and its demo agents. A
+	// default would mean somebody's existing script silently changed which
+	// platform it deploys the day the project's direction moved, which is
+	// the one outcome worth a one-word break instead.
+	Payload string
+
 	// Plan prints what would happen, where, and stops. It creates nothing
 	// and reads nothing on the cluster or in the subscription — only an Azure
 	// CLI preflight and `az account show`, which fill in the two lines that say
@@ -51,16 +61,76 @@ type Options struct {
 	Plan bool
 }
 
+// Payloads are what a lift can land. Named rather than inferred, and
+// validated against this list, so a typo is a refusal instead of a surprise.
+const (
+	PayloadOrka   = "orka"
+	PayloadKagent = "kagent"
+)
+
+// Payloads lists them for the flag's help and its completion.
+var Payloads = []string{PayloadOrka, PayloadKagent}
+
 // Steps are the phases of the lift, in order. Each is re-runnable on its own
 // and each is idempotent, which is what makes a failed lift resumable instead
 // of a cleanup problem.
-var Steps = []string{"cluster", "boundary", "kagent", "credential", "plane", "agents", "observability", "verify"}
+//
+// The two payloads share every phase that is about the CLUSTER — provisioning
+// it, proving its boundary, the plane that meters a model seam, monitoring and
+// verification. They differ only in what is installed to run agents, which is
+// the whole point of the distinction.
+var Steps = stepsFor(PayloadKagent)
+
+func stepsFor(payload string) []string {
+	if payload == PayloadOrka {
+		return []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"}
+	}
+	return []string{"cluster", "boundary", "kagent", "credential", "plane", "agents", "observability", "verify"}
+}
+
+// StepsForPayload exposes the phase list for a payload, for the planner and
+// for anything that needs to name the phases before Options exist.
+func StepsForPayload(payload string) []string { return stepsFor(payload) }
+
+// ValidPayload refuses anything that is not one of the two, and refuses the
+// empty string with the reasoning rather than a bare usage line: an operator
+// who typed `kmx lift` before this flag existed needs to know that the answer
+// changed, not merely that a flag is missing.
+func ValidPayload(payload string) error {
+	switch payload {
+	case PayloadOrka, PayloadKagent:
+		return nil
+	case "":
+		return errors.New("kmx lift: --payload is required, and has no default.\n" +
+			"  --payload orka     Orka, the platform this project now gets agents onto\n" +
+			"  --payload kagent   the legacy kagent runtime and its two demo agents\n" +
+			"  This command bills money and installs a platform. A default would mean an\n" +
+			"  existing script quietly changed which one it deploys, so the choice is yours\n" +
+			"  to state rather than ours to assume.")
+	default:
+		return fmt.Errorf("kmx lift: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
+	}
+}
+
+// PurposeOf is what a phase is for, in the words the banner uses.
+//
+// One phase means different things to the two payloads, and saying the wrong
+// one is worse than saying nothing: a plan that promises "the agent answers"
+// on a payload that installs no agent has told the operator it will prove
+// something it cannot.
+func PurposeOf(step, payload string) string {
+	if step == "verify" && payload == PayloadOrka {
+		return "Orka is installed and ready; no model call is made, because the Provider is yours"
+	}
+	return StepPurpose[step]
+}
 
 // StepPurpose is what each phase is for, in the words the banner uses.
 var StepPurpose = map[string]string{
 	"cluster":       "resource group, private registry and an AKS cluster with a policy engine",
 	"boundary":      "the network boundary and the ledger, then PROVE the boundary is enforced",
 	"kagent":        "the agent runtime",
+	"orka":          "Orka at the pinned version; the model Provider stays yours to create",
 	"credential":    "check the model credential the managed path needs (captured by you, not by kmx)",
 	"plane":         "build the governance plane in the registry and deploy it",
 	"agents":        "the same agents you ran locally, governed from the start",
@@ -91,8 +161,20 @@ func (o Options) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
-	if o.Step != "" && !validStep(o.Step) {
-		add("--step %q is not a phase of the lift. Phases, in order: %s", o.Step, strings.Join(Steps, ", "))
+	// The payload joins the other problems rather than short-circuiting: this
+	// function's contract is that an operator learns everything wrong with
+	// what they asked for in one reading, not one round-trip per mistake.
+	payloadErr := ValidPayload(o.Payload)
+	if payloadErr != nil {
+		add("%s", payloadErr.Error())
+	}
+
+	// The phase list depends on the payload, so a step can only be judged
+	// once the payload is known to be one. Judging it against the wrong list
+	// would refuse a phase that the lift they asked for actually has.
+	if payloadErr == nil && o.Step != "" && !validStep(o.Step, o.Payload) {
+		add("--step %q is not a phase of a %s lift. Phases, in order: %s",
+			o.Step, o.Payload, strings.Join(stepsFor(o.Payload), ", "))
 	}
 
 	if strings.TrimSpace(o.ResourceGroup) == "" {
@@ -194,8 +276,8 @@ func (o Options) ValidateForTeardown() error {
 	return fmt.Errorf("kmx lift down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
 }
 
-func validStep(step string) bool {
-	for _, s := range Steps {
+func validStep(step, payload string) bool {
+	for _, s := range stepsFor(payload) {
 		if s == step {
 			return true
 		}
@@ -245,7 +327,7 @@ func (o Options) Banner(account, subscriptionName string) string {
 	}
 	b.WriteString("\n  will do, in order:\n")
 	for _, step := range o.steps() {
-		fmt.Fprintf(&b, "    %-14s %s\n", step, StepPurpose[step])
+		fmt.Fprintf(&b, "    %-14s %s\n", step, PurposeOf(step, o.Payload))
 	}
 	b.WriteString("\n")
 	if o.BringYourOwn {
@@ -268,7 +350,7 @@ func (o Options) steps() []string {
 		return []string{o.Step}
 	}
 	var out []string
-	for _, s := range Steps {
+	for _, s := range stepsFor(o.Payload) {
 		if s == "cluster" && o.BringYourOwn {
 			continue // the cluster is theirs; nothing to create
 		}

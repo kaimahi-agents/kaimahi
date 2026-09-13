@@ -34,6 +34,27 @@ const (
 // having its data arrive are different things, and only one of them is
 // visible from the Azure CLI's exit status.
 func (a *App) liftVerify(opt lift.Options) error {
+	// The kagent payload proves itself by asking its agent a question. The
+	// Orka payload has no agent to ask: the Provider is the operator's, so
+	// there is nothing here that could answer, and chatting to a kagent agent
+	// that was never installed would fail for a reason that has nothing to do
+	// with the lift. Prove what this payload actually put there.
+	if opt.Payload == lift.PayloadOrka {
+		if err := a.OrkaStatus(); err != nil {
+			return err
+		}
+		a.notef("Orka is installed and its controllers are ready. No model call was made:\n" +
+			"  this payload creates no Provider, so there is nothing yet that could answer.")
+		if !opt.Observability {
+			a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
+			return nil
+		}
+		if err := a.verifyMetricsArrived(opt); err != nil {
+			return err
+		}
+		return a.verifyLogsArrived(opt)
+	}
+
 	if err := a.kubectlRun("-n", "kagent", "rollout", "status",
 		"deploy/hello-world", "--timeout=300s"); err != nil {
 		return err
