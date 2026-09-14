@@ -522,13 +522,19 @@ func (a *App) OrkaReady() error {
 			d.Status.AvailableReplicas != d.Spec.Replicas,
 			d.Status.ReadyReplicas != d.Spec.Replicas,
 			d.Status.UnavailableReplicas != 0:
+			// No guessed label selector here. An earlier version suggested
+			// `-l app.kubernetes.io/name=<deployment>` and that matches
+			// nothing: Orka labels every pod `app.kubernetes.io/name=orka`,
+			// so the hint printed "No resources found" at the exact moment
+			// the operator needed it. The namespace is Orka's own and holds
+			// few pods, so listing it needs no selector to be right.
 			return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
 				"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
 				"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
 				"  Its rollout says why:  kubectl -n %s rollout status deploy/%s\n"+
-				"  And its pods:          kubectl -n %s get pods -l app.kubernetes.io/name=%s",
+				"  And the pods:          kubectl -n %s get pods",
 				name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
-				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, OrkaNamespace, name, OrkaNamespace, name)
+				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, OrkaNamespace, name, OrkaNamespace)
 		}
 	}
 	return nil

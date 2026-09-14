@@ -84,7 +84,9 @@ func TestAStepIsJudgedAgainstItsOwnPayload(t *testing.T) {
 	if err == nil {
 		t.Fatal("a kagent phase was accepted on an orka lift")
 	}
-	if !strings.Contains(err.Error(), "not a phase of a orka lift") {
+	// "a orka" would be wrong and "an kagent" equally so, hence the article
+	// is avoided rather than guessed per payload.
+	if !strings.Contains(err.Error(), "not a phase of the orka payload") {
 		t.Errorf("the refusal does not name the payload: %v", err)
 	}
 	if !strings.Contains(err.Error(), "orka, observability, verify") {

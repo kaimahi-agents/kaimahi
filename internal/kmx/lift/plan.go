@@ -190,7 +190,7 @@ func (o Options) Validate() error {
 	// once the payload is known to be one. Judging it against the wrong list
 	// would refuse a phase that the lift they asked for actually has.
 	if payloadErr == nil && o.Step != "" && !validStep(o.Step, o.Payload) {
-		add("--step %q is not a phase of a %s lift. Phases, in order: %s",
+		add("--step %q is not a phase of the %s payload. Phases, in order: %s",
 			o.Step, o.Payload, strings.Join(stepsFor(o.Payload), ", "))
 	}
 
