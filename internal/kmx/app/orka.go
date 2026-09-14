@@ -448,6 +448,55 @@ func unreachable(err error) bool {
 	return false
 }
 
+// OrkaReady answers, strictly, whether Orka is installed AND both of its
+// Deployments have every replica ready.
+//
+// It exists because `OrkaStatus` is a VIEW: it prints "not installed" and
+// returns nil, which is right for a human asking a question and wrong for a
+// caller deciding whether a lift succeeded. A verification step that consulted
+// the view would report "installed and ready" about a cluster with no Orka on
+// it at all.
+//
+// Unreadable is its own answer, and not a pass: a cluster that did not respond
+// has not been shown to be ready.
+func (a *App) OrkaReady() error {
+	raw, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy",
+		"-o", "jsonpath={range .items[*]}{.metadata.name}={.status.readyReplicas}/{.spec.replicas} {end}")
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("cannot read Orka in namespace %s, so it has NOT been shown to be ready: %w",
+			OrkaNamespace, err)
+	}
+	found := map[string]string{}
+	for _, field := range strings.Fields(raw) {
+		name, counts, ok := strings.Cut(field, "=")
+		if ok {
+			found[name] = counts
+		}
+	}
+	for _, deployment := range []string{orkaController, orkaWrapper} {
+		counts, present := found[deployment]
+		if !present {
+			return fmt.Errorf("Orka's %s is not on this cluster in namespace %s: "+
+				"nothing was verified, because there is nothing there.\n"+
+				"  Install it with `kmx orka install`, or resume this lift at its orka phase",
+				deployment, OrkaNamespace)
+		}
+		ready, desired, ok := strings.Cut(counts, "/")
+		// readyReplicas is ABSENT, not zero, on a Deployment with no ready
+		// pod — jsonpath renders that as an empty field, so the comparison
+		// below must treat it as not ready rather than as unparseable.
+		if ready == "" {
+			ready = "0"
+		}
+		if !ok || ready != desired || desired == "" || desired == "0" {
+			return fmt.Errorf("Orka's %s is %s ready in namespace %s, so this lift is not complete.\n"+
+				"  Its logs say why:  kubectl -n %s logs deploy/%s",
+				deployment, counts, OrkaNamespace, OrkaNamespace, deployment)
+		}
+	}
+	return nil
+}
+
 // OrkaStatus reports what is installed and what it can resolve.
 //
 // Three facts, separately, because any one can be true while the others are

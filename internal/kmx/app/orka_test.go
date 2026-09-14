@@ -428,3 +428,58 @@ func TestOrkaInstallRefusesNoApplyWithDryRun(t *testing.T) {
 		t.Fatalf("the contradictory pair was accepted: %v", err)
 	}
 }
+
+// OrkaStatus is a VIEW: it prints "not installed" and returns nil, which is
+// right for a person asking and wrong for a caller deciding whether a lift
+// succeeded. `lift --payload orka` verify consults OrkaReady for exactly this
+// reason, and these are the three answers that must differ.
+func TestOrkaReadyRefusesAnAbsentOrka(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "")
+
+	err := f.app.OrkaReady()
+	if err == nil {
+		t.Fatal("an absent Orka was reported ready")
+	}
+	if !strings.Contains(err.Error(), "nothing was verified") {
+		t.Errorf("the refusal does not say nothing was verified: %v", err)
+	}
+
+	// And the view still returns nil for the same cluster, which is why the
+	// two exist separately.
+	if err := f.app.OrkaStatus(); err != nil {
+		t.Fatalf("the informational view failed: %v", err)
+	}
+}
+
+// A Deployment with no ready pod renders readyReplicas as an EMPTY field, not
+// as zero. Treating that as unparseable — or as ready — would pass a lift
+// whose controller never started.
+func TestOrkaReadyRefusesADeploymentWithNoReadyPod(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=/1 orka-agent-harness-wrapper=1/1 ")
+
+	err := f.app.OrkaReady()
+	if err == nil || !strings.Contains(err.Error(), "not complete") {
+		t.Fatalf("a controller with no ready pod passed verification: %v", err)
+	}
+}
+
+// Both Deployments, or it is not installed. The wrapper is the half that
+// needs the Secret created before the manifest, so a lift that checked only
+// the controller would miss exactly the failure this path guards.
+func TestOrkaReadyRequiresBothDeployments(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
+
+	err := f.app.OrkaReady()
+	if err == nil || !strings.Contains(err.Error(), orkaWrapper) {
+		t.Fatalf("a half-installed Orka passed verification: %v", err)
+	}
+
+	g := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 orka-agent-harness-wrapper=1/1 ")
+	if err := g.app.OrkaReady(); err != nil {
+		t.Fatalf("a healthy Orka was refused: %v", err)
+	}
+}

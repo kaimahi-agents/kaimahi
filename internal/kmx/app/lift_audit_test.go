@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -225,7 +226,7 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command is not shell-safe: %s: %v", command, err)
 	}
-	want := []string{"--context", opt.Cluster, "lift", "--step", opt.Step, "--observability=false",
+	want := []string{"--context", opt.Cluster, "lift", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
 		"--location", opt.Location, "--node-size", opt.NodeSize, "--network-policy", opt.NetworkPolicy,
 		"--node-count", "3", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
 	if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
@@ -233,6 +234,11 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	}
 	if a.Cfg.KubeContext != "kind-unrelated" {
 		t.Fatal("rendering a command changed configuration")
+	}
+	// --payload is mandatory. A recovery command without it is a command the
+	// operator cannot paste back, which is the only thing it is for.
+	if !strings.Contains(command, "--payload "+opt.Payload) {
+		t.Fatalf("the recovery command omits the mandatory payload: %s", command)
 	}
 	opt.BringYourOwn = true
 	down := a.liftCommand(opt, true)
@@ -440,5 +446,67 @@ func TestLiftPyYAMLAndScriptPlatformChecksAreStepAware(t *testing.T) {
 	}
 	if err := liftPlatformError([]string{"boundary"}, "windows"); err == nil || !strings.Contains(err.Error(), "WSL") {
 		t.Fatalf("script-backed phase has no clear Windows refusal: %v", err)
+	}
+}
+
+// A lift is recorded with the payload it landed. Resuming it with the other
+// one would install BOTH platforms onto a single cluster — the exact outcome
+// the payload split exists to prevent — so the difference is refused rather
+// than reconciled, the same way a branch mismatch is.
+func TestAResumedLiftCannotSwitchPayload(t *testing.T) {
+	a, _, _ := liftAuditApp(t)
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345"}
+	liftAuditRecord(t, a, opt, lift.Pre{}, false)
+
+	opt.Payload = lift.PayloadKagent
+	_, _, err := a.openLiftRecord(opt, "test-subscription")
+	if err == nil {
+		t.Fatal("a recorded orka lift was resumed as kagent")
+	}
+	for _, want := range []string{"orka", "kagent", "both platforms"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal never says %q: %v", want, err)
+		}
+	}
+
+	// The matching payload still opens, or the guard would block every resume.
+	opt.Payload = lift.PayloadOrka
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
+		t.Fatalf("resuming with the recorded payload was refused: %v", err)
+	}
+}
+
+// A record written before the split carries no payload, and only kagent could
+// have written it. Refusing those would strand every existing lift; reading
+// one as orka would be a lie about what is on the cluster.
+func TestALiftRecordedBeforeThePayloadSplitResumesAsKagent(t *testing.T) {
+	a, _, _ := liftAuditApp(t)
+	opt := lift.Options{Payload: lift.PayloadKagent, ResourceGroup: "old-rg", Cluster: "old-cluster", Registry: "reg12345"}
+	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
+
+	// Strip the field, as a record from before it existed has no payload.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	delete(raw, "payload")
+	rewritten, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, rewritten, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
+		t.Fatalf("a legacy record was refused a kagent resume: %v", err)
+	}
+	opt.Payload = lift.PayloadOrka
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err == nil {
+		t.Fatal("a legacy kagent record accepted an orka resume")
 	}
 }

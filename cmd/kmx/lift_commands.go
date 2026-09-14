@@ -43,7 +43,7 @@ func newLiftCommand(state *commandState) *cobra.Command {
 		strings.Join(lift.StepsForPayload(lift.PayloadOrka), "|")+" — kagent adds kagent|agents")
 	cmd.Flags().BoolVar(&opt.Plan, "plan", false, "print what would be created, where, and stop")
 	_ = cmd.RegisterFlagCompletionFunc("payload", staticCompletion(lift.Payloads))
-	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(lift.StepsForPayload(lift.PayloadOrka)))
+	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(lift.AllSteps()))
 	_ = cmd.RegisterFlagCompletionFunc("network-policy", staticCompletion([]string{"cilium", "azure", "calico"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		// An engine set to the empty string is not the same as one left

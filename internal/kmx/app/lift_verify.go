@@ -40,6 +40,12 @@ func (a *App) liftVerify(opt lift.Options) error {
 	// that was never installed would fail for a reason that has nothing to do
 	// with the lift. Prove what this payload actually put there.
 	if opt.Payload == lift.PayloadOrka {
+		// Strictly, then print. OrkaStatus is a view that returns nil for an
+		// absent Orka; a verify that consulted only the view would announce
+		// "installed and ready" about a cluster with nothing on it.
+		if err := a.OrkaReady(); err != nil {
+			return err
+		}
 		if err := a.OrkaStatus(); err != nil {
 			return err
 		}

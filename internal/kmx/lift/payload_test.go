@@ -131,3 +131,64 @@ func TestVerifyDescribesWhatEachPayloadCanActuallyProve(t *testing.T) {
 		t.Errorf("the kagent plan stopped promising its answer: %q", kagent)
 	}
 }
+
+// A record must remember what it landed, or a resumed run installs the other
+// platform on top of it.
+func TestARecordRemembersItsPayload(t *testing.T) {
+	r, err := NewRecord("a1b2c3d4", Created, PayloadOrka, "sub", "rg", "cluster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Payload != PayloadOrka || r.PayloadOrLegacy() != PayloadOrka {
+		t.Fatalf("payload = %q / %q", r.Payload, r.PayloadOrLegacy())
+	}
+	if _, err := NewRecord("a1b2c3d4", Created, "orca", "sub", "rg", "cluster"); err == nil {
+		t.Error("a record was started with a payload that is not one")
+	}
+}
+
+// A record written before the split carries no payload, and only one thing
+// could have written it. Reading that as unknown would refuse a resume that
+// is actually fine; reading it as orka would be a lie about history.
+func TestALegacyRecordReadsAsKagent(t *testing.T) {
+	if got := (&Record{}).PayloadOrLegacy(); got != PayloadKagent {
+		t.Fatalf("a record from before the split reads as %q, want %q", got, PayloadKagent)
+	}
+}
+
+// Shell completion cannot know which payload is being typed, so offering only
+// one payload's phases hides valid answers for the other.
+func TestCompletionOffersEveryPhaseOfBothPayloads(t *testing.T) {
+	all := strings.Join(AllSteps(), " ")
+	for _, want := range []string{"cluster", "boundary", "kagent", "credential", "plane", "agents", "orka", "observability", "verify"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("completion never offers %q: %s", want, all)
+		}
+	}
+	seen := map[string]bool{}
+	for _, step := range AllSteps() {
+		if seen[step] {
+			t.Errorf("completion offers %q twice: %s", step, all)
+		}
+		seen[step] = true
+	}
+}
+
+// The --byo refusal lists "every other phase", and which those are depends on
+// the payload. Advertising kagent phases to an orka lift sends an operator to
+// a phase their lift does not have.
+func TestTheByoRefusalNamesThisPayloadsPhases(t *testing.T) {
+	o := byo()
+	o.Payload = PayloadOrka
+	o.Step = "cluster"
+	err := o.Validate()
+	if err == nil {
+		t.Fatal("--byo --step cluster was accepted")
+	}
+	if strings.Contains(err.Error(), "agents") {
+		t.Errorf("an orka lift was offered a kagent phase: %v", err)
+	}
+	if !strings.Contains(err.Error(), "orka") {
+		t.Errorf("the refusal does not list this payload's phases: %v", err)
+	}
+}

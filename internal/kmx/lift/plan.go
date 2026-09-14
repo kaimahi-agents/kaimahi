@@ -92,6 +92,23 @@ func stepsFor(payload string) []string {
 // for anything that needs to name the phases before Options exist.
 func StepsForPayload(payload string) []string { return stepsFor(payload) }
 
+// AllSteps is every phase either payload has, in order, each once. Shell
+// completion cannot know which payload is being typed, and offering only one
+// payload's phases would hide valid answers for the other.
+func AllSteps() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, payload := range Payloads {
+		for _, step := range stepsFor(payload) {
+			if !seen[step] {
+				seen[step] = true
+				out = append(out, step)
+			}
+		}
+	}
+	return out
+}
+
 // ValidPayload refuses anything that is not one of the two, and refuses the
 // empty string with the reasoning rather than a bare usage line: an operator
 // who typed `kmx lift` before this flag existed needs to know that the answer
@@ -213,7 +230,7 @@ func (o Options) Validate() error {
 		// teardown would then refuse to remove it.
 		if o.Step == "cluster" {
 			add("--step cluster cannot be used with --byo: that phase CREATES a cluster, and this branch never creates one. The phases here are: %s",
-				strings.Join(Steps[1:], ", "))
+				strings.Join(stepsFor(o.Payload)[1:], ", "))
 		}
 		// Nothing about the cluster's shape is ours to choose on someone
 		// else's cluster, so accepting these would be accepting parameters

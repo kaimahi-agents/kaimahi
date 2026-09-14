@@ -3,8 +3,10 @@
 [Orka](orka.md) is the platform; Kaimahi helps applications get onto it.
 For existing applications, start with [model-traffic migration](migrate.md).
 This page documents the **current AKS implementation**, including `kmx lift`'s
-legacy kagent/Copilot demo journey pending the code transition. It is not a
-claim that Orka runs those demo agents or that kagent authoring has been ruled out.
+legacy kagent/Copilot demo journey, selected with `--payload kagent`. The
+`orka` payload lands Orka itself on the same provisioned cluster. Neither is a
+claim that Orka runs those demo agents, or that kagent authoring has been ruled
+out.
 
 AKS is **demonstrated, not maintained**: recorded clusters were short-lived and
 torn down. CI exercises portability and ownership logic with keyless tests;
@@ -83,35 +85,46 @@ refuses to take over pre-existing Azure monitoring. Those are owner decisions.
 
 ### Targets and resume
 
-| Phase | Current work |
-|---|---|
-| `cluster` | create tagged resource group, private ACR and AKS; obtain kubeconfig |
-| `boundary` | check policy engine, deploy plane boundary/ledger bootstrap, run negative network proof |
-| `kagent` | install the legacy runtime |
-| `credential` | keep an existing Copilot Secret; otherwise run native device login and capture |
-| `plane` | build in ACR, create/renew data certificate, render registry image/pull policy, deploy |
-| `agents` | configure the retained legacy agents for governed Copilot; tool wiring stays direct kagent MCP or owner-selected, not gateway-governed |
-| `observability` | Azure monitoring, scrape allowance/PodMonitor, workbook |
-| `verify` | legacy agent answer and ledger; Azure metrics/logs when enabled |
+Phases marked **both** run for either payload; the rest belong to one.
+
+| Phase | Payload | Current work |
+|---|---|---|
+| `cluster` | both | create tagged resource group, private ACR and AKS; obtain kubeconfig |
+| `boundary` | both | check policy engine, deploy plane boundary/ledger bootstrap, run negative network proof |
+| `kagent` | kagent | install the legacy runtime |
+| `credential` | both | keep an existing Copilot Secret; otherwise run native device login and capture |
+| `plane` | both | build in ACR, create/renew data certificate, render registry image/pull policy, deploy |
+| `orka` | orka | install the pinned Orka; creates **no** Provider — that stays yours |
+| `agents` | kagent | configure the retained legacy agents for governed Copilot; tool wiring stays direct kagent MCP or owner-selected, not gateway-governed |
+| `observability` | both | Azure monitoring, scrape allowance/PodMonitor, workbook |
+| `verify` | both | **orka**: Orka is installed and both controllers are ready, strictly — no model call is made. **kagent**: legacy agent answer and ledger. Azure metrics/logs when enabled |
 
 `--step <phase>` runs **one phase only**, not that phase and all following ones.
 Failures leave earlier work in place and print a target-preserving retry. Fix
 the cause, rerun that phase, then run the remaining phases or the full lift:
 
 ```bash
-kmx lift --step plane --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx lift --payload orka --step plane --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
-Retain the same identity/options, including `--byo` where used. Completing a
-single phase proves nothing about phases not run by that invocation.
+Retain the same identity/options, **including `--payload`**, and `--byo` where
+used. A run is recorded with the payload it landed, and resuming with the other
+one is refused rather than reconciled: installing both platforms on one cluster
+is the outcome the split exists to prevent. A record written before the split
+carries no payload and is read as `kagent`, which is the only thing `lift` could
+have landed then. Completing a single phase proves nothing about phases not run
+by that invocation.
 
-For an Orka migration, the reusable infrastructure phases are `cluster`,
-`boundary`, `plane`, and optionally `observability`. Install/configure Orka and
-its Provider separately, then run `kmx migrate`. The `kagent`, `agents`, and
-`verify` phases are still kagent-shaped; `credential` requires Copilot even when
-the migration does not. **Do not present a full lift as an Orka-native journey.**
-The boundary phase also applies the legacy Copilot egress allowance; selected
-phases are not yet a minimal Orka-specific provisioning profile.
+`--step` is validated against the phases the chosen payload has, so `--step
+agents` on an `orka` lift is refused and names that lift's phases.
+
+For an Orka **migration** — an existing application's model traffic, rather
+than a fresh Orka — the reusable infrastructure phases are `cluster`,
+`boundary`, `plane`, and optionally `observability`. Run those, then
+[`kmx migrate`](migrate.md). Note that `credential` still requires Copilot even
+when the migration does not, and the boundary phase applies the legacy Copilot
+egress allowance: selected phases are not yet a minimal Orka-specific
+provisioning profile.
 
 ### The credential handoff
 
