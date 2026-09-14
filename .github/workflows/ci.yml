@@ -511,6 +511,10 @@ jobs:
         run: python3 scripts/test_model_fixtures.py
       - name: Chat verifier self-test (direct tool-path verdicts)
         run: python3 scripts/verify-chat.py --selftest
+      - name: Hello-to-governed demo safety and evidence checks
+        run: |
+          bash -n scripts/demo-hello-to-governed.sh
+          python3 scripts/test_demo_hello_to_governed.py
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
       # and is a required check). A step appended without the guard would run

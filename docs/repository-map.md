@@ -33,7 +33,7 @@ checks.
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
-| `scripts/` | 7 (5 embedded in the binary, 2 operator) | 0 | 41 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 7 (5 embedded in the binary, 2 operator) | 1 | 42 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 37 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
@@ -186,9 +186,9 @@ The retained tools agent uses the direct kagent tool server. Keeping its existin
 installation/authoring path does not restore the removed Kaimahi MCP gateway.
 Model and observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 48 tracked files, three different jobs
+## `scripts/` — 50 tracked files, three different jobs
 
-**Reference coverage:** 36 of the 48 are named by something outside themselves,
+**Reference coverage:** 38 of the 50 are named by something outside themselves,
 and the twelve `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -197,8 +197,8 @@ caller evidence. Textual references are not necessarily invocations.
 |---|---|---|
 | **Installed** — embedded in kmx | 5 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh` |
 | **Checkout** — operator scripts | 2 | `plane-pods.sh`, `copilot-secret.sh` |
-| **Demonstration** | 0 | none |
-| **Scaffolding** — checkers and self-tests | 17 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_model_fixtures.py` |
+| **Demonstration** | 1 | `demo-hello-to-governed.sh` |
+| **Scaffolding** — checkers and self-tests | 18 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures | 4 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `status-unknown-probe.sh` |
 | **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json` |
@@ -229,7 +229,7 @@ operating instructions for deleted code.
 **Retired scenario/integration records (6):** `inbound.md`, `slack.md`,
 `govern-your-agent.md`, `ap-demo.md`, `release-agent.md` and `foreign-runtime.md`.
 
-**Demonstration reference (1):** `demo.md` (the retained local kagent journey).
+**Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
 **Maintainer and process (9):** `development.md`, `repository-map.md`,
 `COORDINATION.md`, `reviews/2026-09-09-orka-composition.md`,
