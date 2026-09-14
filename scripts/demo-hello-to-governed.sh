@@ -165,6 +165,7 @@ print(json.dumps({"uid": x["metadata"]["uid"], "generation": x["metadata"]["gene
 wait_for_text() {
   local text=$1 file=$2 deadline=$((SECONDS + 30))
   until grep -q "$text" "$file" 2>/dev/null; do
+    [[ ! -e $RUN_DIR/watch-exit ]] || fail 'model watcher exited unexpectedly; inspect watch.log'
     (( SECONDS < deadline )) || fail "timed out waiting for $text in $file"
     sleep 0.2
   done
@@ -193,8 +194,10 @@ import json, pathlib, sys
 p=pathlib.Path(sys.argv[1])
 a=json.loads((p/"before-migrate.json").read_text())
 b=json.loads((p/"after-owner-patch.json").read_text())
-assert a["uid"] == b["uid"]
-assert a["spec"]["template"]["spec"]["containers"][0]["image"] == b["spec"]["template"]["spec"]["containers"][0]["image"]
+if a["uid"] != b["uid"]:
+    raise SystemExit("owner patch replaced the Deployment")
+if a["spec"]["template"]["spec"]["containers"][0]["image"] != b["spec"]["template"]["spec"]["containers"][0]["image"]:
+    raise SystemExit("owner patch changed the application image")
 PY
   kube -n demo port-forward --address 127.0.0.1 svc/concierge 18301:80 > "$RUN_DIR/app-forward.log" 2>&1 &
   APP_PID=$!
@@ -207,12 +210,14 @@ PY
   python3 - "$RUN_DIR/app-answer.json" <<'PY'
 import json, sys
 x=json.load(open(sys.argv[1]))
-assert isinstance(x.get("reply"), str) and x["reply"].strip(), "application returned no answer"
+if not isinstance(x.get("reply"), str) or not x["reply"].strip():
+    raise SystemExit("application returned no answer")
 print(x["reply"])
 PY
   wait_for_text 'model.*concierge.*200' "$RUN_DIR/watch.log"
   kmx ledger concierge > "$RUN_DIR/ledger.txt"
   verify
+  [[ ! -e $RUN_DIR/watch-exit ]] || fail 'model watcher exited unexpectedly; inspect watch.log'
   printf 'The application image is unchanged after its owner applied the routing patch.\n'
   sleep "$PAUSE"
 }
@@ -223,25 +228,30 @@ verify() {
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1])
 answer=json.loads((p/"app-answer.json").read_text())
-assert isinstance(answer.get("reply"), str) and answer["reply"].strip(), "application returned no answer"
+if not isinstance(answer.get("reply"), str) or not answer["reply"].strip():
+    raise SystemExit("application returned no answer")
 rows=[line.split() for line in (p/"ledger.txt").read_text().splitlines()]
 rows=[r for r in rows if len(r)>8 and r[1]=="concierge" and r[2]=="orka"]
-assert rows and all(r[8]=="200" for r in rows), "missing successful model rows or unexpected model failure"
-assert all(r[3]=="local/qwen2.5:3b" for r in rows), "unexpected model"
-assert sum(int(r[4])+int(r[5]) for r in rows)>0, "no actual model tokens"
+if not rows or any(r[8]!="200" for r in rows):
+    raise SystemExit("missing successful model rows or unexpected model failure")
+if any(r[3]!="local/qwen2.5:3b" for r in rows):
+    raise SystemExit("unexpected model")
+if sum(int(r[4])+int(r[5]) for r in rows)<=0:
+    raise SystemExit("no actual model tokens")
 print("The ledger records successful local-model traffic for concierge with nonzero token usage.")
 PY
 }
 
 watch() {
+  trap 'printf "%s\\n" "$?" > "$RUN_DIR/watch-exit"' EXIT
   printf 'The lower pane will show new model ledger rows after migration prepares the credential.\n'
   local deadline=$((SECONDS + 180))
   until [[ -f $RUN_DIR/watch-ready ]]; do
     (( SECONDS < deadline )) || fail 'migration did not prepare the watch credential within 180s'
     sleep 0.2
   done
-  printf '\n$ kmx --context %s watch concierge --interval 1s --for 4m\n' "$CTX"
-  ADMIN_PORT=19093 kmx watch concierge --interval 1s --for 4m 2>&1 | tee "$RUN_DIR/watch.log"
+  printf '\n$ kmx --context %s watch concierge --interval 1s\n' "$CTX"
+  ADMIN_PORT=19093 kmx watch concierge --interval 1s 2>&1 | tee "$RUN_DIR/watch.log"
 }
 
 teardown() {
@@ -287,9 +297,12 @@ beats() {
     printf 'Next: external A2A discovery and an answer from hello after orka-agents/orka PR #564 merges (currently %s).\n' "$state"
   fi
   printf 'Demo total: %ss\n' "$(( $(now) - started ))" | tee -a "$RUN_DIR/timings.txt"
-  mux send-keys -t demo:0.1 C-c
+  # Always tear down after the beats, even if the watcher just closed its pane.
+  local watch_status=0
+  mux send-keys -t demo:0.1 C-c || watch_status=$?
   sleep 1
   teardown
+  (( watch_status == 0 )) || fail 'could not stop the model watcher cleanly'
 }
 
 record() {

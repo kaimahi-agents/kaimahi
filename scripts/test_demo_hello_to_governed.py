@@ -77,8 +77,26 @@ class DemoSafetyTest(unittest.TestCase):
             ]:
                 with self.subTest(ledger=ledger):
                     (p / "ledger.txt").write_text(ledger)
-                    result = self.run_demo("verify", directory, KIND_CLUSTER="kmx-hello-governed")
-                    self.assertEqual(result.returncode == 0, success, result.stderr)
+                    for optimize in ("", "1"):
+                        result = self.run_demo("verify", directory,
+                                               KIND_CLUSTER="kmx-hello-governed",
+                                               PYTHONOPTIMIZE=optimize)
+                        self.assertEqual(result.returncode == 0, success, result.stderr)
+
+    def test_watch_failure_is_preserved_for_the_presenter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory)
+            (p / "cluster").write_text("kmx-hello-governed\n")
+            (p / "kubeconfig").touch()
+            (p / "watch-ready").touch()
+            (p / "bin").mkdir()
+            kmx = p / "bin/kmx"
+            kmx.write_text("#!/bin/sh\necho 'model ledger unavailable' >&2\nexit 23\n")
+            kmx.chmod(0o700)
+            result = self.run_demo("_watch", directory, KIND_CLUSTER="kmx-hello-governed")
+            self.assertEqual(result.returncode, 23, result.stderr)
+            self.assertTrue((p / "watch-exit").exists(), "watch lost its exit status")
+            self.assertEqual((p / "watch-exit").read_text().strip(), "23")
 
     def test_unknown_profile_refused_before_preparation(self):
         with tempfile.TemporaryDirectory() as directory:
