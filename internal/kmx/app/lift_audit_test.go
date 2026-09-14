@@ -280,19 +280,31 @@ func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 }
 
 func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
-	for _, byo := range []bool{false, true} {
-		a, out, _ := liftAuditApp(t)
-		opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
-		a.aimAtTheCluster(opt)
-		a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
-		for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx lift down --byo --byo"} {
-			if strings.Contains(out.String(), claim) {
-				t.Errorf("disabled observability claimed %q: %s", claim, out)
+	for _, payload := range lift.Payloads {
+		for _, byo := range []bool{false, true} {
+			a, out, _ := liftAuditApp(t)
+			opt := lift.Options{Payload: payload, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
+			a.aimAtTheCluster(opt)
+			a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
+			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx lift down --byo --byo"} {
+				if strings.Contains(out.String(), claim) {
+					t.Errorf("%s: disabled observability claimed %q: %s", payload, claim, out)
+				}
 			}
-		}
-		for _, want := range []string{"Azure metrics and logs were not checked", a.operationCommand("ledger", a.Cfg.Credential), a.liftCommand(opt, true)} {
-			if !strings.Contains(out.String(), want) {
-				t.Errorf("missing %q: %s", want, out)
+			want := []string{"Azure metrics and logs were not checked", a.liftCommand(opt, true)}
+			// The spend ledger is offered only where something writes to it.
+			// The orka payload wires no Provider through the plane, so
+			// pointing at a credential's ledger would be pointing at an
+			// empty one; `kmx flow` is the honest view there.
+			if payload == lift.PayloadOrka {
+				want = append(want, a.operationCommand("orka", "status"), a.operationCommand("flow"))
+			} else {
+				want = append(want, a.operationCommand("ledger", a.Cfg.Credential))
+			}
+			for _, w := range want {
+				if !strings.Contains(out.String(), w) {
+					t.Errorf("%s: missing %q: %s", payload, w, out)
+				}
 			}
 		}
 	}

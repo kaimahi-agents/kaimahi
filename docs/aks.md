@@ -58,10 +58,20 @@ credential for a hosted one. Orka refuses every model call until a Provider
 exists, so the phase installs the platform and names the step that is yours:
 
 ```bash
-kubectl -n orka-system create secret generic <name> --from-literal=api-key=<key>
-kmx agent create <agent> --namespace orka-system --provider-type openai \
-  --model <model> --secret <name> --base-url <endpoint>
+printf %s "$ORKA_API_KEY" | kubectl --context <cluster> -n orka-system \
+  create secret generic <name> --from-file=api-key=/dev/stdin
+kmx --context <cluster> agent create <agent> --namespace orka-system \
+  --provider-type openai --model <model> --secret <name> --base-url <endpoint>
 ```
+
+Both commands **name the cluster**. `kmx lift` moves only its own process's
+context, so if your current-context is still a local kind cluster, an unpinned
+pair sends the Secret one way and the Agent the other — and the half that lands
+locally looks like success. The key is read from **stdin** rather than passed as
+an argument, because an argument is visible in the process list and is usually
+written to shell history; `printf` keeps the trailing newline out of the Secret,
+and a newline there corrupts the Authorization header on every request. See
+[models](models.md) for the same approach.
 
 The plane's own model seam is **not** usable as that endpoint today: it serves
 TLS under the plane's own authority, and Orka's `Provider` has no field for a

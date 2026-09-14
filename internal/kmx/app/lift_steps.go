@@ -310,9 +310,22 @@ func (a *App) liftOrka(opt lift.Options) error {
 	a.notef("\nNOTE  No Provider was created, because this cluster has no in-cluster model\n" +
 		"      server and kmx holds no credential for a hosted one. Orka refuses every\n" +
 		"      model call until one exists. Create it with a Secret you control:")
-	a.notef("  kubectl -n %s create secret generic <name> --from-literal=api-key=<key>", OrkaNamespace)
-	a.notef("  kmx agent create <agent> --namespace %s --provider-type openai \\\n"+
-		"      --model <model> --secret <name> --base-url <endpoint>", OrkaNamespace)
+	// Both commands name the cluster explicitly. aimAtTheCluster only moves
+	// THIS process's config, so an operator whose current-context is still a
+	// local kind cluster would otherwise send the Secret one way and the
+	// Agent the other — and the half that lands locally looks like success.
+	//
+	// The key is read from stdin rather than passed as an argument, because
+	// an argument is visible in the process list and is usually written to
+	// shell history. docs/models.md describes the same approach.
+	a.notef("  printf %%s \"$ORKA_API_KEY\" | kubectl --context %s -n %s \\\n"+
+		"      create secret generic <name> --from-file=api-key=/dev/stdin",
+		shellArg(a.Cfg.KubeContext), OrkaNamespace)
+	a.notef("  %s", a.operationCommand("agent", "create", "<agent>",
+		"--namespace", OrkaNamespace, "--provider-type", "openai",
+		"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
+	a.notef("\n  printf keeps the trailing newline out of the Secret; a newline there\n" +
+		"  corrupts the Authorization header on every request.")
 	a.notef("\n  The plane's own model seam is NOT usable as that endpoint today: it serves\n" +
 		"  TLS under the plane's authority, and Orka's Provider has no field for a\n" +
 		"  certificate authority to trust. `kmx migrate` remains the governed path,\n" +

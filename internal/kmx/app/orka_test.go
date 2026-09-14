@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
@@ -68,6 +70,10 @@ case "$*" in
     esac ;;
   *"rollout status"*) printf 'deployment "x" successfully rolled out\n'; exit 0 ;;
   *"get deploy orka-controller-manager"*) printf '%s' "$KMX_TEST_IMAGE"; exit 0 ;;
+  # Anchored at the END deliberately. OrkaStatus asks for "-o jsonpath={...}",
+  # and an unanchored *"-o json"* pattern matches that too — which silently
+  # answers the view with OrkaReady's fixture and reports Orka as absent.
+  *"get deploy -o json") printf '%s' "$KMX_TEST_DEPLOY_JSON"; exit 0 ;;
   *"get deploy"*) printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
   *"get crd"*) printf 'tasks.core.orka.ai agents.core.orka.ai '; exit 0 ;;
   *"get providers.core.orka.ai"*) printf '%s' "$KMX_TEST_PROVIDERS"; exit 0 ;;
@@ -429,12 +435,41 @@ func TestOrkaInstallRefusesNoApplyWithDryRun(t *testing.T) {
 	}
 }
 
+// orkaDeployJSON renders what `kubectl get deploy -o json` answers, so a test
+// can state a rollout exactly rather than approximately.
+func orkaDeployJSON(t *testing.T, deployments ...map[string]any) string {
+	t.Helper()
+	items := []any{}
+	for _, d := range deployments {
+		items = append(items, d)
+	}
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// orkaDeploy is one Deployment, healthy by default, so each test states only
+// the one field whose failure it is about.
+func orkaDeploy(name string, edit func(meta, spec, status map[string]any)) map[string]any {
+	meta := map[string]any{"name": name, "generation": 2}
+	spec := map[string]any{"replicas": 1}
+	status := map[string]any{"observedGeneration": 2, "updatedReplicas": 1,
+		"readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 0}
+	if edit != nil {
+		edit(meta, spec, status)
+	}
+	return map[string]any{"metadata": meta, "spec": spec, "status": status}
+}
+
 // OrkaStatus is a VIEW: it prints "not installed" and returns nil, which is
 // right for a person asking and wrong for a caller deciding whether a lift
 // succeeded. `lift --payload orka` verify consults OrkaReady for exactly this
 // reason, and these are the three answers that must differ.
 func TestOrkaReadyRefusesAnAbsentOrka(t *testing.T) {
 	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOY_JSON", "")
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "")
 
 	err := f.app.OrkaReady()
@@ -452,25 +487,12 @@ func TestOrkaReadyRefusesAnAbsentOrka(t *testing.T) {
 	}
 }
 
-// A Deployment with no ready pod renders readyReplicas as an EMPTY field, not
-// as zero. Treating that as unparseable — or as ready — would pass a lift
-// whose controller never started.
-func TestOrkaReadyRefusesADeploymentWithNoReadyPod(t *testing.T) {
-	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=/1 orka-agent-harness-wrapper=1/1 ")
-
-	err := f.app.OrkaReady()
-	if err == nil || !strings.Contains(err.Error(), "not complete") {
-		t.Fatalf("a controller with no ready pod passed verification: %v", err)
-	}
-}
-
-// Both Deployments, or it is not installed. The wrapper is the half that
-// needs the Secret created before the manifest, so a lift that checked only
-// the controller would miss exactly the failure this path guards.
+// Both Deployments, or it is not installed. The wrapper is the half that needs
+// the Secret created before the manifest, so a lift that checked only the
+// controller would miss exactly the failure this path guards.
 func TestOrkaReadyRequiresBothDeployments(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil)))
 
 	err := f.app.OrkaReady()
 	if err == nil || !strings.Contains(err.Error(), orkaWrapper) {
@@ -478,8 +500,183 @@ func TestOrkaReadyRequiresBothDeployments(t *testing.T) {
 	}
 
 	g := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 orka-agent-harness-wrapper=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t,
+		orkaDeploy(orkaController, nil), orkaDeploy(orkaWrapper, nil)))
 	if err := g.app.OrkaReady(); err != nil {
 		t.Fatalf("a healthy Orka was refused: %v", err)
+	}
+}
+
+// A ready replica is not a finished rollout. Every case here reports a READY
+// pod — the old one — while the new spec never lands. Counting ready replicas
+// alone would pass all of them, which is the failure a `--step verify` after a
+// bad image is most likely to meet.
+func TestOrkaReadyRefusesARolloutThatNeverLanded(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(meta, spec, status map[string]any)
+		want string
+	}{
+		{
+			// The new ReplicaSet cannot pull its image, so the old pod stays
+			// ready and the updated count never reaches the desired one.
+			name: "image pull backoff on the replacement",
+			edit: func(_, _, status map[string]any) { status["updatedReplicas"] = 0 },
+			want: "not finished rolling out",
+		},
+		{
+			// The replacement is up but not yet serving.
+			name: "replacement not available",
+			edit: func(_, _, status map[string]any) { status["availableReplicas"] = 0 },
+			want: "not finished rolling out",
+		},
+		{
+			// A surge leaves one pod down; the rollout is still in flight.
+			name: "one replica unavailable",
+			edit: func(_, _, status map[string]any) { status["unavailableReplicas"] = 1 },
+			want: "not finished rolling out",
+		},
+		{
+			// The controller has not yet seen the spec that was applied, so
+			// every count below describes the PREVIOUS spec.
+			name: "spec not yet observed",
+			edit: func(_, _, status map[string]any) { status["observedGeneration"] = 1 },
+			want: "has not observed yet",
+		},
+		{
+			// readyReplicas is absent, not zero, when no pod is ready. It
+			// must read as not ready rather than as unparseable.
+			name: "no ready replica at all",
+			edit: func(_, _, status map[string]any) { delete(status, "readyReplicas") },
+			want: "not finished rolling out",
+		},
+		{
+			// Scaled to zero is not "ready", it is "nothing is running".
+			name: "scaled to zero",
+			edit: func(_, spec, status map[string]any) {
+				spec["replicas"] = 0
+				status["updatedReplicas"], status["readyReplicas"], status["availableReplicas"] = 0, 0, 0
+			},
+			want: "nothing is running to verify",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOrkaFixture(t, nil)
+			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t,
+				orkaDeploy(orkaController, tc.edit), orkaDeploy(orkaWrapper, nil)))
+
+			err := f.app.OrkaReady()
+			if err == nil {
+				t.Fatal("a rollout that never landed passed verification")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("refusal = %v, want it to mention %q", err, tc.want)
+			}
+			if !strings.Contains(err.Error(), orkaController) {
+				t.Errorf("the refusal does not name the deployment: %v", err)
+			}
+		})
+	}
+}
+
+// An unreadable cluster has not been shown to be ready, and saying so is not
+// the same as saying Orka is absent.
+func TestOrkaReadyRefusesUnreadableJSON(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOY_JSON", "{not json")
+
+	err := f.app.OrkaReady()
+	if err == nil || !strings.Contains(err.Error(), "NOT been shown to be ready") {
+		t.Fatalf("unreadable deployments passed verification: %v", err)
+	}
+}
+
+// Every command a lift prints for the operator to paste must name the cluster.
+// `aimAtTheCluster` moves only THIS process's config, so an operator whose
+// current-context is still a local kind cluster would send the Secret one way
+// and the Agent the other — and the half that lands locally looks like success.
+//
+// The key must also be read from stdin. An argument is visible in the process
+// list and is usually written to shell history.
+func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		print func(a *App)
+	}{
+		{"the orka phase note", func(a *App) {
+			a.notef("  printf %%s \"$ORKA_API_KEY\" | kubectl --context %s -n %s \\\n"+
+				"      create secret generic <name> --from-file=api-key=/dev/stdin",
+				shellArg(a.Cfg.KubeContext), OrkaNamespace)
+			a.notef("  %s", a.operationCommand("agent", "create", "<agent>",
+				"--namespace", OrkaNamespace, "--provider-type", "openai",
+				"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
+		}},
+		{"the closing next steps", func(a *App) {
+			a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
+			tc.print(a)
+			got := buf.String()
+
+			for _, line := range strings.Split(got, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "kubectl ") && !strings.Contains(trimmed, "--context demo-cluster") {
+					t.Errorf("an unpinned kubectl would use the operator's current-context: %s", trimmed)
+				}
+				if strings.HasPrefix(trimmed, "kmx ") && !strings.Contains(trimmed, "--context demo-cluster") {
+					t.Errorf("an unpinned kmx would target the wrong cluster: %s", trimmed)
+				}
+			}
+			if strings.Contains(got, "--from-literal=api-key") {
+				t.Errorf("the key is passed in argv, where the process list and shell history see it:\n%s", got)
+			}
+			if !strings.Contains(got, "--from-file=api-key=/dev/stdin") {
+				t.Errorf("the key is not read from protected stdin:\n%s", got)
+			}
+		})
+	}
+}
+
+// The orka payload creates no Agent and no Provider, so the closing text must
+// not claim one or send the operator to `agent chat`.
+func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
+	var buf bytes.Buffer
+	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
+	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+	got := buf.String()
+
+	for _, forbidden := range []string{"agent chat", "hello-world", "The same agent you ran locally"} {
+		if strings.Contains(got, forbidden) {
+			t.Errorf("the orka payload promises %q, but it created no agent:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "no Provider and no Agent yet") {
+		t.Errorf("the closing text does not say what is still missing:\n%s", got)
+	}
+
+	// The kagent payload still says its own thing, or this branch broke it.
+	var legacy bytes.Buffer
+	b := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &legacy, Out: &legacy}
+	b.liftNextSteps(lift.Options{Payload: lift.PayloadKagent, Cluster: "demo-cluster"}, nil)
+	if !strings.Contains(legacy.String(), "hello-world") {
+		t.Errorf("the kagent payload lost its next steps:\n%s", legacy.String())
+	}
+}
+
+// A verify with observability off still differs by payload: the orka payload
+// makes no model call, so promising an agent answer there is a false claim.
+func TestTheNoTelemetryPhaseLabelIsPayloadAware(t *testing.T) {
+	orka := liftVerifyPurposeWithoutTelemetry(lift.PayloadOrka)
+	if strings.Contains(orka, "agent answers") {
+		t.Errorf("an orka verify promises an agent answer: %q", orka)
+	}
+	if !strings.Contains(orka, "Orka") {
+		t.Errorf("an orka verify does not say what it checked: %q", orka)
+	}
+	if kagent := liftVerifyPurposeWithoutTelemetry(lift.PayloadKagent); !strings.Contains(kagent, "agent answers") {
+		t.Errorf("the kagent verify lost its purpose: %q", kagent)
 	}
 }

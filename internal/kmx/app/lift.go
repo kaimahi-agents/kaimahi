@@ -125,7 +125,7 @@ func (a *App) Lift(opt lift.Options) error {
 	for i, step := range steps {
 		p := phase{current: i + 1, total: len(steps), name: lift.PurposeOf(step, opt.Payload)}
 		if step == "verify" && !opt.Observability {
-			p.name = "the agent answers through the plane, and its ledger can be read"
+			p.name = liftVerifyPurposeWithoutTelemetry(opt.Payload)
 		}
 		err := a.runPhase(p, func() error { return a.liftStep(step, opt, record, save, work) })
 		if err != nil {
@@ -151,7 +151,14 @@ func (a *App) Lift(opt lift.Options) error {
 			strings.Join(remainingSteps(opt), ", "), a.liftCommand(full, false))
 		return nil
 	}
-	a.complete("The agent is running on a managed cluster", started)
+	// Payload-aware, because the orka payload creates no Agent and no
+	// Provider. Announcing "the agent is running" there would be a claim
+	// about something this run deliberately did not do.
+	if opt.Payload == lift.PayloadOrka {
+		a.complete("Orka is running on a managed cluster", started)
+	} else {
+		a.complete("The agent is running on a managed cluster", started)
+	}
 	a.liftNextSteps(opt, record)
 	return nil
 }

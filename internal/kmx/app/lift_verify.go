@@ -287,7 +287,33 @@ func (a *App) managedFile(work, name string) ([]byte, error) {
 // liftNextSteps says what the operator now has, and — the part that is not
 // optional — what it costs until they take it down.
 func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
-	fmt.Fprintf(a.Err, `
+	// The orka payload installs the platform and stops. There is no Agent to
+	// chat to and no Provider resolving a model, so the kagent next steps
+	// would send an operator to a command that cannot work and imply an
+	// agent that was never created.
+	if opt.Payload == lift.PayloadOrka {
+		fmt.Fprintf(a.Err, `
+  Orka is running on AKS. It has no Provider and no Agent yet — those are
+  yours to create, because kmx holds no credential for a hosted model and
+  this cluster runs no in-cluster one.
+
+    %s      what is installed, and what it resolves
+    %s      the whole audit trail
+
+  Create a Secret you control, then an Agent against it. The Secret is read
+  from stdin so the key stays out of argv and shell history:
+
+    printf %%s "$ORKA_API_KEY" | kubectl --context %s -n %s \
+        create secret generic <name> --from-file=api-key=/dev/stdin
+    %s
+
+`, a.operationCommand("orka", "status"), a.operationCommand("flow"),
+			shellArg(a.Cfg.KubeContext), OrkaNamespace,
+			a.operationCommand("agent", "create", "<agent>", "--namespace", OrkaNamespace,
+				"--provider-type", "openai", "--model", "<model>", "--secret", "<name>",
+				"--base-url", "<endpoint>"))
+	} else {
+		fmt.Fprintf(a.Err, `
   The same agent you ran locally is now running on AKS, governed.
 
     %s      ask it something
@@ -295,7 +321,8 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
     %s      the whole audit trail
 
 `, a.operationCommand("agent", "chat", "hello-world", "..."),
-		a.operationCommand("ledger", a.Cfg.Credential), a.operationCommand("flow"))
+			a.operationCommand("ledger", a.Cfg.Credential), a.operationCommand("flow"))
+	}
 	if opt.Observability {
 		fmt.Fprintf(a.Err, `  The dashboard is the workbook named "Kaimahi governance plane (%s)" in
   the %s resource group, under Monitoring > Workbooks on the cluster.
