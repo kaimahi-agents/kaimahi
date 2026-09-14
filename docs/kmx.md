@@ -99,7 +99,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + minimal kagent + hello-world + completed answer; no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
-| `kmx lift` / `kmx lift down` | AKS legacy kagent/Copilot journey and owned cleanup; selected infrastructure phases support migration. [AKS](aks.md) |
+| `kmx lift` / `kmx lift down` | provision AKS and land a platform on it, then owned cleanup. **`--payload` is required and has no default**: `orka` lands the pinned Orka (and creates no Provider — that stays yours), `kagent` lands the legacy runtime and its demo agents on governed Copilot. Both share every cluster phase; they differ only in what runs agents. [AKS](aks.md) |
 | `kmx agent list` | readiness, acceptance, ModelConfig, tool wiring; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |

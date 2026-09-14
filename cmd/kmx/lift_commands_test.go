@@ -29,18 +29,23 @@ func TestTheLiftRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 		},
 		{
 			"a policy engine that does not enforce",
-			[]string{"lift", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""},
+			[]string{"lift", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""},
 			[]string{"present but inert"},
 		},
 		{
 			"a registry name Azure would reject",
-			[]string{"lift", "--resource-group", "rg", "--cluster", "c", "--registry", "not-alphanumeric"},
+			[]string{"lift", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "not-alphanumeric"},
 			[]string{"alphanumeric"},
 		},
 		{
 			"a phase that does not exist",
-			[]string{"lift", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--step", "observabilty"},
+			[]string{"lift", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--step", "observabilty"},
 			[]string{"--step", "boundary"},
+		},
+		{
+			"no payload, on a command that bills money",
+			[]string{"lift", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
+			[]string{"--payload is required", "orka", "kagent"},
 		},
 		{
 			"teardown with no idea which lift",
@@ -75,7 +80,7 @@ func TestTheLiftRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 func TestAnExplicitlyEmptyPolicyEngineIsNotTheDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"lift", "--resource-group", "rg", "--cluster", "c",
+	err := execute([]string{"lift", "--payload", "orka", "--resource-group", "rg", "--cluster", "c",
 		"--registry", "reg12345", "--network-policy", ""}, deps)
 	if err == nil || !strings.Contains(err.Error(), "is not a policy engine") {
 		t.Fatalf("an explicitly empty engine was not refused on its own terms: %v", err)

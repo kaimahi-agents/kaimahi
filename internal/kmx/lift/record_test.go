@@ -18,11 +18,11 @@ func armID(group, provider, collection, name string) string {
 
 func TestRunIDMustBeShapedBecauseItNamesEveryResource(t *testing.T) {
 	for _, id := range []string{"", "SHORT", "abcdefg", "abcdefghi", "abcdef-h", "ABCDEF12"} {
-		if _, err := NewRecord(id, Created, "sub", "rg", "cluster"); err == nil {
+		if _, err := NewRecord(id, Created, PayloadOrka, "sub", "rg", "cluster"); err == nil {
 			t.Fatalf("run id %q was accepted; it ends up in the name of every resource the run creates", id)
 		}
 	}
-	if _, err := NewRecord("a1b2c3d4", Created, "sub", "rg", "cluster"); err != nil {
+	if _, err := NewRecord("a1b2c3d4", Created, PayloadOrka, "sub", "rg", "cluster"); err != nil {
 		t.Fatalf("a well-formed run id was refused: %v", err)
 	}
 }
@@ -45,7 +45,7 @@ func TestRunScopedNamesDifferPerRun(t *testing.T) {
 }
 
 func TestRecordRefusesAResourceWithNoID(t *testing.T) {
-	r, err := NewRecord("a1b2c3d4", BringYourOwn, "sub", "rg", "cluster")
+	r, err := NewRecord("a1b2c3d4", BringYourOwn, PayloadOrka, "sub", "rg", "cluster")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestRecordRefusesAResourceWithNoID(t *testing.T) {
 func TestRecordingTheSameResourceTwiceIsOneEntry(t *testing.T) {
 	// A resumed run re-runs a phase that already created its resource. That
 	// must not produce two entries, or teardown reports a phantom.
-	r, _ := NewRecord("a1b2c3d4", Created, "sub", "rg", "cluster")
+	r, _ := NewRecord("a1b2c3d4", Created, PayloadOrka, "sub", "rg", "cluster")
 	res := Resource{Kind: "Log Analytics workspace", Name: "n", ID: armID("rg", "OperationalInsights", "workspaces", "n")}
 	if err := r.Add(res); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestRecordingTheSameResourceTwiceIsOneEntry(t *testing.T) {
 }
 
 func TestRecordRoundTrips(t *testing.T) {
-	r, _ := NewRecord("a1b2c3d4", BringYourOwn, "sub", "rg", "cluster")
+	r, _ := NewRecord("a1b2c3d4", BringYourOwn, PayloadOrka, "sub", "rg", "cluster")
 	_ = r.Add(Resource{Kind: "Azure Monitor workspace", Name: "n", ID: "/id/one", Billing: "retains samples", InResourceGroup: true})
 	_ = r.Add(Resource{Kind: "data collection rule", Name: "m", ID: "/id/two"})
 	var buf bytes.Buffer

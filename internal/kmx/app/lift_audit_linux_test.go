@@ -36,7 +36,10 @@ func TestLiftDownInteractiveConfirmationReachesCarriedScript(t *testing.T) {
 			if _, err := master.WriteString(answer + "\n"); err != nil {
 				t.Fatal(err)
 			}
-			opt := lift.Options{ResourceGroup: "demo(rg)", Cluster: "demo-cluster"}
+			// A record is the account of what a run landed, so seeding one
+			// states a payload. Teardown itself takes none: `lift down`
+			// removes what the record lists, not what a flag claims.
+			opt := lift.Options{Payload: lift.PayloadKagent, ResourceGroup: "demo(rg)", Cluster: "demo-cluster"}
 			liftAuditRecord(t, a, opt, lift.Pre{}, true)
 			err = a.LiftDown(opt)
 			calls, _ := os.ReadFile(filepath.Join(dir, "calls"))

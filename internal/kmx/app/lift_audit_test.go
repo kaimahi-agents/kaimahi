@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -101,7 +102,7 @@ func TestLiftDownConfirmationPrecedesEveryDeletion(t *testing.T) {
 		for _, confirm := range []string{"", "wrong", "demo-cluster", "demo(rg)"} {
 			t.Run(strings.Join([]string{map[bool]string{false: "created", true: "byo"}[byo], confirm}, "/"), func(t *testing.T) {
 				a, out, dir := liftAuditApp(t)
-				opt := lift.Options{BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster"}
+				opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster"}
 				path := liftAuditRecord(t, a, opt, lift.Pre{Recorded: true}, true)
 				a.Cfg.Confirm = confirm
 				err := a.LiftDown(opt)
@@ -150,7 +151,7 @@ func TestLiftDownConfirmationPrecedesEveryDeletion(t *testing.T) {
 func TestLiftDownScriptStillRequiresOwnershipTag(t *testing.T) {
 	a, out, dir := liftAuditApp(t)
 	t.Setenv("LIFT_FAIL", "tag")
-	opt := lift.Options{ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
 	a.Cfg.Confirm = opt.ResourceGroup
 	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
 	if err := a.LiftDown(opt); err == nil {
@@ -170,7 +171,7 @@ func TestLiftDownRetainsRecordForInClusterCleanupFailure(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			a, out, dir := liftAuditApp(t)
 			t.Setenv("LIFT_FAIL", failure)
-			opt := lift.Options{BringYourOwn: true, ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
+			opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
 			a.Cfg.Confirm = opt.Cluster
 			path := liftAuditRecord(t, a, opt, lift.Pre{Recorded: true}, true)
 			err := a.LiftDown(opt)
@@ -199,7 +200,7 @@ func TestLiftDownRetainsRecordForInClusterCleanupFailure(t *testing.T) {
 
 func TestLiftDownUnknownAndZeroAreNotCompleteCleanup(t *testing.T) {
 	a, out, _ := liftAuditApp(t)
-	opt := lift.Options{BringYourOwn: true, ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
+	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "demo-rg", Cluster: "demo-cluster"}
 	a.Cfg.Confirm = opt.Cluster
 	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
 	if err := a.LiftDown(opt); err != nil {
@@ -217,7 +218,7 @@ func TestLiftDownUnknownAndZeroAreNotCompleteCleanup(t *testing.T) {
 
 func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated"}}
-	opt := lift.Options{ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
 		Location: "eastus", NodeSize: "size'$(false)", NodeCount: 3, NetworkPolicy: "calico", NetworkPolicySet: true, Step: "credential"}
 	command := a.liftCommand(opt, false)
 	// Execute only a shell function named kmx, never a real command.
@@ -225,7 +226,7 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command is not shell-safe: %s: %v", command, err)
 	}
-	want := []string{"--context", opt.Cluster, "lift", "--step", opt.Step, "--observability=false",
+	want := []string{"--context", opt.Cluster, "lift", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
 		"--location", opt.Location, "--node-size", opt.NodeSize, "--network-policy", opt.NetworkPolicy,
 		"--node-count", "3", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
 	if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
@@ -233,6 +234,11 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	}
 	if a.Cfg.KubeContext != "kind-unrelated" {
 		t.Fatal("rendering a command changed configuration")
+	}
+	// --payload is mandatory. A recovery command without it is a command the
+	// operator cannot paste back, which is the only thing it is for.
+	if !strings.Contains(command, "--payload "+opt.Payload) {
+		t.Fatalf("the recovery command omits the mandatory payload: %s", command)
 	}
 	opt.BringYourOwn = true
 	down := a.liftCommand(opt, true)
@@ -246,7 +252,7 @@ func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			a, out, _ := liftAuditApp(t)
 			t.Setenv("LIFT_FAIL", failure)
-			opt := lift.Options{ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
+			opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
 				Location: "eastus", NodeSize: "Standard_B8ms", NodeCount: 3, NetworkPolicy: "calico", Step: "credential"}
 			a.Cfg.Confirm = opt.Cluster
 			err := a.Lift(opt)
@@ -274,19 +280,31 @@ func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 }
 
 func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
-	for _, byo := range []bool{false, true} {
-		a, out, _ := liftAuditApp(t)
-		opt := lift.Options{BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
-		a.aimAtTheCluster(opt)
-		a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
-		for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx lift down --byo --byo"} {
-			if strings.Contains(out.String(), claim) {
-				t.Errorf("disabled observability claimed %q: %s", claim, out)
+	for _, payload := range lift.Payloads {
+		for _, byo := range []bool{false, true} {
+			a, out, _ := liftAuditApp(t)
+			opt := lift.Options{Payload: payload, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
+			a.aimAtTheCluster(opt)
+			a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
+			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx lift down --byo --byo"} {
+				if strings.Contains(out.String(), claim) {
+					t.Errorf("%s: disabled observability claimed %q: %s", payload, claim, out)
+				}
 			}
-		}
-		for _, want := range []string{"Azure metrics and logs were not checked", a.operationCommand("ledger", a.Cfg.Credential), a.liftCommand(opt, true)} {
-			if !strings.Contains(out.String(), want) {
-				t.Errorf("missing %q: %s", want, out)
+			want := []string{"Azure metrics and logs were not checked", a.liftCommand(opt, true)}
+			// The spend ledger is offered only where something writes to it.
+			// The orka payload wires no Provider through the plane, so
+			// pointing at a credential's ledger would be pointing at an
+			// empty one; `kmx flow` is the honest view there.
+			if payload == lift.PayloadOrka {
+				want = append(want, a.operationCommand("orka", "status"), a.operationCommand("flow"))
+			} else {
+				want = append(want, a.operationCommand("ledger", a.Cfg.Credential))
+			}
+			for _, w := range want {
+				if !strings.Contains(out.String(), w) {
+					t.Errorf("%s: missing %q: %s", payload, w, out)
+				}
 			}
 		}
 	}
@@ -294,7 +312,7 @@ func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
 
 func TestLiftPlanWithObservabilityDisabledRemainsReadOnly(t *testing.T) {
 	a, out, dir := liftAuditApp(t)
-	opt := lift.Options{ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345", Step: "verify", Plan: true}
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345", Step: "verify", Plan: true}
 	if err := a.Lift(opt); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +351,7 @@ esac
 	t.Setenv("PATH", dir)
 	var out bytes.Buffer
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{Stdout: io.Discard, Stderr: &out}, Out: io.Discard, Err: &out}
-	opt := lift.Options{ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345", Plan: true}
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345", Plan: true}
 	if err := a.Lift(opt); err != nil {
 		t.Fatalf("installed-binary plan required more than az: %v\n%s", err, out.String())
 	}
@@ -363,7 +381,7 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 		}
 		return got
 	}
-	base := lift.Options{ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345", Observability: true}
+	base := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345", Observability: true}
 	for _, tc := range []struct {
 		step string
 		want []string
@@ -393,10 +411,31 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 		})
 	}
 
-	full := names(base)
-	for _, want := range []string{"az", "kubectl", "bash", "python3", "helm", "go", "curl"} {
-		if !full[want] {
-			t.Errorf("full lift does not preflight eventual dependency %s before cluster creation: %v", want, full)
+	// A full lift preflights everything it will EVENTUALLY need, before it
+	// creates anything — and the payload decides what that is. An Orka lift
+	// never runs Helm, so demanding it would make an operator install a tool
+	// this path has no use for.
+	for _, tc := range []struct {
+		payload string
+		want    []string
+		not     []string
+	}{
+		{lift.PayloadKagent, []string{"az", "kubectl", "bash", "python3", "helm", "go", "curl"}, nil},
+		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "python3", "go", "curl"}, []string{"helm"}},
+	} {
+		payloadBase := base
+		payloadBase.Payload = tc.payload
+		full := names(payloadBase)
+		for _, want := range tc.want {
+			if !full[want] {
+				t.Errorf("%s: full lift does not preflight eventual dependency %s before cluster creation: %v",
+					tc.payload, want, full)
+			}
+		}
+		for _, unwanted := range tc.not {
+			if full[unwanted] {
+				t.Errorf("%s: full lift demands %s, which this payload never runs: %v", tc.payload, unwanted, full)
+			}
 		}
 	}
 	withoutTelemetry := base
@@ -419,5 +458,67 @@ func TestLiftPyYAMLAndScriptPlatformChecksAreStepAware(t *testing.T) {
 	}
 	if err := liftPlatformError([]string{"boundary"}, "windows"); err == nil || !strings.Contains(err.Error(), "WSL") {
 		t.Fatalf("script-backed phase has no clear Windows refusal: %v", err)
+	}
+}
+
+// A lift is recorded with the payload it landed. Resuming it with the other
+// one would install BOTH platforms onto a single cluster — the exact outcome
+// the payload split exists to prevent — so the difference is refused rather
+// than reconciled, the same way a branch mismatch is.
+func TestAResumedLiftCannotSwitchPayload(t *testing.T) {
+	a, _, _ := liftAuditApp(t)
+	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345"}
+	liftAuditRecord(t, a, opt, lift.Pre{}, false)
+
+	opt.Payload = lift.PayloadKagent
+	_, _, err := a.openLiftRecord(opt, "test-subscription")
+	if err == nil {
+		t.Fatal("a recorded orka lift was resumed as kagent")
+	}
+	for _, want := range []string{"orka", "kagent", "both platforms"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal never says %q: %v", want, err)
+		}
+	}
+
+	// The matching payload still opens, or the guard would block every resume.
+	opt.Payload = lift.PayloadOrka
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
+		t.Fatalf("resuming with the recorded payload was refused: %v", err)
+	}
+}
+
+// A record written before the split carries no payload, and only kagent could
+// have written it. Refusing those would strand every existing lift; reading
+// one as orka would be a lie about what is on the cluster.
+func TestALiftRecordedBeforeThePayloadSplitResumesAsKagent(t *testing.T) {
+	a, _, _ := liftAuditApp(t)
+	opt := lift.Options{Payload: lift.PayloadKagent, ResourceGroup: "old-rg", Cluster: "old-cluster", Registry: "reg12345"}
+	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
+
+	// Strip the field, as a record from before it existed has no payload.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	delete(raw, "payload")
+	rewritten, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, rewritten, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
+		t.Fatalf("a legacy record was refused a kagent resume: %v", err)
+	}
+	opt.Payload = lift.PayloadOrka
+	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err == nil {
+		t.Fatal("a legacy kagent record accepted an orka resume")
 	}
 }

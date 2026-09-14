@@ -69,7 +69,15 @@ type Record struct {
 	Branch Branch `json:"branch"`
 	// Subscription is recorded so teardown can refuse to act when the CLI is
 	// pointed somewhere else entirely. Never printed, never committed.
-	Subscription  string     `json:"subscription"`
+	Subscription string `json:"subscription"`
+	// Payload is what this run landed. Recorded so a resumed run cannot
+	// install the other one on top: the phases differ, and a cluster with
+	// both is a cluster nobody asked for.
+	//
+	// Empty means the record predates the payload split, when `lift` only
+	// ever landed kagent. That is treated as kagent rather than as unknown,
+	// because it is not unknown — it is history.
+	Payload       string     `json:"payload,omitempty"`
 	ResourceGroup string     `json:"resource_group"`
 	Cluster       string     `json:"cluster"`
 	Created       []Resource `json:"created"`
@@ -173,7 +181,7 @@ func WorkbookName(runID string) string         { return namePrefix + "-workbook-
 
 // NewRecord starts an account of a run. It validates the run id rather than
 // trusting it, because the id ends up in every resource name.
-func NewRecord(runID string, branch Branch, subscription, resourceGroup, cluster string) (*Record, error) {
+func NewRecord(runID string, branch Branch, payload, subscription, resourceGroup, cluster string) (*Record, error) {
 	if !runIDShape.MatchString(runID) {
 		return nil, fmt.Errorf("lift: run id %q is not 8 lowercase alphanumerics — it names every resource this run creates", runID)
 	}
@@ -182,12 +190,25 @@ func NewRecord(runID string, branch Branch, subscription, resourceGroup, cluster
 	default:
 		return nil, fmt.Errorf("lift: unknown branch %q", branch)
 	}
+	if err := ValidPayload(payload); err != nil {
+		return nil, err
+	}
 	for name, v := range map[string]string{"subscription": subscription, "resource group": resourceGroup, "cluster": cluster} {
 		if strings.TrimSpace(v) == "" {
 			return nil, fmt.Errorf("lift: %s is required to record a run", name)
 		}
 	}
-	return &Record{RunID: runID, Branch: branch, Subscription: subscription, ResourceGroup: resourceGroup, Cluster: cluster}, nil
+	return &Record{RunID: runID, Branch: branch, Payload: payload, Subscription: subscription,
+		ResourceGroup: resourceGroup, Cluster: cluster}, nil
+}
+
+// PayloadOrLegacy is what this record landed, reading an absent payload as the
+// only thing `lift` could have landed when the record was written.
+func (r *Record) PayloadOrLegacy() string {
+	if strings.TrimSpace(r.Payload) == "" {
+		return PayloadKagent
+	}
+	return r.Payload
 }
 
 // Add records a resource that now exists. An empty id is refused: a resource

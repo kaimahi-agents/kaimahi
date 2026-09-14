@@ -32,14 +32,18 @@ func newLiftCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	registerLiftIdentityFlags(cmd, &opt)
+	cmd.Flags().StringVar(&opt.Payload, "payload", "",
+		strings.Join(lift.Payloads, "|")+" — what lands on the cluster; required, and never defaulted")
 	cmd.Flags().StringVar(&opt.Location, "location", "", "Azure region (default "+app.DefaultLocation+")")
 	cmd.Flags().StringVar(&opt.NodeSize, "node-size", "", "node VM size (default "+app.DefaultNodeSize+")")
 	cmd.Flags().IntVar(&opt.NodeCount, "node-count", 0, "how many nodes (default 1)")
 	cmd.Flags().StringVar(&opt.NetworkPolicy, "network-policy", "", "NetworkPolicy engine: cilium (default), azure, calico")
 	cmd.Flags().BoolVar(&opt.Observability, "observability", true, "wire Azure Monitor and Container Insights")
-	cmd.Flags().StringVar(&opt.Step, "step", "", "run one phase: "+strings.Join(lift.Steps, "|"))
+	cmd.Flags().StringVar(&opt.Step, "step", "", "run one phase (the phases depend on --payload): "+
+		strings.Join(lift.StepsForPayload(lift.PayloadOrka), "|")+" — kagent adds kagent|agents")
 	cmd.Flags().BoolVar(&opt.Plan, "plan", false, "print what would be created, where, and stop")
-	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(lift.Steps))
+	_ = cmd.RegisterFlagCompletionFunc("payload", staticCompletion(lift.Payloads))
+	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(lift.AllSteps()))
 	_ = cmd.RegisterFlagCompletionFunc("network-policy", staticCompletion([]string{"cilium", "azure", "calico"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		// An engine set to the empty string is not the same as one left

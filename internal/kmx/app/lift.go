@@ -74,7 +74,8 @@ func (a *App) Lift(opt lift.Options) error {
 	// operator having asked for it.
 	banner := opt.Banner(acct.User.Name, acct.Name)
 	if !opt.Observability {
-		banner = strings.ReplaceAll(banner, lift.StepPurpose["verify"], "the agent answers through the plane, and its ledger can be read (Azure telemetry not checked)")
+		banner = strings.ReplaceAll(banner, lift.PurposeOf("verify", opt.Payload),
+			liftVerifyPurposeWithoutTelemetry(opt.Payload))
 	}
 	fmt.Fprint(a.Err, banner)
 	if opt.Plan {
@@ -122,9 +123,9 @@ func (a *App) Lift(opt lift.Options) error {
 	a.aimAtTheCluster(opt)
 	started := a.timeNow()
 	for i, step := range steps {
-		p := phase{current: i + 1, total: len(steps), name: lift.StepPurpose[step]}
+		p := phase{current: i + 1, total: len(steps), name: lift.PurposeOf(step, opt.Payload)}
 		if step == "verify" && !opt.Observability {
-			p.name = "the agent answers through the plane, and its ledger can be read"
+			p.name = liftVerifyPurposeWithoutTelemetry(opt.Payload)
 		}
 		err := a.runPhase(p, func() error { return a.liftStep(step, opt, record, save, work) })
 		if err != nil {
@@ -150,7 +151,14 @@ func (a *App) Lift(opt lift.Options) error {
 			strings.Join(remainingSteps(opt), ", "), a.liftCommand(full, false))
 		return nil
 	}
-	a.complete("The agent is running on a managed cluster", started)
+	// Payload-aware, because the orka payload creates no Agent and no
+	// Provider. Announcing "the agent is running" there would be a claim
+	// about something this run deliberately did not do.
+	if opt.Payload == lift.PayloadOrka {
+		a.complete("Orka is running on a managed cluster", started)
+	} else {
+		a.complete("The agent is running on a managed cluster", started)
+	}
 	a.liftNextSteps(opt, record)
 	return nil
 }
@@ -194,6 +202,16 @@ func withLiftDefaults(opt lift.Options) lift.Options {
 	return opt
 }
 
+// liftVerifyPurposeWithoutTelemetry is what verify still proves when Azure
+// monitoring is off, which differs by payload for the same reason the phase
+// itself does.
+func liftVerifyPurposeWithoutTelemetry(payload string) string {
+	if payload == lift.PayloadOrka {
+		return "Orka is installed and ready (Azure telemetry not checked)"
+	}
+	return "the agent answers through the plane, and its ledger can be read (Azure telemetry not checked)"
+}
+
 func (a *App) liftDependencies(opt lift.Options) []dependency {
 	deps := []dependency{depAz}
 	for _, step := range opt.StepsToRun() {
@@ -207,6 +225,9 @@ func (a *App) liftDependencies(opt lift.Options) []dependency {
 			deps = append(deps, depBash, depPython3)
 		case "kagent":
 			deps = append(deps, depHelm)
+		case "orka":
+			// Orka's installer is applied with kubectl, which every phase
+			// already depends on, and fetched over HTTPS by kmx itself.
 		case "plane":
 			deps = append(deps, depBash, depGo)
 		case "verify":
@@ -312,6 +333,12 @@ func (a *App) liftCommand(opt lift.Options, down bool) string {
 		args = append(args, "down")
 	} else {
 		opt = withLiftDefaults(opt)
+		// --payload is mandatory, so a resume command without it is a
+		// command that cannot be run. Every guard and every failure prints
+		// this string for somebody to paste back.
+		if opt.Payload != "" {
+			args = append(args, "--payload", opt.Payload)
+		}
 		if opt.Step != "" {
 			args = append(args, "--step", opt.Step)
 		}
@@ -404,6 +431,8 @@ func (a *App) liftStep(step string, opt lift.Options, record *lift.Record, save 
 		return a.liftPlane(opt, work)
 	case "agents":
 		return a.liftAgents(opt)
+	case "orka":
+		return a.liftOrka(opt)
 	case "observability":
 		return a.liftObservability(opt, record, save, work)
 	case "verify":
@@ -490,11 +519,27 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 		if err != nil {
 			return nil, nil, err
 		}
-		record, err = lift.NewRecord(runID, opt.Branch(), subscription, opt.ResourceGroup, opt.Cluster)
+		record, err = lift.NewRecord(runID, opt.Branch(), opt.Payload, subscription, opt.ResourceGroup, opt.Cluster)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
+	// The payload is refused on a mismatch for the same reason the branch is:
+	// resuming a run with the other one would install BOTH products on one
+	// cluster, which is the outcome the split exists to prevent. A record
+	// written before the split carries no payload and can only have landed
+	// kagent, so that is what it is compared as — and adopting it records the
+	// fact rather than leaving the next run to guess again.
+	if recorded := record.PayloadOrLegacy(); recorded != opt.Payload {
+		return nil, nil, fmt.Errorf("kmx lift: %s/%s was lifted onto with --payload %s and this run says %s.\n"+
+			"  Refusing: resuming with the other payload would install both platforms on one cluster.\n"+
+			"  Re-run with --payload %s, or tear this lift down first (`kmx lift down`).",
+			opt.ResourceGroup, opt.Cluster, recorded, opt.Payload, recorded)
+	}
+	if record.Payload == "" {
+		record.Payload = opt.Payload
+	}
+
 	if record.Branch != opt.Branch() {
 		return nil, nil, fmt.Errorf("kmx lift: %s/%s was lifted onto as %q and this run says %q.\n"+
 			"  These have opposite teardown rules, so the difference is refused rather than reconciled.",

@@ -21,6 +21,7 @@ package app
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -446,6 +447,97 @@ func unreachable(err error) bool {
 		}
 	}
 	return false
+}
+
+// OrkaReady answers, strictly, whether Orka is installed AND both of its
+// Deployments have every replica ready.
+//
+// It exists because `OrkaStatus` is a VIEW: it prints "not installed" and
+// returns nil, which is right for a human asking a question and wrong for a
+// caller deciding whether a lift succeeded. A verification step that consulted
+// the view would report "installed and ready" about a cluster with no Orka on
+// it at all.
+//
+// Unreadable is its own answer, and not a pass: a cluster that did not respond
+// has not been shown to be ready.
+func (a *App) OrkaReady() error {
+	raw, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy", "-o", "json")
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("cannot read Orka in namespace %s, so it has NOT been shown to be ready: %w",
+			OrkaNamespace, err)
+	}
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name       string `json:"name"`
+				Generation int64  `json:"generation"`
+			} `json:"metadata"`
+			Spec struct {
+				Replicas int32 `json:"replicas"`
+			} `json:"spec"`
+			Status struct {
+				ObservedGeneration  int64 `json:"observedGeneration"`
+				UpdatedReplicas     int32 `json:"updatedReplicas"`
+				ReadyReplicas       int32 `json:"readyReplicas"`
+				AvailableReplicas   int32 `json:"availableReplicas"`
+				UnavailableReplicas int32 `json:"unavailableReplicas"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if trimmed := strings.TrimSpace(raw); trimmed != "" {
+		if err := json.Unmarshal([]byte(trimmed), &list); err != nil {
+			return fmt.Errorf("cannot read Orka's deployments in namespace %s, so it has NOT been shown to be ready: %w",
+				OrkaNamespace, err)
+		}
+	}
+	found := map[string]int{}
+	for i, item := range list.Items {
+		found[item.Metadata.Name] = i
+	}
+	for _, name := range []string{orkaController, orkaWrapper} {
+		i, present := found[name]
+		if !present {
+			return fmt.Errorf("Orka's %s is not on this cluster in namespace %s: "+
+				"nothing was verified, because there is nothing there.\n"+
+				"  Install it with `kmx orka install`, or resume this lift at its orka phase",
+				name, OrkaNamespace)
+		}
+		d := list.Items[i]
+		// Ready replicas alone are not a finished rollout. A Deployment whose
+		// new pod is in ImagePullBackOff still reports the OLD pod as ready,
+		// so `1/1` would pass a rollout that never landed. The generation and
+		// the updated/available counts are what distinguish "this spec is
+		// running" from "some spec is running".
+		switch {
+		case d.Spec.Replicas <= 0:
+			return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
+				"  Scale it up, or reinstall with `kmx orka install`",
+				name, d.Spec.Replicas, OrkaNamespace)
+		case d.Status.ObservedGeneration < d.Metadata.Generation:
+			return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
+				"(generation %d, observed %d), so this lift is not complete.\n"+
+				"  Watch it finish:  kubectl -n %s rollout status deploy/%s",
+				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, OrkaNamespace, name)
+		case d.Status.UpdatedReplicas != d.Spec.Replicas,
+			d.Status.AvailableReplicas != d.Spec.Replicas,
+			d.Status.ReadyReplicas != d.Spec.Replicas,
+			d.Status.UnavailableReplicas != 0:
+			// No guessed label selector here. An earlier version suggested
+			// `-l app.kubernetes.io/name=<deployment>` and that matches
+			// nothing: Orka labels every pod `app.kubernetes.io/name=orka`,
+			// so the hint printed "No resources found" at the exact moment
+			// the operator needed it. The namespace is Orka's own and holds
+			// few pods, so listing it needs no selector to be right.
+			return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
+				"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
+				"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
+				"  Its rollout says why:  kubectl -n %s rollout status deploy/%s\n"+
+				"  And the pods:          kubectl -n %s get pods",
+				name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
+				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, OrkaNamespace, name, OrkaNamespace)
+		}
+	}
+	return nil
 }
 
 // OrkaStatus reports what is installed and what it can resolve.
