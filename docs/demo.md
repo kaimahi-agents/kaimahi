@@ -12,7 +12,9 @@ The four beats are:
 
 1. `kmx orka install` installs the pinned platform on a dedicated kind cluster.
 2. `kmx agent create hello --task ...` creates Provider, Agent and Task and
-   retrieves a real local-model answer.
+   retrieves a real local-model answer. It must equal exactly `Hello world.`;
+   only the CLI's sanitized stdout is saved to `hello-answer.txt`, separately
+   from diagnostics and the generated `hello.yaml` manifest.
 3. Show the generated YAML, then `kmx agent show hello` for the live dependency
    chain, Provider readiness and Secret name. `show` itself supports table/JSON,
    not YAML. The full bundle is saved; its Secret skeleton contains no values
@@ -41,13 +43,25 @@ explicit contexts on kmx/kubectl/Helm; it never selects the shared current conte
 ```bash
 export KIND_CLUSTER=kmx-hello-governed-1
 export DEMO_RECORD_PROFILE=presenter
+export DEMO_APP_PORT=18301
+export DEMO_WATCH_PORT=19093
 run=/home/tng/kaimahi-local/demo-hello-to-governed/take-1
 bash scripts/demo-hello-to-governed.sh prepare "$run"
 bash scripts/demo-hello-to-governed.sh record "$run"
 bash scripts/demo-hello-to-governed.sh verify "$run"
 ```
 
+Each concurrent lane must select a **unique free pair** of `DEMO_APP_PORT`
+(concierge forward and request URL) and `DEMO_WATCH_PORT` (watcher's admin
+forward). The defaults above retain single-lane behavior. Before recording,
+both must be decimal ports in 1–65535, distinct from each other and the CLI's
+`ADMIN_PORT` (default 19091), and available on loopback. This check is not a
+reservation; do not assign the same pair to simultaneous starts. Configure
+`ADMIN_PORT` separately for concurrent plane commands, and serialize native
+hello phases: their existing result listener still uses port 19180.
+
 Repeat with a fresh run directory and cluster suffix for the second cold run.
+Preparation checks `agg` before cluster setup; recording checks it again.
 Preparation refuses an existing cluster or directory. It reuses `kmx up --step`
 for cluster/Ollama/model and `kmx plane`; bare `up` and `quickstart` include a
 different first-answer journey, so they are not duplicated or run in this demo.
@@ -86,7 +100,8 @@ model ledger after teardown; it does not rerun inference or certify a recording.
 The demo proves model traffic through the seam, not tool governance, network
 policy enforcement or general application compatibility. It uses one fresh
 conversation; the [documented continuation limits](migrate.md#continuation-incompatibility)
-still apply. A generated answer is not promised to have exact wording. The
+still apply. Concierge's generated wording may vary; native hello's exact
+answer is checked before proceeding to the next beat. The
 ledger's `unpriced`/zero cents is not itself the proof of free inference; the
 actual model endpoint is the in-cluster Ollama Provider.
 

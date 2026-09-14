@@ -7,6 +7,7 @@ usage() {
   printf 'Usage: %s {prepare|record|verify|teardown} /absolute/run-directory\n' "$0"
   printf 'Each prepare requires a fresh directory and a dedicated kind cluster.\n'
   printf 'KIND_CLUSTER=kmx-hello-governed[-suffix]; DEMO_RECORD_PROFILE=presenter|docs\n'
+  printf 'DEMO_APP_PORT=18301; DEMO_WATCH_PORT=19093 (use a unique free pair per concurrent lane)\n'
   printf 'Recordings retain real elapsed time; setup and teardown are separately timed.\n'
 }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -37,13 +38,15 @@ SCRIPT=$ROOT/scripts/demo-hello-to-governed.sh
 export KUBECONFIG=$RUN_DIR/kubeconfig
 export KUBE_CTX=kind-$KIND_CLUSTER
 export CONTAINER_ENGINE=docker MODEL=qwen2.5:3b
+export DEMO_APP_PORT=${DEMO_APP_PORT-18301} DEMO_WATCH_PORT=${DEMO_WATCH_PORT-19093}
 export PATH=$RUN_DIR/bin:$PATH
 CTX=$KUBE_CTX
 SOCKET=$RUN_DIR/tmux.sock
 kmx() { "$RUN_DIR/bin/kmx" --context "$CTX" "$@"; }
 kube() { kubectl --context "$CTX" "$@"; }
 mux() { tmux -S "$SOCKET" -f /dev/null "$@"; }
-run() { printf '\n$ '; printf '%q ' "$@"; printf '\n'; "$@"; sleep "$PAUSE"; }
+print_command() { printf '\n$ '; printf '%q ' "$@"; printf '\n'; }
+run() { print_command "$@"; "$@"; sleep "$PAUSE"; }
 now() { date +%s; }
 
 # A real wall-clock measurement, including command output and presenter pauses.
@@ -62,7 +65,7 @@ beat() {
 
 prepare() {
   local tool started
-  for tool in go docker kind kubectl helm python3 curl gh tmux asciinema; do
+  for tool in go docker kind kubectl helm python3 curl gh tmux asciinema agg; do
     command -v "$tool" >/dev/null || fail "missing prerequisite: $tool"
   done
   python3 -c 'import yaml'
@@ -135,11 +138,17 @@ PY
 }
 
 hello() {
-  run kmx agent create hello --namespace orka-system --provider-type openai \
-    --model qwen2.5:3b --secret local-provider-key \
-    --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-    --task 'Reply with exactly: Hello world.' --result-service-account orka-result-reader \
-    --out "$RUN_DIR/hello.yaml"
+  local -a command=(kmx agent create hello --namespace orka-system --provider-type openai
+    --model qwen2.5:3b --secret local-provider-key
+    --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+    --task 'Reply with exactly: Hello world.' --result-service-account orka-result-reader
+    --out "$RUN_DIR/hello.yaml")
+  print_command "${command[@]}"
+  # With --out, kmx stdout is only the sanitized answer; diagnostics use stderr.
+  "${command[@]}" | tee "$RUN_DIR/hello-answer.txt"
+  # Fprintln adds one newline; do not trim extra whitespace from the answer.
+  printf 'Hello world.\n' | cmp -s - "$RUN_DIR/hello-answer.txt" || fail 'hello did not answer exactly "Hello world."'
+  sleep "$PAUSE"
 }
 
 show() {
@@ -199,12 +208,12 @@ if a["uid"] != b["uid"]:
 if a["spec"]["template"]["spec"]["containers"][0]["image"] != b["spec"]["template"]["spec"]["containers"][0]["image"]:
     raise SystemExit("owner patch changed the application image")
 PY
-  kube -n demo port-forward --address 127.0.0.1 svc/concierge 18301:80 > "$RUN_DIR/app-forward.log" 2>&1 &
+  kube -n demo port-forward --address 127.0.0.1 svc/concierge "$DEMO_APP_PORT:80" > "$RUN_DIR/app-forward.log" 2>&1 &
   APP_PID=$!
   wait_for_text 'Forwarding from' "$RUN_DIR/app-forward.log"
   printf '\nThe existing concierge application now sends this fresh greeting through the model seam.\n'
   run curl --fail --silent --show-error --max-time 180 \
-    http://127.0.0.1:18301/api/chat -H 'Content-Type: application/json' \
+    "http://127.0.0.1:$DEMO_APP_PORT/api/chat" -H 'Content-Type: application/json' \
     --data '{"session_id":"hello-governed","message":"Hello! Please greet me in one short sentence."}' \
     -o "$RUN_DIR/app-answer.json"
   python3 - "$RUN_DIR/app-answer.json" <<'PY'
@@ -251,7 +260,7 @@ watch() {
     sleep 0.2
   done
   printf '\n$ kmx --context %s watch concierge --interval 1s\n' "$CTX"
-  ADMIN_PORT=19093 kmx watch concierge --interval 1s 2>&1 | tee "$RUN_DIR/watch.log"
+  ADMIN_PORT=$DEMO_WATCH_PORT kmx watch concierge --interval 1s 2>&1 | tee "$RUN_DIR/watch.log"
 }
 
 teardown() {
@@ -305,9 +314,33 @@ beats() {
   (( watch_status == 0 )) || fail 'could not stop the model watcher cleanly'
 }
 
+validate_ports() {
+  local name port
+  for name in DEMO_APP_PORT DEMO_WATCH_PORT; do
+    port=${!name}
+    if [[ ! $port =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+      fail "$name must be a decimal port from 1 to 65535 (no leading zeroes)"
+    fi
+    [[ $port != "${ADMIN_PORT:-19091}" ]] || fail "$name must be distinct from the CLI's ADMIN_PORT"
+  done
+  [[ $DEMO_APP_PORT != "$DEMO_WATCH_PORT" ]] || fail 'DEMO_APP_PORT and DEMO_WATCH_PORT must be distinct'
+  # Detect occupied ports before recording. This is not a reservation: callers
+  # must assign unique pairs to concurrent lanes; port-forward still fails closed.
+  python3 - "$DEMO_APP_PORT" "$DEMO_WATCH_PORT" <<'PY'
+import socket, sys
+for name, port in zip(("DEMO_APP_PORT", "DEMO_WATCH_PORT"), sys.argv[1:]):
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.1", int(port)))
+        except OSError:
+            raise SystemExit(f"{name}={port} is not available; choose unique host ports for each concurrent lane")
+PY
+}
+
 record() {
   [[ -f $RUN_DIR/prepared ]] || fail 'setup has not finished; directory is not prepared'
   [[ ! -e $RUN_DIR/demo.cast ]] || fail 'recording already exists; use a new fresh run, never overwrite evidence'
+  validate_ports
   command -v agg >/dev/null || fail 'install asciinema agg on PATH to render the recording'
   local command
   printf -v command 'bash %q _terminal %q' "$SCRIPT" "$RUN_DIR"
