@@ -57,6 +57,9 @@ type chatRenderer struct {
 	promptOpen      bool
 	promptText      string
 	promptIndent    int
+	promptKind      cliui.FocusKind
+	promptHint      string
+	commandSummary  string
 	transient       bool
 	transientWidth  int
 	spinnerDisabled bool
@@ -67,7 +70,7 @@ type chatRenderer struct {
 func newChatRenderer(out io.Writer) *chatRenderer {
 	terminal := isInteractiveTerminal(out) && os.Getenv("TERM") != "dumb"
 	plain := os.Getenv("NO_COLOR") != ""
-	return &chatRenderer{out: out, ui: cliui.New(out), color: terminal && !plain, cursor: terminal && !plain}
+	return &chatRenderer{out: out, ui: cliui.New(out), color: terminal && !plain, cursor: terminal && !plain, commandSummary: slashCommandSummary()}
 }
 
 func (r *chatRenderer) label(text string, color actorColor) string {
@@ -178,7 +181,11 @@ func (r *chatRenderer) statusStart(agent, kubeContext string) {
 	if kubeContext != "" {
 		fmt.Fprintf(r.out, "  Context: %s\n", strings.Join(strings.Fields(safeTerminal(kubeContext)), " "))
 	}
-	fmt.Fprintf(r.out, "  Commands: %s\n", slashCommandSummary())
+	commands := r.commandSummary
+	if commands == "" {
+		commands = slashCommandSummary()
+	}
+	fmt.Fprintf(r.out, "  Commands: %s\n", commands)
 }
 
 func (r *chatRenderer) wrap(text string, indent int) string {
@@ -279,10 +286,15 @@ func (r *chatRenderer) operationPrompt(kind string, color actorColor, payload, p
 	r.closeLocked()
 	r.promptText = strings.Join(strings.Fields(safeTerminal(prompt)), " ") + " "
 	r.promptIndent = 2
+	r.promptKind = cliui.FocusQuestion
+	if strings.Contains(strings.ToLower(kind), "approval") {
+		r.promptKind = cliui.FocusApproval
+	}
 	if r.ui.Rich() {
-		// Only the static request is boxed. The native editor owns the rows below it.
-		fmt.Fprintln(r.out, r.ui.Callout(cliui.CalloutWarning, "Request details", []cliui.Field{{Value: safeTerminal(payload)}}))
-		fmt.Fprintf(r.out, "%s\n  %s", r.label("["+kind+"]", color), r.promptText)
+		fmt.Fprintf(r.out, "%s\n%s\n", r.label("["+kind+"]", color), indentPayload(payload))
+		if !r.cursor || !isTerminal(r.out) {
+			fmt.Fprintf(r.out, "  %s", r.promptText)
+		}
 	} else {
 		fmt.Fprintf(r.out, "%s\n%s\n  %s", r.label("["+kind+"]", color), indentPayload(payload), r.promptText)
 	}
@@ -364,9 +376,118 @@ func (r *chatRenderer) prompt() {
 	defer r.mu.Unlock()
 	r.clearLocked()
 	r.closeLocked()
-	r.promptText, r.promptIndent = r.label("YOU >", colorCyan)+" ", 0
-	fmt.Fprint(r.out, r.promptText)
+	r.promptText, r.promptIndent, r.promptKind = r.label("YOU >", colorCyan)+" ", 0, cliui.FocusMessage
+	if !r.cursor || !isTerminal(r.out) {
+		fmt.Fprint(r.out, r.promptText)
+	}
 	r.promptOpen = true
+}
+
+type interactiveChatBackend interface {
+	Agent() string
+	Connect(context.Context, *chatRenderer) error
+	Send(context.Context, string, *chatRenderer) error
+}
+
+func (a *App) runInteractiveChatBackend(backend interactiveChatBackend) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	renderer := newChatRenderer(a.Out)
+	if !newChatInput(nil, a.Stdin, a.Out, renderer).enhanced {
+		renderer.ui = cliui.WithCapabilities(cliui.Capabilities{})
+		renderer.cursor = false
+	}
+	defer renderer.finish()
+	renderer.promptHint = "/help  /retry  /exit"
+	renderer.commandSummary = "/help /retry /exit"
+	renderer.working("Connecting to " + backend.Agent())
+	if err := backend.Connect(ctx, renderer); err != nil {
+		return err
+	}
+	input := newChatInput(bufio.NewScanner(a.Stdin), a.Stdin, a.Out, renderer)
+	last := ""
+	for {
+		renderer.prompt()
+		line, err := input.readLine(ctx, false)
+		if err != nil {
+			if err == io.EOF || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				reason := "end of input"
+				if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					reason = "cancelled"
+				}
+				renderer.exit(reason)
+				return nil
+			}
+			return err
+		}
+		message := strings.TrimSpace(line)
+		renderer.submitted(isInteractiveTerminal(a.Stdin))
+		switch message {
+		case "", "\x1b":
+			if message == "\x1b" {
+				renderer.exit("exit requested")
+				return nil
+			}
+			continue
+		case "/exit", "/quit":
+			renderer.exit("exit requested")
+			return nil
+		case "/help":
+			renderer.operation("CHAT HELP", "", colorBlue, "Conversation:\n  /retry\n  /exit\n\nEach message creates one fresh Orka Task.")
+			continue
+		case "/retry":
+			if last == "" {
+				renderer.operation("CHAT", "", colorBlue, "Retry: no previous message")
+				continue
+			}
+			message = last
+		default:
+			if strings.HasPrefix(message, "/") {
+				renderer.operation("CHAT", "", colorBlue, "Unknown command. Use /help for commands.")
+				continue
+			}
+			last = message
+		}
+		if err := sendInteractiveChatMessage(ctx, backend, message, renderer); err != nil {
+			if ctx.Err() != nil {
+				renderer.exit("cancelled")
+				return nil
+			}
+			renderer.operation("CHAT", "", colorRed, "Request failed: "+safeTerminal(err.Error()))
+		}
+		renderer.finish()
+	}
+}
+
+func sendInteractiveChatMessage(ctx context.Context, backend interactiveChatBackend, message string, renderer *chatRenderer) error {
+	done := make(chan struct{})
+	spinnerDone := make(chan struct{})
+	started := time.Now()
+	spinner := renderer != nil && renderer.cursor
+	if spinner {
+		renderer.pauseSpinner(false)
+		go func() {
+			defer close(spinnerDone)
+			frames := []string{"|", "/", "-", "\\"}
+			for i := 0; ; i++ {
+				select {
+				case <-done:
+					return
+				case <-time.After(250 * time.Millisecond):
+					renderer.spinner(backend.Agent(), frames[i%len(frames)], time.Since(started))
+				}
+			}
+		}()
+	} else {
+		close(spinnerDone)
+	}
+	err := backend.Send(ctx, message, renderer)
+	close(done)
+	<-spinnerDone
+	if spinner {
+		renderer.clearTransient()
+	}
+	return err
 }
 
 func (r *chatRenderer) submitted(inputWasTerminal bool) {

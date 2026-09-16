@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
 
 func chatPTY(t *testing.T, width int) (*os.File, *os.File) {
@@ -125,6 +127,7 @@ func TestChatPTYRawInput(t *testing.T) {
 		{name: "wrapped delete", keys: "abcdefghijklmnop\x7f\x7f\r", want: "abcdefghijklmn", width: 10},
 		{name: "shrink wrapped input", keys: "abcdefghijklmnop" + strings.Repeat("\x7f", 16) + "x\r", want: "x", width: 10},
 		{name: "hint submit", keys: "/hi\t\r", want: "/history", width: 10},
+		{name: "transient backend hint", keys: "hello\r", want: "hello", width: 40},
 		{name: "tiny hint", keys: "/\x7fx\r", want: "x", width: 3},
 		{name: "grapheme delete", keys: "e\u0301👩‍💻\x7f\x7fx\r", want: "x", width: 12},
 		{name: "malformed utf8", keys: "\xc3x\r", want: "x", width: 12},
@@ -175,6 +178,10 @@ func TestChatPTYRawInput(t *testing.T) {
 			}()
 			t.Cleanup(func() { close(stop) })
 			r := &chatRenderer{out: slave, cursor: true}
+			if tc.name == "transient backend hint" {
+				r.ui = cliui.WithCapabilities(cliui.Capabilities{Rich: true, Color: false, Width: tc.width})
+				r.promptHint = "/help  /retry  /exit"
+			}
 			if tc.prompt != "" {
 				r.operationPrompt("NATIVE", colorYellow, "payload", tc.prompt)
 			} else {
@@ -262,6 +269,9 @@ func TestChatPTYRawInput(t *testing.T) {
 			}
 			if (tc.name == "long user submission" || tc.name == "wrapped delete") && strings.Count(screen, "YOU >") != 1 {
 				t.Fatalf("submission duplicated prompt/input: %s", screen)
+			}
+			if tc.name == "transient backend hint" && strings.Contains(screen, "/help  /retry  /exit") {
+				t.Fatalf("transient slash hints remained under submitted input: %s", screen)
 			}
 			if tc.prompt != "" && strings.Contains(screen, "YOU >") {
 				t.Fatalf("native prompt replaced: %s", screen)
@@ -397,6 +407,67 @@ func TestChatPTYResizeAbortsWithoutStaleRedraw(t *testing.T) {
 	}
 }
 
+func TestQuickstartChatHandoffWaitsForTerminalSizeToSettle(t *testing.T) {
+	_, slave := chatPTY(t, 80)
+	done := make(chan error, 1)
+	go func() { done <- waitForStableTerminalSize(slave, slave) }()
+	time.Sleep(30 * time.Millisecond)
+	if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 28, Col: 90}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(180 * time.Millisecond)
+	if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 30, Col: 100}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal handoff did not stabilize")
+	}
+	width, height, err := term.GetSize(int(slave.Fd()))
+	if err != nil || width != 100 || height != 30 {
+		t.Fatalf("stable dimensions=%dx%d err=%v", width, height, err)
+	}
+}
+
+func TestQuickstartChatHandoffDoesNotTripFirstRawPrompt(t *testing.T) {
+	master, slave := chatPTY(t, 80)
+	r := newChatRenderer(slave)
+	done := make(chan error, 1)
+	go func() {
+		if err := waitForStableTerminalSize(slave, slave); err != nil {
+			done <- err
+			return
+		}
+		r.prompt()
+		_, err := readSlashLine(context.Background(), slave, slave, r, false)
+		done <- err
+	}()
+	time.Sleep(40 * time.Millisecond)
+	if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 28, Col: 90}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(180 * time.Millisecond)
+	if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 30, Col: 100}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(350 * time.Millisecond)
+	if _, err := io.WriteString(master, "/exit\r"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("first prompt failed after handoff: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first prompt did not accept input after handoff")
+	}
+}
+
 func TestChatPTYSpinnerUsesRendererDestination(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
@@ -488,7 +559,7 @@ func TestChatPTYStaticCalloutPromptTransitions(t *testing.T) {
 				r.assistant("agent", "durable", true)
 				r.operationPrompt("NATIVE APPROVAL", colorYellow, "Call ID: exact\nTool: delete\nArguments:\n{\"name\":\"pod-a\"}", prompt)
 				var captured strings.Builder
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, prompt) })
+				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Arguments:") })
 				static := captured.String()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
@@ -500,7 +571,8 @@ func TestChatPTYStaticCalloutPromptTransitions(t *testing.T) {
 					}
 					done <- err
 				}()
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "\x1b[2K") })
+				frameTitle := "DECISION"
+				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(ansi.Strip(s), "─ "+frameTitle+" ") })
 				io.WriteString(master, "yes\r")
 				if err := <-done; err != nil {
 					t.Fatal(err)
@@ -511,10 +583,8 @@ func TestChatPTYStaticCalloutPromptTransitions(t *testing.T) {
 				io.WriteString(slave, "END\n")
 				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
 				screen := chatScreen(captured.String(), width)
-				staticScreen := chatScreen(static, width)
-				borderEnd := strings.LastIndex(staticScreen, "╯")
-				if borderEnd < 0 || !strings.HasPrefix(screen, staticScreen[:borderEnd+len("╯")]) || !strings.Contains(screen, "resumed") || strings.Contains(captured.String()[len(static):], "╭") {
-					t.Fatalf("native editing damaged or repainted durable callout:\n%s", screen)
+				if !strings.Contains(ansi.Strip(static), "Call ID: exact") || !strings.Contains(screen, "resumed") || strings.Count(screen, "╭") != 0 {
+					t.Fatalf("native editing damaged passive details or left a focus border:\n%s", screen)
 				}
 				if strings.Contains(screen, "YOU >") || r.transient {
 					t.Fatalf("native prompt/progress state changed: %s", screen)

@@ -90,7 +90,7 @@ func newCreateWizardModel(opt CreateOptions) (createWizardModel, error) {
 		help:  help.New(),
 		keys: createWizardKeys{
 			Next:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
-			Select: key.NewBinding(key.WithKeys("left", "right", "up", "down", "tab"), key.WithHelp("arrows", "select")),
+			Select: key.NewBinding(key.WithKeys("left", "right", "up", "down", "tab", "j", "k"), key.WithHelp("arrows/j/k", "select")),
 			Cancel: key.NewBinding(key.WithKeys("esc", "ctrl+c"), key.WithHelp("esc", "cancel")),
 		},
 	}
@@ -106,7 +106,7 @@ func (m *createWizardModel) startMissingStep() {
 		m.input.Placeholder = "What should this agent do?"
 		m.input.Validate = requiredDescription
 		m.input.CharLimit = 0
-		m.input.SetValue("")
+		m.input.SetValue(m.opt.descriptionDefault)
 		m.input.Focus()
 	case strings.TrimSpace(m.opt.Name) == "":
 		m.step = createName
@@ -295,7 +295,7 @@ func (m createWizardModel) View() tea.View {
 		if m.opt.Task != "" {
 			body.WriteString("\n" + createTaskAuthorityNotice + "\n")
 		}
-		body.WriteString("\nCreate Orka resources?\n")
+		fmt.Fprintf(&body, "\nCreate Agent %q (Orka agent)?\n", displayWizardValue(m.opt.Name))
 		choices := []string{"Apply", "Cancel"}
 		for i, choice := range choices {
 			marker := "  "

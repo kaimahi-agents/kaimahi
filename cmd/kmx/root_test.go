@@ -119,7 +119,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"ctx", "down", "flow", "govern", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
-		"plane", "quickstart",
+		"plane", "quickstart", "quickstart-wizard",
 		"restore", "status",
 		"up", "use", "version", "watch",
 	}

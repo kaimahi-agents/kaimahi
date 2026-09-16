@@ -53,7 +53,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 41 | Installed | Command orchestration, model/cluster operations, native Orka create/readiness/Task-result handling and retained kagent editing/chat. |
+| `kmx/app` | 43 | Installed | Command orchestration, model/cluster operations, shared interactive chat UI, native Orka create/readiness/Task-result handling and retained kagent operations. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |

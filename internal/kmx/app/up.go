@@ -50,6 +50,11 @@ func (a *App) Up(step string) error {
 	if err := a.preflightUp(steps); err != nil {
 		return err
 	}
+	if step == "" {
+		if err := a.maybeSelectLocalModel(true); err != nil {
+			return err
+		}
+	}
 
 	action := "bring up the kmx runtime (kind, Ollama, kagent, agents)"
 	command := "kmx up"
@@ -85,11 +90,15 @@ func (a *App) Up(step string) error {
 		// The credential is the RESOLVED one, not the default: with CRED set,
 		// a copied `kmx govern hello-world` would govern a different
 		// credential than the one `kmx govern` and `kmx ledger` then use.
-		a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
-			"Existing governance is not assessed by this setup. To configure it:\n"+
-			"  %s  # the proxy and its ledger\n"+
-			"  %s  # configure agent routing (docs/spend.md)",
-			a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+		if a.selectedLocalModel == nil {
+			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
+				"Existing governance is not assessed by this setup. To configure it:\n"+
+				"  %s  # the proxy and its ledger\n"+
+				"  %s  # configure agent routing (docs/spend.md)",
+				a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+		} else {
+			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane/govern preset requires in-cluster Ollama.")
+		}
 		a.notef("\nTRY   %s", a.operationCommand("agent", "chat", config.DefaultAgent, config.DefaultTask))
 	}
 	return nil
@@ -152,11 +161,16 @@ func (a *App) upOverlapped() error {
 	if err := a.runPhase(phase{current: 1, total: 6, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
 	}
-	if err := a.runPhase(phase{current: 2, total: 6, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
-		return err
-	}
-	if err := a.runPhase(phase{current: 3, total: 6, name: upPhaseName("model")}, a.stepModel); err != nil {
-		return err
+	a.verifySelectedLocalModel()
+	if a.selectedLocalModel == nil {
+		if err := a.runPhase(phase{current: 2, total: 6, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
+			return err
+		}
+		if err := a.runPhase(phase{current: 3, total: 6, name: upPhaseName("model")}, a.stepModel); err != nil {
+			return err
+		}
+	} else {
+		a.notef("SKIP   Reusing %s/%s; no in-cluster Ollama or model pull", a.selectedLocalModel.Provider, a.selectedLocalModel.Model)
 	}
 	if err := a.runPhase(phase{current: 4, total: 6, name: upPhaseName("kagent")}, a.stepKagent); err != nil {
 		return err
@@ -599,7 +613,7 @@ func (a *App) installKagentMode(newRelease bool, extra ...string) error {
 	}
 
 	// helm -f wants a path, and the values file lives inside the binary.
-	values, err := manifest("kagent-values.yaml")
+	values, err := a.renderModelManifest("kagent-values.yaml")
 	if err != nil {
 		return err
 	}
@@ -700,7 +714,17 @@ func (a *App) stepAgent() error {
 		return err
 	}
 	desired, changed := a.desiredModelConfig("hello-world", current)
-	if err := a.apply("hello-world.yaml"); err != nil {
+	if current == config.KeylessModelConfig && a.selectedLocalModel == nil && !a.Cfg.ModelExplicit {
+		a.selectedLocalModel, err = a.liveKeylessLocalModel()
+		if err != nil {
+			return err
+		}
+	}
+	body, err := a.renderModelManifest("hello-world.yaml")
+	if err != nil {
+		return err
+	}
+	if err := a.applyBytes("hello-world.yaml", body); err != nil {
 		return err
 	}
 	if changed {
@@ -709,6 +733,37 @@ func (a *App) stepAgent() error {
 		}
 	}
 	return a.waitAgentReady("hello-world")
+}
+
+func (a *App) liveKeylessLocalModel() (*localModel, error) {
+	raw, err := a.kubectlCapture("-n", "kagent", "get", "modelconfig", config.KeylessModelConfig, "-o", "json")
+	if isNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot read live ModelConfig %q: %w", config.KeylessModelConfig, err)
+	}
+	return parseLiveKeylessLocalModel([]byte(raw))
+}
+
+func parseLiveKeylessLocalModel(raw []byte) (*localModel, error) {
+	var live struct {
+		Spec struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+			Ollama   struct {
+				Host string `json:"host"`
+			} `json:"ollama"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(raw, &live); err != nil {
+		return nil, fmt.Errorf("cannot parse live ModelConfig %q: %w", config.KeylessModelConfig, err)
+	}
+	host := strings.TrimSpace(live.Spec.Ollama.Host)
+	if !strings.EqualFold(strings.TrimSpace(live.Spec.Provider), "ollama") || host == "" || host == "http://ollama.ollama.svc.cluster.local:11434" {
+		return nil, nil
+	}
+	return &localModel{Provider: "ollama", Model: strings.TrimSpace(live.Spec.Model), Endpoint: host}, nil
 }
 
 // agentJSON is the sliver of an Agent kmx reads back.

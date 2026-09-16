@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
@@ -244,12 +243,11 @@ func TestChatStaticNativeCallouts(t *testing.T) {
 					t.Fatal(err)
 				}
 				text := ansi.Strip(out.String())
-				bottom := strings.LastIndex(text, "╰")
 				label, prompt := "[NATIVE APPROVAL]", "Approve? [y/N]:"
 				if question {
 					label, prompt = "[NATIVE QUESTION]", "Answer:"
 				}
-				if bottom < 0 || !strings.Contains(text[bottom:], "\n"+label+"\n  "+prompt) || strings.Contains(out.String(), "\x1b[2J") || strings.Contains(out.String(), "secret") {
+				if strings.Contains(text, "╭") || !strings.Contains(text, label+"\n") || !strings.Contains(text, "  "+prompt) || strings.Contains(out.String(), "\x1b[2J") || strings.Contains(out.String(), "secret") {
 					t.Fatalf("unsafe/detached prompt: %q", text)
 				}
 				if !question && strings.Count(text, "x") != strings.Count(string(call.Args), "x")+1 {
@@ -258,12 +256,8 @@ func TestChatStaticNativeCallouts(t *testing.T) {
 				if !color && strings.Contains(out.String(), "\x1b") {
 					t.Fatal("no-color callout emitted escapes")
 				}
-				start := strings.Index(text, "╭")
-				for _, line := range strings.Split(text[start:bottom], "\n") {
-					if lipgloss.Width(line) > width {
-						t.Fatalf("callout width %d overflow: %q", width, line)
-					}
-				}
+				// Passive request details are complete and intentionally rely on
+				// terminal wrapping; only the focused editor owns bounded rows.
 			}
 		}
 	}

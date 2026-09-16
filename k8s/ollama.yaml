@@ -43,6 +43,11 @@ spec:
               value: /data
             - name: OLLAMA_MODELS
               value: /data/models
+            # The quickstart agent runs each Orka turn in a fresh worker Job.
+            # Keep model weights resident between those Jobs; reloading this
+            # 1.9 GB model added ~21s to an otherwise ~2s local response.
+            - name: OLLAMA_KEEP_ALIVE
+              value: "1h"
           ports:
             - containerPort: 11434
               name: http

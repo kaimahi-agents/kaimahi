@@ -8,6 +8,24 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func TestFocusInputOwnsOneBoundedFrameAndCursor(t *testing.T) {
+	for _, width := range []int{16, 40, 80} {
+		frame := WithCapabilities(Capabilities{Rich: true, Color: true, Width: width}).FocusInput(FocusMessage, "YOU > ", "hello", "/help", width)
+		if len(frame.Rows) < 3 || frame.CursorRow <= 0 || frame.CursorRow >= len(frame.Rows)-1 || frame.CursorColumn <= 2 {
+			t.Fatalf("width %d invalid frame geometry: %+v", width, frame)
+		}
+		plain := ansi.Strip(strings.Join(frame.Rows, "\n"))
+		if strings.Count(plain, "╭") != 1 || strings.Count(plain, "╯") != 1 || !strings.Contains(plain, "MESSAGE") || !strings.Contains(plain, "YOU > hello") {
+			t.Fatalf("width %d invalid frame:\n%s", width, plain)
+		}
+		for _, row := range frame.Rows {
+			if got := lipgloss.Width(row); got > width {
+				t.Fatalf("width %d row uses %d cells: %q", width, got, ansi.Strip(row))
+			}
+		}
+	}
+}
+
 func TestNoColorKeepsRichHierarchyWithoutANSI(t *testing.T) {
 	o := WithCapabilities(Capabilities{Rich: true, Color: false, Width: 80})
 	got := o.Actions("Next", []Action{{Label: "Inspect", Command: "kmx status"}})

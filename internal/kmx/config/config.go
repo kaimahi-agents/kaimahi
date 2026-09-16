@@ -91,11 +91,14 @@ type Config struct {
 	ContainerEngine string
 	KagentVersion   string
 	Model           string
-	ChatPort        string
-	AdminPort       string
-	OpsPort         string
-	Credential      string
-	Confirm         string
+	// ModelExplicit distinguishes an operator's MODEL choice from the default,
+	// so interactive discovery never replaces a value automation supplied.
+	ModelExplicit bool
+	ChatPort      string
+	AdminPort     string
+	OpsPort       string
+	Credential    string
+	Confirm       string
 	// KagentBin, when set, is an existing kagent binary to use instead of
 	// the cached download. The Makefile points it at bin/kagent so a
 	// checkout keeps one copy.
@@ -138,11 +141,17 @@ func env(name, fallback string) string {
 // Following it here would swap an invented target for one another tool
 // picked. The guard names it instead, and refuses.
 func Load(contextFlag string) (*Config, error) {
+	model, modelExplicit := os.LookupEnv("MODEL")
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model, modelExplicit = DefaultModel, false
+	}
 	c := &Config{
 		KindCluster:     env("KIND_CLUSTER", DefaultKindCluster),
 		ContainerEngine: env("CONTAINER_ENGINE", DefaultContainerEngine),
 		KagentVersion:   env("KAGENT_VERSION", DefaultKagentVersion),
-		Model:           env("MODEL", DefaultModel),
+		Model:           model,
+		ModelExplicit:   modelExplicit,
 		ChatPort:        env("CHAT_PORT", DefaultChatPort),
 		AdminPort:       env("ADMIN_PORT", DefaultAdminPort),
 		OpsPort:         env("OPS_PORT", DefaultOpsPort),

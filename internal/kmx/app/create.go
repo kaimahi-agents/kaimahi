@@ -23,6 +23,7 @@ type CreateOptions struct {
 	// Resolved before entering raw terminal mode. Keep the original flags and
 	// distinguish an empty file from an instruction source not yet read.
 	instructionFileText *string
+	descriptionDefault  string
 }
 
 // These kagent readiness/editor helpers retain their existing callers. Orka

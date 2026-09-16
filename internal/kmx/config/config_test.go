@@ -16,6 +16,26 @@ func TestProductDefaultsAreUsable(t *testing.T) {
 	}
 }
 
+func TestModelRecordsWhetherTheOperatorSelectedIt(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("MODEL", "")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Model != DefaultModel || c.ModelExplicit {
+		t.Fatalf("unset MODEL: got %q explicit=%v", c.Model, c.ModelExplicit)
+	}
+	t.Setenv("MODEL", "qwen3:8b")
+	c, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Model != "qwen3:8b" || !c.ModelExplicit {
+		t.Fatalf("set MODEL: got %q explicit=%v", c.Model, c.ModelExplicit)
+	}
+}
+
 // Context resolution is the difference between acting on the cluster the
 // operator meant and acting on whatever was left in the environment, so
 // assert the whole precedence chain.

@@ -118,6 +118,9 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		a.notef("Tools this run is using:")
 		toolchain.Report(a.Err, a.provisioned)
 	}
+	if err := a.maybeSelectLocalModel(!asJSON); err != nil {
+		return err
+	}
 
 	if err := a.GuardCreate("create a local cluster and a first agent", "kmx quickstart"); err != nil {
 		return err
@@ -127,12 +130,35 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		name string
 		fn   func() error
 	}{
-		{"Prepare kind cluster", a.stepCluster},
-		{"Deploy Ollama", a.stepOllama},
-		{"Pull model " + a.Cfg.Model, a.stepModel},
-		{"Install or verify kagent", a.stepQuickstartKagent},
-		{"Deploy the " + agent + " agent", a.stepAgent},
+		{"Prepare kind cluster", func() error {
+			if err := a.stepCluster(); err != nil {
+				return err
+			}
+			a.verifySelectedLocalModel()
+			return nil
+		}},
+		{"Deploy Ollama", func() error {
+			if a.selectedLocalModel != nil {
+				return nil
+			}
+			return a.stepOllama()
+		}},
+		{"Pull model " + a.Cfg.Model, func() error {
+			if a.selectedLocalModel != nil {
+				return nil
+			}
+			return a.stepModel()
+		}},
 	}
+	steps = append(steps,
+		struct {
+			name string
+			fn   func() error
+		}{"Install or verify kagent", a.stepQuickstartKagent},
+		struct {
+			name string
+			fn   func() error
+		}{"Deploy the " + agent + " agent", a.stepAgent})
 	total := len(steps) + 1
 	for i, step := range steps {
 		if err := a.runPhase(phase{current: i + 1, total: total, name: step.name}, step.fn); err != nil {
@@ -156,21 +182,15 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	}
 
 	result := QuickstartResult{
-		OK:       true,
-		Context:  a.Cfg.KubeContext,
-		Cluster:  a.Cfg.KindCluster,
-		Agent:    agent,
-		Manifest: "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
-		Question: task,
-		Answer:   answer,
-		Governed: false,
-		Next: []string{
-			a.operationCommand("agent", "chat", agent, "ask it something else"),
-			a.operationCommand("orka", "install"),
-			a.operationCommand("up"),
-			a.operationCommand("plane"),
-			a.operationCommand("govern", a.Cfg.Credential),
-		},
+		OK:             true,
+		Context:        a.Cfg.KubeContext,
+		Cluster:        a.Cfg.KindCluster,
+		Agent:          agent,
+		Manifest:       "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
+		Question:       task,
+		Answer:         answer,
+		Governed:       false,
+		Next:           a.quickstartFollowups(agent),
 		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
 	}
 	for _, t := range a.provisioned {
@@ -185,13 +205,35 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 
 	fmt.Fprintf(a.Out, "\n%s\n", safeTerminal(answer))
 	a.complete("An agent answered", started)
-	a.notef("\n%s  This command does not enable governance.\n"+
-		"Existing governance is not assessed by quickstart. To configure it:\n"+
-		"  %s  # the metering proxy and its ledger\n"+
-		"  %s  # configure agent routing (docs/spend.md)",
-		a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
+	if a.selectedLocalModel == nil {
+		a.notef("\n%s  This command does not enable governance.\n"+
+			"Existing governance is not assessed by quickstart. To configure it:\n"+
+			"  %s  # the metering proxy and its ledger\n"+
+			"  %s  # configure agent routing (docs/spend.md)",
+			a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
+	} else {
+		a.notef("\n%s  Host Ollama reuse is a direct route; the bundled plane/govern preset requires in-cluster Ollama.",
+			a.presenter().Warning("GOVERNANCE"))
+	}
 	a.quickstartNext(cliui.New(a.Err), result)
 	return nil
+}
+
+func (a *App) quickstartFollowups(agent string) []string {
+	orka := a.operationCommand("orka", "install")
+	if a.selectedLocalModel != nil {
+		orka = a.operationCommand("orka", "install", "--model", a.selectedLocalModel.Model,
+			"--model-url", strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/")+"/v1")
+	}
+	next := []string{
+		a.operationCommand("agent", "chat", agent, "ask it something else"),
+		orka,
+		a.operationCommand("up"),
+	}
+	if a.selectedLocalModel == nil {
+		next = append(next, a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+	}
+	return next
 }
 
 func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {

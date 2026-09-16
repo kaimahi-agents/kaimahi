@@ -52,6 +52,14 @@ type App struct {
 	// progressUI replaces destination detection in tests only. Production uses
 	// cliui.New against Err so styling follows the actual output stream.
 	progressUI progressPresenter
+	// localModels replaces provider discovery and terminal selection in tests.
+	// Nil uses the bounded loopback detectors and real terminal streams.
+	localModels *localModelEnvironment
+	// selectedLocalModel is non-nil only when this invocation elected to reuse
+	// a model that was already installed on the host.
+	selectedLocalModel *localModel
+	localModelsChecked bool
+	localModelVerified bool
 
 	// provisioned records the cluster tools this run had to fetch, so a
 	// command that reports structured output can say what it put on the
@@ -222,6 +230,10 @@ func (a *App) apply(name string) error {
 	if err != nil {
 		return err
 	}
+	return a.applyBytes(name, body)
+}
+
+func (a *App) applyBytes(name string, body []byte) error {
 	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (embedded k8s/%s)\n", a.Cfg.KubeContext, name)
 	quiet := *a.Run
 	quiet.Echo = false

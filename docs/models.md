@@ -199,9 +199,24 @@ Custody properties worth knowing:
 
 ## Swapping the local model
 
+An interactive `kmx quickstart` or full `kmx up` first probes the host's
+loopback Ollama API. It offers reuse only when `/api/tags` reports at least one
+installed model. Reuse is opt-in; KMX's bundled model remains the default.
+`--output json`, redirected sessions, `kmx up --step ...`, and an explicit
+`MODEL` never probe or prompt.
+
+Before reusing host Ollama, KMX verifies the selected tag through an endpoint
+reachable from the kind node, trying the engine host alias and kind bridge
+gateway. If neither works, setup installs the bundled model instead. Reuse
+skips both the in-cluster Ollama deployment and model pull. Limit host Ollama's
+exposure to the container network rather than publishing its unauthenticated
+API to the LAN. The verified route is preserved by later `up --step agent`
+runs. Orka follow-up commands include that route explicitly; the bundled
+plane/govern preset is not offered because it requires in-cluster Ollama.
+
 `MODEL=<tag> kmx up --step model` pulls another Ollama model into the pod; then
-edit `model:` in the ModelConfig of [`k8s/hello-world.yaml`](../k8s/hello-world.yaml)
-and re-apply. Test it with several fresh chats before trusting it:
+full `kmx up` renders that model into the bundled ModelConfig. Test it with
+several fresh chats before trusting it:
 small models misfire kagent's built-in `ask_user` tool, and small models
 that call a tool correctly can still garble its output in the summary
 ([getting-started.md](getting-started.md#choices-and-caveats),
