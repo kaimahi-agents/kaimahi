@@ -90,7 +90,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// A cluster that does not serve the kind is a different answer from a
 		// namespace with nothing in it, and isNotFound does not cover it:
 		// kubectl says "doesn't have a resource type" for an absent CRD.
-		if isMissingKind(err) || isNotFound(err) {
+if isMissingKind(err) {
 			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n" +
 				"  Install Orka with `kmx orka install`, or drop --namespace to list the legacy kagent runtime")
 		}
