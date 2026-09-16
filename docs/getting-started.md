@@ -158,7 +158,7 @@ the bundle**. Online creation uses installed schemas and ordered readiness waits
 existing result ServiceAccount tests a real model answer. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
 and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
-No-name terminal invocation offers a wizard. `agent chat/edit/list` remain
+No-name terminal invocation offers a wizard. `agent chat/edit` remain
 kagent-specific; BYO images, ModelConfig and MCP conversion are not provided.
 
 ## Using Podman instead of Docker

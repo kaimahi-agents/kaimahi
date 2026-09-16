@@ -37,11 +37,28 @@ func newAgentShowCommand(state *commandState) *cobra.Command {
 }
 
 func newAgentListCommand(state *commandState) *cobra.Command {
-	var output string
-	cmd := &cobra.Command{Use: "list", Short: "List agents and active wiring", Args: cobra.NoArgs}
+	var output, namespace string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List agents: Orka Agents with --namespace, else the legacy kagent runtime",
+		Long: `List Agent resources.
+
+The namespace selects which runtime is reported, because they are different
+kinds and merging them under one set of headings would imply they are
+interchangeable.
+
+  --namespace <ns>   Orka Agents in that namespace, as created by
+                     ` + "`kmx agent create`" + ` and inspected by ` + "`kmx agent show`" + `.
+  (omitted)          the legacy kagent runtime, in its own fixed namespace.
+
+Orka watches namespaces explicitly, so there is no default to guess: a wrong
+one would report "none" about a namespace you never meant.`,
+		Args: cobra.NoArgs,
+	}
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "list Orka Agents in this namespace instead of the legacy runtime")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output) })
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output, namespace) })
 	return cmd
 }
 

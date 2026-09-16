@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -254,7 +255,11 @@ func (a *App) EditAgent(name, path string) error {
 	originalInfo, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("no local agent source at %s; `kmx agent edit` edits source, not the live cluster\n  live edit: kubectl --context %s -n kagent edit agents.kagent.dev %s", path, shellArg(a.Cfg.KubeContext), shellArg(name))
+			return fmt.Errorf("no local agent source at %s; `kmx agent edit` edits source, not the live cluster.\n"+
+				"  For a kagent agent:  kubectl --context %s -n kagent edit agents.kagent.dev %s\n"+
+				"  For an Orka Agent:   kubectl --context %s -n <namespace> edit agents.core.orka.ai %s\n"+
+				"                       (`kmx agent list --namespace <ns>` shows what is there)",
+				path, shellArg(a.Cfg.KubeContext), shellArg(name), shellArg(a.Cfg.KubeContext), shellArg(name))
 		}
 		return err
 	}
@@ -267,6 +272,23 @@ func (a *App) EditAgent(name, path string) error {
 	}
 	if err := a.preflight(depKubectl); err != nil {
 		return err
+	}
+	// Name the runtime before validating against one.
+	//
+	// `kmx agent create` writes Orka bundles to this very path, and shell
+	// completion offers those filenames here. Somebody who creates an agent
+	// and then edits it used to be told their source "must validate" and then
+	// handed a kagent schema complaint about their own Orka file.
+	//
+	// A substring is enough: this decides which ERROR to print, not what to
+	// trust. The schema check below is still what admits anything.
+	if bytes.Contains(original, []byte("core.orka.ai")) {
+		return fmt.Errorf("%s is an Orka bundle, and `kmx agent edit` edits kagent source.\n"+
+			"  Nothing was opened and nothing was changed.\n"+
+			"  An Orka Agent is edited as the Kubernetes resource it is:\n\n"+
+			"    kubectl --context %s -n <namespace> edit agents.core.orka.ai %s\n\n"+
+			"  Or read it first:  kmx agent show %s --namespace <namespace>",
+			path, shellArg(a.Cfg.KubeContext), shellArg(name), shellArg(name))
 	}
 	originalAgent, err := a.validateAgentEdit(path, name)
 	if err != nil {

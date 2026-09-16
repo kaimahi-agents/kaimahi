@@ -97,7 +97,7 @@ func TestLegacyAgentsWithOrkaDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := a.ListAgents("json"); err != nil || !strings.Contains(out.String(), "hello-world") {
+	if err := a.ListAgents("json", ""); err != nil || !strings.Contains(out.String(), "hello-world") {
 		t.Fatalf("legacy list failed: %v", err)
 	}
 	if wrongGroup.Load() != 0 || legacyReads.Load() < 4 || legacyPatches.Load() != 1 {

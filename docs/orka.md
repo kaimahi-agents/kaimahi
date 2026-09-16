@@ -200,7 +200,11 @@ trades reconnect availability for protection against later local-port reuse;
 the initial bind and connection are still local trust, not cryptographic process
 authentication. Dry-run does not test access or execution.
 
-`agent chat/edit/list` still operate on kagent, not this Orka Agent. No automatic
+`kmx agent list --namespace <ns>` lists Orka Agents; without a namespace it
+lists the legacy kagent runtime. `agent chat` and `agent edit` still operate on
+kagent, and now say so when handed an Orka Agent or bundle rather than
+reporting it as missing. There is no command yet that asks an EXISTING Orka
+Agent a question. No automatic
 MCP translation, application image deployment or governance is added here.
 
 ## The whole journey, from nothing
