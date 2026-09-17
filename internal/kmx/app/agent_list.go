@@ -87,10 +87,19 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	}
 	raw, err := a.kubectlCapture("-n", namespace, "get", "agents.core.orka.ai", "-o", "json")
 	if err != nil {
-		// A cluster that does not serve the kind is a different answer from a
-		// namespace with nothing in it, and isNotFound does not cover it:
-		// kubectl says "doesn't have a resource type" for an absent CRD.
-if isMissingKind(err) {
+		// Only one failure needs translating here, and it is not the obvious
+		// one. A cluster that does not serve the kind has no Orka on it at
+		// all; kubectl says "doesn't have a resource type" for that, which
+		// isNotFound does not match — hence isMissingKind.
+		//
+		// A NAMESPACE that does not exist is deliberately not handled, because
+		// kubectl does not report it here: listing a namespaced kind in an
+		// absent namespace returns an empty list and exit 0, not NotFound.
+		// Verified against a live cluster. A branch for it would be dead code
+		// implying an error that cannot arrive.
+		//
+		// Anything else is unread, and is returned as it arrived.
+		if isMissingKind(err) {
 			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n" +
 				"  Install Orka with `kmx orka install`, or drop --namespace to list the legacy kagent runtime")
 		}
