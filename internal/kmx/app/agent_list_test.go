@@ -58,6 +58,21 @@ func TestOrkaAgentListRowsNameTheProviderDefault(t *testing.T) {
 	}
 }
 
+func TestOrkaAgentListRowsAcceptExternalRuntimeObjects(t *testing.T) {
+	var agents objectList[orkaAgentSpec]
+	if err := json.Unmarshal([]byte(`{"items":[{
+  "metadata":{"name":"cli-agent"},
+  "spec":{"providerRef":{"name":"provider"},"runtime":{"type":"cli","command":["agent"]}},
+  "status":{"ready":true}
+}]}`), &agents); err != nil {
+		t.Fatal(err)
+	}
+	rows := orkaAgentListRows(agents.Items)
+	if len(rows) != 1 || rows[0][0] != "cli-agent" || rows[0][1] != "yes" {
+		t.Fatalf("rows = %#v", rows)
+	}
+}
+
 // The namespace selects the runtime. Without one this reports the legacy
 // kagent runtime, as it always has; with one it reports Orka. Merging them
 // into a single table would imply two different kinds are interchangeable.
@@ -70,7 +85,9 @@ func TestAgentListNamespaceSelectsTheRuntime(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, dir := agentListFixture(t)
-			_ = a.ListAgents("table", tc.namespace)
+			if err := a.ListAgents("table", tc.namespace); err != nil {
+				t.Fatal(err)
+			}
 			calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
 			if !strings.Contains(string(calls), tc.wantKind) {
 				t.Errorf("did not read %s:\n%s", tc.wantKind, calls)
@@ -94,7 +111,7 @@ func TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace(t *testing.T) {
 	if err == nil {
 		t.Fatal("a cluster with no Orka kind reported an empty list")
 	}
-	if !strings.Contains(err.Error(), "kmx orka install") {
+	if !strings.Contains(err.Error(), "kmx --context kind-test orka install") {
 		t.Errorf("the refusal does not say how to fix it: %v", err)
 	}
 }

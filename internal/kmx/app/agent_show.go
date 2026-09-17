@@ -71,7 +71,7 @@ type orkaAgentSpec struct {
 		Skills []struct {
 			Name string `json:"name"`
 		} `json:"skills"`
-		Runtime string `json:"runtime"`
+		Runtime json.RawMessage `json:"runtime"`
 	} `json:"spec"`
 	Status struct {
 		Ready       bool              `json:"ready"`
@@ -161,8 +161,10 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 	if err != nil {
 		if isNotFound(err) {
 			return nil, fmt.Errorf("no Orka Agent %q in namespace %s.\n"+
-				"  `kmx agent list --namespace %s` shows what is there; `kmx agent create` makes one",
-				name, namespace, namespace)
+				"  `%s` shows what is there; `%s` makes one",
+				name, namespace,
+				a.operationCommand("agent", "list", "--namespace", namespace),
+				a.operationCommand("agent", "create", "<name>", "--namespace", namespace))
 		}
 		return nil, fmt.Errorf("cannot read Orka Agent %q in namespace %s: %w", name, namespace, err)
 	}

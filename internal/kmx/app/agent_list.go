@@ -22,8 +22,8 @@ import (
 // there — which is what `kmx agent create` and `kmx agent show` operate on.
 //
 // Before this existed, an agent created by `kmx agent create` could not be
-// listed by any command at all, and `kmx agent show` pointed at a --namespace
-// flag that did not exist.
+// listed by this inventory command, and `kmx agent show` pointed at a
+// --namespace flag that did not exist.
 func (a *App) ListAgents(output, namespace string) error {
 	if strings.TrimSpace(namespace) != "" {
 		return a.listOrkaAgents(output, strings.TrimSpace(namespace))
@@ -60,9 +60,6 @@ func (a *App) listKagentAgents(output string) error {
 	fmt.Fprintln(a.Out, ui.Heading("Agents"))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
-		a.notef("  This is the legacy kagent runtime, in namespace %s. Orka Agents live\n"+
-			"  in the namespace they were created in: `kmx agent list --namespace <ns>`.",
-			config_kagentNamespace)
 		return nil
 	}
 	humanTable(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows)
@@ -90,7 +87,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// Only one failure needs translating here, and it is not the obvious
 		// one. A cluster that does not serve the kind has no Orka on it at
 		// all; kubectl says "doesn't have a resource type" for that, which
-		// isNotFound does not match — hence isMissingKind.
+		// isNotFound does not match — hence noSuchResourceType.
 		//
 		// A NAMESPACE that does not exist is deliberately not handled, because
 		// kubectl does not report it here: listing a namespaced kind in an
@@ -99,9 +96,10 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// implying an error that cannot arrive.
 		//
 		// Anything else is unread, and is returned as it arrived.
-		if isMissingKind(err) {
-			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n" +
-				"  Install Orka with `kmx orka install`, or drop --namespace to list the legacy kagent runtime")
+		if noSuchResourceType(err) {
+			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
+				"  Install Orka with `%s`, or drop --namespace to list the legacy kagent runtime",
+				a.operationCommand("orka", "install"))
 		}
 		return err
 	}
@@ -119,7 +117,8 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	fmt.Fprintln(a.Out, ui.Heading(heading))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
-		a.notef("  Nothing in %s. `kmx agent create <name> --namespace %s` makes one.", namespace, namespace)
+		a.notef("  Nothing in %s. `%s` makes one.", namespace,
+			a.operationCommand("agent", "create", "<name>", "--namespace", namespace))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)

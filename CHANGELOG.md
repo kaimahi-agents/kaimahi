@@ -25,27 +25,25 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Fixed
 
 - **`kmx agent` no longer reports an agent you just created as missing.**
-  `agent create` and `agent show` operate on Orka; `agent chat` and
-  `agent edit` operate on the legacy kagent runtime. Creating an agent and then
-  chatting to it — the most natural pair of commands there is — reported the
-  operator's own agent as absent and then offered a different agent as the
-  alternative. Each path now names the runtime an agent actually belongs to.
+  `agent create` and `agent show` operate on Orka; interactive `agent chat`
+  supports Orka and kagent, while one-shot chat and `agent edit` remain
+  kagent-specific. A one-shot chat with an Orka Agent reported the operator's
+  own agent as absent and then offered a different agent as the alternative.
+  It now points at the interactive Orka command that works.
 
   - `kmx agent list --namespace <ns>` lists Orka Agents. Without a namespace it
     lists the legacy runtime, as before. An agent created by `kmx agent create`
-    could previously not be listed by any command at all, and `kmx agent show`
+    could previously not be listed by `kmx agent list`, and `kmx agent show`
     pointed at a `--namespace` flag that did not exist. It exists now, so that
     advice is executable.
-  - `kmx agent chat <orka-agent>` says the agent is an Orka Agent, names its
-    namespace, and points at `agent show` and `agent list`. It no longer offers
-    an unrelated kagent agent as a substitute. There is still no command that
-    asks an EXISTING Orka Agent a question, and the message says so rather than
-    implying one.
+  - One-shot `kmx agent chat <orka-agent> ...` names the Agent's Orka namespace
+    and prints the working `--interactive --runtime orka` command. It no longer
+    offers an unrelated kagent agent as a substitute.
   - `kmx agent chat` on a cluster with no kagent runtime installed says the
     runtime is absent, instead of reporting an unreadable cluster.
-  - `kmx agent edit` refuses an Orka bundle **before** opening an editor, rather
-    than opening one and then failing a kagent schema check on the file
-    `kmx agent create` wrote. Nothing is opened and nothing is changed.
+  - `kmx agent edit` identifies an Orka bundle before opening an editor and
+    prints the corresponding `kubectl edit` and `agent show` commands, rather
+    than presenting the existing kagent schema refusal without context.
 
   No behaviour changes for kagent agents, and no flags were removed.
 

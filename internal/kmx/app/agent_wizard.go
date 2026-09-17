@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 )
 
@@ -280,15 +281,25 @@ func (a *App) EditAgent(name, path string) error {
 	// and then edits it used to be told their source "must validate" and then
 	// handed a kagent schema complaint about their own Orka file.
 	//
-	// A substring is enough: this decides which ERROR to print, not what to
-	// trust. The schema check below is still what admits anything.
-	if bytes.Contains(original, []byte("core.orka.ai")) {
-		return fmt.Errorf("%s is an Orka bundle, and `kmx agent edit` edits kagent source.\n"+
+	// This only chooses which diagnostic to print; the schema check below is
+	// still what admits anything. Decode the document identity rather than
+	// treating an arbitrary occurrence of "core.orka.ai" as an Orka Agent.
+	if source, ok := orkaAgentSource(original); ok {
+		// An incomplete identity is not a safe target for a live command. Let
+		// validateAgentEdit report the malformed source instead of inventing a
+		// name from argv or an unknown namespace.
+		if source.Metadata.Name == "" || source.Metadata.Namespace == "" {
+			return fmt.Errorf("%s contains an Orka Agent without a complete metadata.name and metadata.namespace; refusing to invent a live edit target", path)
+		}
+		namespace, sourceName := source.Metadata.Namespace, source.Metadata.Name
+		return fmt.Errorf("%s contains Orka Agent %q, and `kmx agent edit` edits kagent source.\n"+
 			"  Nothing was opened and nothing was changed.\n"+
 			"  An Orka Agent is edited as the Kubernetes resource it is:\n\n"+
-			"    kubectl --context %s -n <namespace> edit agents.core.orka.ai %s\n\n"+
-			"  Or read it first:  kmx agent show %s --namespace <namespace>",
-			path, shellArg(a.Cfg.KubeContext), shellArg(name), shellArg(name))
+			"    kubectl --context %s -n %s edit agents.core.orka.ai %s\n\n"+
+			"  Or read it first:  %s",
+			path, sourceName,
+			shellArg(a.Cfg.KubeContext), shellArg(namespace), shellArg(sourceName),
+			a.operationCommand("agent", "show", sourceName, "--namespace", namespace))
 	}
 	originalAgent, err := a.validateAgentEdit(path, name)
 	if err != nil {
@@ -383,6 +394,37 @@ func (a *App) EditAgent(name, path string) error {
 	fmt.Fprintf(a.Out, "updated %s\n", path)
 	a.notef("Not applied. Review the diff, then:\n  kubectl --context %s apply -f %s", shellArg(a.Cfg.KubeContext), shellArg(path))
 	return nil
+}
+
+type agentSourceIdentity struct {
+	APIVersion string `yaml:"apiVersion"`
+	Kind       string `yaml:"kind"`
+	Metadata   struct {
+		Name      string `yaml:"name"`
+		Namespace string `yaml:"namespace"`
+	} `yaml:"metadata"`
+}
+
+// orkaAgentSource returns the first Orka Agent in a multi-document bundle.
+// Invalid YAML deliberately returns no match: validateAgentEdit then reports
+// the parse failure through kubectl rather than masking it as a runtime issue.
+func orkaAgentSource(data []byte) (agentSourceIdentity, bool) {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	var match agentSourceIdentity
+	found := false
+	for {
+		var source agentSourceIdentity
+		err := decoder.Decode(&source)
+		if errors.Is(err, io.EOF) {
+			return match, found
+		}
+		if err != nil {
+			return agentSourceIdentity{}, false
+		}
+		if source.APIVersion == "core.orka.ai/v1alpha1" && source.Kind == "Agent" && !found {
+			match, found = source, true
+		}
+	}
 }
 
 type editedAgent struct {

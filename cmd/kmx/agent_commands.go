@@ -69,7 +69,8 @@ Select explicitly the namespace the Orka controller watches. Provider type, mode
 identifier (not a ModelConfig), and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
-Interactive agent chat supports Orka and kagent; edit/list remain kagent-specific.
+Interactive agent chat supports Orka and kagent. List uses --namespace for
+Orka and defaults to kagent; edit remains kagent-specific.
 
 Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret

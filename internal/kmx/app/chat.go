@@ -79,7 +79,9 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
 	if !opt.Interactive && opt.Runtime == "orka" {
-		return fmt.Errorf("Orka chat requires --interactive")
+		return fmt.Errorf("Orka chat requires --interactive:\n  %s",
+			a.operationCommand("agent", "chat", "--interactive", "--runtime", "orka", "--namespace",
+				valueOr(opt.Namespace, OrkaNamespace), valueOr(opt.Agent, config.DefaultAgent)))
 	}
 	agent, task := opt.Agent, opt.Task
 	if agent == "" {
@@ -90,6 +92,25 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 	}
 	if err := a.preflight(depKubectl); err != nil {
 		return err
+	}
+	// One-shot chat is still kagent-only. Only an explicit non-kagent namespace
+	// opts into an Orka lookup here: probing every bare one-shot would add API
+	// discovery, make same-named Orka Agents shadow valid kagent Agents, and turn
+	// restricted Orka RBAC into a regression for existing kagent callers.
+	//
+	// A custom namespace is already an Orka signal — kagent is fixed to its own
+	// namespace — so resolve it with main's fail-closed runtime model and point
+	// at the working interactive command.
+	if !opt.Interactive && (opt.Runtime == "" || opt.Runtime == "auto") && opt.Namespace != "" && opt.Namespace != "kagent" {
+		runtime, namespace, err := a.resolveInteractiveChat(opt, agent)
+		if err != nil {
+			return err
+		}
+		if runtime == "orka" {
+			return fmt.Errorf("%q is an Orka Agent in namespace %s; Orka chat is interactive:\n  %s",
+				agent, namespace,
+				a.operationCommand("agent", "chat", "--interactive", "--runtime", "orka", "--namespace", namespace, agent))
+		}
 	}
 	if opt.Interactive {
 		runtime, namespace, err := a.resolveInteractiveChat(opt, agent)
@@ -167,27 +188,11 @@ func (a *App) ensureAgentExists(agent string) error {
 	if err == nil {
 		return nil
 	}
-	// Before reporting anything, find out whether this name is an Orka Agent.
-	//
-	// `kmx agent create` makes Orka Agents; `kmx agent chat` talks to the
-	// legacy kagent runtime. Somebody who creates one and then chats to it —
-	// the most natural next command there is — used to be told their own
-	// agent did not exist, and offered a DIFFERENT agent as an alternative.
-	// Being wrong about which runtime somebody is on is worse than being
-	// unable to help.
-	if where := a.orkaAgentNamespaces(agent); len(where) > 0 {
-		return fmt.Errorf("%q is an Orka Agent (namespace %s), and `kmx agent chat` talks to the legacy kagent runtime.\n"+
-			"  There is no command yet that asks an EXISTING Orka Agent a question; a Task is\n"+
-			"  created with the agent. What works today — the first reports what it is and the\n"+
-			"  chain it depends on, the second everything Orka has there:\n\n"+
-			"    kmx agent show %s --namespace %s\n"+
-			"    kmx agent list --namespace %s\n",
-			agent, strings.Join(where, ", "), agent, where[0], where[0])
-	}
-	if isMissingKind(err) {
+	if noSuchResourceType(err) {
 		return fmt.Errorf("`kmx agent chat` talks to the legacy kagent runtime, and this cluster does not have it installed.\n"+
 			"  Nothing is wrong with the cluster — the kagent Agent kind is simply absent.\n"+
-			"  If %q is an Orka Agent, name its namespace:  kmx agent list --namespace <ns>", agent)
+			"  If %q is an Orka Agent, name its namespace:  %s", agent,
+			a.operationCommand("agent", "list", "--namespace", "<ns>"))
 	}
 	if !isNotFound(err) {
 		return fmt.Errorf("cannot verify agent %q before chat: %w", agent, err)
@@ -206,40 +211,6 @@ func (a *App) ensureAgentExists(agent string) error {
 		return fmt.Errorf("agent %q does not exist in namespace kagent; no agents are installed", agent)
 	}
 	return fmt.Errorf("agent %q does not exist in namespace kagent; available agents: %s", agent, strings.Join(names, ", "))
-}
-
-// orkaAgentNamespaces reports every namespace holding an Orka Agent of this
-// name, so an error can name the runtime somebody is actually on.
-//
-// Best-effort by design: it runs on a path that is already reporting a
-// failure, and a cluster-wide read may be refused. An empty answer means
-// "found nothing to say", never "there is nothing there".
-func (a *App) orkaAgentNamespaces(name string) []string {
-	raw, err := a.kubectlCapture("get", "agents.core.orka.ai", "--all-namespaces",
-		"-o", "jsonpath={range .items[?(@.metadata.name==\""+name+"\")]}{.metadata.namespace}{\"\\n\"}{end}")
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(raw, "\n") {
-		if ns := strings.TrimSpace(line); ns != "" {
-			out = append(out, ns)
-		}
-	}
-	return out
-}
-
-// isMissingKind reports a cluster that does not serve this resource kind at
-// all, which is a different fact from "the object is absent". A runtime that
-// was never installed is not a missing agent.
-func isMissingKind(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := err.Error()
-	return strings.Contains(message, "doesn't have a resource type") ||
-		strings.Contains(message, "could not find the requested resource") ||
-		strings.Contains(message, "the server could not find the requested resource")
 }
 
 // portForward opens the controller forward and WAITS for it, returning a stop
