@@ -37,11 +37,28 @@ func newAgentShowCommand(state *commandState) *cobra.Command {
 }
 
 func newAgentListCommand(state *commandState) *cobra.Command {
-	var output string
-	cmd := &cobra.Command{Use: "list", Short: "List agents and active wiring", Args: cobra.NoArgs}
+	var output, namespace string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List agents: Orka Agents with --namespace, else the legacy kagent runtime",
+		Long: `List Agent resources.
+
+The namespace selects which runtime is reported, because they are different
+kinds and merging them under one set of headings would imply they are
+interchangeable.
+
+  --namespace <ns>   Orka Agents in that namespace, as created by
+                     ` + "`kmx agent create`" + ` and inspected by ` + "`kmx agent show`" + `.
+  (omitted)          the legacy kagent runtime, in its own fixed namespace.
+
+Orka watches namespaces explicitly, so there is no default to guess: a wrong
+one would report "none" about a namespace you never meant.`,
+		Args: cobra.NoArgs,
+	}
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "list Orka Agents in this namespace instead of the legacy runtime")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output) })
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output, namespace) })
 	return cmd
 }
 
@@ -52,7 +69,8 @@ Select explicitly the namespace the Orka controller watches. Provider type, mode
 identifier (not a ModelConfig), and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
-Interactive agent chat supports Orka and kagent; edit/list remain kagent-specific.
+Interactive agent chat supports Orka and kagent. List uses --namespace for
+Orka and defaults to kagent; edit remains kagent-specific.
 
 Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret

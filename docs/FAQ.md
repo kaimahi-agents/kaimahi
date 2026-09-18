@@ -30,7 +30,9 @@ inspection, no-write planning, dry-run and upgrade limits.
 
 There is no supported translation in the current CLI. `kmx agent create`
 authors a native Orka Provider + Agent and optional Task, not kagent resources
-or BYO images. Existing `agent chat/edit/list` remain kagent-specific. See the
+or BYO images. Interactive `agent chat` supports both runtimes; one-shot chat
+and `agent edit` remain kagent-specific. `agent list` reads Orka Agents when
+given `--namespace`. See the
 [create contract](kmx.md#kmx-agent-create) and [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer).
 Whether kagent YAML will become an authoring surface over Orka remains open;
 native Orka resources are the recommendation in [orka.md](orka.md), not a ruling

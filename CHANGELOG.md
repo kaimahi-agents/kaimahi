@@ -22,6 +22,31 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- **`kmx agent` no longer reports an agent you just created as missing.**
+  `agent create` and `agent show` operate on Orka; interactive `agent chat`
+  supports Orka and kagent, while one-shot chat and `agent edit` remain
+  kagent-specific. A one-shot chat with an Orka Agent reported the operator's
+  own agent as absent and then offered a different agent as the alternative.
+  It now points at the interactive Orka command that works.
+
+  - `kmx agent list --namespace <ns>` lists Orka Agents. Without a namespace it
+    lists the legacy runtime, as before. An agent created by `kmx agent create`
+    could previously not be listed by `kmx agent list`, and `kmx agent show`
+    pointed at a `--namespace` flag that did not exist. It exists now, so that
+    advice is executable.
+  - One-shot `kmx agent chat <orka-agent> ...` names the Agent's Orka namespace
+    and prints the working `--interactive --runtime orka` command. It no longer
+    offers an unrelated kagent agent as a substitute.
+  - `kmx agent chat` on a cluster with no kagent runtime installed says the
+    runtime is absent, instead of reporting an unreadable cluster.
+  - `kmx agent edit` identifies an Orka bundle before opening an editor and
+    prints the corresponding `kubectl edit` and `agent show` commands, rather
+    than presenting the existing kagent schema refusal without context.
+
+  No behaviour changes for kagent agents, and no flags were removed.
+
 ### Added
 
 - **Podman is now selectable without knowing the `CONTAINER_ENGINE`

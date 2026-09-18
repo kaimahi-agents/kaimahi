@@ -200,7 +200,17 @@ trades reconnect availability for protection against later local-port reuse;
 the initial bind and connection are still local trust, not cryptographic process
 authentication. Dry-run does not test access or execution.
 
-`agent chat/edit/list` still operate on kagent, not this Orka Agent. No automatic
+`kmx agent list --namespace <ns>` lists Orka Agents; without a namespace it
+lists the legacy kagent runtime. Existing Orka Agents can be used through the
+shared interactive chat:
+
+```bash
+kmx agent chat --interactive --runtime orka --namespace <ns> <name>
+```
+
+One-shot chat remains kagent-specific and now points at that command when the
+name resolves to Orka. `agent edit` remains a kagent source editor and points
+an Orka bundle at explicit `kubectl edit` / `agent show` commands. No automatic
 MCP translation, application image deployment or governance is added here.
 
 ## The whole journey, from nothing

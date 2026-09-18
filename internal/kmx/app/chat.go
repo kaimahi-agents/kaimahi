@@ -79,7 +79,9 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
 	if !opt.Interactive && opt.Runtime == "orka" {
-		return fmt.Errorf("Orka chat requires --interactive")
+		return fmt.Errorf("Orka chat requires --interactive:\n  %s",
+			a.operationCommand("agent", "chat", "--interactive", "--runtime", "orka", "--namespace",
+				valueOr(opt.Namespace, OrkaNamespace), valueOr(opt.Agent, config.DefaultAgent)))
 	}
 	agent, task := opt.Agent, opt.Task
 	if agent == "" {
@@ -90,6 +92,25 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 	}
 	if err := a.preflight(depKubectl); err != nil {
 		return err
+	}
+	// One-shot chat is still kagent-only. Only an explicit non-kagent namespace
+	// opts into an Orka lookup here: probing every bare one-shot would add API
+	// discovery, make same-named Orka Agents shadow valid kagent Agents, and turn
+	// restricted Orka RBAC into a regression for existing kagent callers.
+	//
+	// A custom namespace is already an Orka signal — kagent is fixed to its own
+	// namespace — so resolve it with main's fail-closed runtime model and point
+	// at the working interactive command.
+	if !opt.Interactive && (opt.Runtime == "" || opt.Runtime == "auto") && opt.Namespace != "" && opt.Namespace != "kagent" {
+		runtime, namespace, err := a.resolveInteractiveChat(opt, agent)
+		if err != nil {
+			return err
+		}
+		if runtime == "orka" {
+			return fmt.Errorf("%q is an Orka Agent in namespace %s; Orka chat is interactive:\n  %s",
+				agent, namespace,
+				a.operationCommand("agent", "chat", "--interactive", "--runtime", "orka", "--namespace", namespace, agent))
+		}
 	}
 	if opt.Interactive {
 		runtime, namespace, err := a.resolveInteractiveChat(opt, agent)
@@ -163,26 +184,33 @@ func (a *App) waitServable(agent string) error {
 }
 
 func (a *App) ensureAgentExists(agent string) error {
-	if _, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent, "-o", "name"); err != nil {
-		if !isNotFound(err) {
-			return fmt.Errorf("cannot verify agent %q before chat: %w", agent, err)
-		}
-		available, listErr := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "-o", "name")
-		if listErr != nil {
-			return fmt.Errorf("agent %q does not exist in namespace kagent", agent)
-		}
-		var names []string
-		for _, line := range strings.Split(available, "\n") {
-			if _, name, ok := strings.Cut(strings.TrimSpace(line), "/"); ok && name != "" {
-				names = append(names, name)
-			}
-		}
-		if len(names) == 0 {
-			return fmt.Errorf("agent %q does not exist in namespace kagent; no agents are installed", agent)
-		}
-		return fmt.Errorf("agent %q does not exist in namespace kagent; available agents: %s", agent, strings.Join(names, ", "))
+	_, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent, "-o", "name")
+	if err == nil {
+		return nil
 	}
-	return nil
+	if noSuchResourceType(err) {
+		return fmt.Errorf("`kmx agent chat` talks to the legacy kagent runtime, and this cluster does not have it installed.\n"+
+			"  Nothing is wrong with the cluster — the kagent Agent kind is simply absent.\n"+
+			"  If %q is an Orka Agent, name its namespace:  %s", agent,
+			a.operationCommand("agent", "list", "--namespace", "<ns>"))
+	}
+	if !isNotFound(err) {
+		return fmt.Errorf("cannot verify agent %q before chat: %w", agent, err)
+	}
+	available, listErr := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "-o", "name")
+	if listErr != nil {
+		return fmt.Errorf("agent %q does not exist in namespace kagent", agent)
+	}
+	var names []string
+	for _, line := range strings.Split(available, "\n") {
+		if _, name, ok := strings.Cut(strings.TrimSpace(line), "/"); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return fmt.Errorf("agent %q does not exist in namespace kagent; no agents are installed", agent)
+	}
+	return fmt.Errorf("agent %q does not exist in namespace kagent; available agents: %s", agent, strings.Join(names, ", "))
 }
 
 // portForward opens the controller forward and WAITS for it, returning a stop

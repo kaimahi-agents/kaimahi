@@ -113,10 +113,10 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
 | `kmx lift` / `kmx lift down` | provision AKS and land a platform on it, then owned cleanup. **`--payload` is required and has no default**: `orka` lands the pinned Orka (and creates no Provider — that stays yours), `kagent` lands the legacy runtime and its demo agents on governed Copilot. Both share every cluster phase; they differ only in what runs agents. [AKS](aks.md) |
-| `kmx agent list` | readiness, acceptance, ModelConfig, tool wiring; table/JSON/YAML |
+| `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
-| `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` for sessions, `--json` for raw one-shot task |
+| `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` supports Orka and kagent (`--runtime auto\|orka\|kagent`, `--namespace`); `--json` prints a raw kagent one-shot task |
 | `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |
 | `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
 | `kmx down` | delete named kind cluster, **including its ledger** |
@@ -272,7 +272,11 @@ promote the isolated conversion spike to a supported interface.
 
 ### Existing kagent editor
 
-`agent chat/edit/list` remain kagent-specific, not follow-ups for an Orka bundle.
+One-shot `agent chat` and `agent edit` remain kagent-specific. A one-shot chat
+with an Orka Agent now points at the working interactive Orka command instead
+of reporting that Agent as absent; `--interactive` supports both runtimes.
+`agent list --namespace <ns>` reads Orka Agents, while a bare list retains the
+legacy kagent inventory.
 `agent edit` edits a secure temporary copy of owned local YAML via `$VISUAL`/
 `$EDITOR`; it rejects symlinks, concurrent edits, secrets, invalid identity or
 tool wiring, then atomically replaces source. It never implicitly applies.

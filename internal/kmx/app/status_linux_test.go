@@ -174,7 +174,7 @@ esac
 				want := ""
 				switch command {
 				case "agents":
-					err, want = a.ListAgents(""), "none"
+					err, want = a.ListAgents("", ""), "none"
 				case "context":
 					err, want = a.Ctx(""), "kind-test"
 				}
