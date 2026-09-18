@@ -24,6 +24,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **Podman is now selectable without knowing the `CONTAINER_ENGINE`
+  environment variable.** `kmx --container-engine podman quickstart` and
+  `kmx quickstart --container-engine podman` both choose Podman before the App
+  and its subprocess environment are created. kmx supplies kind's required
+  `KIND_EXPERIMENTAL_PROVIDER=podman` automatically; the environment variable
+  remains supported for automation, and an explicit flag overrides it. There
+  is deliberately no daemon-based fallback: Docker and Podman have separate
+  kind inventories and can each own a same-named cluster, so silently switching
+  on a transient daemon failure could act on the wrong cluster.
+
 - **`kmx lift --payload orka` lands Orka on the managed cluster it provisions.**
   The lift's cluster half is unchanged — resource group, private registry, an
   AKS cluster with a policy engine, the proven network boundary, the plane and

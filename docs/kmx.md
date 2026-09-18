@@ -48,6 +48,18 @@ CLI is cached too. Cached digests are rechecked before reuse. Set
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
 its source; the lift plane phase preflights Go even from a checkout.
 
+Docker remains the default for compatibility. Podman is a first-class explicit
+choice:
+
+```bash
+kmx --container-engine podman quickstart
+```
+
+The global flag works before or after a subcommand and overrides
+`CONTAINER_ENGINE=...`. kmx deliberately does not fall back between live daemons:
+Docker and Podman have separate kind inventories and can each own a same-named
+cluster, so a silent switch can target the wrong one.
+
 ## Commands
 
 Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tree
@@ -126,7 +138,7 @@ remains.
 |---|---|
 | `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
 | `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
-| `CONTAINER_ENGINE` | `docker` or `podman`; keep consistent for every operation on a cluster |
+| `--container-engine`, `CONTAINER_ENGINE` | `docker` (default) or `podman`; the flag overrides the environment; keep consistent for every operation on a cluster |
 | `KAGENT_VERSION`, `MODEL` | defaults `0.9.12`, `qwen2.5:3b` for legacy setup |
 | `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
 | `CRED` | default model/operator credential `hello-world` |

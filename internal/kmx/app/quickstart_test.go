@@ -65,6 +65,59 @@ func TestLocalClusterCreationRefusesDisagreeingContextBeforeCommands(t *testing.
 	}
 }
 
+// kind reads KIND_EXPERIMENTAL_PROVIDER directly. Explicit Docker must remove
+// an inherited Podman value, or --container-engine docker still queries and can
+// delete Podman's separate cluster inventory.
+func TestExplicitDockerClearsInheritedPodmanProviderFromKind(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "provider")
+	t.Setenv("KIND_EXPERIMENTAL_PROVIDER", "podman")
+	t.Setenv("KMX_TEST_PROVIDER_LOG", log)
+	fakeTool(t, dir, "kind", `printf '%s' "${KIND_EXPERIMENTAL_PROVIDER-unset}" > "$KMX_TEST_PROVIDER_LOG"; exit 0`)
+	fakeTool(t, dir, "kubectl", "exit 0")
+	fakeTool(t, dir, "docker", "exit 0")
+	t.Setenv("PATH", dir)
+
+	cfg := &config.Config{KindCluster: "demo", KubeContext: "kind-demo", ContainerEngine: "docker"}
+	a := New(cfg)
+	a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	if err := a.stepCluster(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "unset" {
+		t.Fatalf("kind inherited provider %q under explicit Docker", got)
+	}
+}
+
+func TestExplicitPodmanReplacesAnInheritedKindProvider(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "provider")
+	t.Setenv("KIND_EXPERIMENTAL_PROVIDER", "docker")
+	t.Setenv("KMX_TEST_PROVIDER_LOG", log)
+	fakeTool(t, dir, "kind", `printf '%s' "${KIND_EXPERIMENTAL_PROVIDER-unset}" > "$KMX_TEST_PROVIDER_LOG"; exit 0`)
+	fakeTool(t, dir, "kubectl", "exit 0")
+	fakeTool(t, dir, "podman", "case \"$*\" in ps*) exit 0;; esac")
+	t.Setenv("PATH", dir)
+
+	cfg := &config.Config{KindCluster: "demo", KubeContext: "kind-demo", ContainerEngine: "podman"}
+	a := New(cfg)
+	a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	if err := a.stepCluster(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "podman" {
+		t.Fatalf("kind inherited provider %q under explicit Podman", got)
+	}
+}
+
 func TestInstallKagentStillAcceptsManagedContext(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "helm-commands")

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -136,5 +138,61 @@ func TestPodmanCarriesTheKindProvider(t *testing.T) {
 	}
 	if len(c.KindEnv()) != 0 {
 		t.Errorf("docker must set no kind provider, got %v", c.KindEnv())
+	}
+}
+
+func TestExplicitContainerEngineUsesEnvironmentValidation(t *testing.T) {
+	c := &Config{ContainerEngine: "docker"}
+	if err := c.SetContainerEngine(" podman "); err != nil {
+		t.Fatal(err)
+	}
+	if c.ContainerEngine != "podman" {
+		t.Fatalf("engine = %q", c.ContainerEngine)
+	}
+	if got := c.KindEnv(); len(got) != 1 || got[0] != "KIND_EXPERIMENTAL_PROVIDER=podman" {
+		t.Fatalf("kind env = %v", got)
+	}
+	if err := c.SetContainerEngine("containerd"); err == nil {
+		t.Fatal("unknown engine was accepted")
+	}
+	if c.ContainerEngine != "podman" {
+		t.Fatalf("failed update changed engine to %q", c.ContainerEngine)
+	}
+}
+
+func TestContainerEngineFlagOverridesEvenAnInvalidEnvironment(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_ENGINE", "containerd")
+	c, err := LoadWithOverrides("", "podman")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ContainerEngine != "podman" {
+		t.Fatalf("engine = %q", c.ContainerEngine)
+	}
+
+	if _, err := LoadWithOverrides("", ""); err == nil || !strings.Contains(err.Error(), "CONTAINER_ENGINE") {
+		t.Fatalf("invalid environment was no longer reported as such: %v", err)
+	}
+	if _, err := LoadWithOverrides("", "PODMAN"); err == nil || !strings.Contains(err.Error(), "--container-engine") {
+		t.Fatalf("flag unexpectedly changed the existing case-sensitive contract: %v", err)
+	}
+}
+
+func TestBothEnginesClearInheritedKindProviderBeforeSelecting(t *testing.T) {
+	for _, tc := range []struct {
+		engine string
+		add    []string
+	}{
+		{"docker", nil},
+		{"podman", []string{"KIND_EXPERIMENTAL_PROVIDER=podman"}},
+	} {
+		c := &Config{ContainerEngine: tc.engine}
+		if got := c.KindUnset(); len(got) != 1 || got[0] != "KIND_EXPERIMENTAL_PROVIDER" {
+			t.Errorf("%s unset = %v", tc.engine, got)
+		}
+		if got := c.KindEnv(); !reflect.DeepEqual(got, tc.add) {
+			t.Errorf("%s add = %v, want %v", tc.engine, got, tc.add)
+		}
 	}
 }

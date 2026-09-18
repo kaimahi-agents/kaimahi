@@ -141,6 +141,14 @@ func env(name, fallback string) string {
 // Following it here would swap an invented target for one another tool
 // picked. The guard names it instead, and refuses.
 func Load(contextFlag string) (*Config, error) {
+	return LoadWithOverrides(contextFlag, "")
+}
+
+// LoadWithOverrides resolves configuration with CLI values taking precedence
+// over environment values. Applying the engine here, rather than after Load,
+// lets a valid --container-engine recover from a stale or invalid
+// CONTAINER_ENGINE value exactly as an ordinary CLI override should.
+func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error) {
 	model, modelExplicit := os.LookupEnv("MODEL")
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -159,10 +167,15 @@ func Load(contextFlag string) (*Config, error) {
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
 		KagentBin:       strings.TrimSpace(os.Getenv("KAGENT")),
 	}
-	switch c.ContainerEngine {
-	case "docker", "podman":
-	default:
-		return nil, fmt.Errorf("unknown CONTAINER_ENGINE %q — expected 'docker' or 'podman'", c.ContainerEngine)
+	engine := c.ContainerEngine
+	if containerEngineFlag != "" {
+		engine = containerEngineFlag
+	}
+	if err := c.SetContainerEngine(engine); err != nil {
+		if containerEngineFlag != "" {
+			return nil, fmt.Errorf("unknown --container-engine %q — expected docker or podman", containerEngineFlag)
+		}
+		return nil, fmt.Errorf("unknown CONTAINER_ENGINE %q — expected 'docker' or 'podman'", engine)
 	}
 
 	switch {
@@ -184,6 +197,19 @@ func Load(contextFlag string) (*Config, error) {
 	return c, nil
 }
 
+// SetContainerEngine validates and applies one resolved engine choice. Both
+// the environment and CLI paths use it instead of maintaining separate lists.
+func (c *Config) SetContainerEngine(engine string) error {
+	engine = strings.TrimSpace(engine)
+	switch engine {
+	case "docker", "podman":
+		c.ContainerEngine = engine
+		return nil
+	default:
+		return fmt.Errorf("unknown container engine %q — expected docker or podman", engine)
+	}
+}
+
 // KindEnv returns the environment kind needs for the selected engine. kind
 // talks to podman only when KIND_EXPERIMENTAL_PROVIDER says so, so the two
 // are set together and can never disagree — a cluster created under one
@@ -194,6 +220,15 @@ func (c *Config) KindEnv() []string {
 		return []string{"KIND_EXPERIMENTAL_PROVIDER=podman"}
 	}
 	return nil
+}
+
+// KindUnset removes inherited provider selection before KindEnv applies the
+// chosen engine. Docker is kind's default only when the variable is absent;
+// Podman needs exactly its own value. Clearing first avoids either explicit
+// choice inheriting a contradictory shell setting; Runner additions win over
+// removals, so Podman is then added back deliberately.
+func (c *Config) KindUnset() []string {
+	return []string{"KIND_EXPERIMENTAL_PROVIDER"}
 }
 
 // stateDir is where kmx keeps the selected context and the cached kagent

@@ -141,7 +141,7 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		a, err := state.application()
+		a, err := state.operationApplication(cmd)
 		if err != nil {
 			return err
 		}

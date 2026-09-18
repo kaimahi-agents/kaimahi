@@ -20,27 +20,28 @@ type dependencies struct {
 	stdin      *os.File
 	stdout     io.Writer
 	stderr     io.Writer
-	loadConfig func(string) (*config.Config, error)
+	loadConfig func(string, string) (*config.Config, error)
 	newApp     func(*config.Config) *app.App
 	buildInfo  func() (*debug.BuildInfo, bool)
 }
 
 func productionDependencies() dependencies {
-	return dependencies{os.Stdin, os.Stdout, os.Stderr, config.Load, app.New, debug.ReadBuildInfo}
+	return dependencies{os.Stdin, os.Stdout, os.Stderr, config.LoadWithOverrides, app.New, debug.ReadBuildInfo}
 }
 
 type commandState struct {
-	deps        dependencies
-	contextFlag string
-	app         *app.App
-	argv        []string
+	deps                dependencies
+	contextFlag         string
+	containerEngineFlag string
+	app                 *app.App
+	argv                []string
 }
 
 func (s *commandState) application() (*app.App, error) {
 	if s.app != nil {
 		return s.app, nil
 	}
-	cfg, err := s.deps.loadConfig(s.contextFlag)
+	cfg, err := s.deps.loadConfig(s.contextFlag, s.containerEngineFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +49,29 @@ func (s *commandState) application() (*app.App, error) {
 	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
 	a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
 	s.app = a
+	return a, nil
+}
+
+// operationApplication adds invocation identity to a configured App. Keep it
+// separate from application(): help and completion need no operation, while
+// the credential issue path deliberately validates its destination before it
+// loads configuration and therefore cannot use appRun directly.
+func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error) {
+	a, err := s.application()
+	if err != nil {
+		return nil, err
+	}
+	// Chat slash commands are separate operations; replaying the outer chat
+	// command would not repeat the mutation they are asking to confirm.
+	if cmd.Name() != "chat" && len(s.argv) > 0 {
+		parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
+			"CRED=" + quoteShell(a.Cfg.Credential),
+			"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
+		for _, arg := range s.argv {
+			parts = append(parts, quoteShell(arg))
+		}
+		a.InvocationCommand = strings.Join(parts, " ")
+	}
 	return a, nil
 }
 
@@ -79,7 +103,16 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.SetErr(state.deps.stderr)
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().String("context", "", "act on this kube context for one command (may appear anywhere)")
+	root.PersistentFlags().StringVar(&state.containerEngineFlag, "container-engine", "", "kind container engine: docker or podman (overrides CONTAINER_ENGINE)")
+	engineFlag := root.PersistentFlags().Lookup("container-engine")
+	root.PersistentPreRunE = func(*cobra.Command, []string) error {
+		if engineFlag.Changed && strings.TrimSpace(state.containerEngineFlag) == "" {
+			return fmt.Errorf("--container-engine requires docker or podman")
+		}
+		return nil
+	}
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
+	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
 		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state),
@@ -97,20 +130,9 @@ func newRootCommand(state *commandState) *cobra.Command {
 
 func appRun(state *commandState, fn func(*app.App) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		a, err := state.application()
+		a, err := state.operationApplication(cmd)
 		if err != nil {
 			return err
-		}
-		// Chat slash commands are separate operations; replaying the outer chat
-		// command would not repeat the mutation they are asking to confirm.
-		if cmd.Name() != "chat" && len(state.argv) > 0 {
-			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
-				"CRED=" + quoteShell(a.Cfg.Credential),
-				"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
-			for _, arg := range state.argv {
-				parts = append(parts, quoteShell(arg))
-			}
-			a.InvocationCommand = strings.Join(parts, " ")
 		}
 		return fn(a)
 	}

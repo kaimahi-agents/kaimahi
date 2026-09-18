@@ -81,7 +81,15 @@ func completionContext(cmd *cobra.Command) string {
 	if value, _ := cmd.Root().PersistentFlags().GetString("context"); value != "" {
 		return value
 	}
-	if cfg, err := config.Load(""); err == nil {
+	engine := ""
+	if value, _ := cmd.Flags().GetString("container-engine"); value != "" {
+		engine = value
+	} else if value, _ := cmd.InheritedFlags().GetString("container-engine"); value != "" {
+		engine = value
+	} else if value, _ := cmd.Root().PersistentFlags().GetString("container-engine"); value != "" {
+		engine = value
+	}
+	if cfg, err := config.LoadWithOverrides("", engine); err == nil {
 		return cfg.KubeContext
 	}
 	return ""

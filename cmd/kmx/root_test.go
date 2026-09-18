@@ -18,7 +18,7 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	loads := 0
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = out, errOut
-	deps.loadConfig = func(context string) (*config.Config, error) {
+	deps.loadConfig = func(context, engine string) (*config.Config, error) {
 		loads++
 		return &config.Config{KubeContext: context, Credential: "default-cred"}, nil
 	}
@@ -81,10 +81,113 @@ func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
 	}
 }
 
+func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing.T) {
+	for _, argv := range [][]string{
+		{"--container-engine", "podman", "status"},
+		{"status", "--container-engine", "podman"},
+	} {
+		t.Run(strings.Join(argv, "_"), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, _ := testDependencies(&out, &errOut)
+			deps.loadConfig = func(_ string, engine string) (*config.Config, error) {
+				cfg := &config.Config{ContainerEngine: "docker", KubeContext: "kind-test"}
+				if err := cfg.SetContainerEngine(engine); err != nil {
+					return nil, err
+				}
+				return cfg, nil
+			}
+			var gotEngine string
+			var gotEnv, gotUnset []string
+			deps.newApp = func(cfg *config.Config) *app.App {
+				gotEngine = cfg.ContainerEngine
+				a := app.New(cfg)
+				gotEnv = append([]string(nil), a.Run.Env...)
+				gotUnset = append([]string(nil), a.Run.Unset...)
+				return a
+			}
+			state := &commandState{deps: deps}
+			root := newRootCommand(state)
+			cmd, _, err := root.Find([]string{"status"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd.RunE = appRun(state, func(*app.App) error { return nil })
+			root.SetArgs(argv)
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if gotEngine != "podman" || !reflect.DeepEqual(gotEnv, []string{"KIND_EXPERIMENTAL_PROVIDER=podman"}) || !reflect.DeepEqual(gotUnset, []string{"KIND_EXPERIMENTAL_PROVIDER"}) {
+				t.Fatalf("engine=%q env=%v unset=%v", gotEngine, gotEnv, gotUnset)
+			}
+		})
+	}
+}
+
+func TestContainerEngineFlagRejectsUnknownEngine(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps := productionDependencies()
+	deps.stdout, deps.stderr = &out, &errOut
+	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
+	err := execute([]string{"status", "--container-engine", "containerd"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "expected docker or podman") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestExplicitEmptyContainerEngineIsRefused(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	err := execute([]string{"status", "--container-engine="}, deps)
+	if err == nil || !strings.Contains(err.Error(), "requires docker or podman") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestExplicitEmptyContainerEngineIsRefusedOnCredentialIssue(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	err := execute([]string{"credential", "issue", "demo", "--discard", "--container-engine="}, deps)
+	if err == nil || !strings.Contains(err.Error(), "requires docker or podman") {
+		t.Fatalf("error = %v", err)
+	}
+	if *loads != 0 {
+		t.Fatalf("empty global flag loaded configuration %d times", *loads)
+	}
+}
+
+func TestCredentialIssueRecordsResolvedEngineInInvocation(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	deps.loadConfig = func(_, engine string) (*config.Config, error) {
+		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine, Credential: "cred"}, nil
+	}
+	state := &commandState{deps: deps, argv: []string{"credential", "issue", "demo", "--discard", "--container-engine", "podman"}}
+	root := newRootCommand(state)
+	issue, _, err := root.Find([]string{"credential", "issue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invocation string
+	issue.RunE = func(cmd *cobra.Command, _ []string) error {
+		a, err := state.operationApplication(cmd)
+		if err == nil {
+			invocation = a.InvocationCommand
+		}
+		return err
+	}
+	root.SetArgs(state.argv)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(invocation, "CONTAINER_ENGINE=podman") || !strings.Contains(invocation, "--container-engine podman") {
+		t.Fatalf("invocation lost selected engine: %s", invocation)
+	}
+}
+
 func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	deps.loadConfig = func(string) (*config.Config, error) {
+	deps.loadConfig = func(string, string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance"}, nil
 	}
 	state := &commandState{deps: deps, argv: []string{"budget", "a'b; $(bad)", "--cents", "0", "--tokens", "300"}}
@@ -112,7 +215,7 @@ func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
 	for _, group := range []string{"agent", "models", "credential"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
-		deps.loadConfig = func(string) (*config.Config, error) {
+		deps.loadConfig = func(string, string) (*config.Config, error) {
 			*loads++
 			return nil, errors.New("bad config")
 		}
@@ -239,7 +342,7 @@ func TestErrorsAreReturnedWithoutAutomaticUsage(t *testing.T) {
 func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	deps.loadConfig = func(string) (*config.Config, error) { return nil, errors.New("bad config") }
+	deps.loadConfig = func(string, string) (*config.Config, error) { return nil, errors.New("bad config") }
 	if err := execute([]string{"status"}, deps); err == nil || err.Error() != "bad config" {
 		t.Fatalf("config error=%v", err)
 	}
@@ -259,7 +362,7 @@ func TestAuditInboundIsRejectedBeforeLoadingConfig(t *testing.T) {
 	for _, args := range [][]string{{"audit", "inbound"}, {"audit", "inbound", "demo"}} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
-		deps.loadConfig = func(string) (*config.Config, error) {
+		deps.loadConfig = func(string, string) (*config.Config, error) {
 			*loads++
 			return nil, errors.New("operational config must not be loaded")
 		}

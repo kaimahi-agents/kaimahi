@@ -10,7 +10,7 @@ import (
 
 func TestChatRejectsInteractiveJSONBeforeLoadingApplication(t *testing.T) {
 	for _, flags := range [][]string{{"--interactive", "--json"}, {"--json", "--interactive=true"}} {
-		deps := dependencies{stdout: io.Discard, stderr: io.Discard, loadConfig: func(string) (*config.Config, error) {
+		deps := dependencies{stdout: io.Discard, stderr: io.Discard, loadConfig: func(string, string) (*config.Config, error) {
 			t.Fatal("conflicting chat flags reached configuration or operations")
 			return nil, nil
 		}}

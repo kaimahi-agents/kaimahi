@@ -24,6 +24,9 @@ not settle that choice, and `orka.harness.v2` is outside the direction.
 
 Set `KMX_TOOLCHAIN=off` if missing tools should fail rather than download.
 [kmx installation](kmx.md#install) describes cache verification and release trust.
+Choose Podman directly on the command line with
+`kmx --container-engine podman quickstart`; automation can continue to set
+`CONTAINER_ENGINE=podman`.
 
 ## Current Orka path
 
@@ -163,11 +166,25 @@ kagent-specific; BYO images, ModelConfig and MCP conversion are not provided.
 
 ## Using Podman instead of Docker
 
-Set `CONTAINER_ENGINE=podman` consistently for **every** operation on the cluster;
-Docker's kind inventory cannot see Podman's nodes. On macOS, ensure the Podman
-machine mounts the checkout before building; absent mounts require deliberate
-machine recreation, not an implicit destructive repair. Restarted machines may
-leave nodes stopped; the cluster step starts the named nodes and checks API/DNS.
+Select Podman explicitly for an invocation:
+
+```bash
+kmx --container-engine podman quickstart
+# or equivalently for automation:
+CONTAINER_ENGINE=podman kmx quickstart
+```
+
+The flag can appear before or after the command and overrides
+`CONTAINER_ENGINE`. Keep the same engine for **every** operation on a cluster;
+Docker's kind inventory cannot see Podman's nodes, and both engines can own a
+cluster with the same name. kmx therefore does not silently switch engines when
+one daemon is unavailable.
+
+On macOS, ensure the Podman machine mounts the checkout before building; absent
+mounts require deliberate machine recreation, not an implicit destructive
+repair. Restarted machines may leave nodes stopped; the cluster step starts the
+named nodes and checks API/DNS. kmx supplies
+`KIND_EXPERIMENTAL_PROVIDER=podman` to kind automatically.
 
 ## Choices and caveats
 

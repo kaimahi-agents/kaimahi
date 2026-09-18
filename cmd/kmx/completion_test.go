@@ -96,3 +96,18 @@ func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionContextUsesEngineFlagOverInvalidEnvironment(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KIND_CLUSTER", "podman-demo")
+	t.Setenv("CONTAINER_ENGINE", "containerd")
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	root := newRootCommand(&commandState{deps: deps})
+	if err := root.PersistentFlags().Set("container-engine", "podman"); err != nil {
+		t.Fatal(err)
+	}
+	if got := completionContext(root); got != "kind-podman-demo" {
+		t.Fatalf("context = %q", got)
+	}
+}

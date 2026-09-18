@@ -26,7 +26,10 @@ ensure your Go binary directory is on `PATH`, then:
 
 ```bash
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+# Docker (default):
 kmx up
+# Or choose Podman explicitly instead:
+kmx --container-engine podman up
 kmx orka install
 kmx orka status
 ```
