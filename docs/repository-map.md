@@ -34,14 +34,14 @@ checks.
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 43 (checkers, probes, CI fixtures, mutation specs) |
-| `docs/` | 45 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `docs/` | 46 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 6 assets used by the README and the org profile | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (21 files) | **Installed** | CLI and tests: Orka operations, AX evaluation status, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -53,7 +53,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 70 | Installed | Command orchestration, model/cluster operations, shared interactive chat UI, native Orka create/readiness/Task-result handling and retained kagent operations. |
+| `kmx/app` | 71 | Installed | Command orchestration, model/cluster operations, AX evaluation status, shared interactive chat UI, native Orka create/readiness/Task-result handling and retained kagent operations. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
@@ -217,13 +217,13 @@ line rather than a recipe. Its existing callers include
 are comments). Existing agent tool-call verification concerns the retained
 direct kagent path, not a removed gateway assertion.
 
-## `docs/` — 45 tracked files, guides and retirement records
+## `docs/` — 46 tracked files, guides and retirement records
 
-**Guides and index (23):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (24):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `tools.md`, `spend.md`, `tool-governance.md`,
 `approvals.md`, `egress.md`, `hosted-upstreams.md`, `identity.md`,
 `operations.md`, `releases.md`, `workflows.md`, `FAQ.md`, `isolation.md`,
-`migrate.md`, `orka.md`, `copilot-inference.md`, `interactive-chat.md`,
+`migrate.md`, `orka.md`, `ax.md`, `copilot-inference.md`, `interactive-chat.md`,
 `interactive-lift.md` and `orka-k8s-tool.md`. Retired tool/workflow pages are pointers, not
 operating instructions for deleted code.
 

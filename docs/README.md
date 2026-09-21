@@ -12,6 +12,7 @@ legacy governance-plane demonstrations.
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author a native Provider + Agent, optionally run a Task and retrieve its answer | [Native create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Route an existing application's model traffic through Orka | [Migration](migrate.md) |
+| Inspect an externally installed Google AX evaluation and its Agent Substrate prerequisites | [AX evaluation](ax.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |
@@ -20,6 +21,10 @@ legacy governance-plane demonstrations.
 Installing Orka is not migration. A migrated application's Deployment stays
 under its owner's management; the supported migration governs **model
 traffic**, not all activity by the application.
+
+AX is an evaluation option, not another supported installation or authoring
+path. `kmx ax status` reads an externally owned installation; it does not add
+AX to lift, migrate an Orka Agent, or prove sandboxing from ready Deployments.
 
 Authoring is a separate, **open** decision: native Orka only versus also
 supporting kagent YAML as an authoring surface over Orka. The native

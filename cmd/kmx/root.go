@@ -121,7 +121,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newWatchCommand(state),
 		newUseCommand(state),
 		newBudgetCommand(state), newModelsCommand(state), newMigrateCommand(state),
-		newOrkaCommand(state),
+		newOrkaCommand(state), newAXCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
 		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state),
 	)

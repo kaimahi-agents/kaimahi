@@ -76,6 +76,18 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 
+### AX evaluation path
+
+| Command | Contract / reference |
+|---|---|
+| `kmx ax status [--namespace ax-system]` | inspect an externally installed AX controller/server/Redis, report their declared image templates, read AX's configured Substrate endpoint/router, and check any Kubernetes Services those values name. **Evaluation only:** no install, lift, authoring or migration promise; ready components are not proof of a sandboxed Task. [AX](ax.md) |
+
+There is deliberately no `kmx ax install`. AX `v0.3.0` publishes no binary or
+deployment assets; its manifests require source-built `ko://` images, an
+operator registry and an existing Agent Substrate. Wrapping that path would
+make kmx own AX's build and compatibility matrix rather than consume immutable
+upstream artifacts.
+
 ### Existing plane and operator commands
 
 These are the present seam implementation, including the bridge used by migrate.

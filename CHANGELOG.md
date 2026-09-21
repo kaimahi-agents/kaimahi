@@ -24,6 +24,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- **`kmx ax status` makes Google AX visible as an evaluation option without
+  pretending Kaimahi can install or support it.** The view inspects an
+  externally installed `ax-controller`, `ax-server` and Redis, reports their
+  declared image templates and rollout state, reads the controller's Substrate
+  endpoint and router, and checks any Kubernetes Services those values name.
+  It follows AX's configurable namespace. Unreadable remains
+  different from absent. It explicitly does not call ready control-plane
+  components proof of a sandboxed Task. There is no `kmx ax install`: AX
+  `v0.3.0` publishes no binary or deployment assets, and its documented path
+  builds `ko://` images from source into an operator registry on top of an
+  existing Agent Substrate. Wrapping that would make kmx own AX's build and
+  compatibility matrix ([docs/ax.md](docs/ax.md)).
+
 - **Podman is now selectable without knowing the `CONTAINER_ENGINE`
   environment variable.** `kmx --container-engine podman quickstart` and
   `kmx quickstart --container-engine podman` both choose Podman before the App

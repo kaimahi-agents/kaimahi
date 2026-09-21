@@ -97,6 +97,11 @@ boundary. Installing Orka alone enables none of this routing.
 - **Upstream first:** do not rebuild what Orka supplies. `orka.harness.v2`
   is not a direction for this project. OTLP with GenAI conventions ships
   in Orka; it is not an outstanding Kaimahi upstream candidate.
+- **AX is an explicit evaluation option, not a second supported platform.**
+  `kmx ax status` inspects an externally installed Google AX control plane and
+  the Agent Substrate services it expects. kmx does not install AX, translate
+  Orka resources into AX resources, or call ready Deployments proof of a
+  sandboxed Task. See the [AX evaluation boundary](docs/ax.md).
 
 ## Documentation
 
@@ -105,6 +110,7 @@ operator paths from references for the legacy code still in this tree.
 
 - [Getting started](docs/getting-started.md) and [kmx reference](docs/kmx.md)
 - [Installing Orka](docs/orka.md) and [migrating an application](docs/migrate.md)
+- [Evaluating an existing Google AX installation](docs/ax.md)
 - [AKS](docs/aks.md) and [troubleshooting](docs/FAQ.md)
 - [Repository map](docs/repository-map.md) and [current coordination](docs/COORDINATION.md)
 
