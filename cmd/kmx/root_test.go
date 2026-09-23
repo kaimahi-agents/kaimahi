@@ -184,6 +184,36 @@ func TestCredentialIssueRecordsResolvedEngineInInvocation(t *testing.T) {
 	}
 }
 
+func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *testing.T) {
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"chat output modes", []string{"agent", "chat", "demo", "--interactive", "--json"}, "--interactive and --json"},
+		{"credential destination required", []string{"credential", "issue", "demo"}, "at least one of the flags"},
+		{"credential destinations conflict", []string{"credential", "issue", "demo", "--discard", "--secret", "demo"}, "none of the others can be"},
+		{"credential secret is non-empty", []string{"credential", "issue", "demo", "--secret="}, "non-empty --secret"},
+		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"agent create execution modes", []string{"agent", "create", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"model execution modes", []string{"models", "add", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"migration execution modes", []string{"migrate", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(tc.argv, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want containing %q", err, tc.want)
+			}
+			if *loads != 0 {
+				t.Fatalf("invalid flags loaded operational config %d times", *loads)
+			}
+		})
+	}
+}
+
 func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)

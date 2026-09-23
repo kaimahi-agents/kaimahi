@@ -106,6 +106,18 @@ func TestAModelUpstreamWithNoClassificationIsRefused(t *testing.T) {
 	}
 }
 
+func TestAddModelRefusesConflictingExecutionModes(t *testing.T) {
+	for _, opt := range []AddModelOptions{
+		{NoApply: true, DryRun: true},
+		{Out: "-", DryRun: true},
+	} {
+		err := (&App{}).AddModel(opt)
+		if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+			t.Fatalf("options %+v: error = %v", opt, err)
+		}
+	}
+}
+
 func TestACommittedModelUpstreamMayNotBeRedefined(t *testing.T) {
 	f := newModelFixture(t, vllmService, "notfound", nil)
 	opt := modelOpts(f.dir)

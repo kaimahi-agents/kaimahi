@@ -129,6 +129,13 @@ func migrateOpts(dir string) MigrateOptions {
 	}
 }
 
+func TestMigrateRefusesConflictingExecutionModes(t *testing.T) {
+	err := (&App{}).Migrate(MigrateOptions{NoApply: true, DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 // The division of labour, which is the design: kmx applies the objects it
 // owns and leaves the adopter's Deployment alone.
 func TestAMigrationAppliesWhatItOwnsAndNotYourDeployment(t *testing.T) {

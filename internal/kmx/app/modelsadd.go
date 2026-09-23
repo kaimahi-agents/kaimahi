@@ -46,6 +46,12 @@ type AddModelOptions struct {
 
 // AddModel scaffolds, validates and applies one model upstream.
 func (a *App) AddModel(opt AddModelOptions) error {
+	if opt.Out == "-" {
+		opt.NoApply = true
+	}
+	if opt.NoApply && opt.DryRun {
+		return fmt.Errorf("--no-apply (including --out -) and --dry-run cannot be used together")
+	}
 	if err := scaffold.ValidateModelName(opt.Name); err != nil {
 		return err
 	}
@@ -85,11 +91,6 @@ func (a *App) AddModel(opt AddModelOptions) error {
 		return fmt.Errorf("--server-egress %q: want one of %s",
 			opt.ServerEgress, strings.Join(scaffold.ServerEgressModes, ", "))
 	}
-	// A pure generate must still be a generate, exactly as elsewhere.
-	if opt.Out == "-" {
-		opt.NoApply = true
-	}
-
 	base, path, svc, ns, port, err := scaffold.ParseModelURL(opt.URL)
 	if err != nil {
 		return err

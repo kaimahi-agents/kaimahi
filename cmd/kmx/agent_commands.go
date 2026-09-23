@@ -107,6 +107,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
+	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.1.3", "main"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
@@ -139,14 +140,18 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (prefer matching Orka Agent), orka, kagent")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Agent namespace (default: orka-system for Orka, kagent for kagent)")
 	cmd.Flags().StringVar(&azureDiscovery, "azure-discovery", "cli", "AKS listing for /lift: cli or sdk")
-	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka", "kagent"}))
-	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
+	// --interactive and --json are only in conflict by resolved value, not by
+	// presence: "--interactive=false --json" is the same request as a bare
+	// "--json", so this stays a value check rather than
+	// MarkFlagsMutuallyExclusive, which would trip on the former.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		if interactive && asJSON {
 			return fmt.Errorf("--interactive and --json cannot be used together")
 		}
 		return nil
 	}
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka", "kagent"}))
+	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()

@@ -129,9 +129,11 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 	issue.Flags().StringVar(&secret, "secret", "", "store the one-time bearer in this Kubernetes Secret")
 	issue.Flags().StringVar(&namespace, "namespace", config.DefaultNamespace, "Secret namespace")
 	issue.Flags().StringVar(&issueTTL, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
+	issue.MarkFlagsOneRequired("discard", "secret")
+	issue.MarkFlagsMutuallyExclusive("discard", "secret")
 	issue.RunE = func(cmd *cobra.Command, _ []string) error {
-		if discard == (secret != "") {
-			return fmt.Errorf("kmx credential issue requires exactly one destination: --discard or --secret <name>")
+		if !discard && secret == "" {
+			return fmt.Errorf("kmx credential issue requires a non-empty --secret <name>")
 		}
 		name := issue.Flags().Arg(0)
 		if err := admin.ValidCredentialName(name); err != nil {

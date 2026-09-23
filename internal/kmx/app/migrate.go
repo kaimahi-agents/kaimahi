@@ -132,6 +132,9 @@ func (a *App) migrateDefaults(opt MigrateOptions) MigrateOptions {
 func (a *App) Migrate(opt MigrateOptions) error {
 	started := a.timeNow()
 	opt = a.migrateDefaults(opt)
+	if opt.NoApply && opt.DryRun {
+		return fmt.Errorf("--no-apply and --dry-run cannot be used together")
+	}
 	// --namespace has no default on purpose. Every other kmx command's
 	// namespace default is the agent namespace, and an application this
 	// project did not write does not live there; a migration that

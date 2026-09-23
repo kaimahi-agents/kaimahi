@@ -59,6 +59,7 @@ func newModelsAddCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
+	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		opt.Name = cmd.Flags().Arg(0)
 		if strings.TrimSpace(opt.URL) == "" {

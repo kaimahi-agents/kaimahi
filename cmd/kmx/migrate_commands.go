@@ -37,6 +37,7 @@ func newMigrateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation only")
+	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	_ = cmd.RegisterFlagCompletionFunc("upstream", staticCompletion(app.MigrateUpstreams))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		opt.Deployment = cmd.Flags().Arg(0)
