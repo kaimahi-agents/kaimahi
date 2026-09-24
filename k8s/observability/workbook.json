@@ -55,7 +55,7 @@
           "type": 1,
           "name": "heading",
           "content": {
-            "json": "## The governance plane\n\nEvery panel below is the plane answering for itself. **Decisions** is the one to read first: a governed agent that is working shows allowed calls, and a governed agent that is being stopped shows denials with a reason. An empty Decisions panel means no agent has called anything yet — not that nothing is being enforced.\n\n**Seam degraded** is the alarm. It is 1 while a seam refuses everything because its audit or ledger write last failed. That is the plane failing closed, which is the behaviour we want, but it means work is being rejected and somebody should know."
+            "json": "## The model-traffic bridge\n\nEvery panel below is the plane answering for itself. **Decisions** is the one to read first: a governed agent that is working shows allowed calls, and a governed agent that is being stopped shows denials with a reason. An empty Decisions panel means no agent has called anything yet — not that nothing is being enforced.\n\n**Seam degraded** is the alarm. It is 1 while a seam refuses everything because its audit or ledger write last failed. That is the plane failing closed, which is the behaviour we want, but it means work is being rejected and somebody should know."
           }
         },
         {
@@ -175,7 +175,7 @@
       "location": "[parameters('location')]",
       "kind": "shared",
       "properties": {
-        "displayName": "[concat('Kaimahi governance plane (', parameters('runId'), ')')]",
+        "displayName": "[concat('Kaimahi model-traffic bridge (', parameters('runId'), ')')]",
         "serializedData": "[string(variables('content'))]",
         "version": "1.0",
         "sourceId": "[parameters('clusterResourceId')]",

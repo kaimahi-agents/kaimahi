@@ -121,7 +121,7 @@ func (a *App) Plane(opt PlaneOptions) error {
 		return err
 	}
 
-	action, command := "deploy the Kaimahi governance plane (proxy + Postgres ledger)", "kmx plane"
+	action, command := "deploy the Kaimahi model-traffic bridge (proxy + Postgres ledger)", "kmx plane"
 	if opt.Step != "" {
 		action = "run the plane's '" + opt.Step + "' step"
 		command = "kmx plane --step " + opt.Step
@@ -157,7 +157,7 @@ func (a *App) Plane(opt PlaneOptions) error {
 	}
 
 	if opt.Step == "" {
-		a.complete("Governance plane ready", started)
+		a.complete("Model-traffic bridge ready", started)
 		a.notef("This command does not enable governance for an agent; existing routing is not assessed here.")
 		ui := cliui.New(a.Err)
 		if ui.Rich() {
@@ -222,7 +222,7 @@ func (a *App) refuseForeignImageTag() error {
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
 		"  `kmx plane` is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
-		"  A registry-backed cluster renders the manifest instead — `kmx lift --step plane`, or `TARGET=aks make plane` (docs/aks.md).",
+		"  A registry-backed cluster renders the manifest instead — `kmx aks up --step plane`, or `TARGET=aks make plane` (docs/aks.md).",
 		set, PlaneImage)
 }
 

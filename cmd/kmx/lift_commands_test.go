@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 // The lift acts on a cloud subscription, so its refusals have to arrive
@@ -103,6 +105,55 @@ func TestTeardownTakesTheSameBranchFlagAsTheLift(t *testing.T) {
 				t.Errorf("%v has no --%s", path, flag)
 			}
 		}
+	}
+}
+
+func TestAKSCommandsShareLiftFlagsAndPreserveLegacyPayloadRequirement(t *testing.T) {
+	root := newRootCommand(&commandState{deps: productionDependencies()})
+	for _, pair := range [][2][]string{{{"lift"}, {"aks", "up"}}, {{"lift", "down"}, {"aks", "down"}}} {
+		oldCmd, _, err := root.Find(pair[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		newCmd, _, err := root.Find(pair[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldFlags := map[string]bool{}
+		oldCmd.Flags().VisitAll(func(f *pflag.Flag) { oldFlags[f.Name] = true })
+		newCmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if !oldFlags[f.Name] {
+				t.Errorf("%v has extra flag %s", pair[1], f.Name)
+			}
+			delete(oldFlags, f.Name)
+		})
+		if len(oldFlags) != 0 {
+			t.Errorf("%v missing flags: %v", pair[1], oldFlags)
+		}
+		if oldCmd.Deprecated == "" || !strings.Contains(oldCmd.Deprecated, strings.Join(pair[1], " ")) {
+			t.Errorf("%v should point to %v in its deprecation", pair[0], pair[1])
+		}
+	}
+	legacy, _, _ := root.Find([]string{"lift"})
+	aks, _, _ := root.Find([]string{"aks", "up"})
+	if aks == nil || aks.Flags().Lookup("payload") == nil {
+		t.Fatal("aks up missing payload flag")
+	}
+	if legacy.Flags().Lookup("payload").DefValue != "" || aks.Flags().Lookup("payload").DefValue != "orka" {
+		t.Fatal("legacy payload must remain required; aks up must default to orka")
+	}
+}
+
+// Both names parse into the same lift options. Fail at the explicit inert
+// policy boundary before any cloud preflight; a missing payload would fail
+// earlier only if the new default were not applied.
+func TestAKSUpDefaultsToOrkaWithoutContactingAzure(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	err := execute([]string{"aks", "up", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--network-policy", ""}, deps)
+	if err == nil || !strings.Contains(err.Error(), "is not a policy engine") {
+		t.Fatalf("expected the Orka default to reach policy validation, got %v", err)
 	}
 }
 

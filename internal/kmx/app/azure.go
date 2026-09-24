@@ -208,7 +208,7 @@ func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity) error {
 
   Then resume — nothing before this is undone:
 
-    kmx lift --byo --step plane --resource-group %s --cluster %s --registry %s`,
+    kmx aks up --byo --step plane --resource-group %s --cluster %s --registry %s`,
 			opt.RegistryName(), opt.ClusterName(), opt.GroupName(), opt.RegistryName(),
 			opt.GroupName(), opt.ClusterName(), opt.RegistryName())
 	}

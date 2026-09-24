@@ -55,6 +55,10 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 			t.Errorf("command %q is hidden, so the usage page cannot name it", child.Name())
 			continue
 		}
+		// Cobra omits deprecated commands from the available-command list.
+		if child.Deprecated != "" {
+			continue
+		}
 		if !strings.Contains(out.String(), child.Name()+" ") {
 			t.Errorf("usage page does not name %q:\n%s", child.Name(), out.String())
 		}

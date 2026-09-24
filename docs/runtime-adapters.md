@@ -5,6 +5,11 @@ this document is the contract between the developer experience and runtime
 implementations; it prevents platform identity, model choice, cluster location,
 and policy from collapsing into one ambiguous "provider" concept.
 
+Orka is the first-class runtime for the current create and lift workflow. It
+owns agent execution, orchestration, and platform governance. KMX owns the
+developer experience and lifecycle around it. The selected platform, not a
+generic KMX control plane, owns enforcement.
+
 ## Terms and ownership
 
 | Term | Meaning | Owner |

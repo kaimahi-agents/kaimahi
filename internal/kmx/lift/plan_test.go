@@ -197,7 +197,7 @@ func TestTheBannerNamesTheTargetAndTheTeardownRule(t *testing.T) {
 	// The context guard is not optional when the target is a cloud
 	// subscription: what is about to happen, and where, is on screen first.
 	b := created().Banner("someone@example.com", "Some Subscription")
-	for _, want := range []string{"Some Subscription", "someone@example.com", "rg", "kaimahi-demo", "kaimahidemo", "westus3", "cilium", "kmx lift down"} {
+	for _, want := range []string{"Some Subscription", "someone@example.com", "rg", "kaimahi-demo", "kaimahidemo", "westus3", "cilium", "kmx aks down"} {
 		if !strings.Contains(b, want) {
 			t.Fatalf("the create banner does not say %q:\n%s", want, b)
 		}

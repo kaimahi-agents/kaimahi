@@ -149,7 +149,7 @@ var StepPurpose = map[string]string{
 	"kagent":        "the agent runtime",
 	"orka":          "Orka at the pinned version; the model Provider stays yours to create",
 	"credential":    "check the model credential the managed path needs (captured by you, not by kmx)",
-	"plane":         "build the governance plane in the registry and deploy it",
+	"plane":         "build the model-traffic bridge in the registry and deploy it",
 	"agents":        "the same agents you ran locally, governed from the start",
 	"observability": "Azure Monitor workspace, Container Insights, the scrape job and a workbook",
 	"verify":        "the agent answers, and the dashboard has its traffic",
@@ -328,9 +328,9 @@ func (o Options) Banner(account, subscriptionName string) string {
 	var b strings.Builder
 	b.WriteString("----------------------------------------------------------------\n")
 	if o.BringYourOwn {
-		b.WriteString("  kmx lift — onto a cluster YOU created\n")
+		b.WriteString("  kmx aks up — onto a cluster YOU created\n")
 	} else {
-		b.WriteString("  kmx lift — creating a cluster and everything around it\n")
+		b.WriteString("  kmx aks up — creating a cluster and everything around it\n")
 	}
 	fmt.Fprintf(&b, "  subscription:    %s\n", subscriptionName)
 	fmt.Fprintf(&b, "  signed in as:    %s\n", account)
@@ -349,13 +349,13 @@ func (o Options) Banner(account, subscriptionName string) string {
 	b.WriteString("\n")
 	if o.BringYourOwn {
 		b.WriteString("  YOUR CLUSTER AND RESOURCE GROUP ARE NEVER DELETED and never\n")
-		b.WriteString("  adopted. `kmx lift down` removes only the monitoring resources\n")
+		b.WriteString("  adopted. `kmx aks down` removes only the monitoring resources\n")
 		b.WriteString("  this run creates, and only by the id it recorded when it made\n")
 		b.WriteString("  them. Anything it cannot prove is its own is left alone and\n")
 		b.WriteString("  named, so you can remove it yourself.\n")
 	} else {
 		b.WriteString("  Everything above is created inside that ONE resource group and\n")
-		b.WriteString("  comes back down with it: `kmx lift down`. It bills until it does.\n")
+		b.WriteString("  comes back down with it: `kmx aks down`. It bills until it does.\n")
 	}
 	b.WriteString("----------------------------------------------------------------\n")
 	return b.String()
@@ -394,7 +394,7 @@ func (o Options) StepsToRun() []string { return o.steps() }
 // runs against a live boundary once there is one.
 func PolicyEngineVerdict(engine string, readable bool) error {
 	if !readable {
-		return errors.New("kmx lift: could not read this cluster's NetworkPolicy engine — refusing to install a governance plane whose boundary might be decorative. Not claiming it enforces, and not claiming it does not")
+		return errors.New("kmx lift: could not read this cluster's NetworkPolicy engine — refusing to install a model-traffic bridge whose boundary might be decorative. Not claiming it enforces, and not claiming it does not")
 	}
 	switch e := strings.TrimSpace(strings.ToLower(engine)); {
 	case e == "" || e == "none":
