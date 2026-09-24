@@ -1,0 +1,41 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: hello
+spec:
+  instructions: You are a helpful, careful agent. Answer briefly.
+  model:
+    name: gpt-4o-mini
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+    namespace: orka-system
+    provider:
+      type: openai
+      model: gpt-4o-mini
+      rateLimit:
+        requestsPerMinute: 60
+    secretRef:
+      name: hello-key
+      key: api-key
+    tools:
+      - web-search
+    skills:
+      - triage
+    agentRateLimit:
+      requestsPerMinute: 30
+  kagent:
+    apiVersion: kagent.dev/v1alpha3
+    namespace: kagent-system
+    harness:
+      name: kagent
+    modelConfig:
+      name: local-ollama
+    tools:
+      - server: filesystem
+        name: read-file
+    skills:
+      - name: triage
+    plugins:
+      - name: audit-log
+    promptTemplate: Answer plainly and cite sources.
