@@ -58,7 +58,17 @@ func (a *App) openRuntimeChat(opt ChatOptions, name, namespace string) error {
 	return fmt.Errorf("unsupported runtime %q", opt.Runtime)
 }
 
-type orkaRuntimeAdapter struct{ app *App }
+type orkaRuntimeAdapter struct {
+	app *App
+	// create carries the Orka create flags the closed portable document
+	// deliberately does not model (description, first Task prompt, offline
+	// schema target) plus this command's deployment/output flags. DESIGN.md
+	// §1 keeps app-specific CLI shapes in app: they stay here, in the
+	// app-owned adapter, rather than leaking Orka flags into the neutral
+	// runtime package's RenderOptions/DeployOptions. Chat registration leaves
+	// it zero; only the lifecycle verbs read it (runtime_orka.go).
+	create CreateOptions
+}
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }
 func (a orkaRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Target) (agentruntime.Probe, error) {
@@ -103,46 +113,6 @@ func (a orkaRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target
 		return nil, fmt.Errorf("--session is kagent-specific; Orka chat uses fresh Tasks")
 	}
 	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace}}, nil
-}
-
-// Capabilities is Task 4's skeleton declaration: every lifecycle flag is
-// false until Task 5/6 wrap the existing Orka create/list/show/status paths
-// behind Render/Deploy/Status. Session-level flags remain Session's own
-// concern (via orkaRuntimeSession.Capabilities), not this static, per-adapter
-// declaration.
-func (orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
-	return agentruntime.Capabilities{}
-}
-
-func (a orkaRuntimeAdapter) Render(context.Context, agentruntime.PortableAgent, agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender); err != nil {
-		return agentruntime.RenderedBundle{}, err
-	}
-	return agentruntime.RenderedBundle{}, fmt.Errorf("orka render: not yet implemented")
-}
-
-func (a orkaRuntimeAdapter) Deploy(context.Context, agentruntime.RenderedBundle, agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Deploy, agentruntime.VerbDeploy); err != nil {
-		return agentruntime.AgentRef{}, err
-	}
-	return agentruntime.AgentRef{}, fmt.Errorf("orka deploy: not yet implemented")
-}
-
-func (a orkaRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
-		return agentruntime.LifecycleStatus{}, err
-	}
-	return agentruntime.LifecycleStatus{}, fmt.Errorf("orka status: not yet implemented")
-}
-
-// Evaluate is permanently unsupported for Orka (DESIGN.md §3: "native Orka
-// Tasks do not supply the required frozen target revision, and kmx must not
-// fabricate one"), so Capabilities().Evaluate is never expected to flip true.
-func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
-		return agentruntime.EvaluationReceipt{}, err
-	}
-	return agentruntime.EvaluationReceipt{}, fmt.Errorf("orka evaluate: not yet implemented")
 }
 
 type kagentRuntimeAdapter struct{ app *App }

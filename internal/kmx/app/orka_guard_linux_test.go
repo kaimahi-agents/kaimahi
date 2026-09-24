@@ -149,8 +149,25 @@ func TestOrkaGuardPromptCancellationAndInputOwnership(t *testing.T) {
 				t.Fatal("guard-only path emitted an artifact")
 			}
 			calls := orkaCalls(t, dir)
-			if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Args, " "), "config view") {
-				t.Fatalf("guard-only path reached cluster operations: %+v", calls)
+			// An omitted --runtime is resolved by shared platform detection
+			// before any adapter exists, so a read-only, namespace-free
+			// discovery call may precede the guard's own context read (the
+			// modes that call the guarded helpers directly make neither).
+			// Nothing else may happen: no CRD read, no collision check, no
+			// Secret read, no write.
+			guarded := false
+			for _, call := range calls {
+				joined := strings.Join(call.Args, " ")
+				switch {
+				case strings.Contains(joined, "config view"):
+					guarded = true
+				case strings.Contains(joined, "api-resources --api-group=core.orka.ai"):
+				default:
+					t.Fatalf("guard-only path reached cluster operations: %+v", calls)
+				}
+			}
+			if !guarded {
+				t.Fatalf("guard never read its context metadata: %+v", calls)
 			}
 		})
 	}

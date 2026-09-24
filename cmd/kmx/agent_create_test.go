@@ -74,3 +74,72 @@ func TestAgentCreateUnnamedReachesWizardRatherThanRequiredFlags(t *testing.T) {
 		t.Fatalf("wizard unreachable: %v", err)
 	}
 }
+
+// --file names one exact Agent, so it must not fall through to the wizard,
+// which would collect a second, conflicting definition.
+func TestAgentCreateFileRequiresNameArgument(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"agent", "create", "--file", "portable-agent.yaml"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "--file requires a name argument") {
+		t.Fatalf("err = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("emitted bytes without a name")
+	}
+}
+
+// The Orka shorthand flags conflict with a portable document, and the command
+// says which one rather than silently preferring either.
+func TestAgentCreateFileRefusesShorthandFlags(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"agent", "create", "sample", "--file", "portable-agent.yaml", "--model", "qwen2.5:3b"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "--model") {
+		t.Fatalf("err = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("conflicting flags emitted bytes")
+	}
+}
+
+// An unset --secret-key must not be sent as an explicit value: the document
+// would then conflict with a flag the user never supplied, and generation
+// still applies its own api-key default.
+func TestAgentCreateFileAcceptsUnsetSecretKey(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"agent", "create", "sample", "--file", "missing-portable-agent.yaml", "--out", "-"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "cannot read the portable agent file") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAgentCreateHelpDocumentsRuntimeAndFile(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"--runtime", "--file", "metadata.name", "detects the installed platform", "api-key"} {
+		if !strings.Contains(out.String(), text) {
+			t.Errorf("help lacks %q", text)
+		}
+	}
+}
+
+// Explicit legacy kagent creation is refused with the one shared typed
+// unsupported-verb message, before any artifact is written.
+func TestAgentCreateExplicitKagentRuntimeIsUnsupported(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute(append(orkaCreateArgs(), "--runtime", "kagent"), deps)
+	if err == nil || err.Error() != "runtime kagent does not support render" {
+		t.Fatalf("err = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("unsupported runtime emitted bytes")
+	}
+}
