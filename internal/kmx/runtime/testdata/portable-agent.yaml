@@ -12,30 +12,45 @@ extensions:
     namespace: orka-system
     provider:
       type: openai
-      model: gpt-4o-mini
+      defaultModel: gpt-4o-mini
+      secretRef:
+        name: hello-key
+        key: api-key
       rateLimit:
         requestsPerMinute: 60
-    secretRef:
-      name: hello-key
-      key: api-key
-    tools:
-      - web-search
-    skills:
-      - triage
-    agentRateLimit:
-      requestsPerMinute: 30
+    agent:
+      tools:
+        - name: web-search
+      skills:
+        - name: triage
+      rateLimit:
+        requestsPerMinute: 30
   kagent:
     apiVersion: kagent.dev/v1alpha3
     namespace: kagent-system
-    harness:
+    harnessRef:
       name: kagent
-    modelConfig:
+    modelConfigRef:
       name: local-ollama
+    promptTemplate: Answer plainly and cite sources.
     tools:
-      - server: filesystem
-        name: read-file
+      mcp:
+        - server:
+            kind: RemoteMCPServer
+            name: filesystem
+          tools:
+            - read-file
+          requireApproval: false
+      agents: []
     skills:
       - name: triage
+        source:
+          oci:
+            reference: ghcr.io/kaimahi/skills/triage
+            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
     plugins:
       - name: audit-log
-    promptTemplate: Answer plainly and cite sources.
+        source:
+          git:
+            repository: https://github.com/kaimahi-agents/plugins
+            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
