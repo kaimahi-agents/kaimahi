@@ -7,7 +7,7 @@ import "encoding/json"
 //
 // kagent's python runtime gives every agent a built-in `ask_user` tool. It
 // is not declared in k8s/hello-world.yaml — that agent declares no tools at
-// all — and the Agent CRD at kagent 0.9.12 has no field that turns it off,
+// all — and the Agent CRD at kagent 0.10.1 has no field that turns it off,
 // so the only lever the manifest has is the system message, which already
 // forbids asking questions in so many words. A 3B model obeys that most of
 // the time and occasionally does not; asked "who are you and where are you

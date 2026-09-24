@@ -48,7 +48,7 @@ type QuickstartResult struct {
 // quickstartValues turns off everything a first question cannot reach, only
 // when creating a release. Existing releases are never reduced to this profile.
 //
-// Measured on the images the chart pulls at kagent 0.9.12 (linux/amd64,
+// Measured on the images the chart pulls at kagent 0.10.1 (linux/amd64,
 // compressed): the console is 115MB, the bundled tool server 215MB and the
 // MCP controller 32MB — 362MB and two more pods to become Ready before
 // anybody sees an answer, for three components the hello-world agent never
@@ -57,7 +57,7 @@ type QuickstartResult struct {
 //
 // The console is turned off by replica count rather than a switch because
 // the chart has no `ui.enabled` at this version. That is a fact about kagent
-// 0.9.12, and if a later chart grows the switch this should use it.
+// 0.10.1, and if a later chart grows the switch this should use it.
 var quickstartValues = []string{
 	"--set-string", "kaimahi.profile=first-answer",
 	"--set", "kagent-tools.enabled=false",

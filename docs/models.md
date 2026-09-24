@@ -36,7 +36,7 @@ chat`.
 | `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (via `kmx govern`), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
 
 "Not live-verified" means exactly that. The preset is schema-valid
-against the kagent 0.9.12 CRDs, which CI proves with a server-side
+against the kagent 0.10.1 CRDs, which CI proves with a server-side
 dry-run on every PR, so the YAML is well-formed and the fields exist. But
 no real completion has been bought through it yet. A preset graduates to
 live-verified only when an actual `kmx agent chat` completes through the
@@ -44,7 +44,7 @@ endpoint, and nobody has paid to do that for those five. They should
 work. "Should" is the honest word; schema validation does not prove provider
 availability or successful inference.
 
-At kagent 0.9.12 there is no OpenRouter or Copilot-specific provider in
+At kagent 0.10.1 there is no OpenRouter or Copilot-specific provider in
 the CRD. Every OpenAI-compatible endpoint rides `provider: OpenAI` plus
 `openAI.baseUrl`, and that is all any of these presets do.
 
@@ -119,7 +119,7 @@ Two things bite people here:
 
 ## Azure AI Foundry rides `provider: OpenAI`, deliberately
 
-kagent 0.9.12 has an `azureOpenAI` provider, but its `apiVersion` field
+kagent 0.10.1 has an `azureOpenAI` provider, but its `apiVersion` field
 is **required**, and that field belongs to Azure's legacy per-version
 API surface. Kaimahi pins Foundry's **v1 GA** API, which is a plain
 OpenAI-compatible endpoint with **no** api-version parameter. The two

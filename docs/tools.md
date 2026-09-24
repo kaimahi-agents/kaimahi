@@ -37,7 +37,7 @@ Those layers constrain the server's authority, not arbitrary network
 connections from the agent. A read-only tool can still reveal sensitive
 cluster metadata; absence of writes is not confidentiality.
 
-The Agent also has non-root UID 1001 for the pinned image, capability drops,
+The Agent also has non-root UID 65532 for the pinned image, capability drops,
 no privilege escalation, default seccomp and a read-only root filesystem
 with writable `/tmp`. Do not copy that image-specific UID blindly into BYO
 images; see [isolation](isolation.md).

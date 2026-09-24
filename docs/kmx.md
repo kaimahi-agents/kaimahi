@@ -139,7 +139,7 @@ remains.
 | `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
 | `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
 | `--container-engine`, `CONTAINER_ENGINE` | `docker` (default) or `podman`; the flag overrides the environment; keep consistent for every operation on a cluster |
-| `KAGENT_VERSION`, `MODEL` | defaults `0.9.12`, `qwen2.5:3b` for legacy setup |
+| `KAGENT_VERSION`, `MODEL` | defaults `0.10.1`, `qwen2.5:3b` for legacy setup |
 | `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
 | `CRED` | default model/operator credential `hello-world` |
 | `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
