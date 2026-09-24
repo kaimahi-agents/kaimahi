@@ -1,6 +1,6 @@
 {
   "checker": "check-readme-front-door.py",
-  "why": "The Orka front door must retain a runnable setup sequence and distinguish migration from installation. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
+  "why": "The KMX front door must retain its Day 0 create/lift promise, runnable quickstart, and platform and migration boundaries. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
   "verify": ["python3", "scripts/check-readme-front-door-test.py"],
   "signature": "check-readme-front-door self-test:",
   "mutations": [
@@ -12,14 +12,14 @@
     },
     {
       "name": "the product line marker matches anything",
-      "breaks": "The Orka-first identity stops being required.",
-      "find": "    (\"product line\", r\"^## Get agents onto Orka$\"),",
+      "breaks": "The Agent-specific KMX promise stops being required.",
+      "find": "    (\"product line\", r\"^\\*\\*Create an Agent locally\\. Prove it locally\\. Lift it to Kubernetes\\.\\*\\*$\"),",
       "replace": "    (\"product line\", r\"\"),"
     },
     {
       "name": "the migration marker matches anything",
       "breaks": "The page can omit the separate migration section.",
-      "find": "    (\"migration heading\", r\"^## Migrate model traffic$\"),",
+      "find": "    (\"migration heading\", r\"^## Migrate Model Traffic$\"),",
       "replace": "    (\"migration heading\", r\"\"),"
     },
     {
@@ -36,27 +36,33 @@
     },
     {
       "name": "the install revision check is dropped",
-      "breaks": "An obsolete tagged CLI or an empty revision can satisfy the Orka setup prerequisite.",
+      "breaks": "An obsolete tagged CLI or an empty revision can satisfy the current quickstart prerequisite.",
       "find": "@(?:main|[0-9a-f]{7,40})(?=[ \\t]*(?:#.*)?$)",
       "replace": "@"
     },
     {
-      "name": "the Orka install marker matches anything",
-      "breaks": "The setup can install only the legacy runtime instead of Orka.",
-      "find": "    (\"kmx orka install\", r\"^kmx orka install(?=[ \\t]|$)\"),",
-      "replace": "    (\"kmx orka install\", r\"\"),"
+      "name": "the Day 0 create marker matches anything",
+      "breaks": "The Day 0 story can omit Agent creation.",
+      "find": "    (\"kmx agent create\", r\"^kmx agent create(?=[ \\t]*(?:#.*)?$)\"),",
+      "replace": "    (\"kmx agent create\", r\"\"),"
     },
     {
-      "name": "the Orka status marker matches anything",
-      "breaks": "Setup can omit checking the running Orka.",
-      "find": "    (\"kmx orka status\", r\"^kmx orka status(?=[ \\t]|$)\"),",
-      "replace": "    (\"kmx orka status\", r\"\"),"
+      "name": "the Day 0 lift marker matches anything",
+      "breaks": "The Day 0 story can omit lifting the Agent.",
+      "find": "    (\"kmx agent lift\", r\"^kmx agent lift(?=[ \\t]*(?:#.*)?$)\"),",
+      "replace": "    (\"kmx agent lift\", r\"\"),"
     },
     {
-      "name": "a word boundary accepts obsolete install command names",
-      "breaks": "A hyphenated non-command can satisfy the runnable Orka installer step.",
-      "find": "^kmx orka install(?=[ \\t]|$)",
-      "replace": "^kmx orka install\\b"
+      "name": "a word boundary accepts obsolete quickstart command names",
+      "breaks": "A hyphenated non-command can satisfy the runnable quickstart step.",
+      "find": "^kmx quickstart-wizard(?=[ \\t]*(?:#.*)?$)",
+      "replace": "^kmx quickstart-wizard\\b"
+    },
+    {
+      "name": "the Day 0 command list is emptied",
+      "breaks": "Any fenced block can satisfy Day 0 without create or lift.",
+      "find": "DAY_ZERO_COMMANDS = [\n",
+      "replace": "DAY_ZERO_COMMANDS = []\nUNUSED_DAY_ZERO_COMMANDS = [\n"
     },
     {
       "name": "the quickstart command list is emptied",
@@ -66,7 +72,7 @@
     },
     {
       "name": "command order is searched from the top of the block",
-      "breaks": "Status before installation is accepted as a runnable sequence.",
+      "breaks": "Commands can appear before their prerequisites and still satisfy the sequence.",
       "find": "        found = re.compile(pattern, re.M).search(block, position)",
       "replace": "        found = re.compile(pattern, re.M).search(block, 0)"
     },
