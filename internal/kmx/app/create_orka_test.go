@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +17,9 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 type orkaCall struct {
@@ -398,5 +402,60 @@ func TestOrkaDryRunNeverMintsTokenOrWritesResources(t *testing.T) {
 	}
 	if !strings.Contains(diagnostics.String(), "result access and execution were not tested") {
 		t.Fatal(diagnostics.String())
+	}
+}
+
+// TestOrkaNoTaskGoldenBytes characterizes the exact pre-port rendered bytes of
+// a fixed no-Task Orka bundle (explicit namespace, provider/model, Secret
+// ref, instructions, tools, skills and limits). This pins the literal adapter
+// output — not the portable-bundle framing from DESIGN.md, which digests
+// validated source bytes rather than generated YAML — so that refactoring
+// toward the adapter seam can be proven byte-identical against this golden
+// before and after the port.
+func TestOrkaNoTaskGoldenBytes(t *testing.T) {
+	requestsPerMinute := int32(60)
+	tokensPerMinute := int64(100000)
+	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{
+		Name:              "support-bot",
+		Namespace:         "orka-system",
+		Description:       "Customer support triage agent",
+		ProviderType:      "openai",
+		Model:             "gpt-4o-mini",
+		SecretName:        "support-bot-key",
+		SecretKey:         "api-key",
+		Instructions:      "You are support-bot. Answer briefly and in plain text, and say plainly when you do not know something.",
+		Tools:             []string{"web-search", "ticket-lookup"},
+		Skills:            []string{"triage", "summarize"},
+		AgentRateLimit:    &scaffold.OrkaRateLimit{RequestsPerMinute: &requestsPerMinute},
+		ProviderRateLimit: &scaffold.OrkaRateLimit{TokensPerMinute: &tokensPerMinute},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Task != nil {
+		t.Fatal("fixture must not include a Task; the rendered digest must be stable across runs")
+	}
+	validator, err := orkaschema.Offline("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateOrkaBundle(bundle, validator); err != nil {
+		t.Fatal(err)
+	}
+	document, err := bundle.YAML(validator.Provenance())
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "orka-no-task.golden.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document != string(golden) {
+		t.Fatalf("rendered Orka bundle bytes drifted from the pinned golden fixture:\n--- got ---\n%s\n--- want ---\n%s", document, golden)
+	}
+	got := sha256.Sum256([]byte(document))
+	const wantSHA256 = "29564d0eb4a653fded13934970e7aeebdb734e654642046cf8b4e5b9a63c4b43"
+	if hex.EncodeToString(got[:]) != wantSHA256 {
+		t.Fatalf("rendered Orka bundle SHA-256 = %x, want %s", got, wantSHA256)
 	}
 }
