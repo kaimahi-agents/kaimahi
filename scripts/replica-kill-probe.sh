@@ -14,6 +14,12 @@
 #        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world
 #        CLIENT_PATH=v1/chat/completions)
 #
+# The governance-evidence shard invokes this against the owner-managed
+# workload instead, with every default above overridden and none of its
+# defaults relied on: KUBECTL="kubectl --context kind-kaimahi-p1"
+# SECRET_NAMESPACE=owner-app GOVERNED_SECRET=kaimahi-owner-ci-token
+# UPSTREAM=orka MODEL=local/qwen2.5:3b CRED=owner-ci CLIENT_PATH=v1/responses.
+#
 # CLIENT_PATH is the route the CALLER speaks, which is not always the one
 # the upstream is forwarded on: the committed `orka` entry declares
 # `v1/responses` as its client path and translates. The request body

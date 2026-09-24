@@ -521,6 +521,15 @@ jobs:
       # runs. Mocked HTTP only — no live Kubernetes API is reached.
       - name: Orka k8s-tool self-test (read-only allowlist, secrets and mutation refused)
         run: python3 scripts/test_orka_k8s_tool.py -v
+      # The owner-managed workload the governance-evidence shard proves
+      # `kmx migrate` against. Same discipline as the demo above: a shell
+      # syntax check before the cluster ever sees the script, and the
+      # fixture's own test module (custody, refusal-reporting, TLS) run
+      # here where a failure is legible without a kind cluster.
+      - name: Owner-managed model client safety and evidence checks
+        run: |
+          bash -n scripts/ci/owner-model-client.sh
+          python3 scripts/test_owner_model_client.py
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
       # and is a required check). A step appended without the guard would run
@@ -2030,22 +2039,25 @@ jobs:
             --patch-file migrations/owner-ci-patch.yaml
           kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" rollout status deployment/owner-ci --timeout=300s
           bash scripts/ci/owner-model-client.sh config | tee owner-config-migrated.json
+          # Taken AFTER the rollout completes, so this is the object the
+          # owner actually rolled — not a repeat of the pre-patch snapshot
+          # the previous step already diffed against itself.
+          bash scripts/ci/owner-model-client.sh snapshot > owner-post-patch.json
           python3 - <<'EOF'
           import json
           before = json.load(open("owner-before.json"))
-          after = json.loads(open("owner-after.json").read())
+          post_patch = json.load(open("owner-post-patch.json"))
           wiring = json.load(open("owner-config-migrated.json"))
           assert wiring["base_url"] == "https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/orka/v1", wiring
           assert wiring["model"] == "local/qwen2.5:3b", wiring
           assert wiring["credential"] == "present", wiring
           assert wiring["ca_file"] == "/etc/kaimahi/plane-ca/ca.crt", wiring
-          # The same object, rolled by its owner: the uid is the one the
-          # migration saw, and the generation moved exactly now.
-          assert before["uid"] == after["uid"], (before["uid"], after["uid"])
-          print(f"the owner's patch repointed uid {after['uid']} at the seam")
+          # The same object, rolled by its owner: the uid the patch rolled
+          # is the one `kmx migrate` saw before it ever ran.
+          assert before["uid"] == post_patch["uid"], (before["uid"], post_patch["uid"])
+          print(f"the owner's patch repointed uid {post_patch['uid']} at the seam")
           EOF
-          moved=$(kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get deployment owner-ci -o jsonpath='{.metadata.generation}')
-          python3 -c 'import json,sys; before=json.load(open("owner-after.json")); assert int(sys.argv[1]) > before["generation"], (sys.argv[1], before["generation"])' "$moved"
+          python3 -c 'import json; before=json.load(open("owner-after.json")); post_patch=json.load(open("owner-post-patch.json")); assert post_patch["generation"] > before["generation"], (post_patch["generation"], before["generation"])'
       # A real turn, and the row it wrote. Either alone proves nothing: an
       # answer with no ledger row is ungoverned traffic, and a ledger row
       # with no answer is a refusal.
