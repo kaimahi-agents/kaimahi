@@ -11,7 +11,16 @@
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: replica-kill-probe.sh   (env: GOVERNED_SECRET=kaimahi-governed-token
-#        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world)
+#        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world
+#        CLIENT_PATH=v1/chat/completions)
+#
+# CLIENT_PATH is the route the CALLER speaks, which is not always the one
+# the upstream is forwarded on: the committed `orka` entry declares
+# `v1/responses` as its client path and translates. The request body
+# differs between the two protocols, so the path selects the body here
+# and an unrecognised one is refused rather than guessed — a probe that
+# posted chat-completions JSON to a Responses route would be measuring a
+# 400 and calling it a drain.
 set -euo pipefail
 umask 077
 
@@ -22,6 +31,7 @@ GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
 UPSTREAM="${UPSTREAM:-ollama}"
 MODEL="${MODEL:-qwen2.5:3b}"
 CRED="${CRED:-hello-world}"
+CLIENT_PATH="${CLIENT_PATH:-v1/chat/completions}"
 PORT_A="${PORT_A:-18380}"
 PORT_B="${PORT_B:-18381}"
 
@@ -72,12 +82,23 @@ for pair in "$a:$PORT_A" "$b:$PORT_B"; do
 done
 
 before=$(ledger_rows)
-printf '{"model": "%s", "messages": [{"role": "user", "content": "Reply with the single word OK."}], "max_tokens": 8}\n' \
-  "$MODEL" > "$workdir/body"
+PROMPT='Reply with the single word OK.'
+case "$CLIENT_PATH" in
+  v1/chat/completions)
+    printf '{"model": "%s", "messages": [{"role": "user", "content": "%s"}], "max_tokens": 8}\n' \
+      "$MODEL" "$PROMPT" > "$workdir/body" ;;
+  v1/responses)
+    # The smallest body the seam's translation accepts: no `store` and no
+    # `previous_response_id`, both of which it refuses outright.
+    printf '{"model": "%s", "input": "%s", "max_output_tokens": 16}\n' \
+      "$MODEL" "$PROMPT" > "$workdir/body" ;;
+  *)
+    echo "CLIENT_PATH=$CLIENT_PATH is not a protocol this probe can write a body for" >&2; exit 1 ;;
+esac
 chat() { # port -> status
   curl -sS --cacert "$workdir/plane-ca.crt" -o "$workdir/resp-$1" -w '%{http_code}' -X POST -H @"$workdir/auth-header" \
     -H 'Content-Type: application/json' --data @"$workdir/body" \
-    "https://127.0.0.1:$1/upstream/$UPSTREAM/v1/chat/completions" 2>/dev/null || echo 000
+    "https://127.0.0.1:$1/upstream/$UPSTREAM/$CLIENT_PATH" 2>/dev/null || echo 000
 }
 
 # 1. A call in flight on A...
