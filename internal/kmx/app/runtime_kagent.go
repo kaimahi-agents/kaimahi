@@ -194,7 +194,9 @@ func (s *kagentRuntimeSession) Connect(ctx context.Context, emit agentruntime.Em
 	s.base = "http://127.0.0.1:" + port
 	// The pinned CLI is pointed at the compatibility hop instead: it sends an
 	// empty messageId, which the agent refuses. s.base stays the forward, so
-	// kmx's own session, history, task and HITL calls are unchanged.
+	// kmx's own session list, session history and HITL continuation are
+	// unchanged. Task polling started by invokeStream does go through the
+	// hop — benign passthrough, since `tasks/get` is not a message send.
 	if s.cliBase, s.closeCLIBase, err = s.app.legacyChatEndpoint(s.base); err != nil {
 		s.Close()
 		return status, err

@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -125,9 +128,13 @@ func TestMalformedBodyIsRejected(t *testing.T) {
 	}
 }
 
-// upstreamRecorder is the controller side of the hop.
+// upstreamRecorder is the controller side of the hop. It is written from the
+// server's goroutines and read from the test's, so every field is behind the
+// mutex — an unguarded append here is a race the detector only catches on
+// the runs where the timing happens to line up.
 type upstreamRecorder struct {
 	*httptest.Server
+	mu      sync.Mutex
 	bodies  []string
 	paths   []string
 	hosts   []string
@@ -139,10 +146,12 @@ func newUpstream(t *testing.T, handler http.HandlerFunc) *upstreamRecorder {
 	rec := &upstreamRecorder{}
 	rec.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		rec.mu.Lock()
 		rec.bodies = append(rec.bodies, string(body))
 		rec.paths = append(rec.paths, r.URL.RequestURI())
 		rec.hosts = append(rec.hosts, r.Host)
 		rec.methods = append(rec.methods, r.Method)
+		rec.mu.Unlock()
 		if handler != nil {
 			handler(w, r)
 			return
@@ -151,6 +160,16 @@ func newUpstream(t *testing.T, handler http.HandlerFunc) *upstreamRecorder {
 	}))
 	t.Cleanup(rec.Close)
 	return rec
+}
+
+func (u *upstreamRecorder) seen() []string        { return u.snapshot(&u.bodies) }
+func (u *upstreamRecorder) seenPaths() []string   { return u.snapshot(&u.paths) }
+func (u *upstreamRecorder) seenMethods() []string { return u.snapshot(&u.methods) }
+
+func (u *upstreamRecorder) snapshot(field *[]string) []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), *field...)
 }
 
 func startProxy(t *testing.T, upstream string, opts ...func(*Options)) *Proxy {
@@ -182,17 +201,17 @@ func TestProxyInjectsTheMissingMessageID(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("proxy answered HTTP %d", resp.StatusCode)
 	}
-	if len(upstream.bodies) != 1 {
-		t.Fatalf("upstream saw %d requests, want 1", len(upstream.bodies))
+	if len(upstream.seen()) != 1 {
+		t.Fatalf("upstream saw %d requests, want 1", len(upstream.seen()))
 	}
-	if got := messageField(t, []byte(upstream.bodies[0]), "messageId"); got == `""` || got == "" {
-		t.Fatalf("the controller still received no message ID: %s", upstream.bodies[0])
+	if got := messageField(t, []byte(upstream.seen()[0]), "messageId"); got == `""` || got == "" {
+		t.Fatalf("the controller still received no message ID: %s", upstream.seen()[0])
 	}
-	if upstream.paths[0] != path {
-		t.Fatalf("path=%q, want %q", upstream.paths[0], path)
+	if upstream.seenPaths()[0] != path {
+		t.Fatalf("path=%q, want %q", upstream.seenPaths()[0], path)
 	}
-	if upstream.methods[0] != http.MethodPost {
-		t.Fatalf("method=%q", upstream.methods[0])
+	if upstream.seenMethods()[0] != http.MethodPost {
+		t.Fatalf("method=%q", upstream.seenMethods()[0])
 	}
 }
 
@@ -208,7 +227,7 @@ func TestProxyNeverRewritesARequestThatAlreadyHasAnID(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
-	for i, body := range upstream.bodies {
+	for i, body := range upstream.seen() {
 		if want := []string{hitlBody, `{"jsonrpc":"2.0","id":"1","method":"tasks/get","params":{"id":"t"}}`}[i]; body != want {
 			t.Fatalf("request %d was rewritten:\n got %s\nwant %s", i, body, want)
 		}
@@ -231,8 +250,8 @@ func TestProxyPassesNonPostTrafficThrough(t *testing.T) {
 	if string(body) != `{"kagent_version":"0.10.1"}` {
 		t.Fatalf("body=%q", body)
 	}
-	if upstream.paths[0] != "/api/agents?user_id=admin%40kagent.dev" {
-		t.Fatalf("query was not preserved: %q", upstream.paths[0])
+	if upstream.seenPaths()[0] != "/api/agents?user_id=admin%40kagent.dev" {
+		t.Fatalf("query was not preserved: %q", upstream.seenPaths()[0])
 	}
 }
 
@@ -245,8 +264,8 @@ func TestTheSandboxInvokePathIsAlsoRewritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if id := messageField(t, []byte(upstream.bodies[0]), "messageId"); id == `""` || id == "" {
-		t.Fatalf("the sandbox invoke reached the controller without an ID: %s", upstream.bodies[0])
+	if id := messageField(t, []byte(upstream.seen()[0]), "messageId"); id == `""` || id == "" {
+		t.Fatalf("the sandbox invoke reached the controller without an ID: %s", upstream.seen()[0])
 	}
 }
 
@@ -274,14 +293,14 @@ func TestUnrelatedPostPathsPassThroughUntouched(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("status=%d, want the controller's own answer", resp.StatusCode)
 			}
-			if len(upstream.bodies) != 1 {
-				t.Fatalf("the controller saw %d requests, want 1", len(upstream.bodies))
+			if len(upstream.seen()) != 1 {
+				t.Fatalf("the controller saw %d requests, want 1", len(upstream.seen()))
 			}
-			if upstream.bodies[0] != tc.body {
-				t.Fatalf("the body was altered in flight (%d bytes in, %d out)", len(tc.body), len(upstream.bodies[0]))
+			if upstream.seen()[0] != tc.body {
+				t.Fatalf("the body was altered in flight (%d bytes in, %d out)", len(tc.body), len(upstream.seen()[0]))
 			}
-			if upstream.paths[0] != tc.path {
-				t.Fatalf("path=%q, want %q", upstream.paths[0], tc.path)
+			if upstream.seenPaths()[0] != tc.path {
+				t.Fatalf("path=%q, want %q", upstream.seenPaths()[0], tc.path)
 			}
 		})
 	}
@@ -312,8 +331,8 @@ func TestBoundedAndMalformedBodiesNeverReachTheController(t *testing.T) {
 			if resp.StatusCode != tc.want {
 				t.Fatalf("status=%d, want %d", resp.StatusCode, tc.want)
 			}
-			if len(upstream.bodies) != 0 {
-				t.Fatalf("the controller was called anyway: %q", upstream.bodies)
+			if len(upstream.seen()) != 0 {
+				t.Fatalf("the controller was called anyway: %q", upstream.seen())
 			}
 		})
 	}
@@ -368,8 +387,8 @@ func TestProxyPreservesServerSentEventStreaming(t *testing.T) {
 	if !strings.Contains(string(rest), `"final":true`) {
 		t.Fatalf("the rest of the stream was lost: %q", rest)
 	}
-	if got := messageField(t, []byte(upstream.bodies[0]), "messageId"); got == `""` {
-		t.Fatalf("the streaming send still had no message ID: %s", upstream.bodies[0])
+	if got := messageField(t, []byte(upstream.seen()[0]), "messageId"); got == `""` {
+		t.Fatalf("the streaming send still had no message ID: %s", upstream.seen()[0])
 	}
 }
 
@@ -390,11 +409,11 @@ func TestProxyIsNotAnOpenProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if len(elsewhere.bodies) != 0 {
-		t.Fatalf("a Host header redirected the request: %q", elsewhere.bodies)
+	if len(elsewhere.seen()) != 0 {
+		t.Fatalf("a Host header redirected the request: %q", elsewhere.seen())
 	}
-	if len(upstream.bodies) != 1 {
-		t.Fatalf("the fixed target saw %d requests", len(upstream.bodies))
+	if len(upstream.seen()) != 1 {
+		t.Fatalf("the fixed target saw %d requests", len(upstream.seen()))
 	}
 
 	// The absolute-form request line a real HTTP proxy would accept.
@@ -411,8 +430,8 @@ func TestProxyIsNotAnOpenProxy(t *testing.T) {
 	if strings.Contains(status, "200") {
 		t.Fatalf("absolute-form request was served: %q", status)
 	}
-	if len(elsewhere.bodies) != 0 {
-		t.Fatalf("absolute-form request was forwarded: %q", elsewhere.bodies)
+	if len(elsewhere.seen()) != 0 {
+		t.Fatalf("absolute-form request was forwarded: %q", elsewhere.seen())
 	}
 }
 
@@ -426,6 +445,104 @@ func TestProxyRefusesAnUpstreamItDoesNotOwn(t *testing.T) {
 			proxy.Close()
 			t.Fatalf("upstream %q was accepted", upstream)
 		}
+	}
+}
+
+// deadUpstream returns the URL of a loopback port that refuses connections:
+// the controller forward after kubectl has gone away, which is the exact
+// race `chat`'s transport retry exists for.
+func deadUpstream(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	address := server.URL
+	server.Close()
+	return address
+}
+
+// A forward that has died must still look like a DEAD FORWARD to the CLI.
+//
+// kmx retries exactly three transport failures (chat.go's ChatRetryable):
+// a refused dial, EOF, and a connection reset. Before this hop existed the
+// CLI dialled the forward itself, so it saw them directly. A hop that
+// answered its own 502 instead would be reporting a healthy proxy in front
+// of a dead controller — the CLI would see a valid HTTP response, the retry
+// would never fire, and a port-forward race would become a hard failure.
+//
+// So an upstream transport failure aborts the client connection rather than
+// being rendered as a status code.
+func TestUpstreamTransportFailureReachesTheClientAsATransportFailure(t *testing.T) {
+	proxy := startProxy(t, deadUpstream(t))
+	_, err := http.Post(proxy.URL()+"/api/a2a/kagent/hello/", "application/json", strings.NewReader(cliSendBody))
+	if err == nil {
+		t.Fatal("a dead controller was reported to the client as a valid HTTP response")
+	}
+	// The shape kmx's retry policy already matches on: `Post "<url>": EOF`,
+	// or a reset. Anything else and ChatRetryable stops firing.
+	if !strings.Contains(err.Error(), "EOF") && !strings.Contains(err.Error(), "reset by peer") {
+		t.Fatalf("transport failure does not look retryable to the CLI: %v", err)
+	}
+}
+
+// An application-level failure is NOT a transport failure. A JSON-RPC error,
+// or any status the controller chose itself, is the controller's answer and
+// must be delivered verbatim — retrying a model or tool error would spend
+// budget again and, for a tool call, could burn a grant.
+func TestControllerErrorsAreDeliveredNotAborted(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"a JSON-RPC error with HTTP 200", http.StatusOK, `{"jsonrpc":"2.0","id":"1","error":{"code":-32602,"message":"message ID is required"}}`},
+		{"the controller's own 500", http.StatusInternalServerError, `{"error":"model provider refused"}`},
+		{"the controller's own 502", http.StatusBadGateway, `{"error":"agent unreachable"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			})
+			proxy := startProxy(t, upstream.URL)
+			resp, err := http.Post(proxy.URL()+"/api/a2a/kagent/hello/", "application/json", strings.NewReader(cliSendBody))
+			if err != nil {
+				t.Fatalf("an application error was turned into a transport failure: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != tc.status || string(body) != tc.body {
+				t.Fatalf("got %d %q, want %d %q", resp.StatusCode, body, tc.status, tc.body)
+			}
+		})
+	}
+}
+
+// The hop never writes to the process's log. Interactive chat owns an
+// alternate-screen terminal, and a stray `http: proxy error: dial tcp ...`
+// from deep inside net/http/httputil lands in the middle of the transcript
+// and corrupts it. Nothing here is allowed to print unless the caller asked
+// for it.
+func TestTheHopNeverWritesToTheProcessLog(t *testing.T) {
+	var logged bytes.Buffer
+	flags := log.Flags()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr); log.SetFlags(flags) })
+
+	// No Log writer at all: the default must be silence, not stderr.
+	proxy, err := Start(Options{Upstream: deadUpstream(t)})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { proxy.Close() })
+	if resp, err := http.Post(proxy.URL()+"/api/a2a/kagent/hello/", "application/json", strings.NewReader(cliSendBody)); err == nil {
+		resp.Body.Close()
+	}
+	// The other paths that could reach a logger.
+	if resp, err := http.Post(proxy.URL()+"/api/a2a/kagent/hello/", "application/json", strings.NewReader("not json")); err == nil {
+		resp.Body.Close()
+	}
+	time.Sleep(50 * time.Millisecond)
+	if logged.Len() != 0 {
+		t.Fatalf("the hop wrote to the process log and would corrupt a full-screen chat:\n%s", logged.String())
 	}
 }
 

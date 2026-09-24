@@ -48,8 +48,12 @@ type Options struct {
 	// place it will ever send a request. It must be a plaintext loopback
 	// address with no path — the port-forward kmx opened itself.
 	Upstream string
-	// Log receives transport failures between the hop and the controller;
-	// nil discards them (the caller still sees the HTTP status).
+	// Log receives upstream transport failures. It defaults to DISCARD, not
+	// to stderr: interactive chat owns an alternate-screen terminal, and a
+	// raw `http: proxy error: ...` line from inside net/http/httputil lands
+	// in the middle of the transcript and corrupts it. The client is told
+	// about the failure by the abort (see errorHandler), which is the signal
+	// that actually matters; this is only for a caller that owns no screen.
 	Log io.Writer
 	// NewID overrides the generated message ID (tests).
 	NewID func() string
@@ -67,8 +71,37 @@ type Proxy struct {
 	reverse   *httputil.ReverseProxy
 	transport *http.Transport
 	newID     func() string
+	log       io.Writer
 	closeOnce sync.Once
 	closeErr  error
+}
+
+// errorHandler runs when the hop could not complete a round trip to the
+// controller — a refused dial, a reset, a truncated response. It ABORTS the
+// client connection instead of answering a status code of its own.
+//
+// This is load-bearing for `chat`'s existing retry policy. kmx retries three
+// transport failures (ChatRetryable in chat.go): a refused dial, EOF, and a
+// connection reset. Before this hop existed the pinned CLI dialled the
+// forward directly and saw them. A hop that returned its own 502 would hand
+// the CLI a perfectly valid HTTP response describing a dead controller — the
+// retry would never fire and a port-forward race, which is recoverable,
+// would become a hard failure on the first attempt. Aborting makes the CLI
+// observe `Post "<url>": EOF`, which the shipped policy already matches.
+//
+// http.ErrAbortHandler is the standard way to do this: net/http recovers it
+// WITHOUT logging and closes the connection, so nothing is printed behind a
+// full-screen chat's back.
+//
+// It is never reached for an answer the controller actually produced. A
+// JSON-RPC error, or any status the controller chose, is a round trip that
+// SUCCEEDED and is proxied through verbatim — retrying a model or tool
+// failure would spend budget again and could burn a grant.
+func (p *Proxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) {
+	if p.log != nil {
+		fmt.Fprintf(p.log, "kagent compatibility hop: %s %s: %v\n", r.Method, r.URL.Path, err)
+	}
+	panic(http.ErrAbortHandler)
 }
 
 // Start opens the hop on a fresh loopback port.
@@ -92,18 +125,21 @@ func Start(opt Options) (*Proxy, error) {
 		return nil, fmt.Errorf("cannot open the kagent compatibility hop: %w", err)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	discardLog := log.New(io.Discard, "", 0)
 	proxy := &Proxy{
 		base:      "http://" + listener.Addr().String(),
 		listener:  listener,
 		transport: transport,
 		newID:     newID,
+		log:       logWriter,
 	}
 	proxy.reverse = &httputil.ReverseProxy{
 		// Rewrite (not Director) so Go strips hop-by-hop headers and does
 		// not invent X-Forwarded-* on a hop that is not a proxy.
-		Rewrite:   func(request *httputil.ProxyRequest) { request.SetURL(target) },
-		Transport: transport,
-		ErrorLog:  log.New(logWriter, "kagent compatibility hop: ", 0),
+		Rewrite:      func(request *httputil.ProxyRequest) { request.SetURL(target) },
+		Transport:    transport,
+		ErrorHandler: proxy.errorHandler,
+		ErrorLog:     discardLog,
 	}
 	proxy.server = &http.Server{
 		Handler: proxy,
@@ -111,6 +147,9 @@ func Start(opt Options) (*Proxy, error) {
 		// server-sent event stream. The header deadline still closes a
 		// connection that never states its business.
 		ReadHeaderTimeout: 10 * time.Second,
+		// The server's own logger would otherwise be the standard logger,
+		// i.e. stderr, i.e. the middle of a full-screen chat.
+		ErrorLog: discardLog,
 	}
 	go func() { _ = proxy.server.Serve(listener) }()
 	return proxy, nil

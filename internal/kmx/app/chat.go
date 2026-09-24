@@ -318,13 +318,20 @@ func forwardedPort(output string) (string, error) {
 // compatibility hop and returns the URL the PINNED kagent CLI must be given
 // instead of the forward, plus the function that closes the hop.
 //
-// Only the CLI is redirected. kmx's own controller calls — sessions,
-// history, task polling and the HITL continuation — keep talking to the
-// forward directly: they already write a messageId, and routing them through
-// a rewriting hop would put a second thing in the path of the one protocol
-// exchange that must not be altered.
+// Only the CLI is redirected, and only for the send. kmx's own session list,
+// session history and HITL continuation keep talking to the forward
+// directly (s.base) — the HITL decision already carries its own messageId
+// and is the one exchange that must not be rewritten. Task polling that
+// hangs off a CLI invoke does reach the controller through the hop, because
+// invokeStream passes the endpoint it was given to waitExistingTask; that is
+// benign passthrough, since `tasks/get` is not a message send and is
+// forwarded byte for byte.
+//
+// Nothing is logged to a.Err: interactive chat owns the alternate screen,
+// and the hop reports upstream failures to the CLI by aborting the
+// connection, which is what the retry policy reads.
 func (a *App) legacyChatEndpoint(upstream string) (string, func(), error) {
-	proxy, err := kagentcompat.Start(kagentcompat.Options{Upstream: upstream, Log: a.Err})
+	proxy, err := kagentcompat.Start(kagentcompat.Options{Upstream: upstream})
 	if err != nil {
 		return "", nil, err
 	}
