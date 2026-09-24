@@ -261,21 +261,58 @@ func (a *App) detectOrkaPlatform(ctx context.Context) agentruntime.PlatformDetec
 	return agentruntime.PlatformDetection{}
 }
 
+// kagentV1APIGroupVersion and kagentV1AgentTemplateKind pin the exact
+// prerequisite DESIGN.md §1 names: kagent-v1 is identified by the
+// kagent.dev/v1alpha3 AgentTemplate CRD, not merely by anything named
+// "agenttemplates" under the kagent.dev group at whatever version happens
+// to be preferred.
+const (
+	kagentV1APIGroupVersion   = "kagent.dev/v1alpha3"
+	kagentV1AgentTemplateKind = "AgentTemplate"
+)
+
+// kagentV1APIResourceList is the shape of Kubernetes' own per-group-version
+// discovery document (GET /apis/<group>/<version>), which lists exactly the
+// resources served under that one version — the only discovery shape that
+// can distinguish "AgentTemplate exists under v1alpha3" from "AgentTemplate
+// exists under some other version" or "nothing under v1alpha3 at all".
+type kagentV1APIResourceList struct {
+	Resources []struct {
+		Kind string `json:"kind"`
+	} `json:"resources"`
+}
+
 // detectKagentV1Platform is the Kubernetes-aware half of DESIGN.md §1's
-// shared platform auto-detection for kagent v1: it inspects installed API
-// resources once for the kagent.dev/v1alpha3 AgentTemplate CRD — a resource
-// kind legacy kagent never installs — and returns a neutral installed/error
-// result for agentruntime.SelectPlatform.
+// shared platform auto-detection for kagent v1. Legacy kagent shares the
+// same kagent.dev API group, so a group-level check (e.g. `api-resources
+// --api-group=kagent.dev`) cannot tell kagent-v1 apart from it: both would
+// list a kagent.dev resource regardless of which version actually serves
+// it. Querying the versioned discovery document directly — `get --raw
+// /apis/kagent.dev/v1alpha3`, Kubernetes' own APIResourceList for exactly
+// that group-version — proves the exact served version DESIGN.md §1
+// requires: the apiserver answers NotFound unless some CRD actually serves
+// v1alpha3, and lists only that version's resources when it does.
 func (a *App) detectKagentV1Platform(ctx context.Context) agentruntime.PlatformDetection {
 	if err := ctx.Err(); err != nil {
 		return agentruntime.PlatformDetection{Err: err}
 	}
-	raw, err := a.kubectlCapture("api-resources", "--api-group=kagent.dev", "-o", "name")
+	raw, err := a.kubectlCapture("get", "--raw", "/apis/"+kagentV1APIGroupVersion)
 	if err != nil {
+		if isNotFound(err) {
+			// kagent.dev/v1alpha3 is simply not a registered group-version:
+			// either kagent.dev is entirely absent, or only some other
+			// version (e.g. legacy kagent's v1alpha2) is served. Both mean
+			// kagent-v1 is not installed, never a read failure.
+			return agentruntime.PlatformDetection{}
+		}
 		return agentruntime.PlatformDetection{Err: fmt.Errorf("cannot detect kagent v1 installation: %w", err)}
 	}
-	for _, resource := range strings.Fields(raw) {
-		if resource == "agenttemplates.kagent.dev" {
+	var resources kagentV1APIResourceList
+	if err := json.Unmarshal([]byte(raw), &resources); err != nil {
+		return agentruntime.PlatformDetection{Err: fmt.Errorf("cannot parse %s API discovery: %w", kagentV1APIGroupVersion, err)}
+	}
+	for _, resource := range resources.Resources {
+		if resource.Kind == kagentV1AgentTemplateKind {
 			return agentruntime.PlatformDetection{Installed: true}
 		}
 	}

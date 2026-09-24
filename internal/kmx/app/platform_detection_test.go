@@ -14,11 +14,22 @@ import (
 )
 
 // platformDetectionFixture wires a fake kubectl that answers the exact
-// api-resources calls detectOrkaPlatform/detectKagentV1Platform make.
-// "present" reports the platform's CRD installed, "error" simulates an
-// unreadable API surface, and anything else (including unset) reports
-// absence — mirroring runtimeFixture's KMX_TEST_ORKA/KMX_TEST_KAGENT
-// convention used by the existing #197 chat discovery tests.
+// discovery calls detectOrkaPlatform/detectKagentV1Platform make.
+// KMX_TEST_ORKA_PLATFORM=present/error selects Orka's api-resources answer.
+// KMX_TEST_KAGENTV1_PLATFORM selects detectKagentV1Platform's versioned
+// discovery answer for exactly "get --raw /apis/kagent.dev/v1alpha3":
+//   - present: that exact group-version is served and lists AgentTemplate
+//     (kagent-v1 installed).
+//   - other-version: the server has kagent.dev resources (e.g. legacy
+//     kagent's v1alpha2 Agent) but nothing registers v1alpha3 itself, so
+//     the apiserver's own discovery answers NotFound for this specific
+//     group-version — proving the detector does not accept an unrelated
+//     served version.
+//   - error: a hard discovery failure (not a 404) that must fail closed.
+//   - unset (default): nothing under kagent.dev at all; same NotFound shape
+//     as other-version, since from this endpoint's perspective total
+//     absence and "some other version only" are indistinguishable — both
+//     correctly mean "v1alpha3 AgentTemplate is not installed".
 func platformDetectionFixture(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
@@ -30,11 +41,11 @@ case "$*" in
       error) printf 'error: forbidden\n' >&2; exit 1 ;;
       *) exit 0 ;;
     esac ;;
-  *"--api-group=kagent.dev"*)
+  *"get --raw /apis/kagent.dev/v1alpha3"*)
     case "$KMX_TEST_KAGENTV1_PLATFORM" in
-      present) printf 'agenttemplates.kagent.dev\n'; exit 0 ;;
-      error) printf 'error: forbidden\n' >&2; exit 1 ;;
-      *) exit 0 ;;
+      present) printf '{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kagent.dev/v1alpha3","resources":[{"name":"agenttemplates","singularName":"agenttemplate","namespaced":true,"kind":"AgentTemplate","verbs":["get","list","watch"]}]}\n'; exit 0 ;;
+      error) printf 'Unable to connect to the server: dial tcp 127.0.0.1:6443: i/o timeout\n' >&2; exit 1 ;;
+      *) printf 'Error from server (NotFound): the server could not find the requested resource\n' >&2; exit 1 ;;
     esac ;;
 esac
 exit 0
@@ -72,11 +83,29 @@ func TestDetectOrkaPlatformFailsClosedOnReadError(t *testing.T) {
 	}
 }
 
-func TestDetectKagentV1PlatformReportsInstalled(t *testing.T) {
+// Fix round 1, HIGH finding: the detector must prove the exact served
+// kagent.dev/v1alpha3 AgentTemplate support, not merely that some
+// agenttemplates.kagent.dev resource exists under any version. These four
+// tests pin that contract directly against the versioned discovery
+// document.
+func TestDetectKagentV1PlatformAcceptsExactServedV1Alpha3(t *testing.T) {
 	a := platformDetectionFixture(t)
 	t.Setenv("KMX_TEST_KAGENTV1_PLATFORM", "present")
 	result := a.detectKagentV1Platform(context.Background())
 	if result.Err != nil || !result.Installed {
+		t.Fatalf("detectKagentV1Platform() = %+v", result)
+	}
+}
+
+// A kagent.dev AgentTemplate served only under some other version (for
+// example legacy kagent's v1alpha2, which never defines AgentTemplate at
+// all, or a hypothetical future version) must never be accepted as
+// kagent-v1: the group existing is not the same as v1alpha3 being served.
+func TestDetectKagentV1PlatformRejectsOtherServedVersion(t *testing.T) {
+	a := platformDetectionFixture(t)
+	t.Setenv("KMX_TEST_KAGENTV1_PLATFORM", "other-version")
+	result := a.detectKagentV1Platform(context.Background())
+	if result.Err != nil || result.Installed {
 		t.Fatalf("detectKagentV1Platform() = %+v", result)
 	}
 }
@@ -89,7 +118,7 @@ func TestDetectKagentV1PlatformReportsAbsentWithoutError(t *testing.T) {
 	}
 }
 
-func TestDetectKagentV1PlatformFailsClosedOnReadError(t *testing.T) {
+func TestDetectKagentV1PlatformFailsClosedOnDiscoveryError(t *testing.T) {
 	a := platformDetectionFixture(t)
 	t.Setenv("KMX_TEST_KAGENTV1_PLATFORM", "error")
 	result := a.detectKagentV1Platform(context.Background())
