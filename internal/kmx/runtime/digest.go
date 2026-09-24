@@ -59,9 +59,11 @@ func PortableBundleDigest(source []byte) string {
 }
 
 // RenderedBundleDigest is DESIGN.md §2's rendered bundle digest: the same
-// framing applied to every final rendered document, in deployment order,
-// under stable logical paths rendered/000.yaml, rendered/001.yaml, etc.,
-// with all frames concatenated and hashed once.
+// framing applied to every final rendered document, in artifact order, under
+// stable logical paths rendered/000.yaml, rendered/001.yaml, etc., with all
+// frames concatenated and hashed once. It covers every rendered byte,
+// including any document rendered for review only, so nothing an adapter
+// emits escapes its output identity.
 func RenderedBundleDigest(documents [][]byte) string {
 	var frames bytes.Buffer
 	for i, doc := range documents {

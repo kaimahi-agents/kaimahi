@@ -1,6 +1,9 @@
 package runtime
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -638,5 +641,122 @@ func TestPortableOrkaShorthandRoundTrip(t *testing.T) {
 	if parsed.Extensions.Orka.Agent == nil || len(parsed.Extensions.Orka.Agent.Skills) != 1 ||
 		parsed.Extensions.Orka.Agent.Skills[0].Name != "triage" {
 		t.Errorf("extensions.orka.agent.skills = %#v", parsed.Extensions.Orka.Agent)
+	}
+}
+
+// DESIGN.md §2 frames the portable bundle digest over "the exact validated
+// portable source bytes", and says flag-based shorthand "is deterministically
+// encoded first and framed under the same logical path". An encoded document
+// with no source bytes would therefore have no identity to hash at all.
+func TestPortableOrkaShorthandCarriesItsEncodedSource(t *testing.T) {
+	agent, err := EncodeOrkaShorthand(OrkaShorthand{
+		Name:         "hello",
+		Namespace:    "orka-system",
+		Instructions: "You are a helpful, careful agent.",
+		ProviderType: "openai",
+		Model:        "gpt-4o-mini",
+		SecretName:   "hello-key",
+	})
+	if err != nil {
+		t.Fatalf("EncodeOrkaShorthand: %v", err)
+	}
+	source := agent.Source()
+	if len(source) == 0 {
+		t.Fatal("shorthand encoding produced no source bytes")
+	}
+	rendered, err := agent.YAML()
+	if err != nil {
+		t.Fatalf("YAML: %v", err)
+	}
+	if string(source) != string(rendered) {
+		t.Fatalf("Source() and YAML() disagree:\n--- source ---\n%s\n--- yaml ---\n%s", source, rendered)
+	}
+	// The source must be exactly what a strict parse accepts, so the same
+	// document authored by hand digests identically.
+	parsed, err := ParsePortableAgent(source)
+	if err != nil {
+		t.Fatalf("shorthand source does not parse strictly: %v", err)
+	}
+	if PortableBundleDigest(parsed.Source()) != PortableBundleDigest(source) {
+		t.Fatal("re-parsing the shorthand source changed its portable digest")
+	}
+	// Mutating the returned copy must not change the document.
+	source[0] = '#'
+	if agent.Source()[0] == '#' {
+		t.Fatal("Source() returned a shared, not a defensive, copy")
+	}
+}
+
+// Independent expectation: the digest is the SHA-256 of DESIGN.md §2's exact
+// framing over the encoded document, computed here without calling the
+// framing helper under test.
+func TestPortableOrkaShorthandDigestMatchesIndependentFraming(t *testing.T) {
+	shorthand := OrkaShorthand{
+		Name:         "hello",
+		Namespace:    "orka-system",
+		Instructions: "You are a helpful, careful agent.",
+		ProviderType: "openai",
+		Model:        "gpt-4o-mini",
+		SecretName:   "hello-key",
+	}
+	agent, err := EncodeOrkaShorthand(shorthand)
+	if err != nil {
+		t.Fatalf("EncodeOrkaShorthand: %v", err)
+	}
+	source := agent.Source()
+	sum := sha256.Sum256([]byte(fmt.Sprintf("portable-agent.yaml %d\n%s\n", len(source), source)))
+	if want := hex.EncodeToString(sum[:]); PortableBundleDigest(source) != want {
+		t.Fatalf("PortableBundleDigest(shorthand source) = %q, want %q", PortableBundleDigest(source), want)
+	}
+	// An empty source hashes a constant that identifies nothing; the encoded
+	// document must never collide with it.
+	if PortableBundleDigest(source) == PortableBundleDigest(nil) {
+		t.Fatal("shorthand digest equals the digest of an absent source")
+	}
+}
+
+// Two different shorthand inputs must never share a portable digest, so the
+// digest actually identifies authored behavior rather than a constant.
+func TestPortableOrkaShorthandDigestDiffersPerInput(t *testing.T) {
+	base := OrkaShorthand{
+		Name:         "hello",
+		Namespace:    "orka-system",
+		Instructions: "You are a helpful, careful agent.",
+		ProviderType: "openai",
+		Model:        "gpt-4o-mini",
+		SecretName:   "hello-key",
+	}
+	for _, tc := range []struct {
+		name  string
+		apply func(*OrkaShorthand)
+	}{
+		{"model", func(s *OrkaShorthand) { s.Model = "gpt-4o" }},
+		{"instructions", func(s *OrkaShorthand) { s.Instructions = "Answer in one sentence." }},
+		{"namespace", func(s *OrkaShorthand) { s.Namespace = "agents" }},
+		{"tools", func(s *OrkaShorthand) { s.Tools = []string{"web-search"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first, err := EncodeOrkaShorthand(base)
+			if err != nil {
+				t.Fatalf("EncodeOrkaShorthand: %v", err)
+			}
+			changed := base
+			tc.apply(&changed)
+			second, err := EncodeOrkaShorthand(changed)
+			if err != nil {
+				t.Fatalf("EncodeOrkaShorthand: %v", err)
+			}
+			if PortableBundleDigest(first.Source()) == PortableBundleDigest(second.Source()) {
+				t.Fatalf("changing %s did not change the portable digest", tc.name)
+			}
+			// The same input twice must still be identical.
+			repeat, err := EncodeOrkaShorthand(base)
+			if err != nil {
+				t.Fatalf("EncodeOrkaShorthand: %v", err)
+			}
+			if PortableBundleDigest(first.Source()) != PortableBundleDigest(repeat.Source()) {
+				t.Fatal("identical shorthand inputs produced different portable digests")
+			}
+		})
 	}
 }

@@ -3,6 +3,8 @@ package runtime
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 )
 
@@ -23,7 +25,7 @@ func (a fakeLifecycleAdapter) Capabilities() Capabilities {
 	return Capabilities{Render: true, Deploy: true, Status: true, Evaluate: false}
 }
 func (a fakeLifecycleAdapter) Render(context.Context, PortableAgent, RenderOptions) (RenderedBundle, error) {
-	return NewRenderedBundle(a.id, []byte("portable source"), [][]byte{[]byte("rendered document")}, nil, TargetResolution{Runtime: a.id, Namespace: "ns"}, nil)
+	return NewRenderedBundle(a.id, []byte("portable source"), []Document{ApplyDocument([]byte("rendered document"))}, nil, TargetResolution{Runtime: a.id, Namespace: "ns"}, nil)
 }
 func (a fakeLifecycleAdapter) Deploy(context.Context, RenderedBundle, DeployOptions) (AgentRef, error) {
 	return AgentRef{Runtime: a.id, Namespace: "ns", Kind: "AgentInstance", Name: "hello", UID: "instance-uid"}, nil
@@ -105,9 +107,12 @@ func TestLifecycleStatusSeparatesPairFromInstance(t *testing.T) {
 	}
 }
 
+// The bundle's digests are checked against independently framed expectations
+// — the exact strings DESIGN.md §2 specifies, hashed here in the test — not
+// against the digest helpers the constructor itself calls.
 func TestRenderedBundleComputesBothDigests(t *testing.T) {
 	source := []byte("portable source bytes")
-	docs := [][]byte{[]byte("doc-0"), []byte("doc-1")}
+	docs := []Document{ApplyDocument([]byte("doc-0")), ApplyDocument([]byte("doc-1"))}
 
 	bundle, err := NewRenderedBundle(Orka, source, docs, nil, TargetResolution{Runtime: Orka, Namespace: "ns"}, nil)
 	if err != nil {
@@ -116,10 +121,12 @@ func TestRenderedBundleComputesBothDigests(t *testing.T) {
 	if bundle.Adapter() != Orka {
 		t.Errorf("Adapter() = %q", bundle.Adapter())
 	}
-	if want := PortableBundleDigest(source); bundle.PortableDigest() != want {
+	portableSum := sha256.Sum256([]byte("portable-agent.yaml 21\nportable source bytes\n"))
+	if want := hex.EncodeToString(portableSum[:]); bundle.PortableDigest() != want {
 		t.Errorf("PortableDigest() = %q, want %q", bundle.PortableDigest(), want)
 	}
-	if want := RenderedBundleDigest(docs); bundle.RenderedDigest() != want {
+	renderedSum := sha256.Sum256([]byte("rendered/000.yaml 5\ndoc-0\nrendered/001.yaml 5\ndoc-1\n"))
+	if want := hex.EncodeToString(renderedSum[:]); bundle.RenderedDigest() != want {
 		t.Errorf("RenderedDigest() = %q, want %q", bundle.RenderedDigest(), want)
 	}
 	if bundle.Target().Namespace != "ns" {
@@ -127,15 +134,79 @@ func TestRenderedBundleComputesBothDigests(t *testing.T) {
 	}
 }
 
+// Each digest must answer to its own input: changing the portable source
+// alone, or one rendered byte alone, must move exactly one of them.
+func TestRenderedBundleDigestsRespondToTheirOwnInput(t *testing.T) {
+	build := func(t *testing.T, source, document string) RenderedBundle {
+		t.Helper()
+		bundle, err := NewRenderedBundle(Orka, []byte(source), []Document{ApplyDocument([]byte(document))}, nil, TargetResolution{}, nil)
+		if err != nil {
+			t.Fatalf("NewRenderedBundle: %v", err)
+		}
+		return bundle
+	}
+	base := build(t, "source A", "doc-0")
+	otherSource := build(t, "source B", "doc-0")
+	otherDocuments := build(t, "source A", "doc-1")
+
+	if base.PortableDigest() == otherSource.PortableDigest() {
+		t.Error("a different portable source produced the same portable digest")
+	}
+	if base.RenderedDigest() != otherSource.RenderedDigest() {
+		t.Error("the portable source changed the rendered digest")
+	}
+	if base.RenderedDigest() == otherDocuments.RenderedDigest() {
+		t.Error("different rendered bytes produced the same rendered digest")
+	}
+	if base.PortableDigest() != otherDocuments.PortableDigest() {
+		t.Error("rendered bytes changed the portable digest")
+	}
+}
+
+// DESIGN.md §2 digests "every byte of the final rendered documents", while
+// Deploy may write only what the bundle explicitly marks for deployment.
+func TestRenderedBundleSeparatesArtifactFromDeployDocuments(t *testing.T) {
+	review := []byte("review only")
+	apply := []byte("deploy me")
+	bundle, err := NewRenderedBundle(Orka, []byte("source"), []Document{ReviewDocument(review), ApplyDocument(apply)}, nil, TargetResolution{}, nil)
+	if err != nil {
+		t.Fatalf("NewRenderedBundle: %v", err)
+	}
+	if len(bundle.Documents()) != 2 || !bytes.Equal(bundle.Documents()[0], review) {
+		t.Fatalf("Documents() dropped the review-only document: %q", bundle.Documents())
+	}
+	deploy := bundle.DeployDocuments()
+	if len(deploy) != 1 || !bytes.Equal(deploy[0], apply) {
+		t.Fatalf("DeployDocuments() = %q, want only the applied document", deploy)
+	}
+	framed := sha256.Sum256([]byte("rendered/000.yaml 11\nreview only\nrendered/001.yaml 9\ndeploy me\n"))
+	if want := hex.EncodeToString(framed[:]); bundle.RenderedDigest() != want {
+		t.Errorf("RenderedDigest() = %q, want %q covering every rendered byte", bundle.RenderedDigest(), want)
+	}
+	deploy[0][0] = 'X'
+	if !bytes.Equal(bundle.DeployDocuments()[0], apply) {
+		t.Error("DeployDocuments() returned a shared, not a defensive, copy")
+	}
+}
+
 func TestRenderedBundleRejectsMissingAdapterOrDocuments(t *testing.T) {
-	if _, err := NewRenderedBundle("", []byte("source"), [][]byte{[]byte("doc")}, nil, TargetResolution{}, nil); err == nil {
+	if _, err := NewRenderedBundle("", []byte("source"), []Document{ApplyDocument([]byte("doc"))}, nil, TargetResolution{}, nil); err == nil {
 		t.Error("expected an error for a missing adapter ID")
 	}
 	if _, err := NewRenderedBundle(Orka, []byte("source"), nil, nil, TargetResolution{}, nil); err == nil {
 		t.Error("expected an error for zero rendered documents")
 	}
-	if _, err := NewRenderedBundle(Orka, []byte("source"), [][]byte{nil}, nil, TargetResolution{}, nil); err == nil {
+	if _, err := NewRenderedBundle(Orka, []byte("source"), []Document{ApplyDocument(nil)}, nil, TargetResolution{}, nil); err == nil {
 		t.Error("expected an error for an empty rendered document")
+	}
+	// An absent portable source would digest a constant that identifies no
+	// authored behavior at all.
+	if _, err := NewRenderedBundle(Orka, nil, []Document{ApplyDocument([]byte("doc"))}, nil, TargetResolution{}, nil); err == nil {
+		t.Error("expected an error for an absent portable source")
+	}
+	// A bundle Deploy could only no-op on is never what an adapter meant.
+	if _, err := NewRenderedBundle(Orka, []byte("source"), []Document{ReviewDocument([]byte("doc"))}, nil, TargetResolution{}, nil); err == nil {
+		t.Error("expected an error for a bundle with no deployable document")
 	}
 }
 
@@ -145,7 +216,7 @@ func TestRenderedBundleRejectsMissingAdapterOrDocuments(t *testing.T) {
 // digests.
 func TestRenderedBundleDocumentsAreImmutable(t *testing.T) {
 	doc := []byte("original document")
-	docs := [][]byte{doc}
+	docs := []Document{ApplyDocument(doc)}
 
 	bundle, err := NewRenderedBundle(Orka, []byte("source"), docs, nil, TargetResolution{}, nil)
 	if err != nil {
@@ -155,7 +226,7 @@ func TestRenderedBundleDocumentsAreImmutable(t *testing.T) {
 
 	// Mutate the caller's original input slices after construction.
 	doc[0] = 'X'
-	docs[0] = []byte("replaced")
+	docs[0] = ApplyDocument([]byte("replaced"))
 
 	// Mutate a slice returned by the accessor.
 	returned := bundle.Documents()
@@ -174,7 +245,7 @@ func TestRenderedBundlePrerequisitesAndLossesAreDefensivelyCopied(t *testing.T) 
 	prereqs := []Prerequisite{{Kind: "Harness", Namespace: "ns", Name: "kagent"}}
 	losses := []Loss{{Field: "spec.foo", Reason: "unsupported"}}
 
-	bundle, err := NewRenderedBundle(KagentV1, []byte("source"), [][]byte{[]byte("doc")}, prereqs, TargetResolution{}, losses)
+	bundle, err := NewRenderedBundle(KagentV1, []byte("source"), []Document{ApplyDocument([]byte("doc"))}, prereqs, TargetResolution{}, losses)
 	if err != nil {
 		t.Fatalf("NewRenderedBundle: %v", err)
 	}
@@ -197,7 +268,7 @@ func TestRenderedBundlePrerequisitesAndLossesAreDefensivelyCopied(t *testing.T) 
 
 // DESIGN.md §2: "Losses are normally empty because lossy mappings fail."
 func TestRenderedBundleLossesAreEmptyByDefault(t *testing.T) {
-	bundle, err := NewRenderedBundle(Orka, []byte("source"), [][]byte{[]byte("doc")}, nil, TargetResolution{}, nil)
+	bundle, err := NewRenderedBundle(Orka, []byte("source"), []Document{ApplyDocument([]byte("doc"))}, nil, TargetResolution{}, nil)
 	if err != nil {
 		t.Fatalf("NewRenderedBundle: %v", err)
 	}

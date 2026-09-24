@@ -6,8 +6,10 @@
 //     artifacts, the existing pinned schema validator. It mints the optional
 //     Task's random identity exactly once, and returns it inside an immutable
 //     RenderedBundle.
-//   - Deploy consumes only that bundle. It decodes the exact rendered bytes
-//     back into the existing *scaffold.OrkaBundle shape and hands them to the
+//   - Deploy consumes only that bundle. It applies exactly the bundle's
+//     explicit deploy documents — never the value-free Secret skeleton the
+//     artifact also carries — by decoding those exact rendered bytes back
+//     into the existing *scaffold.OrkaBundle shape and handing them to the
 //     unchanged staged online path, which keeps the mutation guard, installed
 //     CRD schema validation, collision checks, Secret-key proof, strict
 //     server dry-runs, artifact emission and Provider → Ready → Agent →
@@ -22,6 +24,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -92,12 +95,19 @@ func (a orkaRuntimeAdapter) Render(_ context.Context, portable agentruntime.Port
 //
 // The rendered documents are the bundle's review order — Secret skeleton,
 // Provider, Agent and the optional Task — because those exact bytes are what
-// the emitted artifact contains. The Secret is additionally recorded as a
-// prerequisite: creation never writes the skeleton, and Deploy proves the
-// separately provisioned Secret and its referenced key instead.
+// the emitted artifact contains and what the rendered digest must cover. Only
+// Provider, Agent and Task are marked for deployment: the skeleton is a
+// review-only document naming a prerequisite, and the separately provisioned
+// Secret is recorded as one, so Deploy proves it and never writes it.
 func (a orkaRuntimeAdapter) renderOrkaBundle(portable agentruntime.PortableAgent) (agentruntime.RenderedBundle, string, error) {
 	if err := lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender); err != nil {
 		return agentruntime.RenderedBundle{}, "", err
+	}
+	// The portable source is this render's authored identity. Refuse to
+	// render an identity-less document rather than digest a constant.
+	source := portable.Source()
+	if len(source) == 0 {
+		return agentruntime.RenderedBundle{}, "", fmt.Errorf("portable agent %q carries no source bytes; its portable digest would identify nothing", portable.Metadata.Name)
 	}
 	spec, err := orkaSpecFromPortable(portable, a.create)
 	if err != nil {
@@ -126,7 +136,7 @@ func (a orkaRuntimeAdapter) renderOrkaBundle(portable agentruntime.PortableAgent
 	}
 	rendered, err := agentruntime.NewRenderedBundle(
 		a.ID(),
-		portable.Source(),
+		source,
 		documents,
 		[]agentruntime.Prerequisite{{Kind: "Secret", Namespace: spec.Namespace, Name: orkaObjectName(bundle.Secret)}},
 		agentruntime.TargetResolution{Runtime: a.ID(), Namespace: spec.Namespace},
@@ -229,15 +239,21 @@ func orkaSpecFromPortable(portable agentruntime.PortableAgent, opt CreateOptions
 }
 
 // orkaRenderedDocuments serializes the bundle's review order into the exact
-// per-document bytes the artifact contains and the rendered digest covers.
-func orkaRenderedDocuments(bundle *scaffold.OrkaBundle) ([][]byte, error) {
-	documents := make([][]byte, 0, 4)
+// per-document bytes the artifact contains and the rendered digest covers,
+// marking every document except the value-free Secret skeleton for
+// deployment.
+func orkaRenderedDocuments(bundle *scaffold.OrkaBundle) ([]agentruntime.Document, error) {
+	documents := make([]agentruntime.Document, 0, 4)
 	for _, doc := range bundle.Documents() {
 		encoded, err := yaml.Marshal(doc)
 		if err != nil {
 			return nil, fmt.Errorf("render Orka bundle: %w", err)
 		}
-		documents = append(documents, encoded)
+		if kind, _ := doc["kind"].(string); kind == "Secret" {
+			documents = append(documents, agentruntime.ReviewDocument(encoded))
+			continue
+		}
+		documents = append(documents, agentruntime.ApplyDocument(encoded))
 	}
 	return documents, nil
 }
@@ -246,28 +262,41 @@ func orkaRenderedDocuments(bundle *scaffold.OrkaBundle) ([][]byte, error) {
 // existing bundle shape every unchanged Orka helper already takes. It parses
 // the rendered bytes; it never regenerates them, so a Task's random identity
 // survives exactly as rendered.
+//
+// The two lists are read for exactly what they mean: the artifact's first
+// document is the review-only Secret skeleton, and the objects creation
+// writes are taken from the bundle's own explicit deploy list, in its order.
+// Nothing here can turn the artifact's full review order into a bulk apply.
 func orkaBundleFromRendered(rendered agentruntime.RenderedBundle) (*scaffold.OrkaBundle, error) {
 	if rendered.Adapter() != agentruntime.Orka {
 		return nil, fmt.Errorf("rendered bundle targets runtime %q, not %q", rendered.Adapter(), agentruntime.Orka)
 	}
-	documents := rendered.Documents()
-	order := []string{"Secret", "Provider", "Agent", "Task"}
-	if len(documents) < 3 || len(documents) > len(order) {
-		return nil, fmt.Errorf("rendered Orka bundle has %d documents; expected Secret, Provider, Agent and an optional Task", len(documents))
+	artifact, deploy := rendered.Documents(), rendered.DeployDocuments()
+	if len(artifact) < 3 || len(artifact) > 4 {
+		return nil, fmt.Errorf("rendered Orka bundle has %d documents; expected Secret, Provider, Agent and an optional Task", len(artifact))
+	}
+	if len(deploy) != len(artifact)-1 {
+		return nil, fmt.Errorf("rendered Orka bundle marks %d of %d documents for deployment; exactly the value-free Secret skeleton must be review-only", len(deploy), len(artifact))
+	}
+	skeleton := artifact[0]
+	for _, doc := range deploy {
+		if bytes.Equal(doc, skeleton) {
+			return nil, fmt.Errorf("rendered Orka bundle marks the value-free Secret skeleton for deployment")
+		}
 	}
 	bundle := &scaffold.OrkaBundle{}
-	for i, raw := range documents {
-		var doc map[string]any
-		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			return nil, fmt.Errorf("rendered Orka document %d is not valid YAML: %w", i, err)
-		}
-		kind, _ := doc["kind"].(string)
-		if kind != order[i] {
-			return nil, fmt.Errorf("rendered Orka document %d is %q; expected %q", i, kind, order[i])
+	secret, err := decodeOrkaDocument(skeleton, "Secret")
+	if err != nil {
+		return nil, err
+	}
+	bundle.Secret = secret
+	for i, raw := range deploy {
+		kind := []string{"Provider", "Agent", "Task"}[i]
+		doc, err := decodeOrkaDocument(raw, kind)
+		if err != nil {
+			return nil, err
 		}
 		switch kind {
-		case "Secret":
-			bundle.Secret = doc
 		case "Provider":
 			bundle.Provider = doc
 		case "Agent":
@@ -277,6 +306,20 @@ func orkaBundleFromRendered(rendered agentruntime.RenderedBundle) (*scaffold.Ork
 		}
 	}
 	return bundle, nil
+}
+
+// decodeOrkaDocument parses one rendered document and proves it is the kind
+// its position claims, so a reordered or substituted bundle is refused
+// instead of deployed.
+func decodeOrkaDocument(raw []byte, want string) (map[string]any, error) {
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("rendered Orka %s document is not valid YAML: %w", want, err)
+	}
+	if kind, _ := doc["kind"].(string); kind != want {
+		return nil, fmt.Errorf("rendered Orka document is %q where %q was expected", kind, want)
+	}
+	return doc, nil
 }
 
 // portableCreateDocument produces the closed portable document this create

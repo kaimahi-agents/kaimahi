@@ -632,7 +632,12 @@ type OrkaShorthand struct {
 // EncodeOrkaShorthand deterministically encodes flag-based Orka creation
 // inputs into a closed PortableAgent document carrying only the Orka
 // extension, in TARGETS.md §7's nested provider/agent shape. The result
-// validates the same way any decoded document does.
+// validates the same way any decoded document does, and carries those exact
+// encoded bytes as its source: DESIGN.md §2 frames the portable bundle
+// digest over "the exact validated portable source bytes", and shorthand is
+// "deterministically encoded first and framed under the same logical path",
+// so an encoded document without source bytes would have no identity to
+// hash.
 func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	agent := &PortableAgent{
 		APIVersion: PortableAPIVersion,
@@ -672,11 +677,19 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	if err := agent.validate(); err != nil {
 		return nil, err
 	}
+	// Source must be the same bytes YAML renders, so that the portable digest
+	// identifies exactly the document this shorthand stands for.
+	source, err := yaml.Marshal(agent)
+	if err != nil {
+		return nil, fmt.Errorf("encode Orka shorthand: %w", err)
+	}
+	agent.source = source
 	return agent, nil
 }
 
 // YAML deterministically renders the document: struct field order fixes the
-// key order, so two equal documents always render identical bytes.
+// key order, so two equal documents always render identical bytes. For a
+// shorthand-encoded document these are exactly its Source bytes.
 func (p *PortableAgent) YAML() ([]byte, error) {
 	if err := p.validate(); err != nil {
 		return nil, err

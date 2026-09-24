@@ -113,17 +113,38 @@ type Loss struct {
 	Field, Reason string
 }
 
+// Document is one rendered document: the exact bytes the artifact carries,
+// plus whether Deploy applies it. Both kinds are rendered output and both are
+// covered by the rendered bundle digest; they differ only in what Deploy is
+// allowed to do with them.
+//
+// A review-only document is one an adapter renders for a human to read but
+// must never write — Orka's value-free Secret skeleton is the case this
+// models: it names a prerequisite the operator provisions separately, and
+// bulk-applying it would create an empty credential.
+type Document struct {
+	Bytes []byte
+	Apply bool
+}
+
+// ApplyDocument is a rendered document Deploy applies, in the order given.
+func ApplyDocument(bytes []byte) Document { return Document{Bytes: bytes, Apply: true} }
+
+// ReviewDocument is a rendered document that belongs to the artifact and the
+// rendered digest but is never written to a cluster.
+func ReviewDocument(bytes []byte) Document { return Document{Bytes: bytes} }
+
 // RenderedBundle is one adapter's exact rendered output: every target
-// document byte-for-byte in deployment order, both identity digests (over
-// the portable source and over these exact rendered bytes), the external
-// prerequisites Deploy must validate, target resolution metadata, and any
-// losses (normally empty). It is constructed only through NewRenderedBundle,
-// which defensively copies its inputs and computes both digests; every
-// accessor returns a defensive copy, so no caller can mutate a bundle after
-// construction.
+// document byte-for-byte in artifact order, which of those documents Deploy
+// applies, both identity digests (over the portable source and over these
+// exact rendered bytes), the external prerequisites Deploy must validate,
+// target resolution metadata, and any losses (normally empty). It is
+// constructed only through NewRenderedBundle, which defensively copies its
+// inputs and computes both digests; every accessor returns a defensive copy,
+// so no caller can mutate a bundle after construction.
 type RenderedBundle struct {
 	adapter        ID
-	documents      [][]byte
+	documents      []Document
 	portableDigest string
 	renderedDigest string
 	prerequisites  []Prerequisite
@@ -133,34 +154,52 @@ type RenderedBundle struct {
 
 // NewRenderedBundle defensively copies documents, prerequisites and losses,
 // computes both identity digests — PortableBundleDigest over portable and
-// RenderedBundleDigest over documents — and returns an immutable
-// RenderedBundle. portable must be the exact validated portable source bytes
-// (PortableAgent.Source(), or the deterministically encoded Orka shorthand's
-// YAML); documents must already be in final deployment order.
-func NewRenderedBundle(adapter ID, portable []byte, documents [][]byte, prerequisites []Prerequisite, target TargetResolution, losses []Loss) (RenderedBundle, error) {
+// RenderedBundleDigest over every document's bytes in artifact order — and
+// returns an immutable RenderedBundle. portable must be the exact validated
+// portable source bytes (PortableAgent.Source(), which is populated for both
+// parsed and shorthand-encoded documents); an empty source has no identity to
+// digest and is refused rather than hashed into a constant. documents must
+// already be in final order, and at least one of them must be an
+// ApplyDocument, because a bundle Deploy could only no-op on is never what an
+// adapter meant to render.
+func NewRenderedBundle(adapter ID, portable []byte, documents []Document, prerequisites []Prerequisite, target TargetResolution, losses []Loss) (RenderedBundle, error) {
 	if adapter == "" {
 		return RenderedBundle{}, fmt.Errorf("rendered bundle: adapter ID is required")
+	}
+	if len(portable) == 0 {
+		return RenderedBundle{}, fmt.Errorf("rendered bundle: the exact portable source bytes are required for the portable digest")
 	}
 	if len(documents) == 0 {
 		return RenderedBundle{}, fmt.Errorf("rendered bundle: at least one rendered document is required")
 	}
-	docsCopy := make([][]byte, len(documents))
+	docsCopy := make([]Document, len(documents))
+	applied := 0
 	for i, doc := range documents {
-		if len(doc) == 0 {
+		if len(doc.Bytes) == 0 {
 			return RenderedBundle{}, fmt.Errorf("rendered bundle: document %d is empty", i)
 		}
-		cp := make([]byte, len(doc))
-		copy(cp, doc)
-		docsCopy[i] = cp
+		cp := make([]byte, len(doc.Bytes))
+		copy(cp, doc.Bytes)
+		docsCopy[i] = Document{Bytes: cp, Apply: doc.Apply}
+		if doc.Apply {
+			applied++
+		}
+	}
+	if applied == 0 {
+		return RenderedBundle{}, fmt.Errorf("rendered bundle: no document is marked for deployment")
 	}
 	sourceCopy := make([]byte, len(portable))
 	copy(sourceCopy, portable)
 
+	bytesOnly := make([][]byte, len(docsCopy))
+	for i, doc := range docsCopy {
+		bytesOnly[i] = doc.Bytes
+	}
 	return RenderedBundle{
 		adapter:        adapter,
 		documents:      docsCopy,
 		portableDigest: PortableBundleDigest(sourceCopy),
-		renderedDigest: RenderedBundleDigest(docsCopy),
+		renderedDigest: RenderedBundleDigest(bytesOnly),
 		prerequisites:  append([]Prerequisite(nil), prerequisites...),
 		target:         target,
 		losses:         append([]Loss(nil), losses...),
@@ -170,14 +209,31 @@ func NewRenderedBundle(adapter ID, portable []byte, documents [][]byte, prerequi
 // Adapter returns the ID of the runtime that produced this bundle.
 func (b RenderedBundle) Adapter() ID { return b.adapter }
 
-// Documents returns a defensive copy of every rendered document, in
-// deployment order. Mutating the result never affects the bundle.
+// Documents returns a defensive copy of every rendered document, in artifact
+// order: exactly the bytes the emitted artifact carries and the rendered
+// digest covers, review-only documents included. Deploy must not apply these;
+// it applies DeployDocuments. Mutating the result never affects the bundle.
 func (b RenderedBundle) Documents() [][]byte {
-	out := make([][]byte, len(b.documents))
-	for i, doc := range b.documents {
-		cp := make([]byte, len(doc))
-		copy(cp, doc)
-		out[i] = cp
+	return copyDocumentBytes(b.documents, false)
+}
+
+// DeployDocuments returns a defensive copy of exactly the documents Deploy
+// applies, in deployment order. It is the only document list a Deploy
+// implementation may write, so a review-only document (Orka's value-free
+// Secret skeleton) can never be bulk-applied by mistake.
+func (b RenderedBundle) DeployDocuments() [][]byte {
+	return copyDocumentBytes(b.documents, true)
+}
+
+func copyDocumentBytes(documents []Document, deployOnly bool) [][]byte {
+	out := make([][]byte, 0, len(documents))
+	for _, doc := range documents {
+		if deployOnly && !doc.Apply {
+			continue
+		}
+		cp := make([]byte, len(doc.Bytes))
+		copy(cp, doc.Bytes)
+		out = append(out, cp)
 	}
 	return out
 }
