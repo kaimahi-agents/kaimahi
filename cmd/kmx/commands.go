@@ -232,11 +232,31 @@ func newMetricsCommand(state *commandState) *cobra.Command {
 }
 
 func newStatusCommand(state *commandState) *cobra.Command {
-	var output string
-	cmd := &cobra.Command{Use: "status", Short: "Show grouped runtime health", Args: cobra.NoArgs}
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
+	var opt app.StatusOptions
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show grouped runtime health",
+		Long: `Show runtime health.
+
+An omitted --runtime detects the installed platform: Orka first, then kagent
+v1. The legacy kagent runtime is never detected, so a legacy-only cluster is
+told which platform to install; ` + "`--runtime kagent`" + ` selects it explicitly and
+keeps the combined table, its governance/Ollama/MCP/certificate sections and
+its JSON items shape unchanged.
+
+A detected or explicit Orka status reports one Agent's workload state, so it
+requires --namespace and --agent. Missing selectors are reported before
+anything is collected: no partial table or JSON is printed, and nothing then
+claims the ancillary sections were checked.`,
+		Args: cobra.NoArgs,
+	}
+	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json|yaml")
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "", "agent runtime: orka or kagent; omitted detects the installed platform (Orka first)")
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace of the agent to report (required for Orka)")
+	cmd.Flags().StringVar(&opt.Agent, "agent", "", "exact Agent name to report (required for Orka)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.StatusWithOptions(app.StatusOptions{Output: output}) })
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.StatusWithOptions(opt) })
 	return cmd
 }
 

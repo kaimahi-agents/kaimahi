@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,9 +27,20 @@ import (
 // failure as one that needs the thing being diagnosed.
 const statusRequestTimeout = "--request-timeout=15s"
 
-// StatusOptions controls the human table or the structured document.
+// StatusOptions controls the human table or the structured document, and
+// which runtime is reported (DESIGN.md §4).
 type StatusOptions struct {
 	Output string
+	// Runtime is the explicit runtime ID. Empty uses shared platform
+	// detection, which considers only Orka and kagent-v1: a legacy-only
+	// cluster therefore receives the named install error rather than
+	// silently selecting legacy kagent.
+	Runtime string
+	// Namespace and Agent are the explicit selectors that populate the
+	// singular runtime-qualified AgentRef lifecycle Status accepts. Legacy
+	// kagent takes neither: it reports its own fixed namespace.
+	Namespace string
+	Agent     string
 }
 
 type objectList[T any] struct {
@@ -270,16 +282,93 @@ func statusReady(allAgents, allModels bool, kReady, kTotal, oReady, oTotal, pRea
 	return ready
 }
 
-// lifecycleRuntimeRegistry holds the LifecycleAdapters an explicit --runtime
-// lifecycle status dispatch will look up by ID (DESIGN.md §4; the CLI flag
-// itself is a later task). Task 6 wires Orka's real workload Status through
-// it; legacy kagent's skeleton keeps declining until its own combined-status
-// slice is wrapped. This is dispatch bookkeeping only — the aggregate
-// StatusWithOptions/collectStatus path below is unchanged and remains
-// entirely app-owned: governance, Ollama, MCP and certificate sections never
-// come from a LifecycleAdapter.
-func (a *App) lifecycleRuntimeRegistry() (*agentruntime.Registry, error) {
-	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a}, kagentRuntimeAdapter{app: a})
+// lifecycleRuntimeRegistry holds the LifecycleAdapters an explicit or
+// detected --runtime status dispatch looks up by ID (DESIGN.md §4). Orka
+// reports its own workload state and legacy kagent its retained combined
+// runtime slice; kagent-v1 joins this registry in a later task, so until
+// then it resolves to the registry's own typed UnknownRuntimeError rather
+// than to another runtime's implementation.
+//
+// snapshot is the legacy adapter's sink (runtime_kagent.go): the status path
+// passes one so the app-owned aggregate sections report the same combined
+// read the runtime slice came from. Every other caller passes nil.
+func (a *App) lifecycleRuntimeRegistry(snapshot *kagentStatusSnapshot) (*agentruntime.Registry, error) {
+	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a}, kagentRuntimeAdapter{app: a, snapshot: snapshot})
+}
+
+// statusRuntimeAdapter resolves which runtime this status reports and proves
+// it declares Status. An unknown runtime and an unsupported verb are both
+// typed errors from the shared registry's own model; neither ever falls back
+// to a different runtime.
+func (a *App) statusRuntimeAdapter(ctx context.Context, opt StatusOptions, snapshot *kagentStatusSnapshot) (agentruntime.ID, agentruntime.LifecycleAdapter, bool, error) {
+	registry, err := a.lifecycleRuntimeRegistry(snapshot)
+	if err != nil {
+		return "", nil, false, err
+	}
+	id, detected := agentruntime.ID(strings.TrimSpace(opt.Runtime)), false
+	if id == "" {
+		if id, err = a.detectPlatformRuntime(ctx); err != nil {
+			return "", nil, false, err
+		}
+		detected = true
+	}
+	adapter, err := registry.Lookup(id)
+	if err != nil {
+		return id, nil, detected, err
+	}
+	lifecycle, ok := adapter.(agentruntime.LifecycleAdapter)
+	if !ok || !lifecycle.Capabilities().Status {
+		return id, nil, detected, &agentruntime.UnsupportedVerbError{Runtime: id, Verb: agentruntime.VerbStatus}
+	}
+	return id, lifecycle, detected, nil
+}
+
+// statusSelectors proves this runtime has the selectors its lifecycle Status
+// needs, and returns the singular AgentRef they populate.
+//
+// DESIGN.md §4 requires this to happen BEFORE anything is collected or
+// printed: kmx reports the selected platform and the missing flags, emits no
+// partial table or JSON, and makes no claim that the ancillary sections were
+// checked. Orka watches namespaces explicitly and names its Agents
+// explicitly, so both selectors are required and neither is guessed.
+func (a *App) statusSelectors(id agentruntime.ID, detected bool, opt StatusOptions) (agentruntime.AgentRef, error) {
+	namespace, agent := strings.TrimSpace(opt.Namespace), strings.TrimSpace(opt.Agent)
+	if id == agentruntime.Kagent {
+		// The legacy runtime reports its own fixed namespace and every agent
+		// in it. A selector here is a conflict, not a filter.
+		var supplied []string
+		if namespace != "" && namespace != config_kagentNamespace {
+			supplied = append(supplied, "--namespace")
+		}
+		if agent != "" {
+			supplied = append(supplied, "--agent")
+		}
+		if len(supplied) > 0 {
+			return agentruntime.AgentRef{}, fmt.Errorf("runtime %s reports its own fixed namespace %s and every agent in it; %s selects something it cannot report",
+				id, config_kagentNamespace, strings.Join(supplied, " and "))
+		}
+		return agentruntime.AgentRef{Runtime: id, Context: a.Cfg.KubeContext, Namespace: config_kagentNamespace}, nil
+	}
+	var missing []string
+	if namespace == "" {
+		missing = append(missing, "--namespace")
+	}
+	if agent == "" {
+		missing = append(missing, "--agent")
+	}
+	if len(missing) > 0 {
+		return agentruntime.AgentRef{}, fmt.Errorf("kmx status selected runtime %s%s, which requires %s.\n"+
+			"  Nothing was collected or printed, so this says nothing about the governance, Ollama, MCP or certificate sections",
+			id, statusSelectionSource(detected), strings.Join(missing, " and "))
+	}
+	return agentruntime.AgentRef{Runtime: id, Context: a.Cfg.KubeContext, Namespace: namespace, Name: agent}, nil
+}
+
+func statusSelectionSource(detected bool) string {
+	if detected {
+		return " by platform detection"
+	}
+	return ""
 }
 
 // Status prints a grouped human view or kubectl-native JSON/YAML.
@@ -288,16 +377,64 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 	if format != "" && format != "table" && format != "json" && format != "yaml" {
 		return fmt.Errorf("status output %q is not supported — use table, json, or yaml", opt.Output)
 	}
+	// An explicit runtime's selectors are decided from the flags alone, so a
+	// conflicting or incomplete selection is refused before kmx provisions a
+	// tool or contacts a cluster. A detected runtime's selectors can only be
+	// checked once detection has chosen one, which is why that half runs
+	// below — still before any status is collected or printed.
+	if explicit := agentruntime.ID(strings.TrimSpace(opt.Runtime)); explicit != "" {
+		registry, err := a.lifecycleRuntimeRegistry(nil)
+		if err != nil {
+			return err
+		}
+		if _, err := registry.Lookup(explicit); err != nil {
+			return err
+		}
+		if _, err := a.statusSelectors(explicit, false, opt); err != nil {
+			return err
+		}
+	}
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}
 	if err := a.requireExistingContext(); err != nil {
 		return err
 	}
-	if format == "" || format == "table" {
-		return a.statusTable()
+	ctx, cancel := context.WithTimeout(a.operationContext(), 2*time.Minute)
+	defer cancel()
+	snapshot := &kagentStatusSnapshot{}
+	id, lifecycle, detected, err := a.statusRuntimeAdapter(ctx, opt, snapshot)
+	if err != nil {
+		return err
 	}
-	return a.statusStructured(format)
+	ref, err := a.statusSelectors(id, detected, opt)
+	if err != nil {
+		return err
+	}
+	status, err := lifecycle.Status(ctx, ref, agentruntime.StatusOptions{})
+	if err != nil {
+		return err
+	}
+	if id == agentruntime.Kagent {
+		// The legacy runtime keeps its combined view: the slice just read
+		// through the adapter, plus the unchanged app-owned aggregate
+		// sections and the verbatim `items` automation shape.
+		return a.legacyStatus(format, snapshot, status)
+	}
+	return a.runtimeStatus(format, ref, status)
+}
+
+// legacyStatus is the unchanged combined view: the same aggregation, the
+// same two renderers, over the one snapshot the LifecycleAdapter read.
+func (a *App) legacyStatus(format string, snapshot *kagentStatusSnapshot, slice agentruntime.LifecycleStatus) error {
+	data, err := a.collectStatus(snapshot, slice)
+	if err != nil {
+		return err
+	}
+	if format == "" || format == "table" {
+		return a.statusTable(data)
+	}
+	return a.statusStructured(format, data)
 }
 
 // statusDocument is what `kmx status -o json|yaml` publishes.
@@ -315,11 +452,7 @@ type statusDocument struct {
 	Items         []json.RawMessage `json:"items"`
 }
 
-func (a *App) statusStructured(format string) error {
-	data, err := a.collectStatus()
-	if err != nil {
-		return err
-	}
+func (a *App) statusStructured(format string, data *statusData) error {
 	document := statusDocument{
 		Context:       a.Cfg.KubeContext,
 		ContextSource: a.Cfg.ContextSource,
@@ -390,6 +523,129 @@ func exactNumbers(value any) any {
 
 func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
 
+// runtimeStatusDocument is what `kmx status -o json|yaml` publishes for a
+// runtime reported through its LifecycleAdapter. It is a closed document,
+// deliberately separate from the legacy kubectl-native `items` envelope: it
+// carries exactly the runtime-qualified identity that was asked for and the
+// pair/instance states that adapter returned, and nothing that would imply
+// the app-owned aggregate sections were read.
+type runtimeStatusDocument struct {
+	Context   string                `json:"context"`
+	Runtime   string                `json:"runtime"`
+	Namespace string                `json:"namespace"`
+	Name      string                `json:"name"`
+	Pair      runtimeStatusSection  `json:"pair"`
+	Instance  *runtimeStatusSection `json:"instance,omitempty"`
+}
+
+// runtimeStatusSection keeps pair and instance state side by side and never
+// merges them into a single readiness boolean (DESIGN.md §1). Fields stay an
+// ordered list rather than a map so an adapter's own order survives.
+type runtimeStatusSection struct {
+	DesiredRevision          string               `json:"desiredRevision,omitempty"`
+	LatestSuccessfulRevision string               `json:"latestSuccessfulRevision,omitempty"`
+	State                    string               `json:"state,omitempty"`
+	PreparedRevision         string               `json:"preparedRevision,omitempty"`
+	Fields                   []runtimeStatusField `json:"fields"`
+}
+
+type runtimeStatusField struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+func runtimeStatusFields(fields []agentruntime.Field) []runtimeStatusField {
+	out := make([]runtimeStatusField, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, runtimeStatusField{Label: field.Label, Value: field.Value})
+	}
+	return out
+}
+
+// runtimeStatus reports one runtime's workload lifecycle status and nothing
+// else. `kmx status`'s governance, Ollama, MCP and certificate sections are
+// app-owned aggregation over the legacy runtime's own namespace; printing
+// them here would claim sections this command never read.
+func (a *App) runtimeStatus(format string, ref agentruntime.AgentRef, status agentruntime.LifecycleStatus) error {
+	if format == "" || format == "table" {
+		ui := cliui.New(a.Out)
+		fmt.Fprintln(a.Out, ui.Heading(ref.Name))
+		fields := []cliui.Field{{Label: "runtime", Value: string(ref.Runtime)}, {Label: "namespace", Value: ref.Namespace}}
+		fields = append(fields, runtimeStatusPairFields(status.Pair)...)
+		fmt.Fprintln(a.Out, ui.Fields(fields))
+		if status.Instance != nil {
+			instance := []cliui.Field{{Label: "state", Value: status.Instance.State}}
+			if status.Instance.PreparedRevision != "" {
+				instance = append(instance, cliui.Field{Label: "prepared revision", Value: status.Instance.PreparedRevision})
+			}
+			for _, field := range status.Instance.Fields {
+				instance = append(instance, cliui.Field{Label: field.Label, Value: field.Value})
+			}
+			fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Instance"), ui.Fields(instance))
+		}
+		return nil
+	}
+	document := runtimeStatusDocument{
+		Context:   a.Cfg.KubeContext,
+		Runtime:   string(ref.Runtime),
+		Namespace: ref.Namespace,
+		Name:      ref.Name,
+		Pair: runtimeStatusSection{
+			DesiredRevision:          status.Pair.DesiredRevision,
+			LatestSuccessfulRevision: status.Pair.LatestSuccessfulRevision,
+			Fields:                   runtimeStatusFields(status.Pair.Fields),
+		},
+	}
+	if status.Instance != nil {
+		document.Instance = &runtimeStatusSection{
+			State:            status.Instance.State,
+			PreparedRevision: status.Instance.PreparedRevision,
+			Fields:           runtimeStatusFields(status.Instance.Fields),
+		}
+	}
+	return a.writeStatusDocument(format, document)
+}
+
+func runtimeStatusPairFields(pair agentruntime.PairStatus) []cliui.Field {
+	var fields []cliui.Field
+	if pair.DesiredRevision != "" {
+		fields = append(fields, cliui.Field{Label: "desired revision", Value: pair.DesiredRevision})
+	}
+	if pair.LatestSuccessfulRevision != "" {
+		fields = append(fields, cliui.Field{Label: "latest successful revision", Value: pair.LatestSuccessfulRevision})
+	}
+	for _, field := range pair.Fields {
+		fields = append(fields, cliui.Field{Label: field.Label, Value: field.Value})
+	}
+	return fields
+}
+
+// writeStatusDocument encodes one status document in the requested format.
+// json.Marshal decides the field names once for both encodings, and
+// UseNumber keeps integers exact through the generic YAML form.
+func (a *App) writeStatusDocument(format string, document any) error {
+	encoded, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
+	}
+	if format != "yaml" {
+		_, err = a.Out.Write(append(encoded, '\n'))
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	var generic any
+	if err := decoder.Decode(&generic); err != nil {
+		return err
+	}
+	body, err := yaml.Marshal(exactNumbers(generic))
+	if err != nil {
+		return err
+	}
+	_, err = a.Out.Write(body)
+	return err
+}
+
 // statusData is everything one `kmx status` reads, gathered once so the
 // human table and the structured document are the same facts — not two
 // reads of a cluster that may have changed between them.
@@ -403,8 +659,12 @@ type statusData struct {
 	// items is the combined kagent read exactly as kubectl returned it,
 	// carried so `-o json` can publish the objects verbatim without asking
 	// the cluster a second time.
-	items      []json.RawMessage
-	secrets    []string
+	items   []json.RawMessage
+	secrets []string
+	// runtime is the legacy runtime slice exactly as its LifecycleAdapter
+	// reported it (DESIGN.md §3). The ancillary Ollama, governance, MCP and
+	// certificate lines beside it stay app-owned and are added here.
+	runtime    []agentruntime.Field
 	planeThere bool
 	// planeDesired and planeReady come from the proxy Deployment, so a
 	// proxy scaled to zero beside a running Postgres is not reported ready.
@@ -420,59 +680,25 @@ type statusData struct {
 	ollamaErr   string
 }
 
-// collectStatus reads the cluster once.
+// collectStatus assembles one status answer around the legacy runtime's own
+// snapshot.
 //
-// The kagent objects come from ONE combined get — the same one the old
-// kubectl-native output printed — and are demultiplexed by kind here. That
-// is not only three fewer calls: it is what makes `items` and the counts
-// beside them a single snapshot, so a consumer cannot find an Agent in
-// `items` that the count never saw.
-func (a *App) collectStatus() (*statusData, error) {
-	d := &statusData{}
-	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get",
-		"agents.kagent.dev,modelconfigs,pods", "-o", "json", statusRequestTimeout)
-	if err != nil {
-		return nil, err
+// The kagent objects come from ONE combined get — the read the runtime's
+// LifecycleAdapter just performed — and are demultiplexed by kind there.
+// That is not only three fewer calls: it is what makes `items` and the
+// counts beside them a single snapshot, so a consumer cannot find an Agent
+// in `items` that the count never saw. Everything added below is app-owned
+// aggregation, and never comes from an adapter.
+func (a *App) collectStatus(snapshot *kagentStatusSnapshot, slice agentruntime.LifecycleStatus) (*statusData, error) {
+	if snapshot == nil {
+		return nil, fmt.Errorf("status aggregation requires the runtime snapshot its adapter read")
 	}
-	var combined struct {
-		Items []json.RawMessage `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(raw), &combined); err != nil {
-		return nil, err
-	}
-	d.items = combined.Items
-	if d.items == nil {
-		// An empty cluster publishes `[]`, not `null`: a consumer iterates
-		// items, and null makes them vanish with a zero exit code.
-		d.items = []json.RawMessage{}
-	}
-	for _, item := range d.items {
-		var kind struct {
-			Kind string `json:"kind"`
-		}
-		if err := json.Unmarshal(item, &kind); err != nil {
-			return nil, err
-		}
-		switch kind.Kind {
-		case "Agent":
-			var agent agentStatus
-			if err := json.Unmarshal(item, &agent); err != nil {
-				return nil, err
-			}
-			d.agents.Items = append(d.agents.Items, agent)
-		case "ModelConfig":
-			var model modelStatus
-			if err := json.Unmarshal(item, &model); err != nil {
-				return nil, err
-			}
-			d.models.Items = append(d.models.Items, model)
-		case "Pod":
-			var pod podStatus
-			if err := json.Unmarshal(item, &pod); err != nil {
-				return nil, err
-			}
-			d.kagentPods.Items = append(d.kagentPods.Items, pod)
-		}
+	d := &statusData{
+		items:      snapshot.items,
+		agents:     snapshot.agents,
+		models:     snapshot.models,
+		kagentPods: snapshot.pods,
+		runtime:    slice.Pair.Fields,
 	}
 	// The plane, the tool servers and the Secret names are read
 	// TOLERANTLY: none of them exists on the ungoverned fast path, which is
@@ -527,11 +753,7 @@ func (d *statusData) governanceOf() governance {
 	}
 }
 
-func (a *App) statusTable() error {
-	data, err := a.collectStatus()
-	if err != nil {
-		return err
-	}
+func (a *App) statusTable(data *statusData) error {
 	agents, models := data.agents, data.models
 	kagentPods, ollamaPods, planePods := data.kagentPods, data.ollamaPods, data.planePods
 	sort.Slice(kagentPods.Items, func(i, j int) bool { return kagentPods.Items[i].Metadata.Name < kagentPods.Items[j].Metadata.Name })
@@ -561,7 +783,9 @@ func (a *App) statusTable() error {
 	}
 	sort.Slice(modelRows, func(i, j int) bool { return modelRows[i][0] < modelRows[j][0] })
 
-	kReady, kRestarts, podRows := podSummary(kagentPods.Items)
+	// The kagent restart count is now carried by the adapter's own runtime
+	// slice; readiness aggregation still needs the ready/total counts.
+	kReady, _, podRows := podSummary(kagentPods.Items)
 	oReady, oRestarts, _ := podSummary(ollamaPods.Items)
 	pReady, pRestarts, _ := podSummary(planePods.Items)
 	overall := statusReady(allAgents, allModels,
@@ -571,7 +795,7 @@ func (a *App) statusTable() error {
 	ui := cliui.New(a.Out)
 	if ui.Rich() {
 		return a.statusRich(ui, data, overall, agentRows, modelRows, podRows,
-			kReady, kRestarts, oReady, oRestarts, pReady, pRestarts)
+			oReady, oRestarts, pReady, pRestarts)
 	}
 	fmt.Fprintln(a.Out, ui.Heading("Kaimahi status"))
 	// The source is not decoration. `default` means nothing named this
@@ -603,7 +827,11 @@ func (a *App) statusTable() error {
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Models"))
 	humanTable(a.Out, []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows)
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Runtime"))
-	fmt.Fprintf(a.Out, "  kagent:     %d/%d pods ready, %d restarts\n", kReady, len(kagentPods.Items), kRestarts)
+	// The runtime line is the adapter's own slice, printed in the column
+	// layout the ancillary lines below already use.
+	for _, field := range data.runtime {
+		fmt.Fprintf(a.Out, "  %-11s %s\n", field.Label+":", field.Value)
+	}
 	switch {
 	case data.ollamaErr != "":
 		fmt.Fprintf(a.Out, "  ollama:     unknown — %s\n", data.ollamaErr)
@@ -640,7 +868,7 @@ func (a *App) statusTable() error {
 }
 
 func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
-	agentRows, modelRows, podRows [][]string, kReady, kRestarts, oReady, oRestarts, pReady, pRestarts int) error {
+	agentRows, modelRows, podRows [][]string, oReady, oRestarts, pReady, pRestarts int) error {
 	result := ui.Warning("attention required")
 	if overall {
 		result = ui.Success(fmt.Sprintf("ready (%d agents available)", len(agentRows)))
@@ -657,7 +885,10 @@ func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
 	fmt.Fprintln(a.Out, ui.Muted("A credential written since that decision has not yet been tested."))
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Models", []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState))
 
-	runtime := []cliui.Field{{Label: "kagent", Value: fmt.Sprintf("%d/%d pods ready, %d restarts", kReady, len(data.kagentPods.Items), kRestarts)}}
+	runtime := make([]cliui.Field, 0, len(data.runtime)+2)
+	for _, field := range data.runtime {
+		runtime = append(runtime, cliui.Field{Label: field.Label, Value: field.Value})
+	}
 	ollama := "not installed"
 	if data.ollamaErr != "" {
 		ollama = "unknown — " + data.ollamaErr

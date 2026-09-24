@@ -37,28 +37,35 @@ func newAgentShowCommand(state *commandState) *cobra.Command {
 }
 
 func newAgentListCommand(state *commandState) *cobra.Command {
-	var output, namespace string
+	var opt app.ListOptions
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List agents: Orka Agents with --namespace, else the legacy kagent runtime",
+		Short: "List agents on the detected runtime, or an explicit --runtime",
 		Long: `List Agent resources.
 
-The namespace selects which runtime is reported, because they are different
-kinds and merging them under one set of headings would imply they are
+The runtime selects which kind of agent is reported, because merging
+different kinds under one set of headings would imply they are
 interchangeable.
 
-  --namespace <ns>   Orka Agents in that namespace, as created by
-                     ` + "`kmx agent create`" + ` and inspected by ` + "`kmx agent show`" + `.
-  (omitted)          the legacy kagent runtime, in its own fixed namespace.
+  (omitted)          detect the installed platform: Orka first, then
+                     kagent v1. A cluster with neither is told which to
+                     install; the legacy kagent runtime is never detected.
+  --runtime kagent   the legacy kagent runtime, in its own fixed namespace,
+                     exactly as a bare list always reported it.
+  --runtime orka     Orka Agents, as created by ` + "`kmx agent create`" + ` and
+                     inspected by ` + "`kmx agent show`" + `.
 
-Orka watches namespaces explicitly, so there is no default to guess: a wrong
-one would report "none" about a namespace you never meant.`,
+Orka watches namespaces explicitly, so --namespace is required for it and
+never guessed: a wrong one would report "none" about a namespace you never
+meant. Legacy kagent reads its own fixed namespace and refuses any other.`,
 		Args: cobra.NoArgs,
 	}
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
-	cmd.Flags().StringVar(&namespace, "namespace", "", "list Orka Agents in this namespace instead of the legacy runtime")
+	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json|yaml")
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace the selected runtime lists in (required for Orka)")
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "", "agent runtime: orka or kagent; omitted detects the installed platform (Orka first)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output, namespace) })
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(opt) })
 	return cmd
 }
 

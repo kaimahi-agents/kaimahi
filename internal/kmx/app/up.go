@@ -11,6 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // Steps of `kmx up`, in order. They are addressable individually so the
@@ -80,7 +81,14 @@ func (a *App) Up(step string) error {
 	}
 
 	if step == "" {
-		if err := a.runPhase(phase{current: 6, total: 6, name: "Collect runtime status"}, a.Status); err != nil {
+		// `kmx up` installs the legacy runtime, so its closing status names
+		// that runtime explicitly. A detected one would refuse here
+		// (DESIGN.md §4: the detector considers only Orka and kagent-v1),
+		// and this command has just proved which runtime it installed.
+		legacyStatus := func() error {
+			return a.StatusWithOptions(StatusOptions{Runtime: string(agentruntime.Kagent)})
+		}
+		if err := a.runPhase(phase{current: 6, total: 6, name: "Collect runtime status"}, legacyStatus); err != nil {
 			return err
 		}
 		a.complete("Runtime setup finished", started)

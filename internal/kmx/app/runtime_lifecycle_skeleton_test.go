@@ -38,10 +38,14 @@ func TestOrkaLifecycleSkeletonReturnsSharedUnsupportedVerbError(t *testing.T) {
 	}
 }
 
+// Task 8 wraps legacy kagent's retained combined-status slice behind Status
+// (runtime_kagent.go and its tests). The verbs it still declines — Render,
+// Deploy and Evaluate, permanently unsupported per DESIGN.md §3 — must keep
+// returning the one shared, typed error naming the exact runtime ID and verb.
 func TestKagentLifecycleSkeletonReturnsSharedUnsupportedVerbError(t *testing.T) {
 	adapter := kagentRuntimeAdapter{app: &App{}}
-	if caps := adapter.Capabilities(); caps.Render || caps.Deploy || caps.Status || caps.Evaluate {
-		t.Fatalf("kagent lifecycle Capabilities are not all false: %+v", caps)
+	if caps := adapter.Capabilities(); caps.Render || caps.Deploy || caps.Evaluate {
+		t.Fatalf("kagent declares a lifecycle verb it cannot perform: %+v", caps)
 	}
 	cases := []struct {
 		verb string
@@ -53,10 +57,6 @@ func TestKagentLifecycleSkeletonReturnsSharedUnsupportedVerbError(t *testing.T) 
 		}},
 		{agentruntime.VerbDeploy, func() error {
 			_, err := adapter.Deploy(context.Background(), agentruntime.RenderedBundle{}, agentruntime.DeployOptions{})
-			return err
-		}},
-		{agentruntime.VerbStatus, func() error {
-			_, err := adapter.Status(context.Background(), agentruntime.AgentRef{}, agentruntime.StatusOptions{})
 			return err
 		}},
 		{agentruntime.VerbEvaluate, func() error {

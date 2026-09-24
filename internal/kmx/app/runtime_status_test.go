@@ -134,7 +134,7 @@ func TestOrkaAdapterStatusRequiresNamespaceAndName(t *testing.T) {
 // a second behavior.
 func TestLifecycleRuntimeRegistryDispatchesOrkaStatusExplicitly(t *testing.T) {
 	a, _ := statusFixture(t)
-	registry, err := a.lifecycleRuntimeRegistry()
+	registry, err := a.lifecycleRuntimeRegistry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,13 +158,13 @@ func TestLifecycleRuntimeRegistryDispatchesOrkaStatusExplicitly(t *testing.T) {
 	}
 }
 
-// Legacy kagent's lifecycle Status remains an unchanged skeleton: Task 6
-// wraps only Orka's workload state. Explicit dispatch through the shared
-// registry must still return the one shared typed error, never fall back to
-// Orka's implementation.
-func TestLifecycleRuntimeRegistryKeepsKagentStatusUnsupported(t *testing.T) {
+// Legacy kagent's lifecycle declaration stays exactly as narrow as
+// DESIGN.md §3 requires: Task 8 wraps its retained combined-status slice
+// behind Status, while Render, Deploy and Evaluate remain permanently
+// unsupported through the same shared registry and the same typed error.
+func TestLifecycleRuntimeRegistryKeepsKagentRenderUnsupported(t *testing.T) {
 	a := &App{}
-	registry, err := a.lifecycleRuntimeRegistry()
+	registry, err := a.lifecycleRuntimeRegistry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,12 +176,12 @@ func TestLifecycleRuntimeRegistryKeepsKagentStatusUnsupported(t *testing.T) {
 	if !ok {
 		t.Fatalf("registered kagent adapter %T does not implement LifecycleAdapter", adapter)
 	}
-	_, err = lifecycle.Status(context.Background(), agentruntime.AgentRef{}, agentruntime.StatusOptions{})
+	_, err = lifecycle.Render(context.Background(), agentruntime.PortableAgent{}, agentruntime.RenderOptions{})
 	var unsupported *agentruntime.UnsupportedVerbError
 	if !errors.As(err, &unsupported) {
 		t.Fatalf("err = %v, not *UnsupportedVerbError", err)
 	}
-	if unsupported.Runtime != agentruntime.Kagent || unsupported.Verb != agentruntime.VerbStatus {
+	if unsupported.Runtime != agentruntime.Kagent || unsupported.Verb != agentruntime.VerbRender {
 		t.Fatalf("unsupported = %+v", unsupported)
 	}
 }

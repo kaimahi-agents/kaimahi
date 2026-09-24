@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -20,14 +22,13 @@ type listPresentationRegistration struct {
 }
 
 // listPresentationHandlers registers exactly the runtimes this build can
-// list by explicit ID today: Orka's existing --namespace-scoped listing,
-// unchanged. Legacy kagent's own bare-list stays reached through ListAgents'
-// existing --namespace branching until a later task registers it by ID too;
-// looking it up here would silently duplicate that dispatch rather than
-// replace it.
+// list by explicit or detected ID: Orka's --namespace-scoped listing and the
+// legacy runtime's own fixed-namespace list, both unchanged. kagent-v1's
+// handler is a later task's addition.
 func (a *App) listPresentationHandlers() []listPresentationRegistration {
 	return []listPresentationRegistration{
 		{id: agentruntime.Orka, handler: a.listOrkaAgents},
+		{id: agentruntime.Kagent, handler: a.listKagentAgentsIn},
 	}
 }
 
@@ -44,24 +45,86 @@ func (a *App) listPresentationHandler(id agentruntime.ID) (func(output, namespac
 	return nil, &agentruntime.UnsupportedVerbError{Runtime: id, Verb: agentruntime.VerbList}
 }
 
-// ListAgents prints Agent resources. Which KIND of agent depends on
-// --namespace, and that is not a shortcut.
+// ListOptions are `kmx agent list`'s knobs (DESIGN.md §4).
+type ListOptions struct {
+	Output string
+	// Runtime is the explicit runtime ID. Empty uses shared platform
+	// detection: Orka first, then kagent-v1. Legacy kagent is explicit-only.
+	Runtime string
+	// Namespace is the namespace the selected runtime lists in. Orka
+	// requires it; legacy kagent reads its own fixed namespace and refuses
+	// any other.
+	Namespace string
+}
+
+// ListAgents prints Agent resources. WHICH kind of agent is decided by the
+// runtime, and that is not a shortcut.
 //
-// Two runtimes are in play. `kmx agent create` writes Orka Agents into a
-// namespace the operator names; the legacy kagent runtime keeps its agents in
-// one fixed namespace. Listing both in one table would merge two different
-// kinds under one set of column headings and imply they are interchangeable.
+// Several runtimes are in play, keeping different kinds in different places.
+// Listing them in one table would merge different kinds under one set of
+// column headings and imply they are interchangeable.
 //
-// So the namespace selects the question being asked. Without one, this reports
-// the legacy runtime, as it always has. With one, it reports the Orka Agents
-// there — which is what `kmx agent create` and `kmx agent show` operate on.
-//
-// Before this existed, an agent created by `kmx agent create` could not be
-// listed by this inventory command, and `kmx agent show` pointed at a
-// --namespace flag that did not exist.
-func (a *App) ListAgents(output, namespace string) error {
-	if strings.TrimSpace(namespace) != "" {
-		return a.listOrkaAgents(output, strings.TrimSpace(namespace))
+// DESIGN.md §4 intentionally changes the old bare-list default: with no
+// --runtime, shared platform detection selects the installed platform — Orka
+// first, then kagent-v1 — and a legacy-only cluster is told to install one
+// of those rather than silently getting legacy kagent. `--runtime kagent`
+// still reports the legacy runtime in its own fixed namespace, exactly as a
+// bare list always did. After detection, Orka still requires the namespace
+// it watches: kmx reports the selected platform and the missing flag rather
+// than guessing a watched namespace.
+func (a *App) ListAgents(opt ListOptions) error {
+	format, err := agentListFormat(opt.Output)
+	if err != nil {
+		return err
+	}
+	id, detected, err := a.listRuntimeSelection(opt)
+	if err != nil {
+		return err
+	}
+	namespace := strings.TrimSpace(opt.Namespace)
+	if id != agentruntime.Kagent && namespace == "" {
+		return fmt.Errorf("kmx agent list selected runtime %s%s, which requires --namespace.\n"+
+			"  %s watches namespaces explicitly, so a guessed one would report \"none\" about a namespace you never meant",
+			id, statusSelectionSource(detected), id)
+	}
+	handler, err := a.listPresentationHandler(id)
+	if err != nil {
+		return err
+	}
+	return handler(format, namespace)
+}
+
+// listRuntimeSelection resolves which runtime this list reports. An explicit
+// ID is proved against the shared registry, so an unknown or not-yet-
+// registered runtime is that registry's own typed error rather than a
+// fallback to whichever handler happens to exist.
+func (a *App) listRuntimeSelection(opt ListOptions) (agentruntime.ID, bool, error) {
+	registry, err := a.lifecycleRuntimeRegistry(nil)
+	if err != nil {
+		return "", false, err
+	}
+	if id := agentruntime.ID(strings.TrimSpace(opt.Runtime)); id != "" {
+		if _, err := registry.Lookup(id); err != nil {
+			return id, false, err
+		}
+		return id, false, nil
+	}
+	if err := a.preflight(depKubectl); err != nil {
+		return "", true, err
+	}
+	ctx, cancel := context.WithTimeout(a.operationContext(), 2*time.Minute)
+	defer cancel()
+	id, err := a.detectPlatformRuntime(ctx)
+	return id, true, err
+}
+
+// listKagentAgentsIn is the legacy runtime's registered list handler. It is
+// fixed to its own namespace, so a different one is a conflict rather than
+// something to silently list past.
+func (a *App) listKagentAgentsIn(output, namespace string) error {
+	if namespace = strings.TrimSpace(namespace); namespace != "" && namespace != config_kagentNamespace {
+		return fmt.Errorf("runtime %s lists its own fixed namespace %s; --namespace %s selects something it cannot list",
+			agentruntime.Kagent, config_kagentNamespace, namespace)
 	}
 	return a.listKagentAgents(output)
 }
@@ -133,7 +196,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// Anything else is unread, and is returned as it arrived.
 		if noSuchResourceType(err) {
 			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
-				"  Install Orka with `%s`, or drop --namespace to list the legacy kagent runtime",
+				"  Install Orka with `%s`, or list the legacy kagent runtime with `--runtime kagent`",
 				a.operationCommand("orka", "install"))
 		}
 		return err
