@@ -16,6 +16,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"go.yaml.in/yaml/v3"
 )
 
 type orkaCall struct {
@@ -332,6 +333,80 @@ func TestOrkaOnlineCreatesSeparateStrictObjectsAndWaitsInOrder(t *testing.T) {
 	if out.Len() != 0 || !strings.Contains(diagnostics.String(), "no model response was tested") {
 		t.Fatalf("misleading output %s %s", out, diagnostics)
 	}
+}
+
+// TestOrkaOnlineDeploysExactlyTheRenderedBytes is the end-to-end statement of
+// the render-once rule. A Task's name carries 16 random bytes, so a second
+// generation anywhere between rendering and applying would write an object
+// the operator's artifact does not describe.
+//
+// The Task case runs as a server dry-run because that is the longest path a
+// Task can take without a live result endpoint, and it still spans the two
+// points a re-render could happen between: the strict admission check sends
+// the bytes, and the emitted artifact is assembled from them. The no-Task
+// case then runs a real create and requires that what the server was asked to
+// write is what the artifact describes, skeleton excluded.
+func TestOrkaOnlineDeploysExactlyTheRenderedBytes(t *testing.T) {
+	t.Run("task identity is minted once", func(t *testing.T) {
+		a, opt, _, _, dir := orkaCreateFixture(t, "")
+		opt.Task, opt.DryRun = "Say hello", true
+		if err := a.CreateAgent(opt); err != nil {
+			t.Fatal(err)
+		}
+		artifact, err := os.ReadFile(opt.Out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, c := range orkaCalls(t, dir) {
+			if c.Document == nil || c.Document["kind"] != "Task" {
+				continue
+			}
+			metadata := c.Document["metadata"].(map[string]any)
+			names = append(names, metadata["name"].(string))
+		}
+		if len(names) != 1 {
+			t.Fatalf("expected the Task to be sent exactly once, got %v", names)
+		}
+		if !strings.Contains(string(artifact), "name: "+names[0]+"\n") {
+			t.Fatalf("the emitted artifact does not describe the Task that was sent (%s):\n%s", names[0], artifact)
+		}
+	})
+	t.Run("the artifact describes what was written", func(t *testing.T) {
+		a, opt, _, _, dir := orkaCreateFixture(t, "")
+		if err := a.CreateAgent(opt); err != nil {
+			t.Fatal(err)
+		}
+		artifact, err := os.ReadFile(opt.Out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The artifact is assembled from the rendered bytes, so it still
+		// carries the review-only Secret prerequisite it always did.
+		if !strings.Contains(string(artifact), "kind: Secret") {
+			t.Fatalf("the emitted artifact lost the Secret prerequisite:\n%s", artifact)
+		}
+		written := 0
+		for _, c := range orkaCalls(t, dir) {
+			if c.Document == nil {
+				continue
+			}
+			if c.Document["kind"] == "Secret" {
+				t.Fatalf("the Secret skeleton was sent to the server: %v", c.Args)
+			}
+			encoded, err := yaml.Marshal(c.Document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(artifact), string(encoded)) {
+				t.Fatalf("a document sent to the server is not in the artifact:\n%s", encoded)
+			}
+			written++
+		}
+		if written == 0 {
+			t.Fatal("no documents were sent, so the comparison proved nothing")
+		}
+	})
 }
 
 func TestOrkaPreflightFailureNeverEmitsOrMutates(t *testing.T) {

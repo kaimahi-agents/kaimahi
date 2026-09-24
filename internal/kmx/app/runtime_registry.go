@@ -58,7 +58,14 @@ func (a *App) openRuntimeChat(opt ChatOptions, name, namespace string) error {
 	return fmt.Errorf("unsupported runtime %q", opt.Runtime)
 }
 
-type orkaRuntimeAdapter struct{ app *App }
+// orkaRuntimeAdapter is both the chat Adapter and the lifecycle adapter for
+// Orka. create is the command's own flags and is set only by a create: the
+// chat registration leaves it nil, and Capabilities declines Render and
+// Deploy for an instance that has none.
+type orkaRuntimeAdapter struct {
+	app    *App
+	create *CreateOptions
+}
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }
 func (a orkaRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Target) (agentruntime.Probe, error) {
