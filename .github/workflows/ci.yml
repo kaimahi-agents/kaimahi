@@ -147,8 +147,12 @@ jobs:
       # its version — so the number is checked against the image the pinned
       # chart actually resolves to, here, where the bump is being made.
       #
-      # Keyless: the chart and the image are public, and the uid is read by
-      # running `id -u` inside the image rather than taken from a label.
+      # Keyless: the chart and the image are public, and the uid is read
+      # without running anything inside the image at all — from `inspect`'s
+      # own `Config.User` when that is already numeric, and otherwise by
+      # resolving the name it declares against the image's own /etc/passwd,
+      # extracted from an exported (not started) container filesystem. This
+      # is what images that ship no shell and no `id` still answer.
       - name: Agent-uid checker self-test
         run: python3 scripts/check-agent-uid.py --selftest
       - name: Agents run as the uid the kagent image ships
