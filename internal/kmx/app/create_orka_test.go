@@ -94,6 +94,22 @@ func TestOrkaKubectlHelper(t *testing.T) {
 		time.Sleep(time.Hour)
 		os.Exit(0)
 	}
+	// Shared platform detection (DESIGN.md §1). This fixture is an Orka
+	// cluster, so it serves the Orka Agent CRD unless the scenario removes
+	// it; "no-platform" proves a create that can detect neither platform.
+	if slices.Contains(args, "api-resources") {
+		if scenario != "no-platform" {
+			fmt.Println("agents.core.orka.ai")
+		}
+		os.Exit(0)
+	}
+	// kagent v1's versioned discovery document: this fixture never serves
+	// kagent.dev/v1alpha3, and the apiserver answers NotFound for exactly
+	// that group-version rather than failing the read.
+	if slices.Contains(args, "--raw") {
+		fmt.Fprint(os.Stderr, "Error from server (NotFound): the server could not find the requested resource")
+		os.Exit(1)
+	}
 	if i := slices.Index(args, "get"); i >= 0 {
 		if scenario == "oversized-get" {
 			fmt.Print(strings.Repeat("x", 5<<20))

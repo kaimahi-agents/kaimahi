@@ -72,6 +72,13 @@ or chart; use kmx migrate for an existing application's model seam.
 Interactive agent chat supports Orka and kagent. List uses --namespace for
 Orka and defaults to kagent; edit remains kagent-specific.
 
+An omitted --runtime detects the installed platform (Orka first) for any
+create that contacts a cluster; an offline artifact (--no-apply, --out -)
+contacts none and stays Orka. --file supplies a portable agent document and
+requires the name argument to match its metadata.name; the Orka shorthand
+flags above then conflict with it, while deployment and output flags remain
+legal.
+
 Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret
 skeleton: create Provider and wait for current-generation Ready, then Agent and
@@ -90,7 +97,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai or anthropic (required)")
 	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier, not a kagent ModelConfig (required)")
 	cmd.Flags().StringVar(&opt.Secret, "secret", "", "existing Provider Secret name (required)")
-	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "api-key", "key name within the existing Secret; never a value")
+	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "", "key name within the existing Secret; never a value (default \"api-key\")")
 	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "optional HTTP(S) Provider endpoint, no credentials/query/fragment")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
 	cmd.Flags().StringVar(&opt.Tools, "tools", "", "comma-separated explicit Orka tool names (not server:tool)")
@@ -107,11 +114,19 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "", "agent runtime: orka or kagent; omitted detects the installed platform (Orka first)")
+	cmd.Flags().StringVar(&opt.File, "file", "", "portable agent document (kmx.kaimahi.dev/v1alpha1); conflicts with the Orka shorthand flags above")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.1.3", "main"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		if len(cmd.Flags().Args()) == 0 {
+			// --file names one exact Agent, so it cannot fall through to the
+			// wizard, which would collect a second, conflicting definition.
+			if opt.File != "" {
+				return fmt.Errorf("--file requires a name argument matching the document's metadata.name")
+			}
 			return a.CreateAgentInteractive(opt)
 		}
 		opt.Name = cmd.Flags().Arg(0)

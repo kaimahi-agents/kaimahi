@@ -13,11 +13,15 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-// CreateAgent validates the complete Orka artifact before any emission. Offline
-// paths deliberately do not load kubeconfig, provision tools or query a cluster.
+// CreateAgent validates the complete artifact before any emission. Offline
+// paths deliberately do not load kubeconfig, provision tools or query a
+// cluster. Creation is routed through the shared runtime seam: the selected
+// runtime's adapter renders the portable document and then deploys those
+// exact bytes.
 func (a *App) CreateAgent(opt CreateOptions) error {
 	if opt.Out == "-" {
 		opt.NoApply = true
@@ -28,48 +32,211 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if opt.SchemaTarget != "" && !opt.NoApply {
 		return fmt.Errorf("--schema-target is offline only; online creation uses installed CRDs")
 	}
+	if err := validateCreateRuntimeSelection(opt); err != nil {
+		return err
+	}
 	if err := validateOrkaResultOptions(&opt); err != nil {
 		return err
 	}
 	if err := resolveOrkaInstructions(&opt); err != nil {
 		return err
 	}
-	bundle, err := createOrkaBundle(opt)
+	if opt.NoApply {
+		return a.createAgentOffline(opt)
+	}
+	return a.createAgentOnline(opt)
+}
+
+// createAgentOffline renders the artifact and writes it for review. No
+// runtime detection happens here: detection reads a cluster, and this path
+// never contacts one, so an omitted runtime keeps selecting Orka and its
+// pinned offline schema. An explicit --runtime still overrides that.
+func (a *App) createAgentOffline(opt CreateOptions) error {
+	adapter, err := a.createRuntimeAdapter(context.Background(), opt)
 	if err != nil {
 		return err
 	}
-	if !opt.NoApply {
-		if err := a.preflight(depKubectl); err != nil {
-			return err
-		}
-		ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-		return a.createOrkaOnline(ctx, opt, bundle)
-	}
-	validator, err := orkaschema.Offline(opt.SchemaTarget)
+	portable, err := a.portableCreateDocument(opt)
 	if err != nil {
 		return err
 	}
-	if err := validateOrkaBundle(bundle, validator); err != nil {
+	orka, isOrka := adapter.(orkaRuntimeAdapter)
+	if !isOrka {
+		return fmt.Errorf("runtime %s cannot write an offline artifact", adapter.ID())
+	}
+	rendered, provenance, err := orka.renderOrkaBundle(*portable)
+	if err != nil {
 		return err
 	}
-	document, err := bundle.YAML(validator.Provenance())
+	bundle, err := orkaBundleFromRendered(rendered)
+	if err != nil {
+		return err
+	}
+	document, err := bundle.YAML(provenance)
 	if err != nil {
 		return err
 	}
 	if err := a.emitOrka(opt, document); err != nil {
 		return err
 	}
-	a.notef("Orka bundle not applied. Schema: %s", validator.Provenance())
+	a.notef("Orka bundle not applied. Schema: %s", provenance)
 	a.notef("Use the namespace the Orka controller watches. Provision the Secret key separately; never write the skeleton.\nCreate Provider only, wait for current-generation Ready; then Agent and wait; then optional Task.\nLocal schema validation does not test admission, result access or execution.")
+	return nil
+}
+
+// createAgentOnline renders and then deploys the exact rendered bytes.
+//
+// The dependency check comes first because an omitted --runtime is resolved
+// by shared platform detection, which reads the cluster. Rendering therefore
+// also happens after that check: which runtime validates these inputs is not
+// known until the platform is.
+func (a *App) createAgentOnline(opt CreateOptions) error {
+	if err := a.preflight(depKubectl); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	adapter, err := a.createRuntimeAdapter(ctx, opt)
+	if err != nil {
+		return err
+	}
+	portable, err := a.portableCreateDocument(opt)
+	if err != nil {
+		return err
+	}
+	rendered, err := adapter.Render(ctx, *portable, agentruntime.RenderOptions{})
+	if err != nil {
+		return err
+	}
+	_, err = adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{})
+	return err
+}
+
+// createRuntimeRegistry holds exactly the runtimes this build can be asked to
+// create with. Legacy kagent is registered so that an explicit --runtime
+// kagent resolves to its own declared capabilities — and therefore to the one
+// shared typed unsupported-verb error — rather than to an unknown runtime.
+func (a *App) createRuntimeRegistry(opt CreateOptions) (*agentruntime.Registry, error) {
+	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a, create: opt}, kagentRuntimeAdapter{app: a})
+}
+
+// createRuntimeAdapter resolves the runtime this create targets and proves it
+// declares Render. An unknown runtime and an unsupported verb are both typed
+// errors from the shared registry's own model; neither ever falls back to a
+// different runtime.
+func (a *App) createRuntimeAdapter(ctx context.Context, opt CreateOptions) (agentruntime.LifecycleAdapter, error) {
+	registry, err := a.createRuntimeRegistry(opt)
+	if err != nil {
+		return nil, err
+	}
+	id := agentruntime.ID(opt.Runtime)
+	if id == "" {
+		if id, err = a.detectCreateRuntime(ctx, opt); err != nil {
+			return nil, err
+		}
+	}
+	adapter, err := registry.Lookup(id)
+	if err != nil {
+		return nil, err
+	}
+	lifecycle, ok := adapter.(agentruntime.LifecycleAdapter)
+	if !ok || !lifecycle.Capabilities().Render {
+		return nil, &agentruntime.UnsupportedVerbError{Runtime: id, Verb: agentruntime.VerbRender}
+	}
+	return lifecycle, nil
+}
+
+// detectCreateRuntime applies DESIGN.md §1's shared platform detection to an
+// omitted --runtime: Orka first, then kagent-v1, with both install
+// prerequisites named when neither is installed.
+//
+// Recorded conservative ruling: an offline create contacts no cluster at all
+// — kmx deliberately never loads kubeconfig, provisions tools or queries a
+// cluster to write a reviewable artifact — so there is nothing to detect
+// against. An omitted runtime there keeps selecting Orka and its pinned
+// offline schema, which is also the only runtime with an offline artifact
+// path. An explicit --runtime still overrides that, and every create that
+// does contact a cluster (including --dry-run) uses the detector.
+func (a *App) detectCreateRuntime(ctx context.Context, opt CreateOptions) (agentruntime.ID, error) {
+	if opt.NoApply {
+		return agentruntime.Orka, nil
+	}
+	// Go evaluates both arguments before calling, so asking SelectPlatform
+	// directly would always perform kagent-v1's discovery read even when Orka
+	// already decides the outcome. Defer that second read until Orka's result
+	// actually leaves the decision open; SelectPlatform still owns the policy.
+	orka := a.detectOrkaPlatform(ctx)
+	if orka.Err != nil || orka.Installed {
+		return agentruntime.SelectPlatform(orka, agentruntime.PlatformDetection{})
+	}
+	return agentruntime.SelectPlatform(orka, a.detectKagentV1Platform(ctx))
+}
+
+// createFileConflicts lists DESIGN.md §4's approved matrix: with --file every
+// portable-defined input conflicts, because the document already states it.
+// Deployment and output flags (--task, --result-service-account,
+// --orka-api-service, --result-port, --out, --no-apply, --dry-run and Orka's
+// --schema-target) describe what to do with the document, not what it says,
+// and stay legal.
+func createFileConflicts(opt CreateOptions) []string {
+	// Both instruction sources map to the same flag, so they are reported
+	// once: --instructions names a file, and its resolved text is the same
+	// input by the time it reaches here.
+	instructions := opt.Instructions
+	if instructions == "" {
+		instructions = opt.InstructionText
+	}
+	portable := []struct {
+		flag  string
+		value string
+	}{
+		{"--namespace", opt.Namespace},
+		{"--description", opt.Description},
+		{"--provider-type", opt.ProviderType},
+		{"--model", opt.Model},
+		{"--secret", opt.Secret},
+		{"--secret-key", opt.SecretKey},
+		{"--base-url", opt.BaseURL},
+		{"--instructions", instructions},
+		{"--tools", opt.Tools},
+		{"--skills", opt.Skills},
+		{"--agent-requests-per-minute", opt.AgentRequestsPerMinute},
+		{"--agent-tokens-per-minute", opt.AgentTokensPerMinute},
+		{"--provider-requests-per-minute", opt.ProviderRequestsPerMinute},
+		{"--provider-tokens-per-minute", opt.ProviderTokensPerMinute},
+	}
+	var conflicts []string
+	for _, flag := range portable {
+		if flag.value != "" {
+			conflicts = append(conflicts, flag.flag)
+		}
+	}
+	return conflicts
+}
+
+// validateCreateRuntimeSelection enforces the file and runtime halves of the
+// approved matrix before anything is read, rendered or emitted.
+func validateCreateRuntimeSelection(opt CreateOptions) error {
+	if agentruntime.ID(opt.Runtime) == agentruntime.KagentV1 && opt.File == "" {
+		return fmt.Errorf("--runtime %s requires --file naming a portable agent document with a kagent extension", agentruntime.KagentV1)
+	}
+	if opt.File == "" {
+		return nil
+	}
+	if opt.Name == "" {
+		return fmt.Errorf("--file requires a name argument matching the document's metadata.name")
+	}
+	if conflicts := createFileConflicts(opt); len(conflicts) > 0 {
+		return fmt.Errorf("--file already defines %s; supply those values in the document, not as flags", strings.Join(conflicts, ", "))
+	}
 	return nil
 }
 
 func validateOrkaResultOptions(opt *CreateOptions) error {
 	// Scan before validation so error paths never echo credential-shaped flags.
-	for _, value := range []string{opt.Out, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute} {
+	for _, value := range []string{opt.Out, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute, opt.File, opt.Runtime} {
 		if err := scaffold.RefuseKeyShapes(value); err != nil {
 			return fmt.Errorf("refusing credential-shaped create input; supply references, never credentials")
 		}
@@ -132,6 +299,8 @@ func resolveOrkaInstructions(opt *CreateOptions) error {
 
 // Bundle construction is memory-only, including when called from Bubble Tea's
 // synchronous Update. Callers resolve file inputs before entering that loop.
+// It remains the wizard's local validation helper; creation itself renders
+// through the runtime adapter (runtime_orka.go).
 func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	agentLimits, err := parseOrkaLimits(opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, "agent")
 	if err != nil {
@@ -141,33 +310,48 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	instructions := opt.InstructionText
-	if opt.Instructions != "" {
-		if instructions != "" {
-			return nil, fmt.Errorf("supply only one instructions source")
-		}
-		if opt.instructionFileText == nil {
-			return nil, fmt.Errorf("instructions file must be resolved before validation")
-		}
-		instructions = *opt.instructionFileText
-	}
-	names := func(value string) []string {
-		if value == "" {
-			return nil
-		}
-		items := strings.Split(value, ",")
-		for i := range items {
-			items[i] = strings.TrimSpace(items[i])
-		}
-		return items
+	instructions, err := resolveOrkaInstructionText(opt)
+	if err != nil {
+		return nil, err
 	}
 	return scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: opt.Name, Namespace: opt.Namespace, Description: opt.Description,
 		ProviderType: opt.ProviderType, Model: opt.Model, BaseURL: opt.BaseURL,
 		SecretName: opt.Secret, SecretKey: opt.SecretKey, Instructions: instructions,
-		Tools: names(opt.Tools), Skills: names(opt.Skills), TaskPrompt: opt.Task,
+		Tools: orkaNameList(opt.Tools), Skills: orkaNameList(opt.Skills), TaskPrompt: opt.Task,
 		AgentRateLimit: agentLimits, ProviderRateLimit: providerLimits,
 	})
+}
+
+// resolveOrkaInstructionText returns the one instruction source this create
+// supplies. An empty result means the caller supplied none, and generation's
+// own default applies.
+func resolveOrkaInstructionText(opt CreateOptions) (string, error) {
+	instructions := opt.InstructionText
+	if opt.Instructions != "" {
+		if instructions != "" {
+			return "", fmt.Errorf("supply only one instructions source")
+		}
+		if opt.instructionFileText == nil {
+			return "", fmt.Errorf("instructions file must be resolved before validation")
+		}
+		instructions = *opt.instructionFileText
+	}
+	return instructions, nil
+}
+
+// orkaNameList splits a comma-separated tool or skill flag into the explicit
+// names it lists. Empty entries are preserved so that validation refuses them
+// rather than silently dropping one.
+func orkaNameList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	items := strings.Split(value, ",")
+	for i := range items {
+		items[i] = strings.TrimSpace(items[i])
+	}
+	return items
 }
 
 func parseOrkaLimits(requests, tokens, owner string) (*scaffold.OrkaRateLimit, error) {

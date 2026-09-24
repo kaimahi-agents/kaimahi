@@ -19,7 +19,12 @@ type CreateOptions struct {
 	ProviderRequestsPerMinute, ProviderTokensPerMinute                            string
 	ResultServiceAccount, OrkaAPIService, ResultPort, SchemaTarget                string
 	Out                                                                           string
-	NoApply, DryRun                                                               bool
+	// Runtime is the explicit runtime ID. Empty means "resolve it": a create
+	// that contacts a cluster uses shared platform detection, and an offline
+	// artifact keeps Orka. File names a portable agent document; the flags
+	// above are Orka shorthand and conflict with it.
+	Runtime, File   string
+	NoApply, DryRun bool
 	// Resolved before entering raw terminal mode. Keep the original flags and
 	// distinguish an empty file from an instruction source not yet read.
 	instructionFileText *string
