@@ -41,16 +41,20 @@ extensions:
           tools:
             - read-file
           requireApproval: false
-      agents: []
+      agents:
+        - name: researcher
+          description: Delegate deep research subtasks to a specialized agent.
+          templateRef:
+            name: research-template
+          isolation: Shared
     skills:
       - name: triage
         source:
-          oci:
-            reference: ghcr.io/kaimahi/skills/triage
-            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
     plugins:
-      - name: audit-log
-        source:
+      - source:
           git:
-            repository: https://github.com/kaimahi-agents/plugins
+            url: https://github.com/kaimahi-agents/plugins
             commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+        skills:
+          - audit-log

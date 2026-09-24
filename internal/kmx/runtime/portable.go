@@ -6,9 +6,15 @@
 //
 // Extension shapes follow TARGETS.md §7 exactly: Orka nests provider
 // (defaultModel, secretRef, rateLimit) and a separate agent block (tools,
-// skills, rateLimit); kagent nests harnessRef/modelConfigRef, a tools block
-// with mcp/agents arms, and skills/plugins that each carry an immutable
-// OCI-digest, full-Git-commit or versioned-S3 source rather than a bare name.
+// skills, rateLimit); kagent nests harnessRef/modelConfigRef and a tools
+// block with mcp/agents arms. Per-entry kagent shapes mirror the pinned
+// kagent-v1 API verbatim: internal/kmx/runtime/portable.go's Kagent* types
+// mirror agenttemplate_types.go's MCPToolBinding, AgentToolBinding,
+// AgentTemplateSkill, PluginBundle and ArtifactSource — skills are
+// {name, source}, plugins are {source, skills[]} with no name of their own,
+// and a source is exactly one of an oci "ref@sha256:<64hex>" string, a git
+// {url, commit}, or a bucket {s3: {endpoint, bucket, key, versionId,
+// region?}}.
 package runtime
 
 import (
@@ -39,11 +45,19 @@ const (
 // embedded YAML or whitespace that could hide a second value.
 var portableIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
-// ociDigestRE requires an exact sha256 digest, never a mutable tag.
-var ociDigestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+// ociDigestRE mirrors ArtifactSource.OCI's pinned pattern: a digest-pinned
+// image reference, never a mutable tag.
+var ociDigestRE = regexp.MustCompile(`^[^\s@]+@sha256:[0-9a-f]{64}$`)
 
-// gitCommitRE requires a full 40-character commit SHA, never a branch or tag.
-var gitCommitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+// gitCommitRE mirrors GitArtifact.Commit's pinned pattern: a full SHA-1 (40
+// hex) or SHA-256 (64 hex) commit ID, never a branch or tag.
+var gitCommitRE = regexp.MustCompile(`^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
+
+// httpURLRE mirrors GitArtifact.URL and S3Object.Endpoint's pinned pattern.
+var httpURLRE = regexp.MustCompile(`^https?://\S+$`)
+
+// kagentIsolationValues mirrors AgentToolIsolation's closed enum.
+var kagentIsolationValues = map[string]bool{"Shared": true, "Dedicated": true}
 
 // PortableAgent is the closed kmx.kaimahi.dev/v1alpha1 document. It carries
 // its own exact source bytes so identity digests and adapter output can be
@@ -125,8 +139,11 @@ type OrkaRateLimitExtension struct {
 // KagentExtension follows TARGETS.md §7: `harnessRef` and `modelConfigRef`
 // are required; `promptTemplate` falls back to spec.instructions when
 // omitted; `tools` separates MCP tool bindings from delegated-AgentTemplate
-// bindings; `skills`/`plugins` each require an immutable OCI-digest,
-// full-Git-commit or versioned-S3 source, never a bare name.
+// bindings, each mirroring the pinned kagent-v1 MCPToolBinding/
+// AgentToolBinding exactly; `skills`/`plugins` mirror the pinned
+// AgentTemplateSkill/PluginBundle exactly — a skill is {name, source} and a
+// plugin bundle is {source, skills[]} with no name of its own — and every
+// source pins a single immutable artifact, never a bare name.
 type KagentExtension struct {
 	APIVersion     string                `yaml:"apiVersion"`
 	Namespace      string                `yaml:"namespace"`
@@ -134,8 +151,8 @@ type KagentExtension struct {
 	ModelConfigRef KagentModelConfigRef  `yaml:"modelConfigRef"`
 	PromptTemplate string                `yaml:"promptTemplate,omitempty"`
 	Tools          *KagentToolsExtension `yaml:"tools,omitempty"`
-	Skills         []KagentArtifactRef   `yaml:"skills,omitempty"`
-	Plugins        []KagentArtifactRef   `yaml:"plugins,omitempty"`
+	Skills         []KagentSkillRef      `yaml:"skills,omitempty"`
+	Plugins        []KagentPluginBundle  `yaml:"plugins,omitempty"`
 	OutputSchema   map[string]any        `yaml:"outputSchema,omitempty"`
 }
 
@@ -148,15 +165,17 @@ type KagentModelConfigRef struct {
 }
 
 // KagentToolsExtension separates the two arms TARGETS.md §7 names: `mcp`
-// bindings to an MCP server's tools, and `agents` delegation to another
-// AgentTemplate.
+// bindings to an MCP server's tools (mirroring the pinned MCPToolBinding),
+// and `agents` delegation to another AgentTemplate (mirroring the pinned
+// AgentToolBinding).
 type KagentToolsExtension struct {
 	MCP    []KagentMCPToolExtension `yaml:"mcp,omitempty"`
-	Agents []KagentAgentRef         `yaml:"agents,omitempty"`
+	Agents []KagentAgentToolBinding `yaml:"agents,omitempty"`
 }
 
-// KagentMCPToolExtension is one MCP server binding: an explicit server,
-// the tools allowed on it, and whether calling them requires approval.
+// KagentMCPToolExtension mirrors the pinned MCPToolBinding exactly: an
+// explicit RemoteMCPServer, the tools allowed on it, and whether calling
+// them requires approval.
 type KagentMCPToolExtension struct {
 	Server          KagentMCPServerRef `yaml:"server"`
 	Tools           []string           `yaml:"tools,omitempty"`
@@ -168,45 +187,68 @@ type KagentMCPServerRef struct {
 	Name string `yaml:"name"`
 }
 
-// KagentAgentRef delegates to another AgentTemplate by explicit name.
-type KagentAgentRef struct {
+// KagentAgentToolBinding mirrors the pinned AgentToolBinding exactly: name
+// and description tell the parent when and why to delegate; templateRef
+// names the same-namespace AgentTemplate; isolation is optional (Shared or
+// Dedicated). A bare name carries none of this and is refused as lossy.
+type KagentAgentToolBinding struct {
+	Name        string            `yaml:"name"`
+	Description string            `yaml:"description"`
+	TemplateRef KagentTemplateRef `yaml:"templateRef"`
+	Isolation   string            `yaml:"isolation,omitempty"`
+}
+
+// KagentTemplateRef names a same-namespace AgentTemplate.
+type KagentTemplateRef struct {
 	Name string `yaml:"name"`
 }
 
-// KagentArtifactRef is an immutable skill or plugin identity: a name plus
-// exactly one pinned source. A bare name carries no immutable identity and
-// is refused rather than silently accepted as a lossy conversion.
-type KagentArtifactRef struct {
+// KagentSkillRef mirrors the pinned AgentTemplateSkill exactly: one
+// standalone skill's explicit name and its immutable source.
+type KagentSkillRef struct {
 	Name   string               `yaml:"name"`
 	Source KagentArtifactSource `yaml:"source"`
 }
 
-// KagentArtifactSource is a closed union: exactly one of oci, git or s3.
+// KagentPluginBundle mirrors the pinned PluginBundle exactly: a plugin
+// package has no name of its own, only an immutable source and the skill
+// names it selects from that package.
+type KagentPluginBundle struct {
+	Source KagentArtifactSource `yaml:"source"`
+	Skills []string             `yaml:"skills,omitempty"`
+}
+
+// KagentArtifactSource mirrors the pinned ArtifactSource exactly: exactly
+// one of oci (a single "<reference>@sha256:<64hex>" string), git or bucket,
+// plus an optional shared relative path.
 type KagentArtifactSource struct {
-	OCI *KagentOCISource `yaml:"oci,omitempty"`
-	Git *KagentGitSource `yaml:"git,omitempty"`
-	S3  *KagentS3Source  `yaml:"s3,omitempty"`
+	OCI    string                `yaml:"oci,omitempty"`
+	Git    *KagentGitArtifact    `yaml:"git,omitempty"`
+	Bucket *KagentBucketArtifact `yaml:"bucket,omitempty"`
+	Path   string                `yaml:"path,omitempty"`
 }
 
-// KagentOCISource pins an OCI artifact by digest, never a mutable tag.
-type KagentOCISource struct {
-	Reference string `yaml:"reference"`
-	Digest    string `yaml:"digest"`
+// KagentGitArtifact mirrors the pinned GitArtifact exactly: a URL and a
+// full commit ID, never a branch or tag.
+type KagentGitArtifact struct {
+	URL    string `yaml:"url"`
+	Commit string `yaml:"commit"`
 }
 
-// KagentGitSource pins a Git artifact by full commit SHA, never a branch
-// or tag.
-type KagentGitSource struct {
-	Repository string `yaml:"repository"`
-	Commit     string `yaml:"commit"`
-	Path       string `yaml:"path,omitempty"`
+// KagentBucketArtifact mirrors the pinned BucketArtifact exactly: S3 is
+// currently the only supported provider.
+type KagentBucketArtifact struct {
+	S3 KagentS3Object `yaml:"s3"`
 }
 
-// KagentS3Source pins an S3 artifact by explicit object version.
-type KagentS3Source struct {
-	Bucket  string `yaml:"bucket"`
-	Key     string `yaml:"key"`
-	Version string `yaml:"version"`
+// KagentS3Object mirrors the pinned S3Object exactly: an explicit object
+// version, never a mutable "latest" read.
+type KagentS3Object struct {
+	Endpoint  string `yaml:"endpoint"`
+	Bucket    string `yaml:"bucket"`
+	Key       string `yaml:"key"`
+	VersionID string `yaml:"versionId"`
+	Region    string `yaml:"region,omitempty"`
 }
 
 // ParsePortableAgent strictly decodes exactly one YAML document into a
@@ -391,78 +433,141 @@ func (e *KagentExtension) validate() error {
 	}
 	if e.Tools != nil {
 		for i, mcp := range e.Tools.MCP {
-			if strings.TrimSpace(mcp.Server.Kind) == "" || strings.TrimSpace(mcp.Server.Name) == "" {
-				return fmt.Errorf("tools.mcp[%d].server: kind and name are both required", i)
+			if mcp.Server.Kind != "RemoteMCPServer" {
+				return fmt.Errorf("tools.mcp[%d].server.kind must be %q (found %q)", i, "RemoteMCPServer", mcp.Server.Kind)
+			}
+			if strings.TrimSpace(mcp.Server.Name) == "" {
+				return fmt.Errorf("tools.mcp[%d].server.name is required", i)
 			}
 		}
-		for i, ref := range e.Tools.Agents {
-			if strings.TrimSpace(ref.Name) == "" {
-				return fmt.Errorf("tools.agents[%d].name is required", i)
+		for i, agent := range e.Tools.Agents {
+			if err := agent.validate(); err != nil {
+				return fmt.Errorf("tools.agents[%d].%w", i, err)
 			}
 		}
 	}
-	if err := validatePortableArtifactRefs("skills", e.Skills); err != nil {
+	if err := validatePortableSkillRefs(e.Skills); err != nil {
 		return err
 	}
-	return validatePortableArtifactRefs("plugins", e.Plugins)
+	return validatePortablePluginBundles(e.Plugins)
 }
 
-// validatePortableArtifactRefs enforces that every kagent skill or plugin
-// reference names a single, present, unique identity, and that its source
-// pins an immutable artifact — never a bare name or a mutable reference
-// like a tag or branch.
-func validatePortableArtifactRefs(field string, refs []KagentArtifactRef) error {
+// validate mirrors the pinned AgentToolBinding's required/optional fields
+// exactly: name and description are required, templateRef must name a
+// valid same-namespace object, and isolation, when present, must be one of
+// the closed enum values.
+func (b KagentAgentToolBinding) validate() error {
+	if strings.TrimSpace(b.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.TrimSpace(b.Description) == "" {
+		return fmt.Errorf("description is required")
+	}
+	if err := scaffold.ValidateObjectName(b.TemplateRef.Name); err != nil {
+		return fmt.Errorf("templateRef.name: %w", err)
+	}
+	if b.Isolation != "" && !kagentIsolationValues[b.Isolation] {
+		return fmt.Errorf("isolation must be %q or %q (found %q)", "Shared", "Dedicated", b.Isolation)
+	}
+	return nil
+}
+
+// validatePortableSkillRefs enforces that every kagent skill names a
+// single, present, unique identity, and that its source pins an immutable
+// artifact — never a bare name or a mutable reference like a tag or branch.
+func validatePortableSkillRefs(refs []KagentSkillRef) error {
 	seen := make(map[string]bool, len(refs))
 	for i, ref := range refs {
 		if strings.TrimSpace(ref.Name) == "" {
-			return fmt.Errorf("%s[%d].name is required", field, i)
+			return fmt.Errorf("skills[%d].name is required", i)
 		}
 		if seen[ref.Name] {
-			return fmt.Errorf("%s: %q is not a unique, immutable identity (duplicate)", field, ref.Name)
+			return fmt.Errorf("skills: %q is not a unique, immutable identity (duplicate)", ref.Name)
 		}
 		seen[ref.Name] = true
 		if err := ref.Source.validate(); err != nil {
-			return fmt.Errorf("%s[%d].source: %w", field, i, err)
+			return fmt.Errorf("skills[%d].source: %w", i, err)
 		}
 	}
 	return nil
 }
 
+// validatePortablePluginBundles enforces that every plugin bundle's source
+// pins an immutable artifact, and that its skill selection is a set of
+// explicit, non-empty names — a plugin bundle has no name of its own, so
+// there is no bundle-level identity to deduplicate.
+func validatePortablePluginBundles(bundles []KagentPluginBundle) error {
+	for i, bundle := range bundles {
+		if err := bundle.Source.validate(); err != nil {
+			return fmt.Errorf("plugins[%d].source: %w", i, err)
+		}
+		seen := make(map[string]bool, len(bundle.Skills))
+		for j, name := range bundle.Skills {
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("plugins[%d].skills[%d] must be an explicit, non-empty skill name", i, j)
+			}
+			if seen[name] {
+				return fmt.Errorf("plugins[%d].skills: %q is duplicated within one bundle's selection", i, name)
+			}
+			seen[name] = true
+		}
+	}
+	return nil
+}
+
+// validate mirrors the pinned ArtifactSource's CEL rules exactly: exactly
+// one of oci, git or bucket, an oci digest (never a tag), a full git
+// commit ID (never a branch or tag), a non-empty bucket/key/versionId, and
+// a path that is relative with no '..' segments.
 func (s KagentArtifactSource) validate() error {
 	set := 0
-	if s.OCI != nil {
+	if s.OCI != "" {
 		set++
 	}
 	if s.Git != nil {
 		set++
 	}
-	if s.S3 != nil {
+	if s.Bucket != nil {
 		set++
 	}
 	if set != 1 {
-		return fmt.Errorf("exactly one of oci, git or s3 is required for an immutable artifact identity")
+		return fmt.Errorf("exactly one of oci, git or bucket is required for an immutable artifact identity")
 	}
 	switch {
-	case s.OCI != nil:
-		if strings.TrimSpace(s.OCI.Reference) == "" {
-			return fmt.Errorf("oci.reference is required")
-		}
-		if !ociDigestRE.MatchString(s.OCI.Digest) {
-			return fmt.Errorf("oci.digest must be an exact sha256:<64 hex> digest, not a mutable tag")
+	case s.OCI != "":
+		if !ociDigestRE.MatchString(s.OCI) {
+			return fmt.Errorf("oci must be an exact <reference>@sha256:<64 hex> digest, not a mutable tag")
 		}
 	case s.Git != nil:
-		if strings.TrimSpace(s.Git.Repository) == "" {
-			return fmt.Errorf("git.repository is required")
+		if !httpURLRE.MatchString(s.Git.URL) {
+			return fmt.Errorf("git.url must be an absolute http(s) URL")
 		}
 		if !gitCommitRE.MatchString(s.Git.Commit) {
-			return fmt.Errorf("git.commit must be a full 40-character commit SHA, not a branch or tag")
+			return fmt.Errorf("git.commit must be a full 40- or 64-character commit ID, not a branch or tag")
 		}
-	case s.S3 != nil:
-		if strings.TrimSpace(s.S3.Bucket) == "" || strings.TrimSpace(s.S3.Key) == "" {
-			return fmt.Errorf("s3.bucket and s3.key are required")
+	case s.Bucket != nil:
+		if !httpURLRE.MatchString(s.Bucket.S3.Endpoint) {
+			return fmt.Errorf("bucket.s3.endpoint must be an absolute http(s) URL")
 		}
-		if strings.TrimSpace(s.S3.Version) == "" {
-			return fmt.Errorf("s3.version is required for an immutable object reference")
+		if strings.TrimSpace(s.Bucket.S3.Bucket) == "" {
+			return fmt.Errorf("bucket.s3.bucket is required")
+		}
+		if strings.TrimSpace(s.Bucket.S3.Key) == "" {
+			return fmt.Errorf("bucket.s3.key is required")
+		}
+		if strings.TrimSpace(s.Bucket.S3.VersionID) == "" {
+			return fmt.Errorf("bucket.s3.versionId is required for an immutable object reference")
+		}
+	}
+	if len(s.Path) > 1024 {
+		return fmt.Errorf("path must be at most 1024 characters")
+	}
+	if strings.HasPrefix(s.Path, "/") {
+		return fmt.Errorf("path must be relative, not absolute")
+	}
+	for _, segment := range strings.Split(s.Path, "/") {
+		if segment == ".." {
+			return fmt.Errorf("path must not contain '..' segments")
 		}
 	}
 	return nil
