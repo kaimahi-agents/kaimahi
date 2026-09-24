@@ -171,3 +171,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 through pull requests to `main` with checks green and verification actually run.
 The project name's cultural and publication boundaries are documented in
 [docs/NAMING.md](docs/NAMING.md).
+
+> [!IMPORTANT]
+> **Kaimahi is experimental and under active development.** Commands, generated
+> artifacts, and behavior may change between pre-1.0 releases. It is not yet
+> recommended for production use. Use a dedicated test environment, review every
+> proposed mutation, and [open an issue](https://github.com/kaimahi-agents/kaimahi/issues)
+> with feedback, bugs, or ideas.
+
+> [!NOTE]
+> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
+> governance control plane. The selected runtime owns execution and enforcement.
+> See the [runtime contract](docs/runtime-adapters.md) for the current boundary.

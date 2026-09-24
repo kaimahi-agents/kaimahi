@@ -41,6 +41,18 @@
       "replace": "    (\"documentation heading\", r\"\"),"
     },
     {
+      "name": "the experimental notice marker matches anything",
+      "breaks": "The pre-1.0 production warning can disappear unnoticed.",
+      "find": "    (\"experimental notice\", r\"^> \\[!IMPORTANT\\]\\n> \\*\\*Kaimahi is experimental and under active development\\.\\*\\*\"),",
+      "replace": "    (\"experimental notice\", r\"\"),"
+    },
+    {
+      "name": "the runtime ownership note marker matches anything",
+      "breaks": "The front door can again imply that KMX owns runtime execution or generic enforcement.",
+      "find": "    (\"runtime ownership note\", r\"^> \\[!NOTE\\]\\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic$\"),",
+      "replace": "    (\"runtime ownership note\", r\"\"),"
+    },
+    {
       "name": "the install revision check is dropped",
       "breaks": "An obsolete tagged CLI or an empty revision can satisfy the current quickstart prerequisite.",
       "find": "@(?:main|[0-9a-f]{7,40})(?=[ \\t]*(?:#.*)?$)",

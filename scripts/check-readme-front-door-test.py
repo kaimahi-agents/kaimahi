@@ -37,6 +37,13 @@ The owner keeps the application's Deployment.
 Current and proposed capabilities are separated.
 ## Documentation
 See the documentation index.
+## Development
+See the contribution guide.
+> [!IMPORTANT]
+> **Kaimahi is experimental and under active development.** Interfaces may change.
+> [!NOTE]
+> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
+> governance control plane.
 """
 
 CASES = [("valid KMX front door", GOOD, None)]
@@ -51,6 +58,9 @@ for label, literal in [
     ("migration heading", "## Migrate Model Traffic\n"),
     ("Status heading", "## Status\n"),
     ("documentation heading", "## Documentation\n"),
+    ("Development heading", "## Development\n"),
+    ("experimental notice", "> [!IMPORTANT]\n> **Kaimahi is experimental and under active development.** Interfaces may change.\n"),
+    ("runtime ownership note", "> [!NOTE]\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 for label, literal in [

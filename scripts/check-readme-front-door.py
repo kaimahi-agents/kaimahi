@@ -20,6 +20,9 @@ ORDER = [
     ("migration heading", r"^## Migrate Model Traffic$"),
     ("Status heading", r"^## Status$"),
     ("documentation heading", r"^## Documentation$"),
+    ("Development heading", r"^## Development$"),
+    ("experimental notice", r"^> \[!IMPORTANT\]\n> \*\*Kaimahi is experimental and under active development\.\*\*"),
+    ("runtime ownership note", r"^> \[!NOTE\]\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic$"),
 ]
 BADGE_PATTERNS = [
     ("CI badge", r"actions/workflows/ci\.yml/badge\.svg\?branch=main"),
