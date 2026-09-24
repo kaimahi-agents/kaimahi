@@ -101,14 +101,30 @@ func TestOrkaAdapterRenderedBundleCarriesIdentityAndPrerequisite(t *testing.T) {
 	if target := rendered.Target(); target.Runtime != agentruntime.Orka || target.Namespace != "orka-system" {
 		t.Fatalf("target = %+v", target)
 	}
-	if want := agentruntime.PortableBundleDigest(portable.Source()); rendered.PortableDigest() != want {
+	// Independent expectations: both digests are framed here from DESIGN.md
+	// §2's exact rule, not by calling the helpers the constructor uses.
+	frame := func(path string, body []byte) string {
+		return fmt.Sprintf("%s %d\n%s\n", path, len(body), body)
+	}
+	portableSum := sha256.Sum256([]byte(frame("portable-agent.yaml", portable.Source())))
+	if want := hex.EncodeToString(portableSum[:]); rendered.PortableDigest() != want {
 		t.Fatalf("portable digest = %q, want %q", rendered.PortableDigest(), want)
+	}
+	var renderedFrames []byte
+	for i, document := range rendered.Documents() {
+		renderedFrames = append(renderedFrames, frame(fmt.Sprintf("rendered/%03d.yaml", i), document)...)
+	}
+	renderedSum := sha256.Sum256(renderedFrames)
+	if want := hex.EncodeToString(renderedSum[:]); rendered.RenderedDigest() != want {
+		t.Fatalf("rendered digest = %q, want %q covering every artifact byte", rendered.RenderedDigest(), want)
 	}
 	if rendered.RenderedDigest() == rendered.PortableDigest() {
 		t.Fatal("rendered and portable digests must never be the same value")
 	}
-	if rendered.RenderedDigest() != agentruntime.RenderedBundleDigest(rendered.Documents()) {
-		t.Fatal("rendered digest does not cover the exact rendered documents")
+	// The portable digest must identify this document, not a constant: an
+	// absent source would hash to the same value for every agent.
+	if rendered.PortableDigest() == agentruntime.PortableBundleDigest(nil) {
+		t.Fatal("portable digest equals the digest of an absent source")
 	}
 	if losses := rendered.Losses(); len(losses) != 0 {
 		t.Fatalf("losses = %+v", losses)
@@ -116,6 +132,112 @@ func TestOrkaAdapterRenderedBundleCarriesIdentityAndPrerequisite(t *testing.T) {
 	want := []agentruntime.Prerequisite{{Kind: "Secret", Namespace: "orka-system", Name: "support-bot-key"}}
 	if got := rendered.Prerequisites(); !slices.Equal(got, want) {
 		t.Fatalf("prerequisites = %+v, want %+v", got, want)
+	}
+}
+
+// Two creates that differ in one authored input must differ in their portable
+// digest, and two identical creates must agree: the digest identifies the
+// document, not the code path that produced it.
+func TestOrkaAdapterPortableDigestIdentifiesTheInputs(t *testing.T) {
+	digest := func(t *testing.T, mutate func(*CreateOptions)) string {
+		t.Helper()
+		a := &App{}
+		opt := orkaGoldenCreateOptions()
+		mutate(&opt)
+		portable, err := a.portableCreateDocument(opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rendered.PortableDigest()
+	}
+	unchanged := func(*CreateOptions) {}
+	base := digest(t, unchanged)
+	if repeat := digest(t, unchanged); repeat != base {
+		t.Fatalf("identical inputs produced different portable digests: %q vs %q", base, repeat)
+	}
+	for name, mutate := range map[string]func(*CreateOptions){
+		"name":         func(o *CreateOptions) { o.Name = "other-bot" },
+		"model":        func(o *CreateOptions) { o.Model = "gpt-4o" },
+		"namespace":    func(o *CreateOptions) { o.Namespace = "agents" },
+		"instructions": func(o *CreateOptions) { o.InstructionText = "Answer in one sentence." },
+		"secret":       func(o *CreateOptions) { o.Secret = "other-key" },
+	} {
+		if changed := digest(t, mutate); changed == base {
+			t.Errorf("changing %s did not change the portable digest", name)
+		}
+	}
+}
+
+// The artifact carries the full review order, but only Provider, Agent and
+// the optional Task are deployable: the value-free Secret skeleton is a
+// review-only document naming a prerequisite, and Deploy must never see it in
+// its own list.
+func TestOrkaAdapterSeparatesArtifactFromDeployDocuments(t *testing.T) {
+	for _, task := range []string{"", "Summarize the latest release notes."} {
+		a := &App{}
+		opt := orkaGoldenCreateOptions()
+		opt.Task = task
+		portable, err := a.portableCreateDocument(opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		artifact, deploy := rendered.Documents(), rendered.DeployDocuments()
+		wantDocuments := 3
+		if task != "" {
+			wantDocuments = 4
+		}
+		if len(artifact) != wantDocuments {
+			t.Fatalf("artifact documents = %d, want %d", len(artifact), wantDocuments)
+		}
+		if len(deploy) != wantDocuments-1 {
+			t.Fatalf("deploy documents = %d, want %d", len(deploy), wantDocuments-1)
+		}
+		if !bytes.Contains(artifact[0], []byte("kind: Secret")) {
+			t.Fatalf("artifact does not open with the Secret skeleton:\n%s", artifact[0])
+		}
+		for i, document := range deploy {
+			if bytes.Equal(document, artifact[0]) || bytes.Contains(document, []byte("kind: Secret")) {
+				t.Fatalf("deploy document %d is the Secret skeleton:\n%s", i, document)
+			}
+			if !bytes.Equal(document, artifact[i+1]) {
+				t.Fatalf("deploy document %d is not artifact document %d verbatim", i, i+1)
+			}
+		}
+	}
+}
+
+// Defense in depth: even a bundle that claims the value-free Secret skeleton
+// is deployable is refused before anything reaches a cluster, so no future
+// renderer can turn the artifact's review order into a bulk apply.
+func TestOrkaDeployRefusesADeployableSecretSkeleton(t *testing.T) {
+	a := &App{}
+	opt := orkaGoldenCreateOptions()
+	portable, err := a.portableCreateDocument(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var documents []agentruntime.Document
+	for _, raw := range rendered.Documents() {
+		documents = append(documents, agentruntime.ApplyDocument(raw))
+	}
+	tampered, err := agentruntime.NewRenderedBundle(agentruntime.Orka, portable.Source(), documents, rendered.Prerequisites(), rendered.Target(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := orkaBundleFromRendered(tampered); err == nil {
+		t.Fatal("a bundle marking the Secret skeleton for deployment was accepted")
 	}
 }
 

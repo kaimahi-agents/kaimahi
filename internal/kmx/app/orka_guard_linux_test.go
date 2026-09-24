@@ -148,26 +148,25 @@ func TestOrkaGuardPromptCancellationAndInputOwnership(t *testing.T) {
 			if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
 				t.Fatal("guard-only path emitted an artifact")
 			}
-			calls := orkaCalls(t, dir)
-			// An omitted --runtime is resolved by shared platform detection
-			// before any adapter exists, so a read-only, namespace-free
-			// discovery call may precede the guard's own context read (the
-			// modes that call the guarded helpers directly make neither).
-			// Nothing else may happen: no CRD read, no collision check, no
-			// Secret read, no write.
-			guarded := false
-			for _, call := range calls {
-				joined := strings.Join(call.Args, " ")
-				switch {
-				case strings.Contains(joined, "config view"):
-					guarded = true
-				case strings.Contains(joined, "api-resources --api-group=core.orka.ai"):
-				default:
-					t.Fatalf("guard-only path reached cluster operations: %+v", calls)
-				}
+			// Exactly what may touch the cluster before the guard returns,
+			// in order: shared platform detection resolves the omitted
+			// --runtime before any adapter exists (CreateAgent only), then
+			// the guard reads its own context metadata. Nothing else: no CRD
+			// read, no collision check, no Secret read, no write.
+			want := []string{"api-resources --api-group=core.orka.ai", "config view"}
+			if mode == "deadline" || mode == "confirm" {
+				// These modes call the guarded helpers directly, so no
+				// runtime selection happens.
+				want = want[1:]
 			}
-			if !guarded {
-				t.Fatalf("guard never read its context metadata: %+v", calls)
+			calls := orkaCalls(t, dir)
+			if len(calls) != len(want) {
+				t.Fatalf("guard-only path made %d call(s), want %d: %+v", len(calls), len(want), calls)
+			}
+			for i, expected := range want {
+				if joined := strings.Join(calls[i].Args, " "); !strings.Contains(joined, expected) {
+					t.Fatalf("call %d = %q, want %q", i, joined, expected)
+				}
 			}
 		})
 	}
