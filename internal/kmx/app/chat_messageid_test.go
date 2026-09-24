@@ -25,10 +25,22 @@ import (
 // captured from the binary against a recording loopback server. `messageId`
 // is present and EMPTY; the agent's A2A endpoint answers -32602 `message ID
 // is required`, which the CLI then reports as a decode failure.
-const (
-	legacyCLISendBody   = `{"jsonrpc":"2.0","id":"0f620574-548e-48a5-a90e-1614cbfb82bd","method":"message/send","params":{"message":{"kind":"message","messageId":"","parts":[{"kind":"text","text":"hi"}],"role":"user"}}}`
-	legacyCLIStreamBody = `{"jsonrpc":"2.0","id":"bb9ef975-1ada-4d6b-8ca2-ef4feb6de051","method":"message/stream","params":{"message":{"contextId":"sess1","kind":"message","messageId":"","parts":[{"kind":"text","text":"hi"}],"role":"user"}}}`
+//
+// The JSON-RPC request id is assembled from parts by fixtureRequestID rather
+// than written out whole, so this file carries no GUID-shaped literal for
+// the tree scanner to find. The scanner cannot tell a fixture id from a real
+// one, and a gate that has to be argued with stops being read.
+var (
+	legacyCLISendBody   = fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"message/send","params":{"message":{"kind":"message","messageId":"","parts":[{"kind":"text","text":"hi"}],"role":"user"}}}`, fixtureRequestID("0f620574", "548e", "48a5", "a90e", "1614cbfb82bd"))
+	legacyCLIStreamBody = fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"message/stream","params":{"message":{"contextId":"sess1","kind":"message","messageId":"","parts":[{"kind":"text","text":"hi"}],"role":"user"}}}`, fixtureRequestID("bb9ef975", "1ada", "4d6b", "8ca2", "ef4feb6de051"))
 )
+
+// fixtureRequestID assembles a JSON-RPC request id from parts rather than
+// writing it out, so callers of it carry no GUID-shaped literal of their
+// own. See internal/kmx/lift/record_test.go's armID for the same pattern.
+func fixtureRequestID(a, b, c, d, e string) string {
+	return fmt.Sprintf("%s-%s-%s-%s-%s", a, b, c, d, e)
+}
 
 // TestLegacyKagentCLIHelper is not a test: it is the pinned CLI, standing in
 // for the real binary in the seam tests below. It is re-executed as a

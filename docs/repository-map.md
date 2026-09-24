@@ -30,7 +30,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (16 packages), plus embedded schema fixtures and test goldens | — | — |
+| `internal/` | `kmx/` (17 packages), plus embedded schema fixtures and test goldens | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 43 (checkers, probes, CI fixtures, mutation specs) |
@@ -45,7 +45,7 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is sixteen packages. Cluster-independent decisions live in
+`internal/kmx/` is seventeen packages. Cluster-independent decisions live in
 packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data; versioned fixtures are not additional Go
@@ -55,6 +55,7 @@ packages.
 |---|---|---|---|
 | `kmx/app` | 77 | Installed | Command orchestration, runtime adapters, shared chat UI, host inference and native platform operations. |
 | `kmx/app/testdata` | 1 | Scaffolding | The pinned Orka no-Task bundle golden; adapter output must stay byte-identical to it. |
+| `kmx/kagentcompat` | 2 | Installed | Loopback compatibility hop for the pinned kagent CLI v0.10.1's A2A sends, injecting a missing `messageId` on legacy invokes only. |
 | `kmx/runtime` | 6 | Installed | Platform-neutral adapter/session and lifecycle contracts, the ordered registry and platform-selection policy, identities, capabilities, events, the closed portable agent schema and both identity digests. |
 | `kmx/runtime/testdata` | 1 | Scaffolding | One complete portable agent document, used to pin the strict decoder. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
