@@ -115,7 +115,18 @@ func (a orkaRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target
 	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace}}, nil
 }
 
-type kagentRuntimeAdapter struct{ app *App }
+type kagentRuntimeAdapter struct {
+	app *App
+	// snapshot receives the exact combined kagent read Status performs
+	// (DESIGN.md §3's "combined-status runtime slice"). `kmx status` needs
+	// those same objects for the app-owned aggregation it adds around the
+	// runtime slice, and asking the cluster a second time would let the
+	// printed counts and the published `items` come from two different
+	// moments. The status path therefore allocates one sink and reads it
+	// back after dispatch; every other caller leaves it nil and Status
+	// simply retains nothing.
+	snapshot *kagentStatusSnapshot
+}
 
 func (kagentRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Kagent }
 func (a kagentRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Target) (agentruntime.Probe, error) {
@@ -139,43 +150,6 @@ func (a kagentRuntimeAdapter) Open(ctx context.Context, target agentruntime.Targ
 		return nil, err
 	}
 	return &kagentRuntimeSession{app: a.app, executable: executable, name: target.Name, session: target.Session, toolMode: "summary"}, nil
-}
-
-// Capabilities is Task 4's skeleton declaration for legacy kagent: every
-// lifecycle flag is false until Task 8 wraps its existing combined-status
-// slice behind Status (DESIGN.md §3 declares Render/Deploy/Evaluate
-// permanently unsupported for this runtime; only Status is ever expected to
-// flip true).
-func (kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
-	return agentruntime.Capabilities{}
-}
-
-func (a kagentRuntimeAdapter) Render(context.Context, agentruntime.PortableAgent, agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender); err != nil {
-		return agentruntime.RenderedBundle{}, err
-	}
-	return agentruntime.RenderedBundle{}, fmt.Errorf("kagent render: not yet implemented")
-}
-
-func (a kagentRuntimeAdapter) Deploy(context.Context, agentruntime.RenderedBundle, agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Deploy, agentruntime.VerbDeploy); err != nil {
-		return agentruntime.AgentRef{}, err
-	}
-	return agentruntime.AgentRef{}, fmt.Errorf("kagent deploy: not yet implemented")
-}
-
-func (a kagentRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
-		return agentruntime.LifecycleStatus{}, err
-	}
-	return agentruntime.LifecycleStatus{}, fmt.Errorf("kagent status: not yet implemented")
-}
-
-func (a kagentRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
-		return agentruntime.EvaluationReceipt{}, err
-	}
-	return agentruntime.EvaluationReceipt{}, fmt.Errorf("kagent evaluate: not yet implemented")
 }
 
 // resolveRegisteredRuntime keeps PR #197's exact call shape (a slice of
@@ -211,6 +185,26 @@ func lifecycleVerbError(id agentruntime.ID, supported bool, verb string) error {
 		return nil
 	}
 	return &agentruntime.UnsupportedVerbError{Runtime: id, Verb: verb}
+}
+
+// detectPlatformRuntime applies DESIGN.md §1's shared platform detection to
+// every lifecycle command that was given no explicit --runtime: Orka first,
+// then kagent-v1, with both install prerequisites named when neither is
+// installed. Legacy kagent never participates — it is explicit-only — so a
+// legacy-only cluster receives that same named install error rather than
+// being silently selected.
+//
+// Go evaluates both arguments before calling, so asking SelectPlatform
+// directly would always perform kagent-v1's discovery read even when Orka
+// already decides the outcome. The second read is deferred until Orka's
+// result actually leaves the decision open; SelectPlatform still owns the
+// policy, including failing closed on a detection error.
+func (a *App) detectPlatformRuntime(ctx context.Context) (agentruntime.ID, error) {
+	orka := a.detectOrkaPlatform(ctx)
+	if orka.Err != nil || orka.Installed {
+		return agentruntime.SelectPlatform(orka, agentruntime.PlatformDetection{})
+	}
+	return agentruntime.SelectPlatform(orka, a.detectKagentV1Platform(ctx))
 }
 
 // detectOrkaPlatform is the Kubernetes-aware half of DESIGN.md §1's shared

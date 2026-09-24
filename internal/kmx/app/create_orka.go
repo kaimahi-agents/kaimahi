@@ -163,15 +163,7 @@ func (a *App) detectCreateRuntime(ctx context.Context, opt CreateOptions) (agent
 	if opt.NoApply {
 		return agentruntime.Orka, nil
 	}
-	// Go evaluates both arguments before calling, so asking SelectPlatform
-	// directly would always perform kagent-v1's discovery read even when Orka
-	// already decides the outcome. Defer that second read until Orka's result
-	// actually leaves the decision open; SelectPlatform still owns the policy.
-	orka := a.detectOrkaPlatform(ctx)
-	if orka.Err != nil || orka.Installed {
-		return agentruntime.SelectPlatform(orka, agentruntime.PlatformDetection{})
-	}
-	return agentruntime.SelectPlatform(orka, a.detectKagentV1Platform(ctx))
+	return a.detectPlatformRuntime(ctx)
 }
 
 // createFileConflicts lists DESIGN.md §4's approved matrix: with --file every

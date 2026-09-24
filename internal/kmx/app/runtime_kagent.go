@@ -2,10 +2,141 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+// Legacy kagent lifecycle: DESIGN.md §3 wraps this runtime's existing fixed
+// install, list and combined-status mechanics behind the shared seam without
+// changing any of them. Only Status is ever supported here — Render, Deploy
+// and Evaluate are permanently unsupported, because legacy kagent is
+// installed from fixed manifests and implies no portable conversion — and
+// PR #197's Adapter/Session below continue to own chat unchanged.
+
+// kagentStatusSnapshot is one combined kagent read: the verbatim kubectl
+// objects plus the same list demultiplexed by kind. It exists so the runtime
+// slice and the app-owned aggregate sections `kmx status` prints around it
+// are the same snapshot — a consumer can never find an Agent in `items`
+// that the counts beside them never saw.
+type kagentStatusSnapshot struct {
+	items  []json.RawMessage
+	agents objectList[agentStatus]
+	models objectList[modelStatus]
+	pods   objectList[podStatus]
+}
+
+// readKagentStatusSnapshot performs exactly the one combined get `kmx
+// status` has always made and demultiplexes it by kind. It is the only read
+// of these objects in a status run.
+func (a *App) readKagentStatusSnapshot() (*kagentStatusSnapshot, error) {
+	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get",
+		"agents.kagent.dev,modelconfigs,pods", "-o", "json", statusRequestTimeout)
+	if err != nil {
+		return nil, err
+	}
+	var combined struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(raw), &combined); err != nil {
+		return nil, err
+	}
+	snapshot := &kagentStatusSnapshot{items: combined.Items}
+	if snapshot.items == nil {
+		// An empty cluster publishes `[]`, not `null`: a consumer iterates
+		// items, and null makes them vanish with a zero exit code.
+		snapshot.items = []json.RawMessage{}
+	}
+	for _, item := range snapshot.items {
+		var kind struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(item, &kind); err != nil {
+			return nil, err
+		}
+		switch kind.Kind {
+		case "Agent":
+			var agent agentStatus
+			if err := json.Unmarshal(item, &agent); err != nil {
+				return nil, err
+			}
+			snapshot.agents.Items = append(snapshot.agents.Items, agent)
+		case "ModelConfig":
+			var model modelStatus
+			if err := json.Unmarshal(item, &model); err != nil {
+				return nil, err
+			}
+			snapshot.models.Items = append(snapshot.models.Items, model)
+		case "Pod":
+			var pod podStatus
+			if err := json.Unmarshal(item, &pod); err != nil {
+				return nil, err
+			}
+			snapshot.pods.Items = append(snapshot.pods.Items, pod)
+		}
+	}
+	return snapshot, nil
+}
+
+// Capabilities declares exactly what this runtime can be asked to do.
+// DESIGN.md §3 is explicit: Render, Deploy and Evaluate are permanently
+// unsupported for legacy kagent, and only Status — the retained combined
+// runtime slice below — is supported. Session-level flags remain Session's
+// own concern (kagentRuntimeSession.Capabilities), not this static
+// declaration.
+func (kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
+	return agentruntime.Capabilities{Status: true}
+}
+
+func (a kagentRuntimeAdapter) Render(context.Context, agentruntime.PortableAgent, agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
+	return agentruntime.RenderedBundle{}, lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender)
+}
+
+func (a kagentRuntimeAdapter) Deploy(context.Context, agentruntime.RenderedBundle, agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
+	return agentruntime.AgentRef{}, lifecycleVerbError(a.ID(), a.Capabilities().Deploy, agentruntime.VerbDeploy)
+}
+
+func (a kagentRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	return agentruntime.EvaluationReceipt{}, lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate)
+}
+
+// Status wraps the legacy runtime slice `kmx status` has always printed: the
+// kagent pod readiness and restart line, derived from the one combined read
+// above. Legacy kagent has no template/instance split, so PairStatus.Fields
+// carries that slice directly and Instance stays nil; there is never a
+// merged readiness boolean.
+//
+// It deliberately reports nothing else. The governance, Ollama, MCP and
+// certificate sections beside it are app-owned aggregation (status.go) and
+// never come from a LifecycleAdapter — this call only hands that aggregation
+// the same snapshot it read, through the caller's sink.
+func (a kagentRuntimeAdapter) Status(ctx context.Context, ref agentruntime.AgentRef, _ agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	// Legacy kagent is fixed to its own namespace, so a different one is a
+	// conflict rather than something to silently read past.
+	if namespace := strings.TrimSpace(ref.Namespace); namespace != "" && namespace != config_kagentNamespace {
+		return agentruntime.LifecycleStatus{}, fmt.Errorf("the legacy kagent runtime reports namespace %s; it cannot report %s", config_kagentNamespace, namespace)
+	}
+	if err := ctx.Err(); err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	snapshot, err := a.app.readKagentStatusSnapshot()
+	if err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	if a.snapshot != nil {
+		*a.snapshot = *snapshot
+	}
+	ready, restarts, _ := podSummary(snapshot.pods.Items)
+	return agentruntime.LifecycleStatus{Pair: agentruntime.PairStatus{Fields: []agentruntime.Field{{
+		Label: string(a.ID()),
+		Value: fmt.Sprintf("%d/%d pods ready, %d restarts", ready, len(snapshot.pods.Items), restarts),
+	}}}}, nil
+}
 
 // Kagent retains its native session IDs, history and HITL continuation protocol.
 // The terminal coordinator provides a decision callback; model/session work is

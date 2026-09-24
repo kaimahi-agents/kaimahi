@@ -95,7 +95,7 @@ func TestStatusCommandReadinessAndReportParity(t *testing.T) {
 esac
 `, combined, deployment, tc.secrets)
 				a := reportApp(t, out, script)
-				if err := a.Status(); err != nil {
+				if err := a.StatusWithOptions(StatusOptions{Runtime: "kagent"}); err != nil {
 					t.Fatal(err)
 				}
 				got := ansi.Strip(text())
@@ -108,17 +108,14 @@ esac
 				if mode != "plain" && (!strings.Contains(got, "Agents (1)") || !strings.Contains(got, "Runtime pods (1)")) {
 					t.Fatalf("missing group counts: %s", got)
 				}
-				data, err := a.collectStatus()
-				if err != nil {
-					t.Fatal(err)
-				}
+				data := legacyStatusData(t, a)
 				g := data.governanceOf()
 				if governanceReady(g) != tc.wantReady {
 					t.Fatalf("report/state mismatch: %+v", g)
 				}
 				var structured bytes.Buffer
 				a.Out = &structured
-				if err := a.StatusWithOptions(StatusOptions{Output: "json"}); err != nil {
+				if err := a.StatusWithOptions(StatusOptions{Runtime: "kagent", Output: "json"}); err != nil {
 					t.Fatal(err)
 				}
 				var document statusDocument
@@ -138,7 +135,7 @@ func TestStatusExplainsHowToCompleteMissingDefaultSetup(t *testing.T) {
 *"config view"*) printf '%s' '{"current-context":"other","contexts":[{"name":"other","context":{"cluster":"other"}}],"clusters":[{"name":"other","cluster":{"server":"https://example.test"}}]}';;
 esac`)
 	a.Cfg.ContextSource = config.SourceDefault
-	err := a.Status()
+	err := a.StatusWithOptions(StatusOptions{Runtime: "kagent"})
 	if err == nil || !strings.Contains(err.Error(), "setup is incomplete") || !strings.Contains(err.Error(), "kmx quickstart") {
 		t.Fatalf("missing default context did not offer the repair path: %v", err)
 	}
@@ -174,7 +171,7 @@ esac
 				want := ""
 				switch command {
 				case "agents":
-					err, want = a.ListAgents("", ""), "none"
+					err, want = a.ListAgents(ListOptions{Runtime: "kagent"}), "none"
 				case "context":
 					err, want = a.Ctx(""), "kind-test"
 				}
