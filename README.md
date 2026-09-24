@@ -6,7 +6,7 @@
 
 # Kaimahi
 
-**Create locally. Prove locally. Lift to Kubernetes.**
+**Create an Agent locally. Prove it locally. Lift it to Kubernetes.**
 
 `kmx` is Kaimahi's CLI-first developer entry point for agents. Its goal is to
 make the path from an idea to a running Agent obvious while keeping the

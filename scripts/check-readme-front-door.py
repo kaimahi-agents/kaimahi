@@ -13,7 +13,7 @@ from pathlib import Path
 
 ORDER = [
     ("hero image", r'src="brand/hero\.png"'),
-    ("product line", r"^\*\*Create locally\. Prove locally\. Lift to Kubernetes\.\*\*$"),
+    ("product line", r"^\*\*Create an Agent locally\. Prove it locally\. Lift it to Kubernetes\.\*\*$"),
     ("KMX journey heading", r"^## The KMX Journey$"),
     ("Day 0 heading", r"^### Day 0: Two Verbs$"),
     ("Quickstart heading", r"^## Quickstart$"),

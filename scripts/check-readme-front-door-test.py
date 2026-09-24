@@ -19,7 +19,7 @@ kmx quickstart-wizard
 """
 GOOD = """<img src="brand/hero.png">
 # Kaimahi
-**Create locally. Prove locally. Lift to Kubernetes.**
+**Create an Agent locally. Prove it locally. Lift it to Kubernetes.**
 ## The KMX Journey
 ### Day 0: Two Verbs
 ```bash
@@ -42,7 +42,7 @@ CASES = [("valid KMX front door", GOOD, None)]
 # a marker or emptying a list must make the self-test fail.
 for label, literal in [
     ("hero image", '<img src="brand/hero.png">\n'),
-    ("product line", "**Create locally. Prove locally. Lift to Kubernetes.**\n"),
+    ("product line", "**Create an Agent locally. Prove it locally. Lift it to Kubernetes.**\n"),
     ("KMX journey heading", "## The KMX Journey\n"),
     ("Day 0 heading", "### Day 0: Two Verbs\n"),
     ("Quickstart heading", "## Quickstart\n"),
