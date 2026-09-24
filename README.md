@@ -240,6 +240,9 @@ lifecycle direction is developed.
 - Interactive lift of a live Orka Agent to an existing Kubernetes or AKS target.
 - Orka install/status and the separate transitional AKS platform workflow.
 - Model-traffic migration for the supported application and protocol shape.
+- One shared runtime adapter seam over Orka and the legacy kagent runtime,
+  pinned at v0.10.1, reached through platform detection or an explicit
+  `--runtime`. See [runtime adapters](docs/runtime-adapters.md).
 
 **Direction, not shipped command parity:**
 
@@ -248,6 +251,14 @@ lifecycle direction is developed.
 - Built-in multi-target lifecycle adapters and capability reporting.
 - Revision-bound evaluation, deployment receipts, status, verify, diff and
   rollback.
+
+A bare `kmx agent list` or `kmx status` detects the installed platform and
+prefers Orka, so neither silently selects legacy kagent any more; pass
+`--runtime kagent` for exactly the previous output. There is no kagent v1
+implementation: kagent `v1.0.0-alpha2` was installed and reached a ready agent
+instance on a throwaway cluster, but its A2A invoke path did not work against
+the Substrate version that proof pinned, so no speculative v1 behavior was
+merged.
 
 AKS paths have been demonstrated with short-lived clusters, not continuously
 re-proved in CI. Cloud operations can create billable resources. Current

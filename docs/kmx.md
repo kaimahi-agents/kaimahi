@@ -113,12 +113,12 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
 | `kmx lift` / `kmx lift down` | provision AKS and land a platform on it, then owned cleanup. **`--payload` is required and has no default**: `orka` lands the pinned Orka (and creates no Provider — that stays yours), `kagent` lands the legacy runtime and its demo agents on governed Copilot. Both share every cluster phase; they differ only in what runs agents. [AKS](aks.md) |
-| `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
+| `kmx agent list` | **`--runtime` selects the platform; an omitted one detects it (Orka first), and no longer defaults to legacy kagent.** `--runtime kagent` gives the previous legacy readiness/acceptance/ModelConfig/tool-wiring rows; `--runtime orka` (or a detected Orka) needs `--namespace`; table/JSON/YAML. [Runtime selection](#runtime-selection) |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
 | `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` supports Orka and kagent (`--runtime auto\|orka\|kagent`, `--namespace`); `--json` prints a raw kagent one-shot task |
 | `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |
-| `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
+| `kmx status` | **`--runtime` selects the platform; an omitted one detects it and no longer defaults to legacy kagent.** `--runtime kagent` keeps the unchanged combined table — context, kagent/model wiring, runtime health, governance populations and next actions — and its JSON `items` shape. Orka reports one Agent's workload state and needs `--namespace` and `--agent`. [Runtime selection](#runtime-selection) |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
 `quickstart` creates the minimal application release only after proving absence,
@@ -204,6 +204,54 @@ Completion (`source <(kmx completion bash)`, similarly zsh; fish uses
 `kmx completion fish | source`) performs bounded read-only lookups for contexts
 and agents, no guard/download/forward/mutation. Static completion works offline.
 
+## Runtime selection
+
+`kmx agent create`, `kmx agent list` and `kmx status` take `--runtime`. The
+default is **empty, not `auto`**: `auto` is a selection policy, not a runtime.
+There are three IDs — `orka`, legacy `kagent` (pinned at **v0.10.1**), and
+`kagent-v1` — and the full contract is in
+[runtime adapters](runtime-adapters.md).
+
+**`kagent-v1` has no implementation in this build.** Detection knows the
+platform so a kagent v1 cluster is not misreported as empty, but selecting
+that ID reports it as unknown or the verb as unsupported. There is no kagent
+v1 authoring, deploy, status, chat or evaluation path here.
+
+With no `--runtime`, these commands inspect installed API resources once and
+select Orka when it is installed, then kagent v1. **Legacy kagent is never
+detected**, which intentionally changes two defaults:
+
+- A bare `kmx agent list` no longer lists the legacy runtime.
+- A bare `kmx status` no longer reports it.
+
+On a legacy-only cluster — which is what `kmx quickstart` and `kmx up` build —
+both now stop with the same error naming what to install:
+
+```text
+no supported runtime platform is installed: install orka (core.orka.ai Agent CRD)
+or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD)
+```
+
+Pass `--runtime kagent` for exactly the previous output. That path is
+deliberately byte-compatible: the same legacy list rows and fixed namespace,
+and the same combined status table, governance/Ollama/MCP/certificate sections
+and JSON `items` shape. Legacy kagent reads its own namespace and refuses any
+other rather than reading past it.
+
+Orka watches namespaces explicitly, so a selected Orka still requires
+`--namespace`, and `kmx status` also requires `--agent` because it reports one
+Agent's workload state. Missing selectors are reported **before anything is
+collected**, naming the platform and whether it was detected: no partial table
+or JSON is printed, and nothing then claims the ancillary sections were
+checked. A failed detection read is reported as a read failure; it never
+becomes "not installed" and never falls through to another runtime.
+
+A runtime that cannot do what was asked says so plainly —
+`runtime kagent does not support render` — rather than doing something else.
+`kmx agent show` has no `--runtime` flag yet and remains Orka's chain view;
+`kmx agent chat`'s existing `--runtime auto|orka|kagent` is unchanged, and
+still resolves a named Agent rather than a platform installation.
+
 ## `kmx agent create`
 
 **This command authors native Orka, not kagent.** Every bundle contains a new,
@@ -226,6 +274,22 @@ name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
 not credential values. `--instructions` reads a system-prompt file; `--tools` and
 `--skills` name Orka references, not kagent `server:tool` selections or translated
 MCP wiring. Use `kmx agent create --help` for all flags and defaults.
+
+- An omitted `--runtime` detects the installed platform for any create that
+  contacts a cluster, including `--dry-run`; an offline artifact (`--no-apply`,
+  `--out -`) contacts nothing and stays Orka. See
+  [runtime selection](#runtime-selection).
+- `--file` supplies a closed `kmx.kaimahi.dev/v1alpha1` portable agent document
+  instead of the shorthand flags above. It requires the name argument to match
+  the document's `metadata.name`, and never falls through to the wizard.
+  Decoding is strict: unknown fields, duplicate YAML keys, a second document,
+  an inline credential value, a runtime/extension mismatch and an inexact tool
+  or skill identity are refused rather than dropped. Every portable-defined
+  input then conflicts with its flag; `--task`, `--result-service-account`,
+  `--orka-api-service`, `--result-port`, `--out`, `--no-apply`, `--dry-run` and
+  `--schema-target` say what to do with the document rather than what it says,
+  and stay legal. The document's `kagent` extension is validated but rendered
+  by nothing in this build.
 
 - `--out -` prints YAML only and implies offline; `--no-apply` writes an exclusive
   local artifact only. Default file: `agents/<name>.yaml`. Existing files are
@@ -275,8 +339,9 @@ promote the isolated conversion spike to a supported interface.
 One-shot `agent chat` and `agent edit` remain kagent-specific. A one-shot chat
 with an Orka Agent now points at the working interactive Orka command instead
 of reporting that Agent as absent; `--interactive` supports both runtimes.
-`agent list --namespace <ns>` reads Orka Agents, while a bare list retains the
-legacy kagent inventory.
+`agent list --runtime orka --namespace <ns>` reads Orka Agents; a bare list now
+detects the installed platform instead of retaining the legacy kagent
+inventory, which `--runtime kagent` still prints unchanged.
 `agent edit` edits a secure temporary copy of owned local YAML via `$VISUAL`/
 `$EDITOR`; it rejects symlinks, concurrent edits, secrets, invalid identity or
 tool wiring, then atomically replaces source. It never implicitly applies.

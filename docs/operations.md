@@ -184,7 +184,7 @@ for that re-sign. Readiness of a workload does not prove its client verifies
 TLS. Never work around expiry by disabling verification.
 
 ```sh
-kmx status
+kmx status --runtime kagent
 kmx plane --step certificate
 ```
 

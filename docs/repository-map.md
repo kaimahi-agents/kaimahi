@@ -30,7 +30,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (16 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (16 packages), plus embedded schema fixtures and test goldens | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 43 (checkers, probes, CI fixtures, mutation specs) |
@@ -41,7 +41,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (21 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch, plus the runtime-selection flag matrix. |
 
 ## `internal/` — packages in the CLI
 
@@ -53,8 +53,10 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 76 | Installed | Command orchestration, runtime adapters, shared chat UI, host inference and native platform operations. |
-| `kmx/runtime` | 1 | Installed | Platform-neutral adapter/session contracts, identities, capabilities and events. |
+| `kmx/app` | 77 | Installed | Command orchestration, runtime adapters, shared chat UI, host inference and native platform operations. |
+| `kmx/app/testdata` | 1 | Scaffolding | The pinned Orka no-Task bundle golden; adapter output must stay byte-identical to it. |
+| `kmx/runtime` | 6 | Installed | Platform-neutral adapter/session and lifecycle contracts, the ordered registry and platform-selection policy, identities, capabilities, events, the closed portable agent schema and both identity digests. |
+| `kmx/runtime/testdata` | 1 | Scaffolding | One complete portable agent document, used to pin the strict decoder. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |

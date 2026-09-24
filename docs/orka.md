@@ -200,9 +200,12 @@ trades reconnect availability for protection against later local-port reuse;
 the initial bind and connection are still local trust, not cryptographic process
 authentication. Dry-run does not test access or execution.
 
-`kmx agent list --namespace <ns>` lists Orka Agents; without a namespace it
-lists the legacy kagent runtime. Existing Orka Agents can be used through the
-shared interactive chat:
+`kmx agent list --runtime orka --namespace <ns>` lists Orka Agents. An omitted
+`--runtime` detects the installed platform and prefers Orka, so a bare list no
+longer falls back to the legacy kagent runtime — `--runtime kagent` still
+prints that inventory unchanged. See
+[runtime selection](kmx.md#runtime-selection). Existing Orka Agents can be used
+through the shared interactive chat:
 
 ```bash
 kmx agent chat --interactive --runtime orka --namespace <ns> <name>

@@ -66,8 +66,10 @@ listener inventory, Orka architecture or the project's future shape.
 
 ## Maintainer references
 
-- [Runtime adapters](runtime-adapters.md): platform-neutral chat contracts,
-  host inference strategies and native compatibility drivers.
+- [Runtime adapters](runtime-adapters.md): runtime IDs and platform
+  detection, the lifecycle/chat contracts and their capabilities, the strict
+  portable agent document and its two identity digests, host inference
+  strategies and native compatibility drivers.
 
 - [Development](development.md): source boundaries, verification and operational traps.
 - [Repository map](repository-map.md): where the retained files belong.
