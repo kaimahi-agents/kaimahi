@@ -272,8 +272,11 @@ func validateCreateRuntimeSelection(opt CreateOptions) error {
 }
 
 func validateOrkaResultOptions(opt *CreateOptions) error {
-	// Scan before validation so error paths never echo credential-shaped flags.
-	for _, value := range []string{opt.Out, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute, opt.File, opt.Runtime} {
+	// Scan before validation so error paths never echo credential-shaped
+	// flags. opt.Name is included because portableCreateDocument's
+	// --file metadata.name mismatch quotes it verbatim (%q) and runs
+	// after this scan, never before it.
+	for _, value := range []string{opt.Out, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute, opt.File, opt.Runtime, opt.Name} {
 		if err := scaffold.RefuseKeyShapes(value); err != nil {
 			return fmt.Errorf("refusing credential-shaped create input; supply references, never credentials")
 		}
