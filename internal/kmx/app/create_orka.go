@@ -22,6 +22,13 @@ import (
 // cluster. Creation is routed through the shared runtime seam: the selected
 // runtime's adapter renders the portable document and then deploys those
 // exact bytes.
+//
+// The portable document is produced here, before either path runs, because
+// it is the one input every runtime renders from: parsing an explicit --file
+// (or encoding the shorthand flags) needs no cluster, while resolving an
+// omitted --runtime reads one. A document that cannot be rendered at all is
+// therefore reported as itself rather than as a detection failure against a
+// cluster this create was never going to reach.
 func (a *App) CreateAgent(opt CreateOptions) error {
 	if opt.Out == "-" {
 		opt.NoApply = true
@@ -41,22 +48,22 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := resolveOrkaInstructions(&opt); err != nil {
 		return err
 	}
-	if opt.NoApply {
-		return a.createAgentOffline(opt)
+	portable, err := a.portableCreateDocument(opt)
+	if err != nil {
+		return err
 	}
-	return a.createAgentOnline(opt)
+	if opt.NoApply {
+		return a.createAgentOffline(opt, portable)
+	}
+	return a.createAgentOnline(opt, portable)
 }
 
 // createAgentOffline renders the artifact and writes it for review. No
 // runtime detection happens here: detection reads a cluster, and this path
 // never contacts one, so an omitted runtime keeps selecting Orka and its
 // pinned offline schema. An explicit --runtime still overrides that.
-func (a *App) createAgentOffline(opt CreateOptions) error {
+func (a *App) createAgentOffline(opt CreateOptions, portable *agentruntime.PortableAgent) error {
 	adapter, err := a.createRuntimeAdapter(context.Background(), opt)
-	if err != nil {
-		return err
-	}
-	portable, err := a.portableCreateDocument(opt)
 	if err != nil {
 		return err
 	}
@@ -86,11 +93,12 @@ func (a *App) createAgentOffline(opt CreateOptions) error {
 
 // createAgentOnline renders and then deploys the exact rendered bytes.
 //
-// The dependency check comes first because an omitted --runtime is resolved
-// by shared platform detection, which reads the cluster. Rendering therefore
-// also happens after that check: which runtime validates these inputs is not
-// known until the platform is.
-func (a *App) createAgentOnline(opt CreateOptions) error {
+// The dependency check and runtime resolution come after the document is in
+// hand (CreateAgent): an omitted --runtime is resolved by shared platform
+// detection, which reads the cluster, so anything decidable from the
+// document alone is already decided. Which runtime validates these inputs is
+// still not known until the platform is, so the render itself stays here.
+func (a *App) createAgentOnline(opt CreateOptions, portable *agentruntime.PortableAgent) error {
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}
@@ -99,10 +107,6 @@ func (a *App) createAgentOnline(opt CreateOptions) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	adapter, err := a.createRuntimeAdapter(ctx, opt)
-	if err != nil {
-		return err
-	}
-	portable, err := a.portableCreateDocument(opt)
 	if err != nil {
 		return err
 	}
@@ -118,8 +122,11 @@ func (a *App) createAgentOnline(opt CreateOptions) error {
 // create with. Legacy kagent is registered so that an explicit --runtime
 // kagent resolves to its own declared capabilities — and therefore to the one
 // shared typed unsupported-verb error — rather than to an unknown runtime.
+//
+// The Orka adapter is configured with this create's flags, which is what
+// makes it declare Render and Deploy at all (runtime_orka.go).
 func (a *App) createRuntimeRegistry(opt CreateOptions) (*agentruntime.Registry, error) {
-	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a, create: opt}, kagentRuntimeAdapter{app: a})
+	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a, create: &opt}, kagentRuntimeAdapter{app: a})
 }
 
 // createRuntimeAdapter resolves the runtime this create targets and proves it

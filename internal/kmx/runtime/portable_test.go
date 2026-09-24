@@ -212,6 +212,55 @@ func TestPortableRejectsDuplicateKeysAtEveryLevel(t *testing.T) {
 	}
 }
 
+// A YAML merge key injects another mapping's keys into this one, which is
+// exactly what strict decoding and duplicate-key detection exist to prevent:
+// the merged keys are never written where they take effect, so a document can
+// say two things about one field — or carry a field the schema does not model
+// — without either gate seeing it. The merge is refused wherever it appears,
+// naming the field path and line so the author can find it.
+func TestPortableRejectsYAMLMergeKeysAnywhere(t *testing.T) {
+	cases := []struct {
+		name  string
+		doc   string
+		where string
+	}{
+		{
+			"top level",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata: &meta\n  name: hello\n<<: *meta\nspec:\n  instructions: Do the thing.\n  model:\n    name: gpt-4o-mini\n",
+			"<<",
+		},
+		{
+			"nested under spec, silently supplying a modeled field",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata:\n  name: hello\nspec:\n  <<: &base\n    instructions: From the anchor.\n  instructions: Do the thing.\n  model:\n    name: gpt-4o-mini\n",
+			"spec.<<",
+		},
+		{
+			"nested under an extension",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata:\n  name: hello\nspec:\n  instructions: Do the thing.\n  model:\n    name: gpt-4o-mini\nextensions:\n  orka:\n    apiVersion: core.orka.ai/v1alpha1\n    namespace: orka-system\n    provider: &provider\n      type: openai\n      defaultModel: gpt-4o-mini\n      secretRef:\n        name: hello-key\n    agent:\n      <<: *provider\n",
+			"extensions.orka.agent.<<",
+		},
+		{
+			"inside a sequence entry",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata:\n  name: hello\nspec:\n  instructions: Do the thing.\n  model:\n    name: gpt-4o-mini\nextensions:\n  orka:\n    apiVersion: core.orka.ai/v1alpha1\n    namespace: orka-system\n    provider:\n      type: openai\n      defaultModel: gpt-4o-mini\n      secretRef: &ref\n        name: hello-key\n    agent:\n      tools:\n        - <<: *ref\n",
+			"extensions.orka.agent.tools[0].<<",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParsePortableAgent([]byte(tc.doc))
+			if err == nil {
+				t.Fatal("a YAML merge key was accepted")
+			}
+			if !strings.Contains(err.Error(), "merge key") {
+				t.Errorf("error does not name the merge key: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.where) {
+				t.Errorf("error does not name the field path %q: %v", tc.where, err)
+			}
+		})
+	}
+}
+
 func TestPortableRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 	base := validPortableYAML(t)
 	cases := []struct {

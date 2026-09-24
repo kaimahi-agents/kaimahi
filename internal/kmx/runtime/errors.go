@@ -14,11 +14,14 @@ const (
 	VerbStatus   = "status"
 	VerbEvaluate = "evaluate"
 	// VerbList and VerbShow name DESIGN.md §1's app-owned list/show
-	// presentation handlers, registered by runtime ID in app rather than as
-	// LifecycleAdapter methods: they are inventory/presentation operations,
-	// not lifecycle verbs, so no Capabilities flag governs them. A runtime
-	// ID with no registered handler returns this same shared error naming
-	// one of these two verbs.
+	// presentation operations, which live in app rather than as
+	// LifecycleAdapter methods: they are inventory/presentation, not
+	// lifecycle verbs, so no Capabilities flag governs them. List is
+	// dispatched by runtime ID, and an ID with no registered handler returns
+	// this same shared error naming VerbList. Show has no such registry —
+	// `kmx agent show` is Orka's own chain view — so VerbShow is the agreed
+	// word for that verb whenever one is needed, and never a second error
+	// model.
 	VerbList = "list"
 	VerbShow = "show"
 )

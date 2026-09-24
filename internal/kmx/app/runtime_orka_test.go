@@ -52,7 +52,7 @@ func TestOrkaAdapterRenderMatchesPinnedGoldenBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	rendered, provenance, err := adapter.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestOrkaAdapterRenderedBundleCarriesIdentityAndPrerequisite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	rendered, _, err := adapter.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +135,53 @@ func TestOrkaAdapterRenderedBundleCarriesIdentityAndPrerequisite(t *testing.T) {
 	}
 }
 
+// An omitted --secret-key and an explicit `--secret-key api-key` are the same
+// create: generation supplies that exact default either way. The portable
+// document must therefore state it either way too, or one identical agent
+// would carry two different portable digests — the same defaulting rule the
+// shorthand already applies to instructions.
+func TestOrkaShorthandStatesTheDefaultSecretKey(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	render := func(t *testing.T, secretKey string) (*agentruntime.PortableAgent, agentruntime.RenderedBundle) {
+		t.Helper()
+		a := &App{}
+		opt := orkaGoldenCreateOptions()
+		opt.SecretKey = secretKey
+		portable, err := a.portableCreateDocument(opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered, _, err := orkaRuntimeAdapter{app: a, create: &opt}.renderOrkaBundle(*portable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return portable, rendered
+	}
+	omittedDoc, omitted := render(t, "")
+	explicitDoc, explicit := render(t, "api-key")
+
+	if key := omittedDoc.Extensions.Orka.Provider.SecretRef.Key; key != "api-key" {
+		t.Fatalf("an omitted --secret-key left the document saying %q, not the default generation applies", key)
+	}
+	if string(omittedDoc.Source()) != string(explicitDoc.Source()) {
+		t.Fatalf("the two documents differ:\n--- omitted ---\n%s\n--- explicit ---\n%s", omittedDoc.Source(), explicitDoc.Source())
+	}
+	// Independent expectation: the portable digest is framed here from
+	// DESIGN.md §2's rule rather than compared only to the other run.
+	frame := func(path string, body []byte) string {
+		return fmt.Sprintf("%s %d\n%s\n", path, len(body), body)
+	}
+	wantPortable := sha256.Sum256([]byte(frame("portable-agent.yaml", explicitDoc.Source())))
+	for name, bundle := range map[string]agentruntime.RenderedBundle{"omitted": omitted, "explicit": explicit} {
+		if want := hex.EncodeToString(wantPortable[:]); bundle.PortableDigest() != want {
+			t.Errorf("%s --secret-key portable digest = %q, want %q", name, bundle.PortableDigest(), want)
+		}
+	}
+	if omitted.RenderedDigest() != explicit.RenderedDigest() {
+		t.Errorf("identical creates rendered different bytes: %q vs %q", omitted.RenderedDigest(), explicit.RenderedDigest())
+	}
+}
+
 // Two creates that differ in one authored input must differ in their portable
 // digest, and two identical creates must agree: the digest identifies the
 // document, not the code path that produced it.
@@ -148,7 +195,7 @@ func TestOrkaAdapterPortableDigestIdentifiesTheInputs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+		rendered, _, err := orkaRuntimeAdapter{app: a, create: &opt}.renderOrkaBundle(*portable)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,7 +232,7 @@ func TestOrkaAdapterSeparatesArtifactFromDeployDocuments(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+		rendered, _, err := orkaRuntimeAdapter{app: a, create: &opt}.renderOrkaBundle(*portable)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -224,7 +271,7 @@ func TestOrkaDeployRefusesADeployableSecretSkeleton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, _, err := orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+	rendered, _, err := orkaRuntimeAdapter{app: a, create: &opt}.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +298,7 @@ func TestOrkaAdapterSeamRenderEqualsCompatibilityRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	seam, err := adapter.Render(context.Background(), *portable, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -270,13 +317,98 @@ func TestOrkaAdapterSeamRenderEqualsCompatibilityRender(t *testing.T) {
 // Deploy (Task 5) plus Status (Task 6). Evaluate is permanently unsupported,
 // because a native Orka Task supplies no frozen target revision.
 func TestOrkaAdapterDeclaresRenderDeployAndStatusOnly(t *testing.T) {
-	adapter := orkaRuntimeAdapter{app: &App{}}
+	opt := orkaGoldenCreateOptions()
+	adapter := orkaRuntimeAdapter{app: &App{}, create: &opt}
 	caps := adapter.Capabilities()
 	if !caps.Render || !caps.Deploy || !caps.Status {
 		t.Fatalf("Orka lifecycle Capabilities = %+v, want Render, Deploy and Status supported", caps)
 	}
 	if caps.Evaluate {
 		t.Fatalf("Orka lifecycle Capabilities = %+v, want Evaluate unsupported", caps)
+	}
+}
+
+// Render and Deploy act on this create's own flags (--task, --dry-run, the
+// offline schema target, the result service account). The status and chat
+// registries construct the adapter with none of them, and a zero
+// CreateOptions is not a neutral default: it would render and deploy some
+// other create's agent. Such an instance must therefore neither advertise
+// nor execute those two verbs, while Status — which reads only the AgentRef
+// it is given — stays available.
+func TestOrkaAdapterWithoutCreateFlagsDeclinesRenderAndDeploy(t *testing.T) {
+	adapter := orkaRuntimeAdapter{app: &App{}}
+	caps := adapter.Capabilities()
+	if caps.Render || caps.Deploy {
+		t.Fatalf("an adapter with no create flags advertises Render/Deploy: %+v", caps)
+	}
+	if !caps.Status {
+		t.Fatalf("an adapter with no create flags stopped declaring Status: %+v", caps)
+	}
+	for _, tc := range []struct {
+		verb string
+		call func() error
+	}{
+		{agentruntime.VerbRender, func() error {
+			_, err := adapter.Render(context.Background(), agentruntime.PortableAgent{}, agentruntime.RenderOptions{})
+			return err
+		}},
+		{agentruntime.VerbDeploy, func() error {
+			_, err := adapter.Deploy(context.Background(), agentruntime.RenderedBundle{}, agentruntime.DeployOptions{})
+			return err
+		}},
+	} {
+		err := tc.call()
+		var unsupported *agentruntime.UnsupportedVerbError
+		if !errors.As(err, &unsupported) {
+			t.Fatalf("verb %q: err = %v, not *UnsupportedVerbError", tc.verb, err)
+		}
+		if unsupported.Runtime != agentruntime.Orka || unsupported.Verb != tc.verb {
+			t.Fatalf("verb %q: unsupported = %+v", tc.verb, unsupported)
+		}
+	}
+}
+
+// The same rule seen through the registries that build these adapters: a
+// create registry keeps every capability it had, the status registry offers
+// only Status, and chat registration is untouched — chat uses Probe/Open and
+// declares its session flags on the session, not here.
+func TestOrkaRegistriesAdvertiseOnlyWhatTheyConfigured(t *testing.T) {
+	a := &App{}
+	opt := orkaGoldenCreateOptions()
+	create, err := a.createRuntimeRegistry(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := a.lifecycleRuntimeRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := func(t *testing.T, registry *agentruntime.Registry) agentruntime.Capabilities {
+		t.Helper()
+		adapter, err := registry.Lookup(agentruntime.Orka)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lifecycle, ok := adapter.(agentruntime.LifecycleAdapter)
+		if !ok {
+			t.Fatal("the registered Orka adapter is not a LifecycleAdapter")
+		}
+		return lifecycle.Capabilities()
+	}
+	if caps := capabilities(t, create); !caps.Render || !caps.Deploy || !caps.Status {
+		t.Errorf("the create registry lost a capability: %+v", caps)
+	}
+	if caps := capabilities(t, status); caps.Render || caps.Deploy || !caps.Status {
+		t.Errorf("the status registry's Orka adapter = %+v, want Status only", caps)
+	}
+	registered := false
+	for _, registration := range a.chatRuntimes() {
+		if registration.adapter.ID() == agentruntime.Orka {
+			registered = true
+		}
+	}
+	if !registered {
+		t.Error("Orka is no longer registered for chat")
 	}
 }
 
@@ -290,7 +422,7 @@ func TestOrkaAdapterRenderMintsTaskIdentityOncePerRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	first, _, err := adapter.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
@@ -321,6 +453,79 @@ func TestOrkaAdapterRenderMintsTaskIdentityOncePerRender(t *testing.T) {
 	}
 }
 
+// The Secret a deploy proves is the one the rendered bundle names as its
+// prerequisite, so it must name exactly one, in this bundle's own target
+// namespace, for the Secret the rendered documents actually reference. Zero
+// prerequisites would silently fall back to whatever --secret this command
+// happened to carry; several would leave which one is proved to iteration
+// order; a mismatched one would prove a Secret this agent never reads.
+func TestOrkaAdapterDeployRequiresExactlyOneMatchingSecretPrerequisite(t *testing.T) {
+	a, opt, _, _, dir := orkaCreateFixture(t, "")
+	if err := validateOrkaResultOptions(&opt); err != nil {
+		t.Fatal(err)
+	}
+	portable, err := a.portableCreateDocument(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
+	rendered, _, err := adapter.renderOrkaBundle(*portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := rendered.Prerequisites()[0]
+	// Rebuilding preserves the artifact's apply flags: the Secret skeleton
+	// stays review-only, so only the prerequisite list varies between cases.
+	rebundle := func(t *testing.T, prerequisites []agentruntime.Prerequisite) agentruntime.RenderedBundle {
+		t.Helper()
+		var documents []agentruntime.Document
+		for i, raw := range rendered.Documents() {
+			if i == 0 {
+				documents = append(documents, agentruntime.ReviewDocument(raw))
+				continue
+			}
+			documents = append(documents, agentruntime.ApplyDocument(raw))
+		}
+		bundle, err := agentruntime.NewRenderedBundle(agentruntime.Orka, portable.Source(), documents, prerequisites, rendered.Target(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bundle
+	}
+	for _, tc := range []struct {
+		name          string
+		prerequisites []agentruntime.Prerequisite
+	}{
+		{"none at all", nil},
+		{"no Secret among them", []agentruntime.Prerequisite{{Kind: "ServiceAccount", Namespace: secret.Namespace, Name: secret.Name}}},
+		{"two Secrets", []agentruntime.Prerequisite{secret, {Kind: "Secret", Namespace: secret.Namespace, Name: "other-key"}}},
+		{"the same Secret twice", []agentruntime.Prerequisite{secret, secret}},
+		{"a Secret in another namespace", []agentruntime.Prerequisite{{Kind: "Secret", Namespace: "elsewhere", Name: secret.Name}}},
+		{"a Secret the documents do not reference", []agentruntime.Prerequisite{{Kind: "Secret", Namespace: secret.Namespace, Name: "other-key"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := len(orkaCalls(t, dir))
+			_, err := adapter.Deploy(t.Context(), rebundle(t, tc.prerequisites), agentruntime.DeployOptions{})
+			if err == nil {
+				t.Fatal("deploy accepted a bundle that does not name exactly one matching Secret prerequisite")
+			}
+			if !strings.Contains(err.Error(), "Secret") {
+				t.Errorf("error does not name the Secret prerequisite: %v", err)
+			}
+			for _, call := range orkaCalls(t, dir)[before:] {
+				if call.Document != nil {
+					t.Fatalf("a refused deploy still sent a document: %v", call.Args)
+				}
+			}
+		})
+	}
+	// The unmodified bundle still deploys: this refuses a malformed
+	// prerequisite list, not the one Render actually produces.
+	if _, err := adapter.Deploy(t.Context(), rebundle(t, []agentruntime.Prerequisite{secret}), agentruntime.DeployOptions{}); err != nil {
+		t.Fatalf("the rendered bundle's own prerequisite was refused: %v", err)
+	}
+}
+
 // Deploy consumes the immutable bundle: every applied object is byte-for-byte
 // the rendered one, in Provider → Agent → Task order, and the value-free
 // Secret skeleton is never written.
@@ -343,7 +548,7 @@ func TestOrkaAdapterDeployAppliesExactRenderedObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	rendered, _, err := adapter.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +614,7 @@ func TestOrkaAdapterDeployEmitsRenderedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := orkaRuntimeAdapter{app: a, create: opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
 	rendered, _, err := adapter.renderOrkaBundle(*portable)
 	if err != nil {
 		t.Fatal(err)
@@ -512,7 +717,7 @@ func TestOrkaAdapterRenderValidatesPerMode(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, _, err = orkaRuntimeAdapter{app: a, create: opt}.renderOrkaBundle(*portable)
+		_, _, err = orkaRuntimeAdapter{app: a, create: &opt}.renderOrkaBundle(*portable)
 		return err
 	}
 
@@ -763,6 +968,65 @@ func TestCreateAgentExplicitKagentV1RequiresFile(t *testing.T) {
 
 // A --file create resolves its runtime through the same shared detection and
 // then renders the document's own Orka extension.
+// An unreadable or malformed --file is the document's own problem, and it is
+// decided before the cluster is asked anything: shared platform detection is
+// a cluster read, and a create that cannot be rendered at all must not
+// depend on a reachable cluster to say so. The report is the parse error,
+// not a detection failure from a cluster this create was never going to use.
+func TestCreateAgentValidatesTheDocumentBeforeContactingTheCluster(t *testing.T) {
+	malformed := func(t *testing.T) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "portable-agent.yaml")
+		// A merge key: refused by the parser, and refused before the parser
+		// would have to reach a cluster to find out which runtime cares.
+		document := `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: sample
+spec:
+  <<: &base
+    instructions: From the anchor.
+  instructions: Do the thing.
+  model:
+    name: gpt-4o-mini
+`
+		if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("no cluster call is made", func(t *testing.T) {
+		a, opt, out, _, dir := orkaCreateFixture(t, "no-platform")
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformed(t), Out: opt.Out})
+		if err == nil || !strings.Contains(err.Error(), "merge key") {
+			t.Fatalf("err = %v, want the portable parse error", err)
+		}
+		if calls := orkaCalls(t, dir); len(calls) != 0 {
+			t.Fatalf("an unparseable document still contacted the cluster: %v", calls)
+		}
+		if out.Len() != 0 {
+			t.Fatal("an unparseable document emitted bytes")
+		}
+	})
+
+	// With no kubectl on PATH at all, a create that reached preflight would
+	// report a missing dependency. The parse error proves nothing ran first.
+	t.Run("kubectl is never needed", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		t.Setenv("KMX_TOOLCHAIN", "off")
+		var out, diagnostics bytes.Buffer
+		a := &App{Out: &out, Err: &diagnostics}
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformed(t)})
+		if err == nil || !strings.Contains(err.Error(), "merge key") {
+			t.Fatalf("err = %v, want the portable parse error", err)
+		}
+		if out.Len() != 0 {
+			t.Fatal("an unparseable document emitted bytes")
+		}
+	})
+}
+
 func TestCreateAgentFileUsesSharedPlatformDetection(t *testing.T) {
 	a, opt, _, _, dir := orkaCreateFixture(t, "")
 	if err := a.CreateAgent(CreateOptions{Name: "sample", File: portableAgentFile(t, "sample"), Out: opt.Out}); err != nil {

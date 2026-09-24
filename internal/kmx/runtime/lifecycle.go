@@ -25,13 +25,16 @@ type LifecycleAdapter interface {
 	Evaluate(context.Context, AgentRef, EvaluationRequest) (EvaluationReceipt, error)
 }
 
-// RenderOptions is reserved for adapter-specific render tuning. W94 defines
-// no fields yet; later tasks (Orka's dry-run/schema-target flags, kagent-v1's
-// admission label) extend it without changing Render's shape.
+// RenderOptions is reserved for adapter-specific render tuning. It defines
+// no fields: Orka's own render knobs (dry-run, offline schema target) are
+// CLI shapes that stay in the app-owned adapter rather than crossing this
+// neutral boundary, and kagent-v1 — which shared platform detection can
+// detect but this build does not implement — renders nothing here. A field
+// can be added without changing Render's shape.
 type RenderOptions struct{}
 
 // DeployOptions is reserved for adapter-specific deploy tuning, mirroring
-// RenderOptions. W94 defines no fields yet.
+// RenderOptions. It defines no fields for the same reason.
 type DeployOptions struct{}
 
 // StatusOptions is reserved for adapter-specific status tuning. Which
@@ -244,9 +247,10 @@ func copyDocumentBytes(documents []Document, deployOnly bool) [][]byte {
 func (b RenderedBundle) PortableDigest() string { return b.portableDigest }
 
 // RenderedDigest returns the rendered bundle digest computed at
-// construction: lowercase 64-hex SHA-256 over every rendered document,
-// framed under numbered "rendered/%03d.yaml" logical paths in deployment
-// order.
+// construction: lowercase 64-hex SHA-256 over every rendered document —
+// review-only documents included — framed under numbered
+// "rendered/%03d.yaml" logical paths in artifact order, which is the order
+// Documents() returns and the emitted artifact carries.
 func (b RenderedBundle) RenderedDigest() string { return b.renderedDigest }
 
 // Prerequisites returns a defensive copy of the external objects Deploy must

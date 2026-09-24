@@ -79,6 +79,18 @@
       "breaks": "The chart leaves agentImage.tag empty and defers to the chart version. Reading the empty string as a tag would test an image reference that does not exist, or — worse — a floating one.",
       "find": "    tag = image.get(\"tag\") or values.get(\"tag\") or version",
       "replace": "    tag = image.get(\"tag\", version)"
+    },
+    {
+      "name": "a failing cleanup masks the export failure",
+      "breaks": "The container removal is cleanup, not a result. Checking it lets an engine that will not remove a container replace the export failure the operator needs to see, so the run reports the wrong command.",
+      "find": "        subprocess.run([engine_bin, \"rm\", \"-f\", cid], check=False, capture_output=True, text=True)",
+      "replace": "        subprocess.run([engine_bin, \"rm\", \"-f\", cid], check=True, capture_output=True, text=True)"
+    },
+    {
+      "name": "an unreadable export escapes as a traceback",
+      "breaks": "A truncated or non-tar export ends the run in tarfile's own exception instead of this checker's one controlled failure, so CI shows a stack trace where it should name the image.",
+      "find": "    except tarfile.TarError as e:",
+      "replace": "    except ValueError as e:"
     }
   ]
 }

@@ -285,9 +285,13 @@ func statusReady(allAgents, allModels bool, kReady, kTotal, oReady, oTotal, pRea
 // lifecycleRuntimeRegistry holds the LifecycleAdapters an explicit or
 // detected --runtime status dispatch looks up by ID (DESIGN.md §4). Orka
 // reports its own workload state and legacy kagent its retained combined
-// runtime slice; kagent-v1 joins this registry in a later task, so until
-// then it resolves to the registry's own typed UnknownRuntimeError rather
-// than to another runtime's implementation.
+// runtime slice; kagent-v1 is detected by shared platform detection but not
+// implemented in this build, so it resolves to the registry's own typed
+// UnknownRuntimeError rather than to another runtime's implementation.
+//
+// The Orka adapter is built with no create flags, which is exactly what it
+// needs for Status and exactly why it declares neither Render nor Deploy
+// here (runtime_orka.go).
 //
 // snapshot is the legacy adapter's sink (runtime_kagent.go): the status path
 // passes one so the app-owned aggregate sections report the same combined

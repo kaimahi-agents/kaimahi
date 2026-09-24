@@ -23,8 +23,10 @@ type listPresentationRegistration struct {
 
 // listPresentationHandlers registers exactly the runtimes this build can
 // list by explicit or detected ID: Orka's --namespace-scoped listing and the
-// legacy runtime's own fixed-namespace list, both unchanged. kagent-v1's
-// handler is a later task's addition.
+// legacy runtime's own fixed-namespace list, both unchanged. kagent-v1 is
+// detected by shared platform detection but not implemented in this build,
+// so it has no handler here and resolves to the one shared typed
+// unsupported-verb error.
 func (a *App) listPresentationHandlers() []listPresentationRegistration {
 	return []listPresentationRegistration{
 		{id: agentruntime.Orka, handler: a.listOrkaAgents},
