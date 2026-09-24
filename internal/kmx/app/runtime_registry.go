@@ -105,6 +105,46 @@ func (a orkaRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target
 	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace}}, nil
 }
 
+// Capabilities is Task 4's skeleton declaration: every lifecycle flag is
+// false until Task 5/6 wrap the existing Orka create/list/show/status paths
+// behind Render/Deploy/Status. Session-level flags remain Session's own
+// concern (via orkaRuntimeSession.Capabilities), not this static, per-adapter
+// declaration.
+func (orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
+	return agentruntime.Capabilities{}
+}
+
+func (a orkaRuntimeAdapter) Render(context.Context, agentruntime.PortableAgent, agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender); err != nil {
+		return agentruntime.RenderedBundle{}, err
+	}
+	return agentruntime.RenderedBundle{}, fmt.Errorf("orka render: not yet implemented")
+}
+
+func (a orkaRuntimeAdapter) Deploy(context.Context, agentruntime.RenderedBundle, agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Deploy, agentruntime.VerbDeploy); err != nil {
+		return agentruntime.AgentRef{}, err
+	}
+	return agentruntime.AgentRef{}, fmt.Errorf("orka deploy: not yet implemented")
+}
+
+func (a orkaRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	return agentruntime.LifecycleStatus{}, fmt.Errorf("orka status: not yet implemented")
+}
+
+// Evaluate is permanently unsupported for Orka (DESIGN.md §3: "native Orka
+// Tasks do not supply the required frozen target revision, and kmx must not
+// fabricate one"), so Capabilities().Evaluate is never expected to flip true.
+func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	return agentruntime.EvaluationReceipt{}, fmt.Errorf("orka evaluate: not yet implemented")
+}
+
 type kagentRuntimeAdapter struct{ app *App }
 
 func (kagentRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Kagent }
@@ -131,17 +171,113 @@ func (a kagentRuntimeAdapter) Open(ctx context.Context, target agentruntime.Targ
 	return &kagentRuntimeSession{app: a.app, executable: executable, name: target.Name, session: target.Session, toolMode: "summary"}, nil
 }
 
+// Capabilities is Task 4's skeleton declaration for legacy kagent: every
+// lifecycle flag is false until Task 8 wraps its existing combined-status
+// slice behind Status (DESIGN.md §3 declares Render/Deploy/Evaluate
+// permanently unsupported for this runtime; only Status is ever expected to
+// flip true).
+func (kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
+	return agentruntime.Capabilities{}
+}
+
+func (a kagentRuntimeAdapter) Render(context.Context, agentruntime.PortableAgent, agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Render, agentruntime.VerbRender); err != nil {
+		return agentruntime.RenderedBundle{}, err
+	}
+	return agentruntime.RenderedBundle{}, fmt.Errorf("kagent render: not yet implemented")
+}
+
+func (a kagentRuntimeAdapter) Deploy(context.Context, agentruntime.RenderedBundle, agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Deploy, agentruntime.VerbDeploy); err != nil {
+		return agentruntime.AgentRef{}, err
+	}
+	return agentruntime.AgentRef{}, fmt.Errorf("kagent deploy: not yet implemented")
+}
+
+func (a kagentRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	return agentruntime.LifecycleStatus{}, fmt.Errorf("kagent status: not yet implemented")
+}
+
+func (a kagentRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	if err := lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	return agentruntime.EvaluationReceipt{}, fmt.Errorf("kagent evaluate: not yet implemented")
+}
+
+// resolveRegisteredRuntime keeps PR #197's exact call shape (a slice of
+// runtimeRegistration, since chat registrations also carry a run function
+// Adapter alone does not model) but delegates the actual ordered-probe,
+// no-fallback-on-error bookkeeping to the shared, neutral
+// agentruntime.Registry — the same logic Task 4 moved into internal/kmx/runtime
+// so it is no longer duplicated between chat and future lifecycle dispatch.
 func resolveRegisteredRuntime(ctx context.Context, registrations []runtimeRegistration, target agentruntime.Target) (agentruntime.AgentRef, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	for _, registration := range registrations {
-		probe, err := registration.adapter.Probe(ctx, target)
-		if err != nil {
-			return agentruntime.AgentRef{}, err
-		}
-		if probe.Found {
-			return probe.Agent, nil
+	adapters := make([]agentruntime.Adapter, len(registrations))
+	for i, registration := range registrations {
+		adapters[i] = registration.adapter
+	}
+	registry, err := agentruntime.NewRegistry(adapters...)
+	if err != nil {
+		return agentruntime.AgentRef{}, err
+	}
+	return registry.Resolve(ctx, target)
+}
+
+// lifecycleVerbError is the one place both existing adapters' skeleton
+// LifecycleAdapter methods decide whether to run or refuse: a verb a
+// runtime's Capabilities declares unsupported returns the shared
+// UnsupportedVerbError instead of being attempted. Task 4 registers only
+// skeleton Capabilities (every lifecycle flag false) for the existing
+// Orka/legacy-kagent adapters; later tasks flip a flag to true and replace
+// that verb's method body with real behavior, without changing this
+// dispatch rule.
+func lifecycleVerbError(id agentruntime.ID, supported bool, verb string) error {
+	if supported {
+		return nil
+	}
+	return &agentruntime.UnsupportedVerbError{Runtime: id, Verb: verb}
+}
+
+// detectOrkaPlatform is the Kubernetes-aware half of DESIGN.md §1's shared
+// platform auto-detection: it inspects installed API resources once for
+// Orka's core.orka.ai Agent CRD and returns a neutral installed/error result
+// for agentruntime.SelectPlatform. A read error is reported, never silently
+// treated as absence.
+func (a *App) detectOrkaPlatform(ctx context.Context) agentruntime.PlatformDetection {
+	raw, err := a.orkaCapture(ctx, nil, "api-resources", "--api-group=core.orka.ai", "-o", "name")
+	if err != nil {
+		return agentruntime.PlatformDetection{Err: fmt.Errorf("cannot detect Orka installation: %w", err)}
+	}
+	for _, resource := range strings.Fields(string(raw)) {
+		if resource == "agents.core.orka.ai" {
+			return agentruntime.PlatformDetection{Installed: true}
 		}
 	}
-	return agentruntime.AgentRef{}, fmt.Errorf("Agent %s/%s was not found in the registered runtimes", target.Namespace, target.Name)
+	return agentruntime.PlatformDetection{}
+}
+
+// detectKagentV1Platform is the Kubernetes-aware half of DESIGN.md §1's
+// shared platform auto-detection for kagent v1: it inspects installed API
+// resources once for the kagent.dev/v1alpha3 AgentTemplate CRD — a resource
+// kind legacy kagent never installs — and returns a neutral installed/error
+// result for agentruntime.SelectPlatform.
+func (a *App) detectKagentV1Platform(ctx context.Context) agentruntime.PlatformDetection {
+	if err := ctx.Err(); err != nil {
+		return agentruntime.PlatformDetection{Err: err}
+	}
+	raw, err := a.kubectlCapture("api-resources", "--api-group=kagent.dev", "-o", "name")
+	if err != nil {
+		return agentruntime.PlatformDetection{Err: fmt.Errorf("cannot detect kagent v1 installation: %w", err)}
+	}
+	for _, resource := range strings.Fields(raw) {
+		if resource == "agenttemplates.kagent.dev" {
+			return agentruntime.PlatformDetection{Installed: true}
+		}
+	}
+	return agentruntime.PlatformDetection{}
 }

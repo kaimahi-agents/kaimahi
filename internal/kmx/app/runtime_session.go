@@ -154,6 +154,8 @@ var _ agentruntime.Session = (*orkaRuntimeSession)(nil)
 var _ agentruntime.Session = (*kagentRuntimeSession)(nil)
 var _ agentruntime.Adapter = orkaRuntimeAdapter{}
 var _ agentruntime.Adapter = kagentRuntimeAdapter{}
+var _ agentruntime.LifecycleAdapter = orkaRuntimeAdapter{}
+var _ agentruntime.LifecycleAdapter = kagentRuntimeAdapter{}
 
 func (s *orkaRuntimeSession) Connect(ctx context.Context, emit agentruntime.Emit) (agentruntime.Status, error) {
 	fields, err := s.backend.Connect(ctx, runtimeEventRenderer(emit, false))
