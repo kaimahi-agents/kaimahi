@@ -49,8 +49,20 @@
     {
       "name": "the isError test is inverted",
       "breaks": "The sense of the legacy flag flips, so only failed calls count. The kind of edit that comes from moving a `not` while rewrapping a line.",
-      "find": "        return resp[\"isError\"] is False",
-      "replace": "        return resp[\"isError\"] is True"
+      "find": "        return resp[\"isError\"] is False and _nonempty(resp.get(\"content\"))",
+      "replace": "        return resp[\"isError\"] is True and _nonempty(resp.get(\"content\"))"
+    },
+    {
+      "name": "the legacy payload becomes optional",
+      "breaks": "A bare `isError: false` counts as a completed tool round-trip. The flag says nothing went wrong; it does not say the tool answered, and with no SUBSTRING given nothing else is left to notice that the payload never arrived.",
+      "find": "        return resp[\"isError\"] is False and _nonempty(resp.get(\"content\"))",
+      "replace": "        return resp[\"isError\"] is False"
+    },
+    {
+      "name": "an empty payload counts as evidence",
+      "breaks": "The one test both shapes share stops deciding anything: an empty content list or an empty output is read as a tool that answered.",
+      "find": "    if isinstance(payload, str):\n        return bool(payload.strip())\n    return bool(payload)",
+      "replace": "    return True"
     },
     {
       "name": "the legacy isError flag stops being read",
@@ -73,7 +85,7 @@
     {
       "name": "an empty tool output counts as a success",
       "breaks": "On the v0.10 shape the output is the ONLY evidence the tool ran, so accepting an empty one accepts a round-trip that carried nothing.",
-      "find": "    return bool(out.strip()) if isinstance(out, str) else bool(out)",
+      "find": "    return _nonempty(resp.get(\"output\"))",
       "replace": "    return True"
     },
     {

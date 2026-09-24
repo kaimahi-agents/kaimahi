@@ -9,11 +9,13 @@ With TOOL, the task history must additionally contain a function_call for
 that tool name AND a SUCCESSFUL function_response for it — a
 plausible-sounding reply without a real MCP invocation fails. Success is
 read from whichever shape the runtime emits: kagent v0.9 wrapped MCP's
-result and carried `isError`, kagent v0.10.1 emits ADK events whose
-successful response carries the tool's `output` and no flag at all (the
-event-kind key moved from `kagent_type` to `adk_type` at the same time).
-Both are read, and both fail closed: a missing, empty or error-marked
-response is never a success. With SUBSTRING, that successful
+result and carried `isError` beside the payload in `content`, kagent
+v0.10.1 emits ADK events whose successful response carries the tool's
+`output` and no flag at all (the event-kind key moved from `kagent_type`
+to `adk_type` at the same time). Both are read, and both fail closed: a
+missing, empty or error-marked response is never a success, and neither
+is one whose payload is empty — including a bare `isError: false`, which
+says nothing went wrong without showing that anything happened. With SUBSTRING, that successful
 function_response's payload must contain it (CI
 passes an unguessable probe ConfigMap name, so the payload can only have
 come from a live cluster round-trip). The model's prose is printed but not
@@ -72,21 +74,37 @@ def pending_requests(d):
     return names
 
 
+def _nonempty(payload):
+    """True when a tool payload carries something. A string is judged on
+    its non-whitespace content; every other shape (the v0.9 `content`
+    list, a structured object) on being non-empty. Only shapes the
+    runtimes are evidenced to emit are read — there is no speculative
+    unwrapping here, because a key that is never sent cannot be proof."""
+    if isinstance(payload, str):
+        return bool(payload.strip())
+    return bool(payload)
+
+
 def response_ok(data):
     """True when a function_response records a tool call that really
-    SUCCEEDED, in either runtime shape, and False whenever the evidence is
-    missing or ambiguous.
+    SUCCEEDED and returned something, in either runtime shape, and False
+    whenever the evidence is missing or ambiguous.
 
-    kagent v0.9 wrapped MCP's own result: `response.isError` was the
-    verdict, and the fixtures built from those captures still carry it.
-    kagent v0.10.1 emits ADK function responses instead: a success carries
-    the tool's `output` and no flag at all, so the absence of an error
-    marker cannot be the test — a response with nothing in it would read
-    as a success and the tool path would stop being evidence.
+    kagent v0.9 wrapped MCP's own result: `response.isError` carried the
+    verdict and `response.content` the payload — the two fields the Go
+    chat client decodes (internal/kmx/app/chat_interactive.go), and the
+    two the captured fixtures below have. kagent v0.10.1 emits ADK
+    function responses instead: a success carries the tool's `output` and
+    no flag at all, so the absence of an error marker cannot be the test
+    — a response with nothing in it would read as a success and the tool
+    path would stop being evidence.
 
-    So: an explicit error marker is a refusal in either shape; `isError`
-    decides when it is present; otherwise the tool's non-empty output is
-    the only thing that can carry the verdict."""
+    So, in both shapes: an explicit error marker is a refusal, and a
+    success has to carry a non-empty payload. `isError` is read where the
+    runtime sends it, but it is never the whole verdict on its own — a
+    flag saying nothing went wrong is not proof that anything happened.
+    That matters most with no SUBSTRING to fall back on, where this count
+    is all that asserts the tool answered at all."""
     resp = data.get("response")
     if not isinstance(resp, dict) or not resp:
         return False
@@ -94,10 +112,10 @@ def response_ok(data):
         return False
     if "isError" in resp:
         # Legacy: anything but a literal false — including a null the
-        # runtime left behind — is not a success.
-        return resp["isError"] is False
-    out = resp.get("output")
-    return bool(out.strip()) if isinstance(out, str) else bool(out)
+        # runtime left behind — is not a success, and the MCP payload has
+        # to be there behind it.
+        return resp["isError"] is False and _nonempty(resp.get("content"))
+    return _nonempty(resp.get("output"))
 
 
 def verify(d, tool=None, needle=None, tool_path=False):
@@ -395,6 +413,17 @@ def selftest():
     errored = copy.deepcopy(_FIXTURE)
     errored["history"][1]["parts"][0]["data"]["response"]["isError"] = True
     cases.append(("function_response isError:true -> FAIL", errored, False))
+    # `isError: false` and nothing else. The flag says nothing went wrong;
+    # it does not say the tool answered, and a round-trip that returned no
+    # payload is not the proof this step exists to produce.
+    no_content = copy.deepcopy(_FIXTURE)
+    del no_content["history"][1]["parts"][0]["data"]["response"]["content"]
+    cases.append(("isError:false with no content at all -> FAIL",
+                  no_content, False))
+    empty_content = copy.deepcopy(_FIXTURE)
+    empty_content["history"][1]["parts"][0]["data"]["response"]["content"] = []
+    cases.append(("isError:false with an empty content list -> FAIL",
+                  empty_content, False))
     empty = copy.deepcopy(_FIXTURE)
     empty["artifacts"] = []
     cases.append(("empty reply -> FAIL", empty, False))
@@ -453,6 +482,14 @@ def selftest():
                        _FIXTURE, True, "k8s_get_resources", None))
     tool_cases.append(("no substring given, no function_response -> FAIL",
                        no_resp, False, "k8s_get_resources", None))
+    # The legacy pair again with no SUBSTRING: with no probe to fall back
+    # on, the payload behind `isError: false` is the only thing left
+    # asserting the tool returned anything, so it is caught here or
+    # nowhere.
+    tool_cases.append(("no substring given, isError:false with no content -> FAIL",
+                       no_content, False, "k8s_get_resources", None))
+    tool_cases.append(("no substring given, isError:false with empty content -> FAIL",
+                       empty_content, False, "k8s_get_resources", None))
     # Checked with no TOOL argument, so the verdict can only come from the
     # state and the reply — the plain `make chat` steps' form.
     tool_cases.append(("agent asked the user a question -> FAIL",
