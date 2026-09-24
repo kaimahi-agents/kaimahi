@@ -78,12 +78,21 @@ func TestPortableValidDocumentParses(t *testing.T) {
 		kagent.Tools.MCP[0].Server.Kind != "RemoteMCPServer" || kagent.Tools.MCP[0].Server.Name != "filesystem" {
 		t.Errorf("extensions.kagent.tools.mcp = %#v", kagent.Tools)
 	}
-	if len(kagent.Skills) != 1 || kagent.Skills[0].Name != "triage" || kagent.Skills[0].Source.OCI == nil ||
-		kagent.Skills[0].Source.OCI.Digest != "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" {
+	if kagent.Tools == nil || len(kagent.Tools.Agents) != 1 {
+		t.Fatalf("extensions.kagent.tools.agents = %#v", kagent.Tools)
+	}
+	agentBinding := kagent.Tools.Agents[0]
+	if agentBinding.Name != "researcher" || agentBinding.Description == "" ||
+		agentBinding.TemplateRef.Name != "research-template" || agentBinding.Isolation != "Shared" {
+		t.Errorf("extensions.kagent.tools.agents[0] = %#v", agentBinding)
+	}
+	const ociDigest = "ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+	if len(kagent.Skills) != 1 || kagent.Skills[0].Name != "triage" || kagent.Skills[0].Source.OCI != ociDigest {
 		t.Errorf("extensions.kagent.skills = %#v", kagent.Skills)
 	}
-	if len(kagent.Plugins) != 1 || kagent.Plugins[0].Name != "audit-log" || kagent.Plugins[0].Source.Git == nil ||
-		kagent.Plugins[0].Source.Git.Commit != "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2" {
+	if len(kagent.Plugins) != 1 || kagent.Plugins[0].Source.Git == nil ||
+		kagent.Plugins[0].Source.Git.Commit != "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2" ||
+		len(kagent.Plugins[0].Skills) != 1 || kagent.Plugins[0].Skills[0] != "audit-log" {
 		t.Errorf("extensions.kagent.plugins = %#v", kagent.Plugins)
 	}
 
@@ -175,8 +184,16 @@ func TestPortableRejectsDuplicateKeysAtEveryLevel(t *testing.T) {
 			"extensions:\n  kagent:\n    tools:\n      mcp:\n        - server: {kind: RemoteMCPServer, name: a}\n          requireApproval: false\n          requireApproval: false\n",
 		},
 		{
+			"extensions.kagent.tools.agents list entry",
+			"extensions:\n  kagent:\n    tools:\n      agents:\n        - name: a\n          name: a\n",
+		},
+		{
 			"extensions.kagent.skills.source",
-			"extensions:\n  kagent:\n    skills:\n      - name: a\n        source:\n          oci: {reference: a, digest: b}\n        source:\n          oci: {reference: c, digest: d}\n",
+			"extensions:\n  kagent:\n    skills:\n      - name: a\n        source:\n          oci: a@sha256:1111111111111111111111111111111111111111111111111111111111111111\n          oci: b@sha256:2222222222222222222222222222222222222222222222222222222222222222\n",
+		},
+		{
+			"extensions.kagent.plugins entry",
+			"extensions:\n  kagent:\n    plugins:\n      - source: {oci: a@sha256:1111111111111111111111111111111111111111111111111111111111111111}\n        skills: [a]\n        skills: [a]\n",
 		},
 	}
 	for _, tc := range cases {
@@ -214,10 +231,13 @@ func TestPortableRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 		{"extensions.kagent.tools", "tools:\n      mcp:", "tools:\n      bogus: true\n      mcp:"},
 		{"extensions.kagent.tools.mcp entry", "requireApproval: false\n", "requireApproval: false\n          bogus: true\n"},
 		{"extensions.kagent.tools.mcp.server", "kind: RemoteMCPServer\n            name: filesystem\n", "kind: RemoteMCPServer\n            name: filesystem\n            bogus: true\n"},
+		{"extensions.kagent.tools.agents entry", "isolation: Shared\n", "isolation: Shared\n          bogus: true\n"},
+		{"extensions.kagent.tools.agents.templateRef", "templateRef:\n            name: research-template\n", "templateRef:\n            name: research-template\n            bogus: true\n"},
 		{"extensions.kagent.skills entry", "name: triage\n        source:\n", "name: triage\n        bogus: true\n        source:\n"},
-		{"extensions.kagent.skills.source", "source:\n          oci:\n", "source:\n          bogus: true\n          oci:\n"},
-		{"extensions.kagent.skills.source.oci", "reference: ghcr.io/kaimahi/skills/triage\n", "reference: ghcr.io/kaimahi/skills/triage\n            bogus: true\n"},
-		{"extensions.kagent.plugins.source.git", "repository: https://github.com/kaimahi-agents/plugins\n", "repository: https://github.com/kaimahi-agents/plugins\n            bogus: true\n"},
+		{"extensions.kagent.skills.source", "oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n", "oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n          bogus: true\n"},
+		{"extensions.kagent.plugins entry", "plugins:\n      - source:\n", "plugins:\n      - bogus: true\n        source:\n"},
+		{"extensions.kagent.plugins entry has no name field (old lossy shape)", "plugins:\n      - source:\n", "plugins:\n      - name: audit-log\n        source:\n"},
+		{"extensions.kagent.plugins.source.git", "url: https://github.com/kaimahi-agents/plugins\n", "url: https://github.com/kaimahi-agents/plugins\n            bogus: true\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -328,31 +348,26 @@ func TestPortableKagentSkillAndPluginIdentitiesAreImmutable(t *testing.T) {
 		},
 		{
 			"duplicate skill name",
-			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
-			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
-		},
-		{
-			"missing plugin name",
-			"plugins:\n      - name: audit-log\n        source:",
-			"plugins:\n      - name: \"\"\n        source:",
-		},
-		{
-			"duplicate plugin name",
-			"      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
-			"      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
+			"      - name: triage\n        source:\n          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"      - name: triage\n        source:\n          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n      - name: triage\n        source:\n          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
 		},
 		{
 			"skill with no source at all (bare name)",
-			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"      - name: triage\n        source:\n          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
 			"      - name: triage\n        source: {}\n",
 		},
 		{
-			"skill oci digest is a mutable tag, not a digest",
-			"digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
-			"digest: latest\n",
+			"plugin bundle selects a blank skill name",
+			"skills:\n          - audit-log\n",
+			"skills:\n          - \"\"\n",
 		},
 		{
-			"plugin git commit is a branch, not a full SHA",
+			"plugin bundle duplicates a skill selection",
+			"skills:\n          - audit-log\n",
+			"skills:\n          - audit-log\n          - audit-log\n",
+		},
+		{
+			"plugin git commit is a branch, not a full commit ID",
 			"commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
 			"commit: main\n",
 		},
@@ -362,6 +377,134 @@ func TestPortableKagentSkillAndPluginIdentitiesAreImmutable(t *testing.T) {
 			doc := mustReplace(t, base, tc.old, tc.new)
 			if _, err := ParsePortableAgent([]byte(doc)); err == nil {
 				t.Fatal("expected an immutable-identity error")
+			}
+		})
+	}
+}
+
+func TestPortableKagentAgentToolBindingRequiresAllFields(t *testing.T) {
+	base := validPortableYAML(t)
+	cases := []struct {
+		name string
+		old  string
+		new  string
+	}{
+		{
+			"bare name-only binding (the old lossy shape) is rejected",
+			"agents:\n        - name: researcher\n          description: Delegate deep research subtasks to a specialized agent.\n          templateRef:\n            name: research-template\n          isolation: Shared\n",
+			"agents:\n        - name: researcher\n",
+		},
+		{
+			"missing description",
+			"description: Delegate deep research subtasks to a specialized agent.\n",
+			"description: \"\"\n",
+		},
+		{
+			"missing templateRef.name",
+			"            name: research-template\n",
+			"            name: \"\"\n",
+		},
+		{
+			"invalid isolation value",
+			"isolation: Shared\n",
+			"isolation: Bogus\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := mustReplace(t, base, tc.old, tc.new)
+			if _, err := ParsePortableAgent([]byte(doc)); err == nil {
+				t.Fatal("expected an AgentToolBinding validation error")
+			}
+		})
+	}
+}
+
+// TestPortableKagentArtifactSourceMirrorsPinnedForms proves the closed
+// source union matches the pinned ArtifactSource exactly: oci is one
+// "ref@sha256:<64hex>" string, git is {url, commit}, and bucket is
+// {s3: {endpoint, bucket, key, versionId, region?}} — including the two
+// valid commit ID lengths the pinned regex accepts — while the previously
+// invented reference/digest, repository/version and bare s3 forms fail.
+func TestPortableKagentArtifactSourceMirrorsPinnedForms(t *testing.T) {
+	header := `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: hello
+spec:
+  instructions: Do the thing.
+  model:
+    name: gpt-4o-mini
+extensions:
+  kagent:
+    apiVersion: kagent.dev/v1alpha3
+    namespace: kagent-system
+    harnessRef:
+      name: kagent
+    modelConfigRef:
+      name: local-ollama
+    skills:
+      - name: triage
+        source:
+`
+	valid := []struct {
+		name   string
+		source string
+	}{
+		{
+			"oci ref@sha256 string",
+			"          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+		},
+		{
+			"git with a 40-hex commit",
+			"          git:\n            url: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
+		},
+		{
+			"git with a 64-hex commit",
+			"          git:\n            url: https://github.com/kaimahi-agents/plugins\n            commit: c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\n",
+		},
+		{
+			"bucket.s3 with every required field",
+			"          bucket:\n            s3:\n              endpoint: https://s3.example.com\n              bucket: kaimahi-skills\n              key: triage/skill.tar.gz\n              versionId: v1\n",
+		},
+	}
+	for _, tc := range valid {
+		t.Run("valid: "+tc.name, func(t *testing.T) {
+			if _, err := ParsePortableAgent([]byte(header + tc.source)); err != nil {
+				t.Fatalf("a pinned-form source must decode: %v", err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name   string
+		source string
+	}{
+		{
+			"oci as the old invented {reference, digest} object is lossy and must fail",
+			"          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+		},
+		{
+			"oci without an @sha256 digest",
+			"          oci: ghcr.io/kaimahi/skills/triage:latest\n",
+		},
+		{
+			"git commit is a branch name",
+			"          git:\n            url: https://github.com/kaimahi-agents/plugins\n            commit: main\n",
+		},
+		{
+			"the old invented bare s3 object (repository/version, no endpoint or bucket wrapper) is lossy and must fail",
+			"          s3:\n            bucket: kaimahi-skills\n            key: triage/skill.tar.gz\n            version: v1\n",
+		},
+		{
+			"bucket.s3 missing versionId",
+			"          bucket:\n            s3:\n              endpoint: https://s3.example.com\n              bucket: kaimahi-skills\n              key: triage/skill.tar.gz\n",
+		},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid: "+tc.name, func(t *testing.T) {
+			if _, err := ParsePortableAgent([]byte(header + tc.source)); err == nil {
+				t.Fatal("expected a pinned-source-shape error")
 			}
 		})
 	}
@@ -378,10 +521,18 @@ func TestPortableRejectsLossyBareForms(t *testing.T) {
 	})
 	t.Run("bare-string kagent skill name no longer decodes", func(t *testing.T) {
 		doc := mustReplace(t, validPortableYAML(t),
-			"skills:\n      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"skills:\n      - name: triage\n        source:\n          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
 			"skills:\n      - triage\n")
 		if _, err := ParsePortableAgent([]byte(doc)); err == nil {
 			t.Fatal("a bare skill name string must not decode into the required immutable-identity object")
+		}
+	})
+	t.Run("bare-name-only kagent agent tool binding no longer decodes", func(t *testing.T) {
+		doc := mustReplace(t, validPortableYAML(t),
+			"agents:\n        - name: researcher\n          description: Delegate deep research subtasks to a specialized agent.\n          templateRef:\n            name: research-template\n          isolation: Shared\n",
+			"agents:\n        - name: researcher\n")
+		if _, err := ParsePortableAgent([]byte(doc)); err == nil {
+			t.Fatal("a bare agent-tool name must not satisfy the required AgentToolBinding fields")
 		}
 	})
 }
