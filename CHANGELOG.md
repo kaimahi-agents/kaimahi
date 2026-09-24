@@ -22,6 +22,45 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Changed
+
+- **`kmx agent list` and `kmx status` now select a runtime instead of
+  defaulting to legacy kagent.** Both gained `--runtime`, whose default is
+  empty and means "detect the installed platform": Orka when it is installed,
+  then kagent v1. Legacy kagent is never detected, so on a legacy-only cluster
+  — which is what `kmx quickstart` and `kmx up` build — a bare list or status
+  now stops with the platform to install rather than silently reporting the
+  legacy runtime:
+
+  ```text
+  no supported runtime platform is installed: install orka (core.orka.ai Agent CRD)
+  or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD)
+  ```
+
+  - **Upgrading:** add `--runtime kagent` to any script or habit that ran a
+    bare `kmx agent list` or `kmx status` against a kagent cluster. That path
+    is deliberately unchanged: the same legacy list rows and fixed namespace,
+    and the same combined status table, governance/Ollama/MCP/certificate
+    sections and JSON `items` shape. `kmx up` already passes it for the status
+    it prints when it finishes.
+  - A selected Orka still requires `--namespace`, and `kmx status` also
+    requires `--agent`, because it reports one Agent's workload state. Missing
+    selectors are reported before anything is collected — no partial table or
+    JSON, and no claim that the ancillary sections were checked.
+  - A failed detection read is reported as a read failure. It never becomes
+    "not installed" and never falls through to another runtime.
+  - No flags were removed, and `kmx agent chat`'s existing
+    `--runtime auto|orka|kagent` behavior is unchanged.
+  - `kmx agent create` gained the same `--runtime`. It still authors native
+    Orka and an offline artifact (`--no-apply`, `--out -`) contacts nothing
+    and stays Orka; a create that does contact a cluster now selects through
+    detection, so on a cluster with no Orka installed it names the runtime it
+    selected instead of failing later against absent CRDs.
+
+- **The legacy kagent runtime is pinned at v0.10.1**, up from v0.9.12. The
+  chart, CLI download and checksum, fixed `v1alpha2` manifests and presets
+  are all on that exact tag. No resource shape changed.
+
 ### Fixed
 
 - **`kmx agent` no longer reports an agent you just created as missing.**
@@ -31,11 +70,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   own agent as absent and then offered a different agent as the alternative.
   It now points at the interactive Orka command that works.
 
-  - `kmx agent list --namespace <ns>` lists Orka Agents. Without a namespace it
-    lists the legacy runtime, as before. An agent created by `kmx agent create`
-    could previously not be listed by `kmx agent list`, and `kmx agent show`
-    pointed at a `--namespace` flag that did not exist. It exists now, so that
-    advice is executable.
+  - `kmx agent list --runtime orka --namespace <ns>` lists Orka Agents. An
+    agent created by `kmx agent create` could previously not be listed by
+    `kmx agent list`, and `kmx agent show` pointed at a `--namespace` flag
+    that did not exist. It exists now, so that advice is executable. (The
+    bare list's own default changed in the same release — see **Changed**.)
   - One-shot `kmx agent chat <orka-agent> ...` names the Agent's Orka namespace
     and prints the working `--interactive --runtime orka` command. It no longer
     offers an unrelated kagent agent as a substitute.
@@ -48,6 +87,47 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   No behaviour changes for kagent agents, and no flags were removed.
 
 ### Added
+
+- **Orka and legacy kagent are reached through one shared runtime seam.**
+  `internal/kmx/runtime` now carries lifecycle contracts beside the chat
+  contracts merged earlier: an ordered registry with unique-ID validation and
+  explicit lookup, the platform-detection policy, a `LifecycleAdapter` with
+  static `Render`/`Deploy`/`Status`/`Evaluate` capabilities, and one shared
+  typed error for a verb a runtime declines — `runtime kagent does not support
+  render`. Nothing in that package imports Kubernetes or shells out. Orka
+  renders and deploys exactly the bytes and ordering it did before, proven by
+  a committed golden; legacy kagent supports `Status` only. Behavior for
+  existing commands is otherwise unchanged. See
+  [runtime adapters](docs/runtime-adapters.md).
+
+- **`kmx agent create --file` accepts a portable agent document.** It is a
+  closed `kmx.kaimahi.dev/v1alpha1` `PortableAgent` with `metadata.name`,
+  `spec.instructions`, `spec.model.name` and optional `extensions.orka` /
+  `extensions.kagent` blocks. Decoding is strict and fails rather than
+  dropping anything: unknown fields, duplicate YAML keys, a second document,
+  an inline credential value, a runtime/extension mismatch and an inexact tool
+  or skill identity are all refused. The name argument must match the
+  document's `metadata.name`, every portable-defined input then conflicts with
+  its flag, and deployment/output flags stay legal. Orka renders it; the
+  `kagent` extension is validated but rendered by nothing in this release.
+
+  A rendered bundle carries two digests that are never equivalent: a portable
+  bundle digest over the authored source bytes, and a rendered bundle digest
+  over every emitted document byte. Orka's optional random Task changes the
+  second and not the first. The bundle also separates its full artifact from
+  the explicit subset that may be applied, so Orka's value-free Secret
+  skeleton can never be bulk-applied.
+
+- **kagent v1 is detected, not implemented.** Detection recognizes the exact
+  `kagent.dev/v1alpha3` `AgentTemplate` CRD so a kagent v1 cluster is not
+  misreported as empty, but there is no kagent v1 authoring, deploy, status,
+  chat, evaluation or receipt path, and selecting that ID reports it as
+  unknown or unsupported. kagent `v1.0.0-alpha2` was installed on a dedicated
+  throwaway cluster and reached a ready `AgentTemplate`/`Harness` pair and a
+  ready agent instance; its A2A invoke call failed inside the kagent
+  controller against the Substrate version that proof pinned. Without a
+  working evaluation path there was nothing to verify an adapter against, so
+  none was merged.
 
 - **Podman is now selectable without knowing the `CONTAINER_ENGINE`
   environment variable.** `kmx --container-engine podman quickstart` and

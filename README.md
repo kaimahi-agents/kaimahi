@@ -92,8 +92,9 @@ not be conflated:
 - **Enforcement:** policy and governance owned by the selected platform, not by a
   generic KMX control plane.
 
-The shared adapter implemented today is a chat/session boundary. A universal
-agent CRUD, manifest conversion, lifecycle, or enforcement API is not implied.
+The shared adapter implemented today covers chat sessions plus the lifecycle
+verbs each runtime declares it supports. A universal agent CRUD, manifest
+conversion, or enforcement API is not implied.
 
 ## Current Commands
 
@@ -149,6 +150,13 @@ provisioning, and model-traffic migration are implemented. Standalone agent lift
 and the complete lifecycle remain directional. Legacy commands and the retained
 model-traffic bridge stay available while migration paths mature. AKS paths use
 billable resources and are not continuously re-proved in CI.
+
+One shared runtime seam covers the first-class runtime and the legacy kagent
+runtime, pinned at v0.10.1, reached through platform detection or an explicit
+`--runtime`. A bare `kmx agent list` or `kmx status` detects the installed
+platform and prefers Orka instead of silently selecting legacy kagent; pass
+`--runtime kagent` for exactly the previous output. kagent v1 is detected but
+not implemented. See the [runtime contract](docs/runtime-adapters.md).
 
 ## Documentation
 

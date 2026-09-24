@@ -521,8 +521,6 @@ func exactNumbers(value any) any {
 	return value
 }
 
-func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
-
 // runtimeStatusDocument is what `kmx status -o json|yaml` publishes for a
 // runtime reported through its LifecycleAdapter. It is a closed document,
 // deliberately separate from the legacy kubectl-native `items` envelope: it

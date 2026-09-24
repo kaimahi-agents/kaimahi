@@ -123,8 +123,13 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 kmx up
 kmx agent chat hello-world 'Who are you?'
 kmx agent chat --interactive hello-tools
-kmx status
+kmx status --runtime kagent
 ```
+
+`--runtime kagent` is required here and is not a formality: this cluster runs
+the legacy runtime, which is never auto-detected, so a bare `kmx status` stops
+and names the platform to install instead. See
+[runtime selection](kmx.md#runtime-selection).
 
 `up` explicitly upgrades/installs the full kagent application profile, including
 the tool server and original `hello-tools` agent from
@@ -169,7 +174,7 @@ existing result ServiceAccount tests a real model answer. Follow the
 and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
 No-name terminal invocation offers a wizard. Interactive `agent chat` supports
 Orka and kagent; one-shot chat and `agent edit` remain kagent-specific.
-`agent list --namespace <ns>` lists Orka Agents. BYO images, ModelConfig and
+`agent list --runtime orka --namespace <ns>` lists Orka Agents. BYO images, ModelConfig and
 MCP conversion are not provided.
 
 ## Using Podman instead of Docker

@@ -76,8 +76,9 @@ Select explicitly the namespace the Orka controller watches. Provider type, mode
 identifier (not a ModelConfig), and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
-Interactive agent chat supports Orka and kagent. List uses --namespace for
-Orka and defaults to kagent; edit remains kagent-specific.
+Interactive agent chat supports Orka and kagent. List selects a runtime the
+same way this command does and requires --namespace for Orka; edit remains
+kagent-specific.
 
 An omitted --runtime detects the installed platform (Orka first) for any
 create that contacts a cluster; an offline artifact (--no-apply, --out -)

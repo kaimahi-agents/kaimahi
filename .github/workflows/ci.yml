@@ -669,6 +669,12 @@ jobs:
               # fail-closed checks.
               "cmd/kmx": "the argument order of every operator verb",
               "internal/kmx/app": "the operator verbs and their refusals",
+              # The shared runtime seam: the ordered registry's no-fallback
+              # resolution, the platform-selection policy, the strict
+              # portable decoder and both identity digests. Nothing in it
+              # shells out, so nothing else would catch a regression in the
+              # bytes an adapter's output is identified by.
+              "internal/kmx/runtime": "the runtime seam's registry, portable schema and digests",
               # One list of credential shapes, read by the scaffolder, the
               # model configuration and the tree scan.
               "internal/kmx/secretshapes": "the shared credential-shape list",
