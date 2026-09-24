@@ -22,6 +22,24 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- **Orka now has its own required pull-request proof.** A new `e2e-orka-runtime`
+  CI shard brings up kind, Ollama and the model with component steps only,
+  installs the pinned Orka and its keyless Provider, and requires a
+  Provider → Agent → Task round trip to return an exact local-model answer. It
+  then applies the committed native Orka Kubernetes Tool and proves that
+  boundary directly: an allowed ConfigMap listing that contains a ConfigMap
+  created seconds earlier, and refusal of Secret reads and pod mutation at both
+  the tool's own validation and the cluster's RBAC. The shard installs no kagent
+  and creates no Helm release, and fails closed if it ever does. The required
+  `e2e-hello-world` aggregate depends on it, so it gates merges.
+
+  It does not claim that the local model chose to call the tool — small-model
+  tool selection is a known CI flake class and is left unasserted rather than
+  asserted flakily — and it claims nothing about governance: Orka traffic is not
+  on the plane seam there. No product default changed.
+
 ### Fixed
 
 - **`kmx agent` no longer reports an agent you just created as missing.**
