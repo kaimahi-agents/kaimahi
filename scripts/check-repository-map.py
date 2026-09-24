@@ -774,7 +774,11 @@ def the_brand_directory_is_what_the_map_says(doc: Doc, tree: Tree) -> list[str]:
     readmes = everything - images
     if readmes != {"brand/README.md"}:
         problems.append(f"brand/ holds {sorted(readmes)} where the map expects one README")
-    once(r"root README intentionally has no hero image", body, "the root README hero boundary")
+    icon = once(r"root README embeds the compact `([^`]+)` mark", body,
+                "the root README icon boundary")
+    if f"brand/{icon.group(1)}" not in tree.read("README.md"):
+        problems.append(f"README.md does not embed brand/{icon.group(1)} as the map says")
+    once(r"intentionally has no hero image", body, "the root README hero boundary")
     if "brand/hero.png" in tree.read("README.md"):
         problems.append("README.md embeds brand/hero.png even though the map says the root has no hero")
     for token in ticks(body):
@@ -993,7 +997,7 @@ def main(argv) -> int:
 # Counts and membership are hand-specified so a broken extractor cannot
 # manufacture its own expected answer. The real tree is checked separately.
 SELFTEST_FILES = {
-    "README.md": "# Fixture\n",
+    "README.md": "# Fixture\n![mark](brand/mark.svg)\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
                 "\t./scripts/copilot-secret.sh\n# scripts/verify-chat.py\n"
                 "# scripts/check-example.py\n",
@@ -1088,7 +1092,7 @@ every occurrence in the Makefile is a comment line rather than a recipe.
 
 ## `brand/` — assets
 Two image files plus a README.
-Their uses are recorded in `brand/README.md`; the root README intentionally has no hero image.
+Their uses are recorded in `brand/README.md`; the root README embeds the compact `mark.svg` mark and intentionally has no hero image.
 
 ## `blueprints/`, `.github/` and the root files
 | `README.md`, `Makefile`, `embed.go`, `go.mod`, `staticcheck.conf` | **Root** | fixture |
@@ -1272,6 +1276,15 @@ def selftest_fixture(tree: Tree) -> int:
         print(f"FAIL an embedded README hero was not caught: {problems}")
         failed += 1
 
+    without_icon = copy.copy(tree)
+    without_icon._text = {**tree._text, "README.md": "# Fixture\n"}
+    problems = the_brand_directory_is_what_the_map_says(Doc(real), without_icon)
+    if any("does not embed brand/mark.svg" in p for p in problems):
+        print("ok   removing the compact README icon conflicts with the documented boundary")
+    else:
+        print(f"FAIL a missing README icon was not caught: {problems}")
+        failed += 1
+
     resolved = real.replace("## Open questions — one\n1. **Authoring format.** Undecided.",
                             "## Open questions — zero\nNone.")
     problems, _ = check(tree, resolved)
@@ -1447,7 +1460,7 @@ def selftest_fixture(tree: Tree) -> int:
         print(f"\ncheck-repository-map self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
     print(f"\ncheck-repository-map self-test: {len(CLAIMS)} claims, each broken by at least one "
-          f"of {len(MAP_EDITS)} map edits and 10 tree changes, every one caught")
+          f"of {len(MAP_EDITS)} map edits and 11 tree changes, every one caught")
     return 0
 
 

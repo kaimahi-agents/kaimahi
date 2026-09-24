@@ -12,7 +12,7 @@
     },
     {
       "name": "the SVG requirements are never checked",
-      "breaks": "The wordmark, the compact mark and the architecture diagram stop being checked for a viewBox or a title, which is how a diagram ends up shipping under the wrong name.",
+      "breaks": "The ketu mark, wordmark, compact mark and architecture diagram stop being checked for a viewBox or a title, which is how an asset ends up shipping under the wrong name.",
       "find": "    for relative, expected_title in SVG_REQUIREMENTS.items():\n        problems.extend(validate_svg(root, relative, expected_title))",
       "replace": "    for relative, expected_title in []:\n        problems.extend(validate_svg(root, relative, expected_title))"
     },
@@ -25,7 +25,7 @@
     {
       "name": "the SVG requirement table is emptied",
       "breaks": "The same disabling by deletion, on the half of the table that pins what each diagram is called.",
-      "find": "    \"brand/mark.svg\": \"Kaimahi compact mark\",\n    \"brand/wordmark.svg\": \"Kaimahi wordmark\",\n    \"docs/assets/architecture.svg\": \"Kaimahi governance architecture\",\n",
+      "find": "    \"brand/ketu.svg\": \"Kaimahi ketu mark\",\n    \"brand/mark.svg\": \"Kaimahi compact mark\",\n    \"brand/wordmark.svg\": \"Kaimahi wordmark\",\n    \"docs/assets/architecture.svg\": \"Kaimahi governance architecture\",\n",
       "replace": ""
     },
     {

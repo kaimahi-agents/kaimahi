@@ -29,6 +29,7 @@ PNG_REQUIREMENTS = {
 }
 
 SVG_REQUIREMENTS = {
+    "brand/ketu.svg": "Kaimahi ketu mark",
     "brand/mark.svg": "Kaimahi compact mark",
     "brand/wordmark.svg": "Kaimahi wordmark",
     "docs/assets/architecture.svg": "Kaimahi governance architecture",

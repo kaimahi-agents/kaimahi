@@ -35,7 +35,7 @@ checks.
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 43 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 48 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
-| `brand/` | 6 identity assets for repository and organization surfaces | — | its own checker |
+| `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
@@ -247,8 +247,9 @@ a content check. The index explicitly labels the historical diagram.
 
 ## `brand/` — identity assets
 
-Six image files plus a README. Their repository and organization uses are
-recorded in `brand/README.md`; the root README intentionally has no hero image.
+Seven image files plus a README. Their repository and organization uses are
+recorded in `brand/README.md`; the root README embeds the compact `ketu.svg` mark
+and intentionally has no hero image.
 `scripts/check-brand-assets.py` checks their dimensions/transparency/metadata
 and the separately located historical architecture SVG.
 

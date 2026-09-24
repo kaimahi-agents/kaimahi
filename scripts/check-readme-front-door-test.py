@@ -17,8 +17,12 @@ kmx agent lift
 QUICKSTART = """go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
 kmx quickstart-wizard
 """
-GOOD = """# Kaimahi
+GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
+# Kaimahi
 **Agent Builder CLI for Kubernetes.**
+[![CI](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
+[![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 ## Create, Prove, Lift
 ```bash
 """ + JOURNEY + """```
@@ -39,6 +43,7 @@ CASES = [("valid KMX front door", GOOD, None)]
 # These expectations are independent of the checker's marker lists: deleting
 # a marker or emptying a list must make the self-test fail.
 for label, literal in [
+    ("ketu icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n'),
     ("product line", "**Agent Builder CLI for Kubernetes.**\n"),
     ("journey heading", "## Create, Prove, Lift\n"),
     ("Quickstart heading", "## Quickstart\n"),
@@ -46,6 +51,12 @@ for label, literal in [
     ("migration heading", "## Migrate Model Traffic\n"),
     ("Status heading", "## Status\n"),
     ("documentation heading", "## Documentation\n"),
+]:
+    CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
+for label, literal in [
+    ("CI badge", "[![CI](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml)\n"),
+    ("release badge", "[![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)\n"),
+    ("license badge", "[![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 for label, literal in [
@@ -70,7 +81,7 @@ CASES += [
      "go install .../cmd/kmx is missing"),
     ("revision prefix is not a revision", GOOD.replace("cmd/kmx@main", "cmd/kmx@main-obsolete"),
      "go install .../cmd/kmx is missing"),
-    ("empty document", "", "product line is missing"),
+    ("empty document", "", "ketu icon is missing"),
     ("journey commands only in prose", GOOD.replace("```bash\n" + JOURNEY + "```", JOURNEY),
      "create/prove/lift has no fenced command block"),
     ("quickstart commands only in prose", GOOD.replace("```bash\n" + QUICKSTART + "```", QUICKSTART),

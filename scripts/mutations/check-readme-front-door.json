@@ -5,6 +5,12 @@
   "signature": "check-readme-front-door self-test:",
   "mutations": [
     {
+      "name": "the ketu icon marker matches anything",
+      "breaks": "The compact project identity can disappear from the front door unnoticed.",
+      "find": "    (\"ketu icon\", r'src=\"brand/ketu\\.svg\"'),",
+      "replace": "    (\"ketu icon\", r''),"
+    },
+    {
       "name": "the product line marker matches anything",
       "breaks": "The Agent-specific KMX promise stops being required.",
       "find": "    (\"product line\", r\"^\\*\\*Agent Builder CLI for Kubernetes\\.\\*\\*$\"),",
@@ -69,6 +75,12 @@
       "breaks": "Any fenced block can satisfy setup without containing its commands.",
       "find": "QUICKSTART_COMMANDS = [\n",
       "replace": "QUICKSTART_COMMANDS = []\nUNUSED_QUICKSTART_COMMANDS = [\n"
+    },
+    {
+      "name": "the badge list is emptied",
+      "breaks": "The README can lose all status and project metadata badges.",
+      "find": "BADGE_PATTERNS = [\n",
+      "replace": "BADGE_PATTERNS = []\nUNUSED_BADGE_PATTERNS = [\n"
     },
     {
       "name": "command order is searched from the top of the block",

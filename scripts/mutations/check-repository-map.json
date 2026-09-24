@@ -121,6 +121,12 @@
       "breaks": "The map says the root README intentionally has no hero, but the checker no longer enforces that boundary.",
       "find": "    if \"brand/hero.png\" in tree.read(\"README.md\"):\n        problems.append(\"README.md embeds brand/hero.png even though the map says the root has no hero\")",
       "replace": "    if False:\n        problems.append(\"README.md embeds brand/hero.png even though the map says the root has no hero\")"
+    },
+    {
+      "name": "the compact README icon is not checked",
+      "breaks": "The map can claim a compact brand icon that the README never embeds.",
+      "find": "    if f\"brand/{icon.group(1)}\" not in tree.read(\"README.md\"):\n        problems.append(f\"README.md does not embed brand/{icon.group(1)} as the map says\")",
+      "replace": "    if False:\n        problems.append(f\"README.md does not embed brand/{icon.group(1)} as the map says\")"
     }
   ]
 }

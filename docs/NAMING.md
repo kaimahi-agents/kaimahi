@@ -108,6 +108,12 @@ FYI, in plain terms:
   recorded above.
 - **Pronunciation**, for the inevitable meeting: roughly *kigh-MAH-hee*
   (`kai` as in "kite", not "kay").
+- **Icon**, added after the name was settled: the repository mark is a stylized
+  *ketu*, which [Te Aka Māori Dictionary](https://maoridictionary.co.nz/word/2587)
+  defines as a pointed, paddle-shaped cultivation implement used to loosen soil.
+  It is a working-tool metaphor, not a waka paddle, traditional pattern, or claim
+  of cultural authority. The cultural read above covered the name, not this later
+  icon; see the [brand note](../brand/README.md#ketu-mark).
 
 ## Availability, verified 2026-09-01
 

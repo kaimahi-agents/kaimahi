@@ -1,6 +1,22 @@
+<div align="center">
+
+<img src="brand/ketu.svg" alt="Kaimahi ketu mark" width="128" />
+
 # Kaimahi
 
 **Agent Builder CLI for Kubernetes.**
+
+[![CI](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
+[![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
+
+[Getting started](docs/getting-started.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
+
+<sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
+
+</div>
+
+---
 
 Kaimahi's `kmx` CLI helps developers create an agent, prove it locally, and
 move it into a real environment without learning each runtime's manifests first.

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 ORDER = [
+    ("ketu icon", r'src="brand/ketu\.svg"'),
     ("product line", r"^\*\*Agent Builder CLI for Kubernetes\.\*\*$"),
     ("journey heading", r"^## Create, Prove, Lift$"),
     ("Quickstart heading", r"^## Quickstart$"),
@@ -19,6 +20,11 @@ ORDER = [
     ("migration heading", r"^## Migrate Model Traffic$"),
     ("Status heading", r"^## Status$"),
     ("documentation heading", r"^## Documentation$"),
+]
+BADGE_PATTERNS = [
+    ("CI badge", r"actions/workflows/ci\.yml/badge\.svg\?branch=main"),
+    ("release badge", r"img\.shields\.io/github/v/release/kaimahi-agents/kaimahi"),
+    ("license badge", r"img\.shields\.io/github/license/kaimahi-agents/kaimahi"),
 ]
 # Keep the simple journey visible without treating the snippet as evidence that
 # every standalone command is implemented.
@@ -85,6 +91,9 @@ def check(text: str) -> str | None:
             missing = ordered_in(blocks[0], QUICKSTART_COMMANDS)
             if missing is not None:
                 return f"README front door: {missing} is missing from the Quickstart command block"
+    for label, pattern in BADGE_PATTERNS:
+        if re.search(pattern, text) is None:
+            return f"README front door: {label} is missing"
     return None
 
 

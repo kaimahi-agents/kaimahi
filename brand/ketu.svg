@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Kaimahi ketu mark</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9bd5e7"/>
+      <stop offset="0.48" stop-color="#82c4dc"/>
+      <stop offset="0.49" stop-color="#176a9a"/>
+      <stop offset="1" stop-color="#19729f"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0.15" y1="0.85" x2="0.88" y2="0.1">
+      <stop offset="0" stop-color="#e87918"/>
+      <stop offset="0.48" stop-color="#ff922f"/>
+      <stop offset="1" stop-color="#ffad4b"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-opacity=".35"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded app/tool tile. -->
+  <rect x="28" y="28" width="968" height="968" rx="125" fill="url(#bg)"/>
+
+  <!-- Subtle highlight. -->
+  <path d="M45 150 Q45 45 155 45 H870 Q960 45 980 125
+           C720 135 515 170 350 300 C215 407 120 540 45 690 Z"
+        fill="#d9f2fa" opacity=".18"/>
+
+  <!-- Ketu silhouette. -->
+  <g filter="url(#shadow)" stroke="#050505" stroke-width="20"
+     stroke-linejoin="round" stroke-linecap="round">
+    <path fill="url(#blade)"
+      d="M166 852
+         C183 831 207 807 234 781
+         L544 494
+         C571 469 592 437 608 399
+         C621 369 639 345 665 322
+         C734 262 830 211 897 181
+         C923 169 945 170 954 181
+         C964 193 958 217 945 241
+         C911 305 858 386 798 445
+         C772 470 743 489 709 504
+         C673 520 642 541 616 565
+         L304 855
+         C279 878 258 901 242 925
+         C232 939 219 943 205 938
+         C188 932 171 918 163 902
+         C155 886 156 869 166 852 Z"/>
+  </g>
+
+  <!-- Warm inner highlight. -->
+  <path d="M190 872
+           C205 854 226 833 252 809
+           L565 520
+           C593 494 614 461 631 421
+           C643 394 658 375 682 354
+           C742 302 821 246 899 207
+           C914 199 926 197 933 201
+           C927 209 915 216 901 224
+           C819 270 746 322 695 368
+           C671 390 656 409 645 436
+           C629 475 607 508 580 533
+           L273 820
+           C244 847 219 871 203 890 Z"
+        fill="#ffc064" opacity=".28"/>
+
+  <!-- Small handle shine. -->
+  <path d="M181 871 C196 852 220 830 247 805 L557 518"
+        fill="none" stroke="#ffd18a" stroke-width="8" opacity=".55"
+        stroke-linecap="round"/>
+</svg>
