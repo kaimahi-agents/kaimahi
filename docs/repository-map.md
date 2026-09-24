@@ -35,7 +35,7 @@ checks.
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 43 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 48 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
-| `brand/` | 6 assets used by the README and the org profile | — | its own checker |
+| `brand/` | 6 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
@@ -220,12 +220,12 @@ direct kagent path, not a removed gateway assertion.
 
 ## `docs/` — 48 tracked files, guides and retirement records
 
-**Guides and index (23):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (24):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `tools.md`, `spend.md`, `tool-governance.md`,
 `approvals.md`, `egress.md`, `hosted-upstreams.md`, `identity.md`,
 `operations.md`, `releases.md`, `workflows.md`, `FAQ.md`, `isolation.md`,
 `migrate.md`, `orka.md`, `copilot-inference.md`, `interactive-chat.md`,
-`interactive-lift.md` and `orka-k8s-tool.md`. Retired tool/workflow pages are pointers, not
+`interactive-lift.md`, `orka-k8s-tool.md` and `runtime-adapters.md`. Retired tool/workflow pages are pointers, not
 operating instructions for deleted code.
 
 **Retired scenario/integration records (6):** `inbound.md`, `slack.md`,
@@ -233,12 +233,12 @@ operating instructions for deleted code.
 
 **Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
-**Maintainer and process (16):** `development.md`, `repository-map.md`,
+**Maintainer and process (15):** `development.md`, `repository-map.md`,
 `COORDINATION.md`, `reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
 `cli-ux-plan.md`, `charm-ux-followup-plan.md`, `NAMING.md`,
-`azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`
-`orka-startup-performance.md`, `local-foundry-inference.md`, `chat-performance-profile.md` and `runtime-adapters.md`.
+`azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
+`orka-startup-performance.md`, `local-foundry-inference.md` and `chat-performance-profile.md`.
 
 **Assets (2):** `docs/assets/architecture.mmd` and `docs/assets/architecture.svg`.
 These depict the pre-retirement platform, not the current model bridge. The
@@ -247,9 +247,8 @@ a content check. The index explicitly labels the historical diagram.
 
 ## `brand/` — identity assets
 
-Six image files plus a README. `README.md:2` embeds `brand/hero.png`.
-The other five — `mark.svg`, `mark.png`, `wordmark.svg`, `social-preview.png`
-and `mascot.png` — have their uses recorded in `brand/README.md`.
+Six image files plus a README. Their repository and organization uses are
+recorded in `brand/README.md`; the root README intentionally has no hero image.
 `scripts/check-brand-assets.py` checks their dimensions/transparency/metadata
 and the separately located historical architecture SVG.
 

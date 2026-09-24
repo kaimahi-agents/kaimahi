@@ -94,6 +94,12 @@ with an existing local Orka agent, and ends by offering a native Task chat.
 Progress rows show approximate local image/model footprints; they are size
 estimates, not byte counters from the underlying container tools.
 
+Setup starts while the form is open. It creates the Task result-reader account
+and RBAC and installs the default read-only Kubernetes inventory tool, whose
+ClusterRole can list the documented resource kinds across namespaces. Cancelling
+the wizard stops active work but leaves completed resources in place. Review the
+[tool and RBAC boundary](orka-k8s-tool.md) before running it on a shared cluster.
+
 In an interactive terminal, `quickstart` checks whether Ollama is already
 running on the host and lists only models it reports as installed. Reuse is
 opt-in; the bundled in-cluster model remains the default. After kind is ready,

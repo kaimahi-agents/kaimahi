@@ -12,34 +12,30 @@ import sys
 from pathlib import Path
 
 ORDER = [
-    ("hero image", r'src="brand/hero\.png"'),
-    ("product line", r"^\*\*Create an Agent locally\. Prove it locally\. Lift it to Kubernetes\.\*\*$"),
-    ("KMX journey heading", r"^## The KMX Journey$"),
-    ("Day 0 heading", r"^### Day 0: Two Verbs$"),
+    ("product line", r"^\*\*Agent Builder CLI for Kubernetes\.\*\*$"),
+    ("journey heading", r"^## Create, Prove, Lift$"),
     ("Quickstart heading", r"^## Quickstart$"),
-    ("platform boundary heading", r"^## Platform Boundary$"),
+    ("runtime contract heading", r"^## Runtime Contract$"),
     ("migration heading", r"^## Migrate Model Traffic$"),
     ("Status heading", r"^## Status$"),
     ("documentation heading", r"^## Documentation$"),
 ]
-# The KMX Day 0 surface is deliberately stable even while its standalone lift
-# implementation is still directional. Keep both verbs visible without treating
-# the snippet as evidence that every command is implemented.
-DAY_ZERO_COMMANDS = [
+# Keep the simple journey visible without treating the snippet as evidence that
+# every standalone command is implemented.
+JOURNEY_COMMANDS = [
     ("kmx agent create", r"^kmx agent create(?=[ \t]*(?:#.*)?$)"),
     ("kmx agent lift", r"^kmx agent lift(?=[ \t]*(?:#.*)?$)"),
 ]
-# Orka helpers postdate the latest tagged release. The current-main build
+# Current Agent Builder helpers postdate the latest tagged release. The main build
 # prerequisite is explicit rather than promising these commands in an old tag.
 # Accept main or a commit ID; this verifies syntax, not the contents of a commit.
-# Revisit the prerequisite when an Orka-capable tagged CLI is published.
+# Revisit the prerequisite when a capable tagged CLI is published.
 QUICKSTART_COMMANDS = [
     ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@(?:main|[0-9a-f]{7,40})(?=[ \t]*(?:#.*)?$)"),
     ("kmx quickstart-wizard", r"^kmx quickstart-wizard(?=[ \t]*(?:#.*)?$)"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
-NEXT_DAY_ZERO_SECTION = re.compile(r"^#{2,3} ", re.M)
 
 
 def quickstart_blocks(text: str, quickstart_end: int) -> list[str]:
@@ -49,10 +45,10 @@ def quickstart_blocks(text: str, quickstart_end: int) -> list[str]:
     return [block.group(1) for block in FENCE.finditer(section)]
 
 
-def day_zero_blocks(text: str, day_zero_end: int) -> list[str]:
-    """Return fenced blocks in Day 0 before the next H2/H3 section."""
-    section_end = NEXT_DAY_ZERO_SECTION.search(text, day_zero_end)
-    section = text[day_zero_end : section_end.start() if section_end else len(text)]
+def journey_blocks(text: str, journey_end: int) -> list[str]:
+    """Return fenced blocks inside the create/prove/lift section."""
+    section_end = NEXT_SECTION.search(text, journey_end)
+    section = text[journey_end : section_end.start() if section_end else len(text)]
     return [block.group(1) for block in FENCE.finditer(section)]
 
 
@@ -75,13 +71,13 @@ def check(text: str) -> str | None:
         if match is None:
             return f"README front door: {label} is missing or out of order"
         position = match.end()
-        if label == "Day 0 heading":
-            blocks = day_zero_blocks(text, position)
+        if label == "journey heading":
+            blocks = journey_blocks(text, position)
             if not blocks:
-                return "README front door: Day 0 has no fenced command block"
-            missing = ordered_in(blocks[0], DAY_ZERO_COMMANDS)
+                return "README front door: create/prove/lift has no fenced command block"
+            missing = ordered_in(blocks[0], JOURNEY_COMMANDS)
             if missing is not None:
-                return f"README front door: {missing} is missing from the Day 0 command block"
+                return f"README front door: {missing} is missing from the journey command block"
         elif label == "Quickstart heading":
             blocks = quickstart_blocks(text, position)
             if not blocks:
@@ -97,7 +93,7 @@ def main(path: Path) -> int:
     if problem:
         print(problem, file=sys.stderr)
         return 1
-    print("README front door: KMX Day 0, runnable quickstart, boundaries, and status order valid")
+    print("README front door: Agent Builder journey, runtime contract, and status order valid")
     return 0
 
 

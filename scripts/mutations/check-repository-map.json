@@ -115,6 +115,12 @@
       "breaks": "`README.md` in the docs section becomes the front door instead of the documentation index, and `plane/` in the k8s section becomes the plane module instead of `k8s/plane/`. Both resolve to a real file, so nothing looks wrong \u2014 the lists are simply about different files than the map says.",
       "find": "    candidates = []\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))\n    candidates.append(token.rstrip(\"/\"))",
       "replace": "    candidates = [token.rstrip(\"/\")]\n    if base:\n        candidates.append(base.rstrip(\"/\") + \"/\" + token.rstrip(\"/\"))"
+    },
+    {
+      "name": "an embedded README hero is accepted",
+      "breaks": "The map says the root README intentionally has no hero, but the checker no longer enforces that boundary.",
+      "find": "    if \"brand/hero.png\" in tree.read(\"README.md\"):\n        problems.append(\"README.md embeds brand/hero.png even though the map says the root has no hero\")",
+      "replace": "    if False:\n        problems.append(\"README.md embeds brand/hero.png even though the map says the root has no hero\")"
     }
   ]
 }

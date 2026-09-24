@@ -685,7 +685,7 @@ def the_short_version_agrees_with_the_long_one(doc: Doc, tree: Tree) -> list[str
                         f"{installed + demonstration + scaffolding}, and scripts/ has {len(everything)}")
     problems += compare_count(embedded_n, len({p for p in embedded(tree) if p.startswith("scripts/")}),
                               "the short version's count of embedded scripts")
-    brand_row = once(phrase("| `brand/` | {n} assets used by the README"), short,
+    brand_row = once(phrase("| `brand/` | {n} identity assets"), short,
                      "the short version's brand row")
     _, brand = doc.section("`brand/`")
     brand_long = once(phrase("{n} image files plus a README"), brand, "the brand asset count")
@@ -774,10 +774,9 @@ def the_brand_directory_is_what_the_map_says(doc: Doc, tree: Tree) -> list[str]:
     readmes = everything - images
     if readmes != {"brand/README.md"}:
         problems.append(f"brand/ holds {sorted(readmes)} where the map expects one README")
-    hero = once(r"`README\.md:(\d+)` embeds `([^`]+)`", body, "the one brand asset the tree uses")
-    line = tree.read("README.md").splitlines()[int(hero.group(1)) - 1]
-    if hero.group(2) not in line:
-        problems.append(f"README.md:{hero.group(1)} does not name {hero.group(2)}: {line.strip()!r}")
+    once(r"root README intentionally has no hero image", body, "the root README hero boundary")
+    if "brand/hero.png" in tree.read("README.md"):
+        problems.append("README.md embeds brand/hero.png even though the map says the root has no hero")
     for token in ticks(body):
         if token.endswith((".svg", ".png")) and "/" not in token and f"brand/{token}" not in everything:
             problems.append(f"the brand/ section names `{token}`, which is not in brand/")
@@ -994,7 +993,7 @@ def main(argv) -> int:
 # Counts and membership are hand-specified so a broken extractor cannot
 # manufacture its own expected answer. The real tree is checked separately.
 SELFTEST_FILES = {
-    "README.md": "# Fixture\n![hero](brand/hero.png)\n",
+    "README.md": "# Fixture\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
                 "\t./scripts/copilot-secret.sh\n# scripts/verify-chat.py\n"
                 "# scripts/check-example.py\n",
@@ -1038,7 +1037,7 @@ Installed does not mean current direction, including one shell scripts.
 | `internal/` | `kmx/` (one packages) |
 | `scripts/` | 2 (1 embedded in the binary, 1 operator) | 2 | 3 |
 | `docs/` | 6 tracked files |
-| `brand/` | 2 assets used by the README |
+| `brand/` | 2 identity assets for repository and organization surfaces |
 
 ## `cmd/` — installed commands
 | `cmd/kmx` (1 files) | **Installed** | CLI |
@@ -1089,7 +1088,7 @@ every occurrence in the Makefile is a comment line rather than a recipe.
 
 ## `brand/` — assets
 Two image files plus a README.
-`README.md:2` embeds `brand/hero.png`. Also `mark.svg`.
+Their uses are recorded in `brand/README.md`; the root README intentionally has no hero image.
 
 ## `blueprints/`, `.github/` and the root files
 | `README.md`, `Makefile`, `embed.go`, `go.mod`, `staticcheck.conf` | **Root** | fixture |
@@ -1263,6 +1262,15 @@ def selftest_fixture(tree: Tree) -> int:
             print("     " + p, file=sys.stderr)
         return 1
     print(f"ok   the independent fixture passes ({ran} claims)")
+
+    with_hero = copy.copy(tree)
+    with_hero._text = {**tree._text, "README.md": "# Fixture\n![hero](brand/hero.png)\n"}
+    problems = the_brand_directory_is_what_the_map_says(Doc(real), with_hero)
+    if any("embeds brand/hero.png" in p for p in problems):
+        print("ok   reintroducing the README hero conflicts with the documented boundary")
+    else:
+        print(f"FAIL an embedded README hero was not caught: {problems}")
+        failed += 1
 
     resolved = real.replace("## Open questions — one\n1. **Authoring format.** Undecided.",
                             "## Open questions — zero\nNone.")
@@ -1439,7 +1447,7 @@ def selftest_fixture(tree: Tree) -> int:
         print(f"\ncheck-repository-map self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
     print(f"\ncheck-repository-map self-test: {len(CLAIMS)} claims, each broken by at least one "
-          f"of {len(MAP_EDITS)} map edits and 9 tree changes, every one caught")
+          f"of {len(MAP_EDITS)} map edits and 10 tree changes, every one caught")
     return 0
 
 

@@ -1,14 +1,15 @@
 # Kaimahi documentation
 
-**Orka is the platform. Kaimahi is tooling to help people get agents onto
-it.** Start with the installation, native create and migration paths below, not the
-legacy governance-plane demonstrations.
+**KMX is the Agent Builder CLI. Runtimes execute and govern agents.** Start with
+the current creation and lift paths below; use the runtime contract when extending
+or comparing implementations.
 
 ## Current operator paths
 
 | I want to… | Read |
 |---|---|
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
+| Understand runtime, context, session, inference, lifecycle, and enforcement boundaries | [Runtime contract](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author a native Provider + Agent, optionally run a Task and retrieve its answer | [Native create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Route an existing application's model traffic through Orka | [Migration](migrate.md) |
@@ -65,9 +66,6 @@ view, including the removed gateway and inbound paths. It is not the current
 listener inventory, Orka architecture or the project's future shape.
 
 ## Maintainer references
-
-- [Runtime adapters](runtime-adapters.md): platform-neutral chat contracts,
-  host inference strategies and native compatibility drivers.
 
 - [Development](development.md): source boundaries, verification and operational traps.
 - [Repository map](repository-map.md): where the retained files belong.

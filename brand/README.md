@@ -6,7 +6,7 @@ of the project's te reo Māori name and does not use Māori motifs.
 
 ## Product line
 
-> Governance for AI agents running on Kubernetes.
+> Agent Builder CLI for Kubernetes.
 
 ## Files
 
@@ -15,7 +15,7 @@ of the project's te reo Māori name and does not use Māori motifs.
 | `mascot.png` | 1536×1536 RGBA; transparent | Canonical character reference; do not redraw from memory |
 | `mark.svg` / `mark.png` | SVG viewBox `0 0 512 512`; 1024×1024 RGBA transparent PNG | Organization avatar, favicon, and small-size identity |
 | `wordmark.svg` | SVG viewBox `0 0 760 192`; transparent | Horizontal name lockup |
-| `hero.png` | 1600×600 RGB; opaque | README and organization profile hero |
+| `hero.png` | 1600×600 RGB; opaque | Organization profile hero; not embedded in the repository README |
 | `social-preview.png` | 1280×640 RGB; opaque | GitHub repository social preview |
 | `../docs/assets/architecture.svg` | Scalable SVG; opaque navy canvas | Governance architecture; editable source is beside it |
 

@@ -1,20 +1,20 @@
 {
   "checker": "check-readme-front-door.py",
-  "why": "The KMX front door must retain its Day 0 create/lift promise, runnable quickstart, and platform and migration boundaries. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
+  "why": "The KMX front door must retain its create/prove/lift journey, runnable quickstart, and runtime and migration boundaries. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
   "verify": ["python3", "scripts/check-readme-front-door-test.py"],
   "signature": "check-readme-front-door self-test:",
   "mutations": [
     {
-      "name": "the hero image marker matches anything",
-      "breaks": "The page's identity marker can disappear unnoticed.",
-      "find": "    (\"hero image\", r'src=\"brand/hero\\.png\"'),",
-      "replace": "    (\"hero image\", r''),"
-    },
-    {
       "name": "the product line marker matches anything",
       "breaks": "The Agent-specific KMX promise stops being required.",
-      "find": "    (\"product line\", r\"^\\*\\*Create an Agent locally\\. Prove it locally\\. Lift it to Kubernetes\\.\\*\\*$\"),",
+      "find": "    (\"product line\", r\"^\\*\\*Agent Builder CLI for Kubernetes\\.\\*\\*$\"),",
       "replace": "    (\"product line\", r\"\"),"
+    },
+    {
+      "name": "the runtime contract marker matches anything",
+      "breaks": "The page can lose the link between the simple journey and its runtime boundary.",
+      "find": "    (\"runtime contract heading\", r\"^## Runtime Contract$\"),",
+      "replace": "    (\"runtime contract heading\", r\"\"),"
     },
     {
       "name": "the migration marker matches anything",
@@ -41,14 +41,14 @@
       "replace": "@"
     },
     {
-      "name": "the Day 0 create marker matches anything",
-      "breaks": "The Day 0 story can omit Agent creation.",
+      "name": "the journey create marker matches anything",
+      "breaks": "The simple journey can omit Agent creation.",
       "find": "    (\"kmx agent create\", r\"^kmx agent create(?=[ \\t]*(?:#.*)?$)\"),",
       "replace": "    (\"kmx agent create\", r\"\"),"
     },
     {
-      "name": "the Day 0 lift marker matches anything",
-      "breaks": "The Day 0 story can omit lifting the Agent.",
+      "name": "the journey lift marker matches anything",
+      "breaks": "The simple journey can omit lifting the Agent.",
       "find": "    (\"kmx agent lift\", r\"^kmx agent lift(?=[ \\t]*(?:#.*)?$)\"),",
       "replace": "    (\"kmx agent lift\", r\"\"),"
     },
@@ -59,10 +59,10 @@
       "replace": "^kmx quickstart-wizard\\b"
     },
     {
-      "name": "the Day 0 command list is emptied",
-      "breaks": "Any fenced block can satisfy Day 0 without create or lift.",
-      "find": "DAY_ZERO_COMMANDS = [\n",
-      "replace": "DAY_ZERO_COMMANDS = []\nUNUSED_DAY_ZERO_COMMANDS = [\n"
+      "name": "the journey command list is emptied",
+      "breaks": "Any fenced block can satisfy the journey without create or lift.",
+      "find": "JOURNEY_COMMANDS = [\n",
+      "replace": "JOURNEY_COMMANDS = []\nUNUSED_JOURNEY_COMMANDS = [\n"
     },
     {
       "name": "the quickstart command list is emptied",

@@ -28,7 +28,7 @@
     },
     {
       "name": "HTML image sources are not read",
-      "breaks": "The form the README writes its two hero pictures in. This is exactly the gap the checker shipped with: an image whose file was renamed showed a broken picture on the front page and passed.",
+      "breaks": "HTML images whose attributes span lines stop being checked, recreating the gap this checker originally shipped with.",
       "find": "    for m in IMG.finditer(text):",
       "replace": "    for m in []:"
     },

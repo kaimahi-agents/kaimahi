@@ -11,7 +11,7 @@ four forms that all break the same way, and this checker reads all of
 them:
 
   * inline links and images, `[text](target)` and `![alt](target)`;
-  * HTML `<img src="...">`, which is how the README's hero and
+  * HTML `<img src="...">`, which is how some documentation and
     architecture pictures are written — attributes spread over several
     lines, so the tag is read as a whole, not line by line;
   * HTML `<a href="...">`, the same tag family, for when a picture or a
@@ -22,9 +22,8 @@ them:
     the shortcut form `[label]`: the target is verified at the
     definition, so every way of referring to it is verified with it.
 
-For a while this checked only the first form, and the two pictures at the
-top of the README — the most-looked-at links in the repository — were not
-checked at all.
+For a while this checked only the first form, so HTML images could break without
+the documentation check noticing.
 
 Fenced code blocks are not links, and neither is anything inside a
 `backtick` code span: both are blanked out before the scan, so a sample
