@@ -422,10 +422,12 @@ func TestPortableKagentAgentToolBindingRequiresAllFields(t *testing.T) {
 
 // TestPortableKagentArtifactSourceMirrorsPinnedForms proves the closed
 // source union matches the pinned ArtifactSource exactly: oci is one
-// "ref@sha256:<64hex>" string, git is {url, commit}, and bucket is
-// {s3: {endpoint, bucket, key, versionId, region?}} — including the two
-// valid commit ID lengths the pinned regex accepts — while the previously
-// invented reference/digest, repository/version and bare s3 forms fail.
+// "ref@sha256:<64hex>" string, git is {url, commit}, bucket is
+// {s3: {endpoint, bucket, key, versionId, region?}}, and the shared `path`
+// must be relative with no '..' segment — including the two valid commit
+// ID lengths the pinned regex accepts — while the previously invented
+// reference/digest, repository/version, bare s3, absolute-path and '..'
+// forms fail.
 func TestPortableKagentArtifactSourceMirrorsPinnedForms(t *testing.T) {
 	header := `apiVersion: kmx.kaimahi.dev/v1alpha1
 kind: PortableAgent
@@ -467,6 +469,10 @@ extensions:
 			"bucket.s3 with every required field",
 			"          bucket:\n            s3:\n              endpoint: https://s3.example.com\n              bucket: kaimahi-skills\n              key: triage/skill.tar.gz\n              versionId: v1\n",
 		},
+		{
+			"oci with a relative shared path",
+			"          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n          path: skills/triage\n",
+		},
 	}
 	for _, tc := range valid {
 		t.Run("valid: "+tc.name, func(t *testing.T) {
@@ -499,6 +505,14 @@ extensions:
 		{
 			"bucket.s3 missing versionId",
 			"          bucket:\n            s3:\n              endpoint: https://s3.example.com\n              bucket: kaimahi-skills\n              key: triage/skill.tar.gz\n",
+		},
+		{
+			"path is absolute, not relative",
+			"          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n          path: /skills/triage\n",
+		},
+		{
+			"path contains a '..' segment",
+			"          oci: ghcr.io/kaimahi/skills/triage@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n          path: skills/../triage\n",
 		},
 	}
 	for _, tc := range invalid {
