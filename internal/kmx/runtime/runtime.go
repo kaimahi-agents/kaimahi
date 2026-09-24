@@ -8,8 +8,9 @@ import "context"
 type ID string
 
 const (
-	Orka   ID = "orka"
-	Kagent ID = "kagent"
+	Orka     ID = "orka"
+	Kagent   ID = "kagent"
+	KagentV1 ID = "kagent-v1"
 )
 
 type AgentRef struct {
@@ -17,8 +18,14 @@ type AgentRef struct {
 	Context, Namespace, Kind, Name, UID string
 }
 
+// Capabilities carries both #197's chat/session flags and W94's static
+// lifecycle flags in one struct: a runtime declares what it supports once,
+// and unsupported verbs (chat or lifecycle) are decided from these same
+// fields rather than a second capability model. Lifecycle flags are static
+// declarations, not dynamic plugin negotiation.
 type Capabilities struct {
 	Streaming, Resume, Approvals, EditTools, SwitchAgent, Lift, SelectInference bool
+	Render, Deploy, Status, Evaluate                                            bool
 }
 
 type Command struct {
