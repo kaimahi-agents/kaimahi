@@ -167,8 +167,9 @@ func TestAgentListExplicitKagentRefusesANamespaceConflict(t *testing.T) {
 	}
 }
 
-// kagent-v1 joins the shared registry in a later task; until then it is the
-// registry's own typed unknown-runtime error, never another runtime's list.
+// kagent-v1 is detected by shared platform detection but not implemented in
+// this build, so it is the registry's own typed unknown-runtime error, never
+// another runtime's list.
 func TestAgentListKagentV1IsNotYetRegistered(t *testing.T) {
 	a, out, _ := legacyRuntimeFixture(t)
 	err := a.ListAgents(ListOptions{Runtime: string(agentruntime.KagentV1), Namespace: "kagent"})

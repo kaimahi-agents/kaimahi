@@ -34,14 +34,13 @@ spec:
     deployment:
       podSecurityContext:
         runAsNonRoot: true
-        # kagent's agent image declares its user by NAME (`python`), and
-        # Kubernetes refuses to start a runAsNonRoot container it cannot
-        # prove is non-root: "image has non-numeric user (python)". So the
-        # numeric id has to be stated here. 65532 is what that image runs
-        # as at 0.10.1 (a distroless-style base whose declared user, unlike
-        # 0.9.12's `python`, is already numeric). CI reads that number out
-        # of the image the pinned chart resolves to and fails if this line
-        # disagrees (scripts/check-agent-uid.py), because a kagent bump
+        # Kubernetes will not start a runAsNonRoot container whose user it
+        # cannot prove is non-root, and an image's declared USER is only
+        # proof when it is numeric — kagent's agent image has declared it by
+        # name at some versions and numerically at others. So the numeric id
+        # is stated here, which is proof at any version. CI reads that number
+        # out of the image the pinned chart resolves to and fails if this
+        # line disagrees (scripts/check-agent-uid.py), because a kagent bump
         # that moved it would otherwise fail every agent at CreateContainer
         # time with a message that does not mention the image or its version.
         runAsUser: 65532

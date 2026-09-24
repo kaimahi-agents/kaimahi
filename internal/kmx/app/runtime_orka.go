@@ -57,7 +57,8 @@ const (
 
 // renderMode reports which schema gate this adapter's renders apply. An
 // offline create (--no-apply, including --out -) writes an artifact without
-// contacting a cluster; every other create renders for a deploy.
+// contacting a cluster; every other create renders for a deploy. Only a
+// configured adapter renders at all, so create is never nil here.
 func (a orkaRuntimeAdapter) renderMode() orkaRenderMode {
 	if a.create.NoApply {
 		return orkaRenderOffline
@@ -65,14 +66,20 @@ func (a orkaRuntimeAdapter) renderMode() orkaRenderMode {
 	return orkaRenderOnline
 }
 
-// Capabilities declares exactly the lifecycle verbs this adapter implements.
-// Render, Deploy (Task 5) and Status (Task 6) are supported; Evaluate stays
+// Capabilities declares exactly the lifecycle verbs this adapter instance
+// implements. Render and Deploy (Task 5) act on this create's own flags, so
+// they are declared only by an instance a create command configured: the
+// chat and status registrations build an adapter with no create behind it,
+// and an unconfigured instance that advertised Render would render some
+// other create's agent from an empty CreateOptions. Status (Task 6) reads
+// only the AgentRef it is given and is always available. Evaluate stays
 // permanently unsupported, because a native Orka Task supplies no frozen
 // target revision and kmx must not fabricate one (DESIGN.md §3).
 // Session-level flags remain Session's own concern
 // (orkaRuntimeSession.Capabilities), not this static declaration.
-func (orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
-	return agentruntime.Capabilities{Render: true, Deploy: true, Status: true}
+func (a orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
+	configured := a.create != nil
+	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: true}
 }
 
 // Render is the neutral seam over renderOrkaBundle. The schema provenance the
@@ -110,7 +117,7 @@ func (a orkaRuntimeAdapter) renderOrkaBundle(portable agentruntime.PortableAgent
 	if len(source) == 0 {
 		return agentruntime.RenderedBundle{}, "", fmt.Errorf("portable agent %q carries no source bytes; its portable digest would identify nothing", portable.Metadata.Name)
 	}
-	spec, err := orkaSpecFromPortable(portable, a.create)
+	spec, err := orkaSpecFromPortable(portable, *a.create)
 	if err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
@@ -165,14 +172,14 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 	if err != nil {
 		return agentruntime.AgentRef{}, err
 	}
-	opt := a.create
+	opt := *a.create
 	opt.Namespace = rendered.Target().Namespace
 	opt.Name = orkaObjectName(bundle.Agent)
-	for _, prerequisite := range rendered.Prerequisites() {
-		if prerequisite.Kind == "Secret" {
-			opt.Secret = prerequisite.Name
-		}
+	secret, err := orkaSecretPrerequisite(rendered, bundle, opt.Namespace)
+	if err != nil {
+		return agentruntime.AgentRef{}, err
 	}
+	opt.Secret = secret
 	agent, err := a.app.createOrkaStaged(ctx, opt, bundle)
 	if err != nil {
 		return agentruntime.AgentRef{}, err
@@ -182,6 +189,38 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 		kubeContext = a.app.Cfg.KubeContext
 	}
 	return agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace, Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}, nil
+}
+
+// orkaSecretPrerequisite returns the single Secret this rendered bundle
+// requires Deploy to prove exists before it writes anything.
+//
+// The staged deploy proves one Secret, so the bundle must name exactly one,
+// and it must be this bundle's own. Each rejected shape is a different way
+// the proof would be about the wrong object: with none, opt.Secret would
+// keep whatever --secret this command happened to carry (or nothing at all);
+// with several, which one is proved would depend on iteration order; and one
+// naming another namespace or another object would prove a Secret the
+// rendered documents never reference. The name is checked against the
+// rendered Secret skeleton rather than the flags, because the immutable
+// rendered bytes are what this deploy applies.
+func orkaSecretPrerequisite(rendered agentruntime.RenderedBundle, bundle *scaffold.OrkaBundle, namespace string) (string, error) {
+	var secrets []agentruntime.Prerequisite
+	for _, prerequisite := range rendered.Prerequisites() {
+		if prerequisite.Kind == "Secret" {
+			secrets = append(secrets, prerequisite)
+		}
+	}
+	if len(secrets) != 1 {
+		return "", fmt.Errorf("rendered Orka bundle names %d Secret prerequisites; deployment proves exactly one separately provisioned Secret", len(secrets))
+	}
+	secret := secrets[0]
+	if secret.Namespace != namespace {
+		return "", fmt.Errorf("rendered Orka bundle's Secret prerequisite is in namespace %q, but the bundle targets %q", secret.Namespace, namespace)
+	}
+	if want := orkaObjectName(bundle.Secret); secret.Name != want {
+		return "", fmt.Errorf("rendered Orka bundle's Secret prerequisite names %q, but its rendered documents reference Secret %q", secret.Name, want)
+	}
+	return secret.Name, nil
 }
 
 // Status wraps Orka's own workload state — the exact Ready/active-tasks/
@@ -383,6 +422,13 @@ func (a *App) portableCreateDocument(opt CreateOptions) (*agentruntime.PortableA
 	if strings.TrimSpace(instructions) == "" {
 		instructions = scaffold.DefaultOrkaInstructions(opt.Name)
 	}
+	// The Secret key defaults the same way, and for the same reason: two
+	// creates that generation renders identically must carry one portable
+	// digest, not one per spelling of the same input.
+	secretKey := opt.SecretKey
+	if secretKey == "" {
+		secretKey = scaffold.DefaultOrkaSecretKey
+	}
 	return agentruntime.EncodeOrkaShorthand(agentruntime.OrkaShorthand{
 		Name:              opt.Name,
 		Namespace:         opt.Namespace,
@@ -391,7 +437,7 @@ func (a *App) portableCreateDocument(opt CreateOptions) (*agentruntime.PortableA
 		Model:             opt.Model,
 		BaseURL:           opt.BaseURL,
 		SecretName:        opt.Secret,
-		SecretKey:         opt.SecretKey,
+		SecretKey:         secretKey,
 		Tools:             orkaNameList(opt.Tools),
 		Skills:            orkaNameList(opt.Skills),
 		AgentRateLimit:    orkaRateLimitExtension(agentLimits),

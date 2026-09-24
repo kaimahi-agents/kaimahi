@@ -1,8 +1,9 @@
 // Portable agent schema: a closed, platform-neutral authoring document with
 // optional Orka and kagent-v1 extensions. It is decoded strictly — unknown
-// fields, duplicate YAML keys, extra documents and inline credential values
-// are all refused — because this document is later hashed for identity and
-// handed to adapters that must render exactly what it says, nothing more.
+// fields, duplicate YAML keys, merge keys, extra documents and inline
+// credential values are all refused — because this document is later hashed
+// for identity and handed to adapters that must render exactly what it says,
+// nothing more.
 //
 // Extension shapes follow TARGETS.md §7 exactly: Orka nests provider
 // (defaultModel, secretRef, rateLimit) and a separate agent block (tools,
@@ -252,10 +253,11 @@ type KagentS3Object struct {
 }
 
 // ParsePortableAgent strictly decodes exactly one YAML document into a
-// PortableAgent, rejecting unknown fields, duplicate keys at every level,
-// additional documents, missing required fields, extension/apiVersion
-// mismatches and inline credential-shaped values. On success it holds a
-// defensive copy of data; mutating data afterward never changes the result.
+// PortableAgent, rejecting unknown fields, duplicate keys and merge keys at
+// every level, additional documents, missing required fields,
+// extension/apiVersion mismatches and inline credential-shaped values. On
+// success it holds a defensive copy of data; mutating data afterward never
+// changes the result.
 func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("portable agent document must be valid UTF-8")
@@ -279,7 +281,7 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("portable agent document must be a single YAML mapping")
 	}
-	if err := rejectDuplicatePortableKeys(root.Content[0], ""); err != nil {
+	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)
 	}
 
@@ -311,16 +313,30 @@ func (p *PortableAgent) Source() []byte {
 	return out
 }
 
-// rejectDuplicatePortableKeys recurses through every mapping node in the
+// portableMergeKey is YAML's merge key. It is refused rather than resolved:
+// see rejectPortableKeyHazards.
+const portableMergeKey = "<<"
+
+// rejectPortableKeyHazards recurses through every mapping node in the
 // document — at every nesting level, including inside sequences — and
-// refuses a mapping that repeats a key. yaml.v3 otherwise silently keeps
-// the last occurrence, which would let an authored document quietly say
-// two different things about the same field.
-func rejectDuplicatePortableKeys(node *yaml.Node, path string) error {
+// refuses the two ways an authored mapping can mean something other than
+// what it literally says.
+//
+//  1. A repeated key. yaml.v3 otherwise silently keeps the last occurrence,
+//     which would let a document quietly say two different things about the
+//     same field.
+//  2. A merge key ("<<"). yaml.v3 resolves it before the strict decode ever
+//     sees the mapping, so the merged-in keys are never written where they
+//     take effect: a merge can supply a field this mapping also states —
+//     the duplicate this walk exists to catch — or supply one the closed
+//     schema does not model, with neither gate able to see it. Refusing the
+//     merge outright keeps every key an authored document carries visible at
+//     the place it applies.
+func rejectPortableKeyHazards(node *yaml.Node, path string) error {
 	switch node.Kind {
 	case yaml.DocumentNode:
 		for _, child := range node.Content {
-			if err := rejectDuplicatePortableKeys(child, path); err != nil {
+			if err := rejectPortableKeyHazards(child, path); err != nil {
 				return err
 			}
 		}
@@ -333,17 +349,20 @@ func rejectDuplicatePortableKeys(node *yaml.Node, path string) error {
 			if path != "" {
 				location = path + "." + key
 			}
+			if key == portableMergeKey || keyNode.Tag == "!!merge" {
+				return fmt.Errorf("merge key %q at %s (line %d): every field must be stated where it applies, not merged in from an anchor", portableMergeKey, location, keyNode.Line)
+			}
 			if seen[key] {
 				return fmt.Errorf("duplicate key %q at %s (line %d)", key, location, keyNode.Line)
 			}
 			seen[key] = true
-			if err := rejectDuplicatePortableKeys(valueNode, location); err != nil {
+			if err := rejectPortableKeyHazards(valueNode, location); err != nil {
 				return err
 			}
 		}
 	case yaml.SequenceNode:
 		for i, child := range node.Content {
-			if err := rejectDuplicatePortableKeys(child, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+			if err := rejectPortableKeyHazards(child, fmt.Sprintf("%s[%d]", path, i)); err != nil {
 				return err
 			}
 		}

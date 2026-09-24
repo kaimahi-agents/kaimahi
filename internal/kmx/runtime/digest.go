@@ -8,11 +8,12 @@
 //     once, under the fixed logical path "portable-agent.yaml". It
 //     identifies authored portable behavior.
 //  2. RenderedBundleDigest frames every final rendered document, in
-//     deployment order, each under its own numbered logical path
-//     ("rendered/000.yaml", "rendered/001.yaml", ...), concatenates the
-//     frames, and hashes once. It identifies exact adapter output — Orka's
-//     optional random Task changes this digest without changing the
-//     portable digest, because the portable document never contained it.
+//     artifact order and including any document rendered for review only,
+//     each under its own numbered logical path ("rendered/000.yaml",
+//     "rendered/001.yaml", ...), concatenates the frames, and hashes once.
+//     It identifies exact adapter output — Orka's optional random Task
+//     changes this digest without changing the portable digest, because the
+//     portable document never contained it.
 package runtime
 
 import (
@@ -27,7 +28,7 @@ import (
 const PortablePath = "portable-agent.yaml"
 
 // renderedPathFormat produces each rendered document's stable logical path
-// from its zero-based position in deployment order.
+// from its zero-based position in artifact order.
 const renderedPathFormat = "rendered/%03d.yaml"
 
 // frameEntry reproduces DESIGN.md §2's exact catalogue framing for one

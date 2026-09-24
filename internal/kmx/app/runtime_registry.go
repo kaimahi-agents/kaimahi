@@ -65,9 +65,15 @@ type orkaRuntimeAdapter struct {
 	// schema target) plus this command's deployment/output flags. DESIGN.md
 	// §1 keeps app-specific CLI shapes in app: they stay here, in the
 	// app-owned adapter, rather than leaking Orka flags into the neutral
-	// runtime package's RenderOptions/DeployOptions. Chat registration leaves
-	// it zero; only the lifecycle verbs read it (runtime_orka.go).
-	create CreateOptions
+	// runtime package's RenderOptions/DeployOptions.
+	//
+	// It is a pointer because nil is a meaningful state, not an empty one:
+	// the chat and status registrations have no create command behind them,
+	// and a zero CreateOptions there would silently mean "apply, with no
+	// Task, to the empty namespace". Only an instance built by a create
+	// carries one, and only such an instance declares Render and Deploy
+	// (runtime_orka.go).
+	create *CreateOptions
 }
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }
@@ -175,11 +181,10 @@ func resolveRegisteredRuntime(ctx context.Context, registrations []runtimeRegist
 // lifecycleVerbError is the one place both existing adapters' skeleton
 // LifecycleAdapter methods decide whether to run or refuse: a verb a
 // runtime's Capabilities declares unsupported returns the shared
-// UnsupportedVerbError instead of being attempted. Task 4 registers only
-// skeleton Capabilities (every lifecycle flag false) for the existing
-// Orka/legacy-kagent adapters; later tasks flip a flag to true and replace
-// that verb's method body with real behavior, without changing this
-// dispatch rule.
+// UnsupportedVerbError instead of being attempted. Each adapter owns that
+// declaration — Orka's varies with whether the instance was configured by a
+// create (runtime_orka.go), legacy kagent's is fixed — and this dispatch
+// rule is the same for every one of them.
 func lifecycleVerbError(id agentruntime.ID, supported bool, verb string) error {
 	if supported {
 		return nil

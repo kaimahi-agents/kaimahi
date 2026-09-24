@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Pin every agent's runAsUser to the uid the kagent image actually ships.
 
-kagent's agent image has declared its user by NAME (`python`) at some
-versions and numerically (`65532`) at others. Kubernetes refuses to
-start a `runAsNonRoot: true` container whose user it cannot prove is
-non-root, so every Agent manifest here states the numeric id instead.
-The failure when that number is wrong is `image has non-numeric user
-(python)` at CreateContainer time, on every agent at once, with no
-mention of the image or its version — which is why a kagent bump that
-moved the id would be diagnosed as anything but a kagent bump.
+Kubernetes refuses to start a `runAsNonRoot: true` container whose user
+it cannot prove is non-root, and an image's declared USER is only proof
+when it is numeric — kagent's agent image has declared it by NAME at some
+versions and numerically at others. So every Agent manifest here states
+the numeric id itself, which is proof at any version. The failure when
+that number is wrong is a CreateContainer error on every agent at once,
+with no mention of the image or its version — which is why a kagent bump
+that moved the id would be diagnosed as anything but a kagent bump.
 
 So the number is checked against the image rather than asserted in a
 comment. The image is the one the chart at the pinned version resolves
@@ -168,16 +168,24 @@ def passwd_from_export(export_bytes: bytes, path: str, image: str) -> str:
     filesystem; reading a member out of it needs no process running
     inside the container at all, which is what makes this work against
     images that ship no shell.
+
+    A stream that is not a tar at all — truncated, empty, or a diagnostic
+    written where the archive should be — is tarfile's own error, and it is
+    translated into this checker's one controlled failure so the run ends
+    with a sentence about the image rather than a traceback.
     """
-    with tarfile.open(fileobj=io.BytesIO(export_bytes)) as tar:
-        try:
-            member = tar.getmember(path)
-        except KeyError:
-            raise LookupError(f"{image} has no {path}")
-        extracted = tar.extractfile(member)
-        if extracted is None:
-            raise LookupError(f"{image}'s {path} is not a regular file")
-        return extracted.read().decode()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(export_bytes)) as tar:
+            try:
+                member = tar.getmember(path)
+            except KeyError:
+                raise LookupError(f"{image} has no {path}")
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise LookupError(f"{image}'s {path} is not a regular file")
+            return extracted.read().decode()
+    except tarfile.TarError as e:
+        raise LookupError(f"{image}'s exported filesystem is not a readable tar: {e}")
 
 
 def image_file(engine_bin: str, image: str, path: str) -> str:
@@ -187,6 +195,12 @@ def image_file(engine_bin: str, image: str, path: str) -> str:
     exported, and removed again whether or not the read succeeds: a
     checker that leaves stopped containers behind on every run is not
     one anybody wants in CI.
+
+    The removal is cleanup, not a result, so it is best-effort. Checking it
+    would let an engine that refuses to remove a container replace the
+    export failure this function exists to report — the `finally` runs on
+    the way out of the error path, so its own exception would be the one
+    the caller saw.
     """
     cid = subprocess.run([engine_bin, "create", image],
                         check=True, capture_output=True, text=True).stdout.strip()
@@ -194,7 +208,7 @@ def image_file(engine_bin: str, image: str, path: str) -> str:
         export = subprocess.run([engine_bin, "export", cid], check=True, capture_output=True).stdout
         return passwd_from_export(export, path, image)
     finally:
-        subprocess.run([engine_bin, "rm", "-f", cid], check=True, capture_output=True, text=True)
+        subprocess.run([engine_bin, "rm", "-f", cid], check=False, capture_output=True, text=True)
 
 
 def image_uid(image: str) -> int:
@@ -273,8 +287,9 @@ def problems(found: list[tuple[str, dict]], uid: int) -> list[str]:
         got = pinned[0] if pinned else None
         if got is None:
             out.append(f"{name}: agent {doc.get('metadata', {}).get('name', '?')} pins no runAsUser. "
-                       f"The kagent image declares its user by name, so without the numeric id "
-                       f"({uid}) this agent fails at CreateContainer time.")
+                       f"Kubernetes will not start a runAsNonRoot container whose user it cannot "
+                       f"prove is non-root, so without the numeric id ({uid}) this agent fails at "
+                       f"CreateContainer time.")
         else:
             for got in pinned:
                 if got != uid:
@@ -518,6 +533,62 @@ def selftest() -> int:
                 {"etc/other": b"x"}, "etc/passwd", "refused")
     export_case("a directory at the file's path is refused, not read as empty",
                 {"etc/passwd": None}, "etc/passwd", "refused")
+
+    # An export that is not a tar at all: a truncated stream, or an engine
+    # that wrote a diagnostic where the archive should be. tarfile raises its
+    # own error for that, and this checker reports failures in one shape, so
+    # it is translated rather than allowed to escape as a traceback.
+    def corrupt(what, blob, want):
+        nonlocal failed
+        try:
+            got = passwd_from_export(blob, "etc/passwd", "img:tag")
+        except LookupError:
+            got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    corrupt("an export that is not a tar is refused, not raised as a traceback", b"not a tar", "refused")
+    corrupt("an empty export is refused, not raised as a traceback", b"", "refused")
+
+    # The container the export reads from is created and then removed. The
+    # removal is cleanup, not a result: an engine that refuses to remove a
+    # container must not replace the failure the caller actually needs to
+    # see, which is what a checked cleanup in a `finally` does.
+    def fake_engine(directory: Path, export_exit: int, rm_exit: int) -> str:
+        script = directory / "fake-engine"
+        script.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  create) echo deadbeef ;;\n"
+            f"  export) echo 'export failed' >&2; exit {export_exit} ;;\n"
+            f"  rm) echo 'rm failed' >&2; exit {rm_exit} ;;\n"
+            "esac\n")
+        script.chmod(0o755)
+        return str(script)
+
+    def cleanup(what, export_exit, rm_exit, want):
+        nonlocal failed
+        with tempfile.TemporaryDirectory() as tmp:
+            engine_bin = fake_engine(Path(tmp), export_exit, rm_exit)
+            try:
+                image_file(engine_bin, "img:tag", "etc/passwd")
+                got = "no failure at all"
+            except subprocess.CalledProcessError as e:
+                got = e.cmd[1]
+            except LookupError:
+                got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    cleanup("a failing export is reported as the export's failure", 1, 0, "export")
+    cleanup("a failing cleanup does not mask the export's failure", 1, 1, "export")
+    cleanup("a failing cleanup does not mask what the export returned", 0, 1, "refused")
 
     if failed:
         print(f"check-agent-uid self-test: {failed} case(s) failed", file=sys.stderr)

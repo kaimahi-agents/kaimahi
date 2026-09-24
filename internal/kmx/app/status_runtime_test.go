@@ -191,9 +191,10 @@ func TestStatusExplicitOrkaRequiresItsSelectors(t *testing.T) {
 	}
 }
 
-// kagent-v1 registers with the shared registry in a later task. Until then
-// both an explicit and a detected kagent-v1 resolve to the registry's own
-// typed unknown-runtime error, never to another runtime's implementation.
+// kagent-v1 is detected by shared platform detection but not implemented in
+// this build, so both an explicit and a detected kagent-v1 resolve to the
+// registry's own typed unknown-runtime error, never to another runtime's
+// implementation.
 func TestStatusKagentV1IsNotYetRegistered(t *testing.T) {
 	a, out, _ := legacyRuntimeFixture(t)
 	t.Setenv("KMX_TEST_KAGENTV1_PLATFORM", "present")
