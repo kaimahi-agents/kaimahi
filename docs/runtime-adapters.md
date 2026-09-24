@@ -17,7 +17,7 @@ generic KMX control plane, owns enforcement.
 | **Agent** | The named intent and configuration a developer wants to run | Developer and source control |
 | **Runtime** | The platform that discovers and executes an Agent | Runtime adapter and platform |
 | **Context** | Runtime, cluster context, namespace, and Agent name; adapters may add observed kind and UID | KMX target selection and runtime discovery |
-| **Session** | A connected interaction with one resolved Agent | Runtime implementation |
+| **Session** | A connected interaction with one resolved Agent across turns | Runtime implementation |
 | **Inference provider** | The model endpoint or host strategy used for a turn | Agent/environment configuration |
 | **Lifecycle** | Create, render, deploy, inspect, evaluate, diff, and recover operations | KMX orchestration over runtime-specific operations |
 | **Enforcement** | Isolation, policy, authorization, and governance applied during execution | Selected platform and surrounding infrastructure |
