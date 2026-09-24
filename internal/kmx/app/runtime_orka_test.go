@@ -266,17 +266,17 @@ func TestOrkaAdapterSeamRenderEqualsCompatibilityRender(t *testing.T) {
 	}
 }
 
-// Orka declares exactly the lifecycle verbs this task implements. Status is
-// Task 6's; Evaluate is permanently unsupported, because a native Orka Task
-// supplies no frozen target revision.
-func TestOrkaAdapterDeclaresRenderAndDeployOnly(t *testing.T) {
+// Orka declares exactly the lifecycle verbs Tasks 5-6 implement: Render and
+// Deploy (Task 5) plus Status (Task 6). Evaluate is permanently unsupported,
+// because a native Orka Task supplies no frozen target revision.
+func TestOrkaAdapterDeclaresRenderDeployAndStatusOnly(t *testing.T) {
 	adapter := orkaRuntimeAdapter{app: &App{}}
 	caps := adapter.Capabilities()
-	if !caps.Render || !caps.Deploy {
-		t.Fatalf("Orka lifecycle Capabilities = %+v, want Render and Deploy supported", caps)
+	if !caps.Render || !caps.Deploy || !caps.Status {
+		t.Fatalf("Orka lifecycle Capabilities = %+v, want Render, Deploy and Status supported", caps)
 	}
-	if caps.Status || caps.Evaluate {
-		t.Fatalf("Orka lifecycle Capabilities = %+v, want Status and Evaluate unsupported", caps)
+	if caps.Evaluate {
+		t.Fatalf("Orka lifecycle Capabilities = %+v, want Evaluate unsupported", caps)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // statusRequestTimeout bounds every read status makes.
@@ -267,6 +268,18 @@ func statusReady(allAgents, allModels bool, kReady, kTotal, oReady, oTotal, pRea
 		ready = ready && pReady == pTotal
 	}
 	return ready
+}
+
+// lifecycleRuntimeRegistry holds the LifecycleAdapters an explicit --runtime
+// lifecycle status dispatch will look up by ID (DESIGN.md §4; the CLI flag
+// itself is a later task). Task 6 wires Orka's real workload Status through
+// it; legacy kagent's skeleton keeps declining until its own combined-status
+// slice is wrapped. This is dispatch bookkeeping only — the aggregate
+// StatusWithOptions/collectStatus path below is unchanged and remains
+// entirely app-owned: governance, Ollama, MCP and certificate sections never
+// come from a LifecycleAdapter.
+func (a *App) lifecycleRuntimeRegistry() (*agentruntime.Registry, error) {
+	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a}, kagentRuntimeAdapter{app: a})
 }
 
 // Status prints a grouped human view or kubectl-native JSON/YAML.

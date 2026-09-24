@@ -7,7 +7,42 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+// listPresentationRegistration pairs a runtime ID with the app-owned list
+// presentation handler for it (DESIGN.md §1). List is inventory/presentation,
+// not a lifecycle verb, so this lives beside ListAgents rather than inside
+// LifecycleAdapter or Capabilities.
+type listPresentationRegistration struct {
+	id      agentruntime.ID
+	handler func(output, namespace string) error
+}
+
+// listPresentationHandlers registers exactly the runtimes this build can
+// list by explicit ID today: Orka's existing --namespace-scoped listing,
+// unchanged. Legacy kagent's own bare-list stays reached through ListAgents'
+// existing --namespace branching until a later task registers it by ID too;
+// looking it up here would silently duplicate that dispatch rather than
+// replace it.
+func (a *App) listPresentationHandlers() []listPresentationRegistration {
+	return []listPresentationRegistration{
+		{id: agentruntime.Orka, handler: a.listOrkaAgents},
+	}
+}
+
+// listPresentationHandler looks up the registered list handler for id. A
+// runtime with none registered returns the one shared typed
+// UnsupportedVerbError naming it and "list", never a fallback to a
+// different runtime's handler.
+func (a *App) listPresentationHandler(id agentruntime.ID) (func(output, namespace string) error, error) {
+	for _, registration := range a.listPresentationHandlers() {
+		if registration.id == id {
+			return registration.handler, nil
+		}
+	}
+	return nil, &agentruntime.UnsupportedVerbError{Runtime: id, Verb: agentruntime.VerbList}
+}
 
 // ListAgents prints Agent resources. Which KIND of agent depends on
 // --namespace, and that is not a shortcut.

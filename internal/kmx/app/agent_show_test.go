@@ -9,6 +9,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // The fake answers the four reads this command makes, switched by env so a
@@ -213,5 +215,38 @@ func TestAgentShowRejectsAnUnsupportedOutput(t *testing.T) {
 	opt.Output = "yaml"
 	if err := f.app.ShowAgent("concierge", opt); err == nil {
 		t.Fatal("an unsupported output was accepted")
+	}
+}
+
+// DESIGN.md §1: show, like list, is an app-owned presentation handler
+// registered by the same shared runtime ID, not a lifecycle verb. Looking
+// Orka up by ID must dispatch to exactly the existing show chain, unchanged.
+func TestShowPresentationHandlerDispatchesOrkaByID(t *testing.T) {
+	f := newShowFixture(t)
+	handler, err := f.app.showPresentationHandler(agentruntime.Orka)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handler("concierge", showOpts()); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"concierge", "provider local", "qwen2.5:3b"} {
+		if !strings.Contains(f.out.String(), want) {
+			t.Errorf("the registered handler omits %q:\n%s", want, f.out.String())
+		}
+	}
+}
+
+// A runtime ID with no registered show handler returns the one shared typed
+// error naming that runtime and the "show" verb.
+func TestShowPresentationHandlerIsUnsupportedForAnUnregisteredRuntime(t *testing.T) {
+	a := &App{}
+	_, err := a.showPresentationHandler(agentruntime.KagentV1)
+	var unsupported *agentruntime.UnsupportedVerbError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("err = %v, not *UnsupportedVerbError", err)
+	}
+	if unsupported.Runtime != agentruntime.KagentV1 || unsupported.Verb != agentruntime.VerbShow {
+		t.Fatalf("unsupported = %+v", unsupported)
 	}
 }

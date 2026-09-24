@@ -2,12 +2,14 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func TestInteractiveRuntimeDiscoveryPrefersOrkaAndPreservesFailures(t *testing.T) {
@@ -76,5 +78,52 @@ func TestSharedChatInitialMessageSentExactlyOnce(t *testing.T) {
 	}
 	if len(backend.messages) != 1 || backend.messages[0] != "hello" {
 		t.Fatalf("messages=%v", backend.messages)
+	}
+}
+
+// PR #197 regression, unchanged by Task 6: chat's Agent-level discovery must
+// keep refusing an Orka Agent that names an external CLI runtime (spec.runtime
+// set) rather than treating it as a chattable Orka AI agent. This exercises
+// orkaRuntimeAdapter.Probe directly — the exact chat/session discovery path
+// DESIGN.md §1 keeps untouched by W94's lifecycle additions — not through
+// list/show/status, which never call Probe at all.
+func TestChatDiscoveryRejectsAnOrkaExternalRuntimeAgent(t *testing.T) {
+	dir := t.TempDir()
+	fakeTool(t, dir, "kubectl", `case "$*" in
+ *api-resources*) printf 'agents.core.orka.ai';;
+ *) printf '{"metadata":{"name":"demo","namespace":"orka-system","uid":"agent-uid"},"spec":{"runtime":{"type":"cli","command":["agent"]}}}';;
+esac`)
+	t.Setenv("PATH", dir)
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}}
+	adapter := orkaRuntimeAdapter{app: a}
+	probe, err := adapter.Probe(context.Background(), agentruntime.Target{Context: "kind-test", Namespace: "orka-system", Name: "demo"})
+	if err == nil {
+		t.Fatal("an external-runtime Orka Agent was accepted for chat discovery")
+	}
+	if !strings.Contains(err.Error(), "external CLI runtime") {
+		t.Fatalf("the refusal does not name the reason: %v", err)
+	}
+	if probe.Found {
+		t.Fatalf("a refused Agent was still reported Found: %+v", probe)
+	}
+}
+
+// A regular Orka AI Agent (no spec.runtime) remains chattable — the healthy
+// counterpart to the refusal above, proving Task 6 changed neither branch.
+func TestChatDiscoveryAcceptsAPlainOrkaAgent(t *testing.T) {
+	dir := t.TempDir()
+	fakeTool(t, dir, "kubectl", `case "$*" in
+ *api-resources*) printf 'agents.core.orka.ai';;
+ *) printf '{"metadata":{"name":"demo","namespace":"orka-system","uid":"agent-uid"},"spec":{}}';;
+esac`)
+	t.Setenv("PATH", dir)
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}}
+	adapter := orkaRuntimeAdapter{app: a}
+	probe, err := adapter.Probe(context.Background(), agentruntime.Target{Context: "kind-test", Namespace: "orka-system", Name: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !probe.Found || probe.Agent.Runtime != agentruntime.Orka || probe.Agent.UID != "agent-uid" {
+		t.Fatalf("probe = %+v, err=%v", probe, err)
 	}
 }

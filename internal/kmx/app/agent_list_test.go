@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func TestAgentListRowsAreSortedAndShowWiring(t *testing.T) {
@@ -113,6 +115,40 @@ func TestOrkaAgentListSeparatesAbsentKindFromEmptyNamespace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "kmx --context kind-test orka install") {
 		t.Errorf("the refusal does not say how to fix it: %v", err)
+	}
+}
+
+// DESIGN.md §1: list/show are presentation operations kept app-owned and
+// registered by the same shared runtime ID as chat and lifecycle — not a
+// second string/API switch. Looking Orka up by ID must dispatch to exactly
+// the existing --namespace-scoped Orka listing, byte for byte.
+func TestListPresentationHandlerDispatchesOrkaByID(t *testing.T) {
+	a, dir := agentListFixture(t)
+	handler, err := a.listPresentationHandler(agentruntime.Orka)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handler("table", "team-a"); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if !strings.Contains(string(calls), "agents.core.orka.ai") || !strings.Contains(string(calls), "-n team-a") {
+		t.Errorf("the registered handler did not read Orka Agents in the named namespace:\n%s", calls)
+	}
+}
+
+// A runtime ID with no registered list handler returns the one shared typed
+// error naming that runtime and the "list" verb — never a silent fallback
+// to Orka's handler and never an ad hoc string error.
+func TestListPresentationHandlerIsUnsupportedForAnUnregisteredRuntime(t *testing.T) {
+	a := &App{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
+	_, err := a.listPresentationHandler(agentruntime.KagentV1)
+	var unsupported *agentruntime.UnsupportedVerbError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("err = %v, not *UnsupportedVerbError", err)
+	}
+	if unsupported.Runtime != agentruntime.KagentV1 || unsupported.Verb != agentruntime.VerbList {
+		t.Fatalf("unsupported = %+v", unsupported)
 	}
 }
 
