@@ -48,6 +48,21 @@ func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 	}
 }
 
+func TestBYORegistryRetryKeepsTheRecordedPayload(t *testing.T) {
+	bin := t.TempDir()
+	az := "#!/bin/sh\ncase \"$1\" in\n acr) echo /subscriptions/test/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/reg12345;;\n aks) echo kubelet-id;;\n role) echo role-id;;\n rest) echo 0;;\n *) exit 1;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "az"), []byte(az), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	a := &App{Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
+	opt := lift.Options{Payload: lift.PayloadKagent, BringYourOwn: true, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345"}
+	err := a.refuseWithoutRegistryPullRights(opt, opt.Payload)
+	if err == nil || !strings.Contains(err.Error(), "kmx aks up --byo --payload kagent --step plane") {
+		t.Fatalf("BYO retry lost the recorded payload: %v", err)
+	}
+}
+
 func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 	body, err := kaimahi.Managed.ReadFile("scripts/aks-up.sh")
 	if err != nil {
@@ -59,7 +74,9 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 			t.Errorf("embedded aks-up.sh does not carry %q", want)
 		}
 	}
-	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) || !strings.Contains(text, "make netpol-verify") {
+	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
+		!strings.Contains(text, "make netpol-verify") ||
+		!strings.Contains(text, "kmx aks up --byo --resource-group $RG") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
 	}
 }
@@ -451,7 +468,7 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 // re-running a phase must not turn into a refusal.
 func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 	a := &App{}
-	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
+	opt := lift.Options{Payload: lift.PayloadKagent, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
 
 	for _, tc := range []struct {
 		name   string
@@ -471,7 +488,7 @@ func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 				t.Errorf("the refusal does not name %q: %v", tc.says, err)
 			}
 			// It has to say how to get past it, both ways.
-			if !strings.Contains(err.Error(), "--observability=false") || !strings.Contains(err.Error(), "disable-addons") {
+			if !strings.Contains(err.Error(), "--payload kagent --observability=false") || !strings.Contains(err.Error(), "disable-addons") {
 				t.Errorf("the refusal offers no way forward: %v", err)
 			}
 		})

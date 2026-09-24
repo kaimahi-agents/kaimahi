@@ -402,7 +402,7 @@ aks-up: ready.
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
 Next (see docs/aks.md):
-  kmx aks up --resource-group $RG --cluster $CLUSTER --registry $ACR
+  kmx aks up --byo --resource-group $RG --cluster $CLUSTER --registry $ACR
 
   The managed path captures the model credential before deploying the plane
   and proves the network boundary. Use 'kmx aks up --help' for individual phases.

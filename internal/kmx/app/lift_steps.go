@@ -183,7 +183,7 @@ func (a *App) liftPlane(opt lift.Options, work string) error {
 	// layers away from the cause, on a cluster the operator has just been
 	// told is fine.
 	if opt.BringYourOwn {
-		if err := a.refuseWithoutRegistryPullRights(opt); err != nil {
+		if err := a.refuseWithoutRegistryPullRights(opt, opt.Payload); err != nil {
 			return err
 		}
 	}

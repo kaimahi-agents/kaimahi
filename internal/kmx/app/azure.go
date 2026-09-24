@@ -158,7 +158,7 @@ func (a *App) confirmRecordedResource(id string) (lift.Existence, string) {
 // answer that could not be obtained. Proceeding on an unknown here produces
 // ImagePullBackOff several minutes later, which is the least informative
 // possible way to learn this.
-func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity) error {
+func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity, payload string) error {
 	acrID, err := a.Run.Capture("az", "acr", "show", "--name", opt.RegistryName(), "--query", "id", "-o", "tsv")
 	if err != nil || strings.TrimSpace(acrID) == "" {
 		return fmt.Errorf(`cannot find the registry %q, or cannot read it.
@@ -208,9 +208,9 @@ func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity) error {
 
   Then resume — nothing before this is undone:
 
-    kmx aks up --byo --step plane --resource-group %s --cluster %s --registry %s`,
+    kmx aks up --byo --payload %s --step plane --resource-group %s --cluster %s --registry %s`,
 			opt.RegistryName(), opt.ClusterName(), opt.GroupName(), opt.RegistryName(),
-			opt.GroupName(), opt.ClusterName(), opt.RegistryName())
+			payload, opt.GroupName(), opt.ClusterName(), opt.RegistryName())
 	}
 	a.notef("your cluster's kubelet identity holds AcrPull on %s.", opt.RegistryName())
 	return nil

@@ -299,13 +299,13 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 
   Either keep what you have and skip this phase:
 
-    kmx aks up --byo --observability=false %s
+    kmx aks up --byo --payload %s --observability=false %s
 
   or turn the add-on off first, if you meant this run to own it:
 
     az aks disable-addons --name %s --resource-group %s --addons monitoring
     az aks update --name %s --resource-group %s --disable-azure-monitor-metrics`,
-		strings.Join(already, " and "), liftIdentityFlags(opt),
+		strings.Join(already, " and "), opt.Payload, liftIdentityFlags(opt),
 		opt.Cluster, opt.ResourceGroup, opt.Cluster, opt.ResourceGroup)
 }
 

@@ -67,6 +67,8 @@ lint:
 	staticcheck ./...
 
 docs-check:
+	python3 scripts/check-brand-assets.py --selftest
+	python3 scripts/check-brand-assets.py
 	python3 scripts/check-doc-links.py --selftest
 	python3 scripts/check-doc-links.py
 	python3 scripts/check-readme-front-door-test.py
