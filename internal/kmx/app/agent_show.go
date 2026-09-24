@@ -26,7 +26,38 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+// showPresentationRegistration pairs a runtime ID with the app-owned show
+// presentation handler for it (DESIGN.md §1). Show, like list, is
+// inventory/presentation, not a lifecycle verb.
+type showPresentationRegistration struct {
+	id      agentruntime.ID
+	handler func(name string, opt ShowOptions) error
+}
+
+// showPresentationHandlers registers exactly the runtimes this build can
+// show by explicit ID today: Orka's existing chain view, unchanged. Legacy
+// kagent has no show handler at all (it returns unsupported show per
+// DESIGN.md §3) and kagent-v1's is a later task's addition.
+func (a *App) showPresentationHandlers() []showPresentationRegistration {
+	return []showPresentationRegistration{
+		{id: agentruntime.Orka, handler: a.ShowAgent},
+	}
+}
+
+// showPresentationHandler looks up the registered show handler for id. A
+// runtime with none registered returns the one shared typed
+// UnsupportedVerbError naming it and "show".
+func (a *App) showPresentationHandler(id agentruntime.ID) (func(name string, opt ShowOptions) error, error) {
+	for _, registration := range a.showPresentationHandlers() {
+		if registration.id == id {
+			return registration.handler, nil
+		}
+	}
+	return nil, &agentruntime.UnsupportedVerbError{Runtime: id, Verb: agentruntime.VerbShow}
+}
 
 // ShowOptions are `kmx agent show`'s knobs.
 type ShowOptions struct {

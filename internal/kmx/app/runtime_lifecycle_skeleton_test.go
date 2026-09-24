@@ -8,23 +8,19 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// Task 5 implements Orka's Render and Deploy; Status is Task 6's and
-// Evaluate is permanently unsupported. The verbs Orka still declines must
+// Task 5 implements Orka's Render and Deploy, Task 6 implements Status;
+// Evaluate is permanently unsupported. The verb Orka still declines must
 // return the one shared, typed agentruntime.UnsupportedVerbError — not an
 // ad hoc string error — naming the exact runtime ID and verb.
 func TestOrkaLifecycleSkeletonReturnsSharedUnsupportedVerbError(t *testing.T) {
 	adapter := orkaRuntimeAdapter{app: &App{}}
-	if caps := adapter.Capabilities(); caps.Status || caps.Evaluate {
+	if caps := adapter.Capabilities(); caps.Evaluate {
 		t.Fatalf("Orka declares an unimplemented lifecycle verb supported: %+v", caps)
 	}
 	cases := []struct {
 		verb string
 		call func() error
 	}{
-		{agentruntime.VerbStatus, func() error {
-			_, err := adapter.Status(context.Background(), agentruntime.AgentRef{}, agentruntime.StatusOptions{})
-			return err
-		}},
 		{agentruntime.VerbEvaluate, func() error {
 			_, err := adapter.Evaluate(context.Background(), agentruntime.AgentRef{}, agentruntime.EvaluationRequest{})
 			return err

@@ -66,12 +66,13 @@ func (a orkaRuntimeAdapter) renderMode() orkaRenderMode {
 }
 
 // Capabilities declares exactly the lifecycle verbs this adapter implements.
-// Status is wrapped by Task 6; Evaluate stays permanently unsupported,
-// because a native Orka Task supplies no frozen target revision and kmx must
-// not fabricate one (DESIGN.md §3). Session-level flags remain Session's own
-// concern (orkaRuntimeSession.Capabilities), not this static declaration.
+// Render, Deploy (Task 5) and Status (Task 6) are supported; Evaluate stays
+// permanently unsupported, because a native Orka Task supplies no frozen
+// target revision and kmx must not fabricate one (DESIGN.md §3).
+// Session-level flags remain Session's own concern
+// (orkaRuntimeSession.Capabilities), not this static declaration.
 func (orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
-	return agentruntime.Capabilities{Render: true, Deploy: true}
+	return agentruntime.Capabilities{Render: true, Deploy: true, Status: true}
 }
 
 // Render is the neutral seam over renderOrkaBundle. The schema provenance the
@@ -183,11 +184,33 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 	return agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace, Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}, nil
 }
 
-func (a orkaRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
+// Status wraps Orka's own workload state — the exact Ready/active-tasks/
+// last-used read `kmx agent show` already exercises via readOrkaAgent — and
+// nothing else. Orka has no template/instance split, so DESIGN.md §1's
+// PairStatus.Fields carries that workload state directly and Instance stays
+// nil; there is never a merged readiness boolean. This is unrelated to and
+// does not touch `kmx status`'s aggregate governance/Ollama/MCP/certificate
+// sections, which remain entirely app-owned (status.go).
+func (a orkaRuntimeAdapter) Status(_ context.Context, ref agentruntime.AgentRef, _ agentruntime.StatusOptions) (agentruntime.LifecycleStatus, error) {
 	if err := lifecycleVerbError(a.ID(), a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
 		return agentruntime.LifecycleStatus{}, err
 	}
-	return agentruntime.LifecycleStatus{}, fmt.Errorf("orka status: not yet implemented")
+	if strings.TrimSpace(ref.Namespace) == "" || strings.TrimSpace(ref.Name) == "" {
+		return agentruntime.LifecycleStatus{}, fmt.Errorf("orka status requires an explicit namespace and Agent name")
+	}
+	if err := a.app.preflight(depKubectl); err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	agent, err := a.app.readOrkaAgent(ref.Namespace, ref.Name)
+	if err != nil {
+		return agentruntime.LifecycleStatus{}, err
+	}
+	fields := []agentruntime.Field{
+		{Label: "ready", Value: readyWord(agent.Status.Ready)},
+		{Label: "active tasks", Value: fmt.Sprintf("%d", agent.Status.ActiveTasks)},
+		{Label: "last used", Value: orDash(agent.Status.LastUsed)},
+	}
+	return agentruntime.LifecycleStatus{Pair: agentruntime.PairStatus{Fields: fields}}, nil
 }
 
 // Evaluate is permanently unsupported for Orka (DESIGN.md §3: "native Orka

@@ -15,6 +15,8 @@ func TestUnsupportedVerbErrorMessageNamesRuntimeAndVerb(t *testing.T) {
 		{Kagent, VerbRender, "runtime kagent does not support render"},
 		{Orka, VerbEvaluate, "runtime orka does not support evaluate"},
 		{KagentV1, VerbDeploy, "runtime kagent-v1 does not support deploy"},
+		{KagentV1, VerbList, "runtime kagent-v1 does not support list"},
+		{Kagent, VerbShow, "runtime kagent does not support show"},
 	}
 	for _, tc := range cases {
 		err := &UnsupportedVerbError{Runtime: tc.runtime, Verb: tc.verb}
