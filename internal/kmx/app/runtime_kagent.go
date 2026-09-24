@@ -142,11 +142,11 @@ func (a kagentRuntimeAdapter) Status(ctx context.Context, ref agentruntime.Agent
 // The terminal coordinator provides a decision callback; model/session work is
 // behind the same Session contract as Orka. No Orka resource is involved.
 type kagentRuntimeSession struct {
-	app                                       *App
-	executable, name, session, base, toolMode string
-	posture                                   *chatGovernancePosture
-	stop                                      func()
-	decide                                    func(context.Context, *streamView, *chatRenderer) (*streamView, error)
+	app                                                *App
+	executable, name, session, base, cliBase, toolMode string
+	posture                                            *chatGovernancePosture
+	stop, closeCLIBase                                 func()
+	decide                                             func(context.Context, *streamView, *chatRenderer) (*streamView, error)
 	// Compatibility driver renders the native stream directly. Other consumers
 	// use typed events through runtimeEventRenderer instead.
 	renderer        *chatRenderer
@@ -192,6 +192,13 @@ func (s *kagentRuntimeSession) Connect(ctx context.Context, emit agentruntime.Em
 	}
 	s.stop = stop
 	s.base = "http://127.0.0.1:" + port
+	// The pinned CLI is pointed at the compatibility hop instead: it sends an
+	// empty messageId, which the agent refuses. s.base stays the forward, so
+	// kmx's own session, history, task and HITL calls are unchanged.
+	if s.cliBase, s.closeCLIBase, err = s.app.legacyChatEndpoint(s.base); err != nil {
+		s.Close()
+		return status, err
+	}
 	r := s.output(emit, s.app.chatVerbose)
 	s.posture, err = s.app.refreshChatPosture(s.name, r)
 	if err != nil {
@@ -213,7 +220,7 @@ func (s *kagentRuntimeSession) Send(ctx context.Context, turn agentruntime.Turn,
 	if s.posture != nil && s.posture.modelGoverned {
 		r.assistantOperation(s.name, "KAIMAHI ROUTE", "", colorYellow, "Seam: model proxy\nConfiguration: verified through ready plane at chat start\nPer-call decision: not exposed by kagent stream")
 	}
-	view, err := s.app.invokeStream(ctx, s.executable, s.base, s.name, turn.Message, s.session, s.toolMode, r, s.posture)
+	view, err := s.app.invokeStream(ctx, s.executable, s.cliBase, s.name, turn.Message, s.session, s.toolMode, r, s.posture)
 	if view != nil && view.context != "" {
 		s.session = view.context
 	}
@@ -240,6 +247,10 @@ func (s *kagentRuntimeSession) Send(ctx context.Context, turn agentruntime.Turn,
 	return nil
 }
 func (s *kagentRuntimeSession) Close() {
+	if s.closeCLIBase != nil {
+		s.closeCLIBase()
+		s.closeCLIBase, s.cliBase = nil, ""
+	}
 	if s.stop != nil {
 		s.stop()
 		s.stop = nil
