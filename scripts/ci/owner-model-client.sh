@@ -80,6 +80,7 @@ spec:
       labels:
         app: $NAME
     spec:
+      terminationGracePeriodSeconds: 5
       containers:
         - name: app
           image: $IMAGE
