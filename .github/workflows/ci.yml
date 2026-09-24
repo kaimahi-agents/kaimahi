@@ -921,7 +921,18 @@ jobs:
       - name: Converse with the agent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat.out
+          # The prompt is a flat imperative, not a conversation. Asked an
+          # open question ("who are you and where are you running?"), the
+          # 3B model in CI sometimes answers half of it and then calls the
+          # runtime's built-in `ask_user` to ask the rest, which ends the
+          # task input-required with no artifacts and no answer — a model
+          # flake, not a product fault, and one that failed these shards
+          # after the kagent 0.10.1 upgrade. Every ordinary chat probe in
+          # this workflow uses this same prompt for that reason; the MCP
+          # tool step keeps its own, because there the point IS to make the
+          # model reach for a tool. What is asserted is unchanged: a
+          # completed task with a non-empty reply, never the wording.
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee chat.out
           # Fail closed: require a completed A2A task with non-empty reply text.
           python3 scripts/verify-chat.py chat.out
       # Keyless: the model presets must be schema-valid against the live
@@ -935,7 +946,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           bin/kmx use ollama
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat-preset.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee chat-preset.out
           python3 scripts/verify-chat.py chat-preset.out
       # Keyless: prove a REAL MCP tool call, not a plausible answer. A
       # ConfigMap with an unguessable random name is created, the tools
@@ -1245,7 +1256,7 @@ jobs:
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       - name: Assert the ledger recorded the governed chat
         if: steps.changes.outputs.docs_only != 'true'
@@ -1275,7 +1286,7 @@ jobs:
           if grep -qE ' (unknown|legacy) *$' ledger-actor.out; then
             echo 'a ledger row lost its attribution' >&2; exit 1
           fi
-      - name: "Credentials expire: the deadline is visible, the refusal names the fix, and renewal restores it"
+      - name: "Credentials expire: the deadline is visible, the call is refused 403, and renewal restores it"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           # The credential has carried a deadline since `bin/kmx govern`
@@ -1291,13 +1302,22 @@ jobs:
             "UPDATE credential SET expires_at = now() - interval '1 hour' WHERE name = 'hello-world'"
           bin/kmx credentials | tee credentials-expired.out
           grep -E 'hello-world +.* EXPIRED ' credentials-expired.out
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > expired-chat.out 2>&1 || true
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' > expired-chat.out 2>&1 || true
           cat expired-chat.out
-          # The refusal names the fault, the time, and the fix. A
-          # credential that expires silently at 3am is an outage nobody
-          # diagnosed; this is what stops that.
-          grep -q 'expired credential' expired-chat.out
-          grep -q 'kmx credential renew hello-world' expired-chat.out
+          # The refusal reaches the caller as a refusal: the task FAILS,
+          # with the proxy's 403 on the model call. kagent 0.10.1 relays
+          # only the upstream's status line to the caller, so the product's
+          # own wording (`expired credential "hello-world" ... kmx
+          # credential renew hello-world`) is no longer visible here; it is
+          # asserted where it still is, in plane/internal/{proxy,store}'s
+          # tests. What this step proves end to end is the chain either
+          # side of that line: `kmx credentials` above named the deadline
+          # and then EXPIRED, the model call was refused 403, the ledger
+          # below audits the denial, and the renewal at the end restores
+          # the same token. A credential that expires silently at 3am is an
+          # outage nobody diagnosed; this is what stops that.
+          grep -q '"state":"failed"' expired-chat.out
+          grep -q '403 Forbidden' expired-chat.out
           if grep -q '"state":"completed"' expired-chat.out; then
             echo 'chat completed on an expired credential' >&2; exit 1
           fi
@@ -1312,32 +1332,42 @@ jobs:
             "UPDATE credential SET expires_at = NULL WHERE name = 'hello-world'"
           bin/kmx credentials | tee credentials-legacy.out
           grep -E 'hello-world +.* no expiry ' credentials-legacy.out
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee legacy-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee legacy-chat.out
           python3 scripts/verify-chat.py legacy-chat.out
-          # And the fix the refusal named actually fixes it: renewal moves
+          # And the fix the product names actually fixes it: renewal moves
           # the deadline without minting anything, so the Secret the agent
           # mounts is untouched and the same token keeps working.
           bin/kmx credential renew hello-world --ttl 2h
           bin/kmx credentials | tee credentials-renewed.out
           grep -E 'hello-world +.* (ok|EXPIRING) ' credentials-renewed.out
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee renewed-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee renewed-chat.out
           python3 scripts/verify-chat.py renewed-chat.out
       - name: Budget exhaustion fails closed
         if: steps.changes.outputs.docs_only != 'true'
         run: |
+          # The cap is the policy under test, and `kmx budget` setting it
+          # is the first half of the proof: the admin surface accepted a
+          # one-token monthly cap, or this step is already red.
           bin/kmx budget hello-world --tokens 1
-          # The same chat must now fail with the meter's clear error; the
-          # task must NOT complete. kagent may exit nonzero on a failed
-          # task, so capture output regardless and assert on content.
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > denied-chat.out 2>&1 || true
+          # The same chat must now fail closed: the task must NOT complete,
+          # and the failure must be the meter's refusal rather than some
+          # other fault. kagent 0.10.1 relays only the upstream's status
+          # line to the caller, so the meter's wording ("monthly token
+          # budget reached", asserted in plane/internal/{meter,proxy}'s
+          # tests) no longer reaches here and the 429 is what does. kagent
+          # may exit nonzero on a failed task, so capture output regardless
+          # and assert on content.
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' > denied-chat.out 2>&1 || true
           cat denied-chat.out
-          grep -q 'monthly token budget reached' denied-chat.out
           grep -q '"state":"failed"' denied-chat.out
+          grep -q '429 Too Many Requests' denied-chat.out
           # `! cmd` is exempt from errexit (see the lockdown step above),
           # so assert the absence explicitly.
           if grep -q '"state":"completed"' denied-chat.out; then
             echo 'chat completed despite exhausted budget' >&2; exit 1
           fi
+          # The second half: the meter's OWN audit, read from a surface the
+          # chat cannot influence, names the call denied with that status.
           bin/kmx ledger hello-world | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
       # Keyless: the plane's NetworkPolicy boundary, proven ENFORCED
@@ -1468,7 +1498,7 @@ jobs:
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       # The model count distinguishes governed and direct agents. Raw
       # chart-managed MCP objects remain inventory, not governance claims.
@@ -1540,19 +1570,29 @@ jobs:
       - name: Budget exhaustion fails closed
         if: steps.changes.outputs.docs_only != 'true'
         run: |
+          # The cap is the policy under test, and `kmx budget` setting it
+          # is the first half of the proof: the admin surface accepted a
+          # one-token monthly cap, or this step is already red.
           bin/kmx budget hello-world --tokens 1
-          # The same chat must now fail with the meter's clear error; the
-          # task must NOT complete. kagent may exit nonzero on a failed
-          # task, so capture output regardless and assert on content.
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' > denied-chat.out 2>&1 || true
+          # The same chat must now fail closed: the task must NOT complete,
+          # and the failure must be the meter's refusal rather than some
+          # other fault. kagent 0.10.1 relays only the upstream's status
+          # line to the caller, so the meter's wording ("monthly token
+          # budget reached", asserted in plane/internal/{meter,proxy}'s
+          # tests) no longer reaches here and the 429 is what does. kagent
+          # may exit nonzero on a failed task, so capture output regardless
+          # and assert on content.
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' > denied-chat.out 2>&1 || true
           cat denied-chat.out
-          grep -q 'monthly token budget reached' denied-chat.out
           grep -q '"state":"failed"' denied-chat.out
+          grep -q '429 Too Many Requests' denied-chat.out
           # `! cmd` is exempt from errexit (see the lockdown step above),
           # so assert the absence explicitly.
           if grep -q '"state":"completed"' denied-chat.out; then
             echo 'chat completed despite exhausted budget' >&2; exit 1
           fi
+          # The second half: the meter's OWN audit, read from a surface the
+          # chat cannot influence, names the call denied with that status.
           bin/kmx ledger hello-world | tee ledger-denied.out
           grep -E 'denied +429' ledger-denied.out
       - name: "Ordinary budget recovery: denial files no request, restoring headroom admits"
@@ -1569,7 +1609,7 @@ jobs:
           }
           test "$(history_rows)" = 0
           bin/kmx budget hello-world --tokens 1000000
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee recovered-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee recovered-chat.out
           python3 scripts/verify-chat.py recovered-chat.out
           bin/kmx ledger hello-world | tee ledger-recovered.out
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-recovered.out
@@ -1955,7 +1995,7 @@ jobs:
       - name: Governed chat via the proxy
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee governed-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee governed-chat.out
           python3 scripts/verify-chat.py governed-chat.out
       - name: "Replica killed mid-cycle: the in-flight call drains, the survivor serves the next, no ledger row lost"
         if: steps.changes.outputs.docs_only != 'true'
@@ -1983,7 +2023,7 @@ jobs:
             kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -q 'migrations: nothing to apply'
             kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -q 'kaimahi-proxy up'
           done
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee restart-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee restart-chat.out
           python3 scripts/verify-chat.py restart-chat.out
       - name: "Backup, wipe the database, restore: the ledger rows come back"
         if: steps.changes.outputs.docs_only != 'true'
@@ -2011,7 +2051,7 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
           bin/kmx ledger hello-world | tee ledger-restored.out
           grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-restored.out
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee restored-chat.out
+          bin/kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee restored-chat.out
           python3 scripts/verify-chat.py restored-chat.out
           rm -f ci-backup.sql
       - name: Cluster state on failure
@@ -2492,7 +2532,7 @@ jobs:
         env:
           KIND_CLUSTER: kmx-clone-free
         run: |
-          kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat.out
+          kmx agent chat hello-world 'Reply with exactly READY. Do not call tools or ask questions.' | tee chat.out
           grep -q '"state":"completed"' chat.out
       - name: ledger — the governed chat was metered
         if: steps.changes.outputs.docs_only != 'true'

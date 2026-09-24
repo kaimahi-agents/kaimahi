@@ -6,9 +6,15 @@ output from the file named in argv[1].
 Optional positional args cover the tool path:
   verify-chat.py FILE [TOOL [SUBSTRING]]
 With TOOL, the task history must additionally contain a function_call for
-that tool name AND a successful (isError == false) function_response for it
-— a plausible-sounding reply without a real MCP invocation fails. With
-SUBSTRING, that successful function_response's payload must contain it (CI
+that tool name AND a SUCCESSFUL function_response for it — a
+plausible-sounding reply without a real MCP invocation fails. Success is
+read from whichever shape the runtime emits: kagent v0.9 wrapped MCP's
+result and carried `isError`, kagent v0.10.1 emits ADK events whose
+successful response carries the tool's `output` and no flag at all (the
+event-kind key moved from `kagent_type` to `adk_type` at the same time).
+Both are read, and both fail closed: a missing, empty or error-marked
+response is never a success. With SUBSTRING, that successful
+function_response's payload must contain it (CI
 passes an unguessable probe ConfigMap name, so the payload can only have
 come from a live cluster round-trip). The model's prose is printed but not
 asserted on: a 3B model garbles unguessable strings when relaying them
@@ -66,6 +72,34 @@ def pending_requests(d):
     return names
 
 
+def response_ok(data):
+    """True when a function_response records a tool call that really
+    SUCCEEDED, in either runtime shape, and False whenever the evidence is
+    missing or ambiguous.
+
+    kagent v0.9 wrapped MCP's own result: `response.isError` was the
+    verdict, and the fixtures built from those captures still carry it.
+    kagent v0.10.1 emits ADK function responses instead: a success carries
+    the tool's `output` and no flag at all, so the absence of an error
+    marker cannot be the test — a response with nothing in it would read
+    as a success and the tool path would stop being evidence.
+
+    So: an explicit error marker is a refusal in either shape; `isError`
+    decides when it is present; otherwise the tool's non-empty output is
+    the only thing that can carry the verdict."""
+    resp = data.get("response")
+    if not isinstance(resp, dict) or not resp:
+        return False
+    if any(resp.get(k) for k in ("error", "errorMessage", "error_message")):
+        return False
+    if "isError" in resp:
+        # Legacy: anything but a literal false — including a null the
+        # runtime left behind — is not a success.
+        return resp["isError"] is False
+    out = resp.get("output")
+    return bool(out.strip()) if isinstance(out, str) else bool(out)
+
+
 def verify(d, tool=None, needle=None, tool_path=False):
     """Return (ok, report_lines) for one A2A task object."""
     lines = []
@@ -87,11 +121,15 @@ def verify(d, tool=None, needle=None, tool_path=False):
                 if p.get("kind") != "data":
                     continue
                 data = p.get("data", {})
-                kind = (p.get("metadata") or {}).get("kagent_type")
+                meta = p.get("metadata") or {}
+                # The runtime renamed this key when it moved to ADK events:
+                # `kagent_type` in v0.9, `adk_type` in v0.10.1. Read both,
+                # or a version bump silently empties the tool path.
+                kind = meta.get("kagent_type") or meta.get("adk_type")
                 if kind == "function_call" and data.get("name") == tool:
                     calls += 1
                 if (kind == "function_response" and data.get("name") == tool
-                        and not data.get("response", {}).get("isError", True)):
+                        and response_ok(data)):
                     responses += 1
                     # The payload is the proof of a live round-trip; search
                     # its full JSON form so the check does not depend on
@@ -137,6 +175,50 @@ _FIXTURE = {
                                   "NAME               DATA   AGE\n"
                                   "kube-root-ca.crt   1      4m6s\n"
                                   f"{_PROBE}     1      35s\n"}]}}}]},
+    ],
+}
+
+
+# The SAME exchange as captured from kagent v0.10.1 (run of 2026-09-24,
+# the e2e-runtime shard): the runtime moved to ADK event metadata, so the
+# event-kind key is `adk_type` rather than `kagent_type`, and a successful
+# function_response carries the tool's `output` with no `isError` flag at
+# all. Copied from the real task object, trimmed only of the per-message
+# adk_* bookkeeping the verifier never reads. The runtime's GUID-shaped
+# ids are redacted to placeholders (scripts/check-no-azure-ids.sh
+# refuses GUIDs in a public tree); the call id is what has to MATCH
+# across the pair, not what it is.
+_V10_PROBE = "probe-4d2dbc45"
+_V10_FIXTURE = {
+    "artifacts": [{"artifactId": "<artifact-id>",
+                   "parts": [{"kind": "text",
+                              "text": "kube-root-ca.crt  \nprobe-4d2dbc45"}]}],
+    "status": {"state": "completed",
+               "timestamp": "2026-09-24T16:50:13.208770072Z"},
+    "history": [
+        {"kind": "message", "role": "user",
+         "parts": [{"kind": "text",
+                    "text": "List the configmaps in the default namespace."}]},
+        {"kind": "message", "role": "agent", "parts": [
+            {"kind": "data",
+             "data": {"args": {"namespace": "default",
+                               "resource_type": "configmap"},
+                      "id": "<call-id>",
+                      "name": "k8s_get_resources"},
+             "metadata": {"adk_is_long_running": False,
+                          "adk_type": "function_call"}}]},
+        {"kind": "message", "role": "agent", "parts": [
+            {"kind": "data",
+             "data": {"id": "<call-id>",
+                      "name": "k8s_get_resources",
+                      "response": {"output":
+                                   "NAME               DATA   AGE\n"
+                                   "kube-root-ca.crt   1      3m7s\n"
+                                   f"{_V10_PROBE}     1      30s\n"}},
+             "metadata": {"adk_type": "function_response"}}]},
+        {"kind": "message", "role": "agent",
+         "parts": [{"kind": "text",
+                    "text": "kube-root-ca.crt  \nprobe-4d2dbc45"}]},
     ],
 }
 
@@ -239,12 +321,19 @@ def _end_to_end():
         errored["history"][1]["parts"][0]["data"]["response"]["isError"] = True
         with open(failing, "w") as f:
             f.write(json.dumps(errored) + "\n")
+        v10 = os.path.join(d, "v10-chat.out")
+        with open(v10, "w") as f:
+            f.write("/home/runner/.config/kmx/bin/kagent-0.10.1-linux-amd64 "
+                    "invoke --agent hello-tools\n"
+                    + json.dumps(_V10_FIXTURE) + "\n")
         bad = os.path.join(d, "prose.out")
         with open(bad, "w") as f:
             f.write("the agent said hello and nothing else\n")
         checks = [
             ("a task in a captured log -> exit 0",
              [good, "k8s_get_resources", _PROBE], 0),
+            ("a v0.10 task in a captured log -> exit 0",
+             [v10, "k8s_get_resources", _V10_PROBE], 0),
             # A rejected task has to reach the exit code, not only the
             # report: a verdict printed and then discarded is a green build.
             ("a rejected task -> exit 1",
@@ -311,6 +400,52 @@ def selftest():
     cases.append(("empty reply -> FAIL", empty, False))
     tool_cases = [(name, task, want, "k8s_get_resources", _PROBE)
                   for name, task, want in cases]
+    # The same verdicts on the v0.10 shape. The runtime dropped the flag
+    # the legacy cases turn on, so success there can only be read off the
+    # tool's `output` — and every way that evidence can be absent has to
+    # stay a refusal, or a runtime bump turns the tool path into prose.
+    v10_empty = copy.deepcopy(_V10_FIXTURE)
+    v10_empty["history"][2]["parts"][0]["data"]["response"]["output"] = ""
+    v10_error = copy.deepcopy(_V10_FIXTURE)
+    v10_error["history"][2]["parts"][0]["data"]["response"] = {
+        "error": "k8s_get_resources failed: connection refused"}
+    v10_missing = copy.deepcopy(_V10_FIXTURE)
+    del v10_missing["history"][2]["parts"][0]["data"]["response"]
+    # A tool that produced output and then failed: the probe IS in the
+    # payload, so only the error marker stands between a half-finished
+    # round-trip and a green step.
+    v10_errored_output = copy.deepcopy(_V10_FIXTURE)
+    v10_errored_output["history"][2]["parts"][0]["data"]["response"]["error"] = \
+        "k8s_get_resources failed after partial output"
+    v10_other = copy.deepcopy(_V10_FIXTURE)
+    v10_other["history"][2]["parts"][0]["data"]["name"] = _OTHER_TOOL
+    v10_other_call = copy.deepcopy(_V10_FIXTURE)
+    v10_other_call["history"][1]["parts"][0]["data"]["name"] = _OTHER_TOOL
+    tool_cases += [
+        ("v0.10 adk_type exchange, probe in the output -> PASS",
+         _V10_FIXTURE, True, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 response with an empty output -> FAIL",
+         v10_empty, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 response carrying an error instead of output -> FAIL",
+         v10_error, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 response carrying an error beside its output -> FAIL",
+         v10_errored_output, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 function_response with no response at all -> FAIL",
+         v10_missing, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 response under another tool's name -> FAIL",
+         v10_other, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10 call under another tool's name -> FAIL",
+         v10_other_call, False, "k8s_get_resources", _V10_PROBE),
+        ("v0.10, no substring given, real exchange -> PASS",
+         _V10_FIXTURE, True, "k8s_get_resources", None),
+        ("v0.10, no substring given, empty output -> FAIL",
+         v10_empty, False, "k8s_get_resources", None),
+        # With no probe to fall back on, a response that never arrived is
+        # caught here or nowhere: the payload search would not see it
+        # either way.
+        ("v0.10, no substring given, no response at all -> FAIL",
+         v10_missing, False, "k8s_get_resources", None),
+    ]
     # Checked with a TOOL but no SUBSTRING — the form with no payload probe
     # to fall back on, where the count of successful responses is the only
     # thing left asserting that the tool answered at all.

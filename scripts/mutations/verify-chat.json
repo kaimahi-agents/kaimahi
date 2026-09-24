@@ -1,6 +1,6 @@
 {
   "checker": "verify-chat.py",
-  "why": "This is the only thing standing between a chat step that really worked and one where the model produced plausible prose. Every edit below leaves it printing a report that looks the same and passing tasks it exists to reject: a half-finished task, an answer with no tool call behind it, a call to some other tool, a failed tool call, a payload that never carried the probe, or a task still waiting on a human that nothing names.",
+  "why": "This is the only thing standing between a chat step that really worked and one where the model produced plausible prose. Every edit below leaves it printing a report that looks the same and passing tasks it exists to reject: a half-finished task, an answer with no tool call behind it, a call to some other tool, a failed tool call, a tool round-trip the runtime recorded with nothing in it, a payload that never carried the probe, or a task still waiting on a human that nothing names. The runtime ships two event shapes (kagent v0.9 and the v0.10.1 ADK events), and an edit that drops either one is the same silent loss arriving with a version bump.",
   "verify": ["python3", "scripts/verify-chat.py", "--selftest"],
   "signature": "verify-chat self-test:",
   "mutations": [
@@ -37,20 +37,56 @@
     {
       "name": "any response counts, whatever tool it names",
       "breaks": "Another tool's successful response is read as this tool's, and its payload is searched for the probe — so a completely unrelated call can carry the step.",
-      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and not data.get(\"response\", {}).get(\"isError\", True)):",
-      "replace": "                if (kind == \"function_response\"\n                        and not data.get(\"response\", {}).get(\"isError\", True)):"
+      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and response_ok(data)):",
+      "replace": "                if (kind == \"function_response\"\n                        and response_ok(data)):"
     },
     {
       "name": "a failed tool call counts as a successful one",
-      "breaks": "The isError check goes away entirely: the tool was called, it returned an error, and the step is green.",
-      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and not data.get(\"response\", {}).get(\"isError\", True)):",
+      "breaks": "The success test goes away entirely: the tool was called, it returned an error or nothing at all, and the step is green.",
+      "find": "                if (kind == \"function_response\" and data.get(\"name\") == tool\n                        and response_ok(data)):",
       "replace": "                if (kind == \"function_response\" and data.get(\"name\") == tool):"
     },
     {
       "name": "the isError test is inverted",
-      "breaks": "The sense of the flag flips, so only failed calls count. The kind of edit that comes from moving a `not` while rewrapping a line.",
-      "find": "                        and not data.get(\"response\", {}).get(\"isError\", True)):",
-      "replace": "                        and data.get(\"response\", {}).get(\"isError\", False)):"
+      "breaks": "The sense of the legacy flag flips, so only failed calls count. The kind of edit that comes from moving a `not` while rewrapping a line.",
+      "find": "        return resp[\"isError\"] is False",
+      "replace": "        return resp[\"isError\"] is True"
+    },
+    {
+      "name": "the legacy isError flag stops being read",
+      "breaks": "Captures from kagent v0.9 carry their verdict in that flag and nothing else, so every one of them decodes as a tool that never answered.",
+      "find": "    if \"isError\" in resp:",
+      "replace": "    if False:"
+    },
+    {
+      "name": "an explicit error marker is ignored",
+      "breaks": "A tool that produced some output and then failed reads as a success — the probe is in the payload, so nothing else would notice the error.",
+      "find": "    if any(resp.get(k) for k in (\"error\", \"errorMessage\", \"error_message\")):",
+      "replace": "    if False:"
+    },
+    {
+      "name": "a response that never arrived counts as a success",
+      "breaks": "The fail-closed guard at the top becomes fail-open: a function_response with no response object at all is a completed round-trip, and with no SUBSTRING given nothing else is left to object.",
+      "find": "    if not isinstance(resp, dict) or not resp:\n        return False",
+      "replace": "    if not isinstance(resp, dict) or not resp:\n        return True"
+    },
+    {
+      "name": "an empty tool output counts as a success",
+      "breaks": "On the v0.10 shape the output is the ONLY evidence the tool ran, so accepting an empty one accepts a round-trip that carried nothing.",
+      "find": "    return bool(out.strip()) if isinstance(out, str) else bool(out)",
+      "replace": "    return True"
+    },
+    {
+      "name": "the v0.10 event-kind key stops being read",
+      "breaks": "Exactly the regression the kagent v0.10.1 upgrade shipped: `adk_type` events decode as no kind at all, so a real tool exchange is counted as zero calls and zero responses and the tool path proves nothing.",
+      "find": "                kind = meta.get(\"kagent_type\") or meta.get(\"adk_type\")",
+      "replace": "                kind = meta.get(\"kagent_type\")"
+    },
+    {
+      "name": "the legacy event-kind key stops being read",
+      "breaks": "The same loss in the other direction: captures from kagent v0.9 carry `kagent_type`, and dropping it makes every one of them unreadable.",
+      "find": "                kind = meta.get(\"kagent_type\") or meta.get(\"adk_type\")",
+      "replace": "                kind = meta.get(\"adk_type\")"
     },
     {
       "name": "the payload no longer has to contain the probe",
