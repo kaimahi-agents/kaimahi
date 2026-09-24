@@ -974,31 +974,9 @@ func TestCreateAgentExplicitKagentV1RequiresFile(t *testing.T) {
 // depend on a reachable cluster to say so. The report is the parse error,
 // not a detection failure from a cluster this create was never going to use.
 func TestCreateAgentValidatesTheDocumentBeforeContactingTheCluster(t *testing.T) {
-	malformed := func(t *testing.T) string {
-		t.Helper()
-		path := filepath.Join(t.TempDir(), "portable-agent.yaml")
-		// A merge key: refused by the parser, and refused before the parser
-		// would have to reach a cluster to find out which runtime cares.
-		document := `apiVersion: kmx.kaimahi.dev/v1alpha1
-kind: PortableAgent
-metadata:
-  name: sample
-spec:
-  <<: &base
-    instructions: From the anchor.
-  instructions: Do the thing.
-  model:
-    name: gpt-4o-mini
-`
-		if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return path
-	}
-
 	t.Run("no cluster call is made", func(t *testing.T) {
 		a, opt, out, _, dir := orkaCreateFixture(t, "no-platform")
-		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformed(t), Out: opt.Out})
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformedPortableAgentFile(t), Out: opt.Out})
 		if err == nil || !strings.Contains(err.Error(), "merge key") {
 			t.Fatalf("err = %v, want the portable parse error", err)
 		}
@@ -1017,12 +995,117 @@ spec:
 		t.Setenv("KMX_TOOLCHAIN", "off")
 		var out, diagnostics bytes.Buffer
 		a := &App{Out: &out, Err: &diagnostics}
-		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformed(t)})
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformedPortableAgentFile(t)})
 		if err == nil || !strings.Contains(err.Error(), "merge key") {
 			t.Fatalf("err = %v, want the portable parse error", err)
 		}
 		if out.Len() != 0 {
 			t.Fatal("an unparseable document emitted bytes")
+		}
+	})
+}
+
+// malformedPortableAgentFile writes a document the parser refuses: a merge
+// key, which is a hazard the strict decode never sees. It is the input that
+// separates what a create decides from the document from what it decides
+// before reading one at all.
+func malformedPortableAgentFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "portable-agent.yaml")
+	document := `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: sample
+spec:
+  <<: &base
+    instructions: From the anchor.
+  instructions: Do the thing.
+  model:
+    name: gpt-4o-mini
+`
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// An explicit --runtime is a local fact: which runtime was asked for, whether
+// this build registers it, and whether it declares Render are all answerable
+// from the registry alone. They are therefore answered before the document is
+// read, so "this build has no such runtime" and "that runtime cannot create
+// agents" keep saying exactly that, rather than being replaced by a complaint
+// about a document the named runtime was never going to render.
+//
+// None of it contacts a cluster: an explicit runtime overrides detection, so
+// there is nothing to detect.
+func TestCreateAgentExplicitRuntimeIsResolvedBeforeTheDocument(t *testing.T) {
+	t.Run("an unknown runtime names itself, not the document", func(t *testing.T) {
+		a, opt, out, _, dir := orkaCreateFixture(t, "")
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformedPortableAgentFile(t), Out: opt.Out, Runtime: "bogus"})
+		var unknown *agentruntime.UnknownRuntimeError
+		if !errors.As(err, &unknown) {
+			t.Fatalf("err = %v, not *UnknownRuntimeError", err)
+		}
+		if string(unknown.Runtime) != "bogus" {
+			t.Fatalf("unknown = %+v", unknown)
+		}
+		if calls := orkaCalls(t, dir); len(calls) != 0 {
+			t.Fatalf("an explicit runtime contacted the cluster: %v", calls)
+		}
+		if out.Len() != 0 {
+			t.Fatal("a refused runtime emitted bytes")
+		}
+	})
+
+	// Legacy kagent is registered and declares no Render, so the answer is
+	// the shared typed unsupported-verb error whatever the inputs say — an
+	// unreadable document, or shorthand flags no encoder would accept.
+	for _, tc := range []struct {
+		name  string
+		build func(t *testing.T) CreateOptions
+	}{
+		{"a malformed document", func(t *testing.T) CreateOptions {
+			return CreateOptions{Name: "sample", File: malformedPortableAgentFile(t), Runtime: string(agentruntime.Kagent)}
+		}},
+		{"shorthand flags that cannot be encoded", func(t *testing.T) CreateOptions {
+			// No namespace, model or Secret: the shorthand encoder refuses
+			// these long before any renderer sees them.
+			return CreateOptions{Name: "sample", Runtime: string(agentruntime.Kagent)}
+		}},
+	} {
+		t.Run("legacy kagent with "+tc.name, func(t *testing.T) {
+			a, _, out, _, dir := orkaCreateFixture(t, "")
+			err := a.CreateAgent(tc.build(t))
+			var unsupported *agentruntime.UnsupportedVerbError
+			if !errors.As(err, &unsupported) {
+				t.Fatalf("err = %v, not *UnsupportedVerbError", err)
+			}
+			if unsupported.Runtime != agentruntime.Kagent || unsupported.Verb != agentruntime.VerbRender {
+				t.Fatalf("unsupported = %+v", unsupported)
+			}
+			if err.Error() != "runtime kagent does not support render" {
+				t.Fatalf("message = %q", err.Error())
+			}
+			if calls := orkaCalls(t, dir); len(calls) != 0 {
+				t.Fatalf("an explicit runtime contacted the cluster: %v", calls)
+			}
+			if out.Len() != 0 {
+				t.Fatal("a refused runtime emitted bytes")
+			}
+		})
+	}
+
+	// The contrast, on the same malformed document: with no --runtime there
+	// is no local answer, and resolving one reads a cluster — so the document
+	// is parsed first and reported as itself, still without a cluster call.
+	t.Run("an omitted runtime still parses the document first", func(t *testing.T) {
+		a, opt, _, _, dir := orkaCreateFixture(t, "")
+		err := a.CreateAgent(CreateOptions{Name: "sample", File: malformedPortableAgentFile(t), Out: opt.Out})
+		if err == nil || !strings.Contains(err.Error(), "merge key") {
+			t.Fatalf("err = %v, want the portable parse error", err)
+		}
+		if calls := orkaCalls(t, dir); len(calls) != 0 {
+			t.Fatalf("an unparseable document still contacted the cluster: %v", calls)
 		}
 	})
 }

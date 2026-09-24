@@ -23,12 +23,21 @@ import (
 // runtime's adapter renders the portable document and then deploys those
 // exact bytes.
 //
-// The portable document is produced here, before either path runs, because
-// it is the one input every runtime renders from: parsing an explicit --file
-// (or encoding the shorthand flags) needs no cluster, while resolving an
-// omitted --runtime reads one. A document that cannot be rendered at all is
-// therefore reported as itself rather than as a detection failure against a
-// cluster this create was never going to reach.
+// Two things are decided here, in this order, because each is decidable
+// without the next:
+//
+//  1. An explicit --runtime. Which runtime was named, whether this build
+//     registers it and whether it declares Render are all answerable from
+//     the registry alone — no cluster, no document. Answering them first
+//     keeps "this build has no such runtime" and "that runtime cannot create
+//     agents" saying exactly that, instead of being replaced by a complaint
+//     about a document the named runtime was never going to render.
+//  2. The portable document, which every runtime renders from. Parsing an
+//     explicit --file (or encoding the shorthand flags) needs no cluster,
+//     while resolving an OMITTED --runtime reads one — so a document that
+//     cannot be rendered at all is reported as itself rather than as a
+//     detection failure against a cluster this create was never going to
+//     reach.
 func (a *App) CreateAgent(opt CreateOptions) error {
 	if opt.Out == "-" {
 		opt.NoApply = true
@@ -48,22 +57,27 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := resolveOrkaInstructions(&opt); err != nil {
 		return err
 	}
+	adapter, err := a.explicitCreateRuntimeAdapter(opt)
+	if err != nil {
+		return err
+	}
 	portable, err := a.portableCreateDocument(opt)
 	if err != nil {
 		return err
 	}
 	if opt.NoApply {
-		return a.createAgentOffline(opt, portable)
+		return a.createAgentOffline(opt, adapter, portable)
 	}
-	return a.createAgentOnline(opt, portable)
+	return a.createAgentOnline(opt, adapter, portable)
 }
 
 // createAgentOffline renders the artifact and writes it for review. No
 // runtime detection happens here: detection reads a cluster, and this path
 // never contacts one, so an omitted runtime keeps selecting Orka and its
-// pinned offline schema. An explicit --runtime still overrides that.
-func (a *App) createAgentOffline(opt CreateOptions, portable *agentruntime.PortableAgent) error {
-	adapter, err := a.createRuntimeAdapter(context.Background(), opt)
+// pinned offline schema. An explicit --runtime was already resolved by
+// CreateAgent and arrives here as adapter.
+func (a *App) createAgentOffline(opt CreateOptions, adapter agentruntime.LifecycleAdapter, portable *agentruntime.PortableAgent) error {
+	adapter, err := a.resolvedCreateRuntimeAdapter(context.Background(), opt, adapter)
 	if err != nil {
 		return err
 	}
@@ -93,12 +107,13 @@ func (a *App) createAgentOffline(opt CreateOptions, portable *agentruntime.Porta
 
 // createAgentOnline renders and then deploys the exact rendered bytes.
 //
-// The dependency check and runtime resolution come after the document is in
-// hand (CreateAgent): an omitted --runtime is resolved by shared platform
-// detection, which reads the cluster, so anything decidable from the
-// document alone is already decided. Which runtime validates these inputs is
-// still not known until the platform is, so the render itself stays here.
-func (a *App) createAgentOnline(opt CreateOptions, portable *agentruntime.PortableAgent) error {
+// The dependency check and platform detection come after CreateAgent has
+// resolved everything that needs neither: an explicit --runtime arrives here
+// already resolved, and the document is already in hand. Only an OMITTED
+// --runtime still needs the cluster, so that is the one case that reaches
+// detection — and which runtime validates these inputs is not known until it
+// does, so the render itself stays here.
+func (a *App) createAgentOnline(opt CreateOptions, adapter agentruntime.LifecycleAdapter, portable *agentruntime.PortableAgent) error {
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}
@@ -106,7 +121,7 @@ func (a *App) createAgentOnline(opt CreateOptions, portable *agentruntime.Portab
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	adapter, err := a.createRuntimeAdapter(ctx, opt)
+	adapter, err := a.resolvedCreateRuntimeAdapter(ctx, opt, adapter)
 	if err != nil {
 		return err
 	}
@@ -129,20 +144,42 @@ func (a *App) createRuntimeRegistry(opt CreateOptions) (*agentruntime.Registry, 
 	return agentruntime.NewRegistry(orkaRuntimeAdapter{app: a, create: &opt}, kagentRuntimeAdapter{app: a})
 }
 
-// createRuntimeAdapter resolves the runtime this create targets and proves it
-// declares Render. An unknown runtime and an unsupported verb are both typed
-// errors from the shared registry's own model; neither ever falls back to a
-// different runtime.
-func (a *App) createRuntimeAdapter(ctx context.Context, opt CreateOptions) (agentruntime.LifecycleAdapter, error) {
-	registry, err := a.createRuntimeRegistry(opt)
+// explicitCreateRuntimeAdapter resolves an explicit --runtime and proves it
+// declares Render, using nothing but the shared registry: no kubeconfig, no
+// detection, no cluster read. An omitted --runtime returns a nil adapter and
+// no error — it is not resolvable here, and resolvedCreateRuntimeAdapter
+// decides it later, against a cluster.
+func (a *App) explicitCreateRuntimeAdapter(opt CreateOptions) (agentruntime.LifecycleAdapter, error) {
+	id := agentruntime.ID(opt.Runtime)
+	if id == "" {
+		return nil, nil
+	}
+	return a.createRuntimeAdapter(id, opt)
+}
+
+// resolvedCreateRuntimeAdapter returns the already-resolved explicit adapter
+// when there is one, and otherwise applies shared platform detection. It is
+// the only path that can reach a cluster, so an explicit --runtime never
+// does.
+func (a *App) resolvedCreateRuntimeAdapter(ctx context.Context, opt CreateOptions, explicit agentruntime.LifecycleAdapter) (agentruntime.LifecycleAdapter, error) {
+	if explicit != nil {
+		return explicit, nil
+	}
+	id, err := a.detectCreateRuntime(ctx, opt)
 	if err != nil {
 		return nil, err
 	}
-	id := agentruntime.ID(opt.Runtime)
-	if id == "" {
-		if id, err = a.detectCreateRuntime(ctx, opt); err != nil {
-			return nil, err
-		}
+	return a.createRuntimeAdapter(id, opt)
+}
+
+// createRuntimeAdapter looks one already-decided runtime ID up in the shared
+// registry and proves it declares Render. An unknown runtime and an
+// unsupported verb are both typed errors from the shared registry's own
+// model; neither ever falls back to a different runtime.
+func (a *App) createRuntimeAdapter(id agentruntime.ID, opt CreateOptions) (agentruntime.LifecycleAdapter, error) {
+	registry, err := a.createRuntimeRegistry(opt)
+	if err != nil {
+		return nil, err
 	}
 	adapter, err := registry.Lookup(id)
 	if err != nil {
