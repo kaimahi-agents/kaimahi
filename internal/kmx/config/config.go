@@ -20,7 +20,7 @@ import (
 // TestDefaultsMatchTheMakefile refuses to let them drift.
 const (
 	DefaultKindCluster   = "kaimahi-p1"
-	DefaultKagentVersion = "0.9.12"
+	DefaultKagentVersion = "0.10.1"
 	DefaultModel         = "qwen2.5:3b"
 	DefaultChatPort      = "auto"
 	// DefaultAdminPort is the local side of the plane's admin port-forward.

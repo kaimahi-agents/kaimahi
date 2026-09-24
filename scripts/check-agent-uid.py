@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """Pin every agent's runAsUser to the uid the kagent image actually ships.
 
-kagent's agent image declares its user by NAME (`python`). Kubernetes
-refuses to start a `runAsNonRoot: true` container whose user it cannot
-prove is non-root, so every Agent manifest here states the numeric id
-instead. The failure when that number is wrong is
-`image has non-numeric user (python)` at CreateContainer time, on every
-agent at once, with no mention of the image or its version — which is
-why a kagent bump that moved the id would be diagnosed as anything but a
-kagent bump.
+kagent's agent image has declared its user by NAME (`python`) at some
+versions and numerically (`65532`) at others. Kubernetes refuses to
+start a `runAsNonRoot: true` container whose user it cannot prove is
+non-root, so every Agent manifest here states the numeric id instead.
+The failure when that number is wrong is `image has non-numeric user
+(python)` at CreateContainer time, on every agent at once, with no
+mention of the image or its version — which is why a kagent bump that
+moved the id would be diagnosed as anything but a kagent bump.
 
 So the number is checked against the image rather than asserted in a
 comment. The image is the one the chart at the pinned version resolves
 to, with this repository's own values file layered on the chart's
-defaults, and the uid comes from running `id -u` inside it.
+defaults, and the uid comes from the image's own declared USER —
+read from `inspect`, and, when that is a name rather than a number,
+resolved against the image's own `/etc/passwd`, extracted from its
+filesystem rather than looked up by running anything inside a container.
+Newer kagent images ship no shell and no `id`/`cat` (distroless-style),
+so a check that needed one broke the day the image dropped it; this one
+needs nothing but `inspect`, `create`, and `export`.
 
 Two rules, and the second is the one that matters after a bump:
 
@@ -38,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -126,19 +133,89 @@ def engine() -> str:
     return name
 
 
+def declared_user(raw: str) -> str:
+    """The user portion of an image's `Config.User` (`uid`, `uid:gid`, or `name`).
+
+    `inspect` hands this back uninterpreted, in whichever of the three
+    forms the image's build declared. Only the part before a `:` ever
+    names the user; a trailing group is not read here because nothing
+    downstream needs it.
+    """
+    user = raw.strip()
+    if not user:
+        raise LookupError("image declares no USER; cannot resolve a numeric uid without one")
+    return user.split(":", 1)[0]
+
+
+def uid_from_passwd(passwd_text: str, name: str, image: str) -> int:
+    """The numeric uid a passwd-format name resolves to.
+
+    Walked line by line rather than parsed as a table: passwd's own
+    format, and the third colon-separated field is the uid in every
+    entry, blank lines and comments aside.
+    """
+    for line in passwd_text.splitlines():
+        fields = line.split(":")
+        if len(fields) > 2 and fields[0] == name:
+            return int(fields[2])
+    raise LookupError(f"{image} declares USER {name!r}, which is not in the image's /etc/passwd")
+
+
+def passwd_from_export(export_bytes: bytes, path: str, image: str) -> str:
+    """A single file's text, read out of an exported container filesystem.
+
+    `docker export`/`podman export` emit a plain tar of the container's
+    filesystem; reading a member out of it needs no process running
+    inside the container at all, which is what makes this work against
+    images that ship no shell.
+    """
+    with tarfile.open(fileobj=io.BytesIO(export_bytes)) as tar:
+        try:
+            member = tar.getmember(path)
+        except KeyError:
+            raise LookupError(f"{image} has no {path}")
+        extracted = tar.extractfile(member)
+        if extracted is None:
+            raise LookupError(f"{image}'s {path} is not a regular file")
+        return extracted.read().decode()
+
+
+def image_file(engine_bin: str, image: str, path: str) -> str:
+    """A single file's contents, from the image's own filesystem.
+
+    A container is created (never started) so its filesystem can be
+    exported, and removed again whether or not the read succeeds: a
+    checker that leaves stopped containers behind on every run is not
+    one anybody wants in CI.
+    """
+    cid = subprocess.run([engine_bin, "create", image],
+                        check=True, capture_output=True, text=True).stdout.strip()
+    try:
+        export = subprocess.run([engine_bin, "export", cid], check=True, capture_output=True).stdout
+        return passwd_from_export(export, path, image)
+    finally:
+        subprocess.run([engine_bin, "rm", "-f", cid], check=True, capture_output=True, text=True)
+
+
 def image_uid(image: str) -> int:
     """The numeric uid the image's declared user resolves to.
 
-    `id -u` inside the image is the same resolution the kubelet performs
-    when it refuses to start a runAsNonRoot container — the image's own
-    /etc/passwd, not a label anyone can write.
+    Not by running anything inside the container: the image's own
+    declared USER, from `inspect`, is already the uid when it is numeric;
+    when it is a name, it is resolved against the image's own
+    /etc/passwd rather than a label anyone could write, or a process run
+    inside a container the image itself may not be able to start.
     """
     engine_bin = engine()
     subprocess.run([engine_bin, "pull", "--quiet", image], check=True,
                    capture_output=True, text=True)
-    out = subprocess.run([engine_bin, "run", "--rm", "--entrypoint", "id", image, "-u"],
-                         check=True, capture_output=True, text=True).stdout.strip()
-    return int(out)
+    raw = subprocess.run([engine_bin, "inspect", "--format", "{{.Config.User}}", image],
+                        check=True, capture_output=True, text=True).stdout
+    name = declared_user(raw)
+    if name.isdigit():
+        return int(name)
+    passwd = image_file(engine_bin, image, "etc/passwd")
+    return uid_from_passwd(passwd, name, image)
 
 
 # ------------------------------------------------------------ the manifests
@@ -361,6 +438,86 @@ def selftest() -> int:
         os.environ.pop("CONTAINER_ENGINE", None)
     else:
         os.environ["CONTAINER_ENGINE"] = before
+
+    # The uid resolution itself, run without any container engine at all:
+    # `Config.User` in its three shapes, and the passwd lookup a name
+    # takes. This is the part that used to exec `id` inside the container
+    # and broke the day an image shipped none — every case below must
+    # pass with no engine and no network.
+    def user(what, raw, want):
+        nonlocal failed
+        try:
+            got = declared_user(raw)
+        except LookupError:
+            got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    user("a bare numeric USER is its own name", "65532", "65532")
+    user("a uid:gid USER keeps only the uid side", "65532:65532", "65532")
+    user("a named USER is returned as the name", "python", "python")
+    user("an empty USER is refused, not defaulted to root", "", "refused")
+
+    passwd_text = (
+        "root:x:0:0:root:/root:/sbin/nologin\n"
+        "python:x:1001:1001:Linux User,,,:/.kagent/:/bin/bash\n"
+        "nonroot:x:65532:65532:nonroot:/home/nonroot:/sbin/nologin\n"
+    )
+
+    def passwd(what, name, want):
+        nonlocal failed
+        try:
+            got = str(uid_from_passwd(passwd_text, name, "img:tag"))
+        except LookupError:
+            got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    passwd("a name in /etc/passwd resolves to its uid", "python", "1001")
+    passwd("a different name resolves to its own uid", "nonroot", "65532")
+    passwd("a name absent from /etc/passwd is refused, not guessed", "ghost", "refused")
+
+    # The export reader, over a real in-memory tar — built here rather
+    # than by any container engine, so this proves the parsing without
+    # needing one.
+    def export_tar(entries: dict[str, bytes | None]) -> bytes:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for name, data in entries.items():
+                if data is None:
+                    info = tarfile.TarInfo(name=name)
+                    info.type = tarfile.DIRTYPE
+                    tar.addfile(info)
+                else:
+                    info = tarfile.TarInfo(name=name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        return buf.getvalue()
+
+    def export_case(what, entries, path, want):
+        nonlocal failed
+        try:
+            got = passwd_from_export(export_tar(entries), path, "img:tag")
+        except LookupError:
+            got = "refused"
+        if got == want:
+            print(f"ok   {what}")
+        else:
+            print(f"FAIL {what} (got {got!r}, wanted {want!r})")
+            failed += 1
+
+    export_case("a file present in the export is read back whole",
+                {"etc/passwd": passwd_text.encode()}, "etc/passwd", passwd_text)
+    export_case("a file absent from the export is refused, not guessed",
+                {"etc/other": b"x"}, "etc/passwd", "refused")
+    export_case("a directory at the file's path is refused, not read as empty",
+                {"etc/passwd": None}, "etc/passwd", "refused")
 
     if failed:
         print(f"check-agent-uid self-test: {failed} case(s) failed", file=sys.stderr)

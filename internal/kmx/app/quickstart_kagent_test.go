@@ -243,7 +243,7 @@ if [ "$1" = "list" ]; then printf '%s\n' '[]'; fi`)
 	fakeTool(t, dir, "kubectl", `printf 'kubectl %s\n' "$*" >> "$COMMAND_LOG"`)
 	var errOut bytes.Buffer
 	a := &App{
-		Cfg: &config.Config{KubeContext: "kind-test", KagentVersion: "0.9.12"},
+		Cfg: &config.Config{KubeContext: "kind-test", KagentVersion: "0.10.1"},
 		Run: &run.Runner{Stdout: &errOut, Stderr: &errOut},
 		Err: &errOut,
 	}
@@ -276,7 +276,7 @@ case "$1" in
   list) printf '%s\n' '[{"name":"kagent","namespace":"kagent","revision":"1","status":"deployed"}]' ;;
   get) printf '%s\n' '{"kaimahi":{"profile":"first-answer"},"kagent-tools":{"enabled":false},"kmcp":{"enabled":false},"ui":{"replicas":0}}' ;;
 esac`)
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test", KagentVersion: "0.9.12"}, Run: &run.Runner{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}, Err: &bytes.Buffer{}}
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test", KagentVersion: "0.10.1"}, Run: &run.Runner{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}, Err: &bytes.Buffer{}}
 	if err := a.stepQuickstartKagent(); err != nil {
 		t.Fatal(err)
 	}
