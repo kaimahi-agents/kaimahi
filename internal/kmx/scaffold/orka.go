@@ -37,6 +37,18 @@ type OrkaBundle struct {
 
 const orkaAPIVersion = "core.orka.ai/v1alpha1"
 
+// DefaultOrkaSecretKey is the key generation reads a Provider credential from
+// when a caller states none. It is exported so that a caller which has to
+// state the same choice earlier — a portable document, which has no concept
+// of "the renderer's default" — states this one rather than a second one.
+const DefaultOrkaSecretKey = "api-key"
+
+// DefaultOrkaInstructions is the system prompt generation supplies for an
+// agent whose author wrote none, exported for the same reason.
+func DefaultOrkaInstructions(name string) string {
+	return fmt.Sprintf("You are %s, a declarative Orka agent running on Kubernetes. Answer briefly and in plain text, and say plainly when you do not know something.", name)
+}
+
 var orkaSecretKeyRE = regexp.MustCompile(`^[-._a-zA-Z0-9]+$`)
 
 // GenerateOrka constructs the whole bundle without cluster or schema I/O.
@@ -65,7 +77,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		return nil, fmt.Errorf("Secret name: %w", err)
 	}
 	if spec.SecretKey == "" {
-		spec.SecretKey = "api-key"
+		spec.SecretKey = DefaultOrkaSecretKey
 	}
 	if err := ValidateOrkaSecretKey(spec.SecretKey); err != nil {
 		return nil, err
@@ -81,7 +93,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		}
 	}
 	if strings.TrimSpace(spec.Instructions) == "" {
-		spec.Instructions = fmt.Sprintf("You are %s, a declarative Orka agent running on Kubernetes. Answer briefly and in plain text, and say plainly when you do not know something.", spec.Name)
+		spec.Instructions = DefaultOrkaInstructions(spec.Name)
 	}
 	for _, text := range []string{spec.Instructions, spec.TaskPrompt} {
 		// Retain the shared control-character policy, but leave the original
@@ -339,6 +351,24 @@ func (b *OrkaBundle) YAML(provenance string) (string, error) {
 	if err := b.Validate(); err != nil {
 		return "", err
 	}
+	documents := make([][]byte, 0, 4)
+	for _, doc := range b.Documents() {
+		encoded, err := yaml.Marshal(doc)
+		if err != nil {
+			return "", fmt.Errorf("render Orka bundle: %w", err)
+		}
+		documents = append(documents, encoded)
+	}
+	return OrkaArtifact(provenance, documents)
+}
+
+// OrkaArtifact assembles the reviewable artifact from document bytes that are
+// already final: the provenance header, then each document in the order
+// given, separated by the YAML document marker. It exists so that a caller
+// holding exactly the bytes it is going to deploy can emit exactly those
+// bytes, rather than re-serializing a decoded copy of them and hoping the two
+// agree. OrkaBundle.YAML is the caller that still has to serialize first.
+func OrkaArtifact(provenance string, documents [][]byte) (string, error) {
 	if err := refuseOrkaKeyShapes(provenance); err != nil {
 		return "", err
 	}
@@ -358,13 +388,9 @@ func (b *OrkaBundle) YAML(provenance string) (string, error) {
 # and wait for current-generation Ready; only then create the optional Task.
 # Schema support for rate limits is not proof of runtime enforcement.
 `)
-	for _, doc := range b.Documents() {
-		encoded, err := yaml.Marshal(doc)
-		if err != nil {
-			return "", fmt.Errorf("render Orka bundle: %w", err)
-		}
+	for _, document := range documents {
 		out.WriteString("---\n")
-		out.Write(encoded)
+		out.Write(document)
 	}
 	result := out.String()
 	if err := refuseOrkaKeyShapes(result); err != nil {
