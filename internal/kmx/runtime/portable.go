@@ -3,6 +3,12 @@
 // fields, duplicate YAML keys, extra documents and inline credential values
 // are all refused — because this document is later hashed for identity and
 // handed to adapters that must render exactly what it says, nothing more.
+//
+// Extension shapes follow TARGETS.md §7 exactly: Orka nests provider
+// (defaultModel, secretRef, rateLimit) and a separate agent block (tools,
+// skills, rateLimit); kagent nests harnessRef/modelConfigRef, a tools block
+// with mcp/agents arms, and skills/plugins that each carry an immutable
+// OCI-digest, full-Git-commit or versioned-S3 source rather than a bare name.
 package runtime
 
 import (
@@ -32,6 +38,12 @@ const (
 // portableIdentifierRE matches an explicit name: no server:tool syntax, no
 // embedded YAML or whitespace that could hide a second value.
 var portableIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// ociDigestRE requires an exact sha256 digest, never a mutable tag.
+var ociDigestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// gitCommitRE requires a full 40-character commit SHA, never a branch or tag.
+var gitCommitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // PortableAgent is the closed kmx.kaimahi.dev/v1alpha1 document. It carries
 // its own exact source bytes so identity digests and adapter output can be
@@ -66,24 +78,24 @@ type PortableExtensions struct {
 	Kagent *KagentExtension `yaml:"kagent,omitempty"`
 }
 
-// OrkaExtension preserves Orka's current Provider, Agent, Secret-reference,
-// limits, tools and skills inputs under an explicit target apiVersion and
-// namespace.
+// OrkaExtension follows TARGETS.md §7: `provider` is required for the
+// current native-AI adapter (type, defaultModel, secretRef, and optional
+// baseURL/rateLimit); the optional `agent` block carries tools, skills and
+// agent-level rate limits, matching the current scaffold
+// (internal/kmx/scaffold/orka.go).
 type OrkaExtension struct {
-	APIVersion     string                  `yaml:"apiVersion"`
-	Namespace      string                  `yaml:"namespace"`
-	Provider       OrkaProviderExtension   `yaml:"provider"`
-	SecretRef      OrkaSecretRefExtension  `yaml:"secretRef"`
-	Tools          []string                `yaml:"tools,omitempty"`
-	Skills         []string                `yaml:"skills,omitempty"`
-	AgentRateLimit *OrkaRateLimitExtension `yaml:"agentRateLimit,omitempty"`
+	APIVersion string                `yaml:"apiVersion"`
+	Namespace  string                `yaml:"namespace"`
+	Provider   OrkaProviderExtension `yaml:"provider"`
+	Agent      *OrkaAgentExtension   `yaml:"agent,omitempty"`
 }
 
 type OrkaProviderExtension struct {
-	Type      string                  `yaml:"type"`
-	Model     string                  `yaml:"model"`
-	BaseURL   string                  `yaml:"baseURL,omitempty"`
-	RateLimit *OrkaRateLimitExtension `yaml:"rateLimit,omitempty"`
+	Type         string                  `yaml:"type"`
+	BaseURL      string                  `yaml:"baseURL,omitempty"`
+	DefaultModel string                  `yaml:"defaultModel"`
+	SecretRef    OrkaSecretRefExtension  `yaml:"secretRef"`
+	RateLimit    *OrkaRateLimitExtension `yaml:"rateLimit,omitempty"`
 }
 
 type OrkaSecretRefExtension struct {
@@ -91,25 +103,40 @@ type OrkaSecretRefExtension struct {
 	Key  string `yaml:"key,omitempty"`
 }
 
+// OrkaAgentExtension is the optional `extensions.orka.agent` block: omitting
+// it, or any of its fields, means no corresponding field, not a default.
+type OrkaAgentExtension struct {
+	Tools     []OrkaNamedRef          `yaml:"tools,omitempty"`
+	Skills    []OrkaNamedRef          `yaml:"skills,omitempty"`
+	RateLimit *OrkaRateLimitExtension `yaml:"rateLimit,omitempty"`
+}
+
+// OrkaNamedRef is one Orka tool or skill reference: an explicit name, never
+// server:tool syntax or an inline definition.
+type OrkaNamedRef struct {
+	Name string `yaml:"name"`
+}
+
 type OrkaRateLimitExtension struct {
 	RequestsPerMinute *int32 `yaml:"requestsPerMinute,omitempty"`
 	TokensPerMinute   *int64 `yaml:"tokensPerMinute,omitempty"`
 }
 
-// KagentExtension represents a kagent-v1 v1alpha3 Harness reference, a
-// ModelConfig reference, MCP tools, immutable skill/plugin identities, a
-// prompt template and an optional output schema, under an explicit target
-// apiVersion and namespace.
+// KagentExtension follows TARGETS.md §7: `harnessRef` and `modelConfigRef`
+// are required; `promptTemplate` falls back to spec.instructions when
+// omitted; `tools` separates MCP tool bindings from delegated-AgentTemplate
+// bindings; `skills`/`plugins` each require an immutable OCI-digest,
+// full-Git-commit or versioned-S3 source, never a bare name.
 type KagentExtension struct {
-	APIVersion     string               `yaml:"apiVersion"`
-	Namespace      string               `yaml:"namespace"`
-	Harness        KagentHarnessRef     `yaml:"harness"`
-	ModelConfig    KagentModelConfigRef `yaml:"modelConfig"`
-	Tools          []KagentToolRef      `yaml:"tools,omitempty"`
-	Skills         []KagentIdentityRef  `yaml:"skills,omitempty"`
-	Plugins        []KagentIdentityRef  `yaml:"plugins,omitempty"`
-	PromptTemplate string               `yaml:"promptTemplate,omitempty"`
-	OutputSchema   map[string]any       `yaml:"outputSchema,omitempty"`
+	APIVersion     string                `yaml:"apiVersion"`
+	Namespace      string                `yaml:"namespace"`
+	HarnessRef     KagentHarnessRef      `yaml:"harnessRef"`
+	ModelConfigRef KagentModelConfigRef  `yaml:"modelConfigRef"`
+	PromptTemplate string                `yaml:"promptTemplate,omitempty"`
+	Tools          *KagentToolsExtension `yaml:"tools,omitempty"`
+	Skills         []KagentArtifactRef   `yaml:"skills,omitempty"`
+	Plugins        []KagentArtifactRef   `yaml:"plugins,omitempty"`
+	OutputSchema   map[string]any        `yaml:"outputSchema,omitempty"`
 }
 
 type KagentHarnessRef struct {
@@ -120,17 +147,66 @@ type KagentModelConfigRef struct {
 	Name string `yaml:"name"`
 }
 
-// KagentToolRef is one MCP tool reference: an explicit server and tool name,
-// never symbolic server:tool syntax.
-type KagentToolRef struct {
-	Server string `yaml:"server"`
-	Name   string `yaml:"name"`
+// KagentToolsExtension separates the two arms TARGETS.md §7 names: `mcp`
+// bindings to an MCP server's tools, and `agents` delegation to another
+// AgentTemplate.
+type KagentToolsExtension struct {
+	MCP    []KagentMCPToolExtension `yaml:"mcp,omitempty"`
+	Agents []KagentAgentRef         `yaml:"agents,omitempty"`
 }
 
-// KagentIdentityRef is an immutable skill or plugin identity: a single
-// explicit name, never an inline definition.
-type KagentIdentityRef struct {
+// KagentMCPToolExtension is one MCP server binding: an explicit server,
+// the tools allowed on it, and whether calling them requires approval.
+type KagentMCPToolExtension struct {
+	Server          KagentMCPServerRef `yaml:"server"`
+	Tools           []string           `yaml:"tools,omitempty"`
+	RequireApproval bool               `yaml:"requireApproval,omitempty"`
+}
+
+type KagentMCPServerRef struct {
+	Kind string `yaml:"kind"`
 	Name string `yaml:"name"`
+}
+
+// KagentAgentRef delegates to another AgentTemplate by explicit name.
+type KagentAgentRef struct {
+	Name string `yaml:"name"`
+}
+
+// KagentArtifactRef is an immutable skill or plugin identity: a name plus
+// exactly one pinned source. A bare name carries no immutable identity and
+// is refused rather than silently accepted as a lossy conversion.
+type KagentArtifactRef struct {
+	Name   string               `yaml:"name"`
+	Source KagentArtifactSource `yaml:"source"`
+}
+
+// KagentArtifactSource is a closed union: exactly one of oci, git or s3.
+type KagentArtifactSource struct {
+	OCI *KagentOCISource `yaml:"oci,omitempty"`
+	Git *KagentGitSource `yaml:"git,omitempty"`
+	S3  *KagentS3Source  `yaml:"s3,omitempty"`
+}
+
+// KagentOCISource pins an OCI artifact by digest, never a mutable tag.
+type KagentOCISource struct {
+	Reference string `yaml:"reference"`
+	Digest    string `yaml:"digest"`
+}
+
+// KagentGitSource pins a Git artifact by full commit SHA, never a branch
+// or tag.
+type KagentGitSource struct {
+	Repository string `yaml:"repository"`
+	Commit     string `yaml:"commit"`
+	Path       string `yaml:"path,omitempty"`
+}
+
+// KagentS3Source pins an S3 artifact by explicit object version.
+type KagentS3Source struct {
+	Bucket  string `yaml:"bucket"`
+	Key     string `yaml:"key"`
+	Version string `yaml:"version"`
 }
 
 // ParsePortableAgent strictly decodes exactly one YAML document into a
@@ -278,19 +354,22 @@ func (e *OrkaExtension) validate() error {
 	if strings.TrimSpace(e.Provider.Type) == "" {
 		return fmt.Errorf("provider.type is required")
 	}
-	if strings.TrimSpace(e.Provider.Model) == "" {
-		return fmt.Errorf("provider.model is required")
+	if strings.TrimSpace(e.Provider.DefaultModel) == "" {
+		return fmt.Errorf("provider.defaultModel is required")
 	}
-	if err := scaffold.ValidateObjectName(e.SecretRef.Name); err != nil {
-		return fmt.Errorf("secretRef.name: %w", err)
+	if err := scaffold.ValidateObjectName(e.Provider.SecretRef.Name); err != nil {
+		return fmt.Errorf("provider.secretRef.name: %w", err)
+	}
+	if e.Agent == nil {
+		return nil
 	}
 	for _, list := range []struct {
 		field string
-		refs  []string
-	}{{"tools", e.Tools}, {"skills", e.Skills}} {
-		for _, ref := range list.refs {
-			if !portableIdentifierRE.MatchString(ref) {
-				return fmt.Errorf("%s: %q must be an explicit name, not server:tool syntax or YAML", list.field, ref)
+		refs  []OrkaNamedRef
+	}{{"agent.tools", e.Agent.Tools}, {"agent.skills", e.Agent.Skills}} {
+		for i, ref := range list.refs {
+			if !portableIdentifierRE.MatchString(ref.Name) {
+				return fmt.Errorf("%s[%d].name: %q must be an explicit name, not server:tool syntax or YAML", list.field, i, ref.Name)
 			}
 		}
 	}
@@ -304,28 +383,35 @@ func (e *KagentExtension) validate() error {
 	if err := scaffold.ValidateNamespace(e.Namespace); err != nil {
 		return fmt.Errorf("namespace: %w", err)
 	}
-	if err := scaffold.ValidateObjectName(e.Harness.Name); err != nil {
-		return fmt.Errorf("harness.name: %w", err)
+	if err := scaffold.ValidateObjectName(e.HarnessRef.Name); err != nil {
+		return fmt.Errorf("harnessRef.name: %w", err)
 	}
-	if err := scaffold.ValidateObjectName(e.ModelConfig.Name); err != nil {
-		return fmt.Errorf("modelConfig.name: %w", err)
+	if err := scaffold.ValidateObjectName(e.ModelConfigRef.Name); err != nil {
+		return fmt.Errorf("modelConfigRef.name: %w", err)
 	}
-	for i, tool := range e.Tools {
-		if strings.TrimSpace(tool.Server) == "" || strings.TrimSpace(tool.Name) == "" {
-			return fmt.Errorf("tools[%d]: server and name are both required", i)
+	if e.Tools != nil {
+		for i, mcp := range e.Tools.MCP {
+			if strings.TrimSpace(mcp.Server.Kind) == "" || strings.TrimSpace(mcp.Server.Name) == "" {
+				return fmt.Errorf("tools.mcp[%d].server: kind and name are both required", i)
+			}
+		}
+		for i, ref := range e.Tools.Agents {
+			if strings.TrimSpace(ref.Name) == "" {
+				return fmt.Errorf("tools.agents[%d].name is required", i)
+			}
 		}
 	}
-	if err := validatePortableIdentityRefs("skills", e.Skills); err != nil {
+	if err := validatePortableArtifactRefs("skills", e.Skills); err != nil {
 		return err
 	}
-	return validatePortableIdentityRefs("plugins", e.Plugins)
+	return validatePortableArtifactRefs("plugins", e.Plugins)
 }
 
-// validatePortableIdentityRefs enforces that every kagent skill or plugin
-// reference names a single, present, unique identity. Two entries claiming
-// the same name would make that identity ambiguous, which is exactly what
-// "immutable" rules out.
-func validatePortableIdentityRefs(field string, refs []KagentIdentityRef) error {
+// validatePortableArtifactRefs enforces that every kagent skill or plugin
+// reference names a single, present, unique identity, and that its source
+// pins an immutable artifact — never a bare name or a mutable reference
+// like a tag or branch.
+func validatePortableArtifactRefs(field string, refs []KagentArtifactRef) error {
 	seen := make(map[string]bool, len(refs))
 	for i, ref := range refs {
 		if strings.TrimSpace(ref.Name) == "" {
@@ -335,6 +421,49 @@ func validatePortableIdentityRefs(field string, refs []KagentIdentityRef) error 
 			return fmt.Errorf("%s: %q is not a unique, immutable identity (duplicate)", field, ref.Name)
 		}
 		seen[ref.Name] = true
+		if err := ref.Source.validate(); err != nil {
+			return fmt.Errorf("%s[%d].source: %w", field, i, err)
+		}
+	}
+	return nil
+}
+
+func (s KagentArtifactSource) validate() error {
+	set := 0
+	if s.OCI != nil {
+		set++
+	}
+	if s.Git != nil {
+		set++
+	}
+	if s.S3 != nil {
+		set++
+	}
+	if set != 1 {
+		return fmt.Errorf("exactly one of oci, git or s3 is required for an immutable artifact identity")
+	}
+	switch {
+	case s.OCI != nil:
+		if strings.TrimSpace(s.OCI.Reference) == "" {
+			return fmt.Errorf("oci.reference is required")
+		}
+		if !ociDigestRE.MatchString(s.OCI.Digest) {
+			return fmt.Errorf("oci.digest must be an exact sha256:<64 hex> digest, not a mutable tag")
+		}
+	case s.Git != nil:
+		if strings.TrimSpace(s.Git.Repository) == "" {
+			return fmt.Errorf("git.repository is required")
+		}
+		if !gitCommitRE.MatchString(s.Git.Commit) {
+			return fmt.Errorf("git.commit must be a full 40-character commit SHA, not a branch or tag")
+		}
+	case s.S3 != nil:
+		if strings.TrimSpace(s.S3.Bucket) == "" || strings.TrimSpace(s.S3.Key) == "" {
+			return fmt.Errorf("s3.bucket and s3.key are required")
+		}
+		if strings.TrimSpace(s.S3.Version) == "" {
+			return fmt.Errorf("s3.version is required for an immutable object reference")
+		}
 	}
 	return nil
 }
@@ -397,7 +526,8 @@ type OrkaShorthand struct {
 
 // EncodeOrkaShorthand deterministically encodes flag-based Orka creation
 // inputs into a closed PortableAgent document carrying only the Orka
-// extension. The result validates the same way any decoded document does.
+// extension, in TARGETS.md §7's nested provider/agent shape. The result
+// validates the same way any decoded document does.
 func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	agent := &PortableAgent{
 		APIVersion: PortableAPIVersion,
@@ -412,20 +542,27 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 				APIVersion: orkaExtensionAPIVersion,
 				Namespace:  s.Namespace,
 				Provider: OrkaProviderExtension{
-					Type:      s.ProviderType,
-					Model:     s.Model,
-					BaseURL:   s.BaseURL,
+					Type:         s.ProviderType,
+					BaseURL:      s.BaseURL,
+					DefaultModel: s.Model,
+					SecretRef: OrkaSecretRefExtension{
+						Name: s.SecretName,
+						Key:  s.SecretKey,
+					},
 					RateLimit: s.ProviderRateLimit,
 				},
-				SecretRef: OrkaSecretRefExtension{
-					Name: s.SecretName,
-					Key:  s.SecretKey,
-				},
-				Tools:          append([]string(nil), s.Tools...),
-				Skills:         append([]string(nil), s.Skills...),
-				AgentRateLimit: s.AgentRateLimit,
 			},
 		},
+	}
+	if len(s.Tools) > 0 || len(s.Skills) > 0 || s.AgentRateLimit != nil {
+		agentBlock := &OrkaAgentExtension{RateLimit: s.AgentRateLimit}
+		for _, name := range s.Tools {
+			agentBlock.Tools = append(agentBlock.Tools, OrkaNamedRef{Name: name})
+		}
+		for _, name := range s.Skills {
+			agentBlock.Skills = append(agentBlock.Skills, OrkaNamedRef{Name: name})
+		}
+		agent.Extensions.Orka.Agent = agentBlock
 	}
 	if err := agent.validate(); err != nil {
 		return nil, err

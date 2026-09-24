@@ -41,7 +41,7 @@ func TestPortableValidDocumentParses(t *testing.T) {
 	src := validPortableYAML(t)
 	agent, err := ParsePortableAgent([]byte(src))
 	if err != nil {
-		t.Fatalf("valid document must parse: %v", err)
+		t.Fatalf("a TARGETS.md §7-conforming document must parse: %v", err)
 	}
 	if agent.Metadata.Name != "hello" {
 		t.Errorf("metadata.name = %q", agent.Metadata.Name)
@@ -49,21 +49,44 @@ func TestPortableValidDocumentParses(t *testing.T) {
 	if agent.Spec.Model.Name != "gpt-4o-mini" {
 		t.Errorf("spec.model.name = %q", agent.Spec.Model.Name)
 	}
-	if agent.Extensions.Orka == nil || agent.Extensions.Orka.Namespace != "orka-system" {
-		t.Fatalf("extensions.orka: %#v", agent.Extensions.Orka)
+
+	orka := agent.Extensions.Orka
+	if orka == nil || orka.Namespace != "orka-system" {
+		t.Fatalf("extensions.orka: %#v", orka)
 	}
-	if agent.Extensions.Orka.SecretRef.Name != "hello-key" {
-		t.Errorf("extensions.orka.secretRef.name = %q", agent.Extensions.Orka.SecretRef.Name)
+	if orka.Provider.DefaultModel != "gpt-4o-mini" {
+		t.Errorf("extensions.orka.provider.defaultModel = %q", orka.Provider.DefaultModel)
 	}
-	if len(agent.Extensions.Orka.Tools) != 1 || agent.Extensions.Orka.Tools[0] != "web-search" {
-		t.Errorf("extensions.orka.tools = %#v", agent.Extensions.Orka.Tools)
+	if orka.Provider.SecretRef.Name != "hello-key" {
+		t.Errorf("extensions.orka.provider.secretRef.name = %q", orka.Provider.SecretRef.Name)
 	}
-	if agent.Extensions.Kagent == nil || agent.Extensions.Kagent.Harness.Name != "kagent" {
-		t.Fatalf("extensions.kagent: %#v", agent.Extensions.Kagent)
+	if orka.Agent == nil || len(orka.Agent.Tools) != 1 || orka.Agent.Tools[0].Name != "web-search" {
+		t.Errorf("extensions.orka.agent.tools = %#v", orka.Agent)
 	}
-	if len(agent.Extensions.Kagent.Skills) != 1 || agent.Extensions.Kagent.Skills[0].Name != "triage" {
-		t.Errorf("extensions.kagent.skills = %#v", agent.Extensions.Kagent.Skills)
+	if orka.Agent == nil || len(orka.Agent.Skills) != 1 || orka.Agent.Skills[0].Name != "triage" {
+		t.Errorf("extensions.orka.agent.skills = %#v", orka.Agent)
 	}
+
+	kagent := agent.Extensions.Kagent
+	if kagent == nil || kagent.HarnessRef.Name != "kagent" {
+		t.Fatalf("extensions.kagent.harnessRef: %#v", kagent)
+	}
+	if kagent.ModelConfigRef.Name != "local-ollama" {
+		t.Errorf("extensions.kagent.modelConfigRef.name = %q", kagent.ModelConfigRef.Name)
+	}
+	if kagent.Tools == nil || len(kagent.Tools.MCP) != 1 ||
+		kagent.Tools.MCP[0].Server.Kind != "RemoteMCPServer" || kagent.Tools.MCP[0].Server.Name != "filesystem" {
+		t.Errorf("extensions.kagent.tools.mcp = %#v", kagent.Tools)
+	}
+	if len(kagent.Skills) != 1 || kagent.Skills[0].Name != "triage" || kagent.Skills[0].Source.OCI == nil ||
+		kagent.Skills[0].Source.OCI.Digest != "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" {
+		t.Errorf("extensions.kagent.skills = %#v", kagent.Skills)
+	}
+	if len(kagent.Plugins) != 1 || kagent.Plugins[0].Name != "audit-log" || kagent.Plugins[0].Source.Git == nil ||
+		kagent.Plugins[0].Source.Git.Commit != "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2" {
+		t.Errorf("extensions.kagent.plugins = %#v", kagent.Plugins)
+	}
+
 	if string(agent.Source()) != src {
 		t.Errorf("Source() does not return the exact input bytes")
 	}
@@ -136,12 +159,24 @@ func TestPortableRejectsDuplicateKeysAtEveryLevel(t *testing.T) {
 			"extensions:\n  orka:\n    provider:\n      type: openai\n      type: openai\n",
 		},
 		{
+			"extensions.orka.provider.secretRef",
+			"extensions:\n  orka:\n    provider:\n      secretRef:\n        name: a\n        name: b\n",
+		},
+		{
+			"extensions.orka.agent",
+			"extensions:\n  orka:\n    agent:\n      rateLimit:\n        requestsPerMinute: 1\n      rateLimit:\n        requestsPerMinute: 2\n",
+		},
+		{
 			"extensions.kagent",
 			"extensions:\n  kagent:\n    namespace: a\n    namespace: b\n",
 		},
 		{
-			"extensions.kagent.tools list entry",
-			"extensions:\n  kagent:\n    tools:\n      - server: fs\n        name: read\n        name: read\n",
+			"extensions.kagent.tools.mcp list entry",
+			"extensions:\n  kagent:\n    tools:\n      mcp:\n        - server: {kind: RemoteMCPServer, name: a}\n          requireApproval: false\n          requireApproval: false\n",
+		},
+		{
+			"extensions.kagent.skills.source",
+			"extensions:\n  kagent:\n    skills:\n      - name: a\n        source:\n          oci: {reference: a, digest: b}\n        source:\n          oci: {reference: c, digest: d}\n",
 		},
 	}
 	for _, tc := range cases {
@@ -171,10 +206,18 @@ func TestPortableRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 		{"extensions", "extensions:\n  orka:", "extensions:\n  bogus: true\n  orka:"},
 		{"extensions.orka", "namespace: orka-system\n", "namespace: orka-system\n    bogus: true\n"},
 		{"extensions.orka.provider", "type: openai\n", "type: openai\n      bogus: true\n"},
-		{"extensions.orka.secretRef", "name: hello-key\n", "name: hello-key\n      bogus: true\n"},
+		{"extensions.orka.provider.secretRef", "name: hello-key\n", "name: hello-key\n        bogus: true\n"},
+		{"extensions.orka.agent", "agent:\n      tools:", "agent:\n      bogus: true\n      tools:"},
+		{"extensions.orka.agent.rateLimit", "rateLimit:\n        requestsPerMinute: 30\n", "rateLimit:\n        requestsPerMinute: 30\n        bogus: true\n"},
 		{"extensions.kagent", "namespace: kagent-system\n", "namespace: kagent-system\n    bogus: true\n"},
-		{"extensions.kagent.harness", "harness:\n      name: kagent\n", "harness:\n      name: kagent\n      bogus: true\n"},
-		{"extensions.kagent.tools list entry", "- server: filesystem\n        name: read-file\n", "- server: filesystem\n        name: read-file\n        bogus: true\n"},
+		{"extensions.kagent.harnessRef", "harnessRef:\n      name: kagent\n", "harnessRef:\n      name: kagent\n      bogus: true\n"},
+		{"extensions.kagent.tools", "tools:\n      mcp:", "tools:\n      bogus: true\n      mcp:"},
+		{"extensions.kagent.tools.mcp entry", "requireApproval: false\n", "requireApproval: false\n          bogus: true\n"},
+		{"extensions.kagent.tools.mcp.server", "kind: RemoteMCPServer\n            name: filesystem\n", "kind: RemoteMCPServer\n            name: filesystem\n            bogus: true\n"},
+		{"extensions.kagent.skills entry", "name: triage\n        source:\n", "name: triage\n        bogus: true\n        source:\n"},
+		{"extensions.kagent.skills.source", "source:\n          oci:\n", "source:\n          bogus: true\n          oci:\n"},
+		{"extensions.kagent.skills.source.oci", "reference: ghcr.io/kaimahi/skills/triage\n", "reference: ghcr.io/kaimahi/skills/triage\n            bogus: true\n"},
+		{"extensions.kagent.plugins.source.git", "repository: https://github.com/kaimahi-agents/plugins\n", "repository: https://github.com/kaimahi-agents/plugins\n            bogus: true\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -280,23 +323,38 @@ func TestPortableKagentSkillAndPluginIdentitiesAreImmutable(t *testing.T) {
 	}{
 		{
 			"missing skill name",
-			"skills:\n      - name: triage\n",
-			"skills:\n      - name: \"\"\n",
+			"skills:\n      - name: triage\n        source:",
+			"skills:\n      - name: \"\"\n        source:",
 		},
 		{
 			"duplicate skill name",
-			"skills:\n      - name: triage\n",
-			"skills:\n      - name: triage\n      - name: triage\n",
+			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
 		},
 		{
 			"missing plugin name",
-			"plugins:\n      - name: audit-log\n",
-			"plugins:\n      - name: \"\"\n",
+			"plugins:\n      - name: audit-log\n        source:",
+			"plugins:\n      - name: \"\"\n        source:",
 		},
 		{
 			"duplicate plugin name",
-			"plugins:\n      - name: audit-log\n",
-			"plugins:\n      - name: audit-log\n      - name: audit-log\n",
+			"      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
+			"      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n      - name: audit-log\n        source:\n          git:\n            repository: https://github.com/kaimahi-agents/plugins\n            commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
+		},
+		{
+			"skill with no source at all (bare name)",
+			"      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"      - name: triage\n        source: {}\n",
+		},
+		{
+			"skill oci digest is a mutable tag, not a digest",
+			"digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"digest: latest\n",
+		},
+		{
+			"plugin git commit is a branch, not a full SHA",
+			"commit: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\n",
+			"commit: main\n",
 		},
 	}
 	for _, tc := range cases {
@@ -307,6 +365,25 @@ func TestPortableKagentSkillAndPluginIdentitiesAreImmutable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPortableRejectsLossyBareForms(t *testing.T) {
+	t.Run("bare-string orka agent tools/skills no longer decode", func(t *testing.T) {
+		doc := mustReplace(t, validPortableYAML(t),
+			"tools:\n        - name: web-search\n",
+			"tools:\n        - web-search\n")
+		if _, err := ParsePortableAgent([]byte(doc)); err == nil {
+			t.Fatal("a bare tool name string must not decode into the required {name: ...} object")
+		}
+	})
+	t.Run("bare-string kagent skill name no longer decodes", func(t *testing.T) {
+		doc := mustReplace(t, validPortableYAML(t),
+			"skills:\n      - name: triage\n        source:\n          oci:\n            reference: ghcr.io/kaimahi/skills/triage\n            digest: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\n",
+			"skills:\n      - triage\n")
+		if _, err := ParsePortableAgent([]byte(doc)); err == nil {
+			t.Fatal("a bare skill name string must not decode into the required immutable-identity object")
+		}
+	})
 }
 
 func TestPortableSourceIsDefensivelyCopied(t *testing.T) {
@@ -383,10 +460,18 @@ func TestPortableOrkaShorthandRoundTrip(t *testing.T) {
 	if parsed.Extensions.Orka == nil {
 		t.Fatal("Orka shorthand must produce an orka extension")
 	}
-	if parsed.Extensions.Orka.SecretRef.Name != shorthand.SecretName {
-		t.Errorf("extensions.orka.secretRef.name = %q", parsed.Extensions.Orka.SecretRef.Name)
+	if parsed.Extensions.Orka.Provider.DefaultModel != shorthand.Model {
+		t.Errorf("extensions.orka.provider.defaultModel = %q", parsed.Extensions.Orka.Provider.DefaultModel)
 	}
-	if len(parsed.Extensions.Orka.Tools) != 1 || parsed.Extensions.Orka.Tools[0] != "web-search" {
-		t.Errorf("extensions.orka.tools = %#v", parsed.Extensions.Orka.Tools)
+	if parsed.Extensions.Orka.Provider.SecretRef.Name != shorthand.SecretName {
+		t.Errorf("extensions.orka.provider.secretRef.name = %q", parsed.Extensions.Orka.Provider.SecretRef.Name)
+	}
+	if parsed.Extensions.Orka.Agent == nil || len(parsed.Extensions.Orka.Agent.Tools) != 1 ||
+		parsed.Extensions.Orka.Agent.Tools[0].Name != "web-search" {
+		t.Errorf("extensions.orka.agent.tools = %#v", parsed.Extensions.Orka.Agent)
+	}
+	if parsed.Extensions.Orka.Agent == nil || len(parsed.Extensions.Orka.Agent.Skills) != 1 ||
+		parsed.Extensions.Orka.Agent.Skills[0].Name != "triage" {
+		t.Errorf("extensions.orka.agent.skills = %#v", parsed.Extensions.Orka.Agent)
 	}
 }
