@@ -167,18 +167,40 @@ func TestAgentListExplicitKagentRefusesANamespaceConflict(t *testing.T) {
 	}
 }
 
-// kagent-v1 is detected by shared platform detection but not implemented in
-// this build, so it is the registry's own typed unknown-runtime error, never
-// another runtime's list.
-func TestAgentListKagentV1IsNotYetRegistered(t *testing.T) {
+// kagent-v1 is a runtime this build NAMES but does not implement, so an
+// explicit one declines the "list" verb through the shared typed error
+// rather than being reported as an unknown runtime — the operator's
+// spelling was right; the build is what is missing.
+func TestAgentListKagentV1DeclinesListRatherThanBeingUnknown(t *testing.T) {
 	a, out, _ := legacyRuntimeFixture(t)
 	err := a.ListAgents(ListOptions{Runtime: string(agentruntime.KagentV1), Namespace: "kagent"})
+	var unsupported *agentruntime.UnsupportedVerbError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("err = %v, not *UnsupportedVerbError", err)
+	}
+	if unsupported.Runtime != agentruntime.KagentV1 || unsupported.Verb != agentruntime.VerbList {
+		t.Fatalf("unsupported = %+v", unsupported)
+	}
+	var unknown *agentruntime.UnknownRuntimeError
+	if errors.As(err, &unknown) {
+		t.Fatal("a named runtime was reported as unknown")
+	}
+	if out.String() != "" {
+		t.Fatalf("an unresolved runtime printed:\n%s", out.String())
+	}
+}
+
+// An ID kmx does not name at all stays unknown: a typo must not be reported
+// as a runtime that exists and cannot list yet.
+func TestAgentListRejectsAnUnknownRuntime(t *testing.T) {
+	a, out, dir := legacyRuntimeFixture(t)
+	err := a.ListAgents(ListOptions{Runtime: "bogus", Namespace: "kagent"})
 	var unknown *agentruntime.UnknownRuntimeError
 	if !errors.As(err, &unknown) {
 		t.Fatalf("err = %v, not *UnknownRuntimeError", err)
 	}
-	if out.String() != "" {
-		t.Fatalf("an unresolved runtime printed:\n%s", out.String())
+	if out.String() != "" || fixtureCalls(t, dir) != "" {
+		t.Fatalf("an unknown runtime printed %q and called:\n%s", out.String(), fixtureCalls(t, dir))
 	}
 }
 

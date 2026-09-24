@@ -89,7 +89,9 @@ intentional break with the old bare defaults:
 
   ```text
   no supported runtime platform is installed: install orka (core.orka.ai Agent CRD)
-  or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD)
+  or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD).
+    The legacy kagent runtime is not detected and is selected only explicitly,
+    with `--runtime kagent`
   ```
 
   Add `--runtime kagent` to get exactly the previous output. `kmx up` already
@@ -156,8 +158,11 @@ rather than by matching a message. It prints plainly:
 runtime kagent does not support render
 ```
 
-An ID with no registered adapter at all is a separate typed
-`unknown runtime "…"`, never a fallback to a different runtime.
+An ID kmx does not name at all is a separate typed `unknown runtime "…"`,
+never a fallback to a different runtime. A runtime it DOES name but this
+build does not implement — `kagent-v1` — is not that: it declines the verb
+that was asked for, through the same shared error above, so an operator whose
+spelling was right is not told it was wrong.
 
 `LifecycleStatus` keeps pair status and optional instance status side by side
 and **publishes no merged readiness boolean**. Legacy kagent has no

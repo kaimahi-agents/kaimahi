@@ -229,7 +229,9 @@ both now stop with the same error naming what to install:
 
 ```text
 no supported runtime platform is installed: install orka (core.orka.ai Agent CRD)
-or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD)
+or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD).
+  The legacy kagent runtime is not detected and is selected only explicitly,
+  with `--runtime kagent`
 ```
 
 Pass `--runtime kagent` for exactly the previous output. That path is
@@ -248,6 +250,10 @@ becomes "not installed" and never falls through to another runtime.
 
 A runtime that cannot do what was asked says so plainly —
 `runtime kagent does not support render` — rather than doing something else.
+A runtime kmx names but this build does not implement says the same thing:
+`--runtime kagent-v1` declines the verb that was asked for rather than
+reporting an unknown runtime, because the name was right and the build is
+what is missing.
 `kmx agent show` has no `--runtime` flag yet and remains Orka's chain view;
 `kmx agent chat`'s existing `--runtime auto|orka|kagent` is unchanged, and
 still resolves a named Agent rather than a platform installation.

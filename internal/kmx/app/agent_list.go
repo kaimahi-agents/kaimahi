@@ -97,16 +97,17 @@ func (a *App) ListAgents(opt ListOptions) error {
 }
 
 // listRuntimeSelection resolves which runtime this list reports. An explicit
-// ID is proved against the shared registry, so an unknown or not-yet-
-// registered runtime is that registry's own typed error rather than a
-// fallback to whichever handler happens to exist.
+// ID is proved against the shared registry, so a runtime kmx names but does
+// not implement declines "list" and one it does not name at all is that
+// registry's own unknown-runtime error — never a fallback to whichever
+// handler happens to exist.
 func (a *App) listRuntimeSelection(opt ListOptions) (agentruntime.ID, bool, error) {
 	registry, err := a.lifecycleRuntimeRegistry(nil)
 	if err != nil {
 		return "", false, err
 	}
 	if id := agentruntime.ID(strings.TrimSpace(opt.Runtime)); id != "" {
-		if _, err := registry.Lookup(id); err != nil {
+		if _, err := registry.LookupVerb(id, agentruntime.VerbList); err != nil {
 			return id, false, err
 		}
 		return id, false, nil

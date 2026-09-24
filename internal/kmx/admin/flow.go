@@ -170,7 +170,7 @@ func renderFlow(out io.Writer, events []flowEvent, notes []string) {
 		}
 		fmt.Fprintln(out, "no recorded activity")
 		fmt.Fprintln(out, "An agent that has never run leaves no trail, and neither does one")
-		fmt.Fprintln(out, "whose traffic never went through the plane. `kmx status` says which.")
+		fmt.Fprintln(out, "whose traffic never went through the plane. `kmx status --runtime kagent` says which.")
 		return
 	}
 	var cents, denials int64

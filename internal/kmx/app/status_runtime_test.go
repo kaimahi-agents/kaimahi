@@ -191,20 +191,25 @@ func TestStatusExplicitOrkaRequiresItsSelectors(t *testing.T) {
 	}
 }
 
-// kagent-v1 is detected by shared platform detection but not implemented in
-// this build, so both an explicit and a detected kagent-v1 resolve to the
-// registry's own typed unknown-runtime error, never to another runtime's
-// implementation.
-func TestStatusKagentV1IsNotYetRegistered(t *testing.T) {
+// kagent-v1 is a runtime this build NAMES but does not implement, so a
+// detected one declines the "status" verb through the shared typed error
+// rather than being reported as an unknown runtime: the cluster really does
+// run a platform kmx recognized, and calling it unknown would describe the
+// cluster instead of this build.
+func TestStatusKagentV1DeclinesStatusRatherThanBeingUnknown(t *testing.T) {
 	a, out, _ := legacyRuntimeFixture(t)
 	t.Setenv("KMX_TEST_KAGENTV1_PLATFORM", "present")
 	err := a.StatusWithOptions(StatusOptions{Namespace: "kagent", Agent: "hello"})
-	var unknown *agentruntime.UnknownRuntimeError
-	if !errors.As(err, &unknown) {
-		t.Fatalf("err = %v, not *UnknownRuntimeError", err)
+	var unsupported *agentruntime.UnsupportedVerbError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("err = %v, not *UnsupportedVerbError", err)
 	}
-	if unknown.Runtime != agentruntime.KagentV1 {
-		t.Fatalf("unknown = %+v", unknown)
+	if unsupported.Runtime != agentruntime.KagentV1 || unsupported.Verb != agentruntime.VerbStatus {
+		t.Fatalf("unsupported = %+v", unsupported)
+	}
+	var unknown *agentruntime.UnknownRuntimeError
+	if errors.As(err, &unknown) {
+		t.Fatal("a named runtime was reported as unknown")
 	}
 	if out.String() != "" {
 		t.Fatalf("an unresolved runtime printed:\n%s", out.String())
