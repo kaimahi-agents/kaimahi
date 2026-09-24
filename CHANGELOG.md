@@ -34,7 +34,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
   ```text
   no supported runtime platform is installed: install orka (core.orka.ai Agent CRD)
-  or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD)
+  or kagent-v1 (kagent.dev/v1alpha3 AgentTemplate CRD).
+    The legacy kagent runtime is not detected and is selected only explicitly,
+    with `--runtime kagent`
   ```
 
   - **Upgrading:** add `--runtime kagent` to any script or habit that ran a

@@ -254,12 +254,12 @@ func (a orkaRuntimeAdapter) Status(_ context.Context, ref agentruntime.AgentRef,
 
 // Evaluate is permanently unsupported for Orka (DESIGN.md §3: "native Orka
 // Tasks do not supply the required frozen target revision, and kmx must not
-// fabricate one"), so Capabilities().Evaluate is never expected to flip true.
+// fabricate one"), so it returns the one shared typed error directly.
+// Routing it through lifecycleVerbError would need a fallback for a
+// capability that is declared false and never set, and that fallback could
+// only ever be unreachable code claiming an implementation exists.
 func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	if err := lifecycleVerbError(a.ID(), a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
-		return agentruntime.EvaluationReceipt{}, err
-	}
-	return agentruntime.EvaluationReceipt{}, fmt.Errorf("orka evaluate: not yet implemented")
+	return agentruntime.EvaluationReceipt{}, &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: agentruntime.VerbEvaluate}
 }
 
 // orkaSpecFromPortable maps the closed portable document onto the existing

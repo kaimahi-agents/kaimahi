@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // QuickstartWizardOptions configures the experimental path from an empty
@@ -26,6 +27,35 @@ type QuickstartWizardOptions struct {
 	Create         CreateOptions
 	Verbose        bool
 	Inference      string
+}
+
+// quickstartWizardCreate applies the defaults this wizard owns to the create
+// it is about to run, including the runtime.
+//
+// The runtime is NAMED rather than left to detection because this wizard
+// installs Orka itself, a few phases earlier, and then deploys an Orka agent
+// into the namespace it just prepared. An omitted runtime would send the
+// deployment phase back to the cluster to rediscover a platform this same
+// command put there — an extra discovery read whose only possible answers
+// are "Orka" and a detection failure on a cluster the wizard is still
+// setting up.
+func quickstartWizardCreate(create CreateOptions) CreateOptions {
+	quickstartAgentTools(&create)
+	create.descriptionDefault = "Hello world agent"
+	create.Runtime = string(agentruntime.Orka)
+	if create.Namespace == "" {
+		create.Namespace = OrkaNamespace
+	}
+	if create.ProviderType == "" {
+		create.ProviderType = "openai"
+	}
+	if create.Secret == "" {
+		create.Secret = "kickstart-provider-key"
+	}
+	if create.SecretKey == "" {
+		create.SecretKey = "api-key"
+	}
+	return create
 }
 
 type quickstartExistingAgent struct {
@@ -65,21 +95,7 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 		return err
 	}
 
-	create := opt.Create
-	quickstartAgentTools(&create)
-	create.descriptionDefault = "Hello world agent"
-	if create.Namespace == "" {
-		create.Namespace = OrkaNamespace
-	}
-	if create.ProviderType == "" {
-		create.ProviderType = "openai"
-	}
-	if create.Secret == "" {
-		create.Secret = "kickstart-provider-key"
-	}
-	if create.SecretKey == "" {
-		create.SecretKey = "api-key"
-	}
+	create := quickstartWizardCreate(opt.Create)
 	existing := a.quickstartExistingAgents()
 
 	var setupLog bytes.Buffer

@@ -286,8 +286,9 @@ func statusReady(allAgents, allModels bool, kReady, kTotal, oReady, oTotal, pRea
 // detected --runtime status dispatch looks up by ID (DESIGN.md §4). Orka
 // reports its own workload state and legacy kagent its retained combined
 // runtime slice; kagent-v1 is detected by shared platform detection but not
-// implemented in this build, so it resolves to the registry's own typed
-// UnknownRuntimeError rather than to another runtime's implementation.
+// implemented in this build, so it declines the requested verb through the
+// registry's shared UnsupportedVerbError rather than being reported as an
+// unknown runtime.
 //
 // The Orka adapter is built with no create flags, which is exactly what it
 // needs for Status and exactly why it declares neither Render nor Deploy
@@ -301,9 +302,9 @@ func (a *App) lifecycleRuntimeRegistry(snapshot *kagentStatusSnapshot) (*agentru
 }
 
 // statusRuntimeAdapter resolves which runtime this status reports and proves
-// it declares Status. An unknown runtime and an unsupported verb are both
-// typed errors from the shared registry's own model; neither ever falls back
-// to a different runtime.
+// it declares Status. A runtime kmx names but does not implement, an unknown
+// runtime and an unsupported verb are all typed errors from the shared
+// registry's own model; none ever falls back to a different runtime.
 func (a *App) statusRuntimeAdapter(ctx context.Context, opt StatusOptions, snapshot *kagentStatusSnapshot) (agentruntime.ID, agentruntime.LifecycleAdapter, bool, error) {
 	registry, err := a.lifecycleRuntimeRegistry(snapshot)
 	if err != nil {
@@ -316,7 +317,7 @@ func (a *App) statusRuntimeAdapter(ctx context.Context, opt StatusOptions, snaps
 		}
 		detected = true
 	}
-	adapter, err := registry.Lookup(id)
+	adapter, err := registry.LookupVerb(id, agentruntime.VerbStatus)
 	if err != nil {
 		return id, nil, detected, err
 	}

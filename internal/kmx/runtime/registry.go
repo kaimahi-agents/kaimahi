@@ -56,6 +56,17 @@ func (e *UnknownRuntimeError) Error() string {
 	return fmt.Sprintf("unknown runtime %q", e.Runtime)
 }
 
+// Known reports whether id is a runtime this build NAMES, which is not the
+// same as one it implements: kagent-v1 is named by shared platform detection
+// and by `--runtime kagent-v1`, and is deliberately not registered here.
+func Known(id ID) bool {
+	switch id {
+	case Orka, Kagent, KagentV1:
+		return true
+	}
+	return false
+}
+
 // Lookup returns the adapter registered under id. An explicit runtime ID
 // always resolves to exactly one adapter or a typed *UnknownRuntimeError,
 // never a fallback to a different runtime.
@@ -66,6 +77,22 @@ func (r *Registry) Lookup(id ID) (Adapter, error) {
 		}
 	}
 	return nil, &UnknownRuntimeError{Runtime: id}
+}
+
+// LookupVerb is Lookup for a caller that is asking on behalf of one verb, and
+// it draws the line DESIGN.md §1 draws: a runtime kmx NAMES but this build
+// does not implement declines the requested verb — the one shared
+// UnsupportedVerbError every other declined verb uses — while an ID kmx does
+// not name at all stays the typed UnknownRuntimeError. "kagent-v1 cannot do
+// status yet" and "there is no such runtime" are different answers, and a
+// caller that printed the second for the first would be telling an operator
+// their spelling was wrong.
+func (r *Registry) LookupVerb(id ID, verb string) (Adapter, error) {
+	adapter, err := r.Lookup(id)
+	if err != nil && Known(id) {
+		return nil, &UnsupportedVerbError{Runtime: id, Verb: verb}
+	}
+	return adapter, err
 }
 
 // Resolve probes every registered adapter in order and returns the first
@@ -108,12 +135,17 @@ const (
 
 // NoPlatformInstalledError is SelectPlatform's typed failure when neither
 // supported platform is installed. It names both install prerequisites so
-// an operator knows exactly what to install next.
+// an operator knows exactly what to install next, and names the one thing
+// that needs no install at all: legacy kagent is still on this cluster and
+// still reachable, but only by explicit ID (DESIGN.md §1), so an operator
+// looking at a legacy-only cluster is told the override rather than left to
+// conclude that kmx cannot see what they can.
 type NoPlatformInstalledError struct{}
 
 func (e *NoPlatformInstalledError) Error() string {
-	return fmt.Sprintf("no supported runtime platform is installed: install %s (%s) or %s (%s)",
-		Orka, orkaInstallPrerequisite, KagentV1, kagentV1InstallPrerequisite)
+	return fmt.Sprintf("no supported runtime platform is installed: install %s (%s) or %s (%s).\n"+
+		"  The legacy %s runtime is not detected and is selected only explicitly, with `--runtime %s`",
+		Orka, orkaInstallPrerequisite, KagentV1, kagentV1InstallPrerequisite, Kagent, Kagent)
 }
 
 // SelectPlatform implements DESIGN.md §1's shared platform auto-detection

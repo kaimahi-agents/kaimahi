@@ -9,6 +9,12 @@
 # The reader is a ServiceAccount minted on the cluster and a token that
 # lives for the run: no repo secret, because CI in this public,
 # fork-exposed repo holds no credential of any kind.
+#
+# Every kmx call here names `--runtime kagent` explicitly. This cluster
+# runs the legacy runtime and no Orka, and an omitted --runtime now
+# detects a platform rather than defaulting to legacy kagent — so without
+# the explicit ID this probe would assert nothing about the cannot-tell
+# branch and instead fail on platform detection.
 set -euo pipefail
 
 ctx="${KUBE_CTX:-kind-${KIND_CLUSTER:-kaimahi-p1}}"
@@ -41,10 +47,10 @@ contexts: [{name: $ctx, context: {cluster: $ctx, user: kmx-narrow}}]
 current-context: $ctx
 EOF
 
-KUBECONFIG="$work/kubeconfig" "$kmx" status | tee "$work/status.out"
+KUBECONFIG="$work/kubeconfig" "$kmx" status --runtime kagent | tee "$work/status.out"
 grep -E 'credentials: +unknown — .*secrets' "$work/status.out"
 
-KUBECONFIG="$work/kubeconfig" "$kmx" status -o json > "$work/status.json"
+KUBECONFIG="$work/kubeconfig" "$kmx" status --runtime kagent -o json > "$work/status.json"
 python3 - "$work/status.json" <<'PY'
 import json, sys
 

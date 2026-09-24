@@ -191,3 +191,86 @@ func TestSelectPlatformNoInstallErrorIsTypedAndUnwrappable(t *testing.T) {
 		t.Fatalf("SelectPlatform() error = %v, not *NoPlatformInstalledError", err)
 	}
 }
+
+// A runtime kmx NAMES but this build does not implement declines the verb
+// that was asked for. "kagent-v1 does not support status yet" and "there is
+// no runtime called kagent-v1" are different answers, and printing the
+// second for the first tells an operator their spelling was wrong when it
+// was not.
+func TestLookupVerbDeclinesAKnownUnimplementedRuntime(t *testing.T) {
+	registry, err := NewRegistry(registryFakeAdapter{id: Orka})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, verb := range []string{VerbStatus, VerbList, VerbRender, VerbDeploy} {
+		adapter, err := registry.LookupVerb(KagentV1, verb)
+		var unsupported *UnsupportedVerbError
+		if !errors.As(err, &unsupported) {
+			t.Fatalf("verb %q: err = %v, not *UnsupportedVerbError", verb, err)
+		}
+		if unsupported.Runtime != KagentV1 || unsupported.Verb != verb {
+			t.Fatalf("unsupported = %+v", unsupported)
+		}
+		if adapter != nil {
+			t.Fatal("a declined verb still resolved an adapter")
+		}
+	}
+}
+
+// An ID kmx does not name at all keeps the typed unknown-runtime error: a
+// typo must not be reported as a runtime that exists and cannot do this yet.
+func TestLookupVerbKeepsUnknownRuntimesUnknown(t *testing.T) {
+	registry, err := NewRegistry(registryFakeAdapter{id: Orka})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = registry.LookupVerb("bogus", VerbStatus)
+	var unknown *UnknownRuntimeError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("err = %v, not *UnknownRuntimeError", err)
+	}
+	if unknown.Runtime != "bogus" {
+		t.Fatalf("unknown = %+v", unknown)
+	}
+	var unsupported *UnsupportedVerbError
+	if errors.As(err, &unsupported) {
+		t.Fatal("an unknown runtime was reported as a declined verb")
+	}
+}
+
+// A registered runtime resolves to its adapter, whatever verb asked.
+func TestLookupVerbResolvesARegisteredRuntime(t *testing.T) {
+	registry, err := NewRegistry(registryFakeAdapter{id: Orka})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := registry.LookupVerb(Orka, VerbStatus)
+	if err != nil || adapter == nil || adapter.ID() != Orka {
+		t.Fatalf("adapter = %v, err = %v", adapter, err)
+	}
+}
+
+func TestKnownNamesExactlyTheDeclaredRuntimes(t *testing.T) {
+	for _, id := range []ID{Orka, Kagent, KagentV1} {
+		if !Known(id) {
+			t.Errorf("%s is a declared runtime ID but Known says otherwise", id)
+		}
+	}
+	for _, id := range []ID{"", "bogus", "kagent-v2", "Orka"} {
+		if Known(id) {
+			t.Errorf("Known accepted %q, which kmx does not name", id)
+		}
+	}
+}
+
+// The legacy override is named where an operator meets the dead end: a
+// legacy-only cluster gets both install prerequisites AND the one thing
+// that needs no install at all.
+func TestNoPlatformInstalledNamesTheExplicitLegacyOverride(t *testing.T) {
+	message := (&NoPlatformInstalledError{}).Error()
+	for _, want := range []string{string(orkaInstallPrerequisite), string(kagentV1InstallPrerequisite), "--runtime kagent"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message does not mention %q: %s", want, message)
+		}
+	}
+}

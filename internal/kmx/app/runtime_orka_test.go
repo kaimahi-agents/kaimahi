@@ -920,32 +920,51 @@ func TestCreateAgentExplicitLegacyKagentIsUnsupportedRender(t *testing.T) {
 	}
 }
 
-// An explicit runtime this build does not register resolves to exactly one
-// typed error, never a silent fallback to Orka.
-func TestCreateAgentUnknownExplicitRuntimeIsTyped(t *testing.T) {
+// An explicit runtime this build does not implement resolves to exactly one
+// typed error, never a silent fallback to Orka — and the two cases are
+// deliberately different errors. kagent-v1 is a runtime kmx names, so it
+// declines the verb; "bogus" is not, so it stays unknown.
+func TestCreateAgentUnimplementedAndUnknownExplicitRuntimesAreTyped(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	for _, runtime := range []string{"kagent-v1", "bogus"} {
-		t.Run(runtime, func(t *testing.T) {
-			var out, diagnostics bytes.Buffer
-			a := &App{Out: &out, Err: &diagnostics}
-			opt := orkaGoldenCreateOptions()
-			opt.Runtime = runtime
-			if runtime == "kagent-v1" {
-				opt = CreateOptions{Name: "support-bot", File: portableAgentFile(t, "support-bot"), Out: "-", Runtime: runtime}
-			}
-			err := a.CreateAgent(opt)
-			var unknown *agentruntime.UnknownRuntimeError
-			if !errors.As(err, &unknown) {
-				t.Fatalf("err = %v, not *UnknownRuntimeError", err)
-			}
-			if string(unknown.Runtime) != runtime {
-				t.Fatalf("unknown = %+v", unknown)
-			}
-			if out.Len() != 0 {
-				t.Fatal("an unknown runtime emitted bytes")
-			}
-		})
-	}
+
+	t.Run("kagent-v1 declines render", func(t *testing.T) {
+		var out, diagnostics bytes.Buffer
+		a := &App{Out: &out, Err: &diagnostics}
+		opt := CreateOptions{Name: "support-bot", File: portableAgentFile(t, "support-bot"), Out: "-", Runtime: string(agentruntime.KagentV1)}
+		err := a.CreateAgent(opt)
+		var unsupported *agentruntime.UnsupportedVerbError
+		if !errors.As(err, &unsupported) {
+			t.Fatalf("err = %v, not *UnsupportedVerbError", err)
+		}
+		if unsupported.Runtime != agentruntime.KagentV1 || unsupported.Verb != agentruntime.VerbRender {
+			t.Fatalf("unsupported = %+v", unsupported)
+		}
+		var unknown *agentruntime.UnknownRuntimeError
+		if errors.As(err, &unknown) {
+			t.Fatal("a named runtime was reported as unknown")
+		}
+		if out.Len() != 0 {
+			t.Fatal("a declined runtime emitted bytes")
+		}
+	})
+
+	t.Run("an unnamed runtime stays unknown", func(t *testing.T) {
+		var out, diagnostics bytes.Buffer
+		a := &App{Out: &out, Err: &diagnostics}
+		opt := orkaGoldenCreateOptions()
+		opt.Runtime = "bogus"
+		err := a.CreateAgent(opt)
+		var unknown *agentruntime.UnknownRuntimeError
+		if !errors.As(err, &unknown) {
+			t.Fatalf("err = %v, not *UnknownRuntimeError", err)
+		}
+		if string(unknown.Runtime) != "bogus" {
+			t.Fatalf("unknown = %+v", unknown)
+		}
+		if out.Len() != 0 {
+			t.Fatal("an unknown runtime emitted bytes")
+		}
+	})
 }
 
 // DESIGN.md §4: explicit kagent-v1 requires --file and its kagent extension.

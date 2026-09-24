@@ -1001,13 +1001,19 @@ jobs:
       # here rather than only in a unit test. `0 governed` and `cannot tell`
       # are different answers: both are asserted, in the table and in the
       # document something will parse.
+      #
+      # This cluster runs legacy kagent and no Orka, and `kmx status` no
+      # longer defaults to the legacy runtime: with no `--runtime` it would
+      # report that neither supported platform is installed. The explicit
+      # ID is what keeps this assertion about governance counting rather
+      # than about platform detection.
       - name: Status counts the ungoverned system and says the plane is absent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx status | tee status-no-plane.out
+          bin/kmx status --runtime kagent | tee status-no-plane.out
           grep -F 'plane:        not installed' status-no-plane.out
           grep -E 'model seams: +0 of [0-9]+ agents? governed' status-no-plane.out
-          bin/kmx status -o json > status-no-plane.json
+          bin/kmx status --runtime kagent -o json > status-no-plane.json
           python3 - <<'PY'
           import json
           doc = json.load(open("status-no-plane.json"))
@@ -1467,13 +1473,16 @@ jobs:
           python3 scripts/verify-chat.py governed-chat.out
       # The model count distinguishes governed and direct agents. Raw
       # chart-managed MCP objects remain inventory, not governance claims.
+      # Legacy-only cluster: the explicit `--runtime kagent` is required
+      # now that an omitted one detects a platform instead of defaulting
+      # to the legacy runtime.
       - name: Status counts model governance and retains raw MCP inventory
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx status | tee status-governed.out
+          bin/kmx status --runtime kagent | tee status-governed.out
           grep -E 'plane: +installed' status-governed.out
           grep -E 'model seams: +1 of [0-9]+ agents? governed' status-governed.out
-          bin/kmx status -o json > status-governed.json
+          bin/kmx status --runtime kagent -o json > status-governed.json
           python3 - <<'PY'
           import json
           doc = json.load(open('status-governed.json'))

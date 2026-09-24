@@ -259,6 +259,16 @@ type KagentS3Object struct {
 // success it holds a defensive copy of data; mutating data afterward never
 // changes the result.
 func ParsePortableAgent(data []byte) (*PortableAgent, error) {
+	// The raw bytes are scanned before anything is allowed to quote them.
+	// Every gate below names what it refused — yaml.v3 quotes the token it
+	// choked on, the duplicate/merge-key walk names the key at its path, and
+	// field validation prints the offending value — so a credential pasted
+	// into any field of a document that is ALSO malformed would be echoed by
+	// whichever gate happened to fail first. Scanning first means the only
+	// thing kmx ever says about such a document is which shape it carries.
+	if err := refusePortableSecretShape(string(data)); err != nil {
+		return nil, err
+	}
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("portable agent document must be valid UTF-8")
 	}
@@ -638,6 +648,21 @@ func refusePortableSecretShape(value string) error {
 	return nil
 }
 
+// refuseOrkaShorthandSecretShapes scans every value the shorthand supplies,
+// including each tool and skill name. Rate limits are numeric and carry no
+// text, so there is nothing there to scan.
+func refuseOrkaShorthandSecretShapes(s OrkaShorthand) error {
+	values := []string{s.Name, s.Namespace, s.Instructions, s.ProviderType, s.Model, s.BaseURL, s.SecretName, s.SecretKey}
+	values = append(values, s.Tools...)
+	values = append(values, s.Skills...)
+	for _, value := range values {
+		if err := refusePortableSecretShape(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // OrkaShorthand mirrors the existing flag-based Orka creation inputs
 // (OrkaSpec), for callers that author a portable document from CLI flags
 // rather than an explicit --file.
@@ -658,6 +683,14 @@ type OrkaShorthand struct {
 // so an encoded document without source bytes would have no identity to
 // hash.
 func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
+	// Shorthand values are scanned before the encoded document is validated,
+	// for the same reason ParsePortableAgent scans its raw bytes first:
+	// validation quotes what it refuses, so a credential-shaped namespace,
+	// model, Secret name or tool name would be echoed by the validation
+	// error that rejected it rather than refused by its shape.
+	if err := refuseOrkaShorthandSecretShapes(s); err != nil {
+		return nil, err
+	}
 	agent := &PortableAgent{
 		APIVersion: PortableAPIVersion,
 		Kind:       PortableKind,

@@ -173,15 +173,16 @@ func (a *App) resolvedCreateRuntimeAdapter(ctx context.Context, opt CreateOption
 }
 
 // createRuntimeAdapter looks one already-decided runtime ID up in the shared
-// registry and proves it declares Render. An unknown runtime and an
-// unsupported verb are both typed errors from the shared registry's own
-// model; neither ever falls back to a different runtime.
+// registry and proves it declares Render. A runtime kmx names but does not
+// implement, an unknown runtime and an unsupported verb are all typed errors
+// from the shared registry's own model; none ever falls back to a different
+// runtime.
 func (a *App) createRuntimeAdapter(id agentruntime.ID, opt CreateOptions) (agentruntime.LifecycleAdapter, error) {
 	registry, err := a.createRuntimeRegistry(opt)
 	if err != nil {
 		return nil, err
 	}
-	adapter, err := registry.Lookup(id)
+	adapter, err := registry.LookupVerb(id, agentruntime.VerbRender)
 	if err != nil {
 		return nil, err
 	}

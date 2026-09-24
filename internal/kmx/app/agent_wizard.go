@@ -65,7 +65,22 @@ func finishCreateWizardOptions(opt *CreateOptions) error {
 	return nil
 }
 
+// CreateAgentInteractive collects what the flags did not supply and then
+// hands the completed options to CreateAgent.
+//
+// The explicit --runtime is resolved BEFORE the first prompt, for the same
+// reason CreateAgent resolves it before reading the document: which runtime
+// was named and whether this build can create with it are answerable from
+// the registry alone, and asking an operator to describe an agent, name it
+// and pick a model first — only to refuse the runtime they named at the
+// start — spends their whole session on a create that was never going to
+// run. The adapter is discarded: CreateAgent rebuilds it from the COMPLETED
+// options, which is what it must render from. An omitted --runtime resolves
+// against a cluster and is not decidable here, so it keeps prompting.
 func (a *App) CreateAgentInteractive(opt CreateOptions) error {
+	if _, err := a.explicitCreateRuntimeAdapter(opt); err != nil {
+		return err
+	}
 	completed, cancelled, err := a.collectCreateAgentInteractive(opt)
 	if err != nil {
 		return err

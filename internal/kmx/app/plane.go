@@ -178,7 +178,7 @@ func (a *App) Plane(opt PlaneOptions) error {
 			"  %s  # the certificate and model routing\n"+
 			"  The tool gateway is retired. Review owner-managed tool routes deliberately;\n"+
 			"  this command does not repoint them.",
-			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("status"))
+			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("status", "--runtime", "kagent"))
 	}
 	return nil
 }
