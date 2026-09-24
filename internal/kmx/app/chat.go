@@ -9,6 +9,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/kagentcli"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/kagentcompat"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
@@ -313,6 +314,23 @@ func forwardedPort(output string) (string, error) {
 	return match[1], nil
 }
 
+// legacyChatEndpoint fronts a controller forward with the messageId
+// compatibility hop and returns the URL the PINNED kagent CLI must be given
+// instead of the forward, plus the function that closes the hop.
+//
+// Only the CLI is redirected. kmx's own controller calls — sessions,
+// history, task polling and the HITL continuation — keep talking to the
+// forward directly: they already write a messageId, and routing them through
+// a rewriting hop would put a second thing in the path of the one protocol
+// exchange that must not be altered.
+func (a *App) legacyChatEndpoint(upstream string) (string, func(), error) {
+	proxy, err := kagentcompat.Start(kagentcompat.Options{Upstream: upstream, Log: a.Err})
+	if err != nil {
+		return "", nil, err
+	}
+	return proxy.URL(), func() { _ = proxy.Close() }, nil
+}
+
 // askAgent runs one non-interactive invoke and returns kagent's combined
 // output and exit status. It is the body `chat` always had; `quickstart`
 // needs the same bytes to report the answer it just proved, and a second
@@ -350,9 +368,16 @@ func (a *App) askAgent(agent, task, session string, interactive bool, retryable 
 	}
 	defer stop()
 
-	url := "http://127.0.0.1:" + port
-	// The CLI defaults to localhost:8083; name the port we actually opened
-	// so it can never fall back to someone else's.
+	// The CLI defaults to localhost:8083; name the endpoint we actually
+	// opened so it can never fall back to someone else's. That endpoint is
+	// kmx's compatibility hop rather than the forward itself, because
+	// v0.10.1 sends an empty messageId and the agent rejects it.
+	url, closeEndpoint, err := a.legacyChatEndpoint("http://127.0.0.1:" + port)
+	if err != nil {
+		return "", 0, err
+	}
+	defer closeEndpoint()
+
 	args := []string{"--kagent-url", url, "invoke", "--agent", agent, "--task", task}
 	if session != "" {
 		args = append(args, "--session", session)
