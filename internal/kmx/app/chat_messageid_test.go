@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -66,7 +67,11 @@ func TestLegacyKagentCLIHelper(t *testing.T) {
 	}
 	resp, err := http.Post(base+"/api/a2a/kagent/"+agent+"/", "application/json", strings.NewReader(body))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error invoking session: %v\n", err)
+		// The pinned CLI's own wording for a failed send. ChatRetryable is
+		// anchored to this exact line, so the stub must print it the same
+		// way — the error text itself is whatever the transport really
+		// produced, never a literal the test chose.
+		fmt.Fprintf(os.Stderr, "Error invoking session: failed to send HTTP request: %v\n", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
@@ -117,6 +122,14 @@ type legacyController struct {
 
 func newLegacyController(t *testing.T) *legacyController {
 	t.Helper()
+	return newLegacyControllerWith(t, nil)
+}
+
+// newLegacyControllerWith is the controller behind the port-forward: it
+// records every A2A request body and answers with a completed task unless
+// the caller supplies its own answer.
+func newLegacyControllerWith(t *testing.T, answer http.HandlerFunc) *legacyController {
+	t.Helper()
 	c := &legacyController{}
 	c.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -127,6 +140,10 @@ func newLegacyController(t *testing.T) *legacyController {
 		c.mu.Lock()
 		c.bodies = append(c.bodies, string(body))
 		c.mu.Unlock()
+		if answer != nil {
+			answer(w, r)
+			return
+		}
 		if strings.Contains(string(body), `"message/stream"`) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			io.WriteString(w, "data: {\"kind\":\"artifact-update\",\"contextId\":\"ctx-1\",\"taskId\":\"task-1\",\"artifact\":{\"parts\":[{\"kind\":\"text\",\"text\":\"hello\"}]}}\n\n")
@@ -309,6 +326,117 @@ func a_legacyChatEndpoint(t *testing.T, upstream string) (string, func(), error)
 	t.Helper()
 	a := &App{Out: io.Discard, Err: io.Discard}
 	return a.legacyChatEndpoint(upstream)
+}
+
+// The transport retry `chat` has always had must survive the compatibility
+// hop. This is the port-forward race the policy exists for: the forward is
+// gone, so every invoke fails to reach the controller, and askAgent must
+// still make its one attempt plus exactly three retries.
+//
+// Before the hop, the CLI dialled the forward and saw `connection refused`
+// itself. With a hop in the path, an upstream failure rendered as the hop's
+// own 502 would be a valid HTTP response — ChatRetryable would never match
+// and a recoverable race would become a hard failure on the first try.
+func TestTransportRetryStillFiresThroughTheCompatibilityHop(t *testing.T) {
+	controller := newLegacyController(t)
+	port := controller.port(t)
+	// The forward's port, with nothing behind it any more.
+	controller.Close()
+
+	dir := t.TempDir()
+	kagent, urlLog := fakeLegacyCLI(t, dir)
+	fakeTool(t, dir, "kubectl",
+		"for arg in \"$@\"; do\n"+
+			"  if [ \"$arg\" = port-forward ]; then\n"+
+			"    echo 'Forwarding from 127.0.0.1:"+port+" -> 8083'\n"+
+			"    sleep 60\n"+
+			"    exit 0\n"+
+			"  fi\n"+
+			"done\n"+
+			"echo agent.kagent.dev/hello-world")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KMX_HOME", t.TempDir())
+	var errOut bytes.Buffer
+	a := &App{
+		Cfg: &config.Config{KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx,
+			ChatPort: port, KagentBin: kagent},
+		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
+		Out: io.Discard, Err: &errOut,
+	}
+
+	out, _, err := a.askAgent("hello-world", "hi", "", false, ChatRetryable)
+	if err != nil {
+		t.Fatalf("askAgent: %v", err)
+	}
+	// The policy is one attempt plus three retries; anything else means the
+	// hop changed what the CLI reports.
+	if got := strings.Count(strings.TrimSpace(readFileString(t, urlLog)), "\n") + 1; got != 4 {
+		t.Fatalf("the CLI was invoked %d times, want 4 (1 + 3 transport retries)\nkagent output:\n%s\nkmx notes:\n%s",
+			got, out, errOut.String())
+	}
+	if got := strings.Count(errOut.String(), "transport error"); got != 3 {
+		t.Fatalf("announced %d transport retries, want 3:\n%s", got, errOut.String())
+	}
+	if !ChatRetryable.MatchString(out) {
+		t.Fatalf("the failure the hop produced is not one chat retries:\n%s", out)
+	}
+}
+
+// A model or tool failure is not a transport failure. The controller's own
+// answer — including a JSON-RPC error — is returned once, unretried: a
+// second invoke spends budget again and can burn a tool grant.
+func TestControllerErrorsAreNotRetriedThroughTheHop(t *testing.T) {
+	controller := newLegacyControllerWith(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"jsonrpc":"2.0","id":"1","error":{"code":-32000,"message":"model provider refused"}}`)
+	})
+	dir := t.TempDir()
+	kagent, urlLog := fakeLegacyCLI(t, dir)
+	fakeTool(t, dir, "kubectl",
+		"for arg in \"$@\"; do\n"+
+			"  if [ \"$arg\" = port-forward ]; then\n"+
+			"    echo 'Forwarding from 127.0.0.1:"+controller.port(t)+" -> 8083'\n"+
+			"    sleep 30\n"+
+			"    exit 0\n"+
+			"  fi\n"+
+			"done\n"+
+			"echo agent.kagent.dev/hello-world")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KMX_HOME", t.TempDir())
+	a := &App{
+		Cfg: &config.Config{KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx,
+			ChatPort: controller.port(t), KagentBin: kagent},
+		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
+		Out: io.Discard, Err: io.Discard,
+	}
+	if _, _, err := a.askAgent("hello-world", "hi", "", false, ChatRetryable); err != nil {
+		t.Fatalf("askAgent: %v", err)
+	}
+	if got := strings.Count(strings.TrimSpace(readFileString(t, urlLog)), "\n") + 1; got != 1 {
+		t.Fatalf("an application error was invoked %d times, want 1", got)
+	}
+}
+
+// Interactive chat holds the alternate screen. The hop must not print to the
+// terminal behind the renderer's back, whatever the controller does.
+func TestTheCompatibilityHopNeverWritesToTheChatTerminal(t *testing.T) {
+	controller := newLegacyController(t)
+	upstream := controller.URL
+	controller.Close() // dead forward: the noisiest case
+
+	var out, errOut bytes.Buffer
+	a := &App{Out: &out, Err: &errOut}
+	endpoint, stop, err := a.legacyChatEndpoint(upstream)
+	if err != nil {
+		t.Fatalf("legacyChatEndpoint: %v", err)
+	}
+	defer stop()
+	if resp, err := http.Post(endpoint+"/api/a2a/kagent/agent/", "application/json", strings.NewReader(legacyCLISendBody)); err == nil {
+		resp.Body.Close()
+	}
+	time.Sleep(50 * time.Millisecond)
+	if out.Len() != 0 || errOut.Len() != 0 {
+		t.Fatalf("the hop wrote to the chat terminal:\nstdout=%q\nstderr=%q", out.String(), errOut.String())
+	}
 }
 
 func assertNotListening(t *testing.T, endpoint string) {
