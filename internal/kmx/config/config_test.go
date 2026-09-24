@@ -1,10 +1,49 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// config.go's own comment says this test pins its defaults to the
+// Makefile's; a kagent bump landed in one place and not the other would
+// install one version and print another, silently, until something broke
+// against the image that was actually running. Read straight out of the
+// Makefile rather than duplicating its value here, so an edited default
+// that forgets its twin fails here instead of at runtime.
+func TestDefaultsMatchTheMakefile(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		varName string
+		want    string
+	}{
+		{"KIND_CLUSTER", DefaultKindCluster},
+		{"KAGENT_VERSION", DefaultKagentVersion},
+		{"MODEL", DefaultModel},
+	} {
+		re := regexp.MustCompile(`(?m)^` + tc.varName + ` \?= (\S+)$`)
+		m := re.FindStringSubmatch(string(body))
+		if m == nil {
+			t.Fatalf("Makefile no longer sets a default for %s; config.go's Default%s (%q) has nothing to be pinned against",
+				tc.varName, tc.varName, tc.want)
+		}
+		if m[1] != tc.want {
+			t.Errorf("Makefile pins %s to %q but config.go's default is %q; they install different versions",
+				tc.varName, m[1], tc.want)
+		}
+	}
+}
 
 func TestProductDefaultsAreUsable(t *testing.T) {
 	for name, value := range map[string]string{

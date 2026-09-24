@@ -196,8 +196,8 @@ named nodes and checks API/DNS. kmx supplies
   Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
 - The legacy pin is kagent 0.10.1. Its default Python runtime is used. The
-  recorded Go-runtime image gap required `controller.agentImage.registry=ghcr.io`
-  in `k8s/kagent-values.yaml`; this is version-scoped, not a current upstream survey.
+  chart's own default (and global) registry is `ghcr.io`; `k8s/kagent-values.yaml`
+  sets no `controller.agentImage.registry` override at this pin.
 - `kmx down` deletes the whole local cluster, **including Postgres/ledger**.
   Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
 
