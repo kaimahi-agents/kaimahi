@@ -17,7 +17,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-type chatLiftTarget struct{ Context, Subscription, ResourceGroup, Cluster, Location, Tenant string }
+type chatLiftTarget struct{ Context, Subscription, ResourceGroup, Cluster, Location, Tenant, Kubeconfig string }
 
 func liftDiscovery(ctx context.Context, command string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -144,6 +144,14 @@ func (b *orkaChatBackend) liftAgent(ctx context.Context, renderer *chatRenderer)
 	if err != nil || !ok {
 		return err
 	}
+	return b.liftAgentTo(ctx, renderer, target)
+}
+
+// liftAgentTo shares the full interactive deployment flow with the agent dashboard.
+func (b *orkaChatBackend) liftAgentTo(ctx context.Context, renderer *chatRenderer, target chatLiftTarget) error {
+	b.liftHeader = &liftHeader{agent: b.agent, source: b.app.Cfg.KubeContext}
+	defer func() { b.liftHeader = nil }()
+	b.paintLiftHeader()
 	if target.Subscription == "" && target.Context == b.app.Cfg.KubeContext {
 		return fmt.Errorf("select a different target cluster; this Agent already runs in %s", target.Context)
 	}
@@ -165,6 +173,10 @@ func (b *orkaChatBackend) liftAgent(ctx context.Context, renderer *chatRenderer)
 	runner.Context = ctx
 	worker.guarded = false
 	cfg.KubeContext, cfg.ContextSource = target.Context, config.SourceFlag
+	if target.Kubeconfig != "" {
+		located := appAtAgentLocation(&worker, agentLocation{Context: target.Context, Kubeconfig: target.Kubeconfig})
+		runner.Env = located.Run.Env
+	}
 	if target.Subscription != "" {
 		path := filepath.Join(dir, "kubeconfig")
 		if _, err = b.liftAzureFetch(ctx, aksCredentialsArgs(target, path)...); err != nil {
@@ -311,7 +323,15 @@ func portableLiftBundle(agent, provider map[string]any, name, namespace string) 
 	}
 	agent, provider = copies[0], copies[1]
 	clean := func(kind string, doc map[string]any) map[string]any {
-		return map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": map[string]any{"name": name, "namespace": namespace}, "spec": doc["spec"]}
+		metadata := map[string]any{"name": name, "namespace": namespace}
+		if source, ok := doc["metadata"].(map[string]any); ok {
+			if labels, ok := source["labels"].(map[string]any); ok {
+				if version, ok := labels["app.kubernetes.io/version"].(string); ok && version != "" {
+					metadata["labels"] = map[string]any{"app.kubernetes.io/version": version}
+				}
+			}
+		}
+		return map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": metadata, "spec": doc["spec"]}
 	}
 	agent, provider = clean("Agent", agent), clean("Provider", provider)
 	spec, ok := agent["spec"].(map[string]any)
