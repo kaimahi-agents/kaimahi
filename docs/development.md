@@ -120,6 +120,26 @@ What that shard does **not** prove: that the local model chose to call the tool
 is left unasserted rather than asserted flakily), and nothing about governance —
 Orka traffic is not on the plane seam there.
 
+`e2e-resilience` is the governance boundary, and it uses no kagent either. It
+brings up kind, Ollama, the model and the pinned Orka with component steps,
+creates an **owner-managed** Deployment (`owner-ci`) in its own namespace
+before the plane exists, deploys the plane, and runs
+[`kmx migrate`](migrate.md). What it proves is the boundary that command
+claims: the owner's Deployment is byte-identical across the migration — uid,
+generation and whole spec — and changes only when the **owner** applies the
+generated patch. After that it requires a real model turn through the TLS seam
+to Orka with its `unpriced` ledger row and the upstream's own token counts, a
+429 the application itself reports once its token budget is exhausted, and the
+plane surviving a replica killed mid-call, a Postgres outage, a simultaneous
+restart of both replicas and a backup/wipe/restore — with the application
+answering again after each. Absence of the `kagent` namespace is asserted after
+bring-up and again at the end.
+
+What that shard does **not** prove: native Orka Agent governance. The pinned
+Orka Provider schema has no field naming a private certificate authority, so an
+Orka Agent cannot be told to trust the plane's seam; the governed caller is the
+owner's own application, which is the supported path.
+
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as
 a required PR shard. Its native Orka creation journey checks an actual Task answer,
