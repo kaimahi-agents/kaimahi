@@ -443,6 +443,21 @@ func TestParsePortableAgentRejectsInvalidUTF8(t *testing.T) {
 	}
 }
 
+// A "!!binary" scalar decodes to whatever bytes its base64 payload holds,
+// so a document whose raw bytes are valid UTF-8 (the base64 text itself is
+// plain ASCII) can still decode into a field that is not: the raw-byte scan
+// in ParsePortableAgent cannot see this, because it runs before decoding.
+func TestParsePortableAgentRejectsInvalidUTF8InADecodedField(t *testing.T) {
+	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n", "  instructions: !!binary /w==\n")
+	err := mustNotParse(t, doc, "spec.instructions")
+	if !strings.Contains(err.Error(), "UTF-8") {
+		t.Errorf("error %q does not name the encoding", err)
+	}
+	if strings.Contains(err.Error(), "\xff") {
+		t.Errorf("the refusal echoed the decoded value: %v", err)
+	}
+}
+
 func validShorthand() OrkaShorthand {
 	return OrkaShorthand{
 		Name:         "hello",
@@ -546,5 +561,26 @@ func TestEncodeOrkaShorthandRefusesWhatAnAuthoredDocumentWouldFail(t *testing.T)
 				t.Errorf("error %q does not mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Shorthand input reaches the same string fields validate() checks, so the
+// same UTF-8 gate applies before this shorthand is ever marshaled: an
+// encoded document must never carry a field that cannot round-trip as text.
+func TestEncodeOrkaShorthandRejectsInvalidUTF8(t *testing.T) {
+	s := validShorthand()
+	s.Instructions = "Answer\xffbriefly."
+	agent, err := EncodeOrkaShorthand(s)
+	if err == nil {
+		t.Fatal("shorthand with invalid UTF-8 encoded a document")
+	}
+	if agent != nil {
+		t.Fatal("refused shorthand still produced a document")
+	}
+	if !strings.Contains(err.Error(), "spec.instructions") || !strings.Contains(err.Error(), "UTF-8") {
+		t.Errorf("error %q does not name the field and the encoding", err)
+	}
+	if strings.Contains(err.Error(), "\xffbriefly") {
+		t.Errorf("the refusal echoed the invalid value: %v", err)
 	}
 }

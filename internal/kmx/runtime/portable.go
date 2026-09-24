@@ -250,6 +250,17 @@ func portablePathOrRoot(path string) string {
 // strict field decoding already enforces. It is the single validation path:
 // an authored document and a shorthand-encoded one are held to it equally.
 func (p *PortableAgent) validate() error {
+	// Every decoded string is checked for valid UTF-8 before anything else
+	// can quote it, regex-match it, or otherwise treat it as text. A
+	// "!!binary" scalar decodes to whatever bytes its base64 payload holds,
+	// so a document whose raw bytes are valid UTF-8 (the base64 text itself
+	// is plain ASCII) can still decode into a field that is not — the
+	// raw-byte scan in ParsePortableAgent runs before decoding and cannot
+	// see this. This is also the shorthand's only such scan, because
+	// EncodeOrkaShorthand calls this same validate before ever marshaling.
+	if err := refusePortableInvalidUTF8(p); err != nil {
+		return err
+	}
 	// Before any check below can quote a field it refused.
 	if err := refusePortableSecretShapes(p); err != nil {
 		return err
@@ -336,6 +347,46 @@ func (l *OrkaRateLimit) validate() error {
 	}
 	if l.TokensPerMinute != nil && *l.TokensPerMinute <= 0 {
 		return fmt.Errorf("tokensPerMinute must be positive")
+	}
+	return nil
+}
+
+// refusePortableInvalidUTF8 rejects a decoded string that is not valid
+// UTF-8. It walks every string field this closed schema models, tools and
+// skills slices included, so nothing decoded from a document can carry
+// binary content past this point. The error names the field, never the
+// value: the value is exactly what is refused for not being displayable
+// text, so quoting it would defeat the refusal.
+func refusePortableInvalidUTF8(p *PortableAgent) error {
+	fields := []struct{ path, value string }{
+		{"apiVersion", p.APIVersion},
+		{"kind", p.Kind},
+		{"metadata.name", p.Metadata.Name},
+		{"spec.instructions", p.Spec.Instructions},
+		{"spec.model.name", p.Spec.Model.Name},
+	}
+	if orka := p.Extensions.Orka; orka != nil {
+		fields = append(fields,
+			struct{ path, value string }{"extensions.orka.apiVersion", orka.APIVersion},
+			struct{ path, value string }{"extensions.orka.namespace", orka.Namespace},
+			struct{ path, value string }{"extensions.orka.provider.type", orka.Provider.Type},
+			struct{ path, value string }{"extensions.orka.provider.baseURL", orka.Provider.BaseURL},
+			struct{ path, value string }{"extensions.orka.provider.secretRef.name", orka.Provider.SecretRef.Name},
+			struct{ path, value string }{"extensions.orka.provider.secretRef.key", orka.Provider.SecretRef.Key},
+		)
+		if orka.Agent != nil {
+			for i, ref := range orka.Agent.Tools {
+				fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.orka.agent.tools[%d].name", i), ref.Name})
+			}
+			for i, ref := range orka.Agent.Skills {
+				fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.orka.agent.skills[%d].name", i), ref.Name})
+			}
+		}
+	}
+	for _, field := range fields {
+		if !utf8.ValidString(field.value) {
+			return fmt.Errorf("%s must be valid UTF-8", field.path)
+		}
 	}
 	return nil
 }
