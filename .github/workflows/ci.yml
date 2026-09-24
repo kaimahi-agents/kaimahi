@@ -514,6 +514,13 @@ jobs:
         run: |
           bash -n scripts/demo-hello-to-governed.sh
           python3 scripts/test_demo_hello_to_governed.py
+      # The native Orka HTTP Tool's own allow/deny pair, proved keyless and
+      # clusterless: the e2e-orka-runtime shard proves the CLUSTER refuses
+      # (RBAC); this proves the SERVER refuses before a request is ever
+      # made, over every pull request rather than only when that shard
+      # runs. Mocked HTTP only — no live Kubernetes API is reached.
+      - name: Orka k8s-tool self-test (read-only allowlist, secrets and mutation refused)
+        run: python3 scripts/test_orka_k8s_tool.py -v
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
       # and is a required check). A step appended without the guard would run
