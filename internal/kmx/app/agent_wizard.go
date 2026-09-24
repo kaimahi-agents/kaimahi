@@ -78,6 +78,14 @@ func finishCreateWizardOptions(opt *CreateOptions) error {
 // options, which is what it must render from. An omitted --runtime resolves
 // against a cluster and is not decidable here, so it keeps prompting.
 func (a *App) CreateAgentInteractive(opt CreateOptions) error {
+	// Scanned before the explicit lookup below: an unknown or unregistered
+	// ID is reported by the shared registry's own typed errors, which name
+	// the runtime verbatim (UnknownRuntimeError quotes it). A credential
+	// pasted into --runtime must be refused here, non-echoing, rather than
+	// reach that quote — and reached before the wizard's first prompt.
+	if err := refuseWizardCredentials(opt.Runtime); err != nil {
+		return err
+	}
 	if _, err := a.explicitCreateRuntimeAdapter(opt); err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // The quickstart wizard installs Orka itself and then deploys an Orka agent
@@ -122,6 +123,37 @@ func TestCreateAgentInteractivePreservesTheOmittedAndOrkaWizard(t *testing.T) {
 			var unknown *agentruntime.UnknownRuntimeError
 			if errors.As(err, &unsupported) || errors.As(err, &unknown) {
 				t.Fatalf("the wizard refused a runtime it supports: %v", err)
+			}
+		})
+	}
+}
+
+// A credential-shaped --runtime is not a Known ID (the registered constants
+// are fixed strings), so it always falls to the shared registry's
+// UnknownRuntimeError, which quotes it verbatim ("unknown runtime %q"). The
+// early explicit-runtime lookup runs before the wizard's own entry
+// conditions (stdin is not a terminal here, so a check running later would
+// report that instead), so an unscanned credential-shaped runtime would be
+// echoed by that lookup before a single prompt. Assembled at run time from
+// secretshapes.All() so this tracks shapes.json rather than a fixed list.
+func TestCreateAgentInteractiveRefusesACredentialShapedRuntimeWithoutEchoBeforePrompting(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			a := &App{Out: &out, Err: &diagnostics, Stdin: os.Stdin}
+			err := a.CreateAgentInteractive(CreateOptions{Runtime: shape.Example})
+			if err == nil {
+				t.Fatal("a credential-shaped runtime was accepted")
+			}
+			if strings.Contains(err.Error(), shape.Example) {
+				t.Fatalf("the refusal echoed the credential-shaped runtime: %v", err)
+			}
+			var unknown *agentruntime.UnknownRuntimeError
+			if errors.As(err, &unknown) {
+				t.Fatalf("the credential-shaped runtime reached the registry lookup: %v", err)
+			}
+			if out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatalf("a refused runtime prompted:\nout=%q\nerr=%q", out.String(), diagnostics.String())
 			}
 		})
 	}

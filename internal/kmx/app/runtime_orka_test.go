@@ -18,6 +18,7 @@ import (
 	"time"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // orkaGoldenCreateOptions reproduces the exact inputs TestOrkaNoTaskGoldenBytes
@@ -893,6 +894,42 @@ func TestCreateAgentFileRequiresMatchingNameArgument(t *testing.T) {
 		if out.Len() != 0 {
 			t.Fatal("name mismatch emitted bytes")
 		}
+	}
+}
+
+// portableCreateDocument's --file mismatch quotes both names verbatim
+// ("metadata.name %q does not match the requested name %q"). The document's
+// own metadata.name always reaches this check already scanned by
+// ParsePortableAgent, but the positional --name argument does not parse
+// anything and reaches this comparison raw. A credential pasted there —
+// most plausibly by an operator who mistyped the file and name arguments —
+// must be refused before this mismatch can quote it, for every declared
+// shape, assembled at run time from secretshapes.All() so this test tracks
+// shapes.json rather than a fixed literal list.
+func TestCreateAgentFileMismatchRefusesACredentialShapedNameBeforeQuoting(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			a := &App{Out: &out, Err: &diagnostics}
+			// The document names "support-bot", not the credential-shaped
+			// value, so the mismatch is real: a scan running after this
+			// comparison would be visible as the %q mismatch message
+			// instead.
+			err := a.CreateAgent(CreateOptions{Name: shape.Example, File: portableAgentFile(t, "support-bot"), Out: "-"})
+			if err == nil {
+				t.Fatal("a credential-shaped name was accepted")
+			}
+			if strings.Contains(err.Error(), shape.Example) {
+				t.Fatalf("the refusal echoed the credential-shaped name: %v", err)
+			}
+			if strings.Contains(err.Error(), "does not match the requested name") {
+				t.Fatalf("the credential-shaped name reached the mismatch check: %v", err)
+			}
+			if out.Len() != 0 {
+				t.Fatal("a refused name emitted bytes")
+			}
+		})
 	}
 }
 
