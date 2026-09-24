@@ -1,0 +1,53 @@
+# Orka bundle, scaffolded by kmx. Schema source:
+# Orka v0.1.3 at b07d42c0b9e52fe511b434827a342b4720f5d422 (embedded CRDs; https://github.com/orka-agents/orka/tree/b07d42c0b9e52fe511b434827a342b4720f5d422/config/crd/bases)
+# Local schema validation does not evaluate CEL or server admission.
+# Use the explicit namespace that the Orka controller watches.
+# Do not bulk-apply this bundle. The Secret skeleton is a named prerequisite,
+# not a credential: provision its referenced key separately; never write this skeleton.
+# Create Provider only, wait for current-generation Ready; then create Agent
+# and wait for current-generation Ready; only then create the optional Task.
+# Schema support for rate limits is not proof of runtime enforcement.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: model-key
+    namespace: orka-system
+---
+apiVersion: core.orka.ai/v1alpha1
+kind: Provider
+metadata:
+    name: sample
+    namespace: orka-system
+spec:
+    baseURL: https://models.example.invalid/v1
+    defaultModel: gpt-4o-mini
+    rateLimit:
+        requestsPerMinute: 120
+        tokensPerMinute: 240000
+    secretRef:
+        key: api-key
+        name: model-key
+    type: openai
+---
+apiVersion: core.orka.ai/v1alpha1
+kind: Agent
+metadata:
+    annotations:
+        kaimahi.dev/description: Golden sample agent
+    name: sample
+    namespace: orka-system
+spec:
+    providerRef:
+        name: sample
+        namespace: orka-system
+    rateLimit:
+        requestsPerMinute: 30
+        tokensPerMinute: 60000
+    skills:
+        - name: summarize
+    systemPrompt:
+        inline: Answer briefly and say plainly when you do not know something.
+    tools:
+        - name: search
+        - name: read
