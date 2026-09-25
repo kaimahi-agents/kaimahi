@@ -314,6 +314,24 @@
     },
     {
       "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "// `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are",
+      "category": "negative",
+      "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "for _, dead := range []string{\"`kmx govern <\", \"`kmx govern `\", \"`kmx use `\", \"`kmx use <\"} {",
+      "category": "negative",
+      "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "retired := []string{\"kmx govern \", \"kmx govern`\", \"kmx govern\\\\n\", \"kmx use \", \"kmx use`\", \"kmx agent edit\"}",
+      "category": "negative",
+      "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
       "text": "if strings.Contains(string(body), \"pass `--payload kagent`\") {",
       "category": "negative",
       "why": "Bounded documentation test: docs/kmx.md must not offer the retired payload as a choice."

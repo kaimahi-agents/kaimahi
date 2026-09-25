@@ -9,7 +9,7 @@ nine of them — `ollama`, `github-copilot`, `anthropic`, `openai`,
 `openrouter`, `azure-foundry`, `openai-compatible`, `governed-ollama` and
 `governed-copilot`. Every one was an object of a runtime kmx no
 longer installs, and the commands that applied or switched between them
-(`kmx use`, `kmx govern`, `kmx up --step agent`) were removed before them.
+(preset switching, governance and the old agent install step) were removed before them.
 Nothing in kmx reads, renders or applies a preset any more.
 
 What replaces them is not another list of files. An endpoint becomes

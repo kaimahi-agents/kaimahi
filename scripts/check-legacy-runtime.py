@@ -154,6 +154,9 @@ RULES = [
     Rule("cli-surface", "a command spelling that selects the retired runtime",
          r"--(?:step|payload|runtime)(?:=|\s+)" + NAME + r"\b",
          "kmx up --step " + NAME, "kmx up --step orka", True),
+    Rule("retired-preset-command", "a retired preset-switch command",
+         r"\b(?:kmx|make)\s+use\b",
+         "make use PRESET=example", "kmx models credential copilot", True),
     # A boundary on the LEFT only, and both halves of that are deliberate.
     #
     # A trailing `\b` missed `NAME_usage_metadata` in a migration comment:

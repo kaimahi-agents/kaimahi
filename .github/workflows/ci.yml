@@ -638,9 +638,9 @@ jobs:
       # it would make that proof a statement about the job's own fixture
       # instead of about the command.
       #
-      # The legacy journey this job used to run — the three explicit install
-      # steps, `kmx govern` and the `kmx use` preset switch — went with the
-      # commands themselves. The job must not grow them back: there is
+      # The legacy journey this job used to run — three explicit install
+      # steps, governance and preset switching — went with those commands.
+      # The job must not grow them back: there is
       # nothing left to run them against.
       - name: The clone-free journey sets up with a bare `kmx up`, and runs no retired command
         run: |
@@ -1048,8 +1048,8 @@ jobs:
   #
   # Deleted rather than translated, and the loss is recorded in
   # docs/development.md: the `kmx agent chat` turns and their
-  # `verify-chat.py` checks, the `k8s/models/` preset dry-run and the
-  # `kmx use` switch, the kagent tool-server lockdown posture and the MCP
+  # retired chat-verifier checks, the old preset dry-run and preset switch,
+  # the legacy tool-server lockdown posture and the MCP
   # tool round-trip, and the two `kmx status` probes (the ungoverned count
   # and the no-plane branch). Each of those asserted something about
   # legacy objects; rewriting them against surviving ones would have

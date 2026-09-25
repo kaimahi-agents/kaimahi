@@ -243,7 +243,7 @@ bring-up and again at the end.
 
 What that shard no longer proves, deleted rather than translated: the
 `kmx agent chat` conversation and its chat-verifier checks, the model preset
-dry-run against live CRDs and the `kmx use` preset switch, the legacy
+dry-run against live CRDs and the retired preset-switch command, the legacy
 tool-server lockdown posture (read-only mode logged, its ServiceAccount denied
 Secrets and writes) and the MCP tool round-trip that required a real
 `k8s_get_resources` call carrying an unguessable probe name, and the two

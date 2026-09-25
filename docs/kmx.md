@@ -8,7 +8,7 @@ operations silently governs application tools.
 
 The legacy runtime is no longer part of kmx. Its installer steps, its
 manifests and its CLI surface are gone — its three `kmx up --step` names
-are unknown steps, and `kmx govern`, `kmx use` and `kmx agent edit` were removed
+are unknown steps, and governance, preset switching and agent editing were removed
 before them. A cluster that still carries that runtime is untouched and is
 operated with kubectl. `orka.harness.v2` is outside the direction.
 A shrinking compatibility/governance bridge is success, not a reason to rebuild

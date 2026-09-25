@@ -141,7 +141,7 @@ refused with the command that works.
 kmx no longer installs the legacy runtime or its two demonstration
 agents. Its three `kmx up --step` names are
 unknown steps, their manifests are no longer shipped in the binary, and
-`kmx agent edit`, `kmx govern` and `kmx use` went with the runtime adapter.
+agent editing, governance and preset switching went with the runtime adapter.
 `kmx agent chat` and `kmx agent list` remain and are Orka-only.
 
 A cluster that still carries that runtime is untouched by any of this, and is

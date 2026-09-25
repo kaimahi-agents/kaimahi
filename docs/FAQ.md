@@ -73,10 +73,10 @@ that a model reasons correctly or copies identifiers faithfully.
 
 ### Hosted model authentication fails
 
-Create the required Secret before selecting a model preset. Copilot uses
+Create the required Secret before onboarding a hosted endpoint. Copilot uses
 its own device flow, not the `gh` CLI's token, and its short-lived token
 needs renewal. The endpoint is not a stable public GitHub API contract.
-See [models.md](models.md) for current capture and switching commands.
+See [models.md](models.md) for the current capture path.
 Never put token values in command arguments or committed YAML.
 
 ### What do plane error codes mean?
