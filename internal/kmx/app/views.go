@@ -163,6 +163,6 @@ func (a *App) IssueCredentialToSecret(name, secret, namespace string, ttl *int64
 			SecretNamespace: namespace,
 			TTLSeconds:      ttl,
 			Command:         command,
-		}, false)
+		})
 	})
 }

@@ -171,8 +171,8 @@ func (a *App) servingCertificate() (*x509.Certificate, error) {
 // Tolerant of a missing namespace, and deliberately so: `kmx plane` can be
 // run against a cluster where kagent is not installed yet, and refusing the
 // whole deploy over the absence of the thing that will be told to trust it
-// would be the wrong end of the problem. `kmx govern` publishes it again
-// before it needs it.
+// would be the wrong end of the problem. The note below names the command
+// that publishes it once the namespace exists.
 func (a *App) publishAuthority(namespace string, certPEM []byte) error {
 	// The namespace is checked FIRST rather than inferred from a failed
 	// apply. `kubectl apply -f -` is run through a pipe, so its error
@@ -185,8 +185,9 @@ func (a *App) publishAuthority(namespace string, certPEM []byte) error {
 	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
 		if isNotFound(err) {
 			a.notef("NOTE: namespace %s does not exist yet, so nothing was told what to trust.\n"+
-				"  `kmx govern` publishes Secret %s there before it points an agent at the plane.",
-				namespace, config.PlaneCASecret)
+				"  Nothing publishes Secret %s into a namespace that does not exist. Create it, then\n"+
+				"  re-run %s.",
+				namespace, config.PlaneCASecret, authorityPublisher(namespace))
 			return nil
 		}
 		return fmt.Errorf("cannot tell whether namespace %s exists (refusing to guess): %w",
@@ -195,6 +196,22 @@ func (a *App) publishAuthority(namespace string, certPEM []byte) error {
 	body := secretManifest(config.PlaneCASecret, namespace,
 		map[string]string{config.PlaneCAKey: string(certPEM)}, nil)
 	return a.applySecretIn(namespace, body, config.PlaneCASecret)
+}
+
+// authorityPublisher names the command that publishes the plane's authority
+// into namespace, which differs BY namespace because no surviving command
+// republishes into an arbitrary one on its own.
+//
+// `kmx plane` publishes into the kagent namespace on every run, so its
+// certificate step alone repairs that case. Every other namespace is reached
+// only by the command that points a workload there at the seam — `kmx
+// migrate`, through publishPlaneAuthority — so that is what has to be re-run,
+// not the plane deploy.
+func authorityPublisher(namespace string) string {
+	if namespace == config_kagentNamespace {
+		return "`kmx plane --step certificate`"
+	}
+	return "`kmx migrate <deployment> --namespace " + namespace + " --model <provider>/<model>`"
 }
 
 // publishPlaneAuthority republishes the authority's certificate into the

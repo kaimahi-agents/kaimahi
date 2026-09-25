@@ -220,7 +220,9 @@ func (a *App) seamAddress(spec scaffold.ModelSpec) {
 	a.notef("  base URL:   %s", scaffold.SeamBaseURL(spec.Name))
 	a.notef("  the client appends %q — the one path this upstream accepts, and the only one.", spec.Path)
 	a.notef("  credential: a kmh_ token in the Authorization header, where the model API key would go.")
-	a.notef("              `kmx govern` issues one; keys never reach the client.")
+	a.notef("              `kmx credential issue <name> --secret <secret> --namespace <ns>` mints one into a")
+	a.notef("              Secret your workload reads; `kmx migrate` does the same as part of moving a")
+	a.notef("              Deployment onto the seam. Keys never reach the client.")
 	a.notef("  TLS:        the proxy serves under the plane's own authority. Its certificate is published")
 	a.notef("              as Secret %s (key %s) — a client that does not trust it will not connect.",
 		scaffold.PlaneCASecret, scaffold.PlaneCAKey)

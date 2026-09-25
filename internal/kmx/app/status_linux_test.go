@@ -102,6 +102,16 @@ esac
 				if strings.Contains(got, "attention required") == tc.wantReady {
 					t.Fatalf("wrong overall readiness: %s", got)
 				}
+				if strings.Contains(got, "kmx agent chat") {
+					// The rows above come from agents.kagent.dev in the
+					// kagent namespace. `agent chat` is Orka-only and
+					// resolves against orka-system, so it cannot reach a
+					// single one of them, ready or not.
+					t.Fatalf("status offered Orka-only chat for legacy listings: %s", got)
+				}
+				if !strings.Contains(got, "kubectl --context kind-test -n kagent get agents.kagent.dev,pods") {
+					t.Fatalf("status did not offer the inspection that works: %s", got)
+				}
 				if mode != "rich" && strings.Contains(text(), "\x1b") {
 					t.Fatal("unexpected ANSI")
 				}

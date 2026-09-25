@@ -17,12 +17,6 @@ type ChatOptions struct {
 	AzureDiscovery string
 }
 
-// Chat opens a session with an agent. It exists so callers with nothing to
-// say up front do not have to build an options value.
-func (a *App) Chat(agent, task string) error {
-	return a.ChatWithOptions(ChatOptions{Agent: agent, Task: task, Interactive: true})
-}
-
 // ChatWithOptions opens the interactive Orka session.
 //
 // Unguarded, like every other read-shaped command here. Calling it

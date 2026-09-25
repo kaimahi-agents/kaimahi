@@ -169,3 +169,39 @@ func TestACertificateFailureIsRecognisedInASeamVerdict(t *testing.T) {
 		}
 	}
 }
+
+// A missing namespace is tolerated, so the note it prints instead is the only
+// instruction an operator gets — and it has to name a command that exists and
+// publishes into THAT namespace. `kmx govern`, which the note used to name,
+// was retired with the runtime adapter; `kmx plane` republishes into the
+// kagent namespace on every run, and every other namespace is reached only by
+// the `kmx migrate` that points a workload there.
+func TestMissingNamespaceNamesTheCommandThatPublishesIntoIt(t *testing.T) {
+	for _, tc := range []struct {
+		namespace string
+		want      string
+	}{
+		{config_kagentNamespace, "`kmx plane --step certificate`"},
+		{"payments", "`kmx migrate <deployment> --namespace payments --model <provider>/<model>`"},
+	} {
+		t.Run(tc.namespace, func(t *testing.T) {
+			a := appWithKubectl(t, `case "$*" in
+*"get namespace "*) printf 'Error from server (NotFound): namespaces "%s" not found\n' "${*##* }" >&2; exit 1 ;;
+*) exit 0 ;;
+esac`)
+			if err := a.publishAuthority(tc.namespace, []byte("-----BEGIN CERTIFICATE-----\n")); err != nil {
+				t.Fatalf("an absent namespace was not tolerated: %v", err)
+			}
+			note := a.Err.(*bytes.Buffer).String()
+			if !strings.Contains(note, tc.want) {
+				t.Errorf("the note does not name the publisher %s:\n%s", tc.want, note)
+			}
+			if strings.Contains(note, "kmx govern") {
+				t.Errorf("the note still names the retired governance command:\n%s", note)
+			}
+			if !strings.Contains(note, config.PlaneCASecret) {
+				t.Errorf("the note does not say what was not published:\n%s", note)
+			}
+		})
+	}
+}

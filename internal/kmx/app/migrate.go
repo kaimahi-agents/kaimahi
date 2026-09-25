@@ -277,7 +277,7 @@ func (a *App) Migrate(opt MigrateOptions) error {
 	if err := a.session(func(client *admin.Client) error {
 		return a.issueCredential(client, opt.Credential, CredentialOptions{
 			Secret: opt.Secret, SecretNamespace: opt.Namespace, Command: "kmx migrate",
-		}, false)
+		})
 	}); err != nil {
 		// The credential is named after the Deployment unless --credential
 		// says otherwise, so a plane that already holds this name may be

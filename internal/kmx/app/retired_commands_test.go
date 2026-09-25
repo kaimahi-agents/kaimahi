@@ -98,3 +98,51 @@ func TestTheCommandReferenceDoesNotInstructARetiredCommand(t *testing.T) {
 		t.Error("docs/kmx.md still offers the retired kagent payload as a choice")
 	}
 }
+
+// The same rule for text an operator READS rather than a command they are
+// offered structurally. `operationCommand` is not the only way to name a
+// command: `kmx govern` reached operators as plain output from `models add`
+// and from the certificate publisher's missing-namespace note, neither of
+// which builds an operationCommand.
+//
+// String literals only. Comments explaining that a command WAS retired are
+// exactly what these files should say, and a whole-file search would refuse
+// the sentence that documents the retirement.
+func TestNoOperatorFacingStringNamesARetiredCommand(t *testing.T) {
+	retired := []string{"kmx govern ", "kmx govern`", "kmx govern\\n", "kmx use ", "kmx use`", "kmx agent edit"}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	scanned := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			scanned++
+			for _, dead := range retired {
+				if strings.Contains(lit.Value, dead) {
+					t.Errorf("%s: operator-facing text names the retired command %q: %s",
+						fset.Position(lit.Pos()), strings.TrimSpace(dead), lit.Value)
+				}
+			}
+			return true
+		})
+	}
+	// Negative control on the scan itself: a guard that reads nothing
+	// passes forever.
+	if scanned < 500 {
+		t.Fatalf("only %d string literals were examined — the scan is passing vacuously", scanned)
+	}
+}

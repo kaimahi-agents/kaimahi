@@ -95,8 +95,9 @@ jobs:
       # downgrade is the one this checks for, and it proves it can still
       # catch each mistake before its verdict on the tree is trusted.
       #
-      # Scope is COMMITTED model manifests. The interactive ModelConfig
-      # `kmx govern` generates is held to the same rule by its Go tests.
+      # Scope is COMMITTED model manifests, which is now all of them: the
+      # generated seam ModelConfig went with `kmx govern` and the legacy chat
+      # runtime, so nothing produces one outside this tree.
       #
       # Keyless: the committed manifests and nothing else.
       - name: Seam-TLS checker still catches every downgrade
@@ -564,14 +565,61 @@ jobs:
           # Named, not derived: a shard is on this list because its
           # conversion was reviewed. Deriving the list from the file would
           # let a shard leave it by being rewritten.
-          converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models"]
+          converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models",
+                       "e2e-quickstart"]
+          # A bare `kmx up` is no longer what installs kagent — it is the
+          # Orka runtime, which is why `e2e-quickstart` can run one and still
+          # belong here. The legacy install is now reachable only by naming
+          # it, so that is what this forbids: the three explicit steps, which
+          # the previous bare-run rule let through.
+          # `kmx agent chat` is NOT on this list. It survived the retirement
+          # as an Orka-only session against agents.core.orka.ai, so forbidding
+          # it by name would refuse a supported command and say nothing about
+          # the legacy runtime. What is forbidden is the legacy runtime
+          # itself: its install steps, its retired commands, its v1alpha2
+          # resources, and any attempt to aim a surviving command at it.
           forbidden = [
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"kmx govern\b"), "the legacy governance command repoints a kagent Agent"),
-              (re.compile(r"kmx agent chat\b"), "the legacy chat command drives a kagent Agent"),
+              (re.compile(r"kmx use\b"), "the retired preset switch selects the legacy runtime"),
+              (re.compile(r"kmx agent edit\b"), "the retired source editor edits a kagent Agent"),
+              (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
               (re.compile(r"kagent\.dev"), "a v1alpha2 resource of the legacy runtime"),
           ]
+          # Negative controls, checked before the shards are: a guard whose
+          # patterns have drifted either refuses supported commands or
+          # notices nothing, and both failures look like a passing step.
+          must_match = [
+              "kmx up --step kagent",
+              "kmx --context kind-x up --step=tools-agent",
+              "kmx govern hello-world",
+              "kmx use kagent",
+              "kmx agent edit hello-world",
+              "kmx agent chat --runtime kagent hello-world",
+              "kubectl -n kagent get agents.kagent.dev",
+          ]
+          must_not_match = [
+              "kmx agent chat --interactive --namespace orka-system hello-world-agent",
+              "kmx agent chat --interactive --runtime orka hello-world-agent",
+              "kmx agent list --namespace orka-system",
+              "kmx agent create orka-hello --namespace orka-system",
+              "kmx up",
+              "kmx migrate demo --namespace demo --model local/qwen2.5:3b",
+              "kubectl get ns kagent",
+              "kubectl get agents.core.orka.ai -n orka-system",
+          ]
+          control = []
+          for sample in must_match:
+              if not any(p.search(sample) for p, _ in forbidden):
+                  control.append(f"no pattern catches the legacy sample {sample!r}")
+          for sample in must_not_match:
+              for p, _ in forbidden:
+                  if p.search(sample):
+                      control.append(f"{p.pattern!r} refuses the supported command {sample!r}")
+          if control:
+              print("the legacy-runtime patterns are wrong:", *control, sep="\n  ")
+              sys.exit(1)
           wf = yaml.safe_load(open(".github/workflows/ci.yml"))
           problems = []
           for job in converted:
@@ -598,9 +646,9 @@ jobs:
       # instead of about the command.
       #
       # The legacy journey this job used to run — the three explicit install
-      # steps, `kmx govern`, the one-shot `kmx agent chat` and the `kmx use`
-      # preset switch — went with the commands themselves. The job must not
-      # grow them back: there is nothing left to run them against.
+      # steps, `kmx govern` and the `kmx use` preset switch — went with the
+      # commands themselves. The job must not grow them back: there is
+      # nothing left to run them against.
       - name: The clone-free journey sets up with a bare `kmx up`, and runs no retired command
         run: |
           python3 - <<'EOF'
@@ -3233,8 +3281,9 @@ jobs:
           # `--result-service-account` names the account `kmx up --step orka`
           # provisioned: create itself provisions no account and no RBAC, so
           # naming one the bring-up made is the whole point of this step.
-          # This proof is additive: the legacy kagent lane below is installed
-          # by its own named steps and still exercises govern/chat/use.
+          # There is no legacy lane left in this job to contrast it with:
+          # govern/chat/use went with the retirement, and the step above
+          # forbids reinstating any of them.
           kmx --context kind-kmx-clone-free agent create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \

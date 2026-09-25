@@ -27,9 +27,6 @@ var errCredentialNotBound = errors.New("credential exists and its Secret is not 
 // binding checks and the same 409 reconciliation, because the property being
 // protected — a token that exists exactly once — is the same in all three.
 type CredentialOptions struct {
-	// Agent, when set, annotates the Secret with the workload the token was
-	// issued for. It is provenance, not authorization.
-	Agent string
 	// Secret is the agent-side Secret the issued token is stored in.
 	Secret string
 	// SecretNamespace is where that Secret lives. It is never defaulted for
@@ -52,7 +49,7 @@ type CredentialOptions struct {
 // The token is shown EXACTLY ONCE, at issue time, and cannot be recovered.
 // That is what makes both the check before the POST and the 409 branch below
 // more than politeness.
-func (a *App) issueCredential(client *admin.Client, credential string, opt CredentialOptions, interactive bool) error {
+func (a *App) issueCredential(client *admin.Client, credential string, opt CredentialOptions) error {
 	// Whose token is in that Secret? Asked BEFORE issuing, because the
 	// answer can forbid the whole operation: issuing `demo` while the
 	// Secret holds hello-world's token would otherwise mint demo's
@@ -83,7 +80,7 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Crede
 	}
 
 	if status == http.StatusConflict {
-		return a.reconcileExistingCredential(credential, opt, interactive)
+		return a.reconcileExistingCredential(credential, opt)
 	}
 	if status != http.StatusCreated {
 		// A broken or incompatible plane could include a bearer in an error
@@ -102,18 +99,17 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Crede
 		"kaimahi.dev/credential":       credential,
 		"app.kubernetes.io/managed-by": "kmx",
 	}
-	if opt.Agent != "" {
-		annotations["kaimahi.dev/chat-agent"] = opt.Agent
-	}
 	manifest := secretManifest(opt.Secret, opt.SecretNamespace,
 		map[string]string{"api-key": token}, annotations)
 	quiet := *a.Run
 	quiet.Echo = false
-	verb := credentialSecretVerb(interactive, secretExists)
-	fmt.Fprintf(a.Err, "kubectl --context %s -n %s %s -f - # (Secret %s, from the pipe)\n",
-		a.Cfg.KubeContext, opt.SecretNamespace, verb, opt.Secret)
+	// `apply`, always. Every caller is non-interactive, and a `create` that
+	// loses to a Secret written since secretBinding read it would fail with
+	// the one-time token already minted and nowhere to put it.
+	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s, from the pipe)\n",
+		a.Cfg.KubeContext, opt.SecretNamespace, opt.Secret)
 	if err := quiet.RunStdin(manifest, "kubectl",
-		a.kubectl("-n", opt.SecretNamespace, verb, "-f", "-")...); err != nil {
+		a.kubectl("-n", opt.SecretNamespace, "apply", "-f", "-")...); err != nil {
 		return err
 	}
 	a.notef("Governed credential %q issued; Secret %s/%s created.", credential, opt.SecretNamespace, opt.Secret)
@@ -125,13 +121,6 @@ func (a *App) issueCredential(client *admin.Client, credential string, opt Crede
 			expires, credential)
 	}
 	return nil
-}
-
-func credentialSecretVerb(interactive, secretExists bool) string {
-	if interactive && !secretExists {
-		return "create"
-	}
-	return "apply"
 }
 
 // secretBinding returns whether the agent-side Secret exists and, if so, the
@@ -178,7 +167,7 @@ func (a *App) wrongCredentialError(bound, credential string, opt CredentialOptio
 
 // reconcileExistingCredential decides what an HTTP 409 means, given what the
 // agent-side Secret is bound to.
-func (a *App) reconcileExistingCredential(credential string, opt CredentialOptions, interactive bool) error {
+func (a *App) reconcileExistingCredential(credential string, opt CredentialOptions) error {
 	bound, _, err := a.secretBinding(opt)
 	if err != nil {
 		return err
@@ -188,9 +177,6 @@ func (a *App) reconcileExistingCredential(credential string, opt CredentialOptio
 		a.notef("Credential %q already issued and %s is bound to it; keeping both.", credential, opt.Secret)
 		return nil
 	case "":
-		if interactive {
-			return fmt.Errorf("credential %q already exists, but the Secret %s is not safely bound to it; refusing to delete or replace either resource", credential, opt.Secret)
-		}
 		// Wrapped so a caller that knows a SECOND reason this can happen
 		// can say so. The recovery below is right when the Secret was
 		// lost; it is dangerous when the name simply belongs to somebody

@@ -6,9 +6,11 @@ and `kmx migrate` for an existing application's **model traffic**. The Deploymen
 remains owner-managed. Installing Orka alone is not this migration; none of these
 operations silently governs application tools.
 
-The CLI also contains the existing **legacy kagent/plane implementation** pending
-the code transition. Its commands remain documented below because they run
-today, not because agent authoring has been settled. Native-Orka-only versus
+The CLI also contains the existing **legacy kagent/plane implementation**
+pending the code transition. The plane and the `kmx up --step kagent` install
+remain because they run today; the legacy kagent CLI surface does not —
+`kmx govern`, `kmx use` and `kmx agent edit` are gone, and what those steps
+leave on the cluster is operated with kubectl. Native-Orka-only versus
 kagent YAML over Orka remains open; `orka.harness.v2` is outside the direction.
 A shrinking compatibility/governance bridge is success, not a reason to rebuild
 Orka's platform in Kaimahi.
@@ -43,9 +45,9 @@ an independent signature. See [releases](releases.md) for platforms and upgrades
 
 Local kind commands need Docker or Podman. kmx uses kind and kubectl from
 PATH first, otherwise fetches pinned, checksum-verified tools; Helm is fetched
-the same way but is needed only by the explicit legacy `kmx up --step kagent`,
-and the pinned kagent CLI is cached too. Cached digests are rechecked before
-reuse. Set
+the same way but is needed only by the explicit legacy `kmx up --step kagent`.
+No kagent CLI is fetched or cached: kmx shells out to none. Cached digests are
+rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
 its source; the lift plane phase preflights Go even from a checkout.
@@ -183,9 +185,9 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
 - Redirected admin reports retain fixed-width/truncated compatibility output.
   Progress/diagnostics go to stderr. JSON/YAML, manifests, metrics, completion,
   SQL and raw chat bypass styling. Admin JSON/YAML is not implemented.
-- One-shot chat at a terminal shows answer/tools/usage; a pipe gets raw A2A task
-  bytes, as does `--json`. Unrecognized kagent output is not guessed into a task.
-  `--interactive --json` is refused.
+- Chat is a session and has no one-shot form: a non-interactive invocation is
+  refused and names the command that works, so there are no task bytes to pipe
+  and no `--json` chat output. `--interactive --json` is refused too.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
   null when none were provisioned. `governed: false` means **this invocation did
@@ -291,7 +293,7 @@ depends on.
 ## Interactive chat
 
 ```bash
-kmx agent chat --interactive hello-tools
+kmx agent chat --interactive --namespace orka-system hello-world-agent
 ```
 
 `/help`, `/agent`, `/tools`, `/lift`, `/inference`, `/inference-local`,

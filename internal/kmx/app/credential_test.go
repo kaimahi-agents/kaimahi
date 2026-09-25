@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -156,15 +160,68 @@ func issued(token string) http.HandlerFunc {
 	}
 }
 
-func TestInteractiveCredentialReplacesOnlyPrevalidatedOwnedSecret(t *testing.T) {
-	if got := credentialSecretVerb(true, false); got != "create" {
-		t.Fatalf("absent interactive Secret uses %q", got)
+// Every surviving issue path is non-interactive, so the Secret write is
+// `apply` whether or not one exists. The old `create`-when-absent arm belonged
+// to in-chat governance, and a `create` losing a race to a Secret written
+// since secretBinding read it would fail with the one-time token already
+// minted and nowhere left to put it.
+func TestCredentialIssueAppliesWhetherOrNotTheSecretExists(t *testing.T) {
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprint(exists), func(t *testing.T) {
+			if exists {
+				// Bound to the same credential, so the pre-POST check passes.
+				t.Setenv("KMX_TEST_BOUND", "hello-world")
+			}
+			f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("f", 64)))
+			if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+				t.Fatalf("issue: %v", err)
+			}
+			if !strings.Contains(f.args(), "apply -f -") {
+				t.Errorf("Secret was not applied:\n%s", f.args())
+			}
+			if strings.Contains(f.args(), "create -f -") {
+				t.Errorf("a non-interactive issue used create:\n%s", f.args())
+			}
+			if !strings.Contains(f.errOut.String(), "apply -f -") {
+				t.Errorf("the echoed command disagrees with what ran:\n%s", f.errOut.String())
+			}
+		})
 	}
-	if got := credentialSecretVerb(true, true); got != "apply" {
-		t.Fatalf("existing owned interactive Secret uses %q", got)
+}
+
+// The interactive arms are gone because nothing could reach them: both
+// callers of issueCredential are non-interactive, and an unreachable refusal
+// is a claim about behavior no test can exercise. Held here so one cannot be
+// reintroduced without a caller that needs it.
+func TestCredentialIssueHasNoInteractiveMode(t *testing.T) {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "credential.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := credentialSecretVerb(false, false); got != "apply" {
-		t.Fatalf("non-interactive issue behavior changed to %q", got)
+	found := false
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "issueCredential" {
+			return true
+		}
+		found = true
+		if got := fn.Type.Params.NumFields(); got != 3 {
+			t.Errorf("issueCredential takes %d parameter groups; an interactivity flag has no caller", got)
+		}
+		return false
+	})
+	if !found {
+		t.Fatal("issueCredential is not in credential.go")
+	}
+	body, err := os.ReadFile("credential.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dead := range []string{"credentialSecretVerb", "kaimahi.dev/chat-agent", "opt.Agent"} {
+		if strings.Contains(string(body), dead) {
+			t.Errorf("credential.go still carries %q, which no caller reaches", dead)
+		}
 	}
 }
 

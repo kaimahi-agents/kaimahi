@@ -152,9 +152,9 @@ kmx up --step tools-agent
 Those steps install the full kagent application profile, including the tool
 server and original `hello-tools` agent from
 [`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Nothing in kmx drives those
-agents any more: `kmx agent chat`, `kmx agent list`, `kmx agent edit`,
-`kmx govern` and `kmx use` were removed with the runtime adapter, so what these
-steps leave on the cluster is operated with kubectl.
+agents any more: `kmx agent edit`, `kmx govern` and `kmx use` were removed with
+the runtime adapter, and `kmx agent chat` and `kmx agent list` remain but are
+Orka-only, so what these steps leave on the cluster is operated with kubectl.
 An old gateway reference needs [explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
 Interactive `/help` lists local controls.
 
