@@ -2778,14 +2778,14 @@ jobs:
           k="$HOME/.config/kmx/path/kubectl"
           "$k" --context kind-kmx-quickstart -n orka-system patch \
             agents.core.orka.ai hello-world-agent --type merge \
-            -p '{"spec":{"description":"edited by an operator"}}'
+            -p '{"spec":{"systemPrompt":{"inline":"edited by an operator"}}}'
           if kmx quickstart > drift.out 2>&1; then
             echo "a drifted Agent was overwritten instead of refused"; cat drift.out; exit 1
           fi
           grep -q 'different configuration' drift.out
-          desc=$("$k" --context kind-kmx-quickstart -n orka-system get \
-            agents.core.orka.ai hello-world-agent -o jsonpath='{.spec.description}')
-          test "$desc" = "edited by an operator"
+          prompt=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            agents.core.orka.ai hello-world-agent -o jsonpath='{.spec.systemPrompt.inline}')
+          test "$prompt" = "edited by an operator"
           echo "the operator's edit survived the refusal"
       - name: The time did not double
         if: steps.changes.outputs.docs_only != 'true'
