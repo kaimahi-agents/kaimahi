@@ -103,6 +103,7 @@ bin/kmx up
 bin/kmx up --step kagent
 bin/kmx up --step agent
 bin/kmx plane --source .
+bin/kmx credential issue hello-world --secret kaimahi-governed-token --namespace kagent
 bin/kmx ledger hello-world
 ```
 

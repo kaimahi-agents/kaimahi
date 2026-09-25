@@ -328,10 +328,8 @@ and stop uncertain animation after resize.
 
 There is no one-shot chat transport and no retry policy left to describe: the
 legacy runtime's invoke, its connection-refused/EOF/reset retries and its
-resumable `--session` went with it. Question-only `ask_user` resampling is at
-most twice without a recorded tool response or another pending confirmation.
-Interactive `/retry` explicitly resends; that does not promise exactly-once
-execution.
+resumable `--session` went with it. Interactive `/retry` explicitly resends;
+that does not promise exactly-once execution.
 
 `kmx quickstart` is Orka and does not participate in that policy. It creates one
 Task, polls that Task's result over a single context-pinned connection, and never

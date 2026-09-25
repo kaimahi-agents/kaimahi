@@ -32,8 +32,8 @@ chat`.
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | not live-verified |
 | `azure-foundry` | Azure AI Foundry, v1 GA API (edit `baseUrl` + `model` first) | `azure-foundry-api-key` | not live-verified |
 | `openai-compatible` | any OpenAI-compatible base URL (template, edit first) | `openai-compatible-api-key` | not live-verified |
-| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (via the lift agents phase) | **yes**, live and in CI. See [spend.md](spend.md) |
-| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (via the lift agents phase), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
+| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (create with `kmx credential issue <name> --secret kaimahi-governed-token --namespace kagent`) | **yes**, live and in CI. See [spend.md](spend.md) |
+| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (create with `kmx credential issue <name> --secret kaimahi-governed-token --namespace kagent`), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
 
 "Not live-verified" means exactly that. The preset is schema-valid
 against the kagent 0.9.12 CRDs, which CI proves with a server-side
