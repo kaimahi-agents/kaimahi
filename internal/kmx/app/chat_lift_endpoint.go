@@ -39,7 +39,7 @@ func (b *orkaChatBackend) waitFoundryReady(ctx context.Context, cluster chatLift
 	args = append(args, "-o", "json", "--only-show-errors")
 	_, err := b.liftLoading(ctx, label, func(ctx context.Context) ([]byte, error) {
 		for {
-			raw, err := liftDiscovery(ctx, "az", args...)
+			raw, err := b.app.liftDiscovery(ctx, "az", args...)
 			if err != nil {
 				return nil, err
 			}
