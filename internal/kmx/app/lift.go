@@ -328,14 +328,13 @@ func (a *App) liftCommand(opt lift.Options, down bool) string {
 	cfg := *a.Cfg
 	target.Cfg = &cfg
 	target.aimAtTheCluster(opt)
-	args := []string{"lift"}
+	args := []string{"aks", "up"}
 	if down {
-		args = append(args, "down")
+		args = []string{"aks", "down"}
 	} else {
 		opt = withLiftDefaults(opt)
-		// --payload is mandatory, so a resume command without it is a
-		// command that cannot be run. Every guard and every failure prints
-		// this string for somebody to paste back.
+		// Include the selected payload so a retry preserves the platform,
+		// even if the command's default changes later.
 		if opt.Payload != "" {
 			args = append(args, "--payload", opt.Payload)
 		}
@@ -533,7 +532,7 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 	if recorded := record.PayloadOrLegacy(); recorded != opt.Payload {
 		return nil, nil, fmt.Errorf("kmx lift: %s/%s was lifted onto with --payload %s and this run says %s.\n"+
 			"  Refusing: resuming with the other payload would install both platforms on one cluster.\n"+
-			"  Re-run with --payload %s, or tear this lift down first (`kmx lift down`).",
+			"  Re-run with --payload %s, or tear this lift down first (`kmx aks down`).",
 			opt.ResourceGroup, opt.Cluster, recorded, opt.Payload, recorded)
 	}
 	if record.Payload == "" {

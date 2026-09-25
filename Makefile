@@ -56,8 +56,23 @@ export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
 GUARD_NS ?= kagent, kaimahi, ollama
 
-.PHONY: build guard model-secret copilot-secret plane-image aks-creds \
+.PHONY: build test lint docs-check guard model-secret copilot-secret plane-image aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off
+
+## test, lint, docs-check: local checks matching the keyless CI gates
+test:
+	go test ./...
+
+lint:
+	staticcheck ./...
+
+docs-check:
+	python3 scripts/check-brand-assets.py --selftest
+	python3 scripts/check-brand-assets.py
+	python3 scripts/check-doc-links.py --selftest
+	python3 scripts/check-doc-links.py
+	python3 scripts/check-readme-front-door-test.py
+	python3 scripts/check-readme-front-door.py
 
 ## build: build kmx from this checkout and print the resulting path
 build: $(KMX)

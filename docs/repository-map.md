@@ -41,7 +41,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (22 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -53,7 +53,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 76 | Installed | Command orchestration, runtime adapters, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 82 | Installed | Command orchestration, runtime adapters, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/runtime` | 1 | Installed | Platform-neutral adapter/session contracts, identities, capabilities and events. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
@@ -236,7 +236,7 @@ operating instructions for deleted code.
 **Maintainer and process (16):** `development.md`, `repository-map.md`,
 `COORDINATION.md`, `reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
-`cli-ux-plan.md`, `charm-ux-followup-plan.md`, `NAMING.md`,
+`cli-ux-plan.md`, `charm-ux-followup-plan.md`, `interactive-agent-tui-plan.md`, `NAMING.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
 `chat-performance-profile.md` and `agent-lift.md`.

@@ -54,6 +54,11 @@ func orkaEnabledToolsSummary(raw []byte) (string, error) {
 
 // Configure runs only between turns, when no task or input reader owns stdin.
 func (b *orkaChatBackend) Configure(ctx context.Context, command string, renderer *chatRenderer) (bool, error) {
+	if command == "/inference" || command == "/inference-foundry" || command == "/inference-copilot" {
+		if err := b.app.requireLocalHostInference(ctx); err != nil {
+			return false, err
+		}
+	}
 	if (command == "/inference" || command == "/inference-foundry") && (!isInteractiveTerminal(b.app.Stdin) || !isInteractiveTerminal(b.app.Out)) {
 		return false, fmt.Errorf("%s requires an interactive terminal", command)
 	}

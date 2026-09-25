@@ -75,6 +75,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx agent create [name]` | author native Provider + Agent and optional Task; retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
+| `kmx console` | two-column local/remote agent workspace with Vim/arrow navigation, agent actions, inference details and slash-command completion; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
 
 ### Existing plane and operator commands
 
@@ -112,7 +113,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart` | kind + keyless Ollama + minimal kagent + hello-world + completed answer; no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
-| `kmx lift` / `kmx lift down` | provision AKS and land a platform on it, then owned cleanup. **`--payload` is required and has no default**: `orka` lands the pinned Orka (and creates no Provider — that stays yours), `kagent` lands the legacy runtime and its demo agents on governed Copilot. Both share every cluster phase; they differ only in what runs agents. [AKS](aks.md) |
+| `kmx aks up` / `kmx aks down` | Provision AKS and land a platform on it, then clean up owned resources. `--payload` defaults to `orka` (no Provider is created); pass `--payload kagent` for the legacy runtime and its demo agents on governed Copilot. Both share cluster phases. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
