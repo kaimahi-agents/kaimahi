@@ -1448,8 +1448,24 @@ jobs:
             -o jsonpath='{.metadata.uid} {.metadata.resourceVersion}'; }
           secret_hash() { kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get secret "kaimahi-$CRED-token" \
             -o jsonpath='{.data.api-key}' | sha256sum; }
-          owner_pod() { kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get pods -l "app=$CRED" \
-            --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'; }
+          # Running alone is not enough: a pod draining after a restart
+          # stays Running (and keeps its identity) until its grace period
+          # ends, so a naive selector can still name a pod that is on its
+          # way out. Filter deletionTimestamp explicitly and fail closed
+          # unless exactly one live pod answers — the same-pod assertion
+          # below is meaningless against zero or an ambiguous set.
+          owner_pod() {
+            kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get pods -l "app=$CRED" \
+              --field-selector=status.phase=Running -o json | python3 -c '
+          import json, sys
+          names = [p["metadata"]["name"] for p in json.load(sys.stdin)["items"]
+                   if not p["metadata"].get("deletionTimestamp")]
+          if len(names) != 1:
+              print(f"expected exactly one live owner pod, found {len(names)}: {names}", file=sys.stderr)
+              sys.exit(1)
+          print(names[0])
+          '
+          }
           meta_before=$(secret_meta); hash_before=$(secret_hash); pod_before=$(owner_pod)
           test -n "$pod_before"
           # Advance the CLOCK, not the policy: the admin surface refuses
@@ -2887,12 +2903,13 @@ jobs:
           sa=system:serviceaccount:orka-system:kmx-k8s-reader
           for denied in "get secrets" "list secrets" "create pods" "delete pods" \
                         "update pods" "patch pods" "patch configmaps"; do
-            got=$(kubectl --context kind-kmx-orka auth can-i $denied --as="$sa" || true)
+            got=$(kubectl --context kind-kmx-orka auth can-i $denied -n orka-system --as="$sa" || true)
             test "$got" = no || { echo "the tool account may $denied"; exit 1; }
           done
           # The positive control: a denial list that refused everything would
-          # pass the five checks above and prove nothing.
-          kubectl --context kind-kmx-orka auth can-i list configmaps --as="$sa"
+          # pass the five checks above and prove nothing. Scoped to
+          # orka-system to match the namespace the live request above hits.
+          kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
       # Provider → Agent → Task, and a REAL answer. The prompt is
       # deterministic and the comparison is exact: "a non-empty reply" would
       # pass on an error string, and a 3B model asked an open question is
