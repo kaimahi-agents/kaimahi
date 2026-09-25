@@ -7,6 +7,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -24,7 +25,7 @@ type Registry struct {
 func NewRegistry(adapters ...Adapter) (*Registry, error) {
 	registry := &Registry{order: make([]Adapter, 0, len(adapters)), byID: make(map[ID]Adapter, len(adapters))}
 	for i, adapter := range adapters {
-		if adapter == nil {
+		if isNilAdapter(adapter) {
 			return nil, fmt.Errorf("registry: adapter at position %d is nil", i)
 		}
 		id := adapter.ID()
@@ -38,6 +39,26 @@ func NewRegistry(adapters ...Adapter) (*Registry, error) {
 		registry.order = append(registry.order, adapter)
 	}
 	return registry, nil
+}
+
+// isNilAdapter reports whether adapter is nil either as an untyped nil
+// interface or as a nil value stored inside a non-nil interface (a
+// "typed nil", e.g. a nil *SomeAdapter assigned to the Adapter interface).
+// Calling a method on such a value would either panic or, worse, silently
+// operate on a nil receiver, so registration must reject it before ever
+// invoking ID(). Only kinds that can hold a nil dynamic value are checked;
+// every other kind (e.g. a struct value) can never be nil.
+func isNilAdapter(adapter Adapter) bool {
+	if adapter == nil {
+		return true
+	}
+	value := reflect.ValueOf(adapter)
+	switch value.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // UnknownRuntimeError is Lookup's typed failure: no adapter is registered
