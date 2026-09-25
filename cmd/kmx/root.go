@@ -63,7 +63,7 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 	}
 	// Chat slash commands are separate operations; replaying the outer chat
 	// command would not repeat the mutation they are asking to confirm.
-	if cmd.Name() != "chat" && len(s.argv) > 0 {
+	if cmd.Name() != "chat" && cmd.Name() != "console" && len(s.argv) > 0 {
 		parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
 			"CRED=" + quoteShell(a.Cfg.Credential),
 			"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
@@ -115,10 +115,11 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
-		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state),
+		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
 		newPlaneCommand(state), newGovernCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newFlowCommand(state),
 		newWatchCommand(state),
+		newConsoleCommand(state),
 		newUseCommand(state),
 		newBudgetCommand(state), newModelsCommand(state), newMigrateCommand(state),
 		newOrkaCommand(state),

@@ -36,7 +36,7 @@ config:
 ---
 flowchart TB
     accTitle: Kaimahi governance architecture
-    accDescr: The kmx developer entry point provisions the cluster, scaffolds agents and deploys the governance plane, sitting outside every request path. A Kubernetes-hosted agent then reaches models and tools through Kaimahi's governed paths, and external events reach the agent through Kaimahi's governed inbound bridge, while dashed direct paths are explicitly ungoverned.
+    accDescr: The kmx developer entry point provisions the cluster, scaffolds agents and deploys the model-traffic bridge, sitting outside every request path. A Kubernetes-hosted agent then reaches models and tools through Kaimahi's governed paths, and external events reach the agent through Kaimahi's governed inbound bridge, while dashed direct paths are explicitly ungoverned.
 
     D["kmx · developer entry point<br/>provision · scaffold · govern · read<br/>not in any request path"]
     W["External event<br/>webhook"]
@@ -44,7 +44,7 @@ flowchart TB
 
     subgraph K[" "]
       direction TB
-      H["Kaimahi<br/>governance plane"]
+      H["Kaimahi<br/>model-traffic bridge"]
       P["Bounded approvals<br/>expiry and/or use count"]
       L["LLM proxy<br/>auth · budgets<br/>credential custody<br/>spend ledger"]
       T["MCP gateway<br/>request auth · allowlists<br/>upstream bounds · audit<br/>proxy-side credential custody<br/>credential injection<br/>(keyed upstreams only)"]

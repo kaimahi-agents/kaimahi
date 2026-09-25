@@ -5,6 +5,11 @@ this document is the contract between the developer experience and runtime
 implementations; it prevents platform identity, model choice, cluster location,
 and policy from collapsing into one ambiguous "provider" concept.
 
+Orka is the first-class runtime for the current create and lift workflow. It
+owns agent execution, orchestration, and platform governance. KMX owns the
+developer experience and lifecycle around it. The selected platform, not a
+generic KMX control plane, owns enforcement.
+
 ## Terms and ownership
 
 | Term | Meaning | Owner |
@@ -12,7 +17,7 @@ and policy from collapsing into one ambiguous "provider" concept.
 | **Agent** | The named intent and configuration a developer wants to run | Developer and source control |
 | **Runtime** | The platform that discovers and executes an Agent | Runtime adapter and platform |
 | **Context** | Runtime, cluster context, namespace, and Agent name; adapters may add observed kind and UID | KMX target selection and runtime discovery |
-| **Session** | A connected interaction with one resolved Agent | Runtime implementation |
+| **Session** | A connected interaction with one resolved Agent across turns | Runtime implementation |
 | **Inference provider** | The model endpoint or host strategy used for a turn | Agent/environment configuration |
 | **Lifecycle** | Create, render, deploy, inspect, evaluate, diff, and recover operations | KMX orchestration over runtime-specific operations |
 | **Enforcement** | Isolation, policy, authorization, and governance applied during execution | Selected platform and surrounding infrastructure |

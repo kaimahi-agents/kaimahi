@@ -34,14 +34,14 @@ checks.
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 46 (checkers, probes, CI fixtures, mutation specs) |
-| `docs/` | 48 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `docs/` | 49 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (20 files) | **Installed** | CLI and tests: Orka operations, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (22 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -53,7 +53,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 76 | Installed | Command orchestration, runtime adapters, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 82 | Installed | Command orchestration, runtime adapters, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/runtime` | 1 | Installed | Platform-neutral adapter/session contracts, identities, capabilities and events. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
@@ -226,7 +226,7 @@ conclusions rest on: the credential leaves by no route but the bearer
 header, an upstream refusal keeps its status, and the seam's authority is
 verified with no unverified fallback.
 
-## `docs/` — 48 tracked files, guides and retirement records
+## `docs/` — 49 tracked files, guides and retirement records
 
 **Guides and index (24):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `tools.md`, `spend.md`, `tool-governance.md`,
@@ -241,10 +241,10 @@ operating instructions for deleted code.
 
 **Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
-**Maintainer and process (15):** `development.md`, `repository-map.md`,
+**Maintainer and process (16):** `development.md`, `repository-map.md`,
 `COORDINATION.md`, `reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
-`cli-ux-plan.md`, `charm-ux-followup-plan.md`, `NAMING.md`,
+`cli-ux-plan.md`, `charm-ux-followup-plan.md`, `interactive-agent-tui-plan.md`, `NAMING.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md` and `chat-performance-profile.md`.
 

@@ -9,8 +9,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
-// newLiftCommand is the managed-cluster path: the same agent you just ran
-// locally, running on AKS, with Azure-managed monitoring already wired.
+// newLiftCommand retains the original managed-cluster entry point. Both it
+// and aks up use the same provisioning implementation and run records.
 //
 // It is a sibling of `quickstart` rather than a flag on `up`, because it is a
 // different journey with different consequences. `up` builds a local cluster
@@ -25,15 +25,29 @@ import (
 // a cluster happens to be there: the two have opposite teardown rules, and a
 // typo in a cluster name must not be what decides which of them applies.
 func newLiftCommand(state *commandState) *cobra.Command {
+	cmd := newManagedUpCommand(state, "lift", "", "required, and never defaulted")
+	cmd.Deprecated = "use kmx aks up instead"
+	cmd.AddCommand(newManagedDownCommand(state, true))
+	return cmd
+}
+
+func newAKSCommand(state *commandState) *cobra.Command {
+	cmd := &cobra.Command{Use: "aks", Short: "Provision and remove an AKS target", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	cmd.AddCommand(newManagedUpCommand(state, "up", lift.PayloadOrka, "default: orka"), newManagedDownCommand(state, false))
+	return cmd
+}
+
+func newManagedUpCommand(state *commandState, name, payloadDefault, payloadHelp string) *cobra.Command {
 	var opt lift.Options
 	cmd := &cobra.Command{
-		Use:   "lift",
-		Short: "Run the same agent on AKS, with Azure-managed observability",
+		Use:   name,
+		Short: "Provision AKS with Azure-managed observability",
 		Args:  cobra.NoArgs,
 	}
 	registerLiftIdentityFlags(cmd, &opt)
-	cmd.Flags().StringVar(&opt.Payload, "payload", "",
-		strings.Join(lift.Payloads, "|")+" — what lands on the cluster; required, and never defaulted")
+	cmd.Flags().StringVar(&opt.Payload, "payload", payloadDefault,
+		strings.Join(lift.Payloads, "|")+" — what lands on the cluster; "+payloadHelp)
 	cmd.Flags().StringVar(&opt.Location, "location", "", "Azure region (default "+app.DefaultLocation+")")
 	cmd.Flags().StringVar(&opt.NodeSize, "node-size", "", "node VM size (default "+app.DefaultNodeSize+")")
 	cmd.Flags().IntVar(&opt.NodeCount, "node-count", 0, "how many nodes (default 1)")
@@ -54,21 +68,23 @@ func newLiftCommand(state *commandState) *cobra.Command {
 		return a.Lift(opt)
 	})
 
-	cmd.AddCommand(newLiftDownCommand(state))
 	return cmd
 }
 
-// newLiftDownCommand removes what the lift created — and what that means
+// newManagedDownCommand removes what the provisioner created — and what that means
 // depends entirely on which branch created it, which is why `--byo` is
 // required here too rather than remembered silently. The run record says
 // which branch it was, and a mismatch is refused rather than reconciled: the
 // two have opposite rules about the cluster and its resource group.
-func newLiftDownCommand(state *commandState) *cobra.Command {
+func newManagedDownCommand(state *commandState, deprecated bool) *cobra.Command {
 	var opt lift.Options
 	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Remove what the lift created (and on a cluster you own, only that)",
 		Args:  cobra.NoArgs,
+	}
+	if deprecated {
+		cmd.Deprecated = "use kmx aks down instead"
 	}
 	registerLiftIdentityFlags(cmd, &opt)
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.LiftDown(opt) })
