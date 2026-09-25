@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -134,6 +135,82 @@ func TestParsePortableAgentRefusesBase64TaggedCredentialShapes(t *testing.T) {
 			encoded := base64.StdEncoding.EncodeToString([]byte(shape.Example))
 			doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
 				"  instructions: !!binary "+encoded+"\n")
+			if secretshapes.Match(doc) != nil {
+				t.Skip("the raw bytes still carry the shape; proves nothing here")
+			}
+			_, err := ParsePortableAgent([]byte(doc))
+			assertRefusedWithoutEcho(t, err, shape.Example)
+		})
+	}
+}
+
+// A mapping KEY can spell a credential the authored bytes do not contain:
+// "\x67hp_..." is nothing in the file and a token once decoded. Keys are
+// exactly where that matters, because the gates that refuse a key name it —
+// the duplicate/merge/alias walk quotes the key and the path it sits at,
+// and the strict decoder's "field X not found" quotes the unknown field —
+// and a key is never a value the closed schema models, so the scan over the
+// decoded struct cannot see one. The scan therefore also runs over every
+// decoded scalar node, before either gate.
+func TestParsePortableAgentRefusesCredentialShapedKeysAssembledAtDecodeTime(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func(*testing.T, string) string
+	}{
+		{"an unknown field", func(t *testing.T, key string) string {
+			return mustReplace(t, minimalPortableYAML, "kind: PortableAgent\n", "kind: PortableAgent\n"+key+": true\n")
+		}},
+		{"a duplicate key", func(t *testing.T, key string) string {
+			return mustReplace(t, minimalPortableYAML, "  name: hello\n",
+				"  name: hello\n  "+key+": one\n  "+key+": two\n")
+		}},
+		{"the path a refused key is named at", func(t *testing.T, key string) string {
+			return mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
+				"  instructions: Do the thing.\n  "+key+":\n    <<: &base\n      a: b\n")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proven := 0
+			for _, shape := range secretshapes.All() {
+				// Only a shape that survives double quoting unescaped can
+				// be written as a key this way.
+				if shape.Example == "" || shape.Example[0] >= 0x80 || strings.ContainsAny(shape.Example, "\"\\\n") {
+					continue
+				}
+				doc := tc.build(t, escapedPortableKey(shape.Example))
+				if secretshapes.Match(doc) != nil {
+					continue // The raw bytes still carry it; proves nothing here.
+				}
+				proven++
+				t.Run(shape.Name, func(t *testing.T) {
+					_, err := ParsePortableAgent([]byte(doc))
+					assertRefusedWithoutEcho(t, err, shape.Example)
+				})
+			}
+			if proven == 0 {
+				t.Fatal("no declared shape could be hidden from the raw scan; this gate is unproven")
+			}
+		})
+	}
+}
+
+// escapedPortableKey renders value as a double-quoted YAML key whose first
+// byte is written as a \xNN escape, so the authored bytes carry no shape and
+// the decoder assembles one. The credential is never written here: it comes
+// from secretshapes.All(), which joins it from parts at run time.
+func escapedPortableKey(value string) string {
+	return fmt.Sprintf("\"\\x%02x%s\"", value[0], value[1:])
+}
+
+// The same argument for a "!!binary" key: the raw scan sees base64, and the
+// strict decoder resolves the payload before naming the field it did not
+// find.
+func TestParsePortableAgentRefusesBase64TaggedCredentialShapedKeys(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			encoded := base64.StdEncoding.EncodeToString([]byte(shape.Example))
+			doc := mustReplace(t, minimalPortableYAML, "kind: PortableAgent\n",
+				"kind: PortableAgent\n!!binary "+encoded+": true\n")
 			if secretshapes.Match(doc) != nil {
 				t.Skip("the raw bytes still carry the shape; proves nothing here")
 			}

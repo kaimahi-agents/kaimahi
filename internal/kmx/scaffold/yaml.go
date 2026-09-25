@@ -22,15 +22,43 @@ import (
 // (CWE-74, found in review on #16: an unquoted tool name containing a
 // newline closed the sequence and appended a tool nobody had reviewed.)
 
+// ValidateSingleLineText states the control-character policy a value rendered
+// as a single-line YAML scalar is held to, without rendering anything. It is
+// exported so that a caller which only decides whether text is acceptable —
+// the portable authoring document, which validates before any renderer is
+// chosen — holds it to exactly the rule quote enforces, rather than to a
+// second copy of it that could drift into accepting what rendering rejects.
+//
+// The error never quotes the value, because a caller refusing operator text
+// may be about to print it and the value may be the thing worth hiding.
+func ValidateSingleLineText(value string) error {
+	for _, r := range value {
+		if r == '\n' || r == '\r' || (r < 0x20 && r != '\t') || r == 0x7f {
+			return fmt.Errorf("must not contain line breaks or other control characters")
+		}
+	}
+	return nil
+}
+
+// ValidateBlockText is ValidateSingleLineText for text rendered as a literal
+// block scalar, which is the one place multi-line text is expressible: line
+// breaks and tabs are content, every other control character is refused.
+func ValidateBlockText(value string) error {
+	for _, r := range value {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			return fmt.Errorf("must not contain control characters")
+		}
+	}
+	return nil
+}
+
 // quote renders a scalar as a double-quoted YAML string. A value that
 // contains a newline or any other control character is refused: nothing in
 // an Agent's names, namespaces or tool lists legitimately spans lines, so a
 // value that does is either a mistake or an attempt to inject one.
 func quote(value string) (string, error) {
-	for _, r := range value {
-		if r == '\n' || r == '\r' || (r < 0x20 && r != '\t') || r == 0x7f {
-			return "", fmt.Errorf("refusing to emit %q: a single-line YAML value may not contain control characters", value)
-		}
+	if err := ValidateSingleLineText(value); err != nil {
+		return "", fmt.Errorf("refusing to emit %q: a single-line YAML value may not contain control characters", value)
 	}
 	var b strings.Builder
 	b.WriteByte('"')
@@ -81,10 +109,8 @@ func literalBlock(key, value string, keyIndent, contentIndent int) (string, erro
 // spaces cannot change the block's shape, and a line that is entirely empty is
 // emitted empty rather than as indentation.
 func blockScalar(value string, indent int) (string, error) {
-	for _, r := range value {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
-			return "", fmt.Errorf("refusing to emit a block scalar containing control characters")
-		}
+	if err := ValidateBlockText(value); err != nil {
+		return "", fmt.Errorf("refusing to emit a block scalar containing control characters")
 	}
 	pad := strings.Repeat(" ", indent)
 	var b strings.Builder
