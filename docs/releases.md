@@ -92,19 +92,19 @@ fail-closed verification. `install.sh` picks whichever of `sha256sum`,
 `shasum` and `openssl` the machine has, and refuses to install if it finds
 none.
 
-Do not skip the digest check. This project verifies the pinned kagent CLI's
-digest before it will execute it, and now kind's, kubectl's and Helm's too
+Do not skip the digest check. The installer verifies the kmx binary before
+execution, and kmx independently verifies its pinned kind and kubectl downloads
 ([internal/kmx/toolchain](../internal/kmx/toolchain)); applying less care to
 its own binary would be indefensible.
 
 **Platforms**: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
 kmx drives a Linux container runtime, so the machine running it is a Linux
-host or a Mac running one in a VM — and those are the same four platforms the
-pinned kagent CLI publishes, which kmx downloads for the same machine.
-Windows is served through WSL, which is `linux/amd64`; a native
+host or a Mac running one in a VM. Those are the four release platforms the
+installer and pinned toolchain support. Windows is served through WSL, which
+is `linux/amd64`; a native
 `windows/amd64` build would be an untested claim rather than a platform.
 
-**Go is still a prerequisite for the governed half.** `kmx up`, `kmx agent`,
+**Go is still a prerequisite for the plane.** `kmx up`, `kmx agent`,
 `kmx status` and the operator verbs work from a downloaded binary alone.
 `kmx plane` builds the plane's image on your machine and uses `go install` to
 do it — see [below](#why-no-published-image-yet).

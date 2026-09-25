@@ -211,12 +211,9 @@ named nodes and checks API/DNS. kmx supplies
 
 - Target selection and confirmation are explicit: [where commands land](kmx.md#where-the-command-will-land).
   Use your own cluster name; do not share the default across development lanes.
-- The legacy model is small and tool-capable, not a guarantee of reliable prose.
-  Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
+- The bundled local model is small and tool-capable, not a guarantee of reliable
+  prose. Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
-- The legacy pin is kagent 0.9.12. Its default Python runtime is used. The
-  recorded Go-runtime image gap required `controller.agentImage.registry=ghcr.io`
-  in `k8s/kagent-values.yaml`; this is version-scoped, not a current upstream survey.
 - `kmx down` deletes the whole local cluster, **including Postgres/ledger**.
   Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
 

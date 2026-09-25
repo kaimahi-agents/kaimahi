@@ -57,13 +57,13 @@ packages.
 | `kmx/app` | 77 | Installed | Command orchestration, the Orka runtime adapter, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/runtime` | 5 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests and registry. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
-| `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
+| `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
 | `kmx/orkaschema/fixtures/v0.1.3` | 3 | Installed | Embedded release Agent/Provider/Task CRDs for offline validation, not installation. |
 | `kmx/orkaschema/fixtures/main` | 3 | Installed | Immutable main-snapshot CRDs, not a runtime support claim. |
 | `kmx/guard` | 2 | Installed | Context-safety checks and read-only target resolution. |
 | `kmx/seamcert` | 1 | Installed | Model-seam authority and serving certificates. |
-| `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
+| `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind and kubectl downloads. |
 | `kmx/planebuild` | 1 | Installed | Separate plane-module image build/fetch. |
 | `kmx/lift` | 2 | Installed | Cloud-independent lift rules. |
 | `kmx/config` | 1 | Installed | Settings resolution. |
