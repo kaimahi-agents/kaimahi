@@ -84,7 +84,7 @@ func newUpCommand(state *commandState) *cobra.Command {
 
 func newPlaneCommand(state *commandState) *cobra.Command {
 	var opt app.PlaneOptions
-	cmd := &cobra.Command{Use: "plane", Short: "Deploy the Kaimahi governance plane", Args: cobra.NoArgs}
+	cmd := &cobra.Command{Use: "plane", Short: "Deploy the Kaimahi model-traffic bridge", Args: cobra.NoArgs}
 	cmd.Flags().StringVar(&opt.Step, "step", "", "run one step only: "+strings.Join(app.PlaneSteps, ", "))
 	cmd.Flags().StringVar(&opt.Source, "source", "", "build from this checkout ('-' forces module fetch)")
 	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.PlaneSteps))

@@ -76,24 +76,9 @@ build. From a checkout, `make` builds `bin/kmx` without provisioning anything.
 
 ## Runtime Contract
 
-[Orka](https://github.com/orka-agents/orka) is the first-class runtime
-implementation for the current create and lift workflow. It owns agent execution,
-orchestration, and platform governance; KMX owns the developer experience and
-lifecycle around it.
-
-The [runtime contract](docs/runtime-adapters.md) separates the concepts that must
-not be conflated:
-
-- **Runtime:** the platform that executes an agent.
-- **Context:** the exact cluster, namespace, and agent identity being addressed.
-- **Session:** connection, turns, events, commands, and advertised capabilities.
-- **Inference provider:** how the agent reaches a model, independent of runtime.
-- **Lifecycle:** create, deploy, inspect, evaluate, diff, and recover operations.
-- **Enforcement:** policy and governance owned by the selected platform, not by a
-  generic KMX control plane.
-
-The shared adapter implemented today is a chat/session boundary. A universal
-agent CRUD, manifest conversion, lifecycle, or enforcement API is not implied.
+[Orka](https://github.com/orka-agents/orka) is the first-class runtime. The
+selected runtime owns execution and enforcement. Read the [runtime adapter
+contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 
 ## Current Commands
 
@@ -104,7 +89,7 @@ agent CRUD, manifest conversion, lifecycle, or enforcement API is not implied.
 | Prove an answer | Interactive chat or `kmx agent create --task ...` | Readiness alone is not execution proof |
 | Lift an agent | `/lift` in interactive chat | Uses a live agent and an existing destination |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Runtime and namespace semantics remain explicit |
-| Provision an AKS target | `kmx lift --payload orka` | Transitional, billable platform workflow; does not create the agent |
+| Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
 `kmx agent create` writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation

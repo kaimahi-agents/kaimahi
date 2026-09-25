@@ -31,7 +31,7 @@ var (
 	// it for a managed cluster. The first answer does not (the fast path
 	// is ungoverned by design). Fetching it is the obvious next
 	// prerequisite to kill, and it is not killed yet.
-	depGo = dependency{"go", "to fetch and build the governance plane", "https://go.dev/dl/", []string{"version"}, false}
+	depGo = dependency{"go", "to fetch and build the model-traffic bridge", "https://go.dev/dl/", []string{"version"}, false}
 )
 
 func (a *App) engineDependency() dependency {

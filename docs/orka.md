@@ -217,7 +217,7 @@ MCP translation, application image deployment or governance is added here.
 
 ```console
 $ kmx up                                    # a cluster, a model, an agent runtime
-$ kmx plane                                 # the governance plane
+$ kmx plane                                 # the model-traffic bridge
 $ kmx orka install                          # Orka, and a Provider with no key
 $ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 ```
