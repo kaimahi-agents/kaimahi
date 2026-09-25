@@ -2351,8 +2351,10 @@ jobs:
           patched = post_patch["spec"]["template"]["spec"]
           for field in ("image", "command", "envFrom"):
             assert original["containers"][0][field] == patched["containers"][0][field], field
-          assert original["volumes"][0] == patched["volumes"][0], "owner source ConfigMap"
-          assert original["containers"][0]["volumeMounts"][0] == patched["containers"][0]["volumeMounts"][0], "owner source mount"
+          source_volume = lambda pod: next(v for v in pod["volumes"] if v["name"] == "src")
+          source_mount = lambda pod: next(m for m in pod["containers"][0]["volumeMounts"] if m["name"] == "src")
+          assert source_volume(original) == source_volume(patched), "owner source ConfigMap"
+          assert source_mount(original) == source_mount(patched), "owner source mount"
           print(f"the owner's patch repointed uid {post_patch['uid']} at the seam")
           EOF
           python3 -c 'import json; before=json.load(open("owner-after.json")); post_patch=json.load(open("owner-post-patch.json")); assert post_patch["generation"] > before["generation"], (post_patch["generation"], before["generation"])'
