@@ -27,6 +27,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -345,7 +346,7 @@ func orkaReviewDocuments(artifact, deploy [][]byte) [][]byte {
 	for _, doc := range artifact {
 		matched := false
 		for i, candidate := range remaining {
-			if string(candidate) == string(doc) {
+			if bytes.Equal(candidate, doc) {
 				remaining = append(remaining[:i], remaining[i+1:]...)
 				matched = true
 				break
