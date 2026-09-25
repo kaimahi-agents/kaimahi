@@ -114,7 +114,8 @@ replacement is applied. Different specifications and terminating resources are
 reported as conflicts. Ordinary `agent create` retains its strict collision policy.
 The operation
 does not create AKS clusters or install the legacy kagent/plane lift stack.
-The standalone `kmx lift` remains that separate provisioning workflow.
+`kmx aks up` is the separate provisioning workflow. The deprecated `kmx lift`
+still works and requires `--payload`.
 
 After success chat connects to the lifted Agent on the destination, resets retry
 history and uses its remote Provider. The source location is also saved, so

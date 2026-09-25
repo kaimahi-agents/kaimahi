@@ -73,6 +73,7 @@ listener inventory, Orka architecture or the project's future shape.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
+- [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
 - [Naming](NAMING.md): the name and publication constraints.
 
 ## Assessments that inform current work

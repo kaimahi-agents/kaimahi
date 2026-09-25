@@ -226,7 +226,7 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command is not shell-safe: %s: %v", command, err)
 	}
-	want := []string{"--context", opt.Cluster, "lift", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
+	want := []string{"--context", opt.Cluster, "aks", "up", "--payload", opt.Payload, "--step", opt.Step, "--observability=false",
 		"--location", opt.Location, "--node-size", opt.NodeSize, "--network-policy", opt.NetworkPolicy,
 		"--node-count", "3", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
 	if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
@@ -286,7 +286,7 @@ func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
 			opt := lift.Options{Payload: payload, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
 			a.aimAtTheCluster(opt)
 			a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
-			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx lift down --byo --byo"} {
+			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx aks down --byo --byo"} {
 				if strings.Contains(out.String(), claim) {
 					t.Errorf("%s: disabled observability claimed %q: %s", payload, claim, out)
 				}

@@ -15,7 +15,7 @@ chat`.
 
 > **A plain hosted preset is a live credit card.** Switching to one
 > sends every conversation to a billed API with no budget, metering, or
-> ledger in front of it. Kaimahi's governance plane puts exactly that in
+> ledger in front of it. Kaimahi's model-traffic bridge puts exactly that in
 > front of it: budgets that fail closed, a ledger of every call, and the
 > real key held away from the agent. That is [spend.md](spend.md), and
 > the `governed-*` presets below are its entry point. Either accept the

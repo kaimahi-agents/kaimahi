@@ -324,7 +324,7 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
 			a.operationCommand("ledger", a.Cfg.Credential), a.operationCommand("flow"))
 	}
 	if opt.Observability {
-		fmt.Fprintf(a.Err, `  The dashboard is the workbook named "Kaimahi governance plane (%s)" in
+		fmt.Fprintf(a.Err, `  The dashboard is the workbook named "Kaimahi model-traffic bridge (%s)" in
   the %s resource group, under Monitoring > Workbooks on the cluster.
 
   What it shows is what crossed the plane: what was allowed, what was
@@ -352,7 +352,7 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
 
   It deletes only resources whose recorded id still names them, and leaves
   anything it cannot prove is its own, saying which. It does not remove the
-  agents or governance plane from your cluster.
+  agents or model-traffic bridge from your cluster.
 
 `, shellArg(opt.Cluster), a.liftCommand(opt, true))
 		return
