@@ -13,7 +13,7 @@ slash command described in [`interactive-lift.md`](interactive-lift.md).
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) requires this section.
 
 **Not configuration.** `/lift` is reachable only from inside a chat session and
-refuses a non-terminal outright: `chat_orka_controls.go:81-83` returns
+refuses a non-terminal outright: `chat_orka_controls.go:85-88` returns
 `/lift requires an interactive terminal`. There is no flag, env var or file
 that turns the existing flow into a scriptable one.
 
@@ -176,12 +176,12 @@ a separate verb is [open](#open-questions).
 
 | Decision in `/lift` | Where asked | Flag |
 |---|---|---|
-| Target source, then context or subscription+cluster | `chat_lift.go:88,103,124,144` | `--to-context` XOR `--subscription`+`--resource-group`+`--cluster` |
+| Target source, then context or subscription+cluster | `chat_lift.go:89,104,125,145` | `--to-context` XOR `--subscription`+`--resource-group`+`--cluster` |
 | Orka CRDs missing — install? | `chat_lift_prerequisites.go:55` | `--install-orka`, else refuse |
 | Orka controller unavailable — repair? | `chat_lift_prerequisites.go:75` | `--install-orka`, else refuse |
 | Which inference | `chat_lift_prerequisites.go:136` | `--inference`, **required** |
 | Kubernetes tool missing — install? | `chat_lift_prerequisites.go:170` | `--install-k8s-tool`, else refuse |
-| Final deployment review | `chat_lift.go:259-262` | `--plan`, then re-run without it |
+| Final deployment review | `chat_lift.go:260-263` | `--plan`, then re-run without it |
 | Retry after failure | `chat_lift_deploy.go:60-63` | re-run the command |
 
 `--inference` has **no default**, for the reason `--payload` has none. Keeping
@@ -199,7 +199,7 @@ refuses. `--to-namespace` continues to select where the Agent itself deploys.
 
 ### The guard is not bypassed
 
-`/lift` sets `worker.guarded = true` (`chat_lift.go:240`), which suppresses
+`/lift` sets `worker.guarded = true` (`chat_lift.go:241`), which suppresses
 `guardOrkaCreate` (`orka_create_online.go:60-88`). That is correct there: the
 operator selected the destination from a list of live clusters, saw it in the
 header, and confirmed a review pane naming it.
