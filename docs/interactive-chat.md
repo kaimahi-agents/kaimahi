@@ -24,7 +24,7 @@ are reported rather than silently connecting to a different runtime.
 If no Orka Agent matches, the command says so. There is nothing left to fall
 back to: the legacy runtime's route, its resumable sessions, its A2A approval flow
 and its in-chat preset governance were removed with the runtime, and
-A `--runtime` naming it is now refused by name rather than resolved to Orka. Those
+a `--runtime` naming it is now refused by name rather than resolved to Orka. Those
 runtime-specific semantics are not implemented by the Orka Task API.
 
 An optional message after the Agent name is sent once before the interactive

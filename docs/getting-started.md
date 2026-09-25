@@ -10,7 +10,7 @@ gateway is retired.
 The local quickstart below is the **supported Orka first-answer path**: it
 ends with a native Orka Agent answering a question. It is now the only
 first-answer path kmx has: the three legacy install steps
-installers have been removed, and naming one is an unknown step. A cluster
+have been removed, and naming one is an unknown step. A cluster
 that still runs the legacy runtime is operated with kubectl.
 `orka.harness.v2` is outside the direction.
 
