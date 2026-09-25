@@ -147,12 +147,20 @@ case ":$PATH:" in
     ;;
 esac
 
-"$BIN_DIR/kmx" version >&2 || true
-
+# Everything below this point is the END of an install that is not going
+# anywhere else. --quickstart is: it hands the shell to `kmx quickstart`
+# before any of it runs. That ordering is load-bearing rather than tidy —
+# `kmx version` names the pinned kagent release, and the supported
+# first-answer path installs no kagent, so printing it here put the legacy
+# runtime into the transcript of a path that never touches it.
 if [ "$RUN_QUICKSTART" = yes ]; then
   say ""
   exec "$BIN_DIR/kmx" quickstart
 fi
+
+# A plain install reports which build landed; there is nothing after it to
+# confuse the line with.
+"$BIN_DIR/kmx" version >&2 || true
 
 say ""
 say "Next:  kmx quickstart      # a cluster and an agent that answers a question"

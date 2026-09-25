@@ -88,7 +88,16 @@ func (a *App) Up(step string) error {
 		action, command = "run the '"+step+"' step", "kmx up --step "+step
 	}
 	guard := a.Guard
-	if step == "" || step == "cluster" {
+	switch step {
+	case "":
+		// A bare run is the Orka runtime and nothing else, so its banner
+		// names the two namespaces it writes to. An explicitly requested
+		// legacy step keeps the wider list, because that step really does
+		// land in kagent and kaimahi.
+		guard = func(action, command string) error {
+			return a.GuardCreateIn(action, command, OrkaPathNamespaces)
+		}
+	case "cluster":
 		guard = a.GuardCreate
 	}
 	if err := guard(action, command); err != nil {

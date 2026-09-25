@@ -120,7 +120,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		toolchain.Report(a.Err, a.provisioned)
 	}
 
-	if err := a.GuardCreate("create a local cluster and a first agent", "kmx quickstart"); err != nil {
+	if err := a.GuardCreateIn("create a local cluster and a first agent", "kmx quickstart", OrkaPathNamespaces); err != nil {
 		return err
 	}
 

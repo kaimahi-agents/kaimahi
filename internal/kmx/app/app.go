@@ -193,13 +193,22 @@ func (a *App) requireExistingContext() error {
 // local kind cluster without explicit confirmation. It runs at most once per
 // process.
 func (a *App) Guard(action, command string) error {
-	return a.guardWith(action, command, false, false)
+	return a.guardWith(action, command, config.GuardNamespaces, false, false)
 }
 
 // GuardCreate is Guard for bring-up commands that create or repair their
 // exact kind context before performing cluster work.
 func (a *App) GuardCreate(action, command string) error {
-	return a.guardWith(action, command, false, true)
+	return a.guardWith(action, command, config.GuardNamespaces, false, true)
+}
+
+// GuardCreateIn is GuardCreate for a caller that knows exactly which
+// namespaces it writes to, and so can say so instead of printing the whole
+// legacy list. The banner's claim is where the action lands; naming
+// namespaces the command never touches weakens it, and on the Orka path it
+// advertises a runtime that path does not install.
+func (a *App) GuardCreateIn(action, command, namespaces string) error {
+	return a.guardWith(action, command, namespaces, false, true)
 }
 
 // GuardKnown is Guard for an action that must not take the "about to be
@@ -207,10 +216,10 @@ func (a *App) GuardCreate(action, command string) error {
 // or the operator confirms it by name. `kmx down` is the caller — see the
 // reasoning there and on guard.Request.MustBeKnown.
 func (a *App) GuardKnown(action, command string) error {
-	return a.guardWith(action, command, true, false)
+	return a.guardWith(action, command, config.GuardNamespaces, true, false)
 }
 
-func (a *App) guardWith(action, command string, mustBeKnown, createsContext bool) error {
+func (a *App) guardWith(action, command, namespaces string, mustBeKnown, createsContext bool) error {
 	if a.guarded {
 		return nil
 	}
@@ -225,7 +234,7 @@ func (a *App) guardWith(action, command string, mustBeKnown, createsContext bool
 		Action:         action,
 		Context:        a.Cfg.KubeContext,
 		Source:         a.Cfg.ContextSource,
-		Namespaces:     config.GuardNamespaces,
+		Namespaces:     namespaces,
 		Confirm:        a.Cfg.Confirm,
 		Command:        command,
 		MustBeKnown:    mustBeKnown,

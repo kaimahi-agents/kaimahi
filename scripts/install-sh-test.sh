@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Hermetic tests for install.sh — the one command a new machine runs.
+#
+# No network and no release: the download is served from a directory this
+# script builds, through KMX_DOWNLOAD_BASE (the same hook CI uses to prove
+# the install path against the binary a pull request just built), and the
+# "kmx" it installs is a shell script that records how it was called.
+#
+# What that records is the point. `--quickstart` is the supported first
+# answer and it is Orka-only, so nothing on it may print the legacy runtime;
+# `kmx version` names the pinned kagent release, which put "kagent" into the
+# transcript CI greps before quickstart had even started. The recorded
+# argv is the evidence for both the ordering and the absence.
+#
+# Run:  bash scripts/install-sh-test.sh
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")/.." && pwd)
+installer="$here/install.sh"
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+
+os=$(uname -s)
+case "$os" in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+  *) echo "SKIP: install.sh does not support $os"; exit 0 ;;
+esac
+arch=$(uname -m)
+case "$arch" in
+  x86_64|amd64) arch=amd64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) echo "SKIP: install.sh does not support $arch"; exit 0 ;;
+esac
+
+# The "release": a fake kmx that appends its argv to $KMX_CALLS, plus the
+# checksums.txt install.sh verifies it against. Anything that changes the
+# binary changes the digest, so the fixture cannot drift from the check.
+release="$workdir/release"
+mkdir -p "$release"
+cat > "$release/kmx-$os-$arch" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$KMX_CALLS"
+exit 0
+FAKE
+chmod 0755 "$release/kmx-$os-$arch"
+( cd "$release" && { sha256sum "kmx-$os-$arch" 2>/dev/null \
+    || shasum -a 256 "kmx-$os-$arch"; } > checksums.txt )
+
+fails=0
+# install <label> [args...] -> records the argv of every kmx the run invoked
+# into $workdir/calls, and the run's own output into $workdir/out.
+install_run() {
+  local label=$1
+  shift
+  local rc=0
+  : > "$workdir/calls"
+  KMX_CALLS="$workdir/calls" KMX_DOWNLOAD_BASE="file://$release" \
+    KMX_BIN_DIR="$workdir/bin" \
+    sh "$installer" "$@" >"$workdir/out" 2>&1 </dev/null || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fails=$((fails + 1))
+    echo "FAIL [$label]: install.sh exited $rc"
+    sed 's/^/    | /' "$workdir/out"
+    return 1
+  fi
+  return 0
+}
+
+check() {
+  local label=$1 condition=$2
+  if [ "$condition" = ok ]; then
+    echo "ok   [$label]"
+  else
+    fails=$((fails + 1))
+    echo "FAIL [$label]"
+    echo "    | kmx was called as:"
+    sed 's/^/    |   kmx /' "$workdir/calls"
+  fi
+}
+
+# --quickstart: quickstart is the ONLY thing this path runs kmx for. A
+# `kmx version` here prints the pinned kagent release into the transcript of
+# a path that installs no kagent.
+if install_run "--quickstart installs and runs quickstart" --quickstart; then
+  first=$(head -n 1 "$workdir/calls")
+  check "quickstart is the first thing kmx is asked to do" \
+    "$([ "$first" = quickstart ] && echo ok || echo no)"
+  check "the quickstart path never runs 'kmx version'" \
+    "$(grep -q '^version' "$workdir/calls" && echo no || echo ok)"
+  check "the quickstart path says nothing about the legacy runtime" \
+    "$(grep -qi kagent "$workdir/out" && echo no || echo ok)"
+fi
+
+# A plain install still reports what it installed: that line is how an
+# operator learns which build landed, and it is not on the Orka path.
+if install_run "plain install still prints the version"; then
+  check "a plain install runs 'kmx version'" \
+    "$(grep -q '^version' "$workdir/calls" && echo ok || echo no)"
+  check "a plain install runs no quickstart" \
+    "$(grep -q '^quickstart' "$workdir/calls" && echo no || echo ok)"
+fi
+
+if [ "$fails" -ne 0 ]; then
+  echo "install.sh: $fails check(s) failed" >&2
+  exit 1
+fi
+echo "install.sh: all checks passed"

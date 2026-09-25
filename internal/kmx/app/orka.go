@@ -52,6 +52,15 @@ const (
 	// configurable there: the manifest hard-codes it in 77 documents.
 	OrkaNamespace = "orka-system"
 
+	// OrkaPathNamespaces is the guard banner's namespace list for the
+	// supported Orka path: the model server and the Orka runtime, which are
+	// the only two namespaces `kmx quickstart`, the wizard and a bare
+	// `kmx up` write to. config.GuardNamespaces is the wider legacy list and
+	// stays with the commands that still land in kagent and kaimahi — a
+	// banner naming a namespace the command never touches is the guard
+	// describing somebody else's command.
+	OrkaPathNamespaces = "ollama, " + OrkaNamespace
+
 	// orkaWrapperSecret is the Secret their getting-started tells an
 	// operator to create with `openssl rand -hex 32` before applying.
 	orkaWrapperSecret = "harness-wrapper-auth"

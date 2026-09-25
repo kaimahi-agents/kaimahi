@@ -227,6 +227,15 @@ jobs:
       # different context are all refused.
       - name: Context guard fails closed
         run: bash scripts/kube-guard-test.sh
+      # install.sh is the front door and it is not exercised by anything
+      # cheap: the e2e job runs it once, at the far end of a cluster
+      # bring-up. These tests serve the download from a directory and
+      # install a kmx that records its own argv, so what the two paths
+      # actually invoke is asserted in seconds — including that
+      # --quickstart never runs `kmx version`, whose pinned kagent line
+      # would otherwise land in the Orka-only transcript.
+      - name: install.sh runs the right command on each path
+        run: bash scripts/install-sh-test.sh
       # kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
       # local tag must never fall back to pulling a squattable public name),
       # so a registry-backed cluster needs both the image and the policy
