@@ -8,8 +8,8 @@ import (
 
 func TestProductDefaultsAreUsable(t *testing.T) {
 	for name, value := range map[string]string{
-		"kind cluster": DefaultKindCluster, "kagent version": DefaultKagentVersion,
-		"model": DefaultModel, "agent": DefaultAgent, "task": DefaultTask,
+		"kind cluster": DefaultKindCluster,
+		"model":        DefaultModel, "agent": DefaultAgent, "task": DefaultTask,
 		"container engine": DefaultContainerEngine,
 	} {
 		if value == "" {

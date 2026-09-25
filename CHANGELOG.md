@@ -76,6 +76,79 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- **The legacy kagent installer, its manifests and its status report are
+  removed.** This is the last slice of the retirement: what earlier slices
+  left addressable is now gone rather than hidden.
+
+  **Commands.** `kmx up --step kagent`, `--step agent` and `--step tools-agent`
+  are no longer steps. `kmx up --step` accepts exactly `cluster`, `ollama`,
+  `model` and `orka` — the same four a bare run performs — and anything else
+  is refused locally as an unknown step, naming the four that exist. There is
+  no flag, environment variable or payload that restores the installer.
+  **Upgrading:** a script naming one of the three retired steps must drop it.
+  A cluster that already runs the legacy runtime is untouched by this release
+  and is operated with kubectl.
+
+  **`kmx status` now reports the runtime kmx installs.** It was a report about
+  `agents.kagent.dev`, `modelconfigs` and the kagent namespace's pods, with a
+  governance envelope counted off them. Nothing in kmx installs, drives or
+  deploys any of that, so the report was confidently describing objects this
+  project has nothing to do with — which reads as coverage and is not. The
+  command keeps its name and now delegates to the same reading as
+  `kmx orka status`: running version against the kmx pin, deployments, CRDs
+  and Provider readiness. The context check that tells an operator their setup
+  is incomplete is unchanged.
+
+  **`kmx status -o json|yaml` is removed, and refused by name.** The document
+  published `governance` — model-seam, credential and plane populations —
+  assembled from kagent Agents and ModelConfigs. **Nothing replaces that
+  count, deliberately.** `kmx migrate` routes an owner's own Deployments, and
+  those workloads have no discovery index: there is no query that lists them,
+  so any document kmx published would be a tally of what it happened to be
+  told about rather than of what is on the cluster. Emitting the old shape
+  filled with zeros would be exactly the false zero that report always refused.
+  **Upgrading:** a caller pinned to `-o json` gets an error naming `table` and
+  the `kubectl` read that answers the same question. The old `governance`
+  shape has no successor.
+
+  **Helm is no longer a dependency or a download.** The legacy chart install
+  was its only caller, so `kmx` no longer preflights Helm, no longer fetches a
+  pinned copy onto anybody's machine, and no longer names it as a
+  prerequisite. kind and kubectl are still fetched and still digest-checked.
+  The archive-extraction path in the toolchain stays — no pinned tool uses it
+  today, and the rule it encodes (verify what was published, then extract) is
+  the durable part.
+
+  **Embedded manifests.** `k8s/kagent-values.yaml`, `k8s/hello-world.yaml`,
+  `k8s/tools-agent.yaml` and all nine `k8s/models/` presets are deleted from
+  the tree and from the binary. They were kagent v1alpha2 objects and the
+  commands that applied them (`kmx use`, `kmx govern`, the retired install
+  steps) had already gone. `k8s/` is now thirteen files, all embedded.
+  **Upgrading:** a workflow applying a preset with `kubectl` should take it
+  from this repository's history, or onboard the endpoint with
+  `kmx models add` and route a workload onto it with `kmx migrate`.
+
+  **Pins and configuration.** `KAGENT_VERSION` and its `0.9.12` default are
+  removed from the CLI and the Makefile, and `kmx version` now prints the Orka
+  pin in place of the kagent one. `make model-secret`, which captured a preset
+  key into the kagent namespace, is removed with the presets; provider
+  credentials for a governed upstream are `kmx models add`, and the
+  plane-side Copilot token is `kmx models credential copilot`.
+
+  **Certificate publication.** `kmx plane` no longer publishes the seam
+  authority into the `kagent` namespace on every run. No owner-managed
+  workload lives at a namespace kmx can guess, so publication now belongs
+  solely to the command that is *told* which namespace — `kmx migrate`, which
+  is unchanged and still publishes into the workload's namespace before
+  pointing it at the seam.
+
+  **Checkers.** `scripts/check-agent-uid.py` (it read kagent Agent manifests
+  out of `k8s/`), `scripts/check-seam-tls.py` (its entire subject was the
+  `governed-*` presets) and `scripts/verify-chat.py` (its last caller was its
+  own self-test) are deleted with their mutation specifications. The mutation
+  harness now proves nine checkers with 135 deliberate breakages, and the
+  repository map records the new counts.
+
 - **The `kagent` lift payload is retired: `kmx aks up` lands Orka and nothing
   else.** `--payload kagent` is refused **by name** as retired rather than as
   an unknown value — a script that still names it asked for a platform this
@@ -147,9 +220,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `/exit`) are now the whole set.
 
 - **`internal/kmx/kagentcli` is deleted**, and with it the pinned kagent CLI
-  download and its checksum verification. kmx still fetches kind, kubectl and
-  Helm, all still digest-checked. Nothing on any supported path downloads a
-  kagent binary any more.
+  download and its checksum verification. kmx still fetches kind and kubectl,
+  both still digest-checked. Nothing on any supported path downloads a kagent
+  binary any more.
 
   **What deliberately remains, for the slices that retire it:**
   `kmx up --step kagent|agent|tools-agent` still installs the legacy runtime

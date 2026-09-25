@@ -15,7 +15,7 @@ import (
 // operator's machine, half way through `kmx up`), and an edit to k8s/ that
 // nobody rebuilt against. Assert both here, where it costs nothing.
 func TestEmbeddedManifestsAreTheOnesInTheTree(t *testing.T) {
-	for _, name := range []string{"ollama.yaml", "kagent-values.yaml", "hello-world.yaml", "tools-agent.yaml"} {
+	for _, name := range []string{"ollama.yaml", "orka-k8s-tool.yaml"} {
 		embedded, err := manifest(name)
 		if err != nil {
 			t.Errorf("k8s/%s is not embedded in the binary: %v", name, err)
@@ -31,14 +31,12 @@ func TestEmbeddedManifestsAreTheOnesInTheTree(t *testing.T) {
 	}
 }
 
-// Milestone 2 puts the plane's manifests and the two governed presets in the
-// binary, for the same reason as the runtime ones: `kmx plane` and
-// `kmx govern` run outside a clone, with no k8s/ on disk to point kubectl at.
+// `kmx plane` runs outside a clone, with no k8s/ on disk to point kubectl at,
+// so its manifests travel in the binary.
 func TestThePlanesManifestsTravelInTheBinary(t *testing.T) {
 	for _, name := range []string{
 		"plane/namespace.yaml", "plane/postgres.yaml", "plane/proxy.yaml",
 		"plane/upstreams.yaml", "plane/network-policy.yaml",
-		"models/governed-ollama.yaml", "models/governed-copilot.yaml",
 	} {
 		embedded, err := manifest(name)
 		if err != nil {
@@ -55,29 +53,23 @@ func TestThePlanesManifestsTravelInTheBinary(t *testing.T) {
 	}
 }
 
-// Every model preset names a Secret without embedding its credential value.
-func TestModelPresetsTravelInTheBinary(t *testing.T) {
-	var names []string
-	presets, err := os.ReadDir(filepath.Join("..", "..", "..", "k8s", "models"))
-	if err != nil {
-		t.Fatal(err)
+// The legacy runtime's manifests are gone from the tree AND from the binary.
+// A file deleted from k8s/ but left in an embed pattern is a build error; a
+// file left in k8s/ and dropped from the pattern is the silent half, and the
+// walk below would catch that. This catches the third case: a manifest that
+// survives somewhere nobody looks.
+func TestTheLegacyRuntimesManifestsAreGone(t *testing.T) {
+	for _, name := range []string{"kagent-values.yaml", "hello-world.yaml", "tools-agent.yaml",
+		"models/ollama.yaml", "models/governed-ollama.yaml", "models/governed-copilot.yaml"} {
+		if _, err := os.Stat(filepath.Join("..", "..", "..", "k8s", filepath.FromSlash(name))); err == nil {
+			t.Errorf("k8s/%s is still in the tree", name)
+		}
+		if _, err := manifest(name); err == nil {
+			t.Errorf("k8s/%s is still embedded in the binary", name)
+		}
 	}
-	for _, e := range presets {
-		names = append(names, "models/"+e.Name())
-	}
-	for _, name := range names {
-		embedded, err := manifest(name)
-		if err != nil {
-			t.Errorf("k8s/%s is not embedded in the binary: %v", name, err)
-			continue
-		}
-		onDisk, err := os.ReadFile(filepath.Join("..", "..", "..", "k8s", filepath.FromSlash(name)))
-		if err != nil {
-			t.Fatalf("k8s/%s: %v", name, err)
-		}
-		if string(embedded) != string(onDisk) {
-			t.Errorf("k8s/%s differs from the embedded copy", name)
-		}
+	if _, err := os.Stat(filepath.Join("..", "..", "..", "k8s", "models")); err == nil {
+		t.Error("k8s/models still exists; every preset in it was a kagent v1alpha2 ModelConfig")
 	}
 }
 

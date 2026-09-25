@@ -8,12 +8,11 @@ Tool traffic remains the application owner's responsibility; the Kaimahi tool
 gateway is retired.
 
 The local quickstart below is the **supported Orka first-answer path**: it
-ends with a native Orka Agent answering a question. The explicit `kmx up
---step kagent|agent|tools-agent` invocations are the **remaining legacy
-implementation**, kept runnable only until their retirement slices land.
-Native Orka only versus kagent YAML over Orka remains open. Keeping those
-steps runnable does not settle that choice, and `orka.harness.v2` is outside
-the direction.
+ends with a native Orka Agent answering a question. It is now the only
+first-answer path kmx has: the legacy `kmx up --step kagent|agent|tools-agent`
+installers have been removed, and naming one is an unknown step. A cluster
+that still runs the legacy runtime is operated with kubectl.
+`orka.harness.v2` is outside the direction.
 
 ## Prerequisites
 
@@ -22,7 +21,6 @@ the direction.
 | Go 1.26+ | current development `kmx` with Orka commands; also fetched plane builds |
 | Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
 | kind, kubectl | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
-| Helm | only the explicit legacy `kmx up --step kagent`; the Orka path is a pinned manifest |
 | git, make | checkout-based development and remaining scripts/helpers |
 | authenticated Azure CLI | AKS only; never installed by kmx |
 
@@ -140,22 +138,15 @@ line above therefore needs an Agent from one of those two commands first. Orka
 chat is a session: `--interactive` is required, and a one-shot invocation is
 refused with the command that works.
 
-The legacy kagent runtime and its two demonstration agents can still be
-INSTALLED as explicit steps, until their retirement slice lands:
+kmx no longer installs the legacy kagent runtime or its two demonstration
+agents. `kmx up --step kagent`, `--step agent` and `--step tools-agent` are
+unknown steps, their manifests are no longer shipped in the binary, and
+`kmx agent edit`, `kmx govern` and `kmx use` went with the runtime adapter.
+`kmx agent chat` and `kmx agent list` remain and are Orka-only.
 
-```bash
-kmx up --step kagent
-kmx up --step agent
-kmx up --step tools-agent
-```
-
-Those steps install the full kagent application profile, including the tool
-server and original `hello-tools` agent from
-[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Nothing in kmx drives those
-agents any more: `kmx agent edit`, `kmx govern` and `kmx use` were removed with
-the runtime adapter, and `kmx agent chat` and `kmx agent list` remain but are
-Orka-only, so what these steps leave on the cluster is operated with kubectl.
-An old gateway reference needs [explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
+A cluster that still carries that runtime is untouched by any of this, and is
+operated with kubectl. An old gateway reference needs
+[explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
 Interactive `/help` lists local controls.
 
 ### Governing an application

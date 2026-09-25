@@ -86,24 +86,6 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
-      # Model content is served over TLS under the plane's authority.
-      # A ModelConfig must state BOTH https and the CA it verifies against.
-      #
-      # kagent refuses neither half of that on a ModelConfig. A TLS block
-      # beside an http:// baseUrl is admitted and inert: nothing fails, the
-      # seam is plaintext, and the manifest reads as configured. That silent
-      # downgrade is the one this checks for, and it proves it can still
-      # catch each mistake before its verdict on the tree is trusted.
-      #
-      # Scope is COMMITTED model manifests, which is now all of them: the
-      # generated seam ModelConfig went with `kmx govern` and the legacy chat
-      # runtime, so nothing produces one outside this tree.
-      #
-      # Keyless: the committed manifests and nothing else.
-      - name: Seam-TLS checker still catches every downgrade
-        run: python3 scripts/check-seam-tls.py --selftest
-      - name: Every committed seam-facing manifest verifies the seam it points at
-        run: python3 scripts/check-seam-tls.py
       # docs/COORDINATION.md is the board every worker session is handed,
       # and its lane table said a lane was unassigned when it had already
       # shipped five times in six days. That is not a discipline problem:
@@ -140,20 +122,6 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Every checker notices being broken
         run: python3 scripts/check-mutations.py
-      # Every agent manifest states the numeric uid kagent's image runs as,
-      # because that image declares its user by NAME and Kubernetes will not
-      # start a runAsNonRoot container whose user it cannot prove is
-      # non-root. A kagent bump that moved the id would fail every agent at
-      # CreateContainer time with a message that never mentions the image or
-      # its version — so the number is checked against the image the pinned
-      # chart actually resolves to, here, where the bump is being made.
-      #
-      # Keyless: the chart and the image are public, and the uid is read by
-      # running `id -u` inside the image rather than taken from a label.
-      - name: Agent-uid checker self-test
-        run: python3 scripts/check-agent-uid.py --selftest
-      - name: Agents run as the uid the kagent image ships
-        run: python3 scripts/check-agent-uid.py
       # This repo is public and documents a managed-cluster path.
       # A subscription/tenant GUID, an AKS FQDN, or a real ACR login server
       # must never land in the tree — every Azure identifier is supplied by
@@ -233,8 +201,8 @@ jobs:
       # bring-up. These tests serve the download from a directory and
       # install a kmx that records its own argv, so what the two paths
       # actually invoke is asserted in seconds — including that
-      # --quickstart never runs `kmx version`, whose pinned kagent line
-      # would otherwise land in the Orka-only transcript.
+      # --quickstart never runs `kmx version`, whose pinned component lines
+      # would otherwise land in the front-door transcript.
       - name: install.sh runs the right command on each path
         run: bash scripts/install-sh-test.sh
       # kind keeps `imagePullPolicy: Never` (deliberate — a side-loaded
@@ -512,14 +480,12 @@ jobs:
           print('model upstreams: hosted entries marked; model credentials in plane custody')
           PY
 
-      # CI flake class 2: the chat verifier's verdicts on the PR #24 task
-      # shape must not drift — probe in the tool payload passes; a missing,
-      # errored or probe-less function_response fails, as does an empty
-      # reply.
+      # The in-cluster model fixture the `e2e-models` shard mounts
+      # (scripts/ci/plain-model-server.py, via plain-model.sh): its usage
+      # accounting, its silent-response path and its redirect handling are
+      # what that shard's conclusions rest on.
       - name: Model fixture responses and hosted redirects
         run: python3 scripts/test_model_fixtures.py
-      - name: Chat verifier self-test (direct tool-path verdicts)
-        run: python3 scripts/verify-chat.py --selftest
       - name: Hello-to-governed demo safety and evidence checks
         run: |
           bash -n scripts/demo-hello-to-governed.sh

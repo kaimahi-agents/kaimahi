@@ -33,8 +33,8 @@ checks.
 | `cmd/` | `kmx` | — | — |
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
-| `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
-| `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 46 (checkers, probes, CI fixtures, mutation specs) |
+| `k8s/` | embedded runtime/plane/observability artifacts | — | — |
+| `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 40 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 50 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -42,7 +42,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (21 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, retained kagent installation steps, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (21 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -54,7 +54,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 79 | Installed | Command orchestration, the Orka runtime adapter, interactive agent console, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 77 | Installed | Command orchestration, the Orka runtime adapter, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/runtime` | 5 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests and registry. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
@@ -175,22 +175,23 @@ old resources or safely choose replacement tool routing for their owners.
 
 ## `k8s/` — embedded artifacts
 
-Twenty-five of `k8s/`'s 25 files are embedded; zero are not embedded.
+Thirteen of `k8s/`'s 13 files are embedded; zero are not embedded.
 
-**Embedded in `kmx` (25):** `ollama.yaml`, `kagent-values.yaml`, `orka-k8s-tool.yaml`,
-`hello-world.yaml`, `tools-agent.yaml`, `egress-hosted.yaml`, `egress-copilot.yaml`,
-all five of `plane/`, all nine of `models/`, and all four of `observability/`.
+**Embedded in `kmx` (13):** `ollama.yaml`, `orka-k8s-tool.yaml`,
+`egress-hosted.yaml`, `egress-copilot.yaml`, all five of `plane/`, and all four
+of `observability/`.
 
 **Checkout only (0):** none.
 
-The retained tools agent uses the direct kagent tool server. Keeping its existing
-installation/authoring path does not restore the removed Kaimahi MCP gateway.
-Model and observability manifests remain part of clone-free deployment.
+What is no longer here: the legacy chart values, the two demonstration agent
+manifests, and the nine model presets. All were kagent v1alpha2 objects applied
+by the retired installer; nothing left in kmx reads or applies one. Plane and
+observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 55 tracked files, three different jobs
+## `scripts/` — 49 tracked files, three different jobs
 
-**Reference coverage:** 43 of the 55 are named by something outside themselves,
-and the twelve `scripts/mutations/*.json` are named by nothing at all — the
+**Reference coverage:** 40 of the 49 are named by something outside themselves,
+and the nine `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
 
@@ -199,26 +200,18 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 2 | `plane-pods.sh`, `copilot-secret.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers and self-tests | 21 | the twelve `check-*` files, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
+| **Scaffolding** — checkers and self-tests | 18 | the ten `check-*` files, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures | 5 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py` |
-| **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json` |
+| **Scaffolding** — mutation specifications | 9 | `scripts/mutations/*.json` |
 | **Scaffolding** — board checker's recorded findings | 1 | `board-open-drift.json` |
 
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 `scripts/copilot-secret.sh`: one make recipe.
 
-`kube-guard.sh` is counted once as embedded, and is one of the twelve checkers
+`kube-guard.sh` is counted once as embedded, and is one of the nine checkers
 the mutation harness breaks on purpose. Model fixtures are synthetic test
 systems, not providers deployed for users.
-
-`verify-chat.py` is a checker: every occurrence in the Makefile is a comment
-line rather than a recipe. Its only caller is
-`.github/workflows/ci.yml` (one invocation among two mentions — the other
-is a comment), and that invocation is its own `--selftest`. No cluster shard
-runs it against a live agent any more: the `kmx agent chat` turns it verified
-belonged to the legacy runtime and retired with it, so what remains is a
-verifier proven against fixtures rather than against a cluster.
 
 `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload the
 `e2e-resilience` and `e2e-spend` shards migrate with `kmx migrate`. The Python half is a
@@ -302,7 +295,7 @@ and the separately located historical architecture SVG.
 
 ## Existing layout
 
-Seven tracked files under `scripts/` contain the literal `k8s/`. Embedded scripts
+Six tracked files under `scripts/` contain the literal `k8s/`. Embedded scripts
 remain at the paths named by `embed.go`; the separate plane module is fetched
 at the CLI revision. Removed workflow/ERP directories are not kept as empty
 packages or placeholder manifests. Model migration, secret custody, accounting

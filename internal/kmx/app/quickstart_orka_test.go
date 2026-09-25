@@ -49,20 +49,23 @@ func TestQuickstartReachesAnOrkaAnswerWithoutTheLegacyRuntime(t *testing.T) {
 	}
 }
 
-// `kmx up` with no --step is the RUNTIME, and the runtime is now Orka. The
-// legacy steps survive only as explicit invocations, which is what keeps the
-// later removal slices independently green — there is no --legacy-kagent.
-func TestBareUpDefaultsToOrkaAndKeepsLegacyStepsExplicitOnly(t *testing.T) {
+// `kmx up` is the RUNTIME, and the runtime is Orka. The legacy installer
+// steps are gone rather than hidden behind an explicit invocation: there is
+// no --legacy-kagent, and no step name that installs one either.
+func TestUpIsOrkaOnlyWithNoLegacyStepSurviving(t *testing.T) {
 	want := []string{"cluster", "ollama", "model", "orka"}
 	if !slices.Equal(UpDefaultSteps, want) {
 		t.Fatalf("a bare `kmx up` runs %q, want %q", UpDefaultSteps, want)
 	}
+	if !slices.Equal(UpSteps, want) {
+		t.Fatalf("the addressable steps are %q, want %q", UpSteps, want)
+	}
 	for _, step := range []string{"kagent", "agent", "tools-agent"} {
-		if slices.Contains(UpDefaultSteps, step) {
-			t.Errorf("a bare `kmx up` still runs the legacy step %q", step)
+		if slices.Contains(UpSteps, step) {
+			t.Errorf("the retired legacy step %q is still addressable", step)
 		}
-		if !slices.Contains(UpSteps, step) {
-			t.Errorf("the explicit step %q was removed before its retirement slice", step)
+		if upPhaseName(step) != "" {
+			t.Errorf("the retired legacy step %q still has a phase name %q", step, upPhaseName(step))
 		}
 	}
 	if !slices.Contains(UpSteps, "orka") || upPhaseName("orka") == "" {

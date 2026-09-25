@@ -131,9 +131,9 @@ indentation to imply ownership.
 
 The layout example uses `Width`, `lipgloss.Width`, `JoinHorizontal`, and
 `JoinVertical` to compose columns, then clamps the result to the physical
-terminal width. This can improve `kmx status` on wide terminals:
+terminal width. This can improve wide reports such as `kmx agent list`:
 
-- runtime and governance summaries side by side when there is room;
+- related summaries side by side when there is room;
 - one vertical flow on narrow terminals;
 - a compact next-actions panel below both.
 
@@ -305,8 +305,8 @@ These are safety-semantic and format fixes, not merely color changes:
 - Quickstart no longer discovers, installs, or reconciles a kagent Helm
   release. It reconciles the pinned Orka runtime, then reuses only an exact
   match of its fixed Provider and Agent; a differing live spec is refused
-  rather than overwritten. Every run creates a fresh Task. The explicit
-  legacy `kmx up --step kagent` remains the only setup path that uses Helm.
+  rather than overwritten. Every run creates a fresh Task. No setup path uses
+  Helm any more: the legacy chart install was its only caller and is removed.
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
   and context names. Credential bounds and incompatible Secret/preset wiring are

@@ -6,16 +6,15 @@ TARGET ?= kind
 CONTAINER_ENGINE ?= docker
 KIND_CLUSTER ?= kaimahi-p1
 AKS_CLUSTER ?= kaimahi
-KAGENT_VERSION ?= 0.9.12
 MODEL ?= qwen2.5:3b
 KMX ?= bin/kmx
 CRED ?= hello-world
 
 # Relink for every embedded asset: the binary also runs outside a clone.
 KMX_SOURCES := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2>/dev/null)
-KMX_ASSETS := k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/tools-agent.yaml k8s/orka-k8s-tool.yaml scripts/orka-k8s-tool.py \
+KMX_ASSETS := k8s/ollama.yaml k8s/orka-k8s-tool.yaml scripts/orka-k8s-tool.py \
 	k8s/egress-hosted.yaml k8s/egress-copilot.yaml \
-	$(wildcard k8s/plane/*.yaml) $(wildcard k8s/models/*.yaml) \
+	$(wildcard k8s/plane/*.yaml) \
 	$(wildcard k8s/observability/*) \
 	scripts/aks-up.sh scripts/aks-down.sh scripts/plane-deploy.sh \
 	scripts/netpol-probe.sh scripts/kube-guard.sh
@@ -23,7 +22,6 @@ KMX_ASSETS := k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/to
 # Preserve the environment interface used by the installed command.
 export KMX_KIND_CLUSTER := $(KIND_CLUSTER)
 export KMX_CONTAINER_ENGINE := $(CONTAINER_ENGINE)
-export KMX_KAGENT_VERSION := $(KAGENT_VERSION)
 export KMX_MODEL := $(MODEL)
 export KMX_CONFIRM := $(KAIMAHI_CONFIRM)
 export KMX_CHAT_PORT := $(CHAT_PORT)
@@ -31,7 +29,7 @@ export KMX_ADMIN_PORT := $(ADMIN_PORT)
 export KMX_OPS_PORT := $(OPS_PORT)
 export KMX_CRED := $(CRED)
 KMX_ENV = KIND_CLUSTER="$$KMX_KIND_CLUSTER" KUBE_CTX="$$KMX_KUBE_CTX" \
-	CONTAINER_ENGINE="$$KMX_CONTAINER_ENGINE" KAGENT_VERSION="$$KMX_KAGENT_VERSION" \
+	CONTAINER_ENGINE="$$KMX_CONTAINER_ENGINE" \
 	MODEL="$$KMX_MODEL" $(if $(filter command line,$(origin CHAT_PORT)),CHAT_PORT="$$KMX_CHAT_PORT",) \
 	ADMIN_PORT="$$KMX_ADMIN_PORT" OPS_PORT="$$KMX_OPS_PORT" \
 	CRED="$$KMX_CRED" KAIMAHI_CONFIRM="$$KMX_CONFIRM"
@@ -53,7 +51,7 @@ export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
 GUARD_NS ?= kagent, kaimahi, ollama
 
-.PHONY: build test lint docs-check guard model-secret copilot-secret plane-image aks-creds \
+.PHONY: build test lint docs-check guard copilot-secret plane-image aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
@@ -86,13 +84,6 @@ $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 guard:
 	@KUBE_CTX='$(KUBE_CTX)' KUBE_NS='$(GUARD_NS)' \
 		bash scripts/kube-guard.sh '$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL)) [TARGET=$(TARGET)]'
-
-## model-secret: capture an API key from stdin; no credential in argv or logs
-model-secret: guard
-	@test -n "$(NAME)" || { echo 'usage: make model-secret NAME=<preset>-api-key' >&2; exit 1; }
-	@echo 'Paste the API key, press Enter, then Ctrl-D:' >&2
-	@tr -d '\n' | $(KUBECTL) -n kagent create secret generic $(NAME) \
-		--from-file=api-key=/dev/stdin
 
 ## copilot-secret: device login and short-lived token, fail-closed custody
 copilot-secret: guard

@@ -1,32 +1,34 @@
 # Legacy reference: the kagent MCP example
 
-> **Legacy kagent example, not an Orka guarantee.** Orka is the platform;
-> Kaimahi helps people get agents onto it. This page remains to explain
-> the retained `hello-tools` manifests and their tests, not as a competing
-> onboarding tutorial. Start at the [documentation index](README.md).
-> Keeping this reference does not settle whether future authoring is
-> native-Orka-only or includes kagent YAML.
+> **Historical record, not a guide.** Orka is the platform; Kaimahi helps
+> people get agents onto it. The manifests, chart values and verifier this
+> page described have been **deleted from the repository** along with the
+> kagent installer. Nothing here is runnable from this tree. It is kept
+> because the distinctions it draws — discovery is not permission, a Ready
+> agent is not evidence of a call — outlive the example that taught them.
+> Start at the [documentation index](README.md).
 
-## What is wired
+## What was wired
 
-[k8s/tools-agent.yaml](../k8s/tools-agent.yaml) defines `hello-tools`, a
-separate declarative Agent using the keyless `hello-world-model` and one
-tool, `k8s_get_resources`, from the chart-managed `kagent-tool-server`
-RemoteMCPServer. The hello-world Agent remains tool-free in its own file.
+`k8s/tools-agent.yaml` defined `hello-tools`, a separate declarative Agent
+using the keyless `hello-world-model` and one tool, `k8s_get_resources`, from
+the chart-managed `kagent-tool-server` RemoteMCPServer. The hello-world Agent
+was tool-free in its own file. Both manifests are gone.
 
-The direct path is agent → RemoteMCPServer URL → kagent tool server.
+The direct path was agent → RemoteMCPServer URL → kagent tool server.
 **It is independent of the retired Kaimahi MCP gateway.** The plane no longer
 provides tool allowlists, argument policy, tool grants or tool audit. Agent
 `toolNames` is a selection for the runtime, not an independent external enforcement point.
 Model routing is separate: a governed model does not govern tool traffic.
 
-[k8s/kagent-values.yaml](../k8s/kagent-values.yaml) enables the bundled
-`kagent-tools` subchart. The server speaks streamable HTTP at `:8084/mcp`;
-this example deploys no Kaimahi-written MCP runtime or connector.
+`k8s/kagent-values.yaml` enabled the bundled `kagent-tools` subchart. The
+server speaks streamable HTTP at `:8084/mcp`; this example deployed no
+Kaimahi-written MCP runtime or connector. That values file is gone with the
+chart install it fed.
 
 ## The tool server lockdown
 
-The committed chart values configure:
+The chart values configured:
 
 - `tools.enabledTools: [k8s]`: no other provider toolsets;
 - `tools.args: [--read-only]`: application-layer writes disabled;
@@ -81,13 +83,12 @@ the structured A2A task history to contain:
 3. a successful `function_response` with that unpredictable value in its
    payload, not merely in the model's reply.
 
-[scripts/verify-chat.py](../scripts/verify-chat.py) implements that check. It is
-now run only against its own fixtures, in `hygiene`: the shard that drove it
-against a live cluster retired with the runtime whose agent it conversed with,
-so no CI job verifies a tool round-trip on a real cluster today. The verifier is
-kept because the rule is the durable part and a future runtime's proof should be
-held to it.
-It does not certify every future turn. A small model can call the tool
+`scripts/verify-chat.py` implemented that check. It has been deleted: the shard
+that drove it against a live cluster retired with the runtime whose agent it
+conversed with, leaving a verifier whose only caller was its own self-test. The
+rule above is the durable part, and a future runtime's tool proof should be held
+to it rather than to prose.
+A structured check does not certify every future turn. A small model can call the tool
 correctly and still summarize the response incorrectly; inspect structured
 history rather than accepting prose as the system of record.
 

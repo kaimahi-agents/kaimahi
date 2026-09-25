@@ -93,22 +93,19 @@ model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
 owner-managed application. Author an Orka Agent with `bin/kmx agent create`, or
 get a first answer with `bin/kmx quickstart`.
 
-The legacy kagent runtime can still be INSTALLED explicitly, but nothing in kmx
-drives it: `govern`, `use`, `agent chat`, `agent list` and `agent edit` no
-longer reach it. Start by establishing the live cluster and Orka runtime;
-the component steps require that preceding bare `up`:
+kmx neither installs nor drives the legacy kagent runtime. Start by
+establishing the live cluster and Orka runtime; the plane and credential steps
+require that preceding bare `up`:
 
 ```bash
 bin/kmx up
-bin/kmx up --step kagent
-bin/kmx up --step agent
 bin/kmx plane --source .
-bin/kmx credential issue hello-world --secret kaimahi-governed-token --namespace kagent
-bin/kmx ledger hello-world
+bin/kmx credential issue demo --secret kaimahi-governed-token --namespace demo
+bin/kmx ledger demo
 ```
 
-This leaves the legacy objects on the cluster for kubectl. For migration,
-use [getting started](getting-started.md#current-orka-path) and an owner-managed
+For a governed application, use
+[getting started](getting-started.md#current-orka-path) and an owner-managed
 application. Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories
 are separate. `down` destroys the local database too; [backup](kmx.md#backup-restore-and-metrics)
@@ -212,11 +209,11 @@ What that shard no longer proves: the combined `kmx status` counts and the raw
 MCP inventory, which were counts of legacy objects, and the cannot-tell status
 branch on a real cluster, whose probe minted a reader for kagent CRDs. Those
 were deleted rather than rewritten against surviving objects, which would have
-asserted less while looking the same. The rule that branch renders — `unknown`
-is not a zero, it carries kubectl's own reason, and it publishes no counts —
-keeps its unit coverage in `internal/kmx/app/governance_test.go`; what went is
-the proof that a genuinely RBAC-denied reader reaches it. Status is rebuilt on
-its own evidence separately.
+asserted less while looking the same. The counting itself has since gone too:
+`kmx status` is the Orka runtime report, delegating to the same reading as
+`kmx orka status`, and it publishes no structured document — there is no
+owner-managed population to count, because `kmx migrate` routes workloads kmx
+cannot enumerate.
 
 `e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
 `e2e-runtime`. It uses no kagent and no agent runtime at all. It brings up kind,
@@ -243,19 +240,19 @@ with an audited 502. Absence of the `kagent` namespace is asserted after
 bring-up and again at the end.
 
 What that shard no longer proves, deleted rather than translated: the
-`kmx agent chat` conversation and its `verify-chat.py` checks, the `k8s/models/`
-preset dry-run against live CRDs and the `kmx use` preset switch, the kagent
+`kmx agent chat` conversation and its chat-verifier checks, the model preset
+dry-run against live CRDs and the `kmx use` preset switch, the kagent
 tool-server lockdown posture (read-only mode logged, its ServiceAccount denied
 Secrets and writes) and the MCP tool round-trip that required a real
 `k8s_get_resources` call carrying an unguessable probe name, and the two
 `kmx status` probes — the ungoverned seam count and the no-plane branch. Every
 one of them asserted something about legacy objects. The real cost is named
 rather than papered over: **no shard verifies an MCP tool round-trip on a live
-cluster any more**, and `verify-chat.py` now runs only against its own fixtures
-in `hygiene`. The tool-server posture and the preset mechanism went with the
-release that provided them; the `kmx status` rules keep their unit coverage in
-`internal/kmx/app/governance_test.go` and status is rebuilt on its own evidence
-separately.
+cluster any more**, and the chat verifier itself has now been deleted — its
+last caller was its own self-test. The tool-server posture, the preset
+mechanism and the seam/credential counting in `kmx status` all went with the
+release that provided them; `kmx status` is now the Orka runtime report and
+nothing else, which is the only thing it can say truthfully.
 
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as

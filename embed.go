@@ -4,15 +4,20 @@ package kaimahi
 
 import "embed"
 
-// Manifests holds the runtime, retained agents, model presets and model plane.
-// Presets name Secrets; they never contain credential values. Explicit paths
-// keep the packaging boundary independent of unrelated checkout additions.
+// Manifests holds the runtime kmx installs and the model plane it deploys.
+// Explicit paths keep the packaging boundary independent of unrelated
+// checkout additions.
 //
-//go:embed k8s/ollama.yaml k8s/kagent-values.yaml k8s/hello-world.yaml k8s/tools-agent.yaml
+// What is NOT here any more: the legacy runtime's Helm values, its two demo
+// agents, and the k8s/models ModelConfig presets. All five were kagent
+// v1alpha2 objects for a runtime kmx no longer installs, and nothing applied
+// them — `kmx plane` applies k8s/plane/, and `kmx migrate` writes a Secret
+// into the operator's own namespace.
+//
+//go:embed k8s/ollama.yaml
 //go:embed k8s/orka-k8s-tool.yaml scripts/orka-k8s-tool.py
 //go:embed k8s/plane/namespace.yaml k8s/plane/postgres.yaml k8s/plane/proxy.yaml
 //go:embed k8s/plane/upstreams.yaml k8s/plane/network-policy.yaml
-//go:embed k8s/models
 //go:embed k8s/egress-hosted.yaml
 var Manifests embed.FS
 

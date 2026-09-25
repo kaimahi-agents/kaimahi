@@ -37,7 +37,7 @@ func TestLocalClusterCreationRefusesDisagreeingContextBeforeCommands(t *testing.
 				log := filepath.Join(dir, "commands")
 				t.Setenv("KMX_IDENTITY_LOG", log)
 				t.Setenv("KMX_TOOLCHAIN", "off")
-				for _, tool := range []string{"kind", "kubectl", "helm", engine} {
+				for _, tool := range []string{"kind", "kubectl", engine} {
 					fakeTool(t, dir, tool, `printf '%s\n' "$0 $*" >> "$KMX_IDENTITY_LOG"; exit 99`)
 				}
 				t.Setenv("PATH", dir)
@@ -115,27 +115,6 @@ func TestExplicitPodmanReplacesAnInheritedKindProvider(t *testing.T) {
 	}
 	if string(got) != "podman" {
 		t.Fatalf("kind inherited provider %q under explicit Podman", got)
-	}
-}
-
-func TestInstallKagentStillAcceptsManagedContext(t *testing.T) {
-	dir := t.TempDir()
-	log := filepath.Join(dir, "helm-commands")
-	t.Setenv("KMX_IDENTITY_LOG", log)
-	fakeTool(t, dir, "helm", `printf '%s\n' "$*" >> "$KMX_IDENTITY_LOG"`)
-	fakeTool(t, dir, "kubectl", `exit 99`)
-	t.Setenv("PATH", dir)
-	a := &App{Cfg: &config.Config{KindCluster: "unrelated-local", KubeContext: "managed-aks", KagentVersion: config.DefaultKagentVersion},
-		Run: &run.Runner{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
-	if err := a.installKagent(); err != nil {
-		t.Fatalf("shared managed-cluster installation was blocked: %v", err)
-	}
-	commands, err := os.ReadFile(log)
-	if err != nil || strings.Count(string(commands), "--kube-context managed-aks") != 2 {
-		t.Fatalf("Helm did not retain the managed context: %s (%v)", commands, err)
-	}
-	if !strings.Contains(string(commands), "--wait --wait-for-jobs --timeout 420s") {
-		t.Fatalf("application install did not wait for its workloads/jobs: %s", commands)
 	}
 }
 

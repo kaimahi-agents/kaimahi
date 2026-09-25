@@ -6,12 +6,11 @@ and `kmx migrate` for an existing application's **model traffic**. The Deploymen
 remains owner-managed. Installing Orka alone is not this migration; none of these
 operations silently governs application tools.
 
-The CLI also contains the existing **legacy kagent/plane implementation**
-pending the code transition. The plane and the `kmx up --step kagent` install
-remain because they run today; the legacy kagent CLI surface does not —
-`kmx govern`, `kmx use` and `kmx agent edit` are gone, and what those steps
-leave on the cluster is operated with kubectl. Native-Orka-only versus
-kagent YAML over Orka remains open; `orka.harness.v2` is outside the direction.
+The legacy kagent runtime is no longer part of kmx. Its installer steps, its
+manifests and its CLI surface are gone — `kmx up --step kagent|agent|tools-agent`
+are unknown steps, and `kmx govern`, `kmx use` and `kmx agent edit` were removed
+before them. A cluster that still carries that runtime is untouched and is
+operated with kubectl. `orka.harness.v2` is outside the direction.
 A shrinking compatibility/governance bridge is success, not a reason to rebuild
 Orka's platform in Kaimahi.
 
@@ -44,9 +43,9 @@ a checksum from the **same** GitHub release over TLS: corruption detection, not
 an independent signature. See [releases](releases.md) for platforms and upgrades.
 
 Local kind commands need Docker or Podman. kmx uses kind and kubectl from
-PATH first, otherwise fetches pinned, checksum-verified tools; Helm is fetched
-the same way but is needed only by the explicit legacy `kmx up --step kagent`.
-No kagent CLI is fetched or cached: kmx shells out to none. Cached digests are
+PATH first, otherwise fetches pinned, checksum-verified tools. Helm is no
+longer fetched or needed: the only thing that used it was the retired kagent
+chart install. No kagent CLI is fetched or cached either. Cached digests are
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
@@ -110,18 +109,18 @@ old-replica and rollback risks; older installations also need gateway cleanup.
 
 Credential issuance/renewal TTL remains 60 seconds–365 days.
 
-### Runtime and remaining legacy kagent commands
+### Runtime commands
 
 | Command | Current behavior |
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no kagent, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` also selects the explicit legacy `kagent`, `agent` and `tools-agent`, which a bare run no longer performs and no flag restores |
+| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the legacy `kagent`, `agent` and `tools-agent` steps are removed and are refused as unknown |
 | `kmx aks up` / `kmx aks down` | Provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); `--payload kagent` is refused as retired, and an existing kagent lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; `--runtime kagent` is refused by name |
-| `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
+| `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Same reading as `kmx orka status`. `-o table` only |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
 `quickstart` reuses an **exact** live match of the Provider and Agent it would
@@ -129,14 +128,10 @@ write, and nothing else: a differing spec is somebody's deliberate change, so
 it refuses rather than overwrite it, and a half-finished run resumes. Every run
 creates a **fresh** Task — reporting an existing completed Task's answer would
 turn "the agent answered" into "the agent answered once, some time ago". The
-result must be non-blank after sanitisation. The explicit legacy
-`kmx up --step kagent` still installs the full Helm profile; its waits cover
-release workloads/jobs, not all pods in a namespace. These are not read-only
-operations: other setup steps
-still reconcile. Existing non-default routing is preserved by agent
-reconciliation; old gateway tool references require an explicit owner decision,
-not a silent switch to direct access. The original direct kagent MCP example
-remains.
+result must be non-blank after sanitisation. These are not read-only
+operations: other setup steps still reconcile. Old gateway tool references on
+a cluster require an explicit owner decision, not a silent switch to direct
+access.
 
 ## Settings
 
@@ -145,7 +140,7 @@ remains.
 | `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
 | `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
 | `--container-engine`, `CONTAINER_ENGINE` | `docker` (default) or `podman`; the flag overrides the environment; keep consistent for every operation on a cluster |
-| `KAGENT_VERSION`, `MODEL` | defaults `0.9.12`, `qwen2.5:3b` for legacy setup |
+| `MODEL` | model the runtime pulls and resolves, default `qwen2.5:3b` |
 | `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
 | `CRED` | default model/operator credential `hello-world` |
 | `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
@@ -193,14 +188,11 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   null when none were provisioned. `governed: false` means **this invocation did
   not enable governance**, not that existing governance is absent. Success
   requires a completed task with a readable answer; stdout is one JSON document.
-- `status -o json|yaml` carries `context`, `contextSource`, `governance`, and raw
-  kubectl objects under `items`, **not** a Kubernetes List you can apply. Read
-  population `state` before counts: unknown reads publish no invented zeroes.
-  Model seams count agents; credential evidence is Secret references, not Secret
-  values. Raw kagent tool inventory remains, but managed-tool counts/readiness
-  are removed. Old gateway URLs are not evidence of healthy direct routing.
-  Unready installed planes or missing/unreadable required model governance
-  prevent a human ready verdict.
+- `status` has no `-o json|yaml`, and refuses them by name rather than printing
+  an empty document. The structured output counted kagent Agents and
+  ModelConfigs; nothing replaces that count, because `kmx migrate` routes the
+  owner's own workloads and kmx cannot enumerate them. Read the cluster
+  directly for machine-readable runtime facts.
 - Ledger caller claims are unverified client assertions; observed source
   addresses and `acted for` are separate fields. Flow counts model refusals from
   `cost_source: denied`, not from any upstream HTTP error. Configuration posture
@@ -268,8 +260,8 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
 No-name terminal use offers a wizard for missing required inputs and explicit
 Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
-prompts. Non-interactive use requires a name. `hello-world` and `hello-tools`
-remain reserved for embedded kagent examples.
+prompts. Non-interactive use requires a name. No agent name is reserved: the
+embedded examples that occupied `hello-world` and `hello-tools` are gone.
 
 `--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
 scaffold, ModelConfig/MCP conversion, injected governance or copied kagent pod
@@ -405,8 +397,9 @@ Tool credential capture is removed. Plane-side model Copilot capture remains
 `kmx models credential copilot`: GitHub device login, a private 0600 OAuth cache
 and short-lived token exchange without reading credential material from stdin.
 It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
-gives the explicit-context command. Other model-key capture and the separate
-direct-kagent Copilot capture remain `make model-secret` and `make copilot-secret`.
+gives the explicit-context command. Provider credentials for an onboarded
+upstream are `kmx models add`; the separate checkout-only Copilot capture
+remains `make copilot-secret`.
 
 ## Backup, restore, and metrics
 
@@ -424,8 +417,8 @@ It does not invent a sum across replicas. See [operations](operations.md).
 
 ## What is NOT in `kmx`
 
-Non-native model-key capture, direct-kagent Copilot capture and standalone
-network probes retain checkout paths in [models](models.md) and [egress](egress.md).
+Checkout-only Copilot capture and standalone network probes retain paths in
+[models](models.md) and [egress](egress.md).
 Plane-side Copilot capture and the full lift do not need a checkout handoff.
 The tool gateway, tool-governance/capture commands and [workflow runner](workflows.md)
 are retired, not checkout alternatives. Use native kmx, with the Makefile only

@@ -592,3 +592,22 @@ func wrote(unchanged bool) string {
 	}
 	return "Wrote"
 }
+
+// requireNamespace refuses before minting a one-time credential that cannot
+// be stored in its destination namespace.
+//
+// `kmx migrate` is its only caller, and the check is about the operator's own
+// namespace: the token is shown once, so a destination that does not exist
+// has to be caught before anything is issued rather than after.
+func (a *App) requireNamespace(namespace, flag string) error {
+	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("namespace %q does not exist, and it is where the credential's Secret would go.\n"+
+				"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
+				"  Name the namespace your runtime reads its Secret from:\n"+
+				"    %s <your namespace>", namespace, flag)
+		}
+		return fmt.Errorf("cannot tell whether namespace %q exists (refusing to guess): %w", namespace, err)
+	}
+	return nil
+}

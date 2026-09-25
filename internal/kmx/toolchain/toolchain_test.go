@@ -41,11 +41,11 @@ func tarGz(t *testing.T, member string, body []byte) []byte {
 }
 
 // Only the first field of a checksum file is ours to trust: the rest is the
-// PUBLISHER's build path. kubectl publishes a bare digest, kind and Helm
-// publish `<digest>  <name>`, and both must read the same.
+// PUBLISHER's build path. kubectl publishes a bare digest, kind and archived
+// tools publish `<digest>  <name>`, and both must read the same.
 func TestExpectedDigestTakesOnlyTheFirstField(t *testing.T) {
 	want := digestOf([]byte("x"))
-	for _, file := range []string{want, want + "\n", want + "  kind-linux-amd64\n", want + "  /home/publisher/dist/helm.tar.gz\n"} {
+	for _, file := range []string{want, want + "\n", want + "  kind-linux-amd64\n", want + "  /home/publisher/dist/archived.tar.gz\n"} {
 		got, err := ExpectedDigest([]byte(file))
 		if err != nil {
 			t.Fatalf("%q: %v", file, err)
@@ -197,12 +197,23 @@ func TestEnsureWritesNothingWhenTheChecksumFails(t *testing.T) {
 	}
 }
 
-// Helm ships in a tarball, and the published digest covers the TARBALL. The
-// archive is verified before anything is extracted from it, and the extracted
-// member is what gets installed.
+// A tool that ships in a tarball is verified as the TARBALL, because that is
+// what the publisher's digest covers. The archive is verified before anything
+// is extracted from it, and the extracted member is what gets installed.
+//
+// The spec is built here rather than taken from Pinned: no pinned tool is
+// archived today (Helm was, and it was fetched for the retired kagent chart
+// alone). The rule outlives the tool that needed it, so it keeps its test.
 func TestAnArchivedToolIsVerifiedBeforeItIsExtracted(t *testing.T) {
-	binary := []byte("#!/bin/sh\necho helm\n")
-	spec, _ := Pinned("helm", "linux", "amd64")
+	binary := []byte("#!/bin/sh\necho archived\n")
+	spec := Spec{
+		Name:          "archived",
+		Version:       "1.2.3",
+		URL:           "https://example.invalid/archived-1.2.3.tar.gz",
+		ChecksumURL:   "https://example.invalid/archived-1.2.3.tar.gz.sha256sum",
+		ArchiveMember: "archived-1.2.3/archived",
+		Why:           "to prove the archive is verified before it is opened",
+	}
 	archive := tarGz(t, spec.ArchiveMember, binary)
 	tampered := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

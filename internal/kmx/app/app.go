@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
@@ -135,6 +136,22 @@ func (a *App) kubectlCapture(args ...string) (string, error) {
 
 func (a *App) kubectlQuiet(args ...string) bool {
 	return a.Run.Quiet("kubectl", a.kubectl(args...)...)
+}
+
+// isNotFound reports whether a kubectl failure was "the object is not there",
+// as opposed to "the cluster could not be reached" or "you may not read it".
+//
+// The distinction is what lets a read be TOLERANT without becoming blind. A
+// fresh cluster legitimately has no plane, no namespace and no Secret yet,
+// but an unreachable API server or an RBAC denial must NEVER be read as
+// "absent" — that is how a second certificate authority gets minted under a
+// plane whose workloads trust the first.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
 }
 
 // Capture and Command make App an admin.Kube: the admin plumbing reaches the

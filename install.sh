@@ -156,9 +156,9 @@ esac
 # Everything below this point is the END of an install that is not going
 # anywhere else. --quickstart is: it hands the shell to `kmx quickstart`
 # before any of it runs. That ordering is load-bearing rather than tidy —
-# `kmx version` names the pinned kagent release, and the supported
-# first-answer path installs no kagent, so printing it here put the legacy
-# runtime into the transcript of a path that never touches it.
+# `kmx version` prints a banner of pinned component versions, and a first
+# answer should open with the thing the reader asked for rather than with a
+# list of versions they did not.
 if [ "$RUN_QUICKSTART" = yes ]; then
   say ""
   exec "$BIN_DIR/kmx" quickstart
