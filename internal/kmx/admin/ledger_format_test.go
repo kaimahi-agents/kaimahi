@@ -73,7 +73,7 @@ func TestModelShardLedgerRowMatchesTheShardPatterns(t *testing.T) {
 	// vocabulary's non-claim words must not satisfy it.
 	metered := regexp.MustCompile(`model-ci +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200`)
 	caller := regexp.MustCompile(`(?m)model-ci +ollama .*ua:curl/[0-9].*127\.0\.0\.1 +none *$`)
-	unrecorded := regexp.MustCompile(` (legacy|unrecorded|unknown) +(legacy|unrecorded|unknown) +`)
+	unrecorded := regexp.MustCompile(` (legacy|unrecorded|unknown|none) +(legacy|unrecorded|unknown) +`)
 
 	recorded := row("free", "ua:curl/8.5.0", "127.0.0.1")
 	if !metered.MatchString(recorded) {
@@ -97,6 +97,7 @@ func TestModelShardLedgerRowMatchesTheShardPatterns(t *testing.T) {
 		{"legacy", "legacy"},
 		{"unrecorded", "unrecorded"},
 		{"unrecorded", "unknown"},
+		{"none", "unknown"},
 	} {
 		lost := row("free", tc.claim, tc.addr)
 		if !unrecorded.MatchString(lost) {
