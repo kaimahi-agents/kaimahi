@@ -2150,7 +2150,7 @@ jobs:
           export KUBECTL="kubectl --context kind-kaimahi-p1"
           bash scripts/ci/owner-model-client.sh ask 'Reply with exactly this text: BRIDGE WORKS' | tee owner-answer.json
           python3 - <<'EOF'
-          import json, sys
+          import json
           r = json.load(open("owner-answer.json"))
           assert r["status"] == 200, r
           assert "BRIDGE WORKS" in r["text"].upper(), r
