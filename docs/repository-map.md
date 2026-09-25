@@ -214,12 +214,12 @@ systems, not providers deployed for users.
 
 `verify-chat.py` is a checker: every occurrence in the Makefile is a comment
 line rather than a recipe. Its existing callers include
-`.github/workflows/ci.yml` (seven invocations among nine mentions — two
-are comments). Existing agent tool-call verification concerns the retained
+`.github/workflows/ci.yml` (four invocations among five mentions — one
+is a comment). Existing agent tool-call verification concerns the retained
 direct kagent path, not a removed gateway assertion.
 
 `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload the
-`e2e-resilience` shard migrates with `kmx migrate`. The Python half is a
+`e2e-resilience` and `e2e-spend` shards migrate with `kmx migrate`. The Python half is a
 standard-library application fixture rather than a Kaimahi component, and
 `scripts/test_owner_model_client.py` pins the three properties the shard's
 conclusions rest on: the credential leaves by no route but the bearer
