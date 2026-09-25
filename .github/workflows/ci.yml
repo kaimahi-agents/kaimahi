@@ -1548,9 +1548,11 @@ jobs:
       - name: "Caller attribution: the verified model turn retains its caller"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # Reuse the already verified turn; no second model call.
-          grep -E 'model-ci +ollama .*none *$' model-ledger.out
-          if grep -qE ' (legacy|unrecorded) +(legacy|unrecorded) +' model-ledger.out; then
+          # Reuse the already verified turn; no second model call. The
+          # positive pins the actual values curl and the port-forwarded
+          # loopback produce, not just that SOME text sits before `none`.
+          grep -E 'model-ci +ollama .*ua:curl/[0-9].*127\.0\.0\.1 +none *$' model-ledger.out
+          if grep -qE ' (legacy|unrecorded|unknown) +(legacy|unrecorded|unknown) +' model-ledger.out; then
             echo 'a new ledger row lost its caller fields' >&2; exit 1
           fi
       # Keyless: run it for real. Every step below drives the plane's
