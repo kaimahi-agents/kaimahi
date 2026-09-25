@@ -116,11 +116,9 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` also selects the explicit legacy `kagent`, `agent` and `tools-agent`, which a bare run no longer performs and no flag restores |
 | `kmx aks up` / `kmx aks down` | Provision AKS and land a platform on it, then clean up owned resources. `--payload` defaults to `orka` (no Provider is created); pass `--payload kagent` for the legacy runtime and its demo agents on governed Copilot. Both share cluster phases. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
-| `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
+| `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
-| `kmx agent edit <name>` | edit owned local kagent source without automatic apply; not an Orka bundle editor |
-| `kmx agent chat <name> [message]` | one-shot kagent invocation; `--interactive` supports Orka and kagent (`--runtime auto\|orka\|kagent`, `--namespace`); `--json` prints a raw kagent one-shot task |
-| `kmx govern [credential]` / `kmx use <preset>` | issue/reconcile model credential and switch Agent / explicitly switch preset |
+| `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; `--runtime kagent` is refused by name |
 | `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
@@ -278,18 +276,17 @@ hardening. Keep application image/placement/identity in the owner's Deployment;
 native implementation does not settle the open authoring-format decision or
 promote the isolated conversion spike to a supported interface.
 
-### Existing kagent editor
+### Editing an agent
 
-One-shot `agent chat` and `agent edit` remain kagent-specific. A one-shot chat
-with an Orka Agent now points at the working interactive Orka command instead
-of reporting that Agent as absent; `--interactive` supports both runtimes.
-`agent list --namespace <ns>` reads Orka Agents, while a bare list retains the
-legacy kagent inventory.
-`agent edit` edits a secure temporary copy of owned local YAML via `$VISUAL`/
-`$EDITOR`; it rejects symlinks, concurrent edits, secrets, invalid identity or
-tool wiring, then atomically replaces source. It never implicitly applies.
-Invalid non-secret candidates are retained at the reported path. For direct
-live-resource operations use kubectl with explicit context/namespace.
+There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you
+own, and a live Orka Agent is edited as the Kubernetes resource it is:
+
+```bash
+kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>
+```
+
+`kmx agent show <name> --namespace <ns>` reads it back with the chain it
+depends on.
 
 ## Interactive chat
 
@@ -297,12 +294,12 @@ live-resource operations use kubectl with explicit context/namespace.
 kmx agent chat --interactive hello-tools
 ```
 
-`/help`, `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,
-`/tools off|summary|verbose`, `/govern`, `/ungovern`, `/exit` are local controls.
-`--session <id>` resumes history. Scanner input remains supported when raw mode
-is unavailable; terminal slash completion is local. History validates the agent,
-retains received session IDs after stream failure and deduplicates display events
-by ID/payload, not execution. Malformed history can be skipped and ordinary
+`/help`, `/agent`, `/tools`, `/lift`, `/inference`, `/inference-local`,
+`/inference-copilot`, `/inference-foundry`, `/retry`, `/verbose-on`,
+`/verbose-off`, `/exit` are local controls. Each Orka turn is a fresh Task, so
+there is no resumable server-side session and no `--session`. Scanner input
+remains supported when raw mode is unavailable; terminal slash completion is
+local. Malformed history can be skipped and ordinary
 verbose payloads are display-limited; this is not an audit export.
 
 `/govern` creates an agent-specific model credential/Secret/ModelConfig;
@@ -399,10 +396,12 @@ upstream**: there is no per-credential model allowlist.
 
 ## Governing an agent
 
-`kmx govern` remains the legacy kagent model-preset switch. It supports the
-committed governed Ollama/Copilot presets and their fixed Secret reference,
-refusing incompatible overrides before issuance. It does not change tool
-authority or routing; the tool-governance commands are removed.
+`kmx govern` has been removed. An owner-managed application is put behind the
+plane with `kmx migrate`, and a credential is issued into a named destination
+with `kmx credential issue <name> --secret <secret> --namespace <ns>`. Both
+share one implementation of the pre-issue binding checks, so the one-time
+token cannot be overwritten by either path. Legacy preset governance survives
+only inside the `kmx aks up --payload kagent` agents phase, and goes with it.
 
 It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued

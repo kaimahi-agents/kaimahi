@@ -21,18 +21,20 @@ shell: sticky agent/location header, tools, `/agent`, `/lift`, inference selecti
 verbose controls, response timings and reusable connections. Discovery/read errors
 are reported rather than silently connecting to a different runtime.
 
-If no Orka Agent matches, the command retains the legacy kagent route. Where both
-runtimes have the same name, Orka wins; use `--runtime kagent` explicitly to choose
-the kagent Agent. Kagent retains its session/history, governance and A2A approval
-flow. Those runtime-specific semantics are not implemented by the Orka Task API.
+If no Orka Agent matches, the command says so. There is nothing left to fall
+back to: the legacy kagent route, its resumable sessions, its A2A approval flow
+and its in-chat preset governance were removed with the runtime, and
+`--runtime kagent` is now refused by name rather than resolved to Orka. Those
+runtime-specific semantics are not implemented by the Orka Task API.
 
 An optional message after the Agent name is sent once before the interactive
-prompt. `--session` is kagent-only; raw `--json` and interactive mode are mutually
-exclusive. Direct Orka chat starts with the Agent's current Provider; use
+prompt. Orka chat is a session, so `--interactive` is required and a one-shot
+invocation is refused with the command that works. Direct Orka chat starts with
+the Agent's current Provider; use
 `/inference-copilot` to choose Copilot, or `/inference-local` to return. The wizard
 retains its explicitly chosen inference source when entering this same shell.
 
-Shell Agent-name completion now includes Orka names and respects the runtime and
+Shell Agent-name completion reads Orka names in the selected namespace, and respects the
 namespace flags. No additional kagent CLI installation is needed for Orka chat.
 
 Typing `/` opens a floating completion menu above the message editor. It filters

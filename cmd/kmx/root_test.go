@@ -190,7 +190,6 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		argv []string
 		want string
 	}{
-		{"chat output modes", []string{"agent", "chat", "demo", "--interactive", "--json"}, "--interactive and --json"},
 		{"credential destination required", []string{"credential", "issue", "demo"}, "at least one of the flags"},
 		{"credential destinations conflict", []string{"credential", "issue", "demo", "--discard", "--secret", "demo"}, "none of the others can be"},
 		{"credential secret is non-empty", []string{"credential", "issue", "demo", "--secret="}, "non-empty --secret"},
@@ -288,15 +287,15 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent edit", "agent list", "agent show",
+		"agent", "agent chat", "agent create", "agent list", "agent show",
 		"aks", "aks up", "aks down", "backup", "budget", "completion",
 		"credential", "credential issue", "credential renew", "credentials",
-		"ctx", "down", "flow", "govern", "ledger",
+		"ctx", "down", "flow", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
 		"plane", "quickstart", "quickstart-wizard",
 		"restore", "status", "console",
-		"up", "use", "version", "watch",
+		"up", "version", "watch",
 	}
 	sort.Strings(want)
 
@@ -339,7 +338,7 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		path []string
 		want []string
 	}{
-		{[]string{"agent", "chat", "hello", "who", "--json"}, []string{"hello", "who"}},
+		{[]string{"agent", "chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
 		{[]string{"budget", "demo", "--tokens", "1"}, []string{"demo"}},
 		{[]string{"credential", "renew", "demo", "--ttl", "1d"}, []string{"demo"}},
 		{[]string{"credential", "issue", "demo", "--discard", "--ttl", "1d"}, []string{"demo"}},

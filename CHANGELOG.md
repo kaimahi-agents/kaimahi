@@ -66,6 +66,74 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- **The legacy operational commands are gone: `kmx govern`, `kmx use` and
+  `kmx agent edit` are no longer commands at all.** They drove the legacy
+  kagent runtime and nothing else, and each now fails locally as an unknown
+  command — before configuration is loaded and long before a cluster is
+  reached. **Upgrading:** an owner-managed application is put behind the plane
+  with `kmx migrate`, a credential is issued into a named destination with
+  `kmx credential issue <name> --secret <secret> --namespace <ns>`, a model
+  preset is applied with `kubectl apply -f k8s/models/<preset>.yaml`, and an
+  Orka Agent is edited with `kubectl edit agents.core.orka.ai <name>` and read
+  back with `kmx agent show`.
+
+- **`kmx agent chat` is Orka-only, and is a session.** `--runtime` accepts
+  `auto` and `orka`; `--runtime kagent` is **refused by name** rather than
+  quietly resolved to Orka, because a caller who named the legacy runtime
+  asked for a different platform and answering from Orka would answer a
+  question nobody put. Auto-detection resolves an Orka Agent or reports that
+  it did not — there is nothing left to fall back to. The one-shot transport
+  went with it: the kagent CLI download, the controller port-forward, the A2A
+  invoke and its retry policy, the resumable `--session`, the raw `--json`
+  task and the question re-sampling are all removed, and a chat without
+  `--interactive` is refused with the command that works. **Upgrading:**
+  `kmx agent chat --interactive [--namespace <ns>] <name>`. A script that
+  parsed the raw A2A task has no replacement on this path; create a Task with
+  `kmx agent create --task` and read its exact result instead.
+
+- **`kmx agent list` reports Orka Agents only.** A bare list used to report
+  the legacy runtime in its fixed namespace; it now reads `orka-system`, the
+  namespace the pinned installer uses and the same default `agent chat`
+  resolves against. `--namespace` selects another. The kagent
+  readiness/acceptance/ModelConfig/tool-wiring columns are gone with the kind
+  they described. **Upgrading:** `kubectl -n kagent get agents.kagent.dev` for
+  whatever a retained `kmx up --step agent` left behind.
+
+- **In-chat governance is gone.** `/govern`, `/ungovern`, `/sessions`,
+  `/resume`, `/history`, `/new` and `/session` were kagent session and
+  preset-switch controls; the Orka session's controls (`/agent`, `/tools`,
+  `/lift`, the `/inference*` family, `/retry`, `/verbose-*`, `/help`,
+  `/exit`) are now the whole set.
+
+- **`internal/kmx/kagentcli` is deleted**, and with it the pinned kagent CLI
+  download and its checksum verification. kmx still fetches kind, kubectl and
+  Helm, all still digest-checked. Nothing on any supported path downloads a
+  kagent binary any more.
+
+  **What deliberately remains, for the slices that retire it:**
+  `kmx up --step kagent|agent|tools-agent` still installs the legacy runtime
+  and its two demonstration agents, the installer pins and manifests are
+  untouched, `kmx status` still reports the kagent namespace, and the
+  `kmx aks up --payload kagent` agents phase still governs what it deploys —
+  the one remaining caller of the retained internal preset switch, which is
+  explicitly transitional and reachable from no command. What changed is that
+  **nothing in the CLI drives those objects**: what those steps leave on a
+  cluster is now operated with kubectl.
+
+  **CI:** `kmx-clone-free` keeps its no-checkout premise, its bare `kmx up`,
+  its Orka `agent create` Task with an exact expected answer read through the
+  account the bring-up provisioned, its module-proxy plane build and the
+  revision that plane reports. Its legacy half — the three install steps,
+  `kmx govern`, the one-shot `kmx agent chat`, the ledger and budget rows that
+  conversation produced, the `kmx use` switch and the backup/restore that
+  needed those rows — is **removed rather than translated**: each asserted
+  something about a command that no longer exists. Budget, ledger and
+  backup/restore keep their coverage in `e2e-models` and `e2e-resilience`,
+  against supported paths. The `kmx metrics` step stays and drops its
+  `kaimahi_decisions_total` assertion, which had no children left to count.
+  A hygiene check now refuses any retired command anywhere in that job.
+
+
 - **`kmx quickstart` no longer deploys the legacy kagent runtime**, and no
   longer reduces, reconciles or preserves a kagent Helm release. Its
   structured output's `agent` key is now `hello-world-agent` (was

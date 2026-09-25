@@ -8,7 +8,6 @@ KIND_CLUSTER ?= kaimahi-p1
 AKS_CLUSTER ?= kaimahi
 KAGENT_VERSION ?= 0.9.12
 MODEL ?= qwen2.5:3b
-KAGENT ?= bin/kagent
 KMX ?= bin/kmx
 CRED ?= hello-world
 
@@ -26,7 +25,6 @@ export KMX_KIND_CLUSTER := $(KIND_CLUSTER)
 export KMX_CONTAINER_ENGINE := $(CONTAINER_ENGINE)
 export KMX_KAGENT_VERSION := $(KAGENT_VERSION)
 export KMX_MODEL := $(MODEL)
-export KMX_KAGENT := $(KAGENT)
 export KMX_CONFIRM := $(KAIMAHI_CONFIRM)
 export KMX_CHAT_PORT := $(CHAT_PORT)
 export KMX_ADMIN_PORT := $(ADMIN_PORT)
@@ -35,7 +33,6 @@ export KMX_CRED := $(CRED)
 KMX_ENV = KIND_CLUSTER="$$KMX_KIND_CLUSTER" KUBE_CTX="$$KMX_KUBE_CTX" \
 	CONTAINER_ENGINE="$$KMX_CONTAINER_ENGINE" KAGENT_VERSION="$$KMX_KAGENT_VERSION" \
 	MODEL="$$KMX_MODEL" $(if $(filter command line,$(origin CHAT_PORT)),CHAT_PORT="$$KMX_CHAT_PORT",) \
-	$(if $(filter command line environment override,$(origin KAGENT)),KAGENT="$$KMX_KAGENT",) \
 	ADMIN_PORT="$$KMX_ADMIN_PORT" OPS_PORT="$$KMX_OPS_PORT" \
 	CRED="$$KMX_CRED" KAIMAHI_CONFIRM="$$KMX_CONFIRM"
 

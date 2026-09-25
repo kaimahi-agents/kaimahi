@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"reflect"
 	"regexp"
@@ -23,12 +24,11 @@ func TestSlashTrieMatchesPrefixes(t *testing.T) {
 		prefix string
 		want   []string
 	}{
-		{"/", []string{"/exit", "/govern", "/help", "/history", "/new", "/resume", "/retry", "/session", "/sessions", "/tools", "/ungovern", "/verbose-off", "/verbose-on"}},
+		{"/", []string{"/agent", "/exit", "/help", "/inference", "/inference-copilot", "/inference-foundry", "/inference-local", "/lift", "/retry", "/tools", "/verbose-off", "/verbose-on"}},
 		{"/verbose", []string{"/verbose-off", "/verbose-on"}},
-		{"/h", []string{"/help", "/history"}},
-		{"/s", []string{"/session", "/sessions"}},
-		{"/sess", []string{"/session", "/sessions"}},
-		{"/hist", []string{"/history"}},
+		{"/h", []string{"/help"}},
+		{"/l", []string{"/lift"}},
+		{"/inference-", []string{"/inference-copilot", "/inference-foundry", "/inference-local"}},
 		{"/unknown", []string{}},
 	} {
 		if got := commandNames(slashMatches(tc.prefix)); !reflect.DeepEqual(got, tc.want) {
@@ -79,12 +79,10 @@ func TestSlashPopupFitsAndKeepsSelectionVisible(t *testing.T) {
 
 func TestSlashCompletionUsesLongestCommonPrefix(t *testing.T) {
 	for _, tc := range []struct{ line, want string }{
-		{"/hi", "/history"},
 		{"/he", "/help"},
-		{"/s", "/session"},
-		{"/session", "/session"},
-		{"/res", "/resume"},
-		{"/resume", "/resume "},
+		{"/l", "/lift"},
+		{"/lift", "/lift "},
+		{"/inference-c", "/inference-copilot"},
 		{"/tools", "/tools "},
 		{"/unknown", "/unknown"},
 	} {
@@ -98,7 +96,7 @@ func TestSlashHintsStopAtArguments(t *testing.T) {
 	if got := slashMatches("/tools "); got != nil {
 		t.Fatalf("argument input produced command hints: %v", got)
 	}
-	if got := slashHint(slashMatches("/hist")); got != "/history" {
+	if got := slashHint(slashMatches("/lif")); got != "/lift — deploy to another cluster" {
 		t.Fatalf("unexpected hint %q", got)
 	}
 }
@@ -129,9 +127,12 @@ func dispatchedSlashCommands(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Two shapes appear in the switch: an exact match on the whole line, and
-	// a prefix match for the commands that take an argument.
-	pattern := regexp.MustCompile(`message == "(/[a-z-]+)"|strings\.HasPrefix\(message, "(/[a-z-]+) "\)`)
+	// The shared driver keys its switch on a normalised command, so the
+	// names it owns appear as case labels. Everything else is a RUNTIME
+	// command: the driver routes it to the session by name, and the session
+	// decides. Both halves are collected, or the registry check below would
+	// call every Orka command undispatched.
+	pattern := regexp.MustCompile(`case "(/[a-z-]+)"(?:, "(/[a-z-]+)")*:`)
 	dispatched := map[string]bool{}
 	for _, match := range pattern.FindAllStringSubmatch(string(source), -1) {
 		for _, name := range match[1:] {
@@ -139,6 +140,14 @@ func dispatchedSlashCommands(t *testing.T) map[string]bool {
 				dispatched[name] = true
 			}
 		}
+	}
+	// /quit shares its case label with /exit, and Go's multi-value case is
+	// not captured repeatedly by one regexp group.
+	if bytes.Contains(source, []byte(`case "/exit", "/quit":`)) {
+		dispatched["/quit"] = true
+	}
+	for _, command := range (&orkaRuntimeSession{}).Commands() {
+		dispatched[command.Name] = true
 	}
 	// If the switch is ever rewritten into a shape this does not recognise,
 	// the test must say so rather than quietly checking an empty set.

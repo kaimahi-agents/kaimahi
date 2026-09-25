@@ -2,8 +2,9 @@
 """Every COMMITTED ModelConfig pointing at the model seam must use https
 AND name the authority to verify it against.
 
-The interactive ModelConfig `kmx govern` applies is generated rather than
-committed and is held to the same rule by Go tests. Raw MCP inventory is
+Every seam-facing ModelConfig is now committed: the generated one that
+in-chat governance used to apply went with `kmx govern` and the legacy chat
+runtime, so this checker is the whole rule again. Raw MCP inventory is
 outside this model-only check.
 
 Why this check exists rather than trusting admission. kagent refuses neither

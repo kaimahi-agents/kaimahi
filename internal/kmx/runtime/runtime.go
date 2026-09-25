@@ -8,8 +8,7 @@ import "context"
 type ID string
 
 const (
-	Orka   ID = "orka"
-	Kagent ID = "kagent"
+	Orka ID = "orka"
 )
 
 type AgentRef struct {
@@ -71,7 +70,7 @@ type Session interface {
 
 // Discovery adapters distinguish absence from unreadable/unsupported objects.
 // Callers must not turn an error into fallback to a different runtime.
-type Target struct{ Context, Namespace, Name, Session string }
+type Target struct{ Context, Namespace, Name string }
 type Probe struct {
 	Found bool
 	Agent AgentRef

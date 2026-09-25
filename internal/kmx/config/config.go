@@ -99,10 +99,6 @@ type Config struct {
 	OpsPort       string
 	Credential    string
 	Confirm       string
-	// KagentBin, when set, is an existing kagent binary to use instead of
-	// the cached download. The Makefile points it at bin/kagent so a
-	// checkout keeps one copy.
-	KagentBin string
 	// ContextSource records where KubeContext came from, for the banner.
 	ContextSource string
 }
@@ -165,7 +161,6 @@ func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error)
 		OpsPort:         env("OPS_PORT", DefaultOpsPort),
 		Credential:      env("CRED", DefaultCredential),
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
-		KagentBin:       strings.TrimSpace(os.Getenv("KAGENT")),
 	}
 	engine := c.ContainerEngine
 	if containerEngineFlag != "" {

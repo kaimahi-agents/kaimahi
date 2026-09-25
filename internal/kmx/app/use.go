@@ -1,71 +1,18 @@
 package app
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"io/fs"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	kaimahi "github.com/kaimahi-agents/kaimahi"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 // The kagent namespace. Named here rather than reached for through config,
-// because it is not a setting: it is where the chart puts everything.
+// because it is not a setting: it is where the chart puts everything. Still
+// read by status and by certificate publication.
 const config_kagentNamespace = "kagent"
-
-// UseOptions selects the agent switched onto a model preset.
-type UseOptions struct{ Agent string }
-
-// Use switches an agent onto an embedded model preset.
-func (a *App) Use(preset string, opt UseOptions) error {
-	if opt.Agent == "" {
-		opt.Agent = config.DefaultAgent
-	}
-	name, err := presetManifest(preset)
-	if err != nil {
-		return err
-	}
-	if err := a.Guard(fmt.Sprintf("switch agent %q onto model preset %q", opt.Agent, preset),
-		a.operationCommand("use", preset, "--agent", opt.Agent)); err != nil {
-		return err
-	}
-	return a.UsePreset(opt.Agent, preset, []string{name})
-}
-
-func presetManifest(preset string) (string, error) {
-	if preset == "" {
-		return "", fmt.Errorf("usage: kmx use <preset> — one of: %s", strings.Join(presetNames(), ", "))
-	}
-	for _, name := range presetNames() {
-		if name == preset {
-			return "models/" + preset + ".yaml", nil
-		}
-	}
-	return "", fmt.Errorf("unknown model preset %q — kmx carries: %s", preset, strings.Join(presetNames(), ", "))
-}
-
-func presetNames() []string {
-	entries, err := fs.ReadDir(kaimahi.Manifests, "k8s/models")
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		if name := strings.TrimSuffix(e.Name(), ".yaml"); name != e.Name() {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-// PresetNames returns the embedded model preset names for CLI completion.
-func PresetNames() []string { return presetNames() }
 
 // requireNamespace refuses before minting a one-time credential that cannot
 // be stored in its destination namespace.
@@ -82,8 +29,12 @@ func (a *App) requireNamespace(namespace, flag string) error {
 	return nil
 }
 
-// UsePreset switches an agent onto a ModelConfig and waits until that is
-// TRUE of the running pods rather than of the object.
+// UsePreset switches a legacy Agent onto a ModelConfig and waits until that
+// is TRUE of the running pods rather than of the object.
+//
+// TRANSITIONAL, like Govern above it: `kmx use` is retired, and the only
+// remaining callers are the lift `agents` phase and the governance it runs.
+// It goes with the legacy lift payload.
 //
 // This is the Makefile's `use` recipe and its `wait_switched` macro, carried
 // across wait for wait. Each of those waits was added because something
@@ -100,28 +51,12 @@ func (a *App) requireNamespace(namespace, flag string) error {
 //     a perfectly plausible answer from the OLD preset.
 //   - Only then is the Agent's Ready condition meaningful.
 //
-// On kind this is the ONE implementation: `make use`, `make govern-tools`
-// and `make ungovern-tools` all delegate here. The managed-cluster
-// branches of those targets keep a shell copy of the same wait, and the
-// same end-to-end job exercises both.
-//
 // `apply` names the embedded manifests to apply as part of the switch. They
 // are applied INSIDE the before/after window deliberately: the
 // content-only-change case is detected by comparing the ModelConfig's
 // generation across the apply, so applying it beforehand would make that
 // comparison always read "unchanged" and skip the wait it exists to trigger.
 func (a *App) UsePreset(agent, preset string, apply []string) error {
-	return a.usePreset(agent, preset, func() error {
-		for _, name := range apply {
-			if err := a.apply(name); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (a *App) usePreset(agent, preset string, apply func() error) error {
 	// Three values from BEFORE the apply and the patch, because the waits
 	// afterwards are all comparisons against them.
 	presetGen, err := a.generation("modelconfig/" + preset)
@@ -140,8 +75,10 @@ func (a *App) usePreset(agent, preset string, apply func() error) error {
 		return err
 	}
 
-	if err := apply(); err != nil {
-		return err
+	for _, name := range apply {
+		if err := a.apply(name); err != nil {
+			return err
+		}
 	}
 	if err := a.patchModelConfig(agent, preset); err != nil {
 		return err
@@ -194,44 +131,6 @@ func (a *App) usePreset(agent, preset string, apply func() error) error {
 		return fmt.Errorf("agent %s settled on modelConfig %q, not requested %q", agent, current, preset)
 	}
 	return nil
-}
-
-// UngovernModel moves only the agent's model seam back to keyless in-cluster
-// Ollama. Credentials, ledger history, grants, and tool wiring are retained.
-func (a *App) UngovernModel(agent string) error {
-	if err := a.preflight(depKubectl); err != nil {
-		return err
-	}
-	if err := a.Guard(fmt.Sprintf("move agent %q's model seam outside the Kaimahi plane", agent), "kmx agent chat --interactive "+agent); err != nil {
-		return err
-	}
-	model, err := a.activeModelName(agent)
-	if err != nil {
-		return err
-	}
-	preset := governedResourceName("kmx-direct-ollama", agent)
-	if err := a.validateInteractiveModelOwnership(agent, preset); err != nil {
-		return err
-	}
-	manifest, err := interactiveModelManifest(preset, "", model, false, agent)
-	if err != nil {
-		return err
-	}
-	return a.usePreset(agent, preset, func() error {
-		fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (agent-specific direct ModelConfig %s)\n", a.Cfg.KubeContext, preset)
-		quiet := *a.Run
-		quiet.Echo = false
-		return quiet.RunStdin(manifest, "kubectl", a.kubectl("apply", "-f", "-")...)
-	})
-}
-
-func governedResourceName(prefix, agent string) string {
-	name := prefix + "-" + agent
-	if len(name) <= 63 {
-		return name
-	}
-	sum := fmt.Sprintf("%x", sha256.Sum256([]byte(agent)))[:8]
-	return name[:63-len(sum)-1] + "-" + sum
 }
 
 // waitSwitched is `wait_switched`: reconcile, rollout, and then exactly one

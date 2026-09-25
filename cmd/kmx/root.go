@@ -116,11 +116,10 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
 		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
-		newPlaneCommand(state), newGovernCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
+		newPlaneCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newFlowCommand(state),
 		newWatchCommand(state),
 		newConsoleCommand(state),
-		newUseCommand(state),
 		newBudgetCommand(state), newModelsCommand(state), newMigrateCommand(state),
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),

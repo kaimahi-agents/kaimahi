@@ -94,7 +94,7 @@ kmx ledger hello-world
 
 Renewal moves a deadline **without changing token material**. For suspected
 compromise, reissue the credential and repoint its Secret; renewal is not
-rotation. `kmx govern --ttl` can set a lifetime at issuance. Model credentials
+rotation. `kmx credential issue --ttl` sets a lifetime at issuance. Model credentials
 are separate from the removed tool-governance commands. Tokens are shown once
 and stored in the database only as hashes.
 

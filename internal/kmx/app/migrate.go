@@ -275,7 +275,7 @@ func (a *App) Migrate(opt MigrateOptions) error {
 	// 4. The credential the application will present, and the authority
 	//    it will verify the seam with.
 	if err := a.session(func(client *admin.Client) error {
-		return a.issueCredential(client, opt.Credential, GovernOptions{
+		return a.issueCredential(client, opt.Credential, CredentialOptions{
 			Secret: opt.Secret, SecretNamespace: opt.Namespace, Command: "kmx migrate",
 		}, false)
 	}); err != nil {

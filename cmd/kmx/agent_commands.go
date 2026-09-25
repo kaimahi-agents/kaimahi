@@ -1,16 +1,14 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
 func newAgentCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "agent", Short: "Create, inspect, edit, and chat with agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentEditCommand(state), newAgentChatCommand(state))
+	group := &cobra.Command{Use: "agent", Short: "Create, inspect, and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state))
 	return group
 }
 
@@ -40,23 +38,18 @@ func newAgentListCommand(state *commandState) *cobra.Command {
 	var output, namespace string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List agents: Orka Agents with --namespace, else the legacy kagent runtime",
-		Long: `List Agent resources.
+		Short: "List the Orka Agents in a namespace",
+		Long: `List Orka Agent resources.
 
-The namespace selects which runtime is reported, because they are different
-kinds and merging them under one set of headings would imply they are
-interchangeable.
+These are the agents kmx agent create writes and kmx agent show inspects.
 
-  --namespace <ns>   Orka Agents in that namespace, as created by
-                     ` + "`kmx agent create`" + ` and inspected by ` + "`kmx agent show`" + `.
-  (omitted)          the legacy kagent runtime, in its own fixed namespace.
-
-Orka watches namespaces explicitly, so there is no default to guess: a wrong
-one would report "none" about a namespace you never meant.`,
+--namespace selects the namespace the Orka controller watches. It defaults to
+the namespace the pinned installer uses, which is the same default kmx agent
+chat resolves against.`,
 		Args: cobra.NoArgs,
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
-	cmd.Flags().StringVar(&namespace, "namespace", "", "list Orka Agents in this namespace instead of the legacy runtime")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "namespace the Orka controller watches (default: "+app.OrkaNamespace+")")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.ListAgents(output, namespace) })
 	return cmd
@@ -69,8 +62,7 @@ Select explicitly the namespace the Orka controller watches. Provider type, mode
 identifier (not a ModelConfig), and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
-Interactive agent chat supports Orka and kagent. List uses --namespace for
-Orka and defaults to kagent; edit remains kagent-specific.
+Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
 
 Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret
@@ -88,7 +80,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit namespace the Orka controller watches (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai or anthropic (required)")
-	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier, not a kagent ModelConfig (required)")
+	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier (required)")
 	cmd.Flags().StringVar(&opt.Secret, "secret", "", "existing Provider Secret name (required)")
 	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "api-key", "key name within the existing Secret; never a value")
 	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "optional HTTP(S) Provider endpoint, no credentials/query/fragment")
@@ -120,43 +112,21 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	return cmd
 }
 
-func newAgentEditCommand(state *commandState) *cobra.Command {
-	var file string
-	cmd := &cobra.Command{Use: "edit <name>", Short: "Edit and validate local Agent source", Args: usageArgs(1, 1, "kmx agent edit <name> [--file <path>]")}
-	cmd.Flags().StringVar(&file, "file", "", "local Agent manifest")
-	cmd.ValidArgsFunction = completeLocalAgents
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.EditAgent(cmd.Flags().Arg(0), file) })
-	return cmd
-}
-
 func newAgentChatCommand(state *commandState) *cobra.Command {
-	var asJSON, interactive, verbose bool
-	var session, runtime, namespace, azureDiscovery string
-	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Agent", Args: usageArgs(1, -1, "kmx agent chat [--json] [--interactive] [--session <id>] <name> [message]")}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print raw A2A task")
-	cmd.Flags().BoolVar(&interactive, "interactive", false, "open the shared Orka chat TUI or a kagent streamed session")
+	var interactive, verbose bool
+	var runtime, namespace, azureDiscovery string
+	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Args: usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")}
+	cmd.Flags().BoolVar(&interactive, "interactive", false, "open the Orka chat TUI (required: Orka chat is a session)")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
-	cmd.Flags().StringVar(&session, "session", "", "resume this kagent session")
-	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (prefer matching Orka Agent), orka, kagent")
-	cmd.Flags().StringVar(&namespace, "namespace", "", "Agent namespace (default: orka-system for Orka, kagent for kagent)")
+	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().StringVar(&azureDiscovery, "azure-discovery", "cli", "AKS listing for /lift: cli or sdk")
-	// --interactive and --json are only in conflict by resolved value, not by
-	// presence: "--interactive=false --json" is the same request as a bare
-	// "--json", so this stays a value check rather than
-	// MarkFlagsMutuallyExclusive, which would trip on the former.
-	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
-		if interactive && asJSON {
-			return fmt.Errorf("--interactive and --json cannot be used together")
-		}
-		return nil
-	}
-	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka", "kagent"}))
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka"}))
 	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()
-		a.ChatJSON(asJSON)
-		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Session: session, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery})
+		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery})
 	})
 	return cmd
 }

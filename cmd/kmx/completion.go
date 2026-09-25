@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -29,46 +27,17 @@ func completeLiveAgents(cmd *cobra.Command, args []string, toComplete string) ([
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	contextName := completionContext(cmd)
-	runtime, _ := cmd.Flags().GetString("runtime")
-	var values []string
-	if runtime != "orka" {
-		values = kubectlCompletion("--context", contextName, "-n", "kagent", "get", "agents.kagent.dev", "-o", "name")
+	namespace, _ := cmd.Flags().GetString("namespace")
+	if namespace == "" {
+		namespace = app.OrkaNamespace
 	}
-	if cmd.Name() == "chat" && runtime != "kagent" {
-		namespace, _ := cmd.Flags().GetString("namespace")
-		if namespace == "" {
-			namespace = app.OrkaNamespace
-		}
-		values = append(values, kubectlCompletion("--context", contextName, "-n", namespace, "get", "agents.core.orka.ai", "-o", "name")...)
-	}
+	values := kubectlCompletion("--context", completionContext(cmd), "-n", namespace, "get", "agents.core.orka.ai", "-o", "name")
 	for i, value := range values {
 		if _, name, ok := strings.Cut(value, "/"); ok {
 			values[i] = name
 		}
 	}
 	return filterCompletions(values, toComplete), cobra.ShellCompDirectiveNoFileComp
-}
-
-func completeLocalAgents(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	entries, err := os.ReadDir("agents")
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
-			names = append(names, strings.TrimSuffix(entry.Name(), ".yaml"))
-		}
-	}
-	return filterCompletions(names, toComplete), cobra.ShellCompDirectiveNoFileComp
-}
-
-func completePresets(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return filterCompletions(app.PresetNames(), toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
 func completionContext(cmd *cobra.Command) string {

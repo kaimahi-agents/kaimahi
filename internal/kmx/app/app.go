@@ -46,9 +46,7 @@ type App struct {
 	Out               io.Writer
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
-	InvocationCommand string
-	// chatJSON forces raw A2A JSON from `agent chat` on a terminal.
-	chatJSON           bool
+	InvocationCommand  string
 	chatVerbose        bool
 	chatInference      string
 	azureDiscoveryMode string
