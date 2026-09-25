@@ -181,7 +181,7 @@ a separate verb is [open](#open-questions).
 | Orka controller unavailable — repair? | `chat_lift_prerequisites.go:75` | `--install-orka`, else refuse |
 | Which inference | `chat_lift_prerequisites.go:136` | `--inference`, **required** |
 | Kubernetes tool missing — install? | `chat_lift_prerequisites.go:170` | `--install-k8s-tool`, else refuse |
-| Final deployment review | `chat_lift.go:245-250` | `--plan`, then re-run without it |
+| Final deployment review | `chat_lift.go:257-262` | `--plan`, then re-run without it |
 | Retry after failure | `chat_lift_deploy.go:60-63` | re-run the command |
 
 `--inference` has **no default**, for the reason `--payload` has none. Keeping
@@ -199,7 +199,7 @@ refuses. `--to-namespace` continues to select where the Agent itself deploys.
 
 ### The guard is not bypassed
 
-`/lift` sets `worker.guarded = true` (`chat_lift.go:228`), which suppresses
+`/lift` sets `worker.guarded = true` (`chat_lift.go:240`), which suppresses
 `guardOrkaCreate` (`orka_create_online.go:60-88`). That is correct there: the
 operator selected the destination from a list of live clusters, saw it in the
 header, and confirmed a review pane naming it.

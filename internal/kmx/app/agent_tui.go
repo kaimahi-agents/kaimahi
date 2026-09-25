@@ -105,7 +105,7 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 		ctx, cancel := context.WithCancel(a.operationContext())
 		var workers sync.WaitGroup
 		m.inferenceContext = ctx
-		m.loadAzureInference = consoleAzureChoices
+		m.loadAzureInference = a.consoleAzureChoices
 		m.loadInference = func(env agentTUIEnvironment, agent agentTUIAgent) (consoleInferenceSnapshot, error) {
 			return a.consoleLoadInference(ctx, env, agent)
 		}

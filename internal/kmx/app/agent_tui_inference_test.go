@@ -215,23 +215,87 @@ func TestConsoleInferenceAzureDiscoveryAndFinalName(t *testing.T) {
 	}
 }
 
+// Azure console reads are prepared by the Runner like every other lift call:
+// KMX_LIFT_KEPT is added and KMX_LIFT_DROPPED is removed even though the
+// process itself has the latter set, and the subscriptions read is the one
+// that fails closed if the Runner environment was never applied.
 func TestConsoleInferenceAzureCommandsPinScope(t *testing.T) {
 	dir := t.TempDir()
 	fakeTool(t, dir, "az", `case "$*" in
- 'account list '*) printf '%s' '[{"name":"Demo","id":"sub-test","tenantId":"tenant-test"}]' ;;
+ 'account list '*)
+  if [ "$KMX_LIFT_KEPT" != "added" ] || [ -n "$KMX_LIFT_DROPPED" ]; then exit 1; fi
+  printf '%s' '[{"name":"Demo","id":"sub-test","tenantId":"tenant-test"}]' ;;
  'cognitiveservices account list --subscription sub-test '*) printf '%s' '[{"name":"demo","kind":"OpenAI","resourceGroup":"rg-test","location":"westus3","properties":{"endpoint":"https://example.openai.azure.com/"}}]' ;;
  'cognitiveservices account deployment list --subscription sub-test --resource-group rg-test --name demo '*) printf '%s' '[{"name":"ready","properties":{"provisioningState":"Succeeded","model":{"name":"gpt-4.1","version":"test"}}},{"name":"pending","properties":{"provisioningState":"Creating"}}]' ;;
  *) exit 1 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KMX_LIFT_DROPPED", "inherited")
+	a := &App{Run: &run.Runner{Env: []string{"KMX_LIFT_KEPT=added"}, Unset: []string{"KMX_LIFT_DROPPED"}}}
 	for _, stage := range []string{"azure-subscriptions", "azure-accounts", "azure-deployments"} {
-		choices, err := consoleAzureChoices(t.Context(), stage, "sub-test", "rg-test", "demo")
+		choices, err := a.consoleAzureChoices(t.Context(), stage, "sub-test", "rg-test", "demo")
 		if err != nil || len(choices) != 1 {
 			t.Fatalf("%s choices=%+v err=%v", stage, choices, err)
 		}
 		if stage == "azure-deployments" && choices[0].Model != "ready" {
 			t.Fatal("non-ready deployment offered")
 		}
+	}
+}
+
+// consolePrepareClusterFoundry's account/key reads must also go through the
+// Runner: the fake az here only answers once KMX_LIFT_KEPT/KMX_LIFT_DROPPED
+// are applied, and the assertions below check the returned connector and
+// Secret reference, never the key value itself.
+func TestConsolePrepareClusterFoundryReadsExistingAccountThroughTheRunner(t *testing.T) {
+	dir := t.TempDir()
+	body := filepath.Join(dir, "probe")
+	t.Setenv("PROBE_BODY", body)
+	fakeTool(t, dir, "az", `guarded() { [ "$KMX_LIFT_KEPT" = "added" ] && [ -z "$KMX_LIFT_DROPPED" ]; }
+case "$*" in
+ 'cognitiveservices account show --subscription sub-test --resource-group rg-test --name demo -o json --only-show-errors')
+  guarded || exit 1
+  printf '%s' '{"name":"demo","resourceGroup":"rg-test","properties":{"endpoint":"https://example.openai.azure.com/"}}' ;;
+ 'cognitiveservices account keys list --subscription sub-test --resource-group rg-test --name demo -o json --only-show-errors')
+  guarded || exit 1
+  printf '%s' '{"Key1":"unexported-test-key"}' ;;
+ *) exit 1 ;;
+esac`)
+	fakeTool(t, dir, "kubectl", `case "$*" in
+ *'create -f -'*) /bin/cat >> "$PROBE_BODY"; printf '\n---\n' >> "$PROBE_BODY" ;;
+ *'get job'*) printf '%s' '{"status":{"succeeded":1}}' ;;
+ *'delete job'*) exit 0 ;;
+ *) exit 1 ;;
+esac`)
+	t.Setenv("PATH", dir)
+	t.Setenv("KMX_LIFT_DROPPED", "inherited")
+	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{Env: []string{"KMX_LIFT_KEPT=added"}, Unset: []string{"KMX_LIFT_DROPPED"}}, Err: io.Discard}
+	source := consoleInferenceSource{Kind: "foundry-cluster", Subscription: "sub-test", ResourceGroup: "rg-test", Account: "demo", Name: "remote-foundry", Endpoint: "https://example.openai.azure.com/openai/v1", Model: "deployment"}
+	configured, err := a.consolePrepareClusterFoundry(t.Context(), agentTUIAgent{Runtime: "orka", Namespace: "agents"}, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.Kind != "apikey" || configured.Provider != "openai" || configured.Endpoint != "https://example.openai.azure.com/openai/v1" {
+		t.Fatalf("connector=%+v", configured)
+	}
+	if configured.Secret == "" || configured.SecretKey != "api-key" {
+		t.Fatalf("Secret reference not returned: %+v", configured)
+	}
+	raw, err := os.ReadFile(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert shape only: never interpolate the expected key value (even a
+	// fake one) or the raw manifest into a failure message.
+	content := string(raw)
+	if !strings.Contains(content, `"name":"`+configured.Secret+`"`) {
+		t.Fatal("cluster Secret create did not reference the returned Secret name")
+	}
+	if !strings.Contains(content, `"namespace":"agents"`) {
+		t.Fatal("cluster Secret create did not target the agent namespace")
+	}
+	if !strings.Contains(content, `"api-key":`) {
+		t.Fatal("cluster Secret create did not carry an api-key entry")
 	}
 }
 
