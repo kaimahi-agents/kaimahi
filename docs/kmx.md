@@ -37,13 +37,15 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
 `--version=v0.1.0` pins it, `--bin-dir=DIR` changes the destination, and
-`--quickstart` continues into the legacy quickstart. It checks the binary against
+`--quickstart` continues into `kmx quickstart`. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
 an independent signature. See [releases](releases.md) for platforms and upgrades.
 
-Local kind commands need Docker or Podman. kmx uses kind, kubectl and Helm from
-PATH first, otherwise fetches pinned, checksum-verified tools; the pinned kagent
-CLI is cached too. Cached digests are rechecked before reuse. Set
+Local kind commands need Docker or Podman. kmx uses kind and kubectl from
+PATH first, otherwise fetches pinned, checksum-verified tools; Helm is fetched
+the same way but is needed only by the explicit legacy `kmx up --step kagent`,
+and the pinned kagent CLI is cached too. Cached digests are rechecked before
+reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
 its source; the lift plane phase preflights Go even from a checkout.
@@ -106,13 +108,13 @@ old-replica and rollback risks; older installations also need gateway cleanup.
 
 Credential issuance/renewal TTL remains 60 seconds–365 days.
 
-### Existing legacy kagent commands
+### Runtime and remaining legacy kagent commands
 
 | Command | Current behavior |
 |---|---|
-| `kmx quickstart` | kind + keyless Ollama + minimal kagent + hello-world + completed answer; no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no kagent, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
+| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` also selects the explicit legacy `kagent`, `agent` and `tools-agent`, which a bare run no longer performs and no flag restores |
 | `kmx aks up` / `kmx aks down` | Provision AKS and land a platform on it, then clean up owned resources. `--payload` defaults to `orka` (no Provider is created); pass `--payload kagent` for the legacy runtime and its demo agents on governed Copilot. Both share cluster phases. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
@@ -122,12 +124,15 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx status` | context, kagent/model wiring, runtime health, governance populations and next actions |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
-`quickstart` creates the minimal application release only after proving absence,
-using install so a concurrent release is not overwritten. It reconciles its
-recognized first-answer profile; deployed full/custom profiles are preserved and
-the controller checked. Unreadable/malformed or non-deployed state refuses. `up` explicitly
-upgrades/installs the full profile. Helm waits cover release workloads/jobs, not
-all pods in a namespace. These are not read-only operations: other setup steps
+`quickstart` reuses an **exact** live match of the Provider and Agent it would
+write, and nothing else: a differing spec is somebody's deliberate change, so
+it refuses rather than overwrite it, and a half-finished run resumes. Every run
+creates a **fresh** Task — reporting an existing completed Task's answer would
+turn "the agent answered" into "the agent answered once, some time ago". The
+result must be non-blank after sanitisation. The explicit legacy
+`kmx up --step kagent` still installs the full Helm profile; its waits cover
+release workloads/jobs, not all pods in a namespace. These are not read-only
+operations: other setup steps
 still reconcile. Existing non-default routing is preserved by agent
 reconciliation; old gateway tool references require an explicit owner decision,
 not a silent switch to direct access. The original direct kagent MCP example
@@ -247,8 +252,10 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   that order and the UID/generation readiness checks, using an explicit context
   and namespace. Failures leave partial state; reruns do not adopt or overwrite it.
 - `--task` authorizes a model call and requires an existing
-  `--result-service-account` in the selected namespace; kmx creates no account or
-  RBAC. It creates the Task once and waits for Succeeded plus an actual nonblank
+  `--result-service-account` in the selected namespace; `agent create` creates no
+  account or RBAC. (`kmx up --step orka` provisions `orka-result-reader`, whose
+  grant is one verb on `tasks.core.orka.ai` in `orka-system`.) It creates the
+  Task once and waits for Succeeded plus an actual nonblank
   answer. **Without `--task`, no model response was tested.**
 - kmx requests a ten-minute token; **the API server determines its actual TTL**.
   It carries the account's full effective authority, not result-only scope;

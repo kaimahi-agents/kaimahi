@@ -94,6 +94,11 @@ type App struct {
 	// Set only while preparing the Orka result forward, so cancellation and
 	// signals kill a forward even before its bound-port announcement.
 	orkaForwardContext context.Context
+
+	// quickstartResultPort moves quickstart's loopback result forward off the
+	// fixed port so a test can own a listener. Empty in every real
+	// invocation, where the fixed port is the only one.
+	quickstartResultPort string
 }
 
 // New builds an App around the process's own streams.

@@ -2580,10 +2580,24 @@ jobs:
           # The ungoverned state must be stated, not left to be inferred
           # from an empty ledger.
           grep -q 'This command does not enable governance' quickstart.out
-          # The three tools were fetched by kmx, not installed by the job.
-          for t in kind kubectl helm; do
+          # The tools were fetched by kmx, not installed by the job. Helm is
+          # NOT among them: the Orka runtime is a pinned manifest, not a
+          # chart, so a quickstart that fetched Helm would be doing work the
+          # first answer does not need.
+          for t in kind kubectl; do
             grep -q "fetching $t v" quickstart.out
           done
+          if grep -q 'fetching helm v' quickstart.out; then
+            echo "quickstart fetched Helm; nothing on the Orka path uses it"; exit 1
+          fi
+          # Nothing on this path installs, reads or waits on the legacy runtime.
+          if grep -qi 'kagent' quickstart.out; then
+            echo "the supported first-answer path still names the legacy runtime:"
+            grep -i kagent quickstart.out; exit 1
+          fi
+          # The answer came from an Orka Task against the fixed bundle.
+          grep -q 'Install Orka v' quickstart.out
+          grep -q 'Deploy the hello-world-agent agent' quickstart.out
       # Running it twice is how an agent in a harness will use it: run,
       # read, decide, run again. The second run must be safe, and must still
       # end with an answer — this time as the JSON a machine reads.
@@ -2607,7 +2621,9 @@ jobs:
           assert r["ok"] is True, r
           assert r["governed"] is False, "the fast path must not claim governance"
           assert r["answer"].strip(), "no answer in the structured output"
-          assert r["agent"] == "hello-world", r
+          assert r["agent"] == "hello-world-agent", r
+          assert "orka-system" in r["manifest"], r["manifest"]
+          assert "kagent" not in r["manifest"], r["manifest"]
           assert r["context"] == "kind-kmx-quickstart", r
           assert r["elapsed_seconds"] > 0, r
           commands = [shlex.split(n) for n in r["next"]]
@@ -2617,45 +2633,98 @@ jobs:
           assert plane[2:] == ["kmx", "--context", r["context"], "plane"], plane
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
-      # The docs promise that `kmx up` afterwards brings back what quickstart
-      # deferred, on the same cluster. It is a helm reconcile of the same
-      # values file without the `--set` overlays — which is exactly the kind
-      # of claim that is true when written and quietly false a release later.
-      - name: kmx up restores the components quickstart deferred
+      # `kmx up` on the same cluster is the RUNTIME and nothing more: it
+      # must reconcile Orka without deploying an agent, and without bringing
+      # back a legacy runtime that no longer has a caller.
+      - name: kmx up is the runtime, and deploys no agent
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KIND_CLUSTER: kmx-quickstart
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          kmx up
+          kmx up 2>&1 | tee up-after-quickstart.out
+          if grep -qi 'kagent' up-after-quickstart.out; then
+            echo "a bare kmx up still names the legacy runtime:"
+            grep -i kagent up-after-quickstart.out; exit 1
+          fi
           k="$HOME/.config/kmx/path/kubectl"
-          "$k" --context kind-kmx-quickstart -n kagent get deploy kagent-ui \
-            -o jsonpath='{.spec.replicas}' | grep -qx 1
-          "$k" --context kind-kmx-quickstart -n kagent get deploy kagent-tools >/dev/null
-          "$k" --context kind-kmx-quickstart -n kagent get agents.kagent.dev hello-tools >/dev/null
-          echo "the console, the tool server and the second agent are back"
-      # Quickstart is allowed to install less on an empty cluster, but it must
-      # never TAKE AWAY a capability from a release that `kmx up` or an
-      # operator has already made full. This is the transition that exposed a
-      # pod-list race and, more importantly, the non-monotonic profile change.
-      - name: Quickstart preserves an existing full runtime
+          # The runtime, read from the cluster rather than from the command's
+          # own stdout.
+          "$k" --context kind-kmx-quickstart -n orka-system rollout status \
+            deploy/orka-controller-manager --timeout=120s
+          "$k" --context kind-kmx-quickstart -n orka-system rollout status \
+            deploy/orka-agent-harness-wrapper --timeout=120s
+          "$k" --context kind-kmx-quickstart -n orka-system get \
+            providers.core.orka.ai local >/dev/null
+          # The grant `up --step orka` owns, and its exact extent.
+          "$k" --context kind-kmx-quickstart -n orka-system get \
+            serviceaccount orka-result-reader >/dev/null
+          rules=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            role orka-result-reader -o json)
+          python3 - "$rules" <<'EOF'
+          import json, sys
+          rules = json.loads(sys.argv[1])["rules"]
+          assert rules == [{"apiGroups": ["core.orka.ai"], "resources": ["tasks"],
+                            "verbs": ["get"]}], rules
+          print("result-reader grant is one verb on one resource")
+          EOF
+          # No legacy runtime was installed by anything on this path.
+          if "$k" --context kind-kmx-quickstart get ns kagent >/dev/null 2>&1; then
+            echo "namespace kagent exists on the supported path"; exit 1
+          fi
+          # No Helm release anywhere: the runtime is a pinned manifest.
+          if "$k" --context kind-kmx-quickstart get secret -A \
+            -l owner=helm -o name | grep -q .; then
+            echo "a Helm release exists on the supported path"; exit 1
+          fi
+      # Rerunning is how an agent in a harness uses this command. The third
+      # run must REUSE the exact bundle it already wrote — not recreate it,
+      # and not refuse it — and must still produce a fresh Task and answer.
+      - name: A third run reuses the exact bundle and asks a fresh Task
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KIND_CLUSTER: kmx-quickstart
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          kmx quickstart 2>&1 | tee quickstart-after-up.out
-          grep -q 'preserving it' quickstart-after-up.out
-          grep -q 'COMPLETE  An agent answered' quickstart-after-up.out
           k="$HOME/.config/kmx/path/kubectl"
-          "$k" --context kind-kmx-quickstart -n kagent get deploy kagent-ui \
-            -o jsonpath='{.spec.replicas}' | grep -qx 1
-          "$k" --context kind-kmx-quickstart -n kagent get deploy kagent-tools >/dev/null
-          "$k" --context kind-kmx-quickstart -n kagent get deploy kagent-kmcp-controller-manager >/dev/null
-          "$k" --context kind-kmx-quickstart -n kagent get agents.kagent.dev hello-tools >/dev/null
-          echo "quickstart answered without reducing the full runtime"
+          before=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            agents.core.orka.ai hello-world-agent -o jsonpath='{.metadata.uid}')
+          tasks_before=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            tasks.core.orka.ai -o name | wc -l)
+          kmx quickstart 2>&1 | tee quickstart3.out
+          grep -q 'Reusing matching Provider/hello-world-agent' quickstart3.out
+          grep -q 'Reusing matching Agent/hello-world-agent' quickstart3.out
+          grep -q 'COMPLETE  An agent answered' quickstart3.out
+          after=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            agents.core.orka.ai hello-world-agent -o jsonpath='{.metadata.uid}')
+          test "$before" = "$after"
+          tasks_after=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            tasks.core.orka.ai -o name | wc -l)
+          test "$tasks_after" -gt "$tasks_before"
+          echo "reused the bundle (UID $after) and asked a fresh Task"
+      # A live spec that differs from the one quickstart would write is
+      # somebody's deliberate change. It must STOP, not overwrite it.
+      - name: A drifted bundle is refused, not overwritten
+        if: steps.changes.outputs.docs_only != 'true'
+        env:
+          KIND_CLUSTER: kmx-quickstart
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          k="$HOME/.config/kmx/path/kubectl"
+          "$k" --context kind-kmx-quickstart -n orka-system patch \
+            agents.core.orka.ai hello-world-agent --type merge \
+            -p '{"spec":{"description":"edited by an operator"}}'
+          if kmx quickstart > drift.out 2>&1; then
+            echo "a drifted Agent was overwritten instead of refused"; cat drift.out; exit 1
+          fi
+          grep -q 'different configuration' drift.out
+          desc=$("$k" --context kind-kmx-quickstart -n orka-system get \
+            agents.core.orka.ai hello-world-agent -o jsonpath='{.spec.description}')
+          test "$desc" = "edited by an operator"
+          echo "the operator's edit survived the refusal"
       - name: The time did not double
         if: steps.changes.outputs.docs_only != 'true'
         env:
@@ -2666,9 +2735,19 @@ jobs:
           # the first time the job went green, of which the great majority is
           # image and model bytes coming down the wire.
           #
-          # The ceiling is that doubled. Time from one command to a working
-          # agent is the number the front door exists to move, and a number
-          # nothing watches goes back up — so the check is deliberately
+          # THAT BASELINE IS NOW STALE and deliberately not replaced by a
+          # guess. It measured the kagent journey (a Helm chart, a reduced
+          # release, an A2A invoke); this job now measures the Orka journey (a
+          # pinned manifest, a Provider, an Agent and a Task). The two are not
+          # comparable, and a number nobody measured is worse than an honest
+          # stale one. The ceiling below is UNCHANGED until a green run on this
+          # runner class reports a real figure — whoever sees that run first
+          # should record it here, with the run named, and move the ceiling
+          # with it in the same commit.
+          #
+          # The ceiling is the old baseline doubled. Time from one command to a
+          # working agent is the number the front door exists to move, and a
+          # number nothing watches goes back up — so the check is deliberately
           # a doubling detector rather than a generous "is it broken" bound.
           #
           # If this goes red: find what got slower FIRST. Raising the ceiling

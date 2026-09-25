@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -68,6 +69,23 @@ const (
 	// orkaModelNamespace is where `kmx up` puts the keyless model server
 	// the default Provider points at.
 	orkaModelNamespace = "ollama"
+
+	// orkaDefaultProvider and orkaDefaultModelURL are the keyless Provider
+	// `kmx up --step orka` wires and the in-cluster endpoint it resolves
+	// against. They are named rather than repeated because `kmx quickstart`
+	// builds an Agent against the SAME Provider: a second spelling of either
+	// would produce an Agent pointing at a Provider that does not exist.
+	orkaDefaultProvider = "local"
+	orkaDefaultModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
+
+	// orkaResultAccount is the read-only Task result account `kmx up --step
+	// orka` provisions. Task RESULTS are read over Orka's API with a
+	// short-lived token for this account, so the account has to exist before
+	// any command can retrieve one. It is provisioned by the runtime step and
+	// never by `kmx agent create`, which only ever NAMES an existing account:
+	// minting an identity as a side effect of authoring an agent would hide a
+	// grant inside a command nobody reads as a grant.
+	orkaResultAccount = "orka-result-reader"
 )
 
 // OrkaInstallerURL is the pinned source of the installer.
@@ -147,13 +165,13 @@ type OrkaOptions struct {
 // orkaDefaults fills the flags the operator left alone.
 func orkaDefaults(opt OrkaOptions) OrkaOptions {
 	if strings.TrimSpace(opt.Provider) == "" {
-		opt.Provider = "local"
+		opt.Provider = orkaDefaultProvider
 	}
 	if strings.TrimSpace(opt.Model) == "" {
-		opt.Model = "qwen2.5:3b"
+		opt.Model = config.DefaultModel
 	}
 	if strings.TrimSpace(opt.ModelURL) == "" {
-		opt.ModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
+		opt.ModelURL = orkaDefaultModelURL
 	}
 	return opt
 }
@@ -257,6 +275,97 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		a.notef("  kmx migrate <deployment> --namespace <ns> --model <provider>/<model>")
 	}
 	a.notef("  kmx orka status       # what is installed, and what it can resolve")
+	return nil
+}
+
+// stepOrka is `kmx up --step orka`: the pinned runtime, its keyless Provider
+// and the account a Task result is read with.
+//
+// It is `kmx orka install`'s work without `kmx orka install`'s framing — the
+// same fetch, the same digest refusal, the same Secret-before-manifest order
+// — because `up` supplies its own phase, guard and completion lines. Calling
+// OrkaInstall here would nest a four-phase command inside one phase of
+// another and end it with a second "COMPLETE".
+func (a *App) stepOrka() error {
+	opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model})
+	// A verified host model is already reachable FROM the cluster (that is
+	// what verifySelectedLocalModel proves), and it is the model this run
+	// deployed no in-cluster Ollama for. Pointing the Provider at the
+	// in-cluster address instead would wire a Provider to nothing.
+	if a.selectedLocalModel != nil {
+		opt.Model = a.selectedLocalModel.Model
+		opt.ModelURL = strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/") + "/v1"
+	}
+	installer, err := a.fetchOrkaInstaller()
+	if err != nil {
+		return err
+	}
+	if err := a.orkaWrapperCredential(); err != nil {
+		return err
+	}
+	if err := a.applyOrkaInstaller(installer); err != nil {
+		return err
+	}
+	if err := a.orkaProvider(opt); err != nil {
+		return err
+	}
+	return a.orkaResultReader()
+}
+
+// orkaResultReader provisions the read-only Task result account.
+//
+// Its authority is one verb on one resource in one namespace, written out
+// here rather than pointed at a helper, because this is a GRANT and the thing
+// worth reviewing is its exact extent. Orka v0.1.3 authenticates result reads
+// but does not enforce Task-read RBAC, so this Role is the ceiling kmx can
+// state, not a guarantee the server enforces — which is why it is kept this
+// small.
+func (a *App) orkaResultReader() error {
+	manifest := `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ` + orkaResultAccount + `
+  namespace: ` + OrkaNamespace + `
+  labels:
+    app.kubernetes.io/managed-by: kmx
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ` + orkaResultAccount + `
+  namespace: ` + OrkaNamespace + `
+  labels:
+    app.kubernetes.io/managed-by: kmx
+rules:
+  - apiGroups: ["core.orka.ai"]
+    resources: ["tasks"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ` + orkaResultAccount + `
+  namespace: ` + OrkaNamespace + `
+  labels:
+    app.kubernetes.io/managed-by: kmx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ` + orkaResultAccount + `
+subjects:
+  - kind: ServiceAccount
+    name: ` + orkaResultAccount + `
+    namespace: ` + OrkaNamespace + `
+`
+	quiet := *a.Run
+	quiet.Echo = false
+	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (ServiceAccount/Role/RoleBinding %s)\n",
+		a.Cfg.KubeContext, orkaResultAccount)
+	if err := quiet.RunStdin([]byte(manifest), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
+		return fmt.Errorf("provisioning the Task result account %s/%s: %w", OrkaNamespace, orkaResultAccount, err)
+	}
+	a.notef("ServiceAccount %s may get Tasks in %s and nothing else. A result token carries\n"+
+		"  its full effective authority, so it is kept to that one verb.", orkaResultAccount, OrkaNamespace)
 	return nil
 }
 
@@ -388,13 +497,19 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 	if err := scaffold.ValidateName(opt.Provider); err != nil {
 		return fmt.Errorf("--provider %q: %w", opt.Provider, err)
 	}
-	if _, err := a.kubectlCapture("-n", orkaModelNamespace, "get", "svc", "ollama", "-o", "name"); err != nil {
-		if isNotFound(err) {
-			return fmt.Errorf("no in-cluster model server at %s, so Provider %q would resolve nothing.\n"+
-				"  `kmx up` deploys one. To install Orka without a Provider: --provider -",
-				opt.ModelURL, opt.Provider)
+	// Only the in-cluster default is checkable from here. A `--model-url`
+	// pointing somewhere else (a host Ollama reached over the kind gateway,
+	// say) is the caller's own endpoint, and looking for an `ollama` Service
+	// that has nothing to do with it would refuse a route that works.
+	if opt.ModelURL == orkaDefaultModelURL {
+		if _, err := a.kubectlCapture("-n", orkaModelNamespace, "get", "svc", "ollama", "-o", "name"); err != nil {
+			if isNotFound(err) {
+				return fmt.Errorf("no in-cluster model server at %s, so Provider %q would resolve nothing.\n"+
+					"  `kmx up` deploys one. To install Orka without a Provider: --provider -",
+					opt.ModelURL, opt.Provider)
+			}
+			return fmt.Errorf("cannot tell whether an in-cluster model server exists (refusing to guess): %w", err)
 		}
-		return fmt.Errorf("cannot tell whether an in-cluster model server exists (refusing to guess): %w", err)
 	}
 
 	secret := opt.Provider + "-provider-key"

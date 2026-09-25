@@ -680,3 +680,95 @@ func TestTheNoTelemetryPhaseLabelIsPayloadAware(t *testing.T) {
 		t.Errorf("the kagent verify lost its purpose: %q", kagent)
 	}
 }
+
+// `kmx up --step orka` is the step that OWNS the Task result identity.
+//
+// Result reads go over Orka's API with a short-lived token for this account,
+// so it has to exist before any command can retrieve an answer — and the
+// grant has to be reviewable. `kmx agent create` deliberately only NAMES an
+// existing account: minting an identity as a side effect of authoring an
+// agent would hide a grant inside a command nobody reads as a grant.
+func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+	f.app.Cfg.Model = "qwen2.5:3b"
+
+	if err := f.app.stepOrka(); err != nil {
+		t.Fatalf("step orka: %v", err)
+	}
+	applied := f.applied(t)
+	for _, want := range []string{
+		"kind: ServiceAccount",
+		"name: " + orkaResultAccount,
+		"kind: Role",
+		"kind: RoleBinding",
+		`apiGroups: ["core.orka.ai"]`,
+		`resources: ["tasks"]`,
+		`verbs: ["get"]`,
+	} {
+		if !strings.Contains(applied, want) {
+			t.Errorf("the result account manifest is missing %q:\n%s", want, applied)
+		}
+	}
+	// The ceiling, stated. A second verb or a second resource here is a
+	// widened grant, and a token for this account carries its full effective
+	// authority — so the extent is asserted, not merely the presence.
+	for _, forbidden := range []string{"secrets", "pods", `"list"`, `"watch"`, `"create"`, `"delete"`, "ClusterRole"} {
+		if strings.Contains(applied, forbidden) {
+			t.Errorf("the result account grant was widened with %q:\n%s", forbidden, applied)
+		}
+	}
+	// The whole step, not just its last object: a run that skipped the
+	// installer or the Provider would still have written the account.
+	calls := f.calls(t)
+	for _, want := range []string{"get secret harness-wrapper-auth", "rollout status deploy/orka-controller-manager", "get svc ollama"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("the orka step did not %q:\n%s", want, calls)
+		}
+	}
+	if !strings.Contains(applied, "kind: Provider") || !strings.Contains(applied, orkaDefaultModelURL) {
+		t.Errorf("the orka step wired no keyless Provider at the in-cluster endpoint:\n%s", applied)
+	}
+}
+
+// A Provider pointed somewhere other than the in-cluster default is the
+// caller's own endpoint — a host Ollama reached over the kind gateway, say,
+// which `kmx up` verified is reachable FROM the cluster and deployed no
+// in-cluster Ollama for. Refusing it because an `ollama` Service that has
+// nothing to do with it is absent would refuse a route that works.
+func TestOrkaProviderChecksTheInClusterServiceOnlyForTheInClusterEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name, url     string
+		wantErr       bool
+		wantServiceOp bool
+	}{
+		{"in-cluster default", orkaDefaultModelURL, true, true},
+		{"host route", "http://172.18.0.1:11434/v1", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOrkaFixture(t, []byte("kind: Namespace\n"))
+			t.Setenv("KMX_TEST_OLLAMA", "absent")
+			err := f.app.orkaProvider(orkaDefaults(OrkaOptions{ModelURL: tc.url}))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error=%v, want error=%v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				if !strings.Contains(err.Error(), "no in-cluster model server") {
+					t.Fatalf("the refusal does not name the missing server: %v", err)
+				}
+				if applied := f.applied(t); strings.Contains(applied, "kind: Provider") {
+					t.Fatalf("a Provider resolving nothing was written:\n%s", applied)
+				}
+				return
+			}
+			if strings.Contains(f.calls(t), "get svc ollama") != tc.wantServiceOp {
+				t.Fatalf("looked for an unrelated in-cluster Service:\n%s", f.calls(t))
+			}
+			applied := f.applied(t)
+			if !strings.Contains(applied, tc.url) || !strings.Contains(applied, "kind: Provider") {
+				t.Fatalf("the host route was not written into the Provider:\n%s", applied)
+			}
+		})
+	}
+}

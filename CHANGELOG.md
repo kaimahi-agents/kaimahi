@@ -24,6 +24,61 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **The front door is Orka.** `kmx quickstart` now goes kind → keyless Ollama
+  → the pinned Orka release → a fixed `hello-world-agent` Provider/Agent
+  bundle → a fresh Task with a readable answer. Nothing on that path installs,
+  reads or waits on the legacy kagent runtime, and nothing on it uses Helm:
+  the Orka runtime is a pinned, digest-checked manifest, not a chart. The
+  command is also deterministic and non-interactive — the host-Ollama picker
+  is gone from it, so the same command on the same machine produces the same
+  cluster, Provider and Agent, which is what lets an unattended caller rerun
+  it and compare. Choosing your own model and authoring your own agent is
+  `kmx quickstart-wizard` and `kmx agent create`.
+- **A bare `kmx up` is the runtime and deploys no agent.** It now runs
+  `cluster`, `ollama`, `model`, `orka` and stops. `kmx quickstart` is the
+  command that ends with an agent answering; `kmx agent create` is the one
+  that authors your own. The legacy `kagent`, `agent` and `tools-agent` steps
+  remain individually addressable with `kmx up --step <name>` so the slices
+  that retire them can each be green on their own. **There is no flag that
+  puts them back into a bare run** — deliberately, so no configuration can
+  keep the old default alive past its retirement.
+- **`kmx up --step orka` owns the Task result identity.** It provisions the
+  `orka-result-reader` ServiceAccount and its Role/RoleBinding, whose entire
+  grant is `get` on `tasks.core.orka.ai` in `orka-system`. `kmx agent create`
+  still only NAMES an existing account and creates no RBAC: minting an
+  identity as a side effect of authoring an agent would hide a grant inside a
+  command nobody reads as a grant. Orka v0.1.3 authenticates result reads but
+  does not enforce Task-read RBAC, so this Role is the ceiling kmx can state,
+  not one the server enforces — which is why it is kept this small.
+- **`kmx quickstart` reruns by exact match.** A live Provider or Agent whose
+  spec differs from the one quickstart would write is somebody's deliberate
+  change — an edited endpoint, a different model, a hand-applied bundle — so
+  the command now stops rather than overwrite it, and says `different
+  configuration`. A half-finished run resumes: whichever of the two already
+  matches is kept and the other is created. Every run creates a **fresh**
+  Task; reporting an existing completed Task's answer would turn "the agent
+  answered" into "the agent answered once, some time ago".
+- **A Provider pointed away from the in-cluster endpoint is no longer refused
+  for an unrelated Service.** `kmx orka install --model-url` only checks for
+  the in-cluster `ollama` Service when the URL *is* the in-cluster default. A
+  host Ollama reached over the kind gateway is the caller's own endpoint, and
+  `kmx up` has already verified it is reachable from the cluster.
+
+### Breaking
+
+- **`kmx quickstart` no longer deploys the legacy kagent runtime**, and no
+  longer reduces, reconciles or preserves a kagent Helm release. Its
+  structured output's `agent` key is now `hello-world-agent` (was
+  `hello-world`) and `manifest` names the generated Orka bundle in
+  `orka-system` rather than the embedded kagent example. Its `next` actions
+  are now an Orka chat, `kmx agent create`, `kmx orka status`, `kmx plane` and
+  `kmx migrate`. **Upgrading:** a caller parsing `agent` or `manifest` must be
+  updated. To keep using the legacy runtime, invoke it explicitly with
+  `kmx up --step kagent` (and `--step agent` / `--step tools-agent`); those
+  steps are retained only until their retirement slices land.
+- **A bare `kmx up` no longer installs kagent or the two demonstration
+  agents.** **Upgrading:** run the steps explicitly, as above.
+
 - **The runtime shard is now the hosted-model shard.** `e2e-runtime` installed
   the legacy runtime with a bare `kmx up` and opened with a kagent
   conversation, a model-preset switch and an MCP tool call; the hosted-upstream

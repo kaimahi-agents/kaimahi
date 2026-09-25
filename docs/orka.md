@@ -156,9 +156,14 @@ it never adopts or updates the installer's shared Provider `local`. This is a
 new Agent/Task example, not a continuation command for an Agent you already
 created. Choose unused names and output paths; creation refuses collisions.
 
-Task execution requires an existing result account. An operator with RBAC
-creation permission can provision this dedicated account separately; these
-commands contain names only, not token values:
+Task execution requires an existing result account. `kmx up --step orka` (and
+so `kmx quickstart` and `kmx orka install`'s place in them) provisions exactly
+this account, Role and RoleBinding — owning the runtime identity is the
+runtime step's job. `agent create` never does: it only NAMES an account, so
+authoring an agent cannot mint a grant nobody read as a grant. On a cluster
+whose Orka arrived another way, an operator with RBAC creation permission can
+provision the same account separately; these commands contain names only, not
+token values:
 
 ```bash
 kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
