@@ -1571,7 +1571,8 @@ jobs:
             --secret kaimahi-race-token --namespace "$CLIENT_NS"
           bin/kmx budget race-cred --tokens 1
           test "$(bash scripts/plane-pods.sh | wc -l)" = 2
-          GOVERNED_SECRET=kaimahi-race-token SECRET_NAMESPACE="$CLIENT_NS" EXPECT_ADMITTED=1 \
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-race-token \
+            SECRET_NAMESPACE="$CLIENT_NS" EXPECT_ADMITTED=1 \
             bash scripts/spend-race-probe.sh 8 | tee spend-race.out
           grep -q 'admitted=1 denied(429)=7 other=0' spend-race.out
           # The ledger agrees: one allowed row, seven denials, no open hold.
