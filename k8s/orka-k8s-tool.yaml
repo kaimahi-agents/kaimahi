@@ -101,6 +101,18 @@ spec:
       targetPort: 8080
 ---
 apiVersion: core.orka.ai/v1alpha1
+kind: OutboundAccessPolicy
+metadata:
+  name: kmx-k8s-tool-gateway
+  namespace: orka-system
+spec:
+  gateway:
+    serviceRef:
+      name: kmx-k8s-tool
+      port: 8080
+    scheme: http
+---
+apiVersion: core.orka.ai/v1alpha1
 kind: Tool
 metadata:
   name: k8s-get-resources
@@ -123,6 +135,11 @@ spec:
         description: Optional pod phase filter. Use Running when asked which pods are running.
     required: [resource]
   http:
-    url: http://kmx-k8s-tool.orka-system.svc.cluster.local:8080/resources
-    method: POST
-    timeout: 15s
+      # Orka rejects private Service IPs as direct Tool authorities. This public,
+      # credential-free logical authority passes SSRF validation; the policy
+      # routes execution only to the exact same-namespace Service above.
+      url: https://example.com/resources
+      method: POST
+      timeout: 15s
+      outboundAccessPolicyRef:
+        name: kmx-k8s-tool-gateway

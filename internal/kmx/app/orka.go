@@ -396,7 +396,13 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		}
 		return fmt.Errorf("cannot tell whether an in-cluster model server exists (refusing to guess): %w", err)
 	}
+	return a.applyOrkaProvider(opt)
+}
 
+func (a *App) applyOrkaProvider(opt OrkaOptions) error {
+	if err := scaffold.ValidateName(opt.Provider); err != nil {
+		return fmt.Errorf("--provider %q: %w", opt.Provider, err)
+	}
 	secret := opt.Provider + "-provider-key"
 	body := secretManifest(secret, OrkaNamespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
 		map[string]string{"app.kubernetes.io/managed-by": "kmx"})
@@ -425,6 +431,9 @@ spec:
 	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Provider %s -> %s)\n",
 		a.Cfg.KubeContext, opt.Provider, opt.ModelURL)
 	if err := quiet.RunStdin([]byte(provider), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
+		return err
+	}
+	if err := a.waitOrkaResourceCondition(orkaProviderKind, opt.Provider, "Ready"); err != nil {
 		return err
 	}
 	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",

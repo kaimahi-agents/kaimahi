@@ -61,6 +61,26 @@ func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 	}
 }
 
+func TestUpDefaultsToKagentAndAcceptsOrka(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	root := newRootCommand(&commandState{deps: deps})
+	cmd, _, err := root.Find([]string{"up"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flag := cmd.Flags().Lookup("runtime")
+	if flag == nil || flag.DefValue != "kagent" {
+		t.Fatalf("up runtime default=%v, want kagent", flag)
+	}
+	if err := cmd.ParseFlags([]string{"--runtime", "orka"}); err != nil {
+		t.Fatal(err)
+	}
+	if value, _ := cmd.Flags().GetString("runtime"); value != "orka" {
+		t.Fatalf("runtime=%q", value)
+	}
+}
+
 func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)

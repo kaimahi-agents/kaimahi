@@ -74,11 +74,13 @@ func newQuickstartWizardCommand(state *commandState) *cobra.Command {
 }
 
 func newUpCommand(state *commandState) *cobra.Command {
-	var step string
+	var opt app.UpOptions
 	cmd := &cobra.Command{Use: "up", Short: "Bring up the local runtime", Args: cobra.NoArgs}
-	cmd.Flags().StringVar(&step, "step", "", "run one step only: "+strings.Join(app.UpSteps, ", "))
-	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.UpSteps))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Up(step) })
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "kagent", "agent runtime: kagent or orka")
+	cmd.Flags().StringVar(&opt.Step, "step", "", "run one runtime step only: "+strings.Join(app.AllUpSteps, ", "))
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"kagent", "orka"}))
+	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(app.AllUpSteps))
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.UpWithOptions(opt) })
 	return cmd
 }
 

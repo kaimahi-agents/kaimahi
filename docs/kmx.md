@@ -112,7 +112,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + minimal kagent + hello-world + completed answer; no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | full local kagent profile and both demo agents; `--step` selects cluster, ollama, model, kagent, agent or tools-agent |
+| `kmx up` | full local kagent profile and both demo agents by default; `--runtime orka` instead installs Orka, its keyless local Provider, the read-only Kubernetes Tool, and equivalent `hello-world` / `hello-tools` Orka Agents. `--step` accepts the selected runtime's `kagent` or `orka` platform step alongside cluster, ollama, model, agent and tools-agent |
 | `kmx aks up` / `kmx aks down` | Provision AKS and land a platform on it, then clean up owned resources. `--payload` defaults to `orka` (no Provider is created); pass `--payload kagent` for the legacy runtime and its demo agents on governed Copilot. Both share cluster phases. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | legacy kagent readiness/acceptance/ModelConfig/tool wiring; `--namespace <ns>` lists Orka Agents instead; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
@@ -262,7 +262,8 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 No-name terminal use offers a wizard for missing required inputs and explicit
 Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
 prompts. Non-interactive use requires a name. `hello-world` and `hello-tools`
-remain reserved for embedded kagent examples.
+are reserved for the demo Agents installed by `kmx up`; the selected runtime
+determines their resource type.
 
 `--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
 scaffold, ModelConfig/MCP conversion, injected governance or copied kagent pod
@@ -288,6 +289,14 @@ live-resource operations use kubectl with explicit context/namespace.
 
 ```bash
 kmx agent chat --interactive hello-tools
+```
+
+For the Orka runtime installed by `kmx up --runtime orka`, select
+`hello-tools`—not the intentionally tool-free `hello-world` Agent—and make the
+runtime and namespace explicit:
+
+```bash
+kmx agent chat --interactive --runtime orka --namespace orka-system hello-tools
 ```
 
 `/help`, `/session`, `/sessions`, `/history`, `/resume <id>`, `/new`, `/retry`,

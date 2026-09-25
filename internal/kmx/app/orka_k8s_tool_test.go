@@ -2,8 +2,14 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
@@ -27,6 +33,61 @@ func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
 		if err != nil || patch != nil {
 			t.Fatalf("existing tool changed: %s %v", patch, err)
 		}
+	}
+}
+
+func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
+	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"kind: OutboundAccessPolicy",
+		"name: " + quickstartK8sToolPolicy,
+		"name: kmx-k8s-tool",
+		"port: 8080",
+		"url: " + quickstartK8sToolAuthority,
+		"outboundAccessPolicyRef:",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("Tool manifest lacks %q", want)
+		}
+	}
+	if strings.Contains(text, "url: http://kmx-k8s-tool.") {
+		t.Fatal("Tool still presents a private Service URL as its direct authority")
+	}
+}
+
+func TestWaitOrkaResourceConditionRejectsAStaleGeneration(t *testing.T) {
+	dir := t.TempDir()
+	countFile := filepath.Join(dir, "count")
+	fakeTool(t, dir, "kubectl", fmt.Sprintf(`
+count=0
+[ ! -f %[1]q ] || count=$(/bin/cat %[1]q)
+count=$((count + 1))
+printf '%%s' "$count" > %[1]q
+if [ "$count" -eq 1 ]; then
+  printf '%%s' '{"metadata":{"generation":2},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}'
+else
+  printf '%%s' '{"metadata":{"generation":2},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":2}]}}'
+fi
+`, countFile))
+	t.Setenv("PATH", dir)
+	a := &App{
+		Cfg: &config.Config{KubeContext: "kind-demo"},
+		Run: &run.Runner{},
+	}
+
+	if err := a.waitOrkaResourceCondition("tools.core.orka.ai", quickstartK8sTool, "Available"); err != nil {
+		t.Fatal(err)
+	}
+	count, err := os.ReadFile(countFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(count) != "2" {
+		t.Fatalf("status reads = %s, want 2; stale generation was accepted", count)
 	}
 }
 

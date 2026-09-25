@@ -13,13 +13,33 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// Steps of `kmx up`, in order. They are addressable individually so the
+// Steps of the default `kmx up` kagent runtime, in order. They are addressable individually so the
 // Makefile's `cluster`, `ollama`, `model`, `kagent`, `agent` and
 // `tools-agent` targets can delegate to the same code rather than keeping a
 // second copy of it.
 var UpSteps = []string{"cluster", "ollama", "model", "kagent", "agent", "tools-agent"}
 
+// OrkaUpSteps are the equivalent runtime-specific steps selected by
+// `kmx up --runtime orka`.
+var OrkaUpSteps = []string{"cluster", "ollama", "model", "orka", "agent", "tools-agent"}
+
+// AllUpSteps drives flag help and completion. Runtime validation still rejects
+// a step belonging to the other runtime.
+var AllUpSteps = []string{"cluster", "ollama", "model", "kagent", "orka", "agent", "tools-agent"}
+
+// UpOptions selects one built-in runtime and, optionally, one of its steps.
+type UpOptions struct {
+	Runtime string
+	Step    string
+}
+
 // Up runs the whole journey, or the single named step.
+func (a *App) Up(step string) error {
+	return a.UpWithOptions(UpOptions{Runtime: "kagent", Step: step})
+}
+
+// UpWithOptions runs the runtime-specific journey. Empty runtime retains the
+// historical kagent default for direct callers as well as the CLI.
 //
 // On kind this IS the journey: the Makefile's kind `UP_STEPS` is empty and
 // `make up` is one line delegating here, so the sequence CI runs is the
@@ -27,22 +47,36 @@ var UpSteps = []string{"cluster", "ollama", "model", "kagent", "agent", "tools-a
 // could drift from it. RUNTIME ONLY: `kmx up` does not deploy the
 // governance plane, and says so at the end rather than leaving anyone
 // to discover it from an empty ledger.
-func (a *App) Up(step string) error {
+func (a *App) UpWithOptions(opt UpOptions) error {
 	started := a.timeNow()
-	steps := UpSteps
-	if step != "" {
+	runtime := strings.ToLower(strings.TrimSpace(opt.Runtime))
+	if runtime == "" {
+		runtime = "kagent"
+	}
+	var runtimeSteps []string
+	switch runtime {
+	case "kagent":
+		runtimeSteps = UpSteps
+	case "orka":
+		runtimeSteps = OrkaUpSteps
+	default:
+		return fmt.Errorf("unknown runtime %q — expected kagent or orka", opt.Runtime)
+	}
+	steps := runtimeSteps
+	if opt.Step != "" {
 		found := false
-		for _, s := range UpSteps {
-			if s == step {
+		for _, s := range runtimeSteps {
+			if s == opt.Step {
 				found, steps = true, []string{s}
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("unknown step %q — one of: %s", step, strings.Join(UpSteps, ", "))
+			return fmt.Errorf("step %q is not available for runtime %q — one of: %s",
+				opt.Step, runtime, strings.Join(runtimeSteps, ", "))
 		}
 	}
-	if step == "" || step == "cluster" {
+	if opt.Step == "" || opt.Step == "cluster" {
 		if err := a.validateKindTarget(); err != nil {
 			return err
 		}
@@ -50,40 +84,60 @@ func (a *App) Up(step string) error {
 	if err := a.preflightUp(steps); err != nil {
 		return err
 	}
-	if step == "" {
+	if opt.Step == "" {
 		if err := a.maybeSelectLocalModel(true); err != nil {
 			return err
 		}
 	}
 
-	action := "bring up the kmx runtime (kind, Ollama, kagent, agents)"
+	action := fmt.Sprintf("bring up the kmx %s runtime on kind", runtime)
 	command := "kmx up"
-	if step != "" {
-		action, command = "run the '"+step+"' step", "kmx up --step "+step
+	if runtime != "kagent" {
+		command += " --runtime " + runtime
+	}
+	if opt.Step != "" {
+		action = "run the '" + opt.Step + "' step for the " + runtime + " runtime"
+		command += " --step " + opt.Step
 	}
 	guard := a.Guard
-	if step == "" || step == "cluster" {
+	if opt.Step == "" || opt.Step == "cluster" {
 		guard = a.GuardCreate
 	}
 	if err := guard(action, command); err != nil {
 		return err
 	}
 
-	if step != "" {
-		if err := a.runPhase(phase{current: 1, total: 1, name: upPhaseName(step)}, func() error {
-			return a.runUpStep(step)
+	if opt.Step != "" {
+		if err := a.runPhase(phase{current: 1, total: 1, name: upPhaseName(opt.Step)}, func() error {
+			return a.runUpStep(runtime, opt.Step)
 		}); err != nil {
 			return err
 		}
-	} else if err := a.upOverlapped(); err != nil {
-		return err
+	} else {
+		var err error
+		if runtime == "orka" {
+			err = a.upOrka()
+		} else {
+			err = a.upOverlapped()
+		}
+		if err != nil {
+			return err
+		}
 	}
 
-	if step == "" {
-		if err := a.runPhase(phase{current: 6, total: 6, name: "Collect runtime status"}, a.Status); err != nil {
+	if opt.Step == "" {
+		status := a.Status
+		if runtime == "orka" {
+			status = a.OrkaStatus
+		}
+		if err := a.runPhase(phase{current: 6, total: 6, name: "Collect runtime status"}, status); err != nil {
 			return err
 		}
 		a.complete("Runtime setup finished", started)
+		if runtime == "orka" {
+			a.printOrkaUpFollowup()
+			return nil
+		}
 		// One line: `kmx up` is the RUNTIME. Governance is a deliberate
 		// second step, and saying nothing here would leave an operator to
 		// infer it from an empty ledger.
@@ -104,18 +158,27 @@ func (a *App) Up(step string) error {
 	return nil
 }
 
+func (a *App) printOrkaUpFollowup() {
+	a.notef("\nNEXT  Runtime only: this command installed Orka and direct model access; it did not enable Kaimahi model-traffic governance.")
+	a.notef("\nTRY   Kubernetes tools: %s", a.operationCommand("agent", "chat", "--interactive",
+		"--runtime", "orka", "--namespace", OrkaNamespace, orkaHelloToolsAgent))
+	a.notef("      Plain Agent:      %s", a.operationCommand("agent", "chat", "--interactive",
+		"--runtime", "orka", "--namespace", OrkaNamespace, config.DefaultAgent))
+}
+
 func upPhaseName(step string) string {
 	return map[string]string{
 		"cluster":     "Prepare kind cluster",
 		"ollama":      "Deploy Ollama",
 		"model":       "Pull model",
 		"kagent":      "Install kagent",
+		"orka":        "Install Orka and wire its model Provider",
 		"agent":       "Deploy hello-world agent",
 		"tools-agent": "Deploy hello-tools agent",
 	}[step]
 }
 
-func (a *App) runUpStep(step string) error {
+func (a *App) runUpStep(runtime, step string) error {
 	switch step {
 	case "cluster":
 		return a.stepCluster()
@@ -125,9 +188,17 @@ func (a *App) runUpStep(step string) error {
 		return a.stepModel()
 	case "kagent":
 		return a.stepKagent()
+	case "orka":
+		return a.stepOrka()
 	case "agent":
+		if runtime == "orka" {
+			return a.stepOrkaAgent()
+		}
 		return a.stepAgent()
 	case "tools-agent":
+		if runtime == "orka" {
+			return a.stepOrkaToolsAgent()
+		}
 		return a.stepToolsAgent()
 	}
 	return fmt.Errorf("unknown up step %q", step)
@@ -200,6 +271,9 @@ func (a *App) preflightUp(steps []string) error {
 	}
 	if wanted["kagent"] {
 		dependencies = append(dependencies, depHelm, depKubectl)
+	}
+	if wanted["orka"] {
+		dependencies = append(dependencies, depKubectl)
 	}
 	return a.preflight(dependencies...)
 }
