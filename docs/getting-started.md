@@ -7,11 +7,11 @@ or [migration](migrate.md); a migrated application's Deployment stays owner-mana
 Tool traffic remains the application owner's responsibility; the Kaimahi tool
 gateway is retired.
 
-The local quickstart below is the **supported Orka first-answer path**: it
-ends with a native Orka Agent answering a question. It is now the only
-first-answer path kmx has: the three legacy install steps
-have been removed, and naming one is an unknown step. A cluster
-that still runs the legacy runtime is operated with kubectl.
+The local quickstart below is the **supported deterministic Orka first-answer
+path**: it ends with a native Orka Agent answering a question. For guided
+custom authoring and a first answer, use the wizard described below. The three
+legacy install steps have been removed; invoking one is now an unknown step.
+A cluster that still runs the legacy runtime is operated with kubectl.
 `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
@@ -62,8 +62,7 @@ legacy runtime.
 Then install Orka on that selected cluster. Its default Provider points at this
 Ollama server; for an existing cluster use your own model/Provider configuration
 as described in [Orka](orka.md). Installation alone does not govern model traffic.
-For a new native Agent, use [agent create](#an-agent-of-your-own); the legacy
-chat/model-governance sections below are a separate legacy path.
+For a new native Agent, use [agent create](#an-agent-of-your-own).
 
 For an existing application on kind, deploy the plane and follow the owner-reviewed
 [migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
