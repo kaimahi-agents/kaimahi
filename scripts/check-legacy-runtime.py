@@ -15,8 +15,8 @@ So this is a CLAIM scanner, not a grep for a word, and it has two rules
 because there are two different ways a claim survives.
 
   HARD IDENTIFIERS are things that could only ever mean the v0.x runtime:
-  its API group and kinds, its images and charts, its version pin, its three
-  CLI spellings. None of them has an innocent reading. They are refused in
+  its API group and kinds, its images and charts, its version pin, and its
+  retired CLI spellings. None of them has an innocent reading. They are refused in
   EVERY tracked file, including the workflows — a workflow that names one is
   either installing it or claiming something about it.
 
@@ -52,6 +52,8 @@ same argument is not available everywhere:
                 authoring surface that is an open question. A note that
                 something is not supported is not support — and the line
                 or its reason has to SAY so.
+  retired-notice  current documentation that explicitly says a named command
+                is gone. An executable surface cannot borrow this exemption.
 
 HOW IT FAILS, AND WHY THAT MATTERS MORE THAN HOW IT PASSES. A scanner is a
 gate that fails OPEN. Every way this one could quietly stop working is a way
@@ -97,8 +99,8 @@ SELF = {
     "scripts/legacy-runtime-allowlist.json",
 }
 
-# Binary and image files: nothing text-shaped to claim anything.
-SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".ico", ".woff", ".woff2", ".svg"}
+# Binary and raster image files: SVGs are text and must be scanned.
+SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".ico", ".woff", ".woff2"}
 
 # The surfaces a reader takes as current. The bare name is refused on all of
 # them, workflows included: a workflow runs commands, and `kubectl create
@@ -138,7 +140,18 @@ HISTORICAL_LINE_FILES = ("docs/COORDINATION.md",)
 # indistinguishable from documentation of a supported path.
 UNSUPPORTED = ("unsupported", "not supported", "no support", "remains open", "open question")
 
-CATEGORIES = ("retirement", "negative", "historical", "future")
+CATEGORIES = ("retirement", "negative", "historical", "future", "retired-notice")
+
+# These four current-doc notices were reviewed as refusals, not instructions.
+# Unlike a grammar heuristic, this closed set cannot bless a new sentence
+# merely because it includes words such as "no" or "removed". Changing one
+# requires updating both the code and its reasoned exact-line allowlist.
+RETIRED_NOTICES = frozenset({
+    ("docs/FAQ.md", "owner-managed application back behind the plane; `kmx govern` was removed with"),
+    ("docs/kmx.md", "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you"),
+    ("docs/kmx.md", "`kmx govern` has been removed. Put an owner-managed application behind the"),
+    ("docs/spend.md", "credential. (`kmx govern`, which did this for a legacy Agent, was removed with"),
+})
 
 
 def current_doc(path: str) -> bool:
@@ -171,6 +184,11 @@ def category_problem(entry) -> str | None:
             return ("a past-tense line may only be recorded in "
                     f"{', '.join(HISTORICAL_LINE_FILES)} — the whole-file record is "
                     f"{', '.join(HISTORICAL_FILES)}, and everything else is current")
+    elif category == "retired-notice":
+        if not current_doc(path):
+            return "a retired command notice belongs in current documentation, not executable code"
+        if (path, entry["text"].strip()) not in RETIRED_NOTICES:
+            return "only the closed, reviewed set of exact retirement notices may be exempted"
     elif category == "future":
         if not current_doc(path):
             return "a note about an unsupported future belongs in current documentation"
@@ -199,6 +217,8 @@ class Rule:
 # The runtime's own name, assembled rather than written, so this file does
 # not become the one place the tree carries it as a literal.
 NAME = "k" + "agent"
+# Cobra accepts its persistent flags before or inside the command path.
+KMX_OPTIONS = r"(?:\s+--?(?:context|container-engine)(?:=|\s+)\S+)*"
 
 RULES = [
     Rule("api-group", "the retired runtime's API group",
@@ -222,8 +242,13 @@ RULES = [
          r"--(?:step|payload|runtime)(?:=|\s+)" + NAME + r"\b",
          "kmx up --step " + NAME, "kmx up --step orka", True),
     Rule("retired-preset-command", "a retired preset-switch command",
-         r"\b(?:kmx|make)\s+use\b",
+         r"\b(?:kmx" + KMX_OPTIONS + r"|make)\s+use\b",
          "make use PRESET=example", "kmx models credential copilot", True),
+    Rule("retired-command", "a retired agent operation or installation step",
+         r"\bkmx" + KMX_OPTIONS + r"\s+(?:up" + KMX_OPTIONS +
+         r"\s+--step(?:=|\s+)(?:agent|tools-agent)\b|govern\b|agent" +
+         KMX_OPTIONS + r"\s+edit\b)",
+         "kmx up --step tools-agent", "kmx agent create", True),
     # A boundary on the LEFT only, and both halves of that are deliberate.
     #
     # A trailing `\b` missed `NAME_usage_metadata` in a migration comment:
@@ -364,7 +389,9 @@ def judge(paths, historical, lines, root=None):
         try:
             text = p.read_text()
         except UnicodeDecodeError:
-            continue  # binary: nothing to claim
+            if pathlib.Path(path).suffix.lower() == ".svg":
+                findings.append((path, 0, None, "text SVG is not UTF-8 (not scanned)"))
+            continue  # other binary files have nothing textual to claim
         except OSError as e:
             findings.append((path, 0, None, f"could not be read (not scanned): {e}"))
             continue
@@ -503,6 +530,50 @@ def selftest():
             case(rule.name not in near, f"{rule.name}: does not fire on {rule.counterexample!r}",
                  f"{rule.name}: also fires on {rule.counterexample!r}, so it pins nothing")
             f.unlink()
+
+        # Retired commands without the runtime's name still advertise the
+        # removed operation if offered as an instruction. Test the actual
+        # scan, including a flag before the command, and leave live commands.
+        retired = "docs/retired-command.md"
+        (d / "docs").mkdir(exist_ok=True)
+        for command in ("kmx up --step agent", "kmx up --step tools-agent",
+                        "kmx up --context kind-test --step agent", "kmx agent --context kind-test edit",
+                        "kmx govern", "kmx agent edit", "kmx --context kind-test govern",
+                        "kmx -context=kind-test govern"):
+            (d / retired).write_text(f"Run `{command}`\n")
+            hits = {r.name for _, _, r, _ in judge([retired], [], [], root=d)[0] if r}
+            case("retired-command" in hits, f"retired command {command!r} is refused",
+                 f"retired command {command!r} passed (found: {sorted(hits) or 'nothing'})")
+        for command in ("kmx up --step orka", "kmx agent create", "kmx models add"):
+            (d / retired).write_text(f"Run `{command}`\n")
+            hits = {r.name for _, _, r, _ in judge([retired], [], [], root=d)[0] if r}
+            case("retired-command" not in hits, f"supported command {command!r} remains available",
+                 f"supported command {command!r} was mistaken for a retired one")
+        (d / retired).unlink()
+
+        # A context flag does not turn the retired preset switch back into a
+        # supported command. The original rule caught only adjacent kmx use.
+        for command in ("kmx --context kind-test use orka", "kmx -context=kind-test use orka"):
+            (d / retired).write_text(f"Run `{command}`\n")
+            hits = {r.name for _, _, r, _ in judge([retired], [], [], root=d)[0] if r}
+            case("retired-preset-command" in hits, f"context-qualified use {command!r} is refused",
+                 f"context-qualified use {command!r} passed the gate")
+        (d / retired).unlink()
+
+        # SVGs are text; a bundled diagram can carry a runnable old API name
+        # as readily as a Markdown guide. Raster images remain skipped.
+        diagram = "docs/retired-command.svg"
+        (d / diagram).write_text(f"<svg><text>agents.{NAME}.dev/v1alpha2</text></svg>\n")
+        found, read_count, _ = judge([diagram], [], [], root=d)
+        case(read_count == 1 and found,
+             "a text SVG is scanned and its retired API name refused",
+             "a text SVG with a retired API name was skipped")
+        (d / diagram).write_bytes(b"\xff<svg/>")
+        found, read_count, _ = judge([diagram], [], [], root=d)
+        case(read_count == 0 and found,
+             "an invalid UTF-8 SVG fails closed instead of being silently skipped",
+             "an invalid UTF-8 SVG was treated as an unscannable binary")
+        (d / diagram).unlink()
 
         # A word that merely ENDS in the name is not the name. This is
         # `pickAgent`, an Orka helper a boundary-free pattern refused.
@@ -679,6 +750,37 @@ def selftest():
             except SystemExit:
                 case(True, f"{why} is refused", "")
 
+        # Honest notices of a retired command are current documentation, not
+        # support instructions. They earn a separately bounded category:
+        # current docs only, and the exact line must explicitly deny it.
+        for entry, allowed, what in (
+                ({"path": "docs/kmx.md",
+                  "text": "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you",
+                  "category": "retired-notice", "why": "removed operation"}, True,
+                 "a current-doc notice explicitly denying a retired command"),
+                ({"path": "docs/kmx.md", "text": "Run `kmx agent edit`.",
+                  "category": "retired-notice", "why": "this used to be removed"}, False,
+                 "a live command instruction disguised as a notice"),
+                ({"path": "docs/kmx.md", "text": "No prerequisite is needed. Run `kmx govern foo`.",
+                  "category": "retired-notice", "why": "this used to be removed"}, False,
+                 "an unrelated negative word hiding an active command"),
+                ({"path": "docs/kmx.md", "text": "There is no `kmx agent edit`. Run `kmx govern foo`.",
+                  "category": "retired-notice", "why": "a current-doc notice"}, False,
+                 "a notice concealing a second retired command on the same line"),
+                ({"path": "docs/kmx.md", "text": "There is no `kmx agent edit`; run it with --namespace app.",
+                  "category": "retired-notice", "why": "a current-doc notice"}, False,
+                 "a new instruction hidden behind an approved notice prefix"),
+                ({"path": "Makefile", "text": "There is no `kmx agent edit`.",
+                  "category": "retired-notice", "why": "removed operation"}, False,
+                 "a notice category on an executable surface")):
+            f = d / "allowlist.json"
+            f.write_text(json.dumps(allowlist_with(entry)))
+            try:
+                load_allowlist(f)
+                case(allowed, f"{what} is classified correctly", f"{what} was accepted without its boundary")
+            except SystemExit:
+                case(not allowed, f"{what} is refused", f"{what} was refused despite its boundary")
+
         # ...and each category still loads where it IS earned, or the rule
         # above would be a way of refusing the policy itself.
         for entry, what in (
@@ -721,7 +823,11 @@ def selftest():
         # above, because an entry list that has already been through judge()
         # carries the identities staleness is tracked by.
         real = json.loads(ALLOWLIST.read_text())
-        real["historical_files"] = list(real["historical_files"]) + ["docs/kmx.md"]
+        widened_doc = "docs/getting-started.md"
+        case(all(entry["path"] != widened_doc for entry in real["lines"]),
+             "the widened fixture document has no line exemptions",
+             "the widened fixture document now has line exemptions that mask a broken floor")
+        real["historical_files"] = list(real["historical_files"]) + [widened_doc]
         widened = d / "widened.json"
         widened.write_text(json.dumps(real))
         case(main([], allowlist=widened) == 1,

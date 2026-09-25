@@ -58,14 +58,12 @@ const (
 	// PlaneCAKey is the key inside PlaneCASecret, and the one a workload's
 	// model client verifies the seam against.
 	PlaneCAKey = "ca.crt"
-	// GuardNamespaces is the guard banner's namespace list for commands
-	// whose target namespaces vary or include the plane: the plane's own
-	// namespace, the model server's, and the Orka runtime's. Those are the
-	// three anything supported writes to, and the banner is a claim about
-	// where the command lands — a fourth name would advertise a namespace no
-	// command touches. Callers that know their exact pair say so instead;
-	// see app.GuardCreateIn and app.OrkaPathNamespaces.
+	// GuardNamespaces names the common fixed namespaces. Some operations also
+	// write to a caller-selected workload namespace; the generic banner must
+	// not present this list as a complete destination set. Known Orka-path
+	// destinations still get their exact list from app.GuardCreateIn.
 	GuardNamespaces        = "kaimahi, ollama, orka-system"
+	GuardNamespaceHint     = GuardNamespaces + " (common, not exhaustive; see action for other namespaces)"
 	DefaultContainerEngine = "docker"
 )
 

@@ -98,7 +98,7 @@ func TestBannerNamesWhereTheActionLands(t *testing.T) {
 	}, &out, nil); err != nil {
 		t.Fatalf("local kind must proceed: %v", err)
 	}
-	for _, needle := range []string{"kind-real", "127.0.0.1", "about to:", "namespace(s):", "posture:"} {
+	for _, needle := range []string{"kind-real", "127.0.0.1", "about to:", "namespace(s):", "not exhaustive", "posture:"} {
 		if !strings.Contains(out.String(), needle) {
 			t.Errorf("banner is missing %q:\n%s", needle, out.String())
 		}

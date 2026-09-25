@@ -292,8 +292,10 @@ jobs:
           python3 - <<'EOF'
           import pathlib, sys, yaml
           plane = pathlib.Path("k8s/plane")
-          docs = [d for f in sorted(plane.glob("*.y*ml"))
-                  for d in yaml.safe_load_all(f.read_text()) if d]
+          # Match plane-deploy.sh: kind applies the directory; the registry
+          # path applies .yaml, .yml and .json, so every one is a shipped input.
+          files = sorted((*plane.glob("*.yaml"), *plane.glob("*.yml"), *plane.glob("*.json")))
+          docs = [d for f in files for d in yaml.safe_load_all(f.read_text()) if d]
           pols = [d for d in docs if d.get("kind") == "NetworkPolicy"]
           assert pols, "no NetworkPolicy under k8s/plane/"
           assert all(p["metadata"]["namespace"] == "kaimahi" for p in pols), "policy outside kaimahi"
@@ -301,6 +303,12 @@ jobs:
                   and sorted(p["spec"].get("policyTypes", [])) == ["Egress", "Ingress"]
                   and not p["spec"].get("ingress") and not p["spec"].get("egress")]
           assert len(deny) == 1, f"expected exactly one default-deny(Ingress+Egress), found {len(deny)}"
+          # The committed proxy policy is egress-only despite selecting
+          # Ingress: migrate owns each caller's separate ingress allowance.
+          proxy = [p for p in pols if p["metadata"]["name"] == "kaimahi-proxy"]
+          assert len(proxy) == 1, f"expected one committed proxy policy, found {len(proxy)}"
+          assert "Ingress" in proxy[0]["spec"].get("policyTypes", []), "proxy lost ingress isolation"
+          assert not proxy[0]["spec"].get("ingress"), "committed proxy policy admits model callers"
           # The full exclusion list the manifests carry — trimming any of
           # it must fail here, not only the four RFC1918/link-local ones.
           private = {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
@@ -317,6 +325,9 @@ jobs:
           for p in pols + [copilot, hosted]:
               for rule in p["spec"].get("ingress") or []:
                   assert rule.get("from"), f'{p["metadata"]["name"]}: ingress rule without `from` (admits all sources)'
+                  assert rule.get("ports"), f'{p["metadata"]["name"]}: ingress rule without ports (admits every port)'
+                  if p in pols:
+                      assert all("endPort" not in port for port in rule["ports"]), f'{p["metadata"]["name"]}: committed ingress port range needs review'
                   for peer in rule["from"]:
                       assert "ipBlock" not in peer, f'{p["metadata"]["name"]}: IP-range ingress is not permitted'
           for p in pols + [copilot, hosted]:
@@ -349,13 +360,21 @@ jobs:
           # The ops port (metrics + probes, no auth) is on NO Service,
           # and the only policy that opens it is the scraper allowance —
           # a namespace+pod selector, never an ipBlock, never the agent
-          # namespace. The agents' rule opens only the model port, 8080.
+          # namespace. Model-port ingress belongs to migration-owned policy,
+          # not the plane's committed proxy policy.
           svc_ports = {x["port"] for d in docs if d.get("kind") == "Service" for x in d["spec"]["ports"]}
           assert 9092 not in svc_ports and 9091 not in svc_ports, f"admin/ops port on a Service: {svc_ports}"
+          proxy_deploy = [d for d in docs if d.get("kind") == "Deployment" and d["metadata"]["name"] == "kaimahi-proxy"]
+          assert len(proxy_deploy) == 1, "expected exactly one proxy Deployment"
+          model_port_names = {p.get("name") for c in proxy_deploy[0]["spec"]["template"]["spec"]["containers"]
+                              if c["name"] == "proxy" for p in c.get("ports") or [] if p["containerPort"] == 8080}
+          assert model_port_names, "proxy model port is not declared"
           opens_ops = []
           for p in pols + [copilot, hosted]:
               for rule in p["spec"].get("ingress") or []:
                   ports = {x["port"] for x in rule.get("ports") or []}
+                  if p in pols:
+                      assert not ports.intersection({8080} | model_port_names), f'{p["metadata"]["name"]}: committed model ingress on 8080 or its named port'
                   if 9092 in ports:
                       opens_ops.append(p["metadata"]["name"])
                       assert ports == {9092}, f'{p["metadata"]["name"]}: ops rule opens more than 9092: {ports}'
@@ -363,12 +382,10 @@ jobs:
                           assert "ipBlock" not in peer, "ops port opened to an ipBlock"
                           assert peer.get("namespaceSelector", {}).get("matchLabels", {}).get("kubernetes.io/metadata.name") == "monitoring", peer
                           assert peer.get("podSelector", {}).get("matchLabels"), f"ops port opened to a whole namespace: {peer}"
-                  if p["metadata"]["name"] == "kaimahi-proxy":
-                      assert ports == {8080}, f"agents' ingress to the proxy changed: {ports}"
           assert opens_ops == ["kaimahi-proxy-metrics"], f"ops port allowances: {opens_ops}"
           pdb = [d for d in docs if d.get("kind") == "PodDisruptionBudget"]
           assert len(pdb) == 1 and pdb[0]["spec"].get("minAvailable") == 1, "proxy PDB missing or not minAvailable: 1"
-          print(f"{len(pols)} plane policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); internet allowances are 443-only with private ranges excluded; no internet ingress; ops port 9092 on no Service, opened only to the monitoring scraper")
+          print(f"{len(pols)} plane policies + 2 opt-in proxy allowances (Copilot, hosted upstreams; identical shape); committed proxy policy has no model ingress; internet allowances are 443-only with private ranges excluded; ops port 9092 on no Service, opened only to the monitoring scraper")
           EOF
       # The managed path's own allowance, checked separately because it
       # ships separately. CI cannot reach Azure, so what is provable here
@@ -647,7 +664,7 @@ jobs:
           python3 - <<'EOF'
           import re, sys, yaml
           wf = yaml.safe_load(open(".github/workflows/ci.yml"))
-          # Commands, not prose: a step whose COMMENT names `kmx govern` is
+          # Commands, not prose: a step whose COMMENT names the retired govern command is
           # explaining itself, and reading it as an invocation would make the
           # ordering rule below fire on a comment.
           def commands(step):
@@ -1713,7 +1730,7 @@ jobs:
   # Model protocols, overlay safety, ordinary budget recovery, races and metrics.
   #
   # This shard used to drive the plane through the legacy runtime: `kmx up`
-  # installed the chart, `kmx govern` repointed a legacy Agent at the seam,
+  # installed the chart, the retired govern command repointed a legacy Agent at the seam,
   # and `kmx agent chat` was what produced a ledger row. None of that is a
   # supported path any more. Nothing here needs an agent runtime: the
   # governed caller is a direct, authenticated, TLS call to the plane's
@@ -2290,7 +2307,7 @@ jobs:
   # restore.
   #
   # This shard used to drive the plane through the legacy runtime: `kmx up`
-  # installed the chart, `kmx govern` repointed a legacy Agent at the seam,
+  # installed the chart, the retired govern command repointed a legacy Agent at the seam,
   # and `kmx agent chat` was the thing that produced a ledger row. None of
   # that is a supported path any more, and translating those assertions
   # onto Orka would have claimed something this repository cannot claim:

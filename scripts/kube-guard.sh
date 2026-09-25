@@ -49,7 +49,7 @@ set -euo pipefail
 
 ACTION="${1:-cluster-mutating action}"
 CTX="${KUBE_CTX:-}"
-NS="${KUBE_NS:-kaimahi, ollama, orka-system}"
+NS="${KUBE_NS:-kaimahi, ollama, orka-system (common, not exhaustive; see action for other namespaces)}"
 
 if [ -z "$CTX" ]; then
   echo "kube-guard: KUBE_CTX is empty — refusing to act on an unnamed cluster." >&2

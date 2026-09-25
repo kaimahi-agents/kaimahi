@@ -101,8 +101,8 @@ func (a *App) Up(step string) error {
 		// second step, and saying nothing here would leave an operator to
 		// infer it from an empty ledger.
 		// The route offered is the one this cluster can take. A bare run
-		// deploys no governed Agent, so `kmx govern <credential>` would name
-		// nothing; putting an application's model traffic on the seam is
+		// deploys no governed Agent, so the old governance operation would
+		// name nothing; putting an application's model traffic on the seam is
 		// `kmx migrate`, one workload at a time.
 		if a.selectedLocalModel == nil {
 			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+

@@ -49,7 +49,7 @@ $(error unknown TARGET '$(TARGET)' — expected 'kind' or 'aks')
 endif
 export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
-GUARD_NS ?= kaimahi, ollama, orka-system
+GUARD_NS ?= kaimahi, ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
 .PHONY: build test lint docs-check guard plane-image aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off

@@ -6,6 +6,96 @@
   ],
   "lines": [
     {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "// \"Govern the agent — kmx govern <credential>\" long after the command it named",
+      "category": "negative",
+      "why": "Documents the obsolete follow-up text whose reintroduction the negative test refuses."
+    },
+    {
+      "path": "internal/kmx/admin/admin_test.go",
+      "text": "// `kmx govern` would issue the credential in THAT plane while the Secret and",
+      "category": "negative",
+      "why": "Explains the negative wrong-cluster port-forward test; it does not invoke the removed command."
+    },
+    {
+      "path": "internal/kmx/app/certificate_test.go",
+      "text": "if strings.Contains(note, \"kmx govern\") {",
+      "category": "negative",
+      "why": "Rejects output that offers the removed command."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "// It named `kmx govern`, which was retired with the runtime adapter: an",
+      "category": "negative",
+      "why": "Explains the bounded assertion that the follow-up suggests only commands that exist."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "if strings.Contains(printed, \"kmx govern\") {",
+      "category": "negative",
+      "why": "Rejects a suggested command removed from the CLI."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "// `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are",
+      "category": "negative",
+      "why": "Describes negative tests for the removed command surface."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "// Backticked invocations only. Prose explaining that `kmx govern` HAS BEEN",
+      "category": "negative",
+      "why": "Scopes the test to active instructions rather than honest retirement notices."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "// command: `kmx govern` reached operators as plain output from `models add`",
+      "category": "negative",
+      "why": "Describes the negative output assertion for the removed command."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --context kind-x up --step=tools-agent\",",
+      "category": "negative",
+      "why": "A negative command control: the closure gate must reject the retired tools-agent step even with an explicit context."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --context kind-x govern hello-world\",",
+      "category": "negative",
+      "why": "A negative command control: the closure gate must reject a govern invocation even with an explicit context."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --context=kind-x agent edit hello-world\",",
+      "category": "negative",
+      "why": "A negative command control: the closure gate must reject agent edit with a context flag."
+    },
+    {
+      "path": "docs/FAQ.md",
+      "text": "owner-managed application back behind the plane; `kmx govern` was removed with",
+      "category": "retired-notice",
+      "why": "Explains that the old command cannot be used and names migrate as its replacement."
+    },
+    {
+      "path": "docs/kmx.md",
+      "text": "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you",
+      "category": "retired-notice",
+      "why": "Explicitly denies the removed editor and names a supported alternative."
+    },
+    {
+      "path": "docs/kmx.md",
+      "text": "`kmx govern` has been removed. Put an owner-managed application behind the",
+      "category": "retired-notice",
+      "why": "Explicitly denies the retired command and names migration as the replacement."
+    },
+    {
+      "path": "docs/spend.md",
+      "text": "credential. (`kmx govern`, which did this for a legacy Agent, was removed with",
+      "category": "retired-notice",
+      "why": "Historical comparison explains that the command is removed, not an available way to issue a credential."
+    },
+    {
       "path": ".github/workflows/ci.yml",
       "text": "\"kmx agent chat --runtime kagent hello-world\",",
       "category": "negative",

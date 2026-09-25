@@ -159,9 +159,9 @@ func (a *App) Plane(opt PlaneOptions) error {
 	if opt.Step == "" {
 		a.complete("Model-traffic bridge ready", started)
 		a.notef("This command does not enable governance for an agent; existing routing is not assessed here.")
-		// The route offered has to be one this cluster can take. `kmx govern`
-		// is retired along with the legacy runtime it repointed, so naming it
-		// here would send an operator to an unknown command; putting an
+		// The route offered has to be one this cluster can take. The old
+		// governance command was retired with the runtime it repointed.
+		// Naming it here would send an operator to an unknown command; putting an
 		// application's model traffic on the seam is `kmx migrate`.
 		ui := cliui.New(a.Err)
 		if ui.Rich() {

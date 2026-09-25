@@ -46,9 +46,8 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
-	"golang.org/x/term"
-
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"golang.org/x/term"
 )
 
 // Kubeconfig is the sliver of `kubectl config view -o json` this package
@@ -250,7 +249,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 
 	namespaces := req.Namespaces
 	if namespaces == "" {
-		namespaces = "kaimahi, ollama, orka-system"
+		namespaces = config.GuardNamespaceHint
 	}
 	hostShown := posture.Host
 	if hostShown == "" {

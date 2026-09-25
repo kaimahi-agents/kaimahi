@@ -199,28 +199,26 @@ func TestBothEnginesClearInheritedKindProviderBeforeSelecting(t *testing.T) {
 	}
 }
 
-// The guard banner's namespace list is a CLAIM about where a command lands,
-// and the only namespaces anything supported writes to are the plane's, the
-// model server's and the Orka runtime's. A fourth name on that line is a
-// namespace no command touches, which makes the banner wrong in the one
-// direction that matters: an operator reads it, sees a runtime that is not
-// installed, and learns the banner is decoration.
+// These three fixed namespaces are common, but not exhaustive: migrate and
+// credential issue can also write to a caller-selected workload namespace.
+// The generic banner must say so instead of advertising a complete list.
 func TestGuardNamespacesAreTheSupportedOnes(t *testing.T) {
 	const want = "kaimahi, ollama, orka-system"
 	if GuardNamespaces != want {
 		t.Fatalf("GuardNamespaces = %q, want %q", GuardNamespaces, want)
 	}
+	if GuardNamespaceHint != want+" (common, not exhaustive; see action for other namespaces)" {
+		t.Fatalf("generic banner hides caller-selected destinations: %q", GuardNamespaceHint)
+	}
 }
 
-// One list, four readers. The Go constant, the Go guard's own fallback, the
-// Makefile's GUARD_NS and the shell guard's default all print the same
-// sentence to an operator, and three of them are strings nothing else would
-// notice drifting. Before this, they said three different things.
+// Makefile and shell guard defaults must carry the same non-exhaustive hint
+// as Go. The Go guard's behavior is exercised by TestBannerNamesWhereTheActionLands
+// rather than inspecting an implementation line in another package.
 func TestEveryGuardNamespaceListAgrees(t *testing.T) {
 	for _, tc := range []struct{ path, pattern string }{
 		{"Makefile", "GUARD_NS ?= "},
 		{filepath.Join("scripts", "kube-guard.sh"), `NS="${KUBE_NS:-`},
-		{filepath.Join("internal", "kmx", "guard", "guard.go"), "namespaces = "},
 	} {
 		b, err := os.ReadFile(filepath.Join("..", "..", "..", tc.path))
 		if err != nil {
@@ -236,8 +234,8 @@ func TestEveryGuardNamespaceListAgrees(t *testing.T) {
 		if found == "" {
 			t.Fatalf("%s: no line carrying %q — this test no longer reads anything", tc.path, tc.pattern)
 		}
-		if found != GuardNamespaces {
-			t.Errorf("%s names %q, want the one list %q", tc.path, found, GuardNamespaces)
+		if found != GuardNamespaceHint {
+			t.Errorf("%s names %q, want the non-exhaustive hint %q", tc.path, found, GuardNamespaceHint)
 		}
 	}
 }

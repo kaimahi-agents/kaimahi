@@ -66,6 +66,9 @@ func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 			if !strings.Contains(banner, config.GuardNamespaces) {
 				t.Errorf("%s no longer names %q:\n%s", tc.name, config.GuardNamespaces, banner)
 			}
+			if !strings.Contains(banner, "not exhaustive") {
+				t.Errorf("%s claims the generic namespace list is complete:\n%s", tc.name, banner)
+			}
 		})
 	}
 }
