@@ -12,7 +12,7 @@ used at the top of the repository README.
 
 | File | Format and canvas | Use |
 |---|---|---|
-| `ketu.svg` | SVG viewBox `0 0 1024 1024`; rounded tile | Repository README icon |
+| `ketu.svg` | SVG viewBox `0 0 1473 1371`; rounded tile | Repository README icon |
 | `mascot.png` | 1536×1536 RGBA; transparent | Canonical character reference; do not redraw from memory |
 | `mark.svg` / `mark.png` | SVG viewBox `0 0 512 512`; 1024×1024 RGBA transparent PNG | Organization avatar, favicon, and small-size identity |
 | `wordmark.svg` | SVG viewBox `0 0 760 192`; transparent | Horizontal name lockup |
