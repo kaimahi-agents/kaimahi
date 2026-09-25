@@ -60,26 +60,38 @@ func (a *App) installQuickstartK8sTool() error {
 }
 
 func (a *App) waitOrkaResourceCondition(resource, name, condition string) error {
-	generation, err := a.kubectlCapture("-n", OrkaNamespace, "get", resource, name,
-		"-o", "jsonpath={.metadata.generation}")
-	if err != nil {
-		return fmt.Errorf("read %s/%s generation: %w", resource, name, err)
+	ctx, cancel := context.WithTimeout(a.operationContext(), time.Minute)
+	defer cancel()
+	for {
+		raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", resource, name, "-o", "json")
+		if err != nil {
+			return fmt.Errorf("read %s/%s status: %w", resource, name, err)
+		}
+		var object struct {
+			Metadata struct {
+				Generation int64 `json:"generation"`
+			} `json:"metadata"`
+			Status struct {
+				Conditions []serverCondition `json:"conditions"`
+			} `json:"status"`
+		}
+		if err := json.Unmarshal(raw, &object); err != nil {
+			return fmt.Errorf("read %s/%s status: invalid JSON: %w", resource, name, err)
+		}
+		if object.Metadata.Generation < 1 {
+			return fmt.Errorf("%s/%s has no generation", resource, name)
+		}
+		for _, current := range object.Status.Conditions {
+			if current.Type == condition && current.Status == "True" &&
+				current.ObservedGeneration == object.Metadata.Generation {
+				return nil
+			}
+		}
+		if err := orkaPause(ctx); err != nil {
+			return fmt.Errorf("waiting for %s/%s current-generation %s: %w",
+				resource, name, condition, err)
+		}
 	}
-	generation = strings.TrimSpace(generation)
-	if generation == "" {
-		return fmt.Errorf("%s/%s has no generation", resource, name)
-	}
-	observed := fmt.Sprintf(`jsonpath={.status.conditions[?(@.type=="%s")].observedGeneration}=%s`,
-		condition, generation)
-	if err := a.kubectlRun("-n", OrkaNamespace, "wait", "--for="+observed,
-		resource+"/"+name, "--timeout=60s"); err != nil {
-		return fmt.Errorf("wait for %s/%s current generation: %w", resource, name, err)
-	}
-	if err := a.kubectlRun("-n", OrkaNamespace, "wait", "--for=condition="+condition,
-		resource+"/"+name, "--timeout=60s"); err != nil {
-		return fmt.Errorf("wait for %s/%s %s: %w", resource, name, condition, err)
-	}
-	return nil
 }
 
 // Preserve existing references and instructions. A resourceVersion test prevents
