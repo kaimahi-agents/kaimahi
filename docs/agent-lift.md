@@ -181,7 +181,7 @@ a separate verb is [open](#open-questions).
 | Orka controller unavailable — repair? | `chat_lift_prerequisites.go:75` | `--install-orka`, else refuse |
 | Which inference | `chat_lift_prerequisites.go:136` | `--inference`, **required** |
 | Kubernetes tool missing — install? | `chat_lift_prerequisites.go:170` | `--install-k8s-tool`, else refuse |
-| Final deployment review | `chat_lift.go:257-262` | `--plan`, then re-run without it |
+| Final deployment review | `chat_lift.go:259-262` | `--plan`, then re-run without it |
 | Retry after failure | `chat_lift_deploy.go:60-63` | re-run the command |
 
 `--inference` has **no default**, for the reason `--payload` has none. Keeping
@@ -309,7 +309,8 @@ without it.
 the TUI would supply the same resolved options from its pickers, removing the
 duplicate sequencing rather than adding a second one.
 
-Phases 1 to 3 leave `/lift` untouched.
+Phases 2 and 3 leave `/lift`'s interactive sequencing alone; phase 1 changes
+only Azure command preparation, not anything user-visible in `/lift`.
 
 ## Testing
 
@@ -348,10 +349,10 @@ work is unguarded by existing coverage and must bring its own.
    #194's opening names `kmx agent lift` explicitly as using the same bundle
    and lifecycle operations as the rest of the design, so that issue does not
    argue against a separate verb. #203 names the active cluster-provisioning
-   command `kmx aks up`, retaining `kmx lift` as a deprecated alias; neither
-   PR has merged into this one. For a separate verb: `README.md:28` commits to
-   `kmx agent lift` and `scripts/check-readme-front-door.py:36` enforces the
-   line, so reversing is a product decision.
+   command `kmx aks up`, retaining `kmx lift` as a deprecated alias. For a
+   separate verb: `README.md:28` commits to `kmx agent lift` and
+   `scripts/check-readme-front-door.py:36` enforces the line, so reversing is
+   a product decision.
 4. **Does v1 refuse Foundry, or accept fully-specified Foundry?** This document
    proposes refusing. An alternative is accepting an account and deployment
    that already exist while refusing to *create* either. That is a narrower

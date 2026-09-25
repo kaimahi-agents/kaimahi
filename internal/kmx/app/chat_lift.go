@@ -34,8 +34,9 @@ func (a *App) liftDiscovery(ctx context.Context, command string, args ...string)
 		fmt.Sprintf("%s discovery failed; check login and read access", command))
 }
 
-// liftAzureWrite carries the longer deadline Azure writes need. Key reads use
-// it too, which is why its output is bounded and never echoed.
+// liftAzureWrite carries the longer deadline Azure writes need. Key reads go
+// through liftDiscovery instead, which is why its output is bounded and never
+// echoed.
 func (a *App) liftAzureWrite(ctx context.Context, args ...string) ([]byte, error) {
 	return a.azureCapture(ctx, 10*time.Minute, "az", args,
 		"Azure operation failed; check resource state, permissions and quota (no automatic retry)")
