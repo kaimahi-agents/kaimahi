@@ -2609,6 +2609,20 @@ jobs:
           annotated=$(kubectl --context kind-kmx-orka -n orka-system get deploy kmx-k8s-tool \
             -o jsonpath='{.spec.template.metadata.annotations.kaimahi\.dev/tool-code}')
           test "$annotated" = "$sum"
+      - name: Orka — fail closed on legacy runtime state
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          if kubectl --context kind-kmx-orka get namespace kagent >/dev/null 2>&1; then
+            echo "the Orka shard created the legacy runtime's namespace"
+            exit 1
+          fi
+          releases=$(helm list --all-namespaces --short)
+          if [ -n "$releases" ]; then
+            echo "the Orka shard left Helm releases:"
+            printf '%s\n' "$releases"
+            exit 1
+          fi
       # The allowed half. An unguessable name is created first, so a listing
       # that contains it can only have come from a live read through the
       # tool — not from a fixture, a cache or a plausible reply.
@@ -2678,7 +2692,8 @@ jobs:
           # bypassed. `! cmd` is exempt from errexit, so can-i's answer is
           # compared explicitly — each check aborts the step on a wrong one.
           sa=system:serviceaccount:orka-system:kmx-k8s-reader
-          for denied in "get secrets" "list secrets" "create pods" "delete pods" "patch configmaps"; do
+          for denied in "get secrets" "list secrets" "create pods" "delete pods" \
+                        "update pods" "patch pods" "patch configmaps"; do
             got=$(kubectl --context kind-kmx-orka auth can-i $denied --as="$sa" || true)
             test "$got" = no || { echo "the tool account may $denied"; exit 1; }
           done
