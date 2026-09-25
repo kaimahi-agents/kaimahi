@@ -458,6 +458,47 @@ func TestParsePortableAgentRejectsInvalidUTF8InADecodedField(t *testing.T) {
 	}
 }
 
+// spec.instructions is rendered as a literal block scalar and spec.model.name
+// as a single-line one, so each is held here to exactly the renderer's
+// control-character policy: a document that validated at authoring time and
+// then failed to render would be a refusal with no authoring gate behind it.
+// The refusal names the field and never the value — the value is what was
+// refused, and a control character is not something to print at a terminal.
+func TestParsePortableAgentRejectsControlCharactersRenderingWouldRefuse(t *testing.T) {
+	for _, tc := range []struct{ name, old, replacement, want, value string }{
+		{"instructions carrying a control character", "  instructions: Do the thing.\n",
+			"  instructions: \"Do\\u0001the thing.\"\n", "spec.instructions must not contain control characters", "Do\x01the thing."},
+		{"instructions carrying a delete", "  instructions: Do the thing.\n",
+			"  instructions: \"Do\\u007fthe thing.\"\n", "spec.instructions must not contain control characters", "Do\x7fthe thing."},
+		{"a model name spanning lines", "    name: gpt-4o-mini\n",
+			"    name: \"gpt-4o\\nmini\"\n", "spec.model.name must not contain line breaks", "gpt-4o\nmini"},
+		{"a model name carrying a control character", "    name: gpt-4o-mini\n",
+			"    name: \"gpt-4o\\u0001mini\"\n", "spec.model.name must not contain line breaks", "gpt-4o\x01mini"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := mustNotParse(t, mustReplace(t, minimalPortableYAML, tc.old, tc.replacement), tc.want)
+			if strings.Contains(err.Error(), tc.value) {
+				t.Errorf("the refusal echoed the value: %q", err)
+			}
+		})
+	}
+}
+
+// The policy shared for instructions is the BLOCK-scalar one, not the
+// single-line one: instructions are multi-line text by nature, and a gate
+// that refused a line break would refuse the ordinary case.
+func TestParsePortableAgentAcceptsMultiLineInstructions(t *testing.T) {
+	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
+		"  instructions: |\n    Do the thing.\n    \tThen say so.\n")
+	agent, err := ParsePortableAgent([]byte(doc))
+	if err != nil {
+		t.Fatalf("multi-line instructions must parse: %v", err)
+	}
+	if agent.Spec.Instructions != "Do the thing.\n\tThen say so.\n" {
+		t.Errorf("spec.instructions = %q", agent.Spec.Instructions)
+	}
+}
+
 func validShorthand() OrkaShorthand {
 	return OrkaShorthand{
 		Name:         "hello",
@@ -561,6 +602,51 @@ func TestEncodeOrkaShorthandRefusesWhatAnAuthoredDocumentWouldFail(t *testing.T)
 				t.Errorf("error %q does not mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Shorthand reaches the same two fields, so it meets the same renderer
+// policy before it is ever marshaled: there is no weaker way to encode text
+// a renderer would then refuse.
+func TestEncodeOrkaShorthandRejectsControlCharactersRenderingWouldRefuse(t *testing.T) {
+	for _, tc := range []struct {
+		name, want, value string
+		build             func(OrkaShorthand) OrkaShorthand
+	}{
+		{"instructions", "spec.instructions must not contain control characters", "Answer\x01briefly.",
+			func(s OrkaShorthand) OrkaShorthand { s.Instructions = "Answer\x01briefly."; return s }},
+		{"model", "spec.model.name must not contain line breaks", "gpt-4o\nmini",
+			func(s OrkaShorthand) OrkaShorthand { s.Model = "gpt-4o\nmini"; return s }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent, err := EncodeOrkaShorthand(tc.build(validShorthand()))
+			if err == nil {
+				t.Fatal("shorthand a renderer would refuse encoded a document")
+			}
+			if agent != nil {
+				t.Fatal("refused shorthand still produced a document")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not mention %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), tc.value) {
+				t.Errorf("the refusal echoed the value: %q", err)
+			}
+		})
+	}
+	// ...and multi-line instructions still encode and parse back.
+	s := validShorthand()
+	s.Instructions = "Answer briefly.\nSay plainly when you do not know."
+	agent, err := EncodeOrkaShorthand(s)
+	if err != nil {
+		t.Fatalf("multi-line shorthand instructions must encode: %v", err)
+	}
+	reparsed, err := ParsePortableAgent(agent.Source())
+	if err != nil {
+		t.Fatalf("an encoded document must parse: %v", err)
+	}
+	if reparsed.Spec.Instructions != s.Instructions {
+		t.Errorf("round-tripped instructions = %q", reparsed.Spec.Instructions)
 	}
 }
 

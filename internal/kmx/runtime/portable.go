@@ -16,6 +16,7 @@ package runtime
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -156,6 +157,15 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("portable agent document must be a single YAML mapping")
 	}
+	// Now that the document has parsed, scan what it DECODES to, before the
+	// two gates below can quote a decoded key back: the key walk names the
+	// key it refused and the path it sits at, and yaml.v3's KnownFields
+	// error names the unknown field it found. Neither value need exist in
+	// the authored bytes the scan above saw, because escapes and a
+	// "!!binary" payload are resolved at decode time.
+	if err := refusePortableDecodedSecretShapes(root.Content[0]); err != nil {
+		return nil, err
+	}
 	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)
 	}
@@ -277,8 +287,20 @@ func (p *PortableAgent) validate() error {
 	if strings.TrimSpace(p.Spec.Instructions) == "" {
 		return fmt.Errorf("spec.instructions is required")
 	}
+	// Instructions are rendered as a literal block scalar and the model name
+	// as a single-line one, so each is held to exactly the control-character
+	// policy that renderer applies — shared from scaffold rather than
+	// restated, because a portable document that validated here and then
+	// failed to render would be a rejection with no authoring gate behind
+	// it. Neither refusal quotes the value: the value is what was refused.
+	if err := scaffold.ValidateBlockText(p.Spec.Instructions); err != nil {
+		return fmt.Errorf("spec.instructions %w", err)
+	}
 	if strings.TrimSpace(p.Spec.Model.Name) == "" {
 		return fmt.Errorf("spec.model.name is required")
+	}
+	if err := scaffold.ValidateSingleLineText(p.Spec.Model.Name); err != nil {
+		return fmt.Errorf("spec.model.name %w", err)
 	}
 	if p.Extensions.Orka == nil {
 		return fmt.Errorf("extensions.orka is required: %q is the only runtime this document targets", Orka)
@@ -410,6 +432,44 @@ func refusePortableSecretShapes(p *PortableAgent) error {
 	}
 	for _, value := range values {
 		if err := refusePortableSecretShape(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refusePortableDecodedSecretShapes scans every scalar the parsed document
+// carries — mapping keys as well as values, at every nesting level, modeled
+// by this schema or not — and refuses a credential shape before any later
+// gate can quote one back.
+//
+// The raw-byte scan in ParsePortableAgent sees what was authored; this sees
+// what that text decodes to, and they are not the same string. A key
+// written "\x67hp_..." carries no shape in the file and a credential once
+// decoded, and the gates that name keys — the duplicate/merge/alias walk,
+// and the strict decoder's "field X not found" — print the decoded form. A
+// key is never a value this schema models, so validate()'s scan of the
+// decoded struct cannot cover one.
+func refusePortableDecodedSecretShapes(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		if err := refusePortableSecretShape(node.Value); err != nil {
+			return err
+		}
+		// A "!!binary" scalar's Value is still the base64 text; yaml.v3
+		// resolves it into the bytes it encodes, and those bytes are what a
+		// later error would print. A payload that does not decode is left
+		// to the decoder to refuse — it carries no assembled value to echo.
+		if node.Tag == "!!binary" {
+			if decoded, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(node.Value), "")); err == nil {
+				if err := refusePortableSecretShape(string(decoded)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for _, child := range node.Content {
+		if err := refusePortableDecodedSecretShapes(child); err != nil {
 			return err
 		}
 	}
