@@ -95,7 +95,7 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		"agent create",
 		"orka status",
 		"plane",
-		"migrate",
+		"migrate '<deployment>' --namespace '<ns>' --model local/qwen2.5:3b",
 	} {
 		if !strings.Contains(next[i], want) {
 			t.Errorf("follow-up %d is %q, want it to offer %q", i, next[i], want)

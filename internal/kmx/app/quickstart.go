@@ -292,7 +292,7 @@ func (a *App) quickstartFollowups() []string {
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
 		a.operationCommand("plane"),
-		a.operationCommand("migrate"),
+		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", orkaDefaultProvider+"/"+a.Cfg.Model),
 	}
 }
 

@@ -557,7 +557,8 @@ jobs:
           # let a shard leave it by being rewritten.
           converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models"]
           forbidden = [
-              (re.compile(r"kmx up(?!\s+--step)"), "a bare `kmx up` installs the legacy runtime"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
+               "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"kmx govern\b"), "the legacy governance command repoints a kagent Agent"),
               (re.compile(r"kmx agent chat\b"), "the legacy chat command drives a kagent Agent"),
               (re.compile(r"kagent\.dev"), "a v1alpha2 resource of the legacy runtime"),
