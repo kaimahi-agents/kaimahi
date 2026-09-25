@@ -199,11 +199,16 @@ Custody properties worth knowing:
 
 ## Swapping the local model
 
-An interactive `kmx quickstart` or full `kmx up` first probes the host's
-loopback Ollama API. It offers reuse only when `/api/tags` reports at least one
-installed model. Reuse is opt-in; KMX's bundled model remains the default.
-`--output json`, redirected sessions, `kmx up --step ...`, and an explicit
-`MODEL` never probe or prompt.
+A full `kmx up` first probes the host's loopback Ollama API. It offers reuse
+only when `/api/tags` reports at least one installed model. Reuse is opt-in;
+KMX's bundled model remains the default. `--output json`, redirected sessions,
+`kmx up --step ...`, and an explicit `MODEL` never probe or prompt.
+
+`kmx quickstart` never probes or prompts at all. It is deterministic and
+non-interactive on purpose — there is no host-model picker on that path, so
+it always deploys the in-cluster Ollama and the bundled model, and the same
+command on the same machine produces the same cluster, Provider and Agent.
+Choosing a host model while the runtime starts is `kmx quickstart-wizard`.
 
 Before reusing host Ollama, KMX verifies the selected tag through an endpoint
 reachable from the kind node, trying the engine host alias and kind bridge

@@ -277,7 +277,7 @@ func (b *orkaChatBackend) liftAgentTo(ctx context.Context, renderer *chatRendere
 	if _, err := rememberAgentLocation(ctx, b.app, agentLocation{Agent: b.agent, Namespace: b.namespace, Context: b.app.Cfg.KubeContext}); err != nil {
 		return fmt.Errorf("Agent deployed, but source location could not be saved: %w", err)
 	}
-	if err := worker.quickstartResultReader(); err != nil {
+	if err := worker.orkaResultReader(); err != nil {
 		return fmt.Errorf("Agent deployed; result access setup failed: %w", err)
 	}
 	location, err := rememberAgentLocation(ctx, &worker, agentLocation{Agent: b.agent, Namespace: b.namespace, Context: target.Context, Cluster: target.Cluster, Subscription: target.Subscription, ResourceGroup: target.ResourceGroup})

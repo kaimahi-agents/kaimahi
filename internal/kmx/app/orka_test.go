@@ -732,6 +732,75 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 	}
 }
 
+// Every path that needs the Task result identity writes the SAME grant.
+//
+// `kmx up --step orka`, `kmx quickstart-wizard` and the lift deployment all
+// provision the account results are read with, and a copy per path is free to
+// drift: a Role whose extent depends on which command wrote it is a grant
+// nobody reviews as one. The wizard used to carry its own literal; both
+// halves are asserted here because the next path is one paste away from a
+// second spelling.
+func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+
+	// The grant itself, applied by nothing else, so the comparison below is
+	// byte-for-byte rather than "mentions the same words somewhere".
+	canonical := newOrkaFixture(t, installer)
+	if err := canonical.app.orkaResultReader(); err != nil {
+		t.Fatalf("result reader: %v", err)
+	}
+	grant := strings.TrimSpace(canonical.applied(t))
+	for _, want := range []string{"kind: ServiceAccount", "kind: Role", "kind: RoleBinding", `resources: ["tasks"]`, `verbs: ["get"]`} {
+		if !strings.Contains(grant, want) {
+			t.Fatalf("the grant to compare against is missing %q:\n%s", want, grant)
+		}
+	}
+
+	step := newOrkaFixture(t, installer)
+	step.app.orkaInstallerDigest = digestOf(installer)
+	step.app.Cfg.Model = "qwen2.5:3b"
+	if err := step.app.stepOrka(); err != nil {
+		t.Fatalf("step orka: %v", err)
+	}
+	if !strings.Contains(step.applied(t), grant) {
+		t.Errorf("`kmx up --step orka` wrote a different result-reader grant:\n%s", step.applied(t))
+	}
+
+	wizard := newOrkaFixture(t, installer)
+	wizard.app.orkaInstallerDigest = digestOf(installer)
+	wizard.app.Cfg.Model = "qwen2.5:3b"
+	if err := wizard.app.quickstartWizardOrka(func(quickstartSetupEvent) {}); err != nil {
+		t.Fatalf("wizard orka: %v", err)
+	}
+	if !strings.Contains(wizard.applied(t), grant) {
+		t.Errorf("the wizard wrote a different result-reader grant:\n%s", wizard.applied(t))
+	}
+
+	// One author in the source, not just one shape in this run: a second
+	// literal elsewhere in the package would pass the comparison above on the
+	// day it is written and drift on some later one.
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var authors []string
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text := string(body); strings.Contains(text, "kind: RoleBinding") && strings.Contains(text, `resources: ["tasks"]`) {
+			authors = append(authors, path)
+		}
+	}
+	if len(authors) != 1 || authors[0] != "orka.go" {
+		t.Errorf("the Task-result grant is written in %v; it belongs to orkaResultReader in orka.go alone", authors)
+	}
+}
+
 // A Provider pointed somewhere other than the in-cluster default is the
 // caller's own endpoint — a host Ollama reached over the kind gateway, say,
 // which `kmx up` verified is reachable FROM the cluster and deployed no

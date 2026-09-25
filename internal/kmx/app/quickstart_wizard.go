@@ -361,7 +361,11 @@ func (a *App) quickstartWizardOrka(report func(quickstartSetupEvent)) error {
 			map[string]string{"app.kubernetes.io/managed-by": "kmx"})
 		err := a.applySecretIn(OrkaNamespace, body, "kickstart-provider-key")
 		if err == nil {
-			err = a.quickstartResultReader()
+			// The runtime's own grant, not a second spelling of it: a wizard
+			// copy would be free to drift from the account `kmx up --step orka`
+			// provisions and the one `agent create` names, and a Role that
+			// differs by path is a grant nobody reviews as one.
+			err = a.orkaResultReader()
 		}
 		if err == nil {
 			err = a.installQuickstartK8sTool()
@@ -373,40 +377,6 @@ func (a *App) quickstartWizardOrka(report func(quickstartSetupEvent)) error {
 		report(quickstartSetupEvent{step: 5, status: status, err: err})
 		return err
 	}()
-}
-
-func (a *App) quickstartResultReader() error {
-	body := []byte(`apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: orka-result-reader
-  namespace: orka-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: orka-result-reader
-  namespace: orka-system
-rules:
-- apiGroups: ["core.orka.ai"]
-  resources: ["tasks"]
-  verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: orka-result-reader
-  namespace: orka-system
-subjects:
-- kind: ServiceAccount
-  name: orka-result-reader
-  namespace: orka-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: orka-result-reader
-`)
-	return a.applyBytes("quickstart-wizard result reader", body)
 }
 
 type quickstartWizardModel struct {
