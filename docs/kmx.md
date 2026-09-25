@@ -344,7 +344,9 @@ or another pending confirmation. Interactive
 `kmx quickstart` is Orka and does not participate in that policy. It creates one
 Task, polls that Task's result over a single context-pinned connection, and never
 resubmits: connection or forward loss ends the wait rather than repeating the
-model call. A blank result is refused, not retried.
+model call. A missing or whitespace-only result remains unavailable and is
+polled on that same Task; once a nonblank result arrives, output with no printable
+content is refused. Neither case resubmits the Task.
 
 ## How the plane gets there without a clone
 
