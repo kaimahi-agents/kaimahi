@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,39 @@ func TestStatusAndOrkaStatusAgree(t *testing.T) {
 	}
 	if viaStatus != other.String() {
 		t.Fatalf("the two status commands disagree:\n%s\n---\n%s", viaStatus, other)
+	}
+}
+
+// Delegation has to hold for the UNHAPPY cluster too, which is where a
+// second reading would have been bolted on. `kmx status` once ran its own
+// context check before delegating, so a missing context — and a machine
+// without kubectl, whose toolchain fetch lives in the delegated preflight —
+// got a different answer depending on which of the two names was typed.
+// Whatever the reading says here, both commands must say it.
+func TestStatusDelegatesEvenWhenTheClusterCannotBeRead(t *testing.T) {
+	const noCluster = `case "$*" in
+*"config view"*) printf '%s' '{"current-context":"other","contexts":[{"name":"other","context":{"cluster":"other"}}],"clusters":[{"name":"other","cluster":{"server":"https://example.test"}}]}';;
+esac`
+	a, out, viaStatusCalls := statusFixture(t, noCluster)
+	a.Cfg.ContextSource = config.SourceDefault
+	statusErr := a.Status()
+
+	b, other, orkaCalls := statusFixture(t, noCluster)
+	b.Cfg.ContextSource = config.SourceDefault
+	orkaErr := b.OrkaStatus()
+
+	if fmt.Sprint(statusErr) != fmt.Sprint(orkaErr) {
+		t.Fatalf("the two status commands disagree about an unreadable cluster:\n%v\n---\n%v", statusErr, orkaErr)
+	}
+	if out.String() != other.String() {
+		t.Fatalf("the two status commands printed different reports:\n%s\n---\n%s", out, other)
+	}
+	// And they asked the cluster the same questions: a pre-call that reads
+	// the kubeconfig on its own would show up here as an extra read.
+	asked, _ := os.ReadFile(viaStatusCalls)
+	delegated, _ := os.ReadFile(orkaCalls)
+	if string(asked) != string(delegated) {
+		t.Fatalf("`kmx status` reads the cluster differently from `kmx orka status`:\n%s\n---\n%s", asked, delegated)
 	}
 }
 

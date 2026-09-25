@@ -1794,11 +1794,19 @@ jobs:
           bin/kmx credential issue model-ci \
             --secret kaimahi-model-ci-token --namespace "$CLIENT_NS"
           kubectl --context kind-kaimahi-p1 -n "$CLIENT_NS" get secret kaimahi-model-ci-token
-          # The old default destination must not have been written to as
-          # well: an explicit namespace means exactly one Secret exists.
+          # There is no default destination any more — `--namespace` is
+          # required with `--secret` — so the retired runtime's namespace
+          # must not exist at all, let alone hold a Secret.
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
             echo 'issuing a credential created the legacy default namespace' >&2; exit 1
           fi
+          # And the flag is genuinely required: an invocation that omits it
+          # must refuse rather than guess, before anything is minted.
+          if bin/kmx credential issue never-issued \
+               --secret kaimahi-never-token >refusal.out 2>&1; then
+            echo 'a credential was issued with no --namespace' >&2; exit 1
+          fi
+          grep -q -- '--namespace' refusal.out
       # A real governed turn, made at the TLS seam itself rather than
       # through an agent client: the answer AND the row it wrote. Either
       # alone proves nothing — an answer with no row is ungoverned

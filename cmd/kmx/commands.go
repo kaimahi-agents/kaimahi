@@ -103,16 +103,25 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 	var secret string
 	var namespace string
 	var issueTTL string
-	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name>) [--namespace <namespace>] [--ttl duration]")}
+	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name> --namespace <namespace>) [--ttl duration]")}
 	issue.Flags().BoolVar(&discard, "discard", false, "discard the one-time bearer instead of storing or printing it")
 	issue.Flags().StringVar(&secret, "secret", "", "store the one-time bearer in this Kubernetes Secret")
-	issue.Flags().StringVar(&namespace, "namespace", config.DefaultNamespace, "Secret namespace")
+	// No default. The namespace a one-time token is written into is the
+	// operator's own, and it used to default to the legacy runtime's — a
+	// credential silently issued into a namespace nothing here installs any
+	// more is not a convenience, it is an unrecoverable token in the wrong
+	// place.
+	issue.Flags().StringVar(&namespace, "namespace", "", "namespace the Secret is created in (required with --secret)")
 	issue.Flags().StringVar(&issueTTL, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
 	issue.MarkFlagsOneRequired("discard", "secret")
 	issue.MarkFlagsMutuallyExclusive("discard", "secret")
 	issue.RunE = func(cmd *cobra.Command, _ []string) error {
 		if !discard && secret == "" {
 			return fmt.Errorf("kmx credential issue requires a non-empty --secret <name>")
+		}
+		if !discard && strings.TrimSpace(namespace) == "" {
+			return fmt.Errorf("kmx credential issue --secret %s also requires --namespace <namespace>:\n"+
+				"  the token is shown exactly once, so the namespace its Secret lands in is named rather than guessed", secret)
 		}
 		name := issue.Flags().Arg(0)
 		if err := admin.ValidCredentialName(name); err != nil {

@@ -88,7 +88,7 @@ These are the present seam implementation, including the bridge used by migrate.
 |---|---|
 | `kmx plane` | image, secrets, certificate, deployment; `--step` runs one of those steps; `--source` selects checkout or fetch |
 | `kmx credentials` / `kmx credential renew <name>` | list expiries / extend deadline without changing token material. [Identity](identity.md) |
-| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` (optional namespace/TTL) or `--discard` to discard the one-time bearer; never print the bearer |
+| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` with the `--namespace <ns>` it lands in (no default — the namespace is named, never guessed) or `--discard` to discard the one-time bearer; never print the bearer. A namespace that does not exist is refused before the token is minted |
 | `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
 | `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
 | `kmx flow [credential]` | model ledger, oldest first; all credentials by default; **timeline, not causal trace** |
@@ -120,7 +120,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; `--runtime kagent` is refused by name |
-| `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Same reading as `kmx orka status`. `-o table` only |
+| `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Delegates entirely to `kmx orka status` — same reads, same answer on an unreadable cluster. `-o table` only |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
 `quickstart` reuses an **exact** live match of the Provider and Agent it would
@@ -385,8 +385,10 @@ upstream**: there is no per-credential model allowlist.
 plane with `kmx migrate`, or issue a credential into a named destination with
 `kmx credential issue <name> --secret <secret> --namespace <ns>`. Both paths
 share the same pre-issue binding checks, so neither can overwrite a one-time
-token. Legacy preset governance is gone with the `kagent` lift payload that was
-its last caller.
+token, and both refuse a destination namespace that is blank or absent before
+anything is minted — there is no default namespace, because a token issued
+into a guessed one cannot be recovered. Legacy preset governance is gone with
+the `kagent` lift payload that was its last caller.
 
 It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued

@@ -210,10 +210,11 @@ MCP inventory, which were counts of legacy objects, and the cannot-tell status
 branch on a real cluster, whose probe minted a reader for kagent CRDs. Those
 were deleted rather than rewritten against surviving objects, which would have
 asserted less while looking the same. The counting itself has since gone too:
-`kmx status` is the Orka runtime report, delegating to the same reading as
-`kmx orka status`, and it publishes no structured document — there is no
-owner-managed population to count, because `kmx migrate` routes workloads kmx
-cannot enumerate.
+`kmx status` is the Orka runtime report, delegating wholly to `kmx orka
+status` — the same reads, including the preflight that fetches kubectl, so
+neither name can give a different answer about one cluster — and it publishes
+no structured document: there is no owner-managed population to count, because
+`kmx migrate` routes workloads kmx cannot enumerate.
 
 `e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
 `e2e-runtime`. It uses no kagent and no agent runtime at all. It brings up kind,

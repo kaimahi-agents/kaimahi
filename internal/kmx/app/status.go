@@ -22,6 +22,14 @@ import (
 // cluster from an absent install, and reports the running version rather than
 // the pin. Two readings of one cluster is two answers that can disagree about
 // it, and an operator who ran both would have no way to tell which was right.
+//
+// Delegation is the WHOLE table path, preflight included. A context check
+// bolted on in front of it made this command answer a missing context
+// differently from `kmx orka status` — and skipped the toolchain fetch that
+// puts kubectl on PATH, so the report an operator got depended on which of
+// the two names they typed. Validating the requested FORMAT is not that: it
+// decides whether there is a reading to delegate at all, and needs no
+// cluster.
 
 // StatusOptions controls the output format.
 type StatusOptions struct {
@@ -55,9 +63,6 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 			"    kubectl --context %s -n %s get deploy,%s -o json", format, a.Cfg.KubeContext, OrkaNamespace, orkaProviderKind)
 	default:
 		return fmt.Errorf("status output %q is not supported — use table", opt.Output)
-	}
-	if err := a.requireExistingContext(); err != nil {
-		return err
 	}
 	return a.OrkaStatus()
 }

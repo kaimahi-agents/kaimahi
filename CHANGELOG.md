@@ -96,8 +96,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   project has nothing to do with — which reads as coverage and is not. The
   command keeps its name and now delegates to the same reading as
   `kmx orka status`: running version against the kmx pin, deployments, CRDs
-  and Provider readiness. The context check that tells an operator their setup
-  is incomplete is unchanged.
+  and Provider readiness. It delegates *entirely* — there is no context check
+  in front of the delegation, because one made `kmx status` answer a missing
+  context differently from the command it exists to reuse, and skipped the
+  preflight that puts kubectl on PATH. `kmx ctx` is where an incomplete local
+  setup is explained.
+
+  **`kmx credential issue --secret` now requires `--namespace`.** It defaulted
+  to the retired runtime's namespace, so an operator who omitted the flag
+  minted a one-time token into a namespace nothing here installs any more —
+  and that token is shown exactly once. The namespace is now named rather than
+  guessed, and a destination that is blank or does not exist is refused before
+  the credential is issued and before any Secret is written, so a missing
+  namespace can no longer strand a token that cannot be recovered.
+  **Upgrading:** add `--namespace <ns>` to any `kmx credential issue --secret`
+  invocation that relied on the default. `--discard` is unaffected, and
+  `kmx migrate` already took its namespace.
 
   **`kmx status -o json|yaml` is removed, and refused by name.** The document
   published `governance` — model-seam, credential and plane populations —

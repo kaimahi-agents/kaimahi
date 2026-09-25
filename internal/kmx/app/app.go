@@ -186,24 +186,6 @@ func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 	return cfg, nil
 }
 
-func (a *App) requireExistingContext() error {
-	cfg, err := a.kubeconfig()
-	if err != nil {
-		return err
-	}
-	posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
-	if err != nil {
-		return fmt.Errorf("kube-guard: %w", err)
-	}
-	if posture.Host != "" {
-		return nil
-	}
-	if a.Cfg.ContextSource == config.SourceDefault {
-		return fmt.Errorf("setup is incomplete: context %q has not been created yet\n  run `kmx quickstart` to create or repair the local kind cluster", a.Cfg.KubeContext)
-	}
-	return fmt.Errorf("context %q has not been created yet\n  run `kmx quickstart` for the local default, or select an existing context with `kmx ctx <name>`", a.Cfg.KubeContext)
-}
-
 // Guard prints where the action will land and refuses anything that is not a
 // local kind cluster without explicit confirmation. It runs at most once per
 // process.
