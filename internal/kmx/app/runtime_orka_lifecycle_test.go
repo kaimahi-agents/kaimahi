@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -368,4 +369,198 @@ func TestOrkaStatusRequiresAnExplicitTarget(t *testing.T) {
 			t.Fatalf("status accepted an incomplete reference %+v", ref)
 		}
 	}
+}
+
+// The Status tests below are the only ones here that reach a cluster, so they
+// get the fake kubectl `kmx agent show`'s tests use: it answers the preflight
+// probe and the Agent read, and it records every invocation, which is how a
+// test proves a call was NOT made.
+const fakeStatusKubectl = `#!/bin/sh
+printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
+case "$*" in
+  *"version --client"*) printf 'Client Version: v1.31.0\n' ;;
+  *"get agents.core.orka.ai"*) printf '%s' "$KMX_TEST_AGENT" ;;
+esac
+exit 0
+`
+
+const statusAgentJSON = `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111"},
+"status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z"}}`
+
+func statusFixture(t *testing.T, agent string) (orkaRuntimeAdapter, string) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("the fake kubectl is a shell script")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fakeStatusKubectl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := filepath.Join(dir, "args")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KMX_TEST_ARGS", args)
+	t.Setenv("KMX_TEST_AGENT", agent)
+	// A unit test must never fetch a toolchain, and nothing here should try:
+	// the fake is already on PATH.
+	t.Setenv("KMX_TOOLCHAIN", "off")
+	return orkaRuntimeAdapter{app: lifecycleTestApp(t)}, args
+}
+
+// kubectlCalls returns every command the fake was asked to run.
+func kubectlCalls(t *testing.T, path string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if strings.TrimSpace(line) != "" {
+			calls = append(calls, line)
+		}
+	}
+	return calls
+}
+
+func statusRef(t *testing.T) agentruntime.AgentRef {
+	t.Helper()
+	return agentruntime.AgentRef{Runtime: agentruntime.Orka, Context: "kind-test", Namespace: "demo",
+		Kind: "agents.core.orka.ai", Name: "concierge", UID: "11111111-1111-1111-1111-111111111111"}
+}
+
+func statusFieldText(status agentruntime.Status) string {
+	var parts []string
+	for _, field := range status.Fields {
+		parts = append(parts, field.Label+"="+field.Value)
+	}
+	return strings.Join(parts, " ")
+}
+
+// TestOrkaStatusReportsTheSameFieldsForEveryValidReference pins the output.
+// Runtime, Context, Kind and UID are optional in a reference — a caller
+// holding only a namespace and a name still gets a status — and stating them
+// must not change a single reported field.
+func TestOrkaStatusReportsTheSameFieldsForEveryValidReference(t *testing.T) {
+	const want = "ready=yes active tasks=2 last used=2026-09-24T18:00:00Z"
+	for _, tc := range []struct {
+		name string
+		ref  agentruntime.AgentRef
+	}{
+		{"fully qualified", statusRef(t)},
+		{"namespace and name only", agentruntime.AgentRef{Namespace: "demo", Name: "concierge"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, _ := statusFixture(t, statusAgentJSON)
+			status, err := adapter.Status(context.Background(), tc.ref, agentruntime.StatusOptions{})
+			if err != nil {
+				t.Fatalf("status: %v", err)
+			}
+			if got := statusFieldText(status); got != want {
+				t.Fatalf("status reported %q, want %q", got, want)
+			}
+			if status.Agent != tc.ref {
+				t.Fatalf("status reported reference %+v, not the one it was given %+v", status.Agent, tc.ref)
+			}
+		})
+	}
+}
+
+// TestOrkaStatusStopsBeforeReadingOnACancelledContext is the cancellation
+// claim, and the assertion that matters is the second one: a cancelled status
+// must not preflight (which may FETCH kubectl) or read the cluster at all.
+func TestOrkaStatusStopsBeforeReadingOnACancelledContext(t *testing.T) {
+	adapter, args := statusFixture(t, statusAgentJSON)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := adapter.Status(ctx, statusRef(t), agentruntime.StatusOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled status returned %v, not the cancellation", err)
+	}
+	if calls := kubectlCalls(t, args); len(calls) != 0 {
+		t.Fatalf("a cancelled status still ran %d command(s): %v", len(calls), calls)
+	}
+}
+
+// TestStatusContextBindsOnlyTheCopyThatUsesIt states why the context is bound
+// to a copy: the Runner is shared by every caller holding this App, so one
+// entry point's cancellation must not become the deadline of a command
+// somebody else started.
+func TestStatusContextBindsOnlyTheCopyThatUsesIt(t *testing.T) {
+	app := lifecycleTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scoped := app.withRunContext(ctx)
+	if scoped.Run.Context != ctx {
+		t.Fatal("the scoped copy does not carry the caller's context")
+	}
+	if app.Run.Context != nil {
+		t.Fatal("binding a context rebound the Runner every other caller shares")
+	}
+	// Binding the context a Runner already carries is a no-op: the copy
+	// exists to avoid sharing, not to be made for its own sake.
+	if same := scoped.withRunContext(ctx); same != scoped {
+		t.Fatal("rebinding the same context copied the App again")
+	}
+}
+
+// TestOrkaStatusRefusesAForeignReference: a reference naming another runtime,
+// another kube context or another resource kind is not one this adapter can
+// report on. Answering anyway would describe a different object while looking
+// like it had honoured the reference — so it is refused before any read.
+func TestOrkaStatusRefusesAForeignReference(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		ref        agentruntime.AgentRef
+	}{
+		{"another runtime", "kagent", agentruntime.AgentRef{Runtime: agentruntime.Kagent, Namespace: "demo", Name: "concierge"}},
+		{"another kind", "agents.kagent.dev", agentruntime.AgentRef{Namespace: "demo", Name: "concierge", Kind: "agents.kagent.dev"}},
+		{"another context", "kind-other", agentruntime.AgentRef{Namespace: "demo", Name: "concierge", Context: "kind-other"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, args := statusFixture(t, statusAgentJSON)
+			_, err := adapter.Status(context.Background(), tc.ref, agentruntime.StatusOptions{})
+			if err == nil {
+				t.Fatalf("status accepted a foreign reference %+v", tc.ref)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("the refusal does not name what disagreed: %v", err)
+			}
+			if calls := kubectlCalls(t, args); len(calls) != 0 {
+				t.Fatalf("a foreign reference still reached the cluster: %v", calls)
+			}
+		})
+	}
+}
+
+// TestOrkaStatusRefusesAReusedAgentName is what the UID is for. Names are
+// reused: an Agent deleted and recreated under the same name is a different
+// workload, and reporting its state against the old reference would claim the
+// original one recovered.
+func TestOrkaStatusRefusesAReusedAgentName(t *testing.T) {
+	t.Run("a different object answers", func(t *testing.T) {
+		adapter, _ := statusFixture(t, statusAgentJSON)
+		ref := statusRef(t)
+		ref.UID = "22222222-2222-2222-2222-222222222222"
+		_, err := adapter.Status(context.Background(), ref, agentruntime.StatusOptions{})
+		if err == nil {
+			t.Fatal("status reported on an Agent with a different UID")
+		}
+		for _, want := range []string{"11111111-1111-1111-1111-111111111111", ref.UID} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("the refusal does not name both identities: %v", err)
+			}
+		}
+	})
+	// A stated UID that cannot be checked is not a confirmed one: reporting
+	// anyway would silently downgrade the caller's identity check.
+	t.Run("the object states no UID", func(t *testing.T) {
+		adapter, _ := statusFixture(t, `{"metadata":{"name":"concierge","namespace":"demo"},"status":{"ready":true}}`)
+		_, err := adapter.Status(context.Background(), statusRef(t), agentruntime.StatusOptions{})
+		if err == nil || !strings.Contains(err.Error(), "cannot be confirmed") {
+			t.Fatalf("an unconfirmable UID was accepted: %v", err)
+		}
+	})
 }

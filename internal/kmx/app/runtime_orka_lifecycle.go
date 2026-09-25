@@ -179,7 +179,12 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 // last-used read `kmx agent show` already exercises through readOrkaAgent —
 // and nothing else. It is unrelated to `kmx status`'s aggregate governance,
 // Ollama, MCP and certificate sections, which remain app-owned.
-func (a orkaRuntimeAdapter) Status(_ context.Context, ref agentruntime.AgentRef, _ agentruntime.StatusOptions) (agentruntime.Status, error) {
+//
+// The caller's context bounds everything this read does: preflight's probe
+// and the kubectl read go through a Runner bound to it, and an already
+// cancelled context returns before provisioning, so a cancelled status never
+// starts fetching a toolchain it is not going to use.
+func (a orkaRuntimeAdapter) Status(ctx context.Context, ref agentruntime.AgentRef, _ agentruntime.StatusOptions) (agentruntime.Status, error) {
 	if err := a.lifecycleVerbError(a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
 		return agentruntime.Status{}, err
 	}
@@ -189,11 +194,29 @@ func (a orkaRuntimeAdapter) Status(_ context.Context, ref agentruntime.AgentRef,
 	if strings.TrimSpace(ref.Namespace) == "" || strings.TrimSpace(ref.Name) == "" {
 		return agentruntime.Status{}, fmt.Errorf("Orka status requires an explicit namespace and Agent name")
 	}
-	if err := a.app.preflight(depKubectl); err != nil {
+	if err := a.statusTargetError(ref); err != nil {
 		return agentruntime.Status{}, err
 	}
-	agent, err := a.app.readOrkaAgent(ref.Namespace, ref.Name)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Checked here rather than left to the child process: preflight may FETCH
+	// a missing kubectl before it runs one, and a download is not what a
+	// cancelled status should start. Saying so is also the only honest answer
+	// — a cancelled child exits like a broken tool, and "kubectl is unusable"
+	// would send an operator to fix a machine that is fine.
+	if err := ctx.Err(); err != nil {
+		return agentruntime.Status{}, fmt.Errorf("Orka status for %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	app := a.app.withRunContext(ctx)
+	if err := app.preflight(depKubectl); err != nil {
+		return agentruntime.Status{}, err
+	}
+	agent, err := app.readOrkaAgent(ref.Namespace, ref.Name)
 	if err != nil {
+		return agentruntime.Status{}, err
+	}
+	if err := statusIdentityError(ref, agent); err != nil {
 		return agentruntime.Status{}, err
 	}
 	return agentruntime.Status{Agent: ref, Fields: []agentruntime.Field{
@@ -201,6 +224,48 @@ func (a orkaRuntimeAdapter) Status(_ context.Context, ref agentruntime.AgentRef,
 		{Label: "active tasks", Value: fmt.Sprintf("%d", agent.Status.ActiveTasks)},
 		{Label: "last used", Value: orDash(agent.Status.LastUsed)},
 	}}, nil
+}
+
+// statusTargetError refuses a reference this adapter cannot report on, before
+// it reads anything. Runtime, Context and Kind are optional — a caller that
+// holds only a namespace and a name still gets a status — but a value that
+// disagrees with the one canonical Orka form is a mistake rather than a hint:
+// this read reaches exactly one kube context, always through
+// agents.core.orka.ai, so answering anyway would report on a different object
+// than the reference names while looking like it had honoured it.
+func (a orkaRuntimeAdapter) statusTargetError(ref agentruntime.AgentRef) error {
+	if named := agentruntime.ID(strings.TrimSpace(string(ref.Runtime))); named != "" && named != a.ID() {
+		return fmt.Errorf("Orka status cannot report on a %q reference", named)
+	}
+	if kind := strings.TrimSpace(ref.Kind); kind != "" && kind != orkaPlural("Agent") {
+		return fmt.Errorf("Orka status reads %s, but the reference names kind %q", orkaPlural("Agent"), kind)
+	}
+	kubeContext := ""
+	if a.app != nil && a.app.Cfg != nil {
+		kubeContext = a.app.Cfg.KubeContext
+	}
+	if target := strings.TrimSpace(ref.Context); target != "" && target != kubeContext {
+		return fmt.Errorf("Orka status reads context %q, but the reference names context %q", kubeContext, target)
+	}
+	return nil
+}
+
+// statusIdentityError proves the object that was read is the object the
+// reference named. A UID is optional in a reference and authoritative when it
+// is present: names are reused, so an Agent deleted and recreated under the
+// same name is a different workload, and reporting its state against the old
+// reference would say the original one recovered.
+func statusIdentityError(ref agentruntime.AgentRef, agent *orkaAgentSpec) error {
+	want := strings.TrimSpace(ref.UID)
+	if want == "" || agent.Metadata.UID == want {
+		return nil
+	}
+	if agent.Metadata.UID == "" {
+		return fmt.Errorf("Orka Agent %s/%s reports no UID, so the UID %s this reference names cannot be confirmed",
+			ref.Namespace, ref.Name, want)
+	}
+	return fmt.Errorf("Orka Agent %s/%s has UID %s, not the %s this reference names; the name now belongs to a different Agent",
+		ref.Namespace, ref.Name, agent.Metadata.UID, want)
 }
 
 // Evaluate is permanently unsupported for Orka: a native Orka Task supplies

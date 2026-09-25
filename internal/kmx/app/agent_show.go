@@ -48,6 +48,10 @@ type orkaAgentSpec struct {
 	Metadata struct {
 		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
+		// UID is decoded, not displayed: it is the one identity that does
+		// not survive a delete and recreate, so a lifecycle caller holding a
+		// reference can prove this is still the same Agent.
+		UID string `json:"uid"`
 	} `json:"metadata"`
 	Spec struct {
 		ProviderRef struct {
