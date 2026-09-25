@@ -130,9 +130,12 @@ generation and whole spec — and changes only when the **owner** applies the
 generated patch. After that it requires a real model turn through the TLS seam
 to Orka with its `unpriced` ledger row and the upstream's own token counts, a
 429 the application itself reports once its token budget is exhausted, and the
-plane surviving a replica killed mid-call, a Postgres outage, a simultaneous
-restart of both replicas and a backup/wipe/restore — with the application
-answering again after each. Absence of the `kagent` namespace is asserted after
+plane surviving a replica killed mid-call — the in-flight call drained, the
+survivor answering 200, exactly two ledger rows gained, 2/2 ready again — and
+a Postgres outage, where every replica's readiness drops and returns with no
+replica's restart count changing. The owner's application is separately
+asserted to answer again after a simultaneous restart of both replicas and
+after a backup/wipe/restore. Absence of the `kagent` namespace is asserted after
 bring-up and again at the end.
 
 What that shard does **not** prove: native Orka Agent governance. The pinned
