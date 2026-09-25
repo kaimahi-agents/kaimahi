@@ -24,6 +24,45 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **Model-seam evidence now comes from direct authenticated calls, not kagent.**
+  The `e2e-models` shard used to install the legacy runtime with a bare
+  `kmx up`, repoint a kagent Agent at the seam with `kmx govern`, and produce
+  its ledger rows through `kmx agent chat`. It now brings up kind, Ollama and
+  the model with `kmx up --step` component steps, creates the model client's
+  own namespace, and issues every credential (`model-ci`, `race-cred`,
+  `house-agent`) into that namespace **by name** — no command there inherits a
+  destination. Every governed turn is a direct TLS call to the plane's own
+  model seam under that credential, which is also the only honest way to
+  exercise a protocol the committed upstreams do not speak: an agent's OpenAI
+  client sends one shape and retries a 429 on its own. The shard installs no
+  kagent and fails closed — after bring-up, after the first credential is
+  issued, and again at the end — if that namespace ever appears.
+
+  What it asserts is unchanged in substance: a metered `free` ollama row
+  carrying the upstream's own token counts and its caller fields, eight
+  concurrent calls against a one-token cap admitting exactly one across both
+  replicas, a cap denial that relays no answer and files no approval request,
+  ordinary recovery, the ops-port metrics, and model onboarding end to end —
+  dry-run, overlay precedence and stale-apply refusal, refused overlay custody
+  of the admin bearer, Responses-API metering, the onboarded endpoint
+  reachable only by the proxy, an unmeterable answer refused rather than
+  relayed, a protocol contradicting its own path refused at load, and the
+  entry surviving the next `kmx plane`. No product behaviour and no default
+  changed — this is CI evidence only.
+
+  - **Removed rather than translated:** the shard's combined `kmx status`
+    assertions and its raw MCP inventory check, which counted legacy objects,
+    and `scripts/ci/status-unknown-probe.sh`, which minted a reader for kagent
+    CRDs to prove the cannot-tell branch of `kmx status`. Rewriting either
+    against surviving objects would have asserted less while looking the same.
+    What is lost with the probe is the real-cluster half: that a genuinely
+    RBAC-denied reader reaches that branch at all. The rule it rendered still
+    has unit coverage — `TestCredentialsAreUnknownWhenTheSecretsCouldNotBeListed`,
+    `TestGovernanceCannotTellIsNotNotInstalled` and
+    `TestUnknownPopulationsPublishNoCounts` keep `unknown` distinct from a
+    zero, carry kubectl's own reason, and publish no counts — and status is
+    rebuilt on defensible evidence in its own change.
+
 - **Governance evidence now comes from an owner-managed application, not kagent.**
   The `e2e-resilience` shard used to install the legacy runtime, repoint a
   kagent Agent at the seam with `kmx govern`, and produce every ledger row

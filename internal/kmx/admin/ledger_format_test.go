@@ -46,3 +46,49 @@ func TestOwnerApplicationLedgerRowMatchesTheShardPattern(t *testing.T) {
 		t.Fatalf("a reclassified `free` row satisfies the shard's metered assertion:\n%s", buf.String())
 	}
 }
+
+// The same tie, for the other shard that reads governance evidence out of
+// this table. `e2e-models` no longer produces its rows through an agent
+// client; it calls the TLS seam directly under an explicitly namespaced
+// credential, and the row below is what it greps for. Two columns it
+// depends on are not in the resilience row at all: `free`, which is the
+// committed `ollama` upstream's own classification, and the caller pair
+// the shard asserts was recorded rather than left blank.
+func TestModelShardLedgerRowMatchesTheShardPatterns(t *testing.T) {
+	headers := []string{"created (UTC)", "credential", "upstream", "model", "in", "out", "cents",
+		"source", "status", "caller (claimed)", "from (observed)", "acted for"}
+	row := func(source, claim, addr string) string {
+		var buf bytes.Buffer
+		renderTable(&buf, headers,
+			[][]string{{"2026-09-20 10:00:00", "model-ci", "ollama", trunc("qwen2.5:3b", 16),
+				"11", "3", "0", source, "200", claim, addr, "none"}},
+			ledgerFmt)
+		return buf.String()
+	}
+
+	// Exactly the patterns in .github/workflows/ci.yml's e2e-models job.
+	metered := regexp.MustCompile(`model-ci +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200`)
+	caller := regexp.MustCompile(`(?m)model-ci +ollama .*none *$`)
+	unrecorded := regexp.MustCompile(` (legacy|unrecorded) +(legacy|unrecorded) +`)
+
+	recorded := row("free", "ua:curl/8.5.0", "127.0.0.1")
+	if !metered.MatchString(recorded) {
+		t.Fatalf("the e2e-models ledger assertion no longer matches this table:\n%s", recorded)
+	}
+	if !caller.MatchString(recorded) {
+		t.Fatalf("the e2e-models caller assertion no longer matches this table:\n%s", recorded)
+	}
+	if unrecorded.MatchString(recorded) {
+		t.Fatalf("a row WITH caller fields satisfies the shard's lost-caller alarm:\n%s", recorded)
+	}
+
+	// The negatives, both of which the shard depends on being able to
+	// fail. A row the plane could not attribute must trip the alarm, and
+	// an `unpriced` row must not pass for the free upstream's.
+	if !unrecorded.MatchString(row("free", "unrecorded", "unrecorded")) {
+		t.Fatal("a row that lost its caller fields no longer trips the shard's alarm")
+	}
+	if metered.MatchString(row("unpriced", "ua:curl/8.5.0", "127.0.0.1")) {
+		t.Fatal("an `unpriced` row satisfies the shard's free-upstream assertion")
+	}
+}
