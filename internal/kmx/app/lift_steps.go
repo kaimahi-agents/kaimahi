@@ -111,7 +111,7 @@ func (a *App) liftBoundary(opt lift.Options, work string) error {
 		return fmt.Errorf(`the network boundary is NOT enforced on this cluster.
 
   What exists on it now: the kaimahi namespace, its NetworkPolicies, and an
-  empty ledger. No governance plane, no credential and no agent has been put
+  empty ledger. No model-traffic bridge, no credential and no agent has been put
   behind a boundary that does not hold, which is the whole reason this phase
   runs before those.
 
@@ -167,7 +167,7 @@ func (a *App) liftCredential(opt lift.Options, work string) error {
 func (a *App) liftPlane(opt lift.Options, work string) error {
 	resume := opt
 	resume.Step = "plane"
-	if err := a.Guard("deploy the governance plane", a.liftCommand(resume, false)); err != nil {
+	if err := a.Guard("deploy the model-traffic bridge", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
 	image := planeRegistryImage(opt.Registry)
@@ -183,7 +183,7 @@ func (a *App) liftPlane(opt lift.Options, work string) error {
 	// layers away from the cause, on a cluster the operator has just been
 	// told is fine.
 	if opt.BringYourOwn {
-		if err := a.refuseWithoutRegistryPullRights(opt); err != nil {
+		if err := a.refuseWithoutRegistryPullRights(opt, opt.Payload); err != nil {
 			return err
 		}
 	}

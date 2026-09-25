@@ -103,6 +103,10 @@ func (b *orkaChatBackend) verifyLiftFoundry(ctx context.Context, target *App, se
 }
 
 func (worker *App) verifyFoundryEndpoint(parent context.Context, namespace, secret, endpoint, model string) error {
+	return worker.verifyFoundryEndpointKey(parent, namespace, secret, "api-key", endpoint, model)
+}
+
+func (worker *App) verifyFoundryEndpointKey(parent context.Context, namespace, secret, key, endpoint, model string) error {
 	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
 	defer cancel()
 	suffix, err := randomHex(4)
@@ -110,7 +114,10 @@ func (worker *App) verifyFoundryEndpoint(parent context.Context, namespace, secr
 		return err
 	}
 	name := "kmx-inference-check-" + suffix
-	body, err := json.Marshal(foundryProbeJob(name, namespace, secret, endpoint, model))
+	job := foundryProbeJob(name, namespace, secret, endpoint, model)
+	volumes := job["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["volumes"].([]any)
+	volumes[0].(map[string]any)["secret"].(map[string]any)["items"] = []any{map[string]string{"key": key, "path": "api-key"}}
+	body, err := json.Marshal(job)
 	if err != nil {
 		return err
 	}

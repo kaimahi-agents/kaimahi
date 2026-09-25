@@ -67,6 +67,9 @@ type modelStatus struct {
 		OpenAI struct {
 			BaseURL string `json:"baseUrl"`
 		} `json:"openAI"`
+		Ollama struct {
+			Host string `json:"host"`
+		} `json:"ollama"`
 		APIKeySecret string `json:"apiKeySecret"`
 	} `json:"spec"`
 	Status struct{ Conditions []statusCondition } `json:"status"`

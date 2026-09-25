@@ -25,7 +25,7 @@
     {
       "name": "the SVG requirement table is emptied",
       "breaks": "The same disabling by deletion, on the half of the table that pins what each diagram is called.",
-      "find": "    \"brand/ketu.svg\": \"Kaimahi ketu mark\",\n    \"brand/mark.svg\": \"Kaimahi compact mark\",\n    \"brand/wordmark.svg\": \"Kaimahi wordmark\",\n    \"docs/assets/architecture.svg\": \"Kaimahi governance architecture\",\n",
+      "find": "    \"brand/ketu.svg\": \"Kaimahi ketu mark\",\n    \"brand/mark.svg\": \"Kaimahi compact mark\",\n    \"brand/wordmark.svg\": \"Kaimahi wordmark\",\n    \"docs/assets/architecture.svg\": \"Kaimahi model-traffic architecture\",\n",
       "replace": ""
     },
     {

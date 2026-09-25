@@ -255,7 +255,7 @@ is [here](reviews/2026-09-09-orka-composition.md).
 - Tool traffic remains the application owner's responsibility. The Kaimahi tool
   gateway is retired; do not infer tool governance from a model ledger row or
   silently repoint an application's tools during an upgrade.
-- A full `kmx lift` still installs kagent/Copilot demo agents and obtains a
+- A full `kmx aks up --payload kagent` still installs kagent/Copilot demo agents and obtains a
   Copilot credential by device login if absent. Orka migration uses selected phases;
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
 
