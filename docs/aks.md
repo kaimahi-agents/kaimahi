@@ -2,7 +2,7 @@
 
 [Orka](orka.md) is the platform; Kaimahi helps applications get onto it.
 For existing applications, start with [model-traffic migration](migrate.md).
-This page documents the **current AKS implementation**, including `kmx lift`'s
+This page documents the **current AKS implementation**, including `kmx aks up`'s
 legacy kagent/Copilot demo journey, selected with `--payload kagent`. The
 `orka` payload lands Orka itself on the same provisioned cluster. Neither is a
 claim that Orka runs those demo agents, or that kagent authoring has been ruled
@@ -27,17 +27,17 @@ it has no Azure credential and does not re-prove live cloud behavior.
 - A checkout for standalone probes and model-key helpers, not for lift or
   Copilot capture. Images build in private ACR: no local Docker or push.
 
-## One command: `kmx lift`
+## One command: `kmx aks up`
 
 ```bash
-kmx lift --payload orka --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
-kmx lift --payload orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx aks up --plan --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
-### `--payload` is required, and has no default
+### `--payload` defaults to `orka`
 
-`lift` bills money and installs a platform, and there are two different things
-it can install:
+`kmx aks up` bills money and installs a platform. It defaults to Orka; pass
+`--payload kagent` for the legacy demo:
 
 | payload | what lands | phases |
 |---|---|---|
@@ -48,9 +48,8 @@ Everything about the **cluster** is shared: provisioning it, proving its
 network boundary, the plane that meters a model seam, Azure monitoring, and
 verification. The payloads differ only in what runs agents.
 
-There is no default because a default would mean an existing script quietly
-changed which platform it deploys the day this project's direction moved. A
-missing `--payload` refuses and names both.
+The deprecated `kmx lift` still requires `--payload` so existing scripts cannot
+silently change platform. Both names use the same run records and teardown.
 
 **The `orka` payload creates no Provider.** A managed cluster has no
 in-cluster model server — this path deploys no Ollama — and kmx holds no
@@ -64,7 +63,7 @@ kmx --context <cluster> agent create <agent> --namespace orka-system \
   --provider-type openai --model <model> --secret <name> --base-url <endpoint>
 ```
 
-Both commands **name the cluster**. `kmx lift` moves only its own process's
+Both commands **name the cluster**. `kmx aks up` moves only its own process's
 context, so if your current-context is still a local kind cluster, an unpinned
 pair sends the Secret one way and the Agent the other — and the half that lands
 locally looks like success. The key is read from **stdin** rather than passed as
@@ -86,7 +85,7 @@ run requires the cluster name typed at a terminal or
 For an existing cluster, add `--byo` explicitly:
 
 ```bash
-kmx lift --payload orka --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx aks up --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 **BYO never creates, deletes or adopts the cluster or resource group.** It checks
@@ -114,10 +113,10 @@ Failures leave earlier work in place and print a target-preserving retry. Fix
 the cause, rerun that phase, then run the remaining phases or the full lift:
 
 ```bash
-kmx lift --payload orka --step plane --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx aks up --step plane --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
-Retain the same identity/options, **including `--payload`**, and `--byo` where
+Retain the same identity/options, **including `--payload` if you selected kagent**, and `--byo` where
 used. A run is recorded with the payload it landed, and resuming with the other
 one is refused rather than reconciled: installing both platforms on one cluster
 is the outcome the split exists to prevent. A record written before the split
@@ -197,7 +196,7 @@ CNI or reimaging node pools is not hidden behind a create operation.
 
 ## Remaining checkout helpers
 
-Use native `kmx lift` and its phases for managed provisioning; the former
+Use native `kmx aks up` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
 [Makefile](../Makefile) retains model credential helpers and probes such as
 `make netpol-verify`. For those helpers, set `TARGET=aks`,
@@ -255,7 +254,7 @@ spans or reasoning**; keep your own OpenTelemetry instrumentation.
 Cloud resources keep billing until cleaned up. For a lift-created cluster:
 
 ```bash
-KAIMAHI_CONFIRM=<your-rg> kmx lift down --resource-group <your-rg> --cluster <cluster>
+KAIMAHI_CONFIRM=<your-rg> kmx aks down --resource-group <your-rg> --cluster <cluster>
 ```
 
 Confirmation names the **resource group**, not the cluster. Before recursive
@@ -267,12 +266,12 @@ the group. Its conclusion covers that group and its record, not all billing.
 ### Teardown on a cluster you did not create
 
 ```bash
-KAIMAHI_CONFIRM=<cluster> kmx lift down --byo \
+KAIMAHI_CONFIRM=<cluster> kmx aks down --byo \
   --resource-group <your-rg> --cluster <cluster>
 ```
 
 BYO confirms the **cluster**. It removes recorded monitoring, **not the agents,
-governance plane, cluster or resource group**. Those remaining workloads need
+model-traffic bridge, cluster or resource group**. Those remaining workloads need
 an owner's cleanup decision. It removes its in-cluster monitoring objects first,
 disables only add-ons it enabled, then removes recorded Azure resources by ID,
 never by a guessed name. Unknown/pre-existing ownership is left unchanged.

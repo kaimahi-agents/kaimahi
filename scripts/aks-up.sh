@@ -379,13 +379,13 @@ cat >&2 <<EOF
 
 aks-up: ready.
 
-  context:   $CLUSTER   (NOT a kind context — kmx lift already confirmed it)
+  context:   $CLUSTER   (NOT a kind context — kmx aks up already confirmed it)
   registry:  $ACR.azurecr.io
   netpol:    $NETWORK_POLICY engine (present; the next lift phase proves enforcement)
   continue:  $KMX_LIFT_CONTINUE
   teardown:  $KMX_LIFT_DOWN
 
-The invoking kmx lift continues automatically. Use the commands above only
+The invoking kmx aks up continues automatically. Use the commands above only
 to resume after interruption or to tear the billed resources down.
 EOF
 else
@@ -402,9 +402,9 @@ aks-up: ready.
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
 Next (see docs/aks.md):
-  kmx lift --resource-group $RG --cluster $CLUSTER --registry $ACR
+  kmx aks up --byo --resource-group $RG --cluster $CLUSTER --registry $ACR
 
   The managed path captures the model credential before deploying the plane
-  and proves the network boundary. Use 'kmx lift --help' for individual phases.
+  and proves the network boundary. Use 'kmx aks up --help' for individual phases.
 EOF
 fi
