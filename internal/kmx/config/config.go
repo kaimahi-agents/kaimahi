@@ -26,9 +26,9 @@ const (
 	DefaultAdminPort = "19091"
 	// DefaultOpsPort is the local side of the metrics forward. Keeping one
 	// default makes a stale forward fail closed at bind time.
-	DefaultOpsPort   = "19092"
-	DefaultAgent = "hello-world"
-	DefaultTask  = "Hello! Who are you and where are you running?"
+	DefaultOpsPort = "19092"
+	DefaultAgent   = "hello-world"
+	DefaultTask    = "Hello! Who are you and where are you running?"
 	// DefaultCredential is the Makefile's CRED: the credential the ledger is
 	// read for by default.
 	DefaultCredential = "hello-world"

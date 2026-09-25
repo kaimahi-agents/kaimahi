@@ -2140,9 +2140,8 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           # The probe pod runs in the model client's namespace and its
-          # control is Ollama's Service: both are named here because the
-          # script's defaults name the legacy runtime's namespace and its
-          # tool server, neither of which exists in this job.
+          # control is Ollama's Service. Both are required so a negative
+          # result cannot inherit a stale namespace or unreachable control.
           KUBECTL="kubectl --context kind-kaimahi-p1" PROBE_NS="$CLIENT_NS" \
             CONTROL=ollama.ollama:11434 \
             bash scripts/upstream-boundary-probe.sh

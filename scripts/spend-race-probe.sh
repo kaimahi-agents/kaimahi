@@ -23,13 +23,13 @@ umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=kaimahi
+GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
 # SECRET_NAMESPACE has no default. It is the namespace the governed
 # credential lives in, which is the caller's own — an application
 # namespace named by whoever migrated it. Guessing one would send the
 # probe looking for a Secret that was never going to be there and report
 # the miss as a cluster fault.
 SECRET_NAMESPACE="${SECRET_NAMESPACE:?set SECRET_NAMESPACE to the namespace holding $GOVERNED_SECRET}"
-GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
 UPSTREAM="${UPSTREAM:-ollama}"
 MODEL="${MODEL:-qwen2.5:3b}"
 EXPECT_ADMITTED="${EXPECT_ADMITTED:-1}"

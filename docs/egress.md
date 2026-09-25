@@ -18,19 +18,23 @@ A direct-provider agent or direct MCP client is not made governed by the
 existence of plane policies. An application migrated
 in its own namespace keeps its owner's network responsibilities.
 
-## Connections in the committed policy
+## Connections in the plane policy
 
-| From | To | Port |
-|---|---|---|
-| a migrated namespace | proxy's model seam | 8080 |
-| proxy | Postgres | 5432 |
-| proxy | ollama | 11434 |
-| proxy | Orka API pods selected in `orka-system` | 8080 |
-| proxy | CoreDNS | UDP/TCP 53 |
-| Prometheus-labeled pods in `monitoring` | proxy ops listener | 9092 |
+The committed policy opens no model-seam ingress. `kmx migrate` applies one
+additional `kaimahi-proxy-ingress-<namespace>` policy for each admitted
+application namespace.
+
+| From | To | Port | Source |
+|---|---|---|---|
+| a migrated namespace | proxy's model seam | 8080 | per-namespace migration policy |
+| proxy | Postgres | 5432 | committed plane policy |
+| proxy | ollama | 11434 | committed plane policy |
+| proxy | Orka API pods selected in `orka-system` | 8080 | committed plane policy |
+| proxy | CoreDNS | UDP/TCP 53 | committed plane policy |
+| Prometheus-labeled pods in `monitoring` | proxy ops listener | 9092 | committed plane policy |
 
 Postgres has no granted egress; its ingress admits the proxy alone on 5432.
-The default model-seam ingress matches a namespace, not a verified agent runtime.
+Each model-seam ingress allowance matches one namespace, not a verified agent runtime.
 The gateway, Slack and ERP fixture allowances are removed from the shipped
 policy; existing clusters still require deliberate cleanup.
 

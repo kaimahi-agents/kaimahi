@@ -220,8 +220,8 @@ verified with no unverified fallback.
 shard's only governed callers, and `model-seam-probe.sh` alone is
 `e2e-hosted-models`'. Neither shard holds an agent, so every turn either
 meters is a direct TLS call under a credential in the caller's own
-namespace. Their `SECRET_NAMESPACE` defaults name the legacy runtime's
-namespace, so both shards pass the destination at each call site.
+namespace. `SECRET_NAMESPACE` has no default, so both shards must pass the
+credential's destination at each call site.
 
 `scripts/ci/synthetic-model.sh` is the `e2e-hosted-models` fixture: a
 throwaway CA and a documentation-range address routed over kind's network,
