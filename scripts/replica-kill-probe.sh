@@ -112,14 +112,12 @@ chat "$PORT_A" > "$workdir/status-a" &
 inflight=$!
 sleep 0.2
 # Was the call still open when A went? curl writes the status only on
-# completion, so an empty file means yes. A host fast enough to finish
-# the generation first has not exercised the drain — say so rather
-# than claim it (the survivor and ledger assertions still hold either
-# way; CI's 2-CPU runner is slow enough that the drain is exercised).
+# completion, so an empty file means yes. A host that finishes generation
+# first has not exercised the drain and cannot pass this drain proof.
 drained=1
 if [ -s "$workdir/status-a" ]; then
   drained=0
-  echo "NOTE: the call on $a completed before the delete ($(cat "$workdir/status-a")); the drain is not exercised on this host"
+  echo "the call on $a completed before deletion; the drain was not exercised" >&2
 fi
 # 2. ...A is deleted (a direct delete: no eviction, no PDB — the harsher case)...
 echo "deleting replica $a"
@@ -131,6 +129,7 @@ st_a=$(cat "$workdir/status-a")
 echo "call on the deleted replica: $st_a (drain exercised: $drained); next call on the survivor: $st_b"
 [ "$st_b" = 200 ] || { echo "survivor answered $st_b: $(head -c 300 "$workdir/resp-$PORT_B")" >&2; exit 1; }
 [ "$st_a" = 200 ] || { echo "the in-flight call was not drained (got $st_a)" >&2; exit 1; }
+[ "$drained" = 1 ] || { echo "the call finished before deletion; retry the drain proof" >&2; exit 1; }
 
 # The ledger gained exactly the two rows — nothing lost with the replica.
 after=$(ledger_rows)
@@ -141,8 +140,4 @@ echo "ledger rows for $CRED: $before -> $after"
 $KUBECTL -n "$NAMESPACE" rollout status deploy/kaimahi-proxy --timeout=180s >/dev/null
 ready=$($KUBECTL -n "$NAMESPACE" get deploy kaimahi-proxy -o jsonpath='{.status.readyReplicas}')
 [ "$ready" = 2 ] || { echo "deployment not back at 2 ready replicas ($ready)" >&2; exit 1; }
-if [ "$drained" = 1 ]; then
-  echo "replica-kill: survivor served, in-flight call drained, ledger complete, 2/2 ready again"
-else
-  echo "replica-kill: survivor served, ledger complete, 2/2 ready again (drain not exercised on this host)"
-fi
+echo "replica-kill: survivor served, in-flight call drained, ledger complete, 2/2 ready again"
