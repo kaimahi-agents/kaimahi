@@ -2347,7 +2347,7 @@ jobs:
             echo "the Orka shard created the legacy runtime's namespace"
             exit 1
           fi
-          releases=$(helm list --all-namespaces --short)
+          releases=$(helm --kube-context kind-kmx-orka list --all-namespaces --short)
           if [ -n "$releases" ]; then
             echo "the Orka shard left Helm releases:"
             printf '%s\n' "$releases"
