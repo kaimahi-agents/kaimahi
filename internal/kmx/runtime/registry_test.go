@@ -23,12 +23,27 @@ func (a probeAdapter) Probe(context.Context, Target) (Probe, error) {
 }
 func (a probeAdapter) Open(context.Context, Target) (Session, error) { return nil, nil }
 
+// nilIDAdapter panics if its ID method is ever invoked on a nil receiver, so
+// tests using it prove NewRegistry rejects a typed-nil adapter without
+// calling ID().
+type nilIDAdapter struct{ id ID }
+
+func (a *nilIDAdapter) ID() ID {
+	if a == nil {
+		panic("ID called on nil adapter")
+	}
+	return a.id
+}
+func (a *nilIDAdapter) Probe(context.Context, Target) (Probe, error)  { return Probe{}, nil }
+func (a *nilIDAdapter) Open(context.Context, Target) (Session, error) { return nil, nil }
+
 func TestNewRegistryRejectsAmbiguousRegistrations(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		adapters []Adapter
 	}{
 		{"nil adapter", []Adapter{probeAdapter{id: testRuntime}, nil}},
+		{"typed-nil adapter", []Adapter{probeAdapter{id: testRuntime}, (*nilIDAdapter)(nil)}},
 		{"empty ID", []Adapter{probeAdapter{}}},
 		{"duplicate ID", []Adapter{probeAdapter{id: testRuntime}, probeAdapter{id: testRuntime}}},
 	} {
@@ -40,6 +55,36 @@ func TestNewRegistryRejectsAmbiguousRegistrations(t *testing.T) {
 	}
 	if _, err := NewRegistry(); err != nil {
 		t.Fatalf("an empty registry is legal: %v", err)
+	}
+}
+
+// A typed-nil Adapter (a nil pointer stored in the interface) must be
+// rejected without ever invoking a method on the nil receiver, and the
+// rejection must produce the same positional error as an untyped nil.
+func TestNewRegistryRejectsTypedNilAdapterWithoutPanicking(t *testing.T) {
+	var nilAdapter *nilIDAdapter
+	_, err := NewRegistry(probeAdapter{id: testRuntime}, nilAdapter)
+	if err == nil {
+		t.Fatal("NewRegistry accepted a typed-nil adapter")
+	}
+	const want = "registry: adapter at position 1 is nil"
+	if err.Error() != want {
+		t.Fatalf("NewRegistry error = %q, want %q", err.Error(), want)
+	}
+}
+
+// Ordinary value-receiver and pointer-receiver adapters that are not nil must
+// still register successfully; the typed-nil check must not reject them.
+func TestNewRegistryAcceptsOrdinaryValueAndPointerAdapters(t *testing.T) {
+	registry, err := NewRegistry(probeAdapter{id: testRuntime}, &nilIDAdapter{id: otherRuntime})
+	if err != nil {
+		t.Fatalf("NewRegistry rejected ordinary adapters: %v", err)
+	}
+	if adapter, err := registry.Lookup(testRuntime); err != nil || adapter.ID() != testRuntime {
+		t.Fatalf("Lookup(%q) = %v, %v", testRuntime, adapter, err)
+	}
+	if adapter, err := registry.Lookup(otherRuntime); err != nil || adapter.ID() != otherRuntime {
+		t.Fatalf("Lookup(%q) = %v, %v", otherRuntime, adapter, err)
 	}
 }
 

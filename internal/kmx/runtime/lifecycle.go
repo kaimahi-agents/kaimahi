@@ -17,8 +17,9 @@ import (
 type LifecycleAdapter interface {
 	Adapter
 	Capabilities() Capabilities
-	// Render consumes the exact prevalidated source bytes. It never reparses
-	// or reserializes them, because those bytes are the portable identity.
+	// Render consumes the exact prevalidated source bytes. Those bytes are the
+	// authoritative portable-identity input. An adapter may decode them to learn
+	// what to render, but must not render from a re-serialized copy.
 	Render(context.Context, []byte, RenderOptions) (RenderedBundle, error)
 	// Deploy applies exactly the bundle Render produced, never a re-render.
 	Deploy(context.Context, RenderedBundle, DeployOptions) (AgentRef, error)
