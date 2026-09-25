@@ -123,7 +123,7 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 // does not own, and nothing else.
 func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error {
 	fmt.Fprintf(a.Err, `----------------------------------------------------------------
-  kmx lift down — on a cluster YOU created
+  kmx aks down — on a cluster YOU created
 
   cluster %q and resource group %q are NOT deleted. They were
   not created here and they are not deleted here.

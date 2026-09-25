@@ -73,7 +73,7 @@ func TestLiftDiscoveryCancels(t *testing.T) {
 }
 
 func TestPortableLiftBundleDropsServerMetadataAndKeepsConfiguration(t *testing.T) {
-	agent := map[string]any{"status": map[string]any{"ready": true}, "metadata": map[string]any{"uid": "old"}, "spec": map[string]any{"providerRef": map[string]any{"name": "shared"}, "tools": []any{map[string]any{"name": "k8s-get-resources"}}, "systemPrompt": map[string]any{"inline": "custom"}}}
+	agent := map[string]any{"status": map[string]any{"ready": true}, "metadata": map[string]any{"uid": "old", "labels": map[string]any{"app.kubernetes.io/version": "v2", "cluster-only": "local"}}, "spec": map[string]any{"providerRef": map[string]any{"name": "shared"}, "tools": []any{map[string]any{"name": "k8s-get-resources"}}, "systemPrompt": map[string]any{"inline": "custom"}}}
 	provider := map[string]any{"status": map[string]any{"ready": true}, "spec": map[string]any{"type": "openai", "defaultModel": "test", "secretRef": map[string]any{"name": "existing-key", "key": "api-key"}}}
 	bundle, err := portableLiftBundle(agent, provider, "demo", OrkaNamespace)
 	if err != nil {
@@ -81,6 +81,10 @@ func TestPortableLiftBundleDropsServerMetadataAndKeepsConfiguration(t *testing.T
 	}
 	if bundle.Agent["status"] != nil || bundle.Agent["metadata"].(map[string]any)["uid"] != nil {
 		t.Fatal("server metadata copied")
+	}
+	labels := bundle.Agent["metadata"].(map[string]any)["labels"].(map[string]any)
+	if len(labels) != 1 || labels["app.kubernetes.io/version"] != "v2" {
+		t.Fatal("lift lost release version or copied unrelated labels")
 	}
 	if bundle.Secret["data"] != nil || bundle.Secret["metadata"].(map[string]any)["name"] != "existing-key" {
 		t.Fatal("credentials copied or reference changed")
