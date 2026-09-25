@@ -96,8 +96,9 @@ include API access to OpenAI and other models** at
 `api.githubcopilot.com`, an OpenAI-compatible endpoint.
 
 The plane-side route is `kmx models credential copilot`. A checkout helper,
-`make copilot-secret`, remains for capturing the token outside the plane; it
-logs you in once via
+`COPILOT_SECRET_NAMESPACE=<workload-ns> make copilot-secret`, remains for
+explicitly named, checkout-managed token capture outside the plane; without
+that destination it refuses before login or token exchange. It logs you in once via
 GitHub's device flow (open the printed URL, enter
 the code), caches that OAuth token 0600 under `~/.config/kaimahi/`
 (override with `KAIMAHI_COPILOT_TOKEN_FILE`), exchanges it at GitHub's

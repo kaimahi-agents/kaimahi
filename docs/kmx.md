@@ -401,7 +401,7 @@ and short-lived token exchange without reading credential material from stdin.
 It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
 gives the explicit-context command. Provider credentials for an onboarded
 upstream are `kmx models add`; the separate checkout-only Copilot capture
-remains `make copilot-secret`.
+requires an explicit destination: `COPILOT_SECRET_NAMESPACE=<workload-ns> make copilot-secret`.
 
 ## Backup, restore, and metrics
 

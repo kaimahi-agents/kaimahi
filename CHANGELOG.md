@@ -187,9 +187,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   reached. **Upgrading:** an owner-managed application is put behind the plane
   with `kmx migrate`, a credential is issued into a named destination with
   `kmx credential issue <name> --secret <secret> --namespace <ns>`, a model
-  preset is applied with `kubectl apply -f k8s/models/<preset>.yaml`, and an
-  Orka Agent is edited with `kubectl edit agents.core.orka.ai <name>` and read
-  back with `kmx agent show`.
+  upstream is onboarded with `kmx models add`, and an Orka Agent is edited
+  with `kubectl --context <context> edit agents.core.orka.ai <name>` and read
+  back with `kmx agent show`. The old `k8s/models/` presets are removed.
 
 - **`kmx console` drives Orka Agents only.** The dashboard used to list
   `agents.kagent.dev` beside Orka Agents and offer chat, inference editing and
@@ -224,8 +224,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   namespace the pinned installer uses and the same default `agent chat`
   resolves against. `--namespace` selects another. The kagent
   readiness/acceptance/ModelConfig/tool-wiring columns are gone with the kind
-  they described. **Upgrading:** `kubectl -n kagent get agents.kagent.dev` for
-  whatever a retained `kmx up --step agent` left behind.
+  they described. **Upgrading:** inspect any previously installed objects with
+  `kubectl --context <context> -n kagent get agents.kagent.dev`; this release
+  no longer provides `kmx up --step agent`.
 
 - **In-chat governance is gone.** `/govern`, `/ungovern`, `/sessions`,
   `/resume`, `/history`, `/new` and `/session` were kagent session and

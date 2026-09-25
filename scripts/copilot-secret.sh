@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mint a short-lived GitHub Copilot API token and store it in-cluster as the
-# github-copilot-token Secret (key: api-key), for the github-copilot preset.
+# Mint a short-lived GitHub Copilot API token and store it in an explicitly
+# selected workload namespace as the github-copilot-token Secret (key: api-key).
 #
 # Flow: GitHub device login (once, token cached 0600 under ~/.config/kaimahi/)
 #   -> exchange at GitHub's Copilot token endpoint
@@ -24,10 +24,13 @@ umask 077
 CLIENT_ID="01ab8ac9400c4e429b23" # GitHub's VS Code OAuth app (Copilot-entitled)
 TOKEN_FILE="${KAIMAHI_COPILOT_TOKEN_FILE:-$HOME/.config/kaimahi/copilot-oauth-token}"
 KUBECTL="${KUBECTL:-kubectl}"
-# Defaults store the token for the ungoverned direct-to-Copilot preset;
-# The native governed path is `kmx models credential copilot`; this retained
-# script serves only the direct github-copilot preset.
-NAMESPACE="${COPILOT_SECRET_NAMESPACE:-kagent}"
+# The legacy preset and its namespace default are gone. Require a destination
+# before any device login or token exchange can mint a short-lived credential.
+NAMESPACE="${COPILOT_SECRET_NAMESPACE:-}"
+if [[ ! "$NAMESPACE" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || [ "${#NAMESPACE}" -gt 63 ]; then
+  echo "Set COPILOT_SECRET_NAMESPACE to an explicit Kubernetes namespace before login" >&2
+  exit 2
+fi
 SECRET_NAME="${COPILOT_SECRET_NAME:-github-copilot-token}"
 
 workdir=$(mktemp -d)
@@ -118,4 +121,4 @@ $KUBECTL -n "$NAMESPACE" create secret generic "$SECRET_NAME" \
   --dry-run=client -o yaml \
   | $KUBECTL -n "$NAMESPACE" apply -f -
 echo "Secret $SECRET_NAME refreshed. Note: the Copilot token expires;" >&2
-echo "re-run this (then 'make use PRESET=github-copilot') when auth fails." >&2
+echo "re-run this when auth fails; the legacy model preset is no longer installed." >&2
