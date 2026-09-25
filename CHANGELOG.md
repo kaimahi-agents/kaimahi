@@ -68,10 +68,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   model turn through the TLS seam to Orka returns an answer and writes an
   `unpriced` Orka ledger row with the upstream's own token counts; an
   exhausted token budget is reported by the application itself as a 429 and
-  audited as a denied row; and the plane survives a replica killed mid-call,
-  a Postgres outage, a simultaneous restart of both replicas and a
-  backup/wipe/restore — with the owner's application answering again after
-  each.
+  audited as a denied row; and the plane survives a replica killed mid-call —
+  the in-flight call drained, the survivor answering 200, exactly two ledger
+  rows gained, and both replicas back to 2/2 ready — and a Postgres outage,
+  where every replica's readiness drops and returns and no replica's restart
+  count changes across it. It separately proves the owner's application
+  answers again after a simultaneous restart of both replicas and after a
+  backup/wipe/restore.
 
   It does **not** claim native Orka Agent governance. The pinned Orka Provider
   schema has no field naming a private certificate authority, so an Orka Agent
