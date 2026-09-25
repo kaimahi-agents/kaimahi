@@ -334,12 +334,17 @@ and stop uncertain animation after resize.
 
 ### Retry limits
 
-One-shot chat/quickstart still retry matching connection-refused, EOF and reset
+One-shot **kagent** chat still retries matching connection-refused, EOF and reset
 errors up to three times, **even with an explicit session**. Ambiguous disconnects
 can follow an effect: retries may duplicate tools/spend. Question-only `ask_user`
 resampling is at most twice without an explicit session, recorded tool response
 or another pending confirmation. Interactive
 `/retry` explicitly resends; none of this promises exactly-once execution.
+
+`kmx quickstart` is Orka and does not participate in that policy. It creates one
+Task, polls that Task's result over a single context-pinned connection, and never
+resubmits: connection or forward loss ends the wait rather than repeating the
+model call. A blank result is refused, not retried.
 
 ## How the plane gets there without a clone
 

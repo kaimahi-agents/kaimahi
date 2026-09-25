@@ -339,9 +339,11 @@ positive per-call governance receipts in chat. Existing chat route labels attest
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.
 
-Residual policies: broad one-shot chat/quickstart transport retries are unchanged
+Residual policies: broad one-shot **kagent** chat transport retries are unchanged
 (up to three retries for matching connection refusal, EOF, or reset). Ambiguous
 disconnects can repeat effects, including with an explicit one-shot session.
+`kmx quickstart` no longer shares that policy: the Orka path creates one Task and
+polls its result without resubmitting.
 Question-only resampling remains at most twice under its existing exclusions.
 Interactive `/retry` resends a message explicitly, not exactly once. History still
 skips malformed event data and limits verbose payload display; replay deduplication

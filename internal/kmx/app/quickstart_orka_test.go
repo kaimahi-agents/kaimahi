@@ -90,7 +90,7 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		t.Fatalf("follow-ups are %q", next)
 	}
 	for i, want := range []string{
-		"agent chat hello-world-agent --runtime orka --namespace orka-system",
+		"agent chat hello-world-agent --interactive --runtime orka --namespace orka-system",
 		"agent create",
 		"orka status",
 		"plane",
@@ -99,6 +99,13 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		if !strings.Contains(next[i], want) {
 			t.Errorf("follow-up %d is %q, want it to offer %q", i, next[i], want)
 		}
+	}
+	// The chat follow-up has to be a command that runs. Orka chat is
+	// interactive-only and refuses a one-shot by name, so a follow-up without
+	// --interactive ends the first answer with an instruction that fails.
+	chat := ChatOptions{Agent: QuickstartAgent, Namespace: OrkaNamespace, Runtime: "orka", Task: "ask it something else"}
+	if err := a.ChatWithOptions(chat); err == nil || !strings.Contains(err.Error(), "requires --interactive") {
+		t.Fatalf("one-shot Orka chat no longer refuses; this test no longer pins the follow-up: %v", err)
 	}
 	for _, command := range next {
 		if !strings.Contains(command, "--context kind-test") {

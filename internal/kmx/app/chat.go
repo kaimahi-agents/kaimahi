@@ -24,17 +24,21 @@ import (
 // ending in Go's net error; both ends are anchored so a line that starts with
 // `{` can never match.
 //
-// Chat and quickstart retain their existing retry policy: refused dials,
+// One-shot kagent chat retains its existing retry policy: refused dials,
 // EOF and connection resets. The latter two may follow an already-served
 // request; this policy is not a claim that arbitrary agent actions are safe
-// to repeat.
+// to repeat. It is this path only. `kmx quickstart` is Orka: it creates one
+// Task, polls for that Task's result over a single connection, and never
+// resubmits — a lost forward or connection ends the wait rather than
+// repeating the model call.
 const (
 	chatErrorLine = `^Error invoking session: .*failed to send HTTP request: Post "[^"]*": `
 	chatRefused   = `dial tcp [^ ]*: connect: connection refused`
 	chatAmbiguous = `EOF|(read|write) tcp [^ ]*: (read|write): connection reset by peer`
 )
 
-// ChatRetryable matches the transport failures `chat` retries.
+// ChatRetryable matches the transport failures one-shot kagent `chat`
+// retries. No Orka path consults it.
 var ChatRetryable = regexp.MustCompile(`(?m)` + chatErrorLine + `(` + chatRefused + `|` + chatAmbiguous + `)$`)
 
 // ChatOptions selects one-shot or session-preserving chat behavior.

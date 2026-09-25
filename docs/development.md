@@ -83,10 +83,27 @@ export KIND_CLUSTER=dev-local
 export KUBE_CTX=kind-dev-local
 bin/kmx up
 bin/kmx plane --source .
+bin/kmx migrate <deployment> --namespace <ns> --model local/qwen2.5:3b
+bin/kmx down
+```
+
+A bare `bin/kmx up` is the Orka runtime: kind, Ollama, the model and the pinned
+Orka with its keyless `local` Provider. It deploys no kagent Agent, so the
+model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
+owner-managed application rather than with `kmx govern`, which configures a
+kagent Agent's ModelConfig. Author an Orka Agent with `bin/kmx agent create`, or
+get a first answer with `bin/kmx quickstart`.
+
+The legacy kagent loop is explicit, and keeps `govern` because it deploys the
+agent that command names:
+
+```bash
+bin/kmx up --step kagent
+bin/kmx up --step agent
+bin/kmx plane --source .
 bin/kmx govern hello-world
 bin/kmx agent chat hello-world 'Who are you?'
 bin/kmx ledger hello-world
-bin/kmx down
 ```
 
 This exercises the existing kagent plane path, not Orka authoring. For migration,

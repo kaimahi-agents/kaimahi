@@ -280,9 +280,15 @@ func (a *App) quickstartAnswer(task string) (string, error) {
 	return a.runQuickstartOrkaTaskProfile(ctx, QuickstartAgent, OrkaNamespace, task, nil, nil, session)
 }
 
+// quickstartFollowups are the commands this cluster can actually run next.
+//
+// The chat follow-up carries --interactive because Orka chat has no one-shot:
+// `kmx agent chat --runtime orka` without it is refused by name, so printing
+// the shorter command would end the first answer with an instruction that
+// fails.
 func (a *App) quickstartFollowups() []string {
 	return []string{
-		a.operationCommand("agent", "chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
+		a.operationCommand("agent", "chat", QuickstartAgent, "--interactive", "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
 		a.operationCommand("plane"),

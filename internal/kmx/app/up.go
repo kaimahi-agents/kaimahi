@@ -25,6 +25,27 @@ var UpSteps = []string{"cluster", "ollama", "model", "orka", "kagent", "agent", 
 // one that authors your own.
 var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 
+// upLegacySteps are the steps that put the kagent runtime on the cluster.
+// They are the ONLY reason `kmx up` reads `agents.kagent.dev`: the final
+// status collection is a kagent read, and a cluster that never installed
+// kagent answers it with "the server doesn't have a resource type", which
+// would fail an Orka-only run at its last phase over something the run
+// deliberately did not deploy.
+var upLegacySteps = []string{"kagent", "agent", "tools-agent"}
+
+// stepsIncludeLegacy reports whether this invocation asked for the legacy
+// runtime, and so whether the legacy status is about something it did.
+func stepsIncludeLegacy(steps []string) bool {
+	for _, step := range steps {
+		for _, legacy := range upLegacySteps {
+			if step == legacy {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Up runs the whole journey, or the single named step.
 //
 // On kind this IS the journey: `make up` is one line delegating here, so the
@@ -74,35 +95,47 @@ func (a *App) Up(step string) error {
 		return err
 	}
 
+	legacy := stepsIncludeLegacy(steps)
 	if step != "" {
-		if err := a.runPhase(phase{current: 1, total: 1, name: upPhaseName(step)}, func() error {
+		total := 1
+		if legacy {
+			total = 2
+		}
+		if err := a.runPhase(phase{current: 1, total: total, name: upPhaseName(step)}, func() error {
 			return a.runUpStep(step)
 		}); err != nil {
 			return err
+		}
+		if legacy {
+			// Kept exactly here: the legacy runtime is on this cluster
+			// because this invocation asked for it, so the kagent read the
+			// status collection makes is a read of what just happened.
+			if err := a.runPhase(phase{current: 2, total: 2, name: "Collect runtime status"}, a.Status); err != nil {
+				return err
+			}
 		}
 	} else if err := a.upDefault(); err != nil {
 		return err
 	}
 
 	if step == "" {
-		if err := a.runPhase(phase{current: 5, total: 5, name: "Collect runtime status"}, a.Status); err != nil {
-			return err
-		}
 		a.complete("Runtime setup finished", started)
 		// One line: `kmx up` is the RUNTIME. Governance is a deliberate
 		// second step, and saying nothing here would leave an operator to
 		// infer it from an empty ledger.
-		// The credential is the RESOLVED one, not the default: with CRED set,
-		// a copied `kmx govern hello-world` would govern a different
-		// credential than the one `kmx govern` and `kmx ledger` then use.
+		// The route offered is the one this cluster can take. A bare run
+		// deploys no kagent Agent, so `kmx govern <credential>` would name
+		// nothing; putting an application's model traffic on the seam is
+		// `kmx migrate`, one workload at a time.
 		if a.selectedLocalModel == nil {
 			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
 				"Existing governance is not assessed by this setup. To configure it:\n"+
 				"  %s  # the proxy and its ledger\n"+
-				"  %s  # configure agent routing (docs/spend.md)",
-				a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+				"  %s --namespace <ns> --model %s/%s  # route an application's model traffic (docs/migrate.md)",
+				a.operationCommand("plane"), a.operationCommand("migrate", "<deployment>"),
+				orkaDefaultProvider, a.Cfg.Model)
 		} else {
-			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane/govern preset requires in-cluster Ollama.")
+			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane preset requires in-cluster Ollama.")
 		}
 		a.notef("\nTRY   %s", a.operationCommand("agent", "create"))
 	}
@@ -153,21 +186,21 @@ func (a *App) runUpStep(step string) error {
 // from running together — they pull ~2GB of images between them, so starting
 // them at once splits the bandwidth instead of saving time.
 func (a *App) upDefault() error {
-	if err := a.runPhase(phase{current: 1, total: 5, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
+	if err := a.runPhase(phase{current: 1, total: 4, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
 	}
 	a.verifySelectedLocalModel()
 	if a.selectedLocalModel == nil {
-		if err := a.runPhase(phase{current: 2, total: 5, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
+		if err := a.runPhase(phase{current: 2, total: 4, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
 			return err
 		}
-		if err := a.runPhase(phase{current: 3, total: 5, name: upPhaseName("model")}, a.stepModel); err != nil {
+		if err := a.runPhase(phase{current: 3, total: 4, name: upPhaseName("model")}, a.stepModel); err != nil {
 			return err
 		}
 	} else {
 		a.notef("SKIP   Reusing %s/%s; no in-cluster Ollama or model pull", a.selectedLocalModel.Provider, a.selectedLocalModel.Model)
 	}
-	return a.runPhase(phase{current: 4, total: 5, name: upPhaseName("orka")}, a.stepOrka)
+	return a.runPhase(phase{current: 4, total: 4, name: upPhaseName("orka")}, a.stepOrka)
 }
 
 func (a *App) preflightUp(steps []string) error {
