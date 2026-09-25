@@ -96,7 +96,7 @@ include API access to OpenAI and other models** at
 `api.githubcopilot.com`, an OpenAI-compatible endpoint.
 
 The plane-side route is `kmx models credential copilot`. The checkout-only
-`make copilot-secret` helper belonged to the deleted direct-to-Copilot kagent
+`make copilot-secret` helper belonged to the deleted direct-to-Copilot legacy
 preset and is no longer available. Use the plane-side command instead.
 
 Custody properties worth knowing:
