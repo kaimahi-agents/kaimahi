@@ -115,7 +115,7 @@ do it — see [below](#why-no-published-image-yet).
 $ kmx version
 kmx v0.1.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
-  kagent   0.9.12
+  orka     v0.1.3
   model    qwen2.5:3b
   plane    kaimahi-proxy:p10, built from v0.1.0
 ```
