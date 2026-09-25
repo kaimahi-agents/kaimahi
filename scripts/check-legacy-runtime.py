@@ -154,9 +154,25 @@ RULES = [
     Rule("cli-surface", "a command spelling that selects the retired runtime",
          r"--(?:step|payload|runtime)(?:=|\s+)" + NAME + r"\b",
          "kmx up --step " + NAME, "kmx up --step orka", True),
+    # A boundary on the LEFT only, and both halves of that are deliberate.
+    #
+    # A trailing `\b` missed `NAME_usage_metadata` in a migration comment:
+    # an underscore is a word character, so there was no boundary after the
+    # name, and the rule read a line naming the retired runtime's own
+    # telemetry field as clean. Dropping the boundary entirely goes too far
+    # the other way — it fires on `pickAgent`, an Orka chat helper that
+    # merely ENDS in the letters. A word ending in the name is not the name;
+    # a word starting with it is.
+    #
+    # The second alternative is the CamelCase spelling, case-SENSITIVE and
+    # scoped so the insensitive flag above cannot leak onto it. Without it
+    # the historical teardown sentinel `PayloadKagent` and the tests named
+    # after it would be invisible here — present in the tree, accounted for
+    # nowhere. They are allowed, but they are allowed BY NAME.
     Rule("bare-name", "the retired runtime named on a current surface",
-         r"(?i)\b" + NAME + r"\b", "point it at the " + NAME + " namespace",
-         "point it at the orka-system namespace", False),
+         r"(?i:\b" + NAME + r")|" + NAME.capitalize(),
+         "the " + NAME + "_usage_metadata field",
+         "return b.pickAgent(ctx)  // orka-system", False),
 ]
 
 
@@ -408,6 +424,20 @@ def selftest():
             case(rule.name not in near, f"{rule.name}: does not fire on {rule.counterexample!r}",
                  f"{rule.name}: also fires on {rule.counterexample!r}, so it pins nothing")
             f.unlink()
+
+        # A word that merely ENDS in the name is not the name. This is
+        # `pickAgent`, an Orka helper a boundary-free pattern refused.
+        (d / "internal" / "kmx" / "app").mkdir(parents=True, exist_ok=True)
+        ending = "internal/kmx/app/chat.go"
+        (d / ending).write_text("func (b *orkaChatBackend) pickAgent(ctx context.Context) {\n")
+        case(not judge([ending], [], [], root=d)[0],
+             "a word ending in the name is not refused",
+             "an unrelated identifier ending in the letters was refused as the runtime")
+        # ...while a word STARTING with it is, underscore or not.
+        (d / ending).write_text(f"    -- ({NAME}_usage_metadata), on outcome rows\n")
+        case(judge([ending], [], [], root=d)[0],
+             "a word starting with the name is refused, underscore or not",
+             "the name followed by an underscore was read as clean")
 
         # The bare name is refused on a current surface and NOT in a
         # workflow, which is the whole reason there are two rule classes.

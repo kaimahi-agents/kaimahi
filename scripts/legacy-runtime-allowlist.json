@@ -86,6 +86,18 @@
     },
     {
       "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "func TestConsoleNeverRequestsLegacyKagentKinds(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "func TestConsoleSourcesNameNoLegacyKagentResource(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
       "text": "if strings.Contains(line, \"kagent\") {",
       "category": "negative",
       "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
@@ -128,6 +140,12 @@
     },
     {
       "path": "internal/kmx/app/lift.go",
+      "text": "if recorded := record.PayloadOrLegacy(); recorded == lift.PayloadKagent {",
+      "category": "retirement",
+      "why": "The resume refusal for a record that landed the retired payload, naming the payload the operator's script still passes."
+    },
+    {
+      "path": "internal/kmx/app/lift.go",
       "text": "return nil, nil, fmt.Errorf(\"kmx lift: %s/%s was lifted onto with --payload kagent, which is retired.\\n\"+",
       "category": "retirement",
       "why": "The resume refusal for a record that landed the retired payload, naming the payload the operator's script still passes."
@@ -153,6 +171,12 @@
     {
       "path": "internal/kmx/app/lift_audit_test.go",
       "text": "for _, want := range []string{\"kagent\", \"retired\", \"aks down\"} {",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "func TestAKagentLiftRefusesToResumeAndStillTearsDown(t *testing.T) {",
       "category": "negative",
       "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
     },
@@ -338,6 +362,12 @@
     },
     {
       "path": "internal/kmx/app/retirement_test.go",
+      "text": "func TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
       "text": "if strings.Contains(string(calls), \"kagent.dev\") {",
       "category": "negative",
       "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
@@ -404,6 +434,12 @@
     },
     {
       "path": "internal/kmx/lift/payload_test.go",
+      "text": "// PayloadKagent survives as a HISTORICAL sentinel and nothing else: it is",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
       "text": "// vocabulary. A `--step kagent` that still validated would run a phase whose",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
@@ -434,6 +470,60 @@
     },
     {
       "path": "internal/kmx/lift/payload_test.go",
+      "text": "func TestAKagentRecordStillDecodesSoItsResourcesCanBeRemoved(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "func TestARecordFromBeforeTheSplitStillReadsAsKagent(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "func TestTheKagentPayloadIsRefusedAsRetiredRatherThanUnknown(t *testing.T) {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "if _, err := NewRecord(\"a1b2c3d4\", Created, PayloadKagent, \"sub\", \"rg\", \"cluster\"); err == nil {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "if err := ValidPayload(PayloadKagent); err == nil {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "if got := (&Record{Payload: PayloadKagent}).PayloadOrLegacy(); got != PayloadKagent {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "if got := (&Record{}).PayloadOrLegacy(); got != PayloadKagent {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "if r.PayloadOrLegacy() != PayloadKagent {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "o.Payload = PayloadKagent",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
       "text": "t.Fatal(\"a new lift was accepted with the retired kagent payload\")",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
@@ -441,6 +531,12 @@
     {
       "path": "internal/kmx/lift/payload_test.go",
       "text": "t.Fatalf(\"a kagent record no longer decodes, so its resources cannot be torn down: %v\", err)",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "t.Fatalf(\"a record from before the split reads as %q, want %q\", got, PayloadKagent)",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
     },
@@ -464,6 +560,12 @@
     },
     {
       "path": "internal/kmx/lift/plan.go",
+      "text": "// PayloadKagent is a HISTORICAL SENTINEL and nothing else. No new lift and no",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
       "text": "// that says `--payload kagent` must be told its platform is gone rather",
       "category": "retirement",
       "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
@@ -482,9 +584,21 @@
     },
     {
       "path": "internal/kmx/lift/plan.go",
+      "text": "case PayloadKagent:",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
       "text": "return errors.New(\"kmx lift: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
       "category": "retirement",
       "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/record.go",
+      "text": "// This is the one place PayloadKagent is still produced. Teardown and the",
+      "category": "retirement",
+      "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
     },
     {
       "path": "internal/kmx/lift/record.go",
@@ -501,6 +615,12 @@
     {
       "path": "internal/kmx/lift/record.go",
       "text": "// kagent record must tear down, and must not resume.",
+      "category": "retirement",
+      "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
+    },
+    {
+      "path": "internal/kmx/lift/record.go",
+      "text": "return PayloadKagent",
       "category": "retirement",
       "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
     },

@@ -43,8 +43,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   install would come back. The bare name is refused from the surfaces a
   reader takes as current, one approved line at a time in
   `scripts/legacy-runtime-allowlist.json`, because prose can refuse a runtime
-  or advertise it and no pattern tells those apart. Eighty-six lines are named
-  there, each with a category and a reason: the production refusals that must
+  or advertise it and no pattern tells those apart. A hundred and six lines
+  are named there, each with a category and a reason: the production refusals that must
   spell what an operator typed, the historical teardown sentinel a
   pre-retirement lift record decodes to, the bounded negative tests, and the
   CI tripwires' own negative controls. The historical record — this file, the
