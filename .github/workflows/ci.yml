@@ -1443,8 +1443,24 @@ jobs:
             -o jsonpath='{.metadata.uid} {.metadata.resourceVersion}'; }
           secret_hash() { kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get secret "kaimahi-$CRED-token" \
             -o jsonpath='{.data.api-key}' | sha256sum; }
-          owner_pod() { kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get pods -l "app=$CRED" \
-            --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'; }
+          # Running alone is not enough: a pod draining after a restart
+          # stays Running (and keeps its identity) until its grace period
+          # ends, so a naive selector can still name a pod that is on its
+          # way out. Filter deletionTimestamp explicitly and fail closed
+          # unless exactly one live pod answers — the same-pod assertion
+          # below is meaningless against zero or an ambiguous set.
+          owner_pod() {
+            kubectl --context kind-kaimahi-p1 -n "$OWNER_NS" get pods -l "app=$CRED" \
+              --field-selector=status.phase=Running -o json | python3 -c '
+          import json, sys
+          names = [p["metadata"]["name"] for p in json.load(sys.stdin)["items"]
+                   if not p["metadata"].get("deletionTimestamp")]
+          if len(names) != 1:
+              print(f"expected exactly one live owner pod, found {len(names)}: {names}", file=sys.stderr)
+              sys.exit(1)
+          print(names[0])
+          '
+          }
           meta_before=$(secret_meta); hash_before=$(secret_hash); pod_before=$(owner_pod)
           test -n "$pod_before"
           # Advance the CLOCK, not the policy: the admin surface refuses
