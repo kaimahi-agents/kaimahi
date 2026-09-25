@@ -874,7 +874,8 @@ def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list
     misleading is not.
     """
     _, body = doc.section("`scripts/`")
-    m = once(phrase("`.github/workflows/ci.yml` ({n} invocation among {n} mention"),
+    m = once(phrase("`.github/workflows/ci.yml` ({n} invocation") + r"s?" +
+             phrase(" among {n} mention") + r"s?",
              body, "the verify-chat invocation count")
     once(phrase("every occurrence in the Makefile is a comment line rather than a recipe"), body,
          "the Makefile claim")
