@@ -111,6 +111,12 @@ elif [ "$VERSION" = latest ]; then
   esac
 fi
 
+# v0.1.0 predates the Orka quickstart. Do not install it and then silently
+# run the legacy first-answer journey when the user asked for this one.
+if [ "$RUN_QUICKSTART" = yes ] && [ -z "$BASE_OVERRIDE" ] && [ "$VERSION" = v0.1.0 ]; then
+  die "v0.1.0 does not include Orka quickstart. Install the current source build until an Orka-capable release is published."
+fi
+
 base="https://github.com/$REPO/releases/download/$VERSION"
 [ -n "$BASE_OVERRIDE" ] && base="$BASE_OVERRIDE"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kmx-install.XXXXXX")

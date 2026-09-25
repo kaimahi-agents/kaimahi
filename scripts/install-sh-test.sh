@@ -92,6 +92,20 @@ if install_run "--quickstart installs and runs quickstart" --quickstart; then
     "$(grep -qi kagent "$workdir/out" && echo no || echo ok)"
 fi
 
+# The published v0.1.0 cannot provide the new Orka path. Refuse before
+# downloading or running any binary rather than launching its old quickstart.
+: > "$workdir/calls"
+if KMX_VERSION=v0.1.0 KMX_BIN_DIR="$workdir/legacy-bin" \
+  sh "$installer" --quickstart >"$workdir/out" 2>&1 </dev/null; then
+  fails=$((fails + 1))
+  echo "FAIL [v0.1.0 quickstart should be refused]"
+else
+  check "v0.1.0 quickstart explains the release gap" \
+    "$(grep -q 'does not include Orka quickstart' "$workdir/out" && echo ok || echo no)"
+  check "v0.1.0 quickstart installs no binary" \
+    "$([ ! -e "$workdir/legacy-bin/kmx" ] && echo ok || echo no)"
+fi
+
 # A plain install still reports what it installed: that line is how an
 # operator learns which build landed, and it is not on the Orka path.
 if install_run "plain install still prints the version"; then
