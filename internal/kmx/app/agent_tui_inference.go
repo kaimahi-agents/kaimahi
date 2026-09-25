@@ -180,7 +180,7 @@ func (s consoleInferenceSource) validate(runtime string) error {
 	}
 }
 
-func consoleAzureChoices(ctx context.Context, stage, subscription, group, account string) ([]consoleAzureChoice, error) {
+func (a *App) consoleAzureChoices(ctx context.Context, stage, subscription, group, account string) ([]consoleAzureChoice, error) {
 	var args []string
 	switch stage {
 	case "azure-subscriptions":
@@ -192,7 +192,7 @@ func consoleAzureChoices(ctx context.Context, stage, subscription, group, accoun
 	default:
 		return nil, fmt.Errorf("unknown Azure discovery stage")
 	}
-	raw, err := liftDiscovery(ctx, "az", args...)
+	raw, err := a.liftDiscovery(ctx, "az", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ func (a *App) consolePrepareClusterFoundry(ctx context.Context, agent agentTUIAg
 		target := chatLiftTarget{Subscription: s.Subscription}
 		account := foundryAccount{Name: s.Account, ResourceGroup: s.ResourceGroup}
 		args := append([]string{"cognitiveservices", "account", "show"}, foundryScope(target, account)...)
-		raw, err := liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
+		raw, err := a.liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
 		if err != nil {
 			return s, err
 		}
@@ -474,7 +474,7 @@ func (a *App) consolePrepareClusterFoundry(ctx context.Context, agent agentTUIAg
 			return s, fmt.Errorf("Foundry endpoint changed; reopen setup")
 		}
 		args = append([]string{"cognitiveservices", "account", "keys", "list"}, foundryScope(target, account)...)
-		raw, err = liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
+		raw, err = a.liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
 		if err != nil {
 			return s, err
 		}

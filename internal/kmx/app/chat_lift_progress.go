@@ -99,11 +99,11 @@ func azureFetchLabel(args []string) string {
 }
 
 func (b *orkaChatBackend) liftAzureFetch(ctx context.Context, args ...string) ([]byte, error) {
-	return b.liftLoading(ctx, azureFetchLabel(args), func(ctx context.Context) ([]byte, error) { return liftDiscovery(ctx, "az", args...) })
+	return b.liftLoading(ctx, azureFetchLabel(args), func(ctx context.Context) ([]byte, error) { return b.app.liftDiscovery(ctx, "az", args...) })
 }
 
 func (b *orkaChatBackend) liftAzureCreate(ctx context.Context, args ...string) ([]byte, error) {
-	return b.liftLoading(ctx, azureFetchLabel(args), func(ctx context.Context) ([]byte, error) { return liftAzureWrite(ctx, args...) })
+	return b.liftLoading(ctx, azureFetchLabel(args), func(ctx context.Context) ([]byte, error) { return b.app.liftAzureWrite(ctx, args...) })
 }
 
 func (b *orkaChatBackend) liftSubscriptions(ctx context.Context) ([]byte, error) {
@@ -120,6 +120,6 @@ func (b *orkaChatBackend) liftSubscriptions(ctx context.Context) ([]byte, error)
 	}
 	label := "Fetching subscriptions for tenant:" + tenant + " (active; includes all accessible tenants)"
 	return b.liftLoading(ctx, label, func(ctx context.Context) ([]byte, error) {
-		return liftDiscovery(ctx, "az", "account", "list", "--query", "[?state=='Enabled'].{name:name,id:id,tenantId:tenantId}", "-o", "json", "--only-show-errors")
+		return b.app.liftDiscovery(ctx, "az", "account", "list", "--query", "[?state=='Enabled'].{name:name,id:id,tenantId:tenantId}", "-o", "json", "--only-show-errors")
 	})
 }
