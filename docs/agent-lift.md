@@ -309,8 +309,9 @@ without it.
 the TUI would supply the same resolved options from its pickers, removing the
 duplicate sequencing rather than adding a second one.
 
-Phases 2 and 3 leave `/lift`'s interactive sequencing alone; phase 1 changes
-only Azure command preparation, not anything user-visible in `/lift`.
+Phases 2 and 3 leave `/lift`'s interactive picker and deployment sequencing
+unchanged; phase 1 does change `/lift`'s Azure subprocess environment
+preparation.
 
 ## Testing
 
