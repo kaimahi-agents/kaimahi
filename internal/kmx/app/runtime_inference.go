@@ -62,6 +62,9 @@ func (a *App) hostInferenceStrategy() (hostInference, bool, error) {
 // This method is the Orka-specific resolver only. Model execution is delegated
 // to a strategy that does not read Agent resources itself.
 func (b *orkaChatBackend) sendHostTurn(ctx context.Context, message string, r *chatRenderer, inference hostInference) error {
+	if err := b.app.requireLocalHostInference(ctx); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	raw, err := b.app.orkaCapture(ctx, nil, "-n", b.namespace, "get", "agents.core.orka.ai", b.agent, "-o", "json")

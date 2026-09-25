@@ -62,7 +62,7 @@ const (
 // panel and an empty log panel mean different things and point at different
 // fixes.
 func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func() error, work string) error {
-	if err := a.Guard("wire Azure-managed observability", "kmx lift --step observability "+liftIdentityFlags(opt)); err != nil {
+	if err := a.Guard("wire Azure-managed observability", "kmx aks up --step observability "+liftIdentityFlags(opt)); err != nil {
 		return err
 	}
 
@@ -299,13 +299,13 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 
   Either keep what you have and skip this phase:
 
-    kmx lift --byo --observability=false %s
+    kmx aks up --byo --payload %s --observability=false %s
 
   or turn the add-on off first, if you meant this run to own it:
 
     az aks disable-addons --name %s --resource-group %s --addons monitoring
     az aks update --name %s --resource-group %s --disable-azure-monitor-metrics`,
-		strings.Join(already, " and "), liftIdentityFlags(opt),
+		strings.Join(already, " and "), opt.Payload, liftIdentityFlags(opt),
 		opt.Cluster, opt.ResourceGroup, opt.Cluster, opt.ResourceGroup)
 }
 
