@@ -38,8 +38,8 @@ func appWithKubectl(t *testing.T, script string) *App {
 // and scaffold, which writes it into every manifest that points at a seam.
 // scaffold is a leaf package and does not import config, so the constants are
 // duplicated — and a duplicate that drifts here would produce manifests naming
-// a Secret nothing creates. kagent refuses those with Accepted=false, which
-// reads as a broken seam rather than as a typo.
+// a Secret nothing creates. The migrated workload would then fail TLS rather
+// than exposing the naming mismatch.
 func TestTheCASecretIsNamedTheSameWhereverItIsNamed(t *testing.T) {
 	if config.PlaneCASecret != scaffold.PlaneCASecret {
 		t.Errorf("config names the CA Secret %q and scaffold names it %q",
@@ -77,33 +77,6 @@ func TestTheCertificateStepIsAddressableOnItsOwn(t *testing.T) {
 	}
 	if certificate > deploy {
 		t.Errorf("the certificate is minted after the deploy that mounts it: %v", PlaneSteps)
-	}
-}
-
-// A model client surfaces a failed handshake as a generic connection error.
-// kmx cannot fix that message, but it must recognise it, so a seam rejected
-// over trust is not reported as a seam that is merely down.
-func TestACertificateFailureIsRecognisedInASeamVerdict(t *testing.T) {
-	for _, message := range []string{
-		`Get "https://kaimahi-mcp-gateway.kaimahi:8081/upstream/x/mcp": tls: failed to verify certificate: x509: certificate signed by unknown authority`,
-		`x509: certificate has expired or is not yet valid`,
-		`certificate is valid for kaimahi-proxy.kaimahi, not kaimahi-proxy.other`,
-		`remote error: tls: bad certificate`,
-		`SSL: CERTIFICATE_VERIFY_FAILED`,
-	} {
-		if !certificateFailure(message) {
-			t.Errorf("a trust failure was not recognised: %q", message)
-		}
-	}
-	for _, message := range []string{
-		"connection refused",
-		"context deadline exceeded",
-		"401 Unauthorized: credential not found",
-		"i/o timeout",
-	} {
-		if certificateFailure(message) {
-			t.Errorf("an ordinary failure was reported as a certificate problem: %q", message)
-		}
 	}
 }
 

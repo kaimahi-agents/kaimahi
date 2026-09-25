@@ -793,7 +793,7 @@ jobs:
               "internal/kmx/guard": "the context guard's port decisions",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
               "internal/kmx/orkaschema": "pinned Orka schemas and unknown-field refusals",
-              # kmx downloads kind, kubectl and Helm. A binary it fetches
+              # kmx downloads kind and kubectl. A binary it fetches
               # runs with the operator's kubeconfig, so the digest checks
               # are not decoration.
               "internal/kmx/toolchain": "the fetched toolchain's digests",

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -271,25 +270,4 @@ func (a *App) applySecretIn(namespace string, body []byte, name string) error {
 	quiet := *a.Run
 	quiet.Echo = false
 	return quiet.RunStdin(body, "kubectl", a.kubectl("-n", namespace, "apply", "-f", "-")...)
-}
-
-// certificateFailure recognises a refusal that is about TRUST rather than
-// about reachability.
-//
-// It exists because of what the other side does not say. kagent's agent
-// runtime surfaces a failed handshake as a generic connection error — the
-// certificate-naming diagnostic in its own source is never called on that
-// path — so an operator meeting a wrong or expired certificate is told only
-// that something could not connect. kmx cannot fix that message, but it can
-// decline to repeat it.
-func certificateFailure(message string) bool {
-	lower := strings.ToLower(message)
-	for _, marker := range []string{
-		"certificate", "x509", "tls", "ssl", "unknown authority", "handshake",
-	} {
-		if strings.Contains(lower, marker) {
-			return true
-		}
-	}
-	return false
 }

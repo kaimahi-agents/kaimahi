@@ -4,12 +4,13 @@
 The remaining plane is a model-traffic bridge, not an application runtime or
 tool-governance platform. Migrated applications keep their owner-managed
 Deployment and tools. Agent authoring is Orka-native: the legacy operational
-commands and their runtime adapter have been removed, and the remaining kagent
-references are installation, status and lift paths retired in later slices.
+commands, installer, manifests and status adapter have been removed. Remaining
+kagent references are historical records, compatibility fixtures and teardown
+support for lift records created before retirement.
 
 Read [the documentation index](README.md) for current guides and retirement
 records. This map describes tracked files, packaging and actual callers, not
-an endorsement of every retained legacy installation path.
+an endorsement of historical compatibility material.
 
 - **Installed / checkout** describes reachability. `embed.go` names what travels
   inside kmx, including five shell scripts and one Python tool server. Embedding is not a support guarantee.
@@ -72,8 +73,8 @@ packages.
 | `kmx/secretshapes` | 2 | Installed | Shared credential-shape checks and data. |
 | `kmx/version` | 1 | Installed | Version and upgrade answers. |
 
-Removing tool-governance scaffolding does not remove direct kagent MCP tool
-references or Orka tool names. Neither is the retired custom gateway. Migration
+Removing the legacy installer does not remove historical kagent compatibility
+fixtures or Orka tool names. Neither is the retired custom gateway. Migration
 keeps its original source/generator bytes so a repeated invocation can reuse its
 previously generated identity/patch files. Old generated tool-seam comments are
 not evidence that the removed service or commands still exist.
@@ -279,7 +280,7 @@ and the separately located historical architecture SVG.
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
 | `embed.go` | **Installed tooling** | Root-module embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
-| `Makefile` | **Scaffolding** | Build and retained model/kagent checkout commands. |
+| `Makefile` | **Scaffolding** | Build and retained model, plane and network-policy checkout commands. |
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. |
 | `.github/workflows/kagent-shim-spike.yml` | **Scaffolding** | Isolated, keyless converter/adapter tests. |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
@@ -290,8 +291,9 @@ and the separately located historical architecture SVG.
 
 ## Open questions — one
 
-1. **Agent authoring format.** Orka-native versus kagent YAML is open.
-   Retaining both existing paths does not settle it.
+1. **Agent authoring format.** Whether a future compatibility path should
+   translate kagent YAML into Orka-native resources remains open; the installed
+   CLI currently authors Orka-native resources only.
 
 ## Existing layout
 

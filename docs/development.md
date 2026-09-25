@@ -15,11 +15,11 @@ see its [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside
 the direction. The seam bridge shrinking as upstream capabilities arrive is a
 successful outcome.
 
-The tree retains kagent Agent/ModelConfig/direct RemoteMCPServer wiring and the
-model proxy with its operator APIs, ordinary budgets and ledger. The custom MCP
-gateway, all custom approvals/grants, workflow runner and connector fixtures are
-removed, following inbound/notification retirement. Neither agent-authoring
-path is removed; the original direct `hello-tools` example remains. Document
+The tree retains the model proxy with its operator APIs, ordinary budgets and
+ledger. The legacy kagent installer, Agent/ModelConfig manifests, direct
+RemoteMCPServer example, custom MCP gateway, approvals/grants, workflow runner
+and connector fixtures are removed. Current authoring is Orka-native; migration
+routes an owner-managed application's model traffic through the bridge. Document
 the bridge as present implementation, not the long-term platform boundary.
 
 ## Repository layout
@@ -32,7 +32,7 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 | `plane/` | separate Go module: model proxy, budgets, durable ledger |
 | `plane/cmd/kaimahi-proxy/` | process/listener wiring |
 | `plane/internal/` | proxy, meter/pricing, config, store/db, redaction, metrics/ops |
-| `k8s/` | retained agents, presets, model plane and network policies |
+| `k8s/` | Orka/Ollama runtime, model plane, observability and network policies |
 | `scripts/`, `Makefile` | checks, model/network probes and model credential helpers |
 | `.github/workflows/` | actual verification jobs and docs-only routing |
 
@@ -322,11 +322,11 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
 
 ## Troubleshooting traps
 
-- A missing ModelConfig can be admitted yet never reconcile. Inspect Agent
-  Accepted/Ready conditions, not only a pod or cached readiness verdict.
-- Fresh `up` does not enable governance. Rerunning it preserves non-default
-  routing; `use` explicitly selects a model preset. There is no tool-ungovern
-  repair path: old gateway references need an owner's deliberate decision.
+- An Orka Provider can exist without being ready to resolve a model. Inspect
+  Provider and Agent readiness, not only controller pod health.
+- Fresh `up` does not enable governance. Use `kmx migrate` to route an
+  owner-managed workload through the plane. Old gateway references still need
+  their owner's deliberate replacement or removal.
 - The image is distroless: no shell for exec-based readiness loops. Probe its
   behavior. A Secret created after an optional mount may need a rollout restart.
 - A Service port-forward selects one pod. Use separate pod forwards for claims
