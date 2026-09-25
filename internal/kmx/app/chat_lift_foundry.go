@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
-	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -41,25 +38,6 @@ type foundrySKU struct {
 		Default, Minimum, Maximum, Step int
 		AllowedValues                   []int
 	}
-}
-
-// Azure writes can take minutes; output is bounded and never echoed (key reads
-// also use this adapter). Discovery retains its shorter 30-second deadline.
-func liftAzureWrite(ctx context.Context, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "az", args...)
-	cmd.WaitDelay = time.Second
-	out := &orkaBoundedBuffer{remaining: 4 << 20}
-	cmd.Stdout = out
-	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("Azure operation failed; check resource state, permissions and quota (no automatic retry)")
-	}
-	return out.buffer.Bytes(), nil
 }
 
 func foundryScope(cluster chatLiftTarget, account foundryAccount) []string {

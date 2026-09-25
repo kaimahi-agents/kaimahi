@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -85,7 +87,7 @@ func TestLiveAzureDiscoveryPerformance(t *testing.T) {
 				clusters, err = d.clusters(ctx, sub, tenant)
 			} else {
 				var raw []byte
-				raw, err = liftDiscovery(ctx, "az", aksListArgs(chatLiftTarget{Subscription: sub})...)
+				raw, err = (&App{Run: &run.Runner{}}).liftDiscovery(ctx, "az", aksListArgs(chatLiftTarget{Subscription: sub})...)
 				if err == nil {
 					err = json.Unmarshal(raw, &clusters)
 				}
