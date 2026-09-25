@@ -1780,7 +1780,8 @@ jobs:
             --secret kaimahi-race-token --namespace "$CLIENT_NS"
           bin/kmx budget race-cred --tokens 1
           test "$(bash scripts/plane-pods.sh | wc -l)" = 2
-          GOVERNED_SECRET=kaimahi-race-token SECRET_NAMESPACE="$CLIENT_NS" EXPECT_ADMITTED=1 \
+          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-race-token \
+            SECRET_NAMESPACE="$CLIENT_NS" EXPECT_ADMITTED=1 \
             bash scripts/spend-race-probe.sh 8 | tee spend-race.out
           grep -q 'admitted=1 denied(429)=7 other=0' spend-race.out
           # The ledger agrees: one allowed row, seven denials, no open hold.
@@ -2346,6 +2347,12 @@ jobs:
           # The same object, rolled by its owner: the uid the patch rolled
           # is the one `kmx migrate` saw before it ever ran.
           assert before["uid"] == post_patch["uid"], (before["uid"], post_patch["uid"])
+          original = before["spec"]["template"]["spec"]
+          patched = post_patch["spec"]["template"]["spec"]
+          for field in ("image", "command", "envFrom"):
+            assert original["containers"][0][field] == patched["containers"][0][field], field
+          assert original["volumes"][0] == patched["volumes"][0], "owner source ConfigMap"
+          assert original["containers"][0]["volumeMounts"][0] == patched["containers"][0]["volumeMounts"][0], "owner source mount"
           print(f"the owner's patch repointed uid {post_patch['uid']} at the seam")
           EOF
           python3 -c 'import json; before=json.load(open("owner-after.json")); post_patch=json.load(open("owner-post-patch.json")); assert post_patch["generation"] > before["generation"], (post_patch["generation"], before["generation"])'
@@ -2826,7 +2833,7 @@ jobs:
             echo "the Orka shard created the legacy runtime's namespace"
             exit 1
           fi
-          releases=$(helm list --all-namespaces --short)
+          releases=$(helm --kube-context kind-kmx-orka list --all-namespaces --short)
           if [ -n "$releases" ]; then
             echo "the Orka shard left Helm releases:"
             printf '%s\n' "$releases"
