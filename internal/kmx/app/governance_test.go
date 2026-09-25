@@ -30,6 +30,23 @@ func TestRequiredGovernanceCannotBeReadyWhenUnknown(t *testing.T) {
 	}
 }
 
+// A failed Secret listing must not blank out model seam evidence: the two
+// reads are independent, and a `governanceOf` that let one failure silence
+// the other would hide governed-but-unattributed model traffic behind an
+// unrelated Secrets-list error.
+func TestGovernanceOfCredentialsReasonAndModelSeamsCounted(t *testing.T) {
+	d := &statusData{planeThere: true, planeDesired: 1, planeReady: 1, secretErr: "Forbidden"}
+	d.agents.Items = []agentStatus{agentOn("agent", "model")}
+	d.models.Items = []modelStatus{modelAt("model", governedModelURL, "token")}
+	g := d.governanceOf()
+	if g.Credentials.State != stateUnknown || g.Credentials.Reason != "Forbidden" {
+		t.Fatalf("a failed Secret listing did not carry its reason: %+v", g.Credentials)
+	}
+	if g.ModelSeams.State != stateCounted || g.ModelSeams.Total != 1 || g.ModelSeams.Governed != 1 {
+		t.Fatalf("model seam evidence was silenced by an unrelated credential failure: %+v", g.ModelSeams)
+	}
+}
+
 func modelAt(name, baseURL, secret string) modelStatus {
 	var m modelStatus
 	m.Metadata.Name = name
