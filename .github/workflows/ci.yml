@@ -521,11 +521,12 @@ jobs:
       # runs. Mocked HTTP only — no live Kubernetes API is reached.
       - name: Orka k8s-tool self-test (read-only allowlist, secrets and mutation refused)
         run: python3 scripts/test_orka_k8s_tool.py -v
-      # The owner-managed workload the governance-evidence shard proves
-      # `kmx migrate` against. Same discipline as the demo above: a shell
-      # syntax check before the cluster ever sees the script, and the
-      # fixture's own test module (custody, refusal-reporting, TLS) run
-      # here where a failure is legible without a kind cluster.
+      # The owner-managed workload `kmx migrate` is proven against, shared
+      # by the e2e-resilience and e2e-spend shards. Same discipline as the
+      # demo above: a shell syntax check before the cluster ever sees the
+      # script, and the fixture's own test module (custody,
+      # refusal-reporting, TLS) run here where a failure is legible without
+      # a kind cluster.
       - name: Owner-managed model client safety and evidence checks
         run: |
           bash -n scripts/ci/owner-model-client.sh
