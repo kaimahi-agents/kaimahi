@@ -34,7 +34,11 @@ Tool updates take effect on the next Task and preserve other Agent configuration
 
 ## Implementation
 
-- `k8s/orka-k8s-tool.yaml`: Tool, Service, Deployment and read-only RBAC.
+- `k8s/orka-k8s-tool.yaml`: Tool, exact same-namespace
+  `OutboundAccessPolicy` gateway, Service, Deployment and read-only RBAC. Orka
+  rejects private Service IPs as direct Tool authorities; the Tool therefore
+  uses a credential-free public logical authority while Orka routes execution
+  only to the named `kmx-k8s-tool` Service.
 - `scripts/orka-k8s-tool.py`: standard-library HTTP server, embedded into KMX and
   installed in the `kmx-k8s-tool` ConfigMap.
 - `internal/kmx/app/orka_k8s_tool.go`: installation and existing-agent attachment.

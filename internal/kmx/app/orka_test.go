@@ -76,6 +76,8 @@ case "$*" in
   *"get deploy -o json") printf '%s' "$KMX_TEST_DEPLOY_JSON"; exit 0 ;;
   *"get deploy"*) printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
   *"get crd"*) printf 'tasks.core.orka.ai agents.core.orka.ai '; exit 0 ;;
+  *"get providers.core.orka.ai local -o jsonpath={.metadata.generation}"*) printf '1'; exit 0 ;;
+  *"wait --for="*) exit 0 ;;
   *"get providers.core.orka.ai"*) printf '%s' "$KMX_TEST_PROVIDERS"; exit 0 ;;
 esac
 exit 0

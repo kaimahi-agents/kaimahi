@@ -30,6 +30,29 @@ func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
 	}
 }
 
+func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
+	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"kind: OutboundAccessPolicy",
+		"name: " + quickstartK8sToolPolicy,
+		"name: kmx-k8s-tool",
+		"port: 8080",
+		"url: " + quickstartK8sToolAuthority,
+		"outboundAccessPolicyRef:",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("Tool manifest lacks %q", want)
+		}
+	}
+	if strings.Contains(text, "url: http://kmx-k8s-tool.") {
+		t.Fatal("Tool still presents a private Service URL as its direct authority")
+	}
+}
+
 func TestQuickstartToolDefaultAndCustomInstructions(t *testing.T) {
 	opt := CreateOptions{Name: "demo", Description: "My agent", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key"}
 	quickstartAgentTools(&opt)
