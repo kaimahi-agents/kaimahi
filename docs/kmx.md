@@ -400,8 +400,9 @@ Tool credential capture is removed. Plane-side model Copilot capture remains
 and short-lived token exchange without reading credential material from stdin.
 It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
 gives the explicit-context command. Provider credentials for an onboarded
-upstream are `kmx models add`; the separate checkout-only Copilot capture
-requires an explicit destination: `COPILOT_SECRET_NAMESPACE=<workload-ns> make copilot-secret`.
+upstream are `kmx models add`; for plane-side Copilot credentials use
+`kmx models credential copilot`. The retired direct-to-Copilot preset's
+checkout-only Secret helper is no longer provided.
 
 ## Backup, restore, and metrics
 

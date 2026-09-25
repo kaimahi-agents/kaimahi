@@ -35,7 +35,7 @@ checks.
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
-| `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 40 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 40 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 50 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -189,9 +189,9 @@ manifests, and the nine model presets. All were kagent v1alpha2 objects applied
 by the retired installer; nothing left in kmx reads or applies one. Plane and
 observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 49 tracked files, three different jobs
+## `scripts/` — 48 tracked files, three different jobs
 
-**Reference coverage:** 40 of the 49 are named by something outside themselves,
+**Reference coverage:** 39 of the 48 are named by something outside themselves,
 and the nine `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -199,7 +199,7 @@ caller evidence. Textual references are not necessarily invocations.
 | Class | Count | Files |
 |---|---|---|
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Checkout** — operator scripts | 2 | `plane-pods.sh`, `copilot-secret.sh` |
+| **Checkout** — operator scripts | 1 | `plane-pods.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
 | **Scaffolding** — checkers and self-tests | 18 | the ten `check-*` files, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
@@ -208,8 +208,6 @@ caller evidence. Textual references are not necessarily invocations.
 | **Scaffolding** — board checker's recorded findings | 1 | `board-open-drift.json` |
 
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
-`scripts/copilot-secret.sh`: one make recipe.
-
 `kube-guard.sh` is counted once as embedded, and is one of the nine checkers
 the mutation harness breaks on purpose. Model fixtures are synthetic test
 systems, not providers deployed for users.

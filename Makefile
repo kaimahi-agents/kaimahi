@@ -51,7 +51,7 @@ export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
 GUARD_NS ?= kagent, kaimahi, ollama
 
-.PHONY: build test lint docs-check guard copilot-secret plane-image aks-creds \
+.PHONY: build test lint docs-check guard plane-image aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
@@ -84,10 +84,6 @@ $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 guard:
 	@KUBE_CTX='$(KUBE_CTX)' KUBE_NS='$(GUARD_NS)' \
 		bash scripts/kube-guard.sh '$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL)) [TARGET=$(TARGET)]'
-
-## copilot-secret: device login and short-lived token, fail-closed custody
-copilot-secret: guard
-	@KUBECTL="$(KUBECTL)" bash scripts/copilot-secret.sh
 
 ifeq ($(TARGET),kind)
 plane-image: $(KMX)

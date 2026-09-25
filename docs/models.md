@@ -95,17 +95,9 @@ What a GitHub subscription still provides: **GitHub Copilot plans
 include API access to OpenAI and other models** at
 `api.githubcopilot.com`, an OpenAI-compatible endpoint.
 
-The plane-side route is `kmx models credential copilot`. A checkout helper,
-`COPILOT_SECRET_NAMESPACE=<workload-ns> make copilot-secret`, remains for
-explicitly named, checkout-managed token capture outside the plane; without
-that destination it refuses before login or token exchange. It logs you in once via
-GitHub's device flow (open the printed URL, enter
-the code), caches that OAuth token 0600 under `~/.config/kaimahi/`
-(override with `KAIMAHI_COPILOT_TOKEN_FILE`), exchanges it at GitHub's
-Copilot token endpoint, and stores **only the short-lived Copilot token**
-in-cluster. If you have only a cache under the former project name, log in
-again or explicitly select that cache with `KAIMAHI_COPILOT_TOKEN_FILE`;
-there is no automatic migration of that old path.
+The plane-side route is `kmx models credential copilot`. The checkout-only
+`make copilot-secret` helper belonged to the deleted direct-to-Copilot kagent
+preset and is no longer available. Use the plane-side command instead.
 
 Custody properties worth knowing:
 
@@ -115,16 +107,12 @@ Custody properties worth knowing:
   tooling itself does. Same terminal-login UX, one extra browser approval
   on first run, cached after that.
 - **The device-flow OAuth token never enters the cluster.** Only the
-  short-lived exchange token does. All token bytes travel through 0600
-  temp files and pipes; nothing touches argv, env listings, YAML, or
-  logs, and no keyed call follows redirects. Fail-closed: a failed or
-  empty exchange stores nothing.
+  short-lived exchange token does. The plane command handles credential
+  custody; do not place tokens in command arguments or checked-in manifests.
 - **The exchanged token expires**, typically within hours. For the plane-side
   route, re-run `kmx models credential copilot`: it writes **only**
-  `kaimahi/kaimahi-copilot-token` and restarts an existing plane. The checkout
-  helper writes its own Secret and uses the standard OAuth cache path without
-  the script's environment override. Neither path has an in-cluster
-  auto-refresher ([FAQ](FAQ.md#hosted-model-authentication-fails)).
+  `kaimahi/kaimahi-copilot-token` and restarts an existing plane. This path
+  has no in-cluster auto-refresher ([FAQ](FAQ.md#hosted-model-authentication-fails)).
 - **`api.githubcopilot.com` is not part of GitHub's documented public API
   surface.** GitHub's documented programmatic paths are the Copilot
   CLI/SDK and BYOK. It is the endpoint GitHub's own clients and

@@ -865,17 +865,6 @@ def model_probes_call_seam_ca_directly(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def copilot_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
-    """Count make recipes without freezing an interpretation of ownership."""
-    _, body = doc.section("`scripts/`")
-    m = once(phrase("`scripts/copilot-secret.sh`: {n} make recipe"), body,
-             "the copilot-secret make caller")
-    recipes = [line for line in tree.read("Makefile").splitlines()
-               if line.startswith("\t") and "scripts/copilot-secret.sh" in line]
-    return compare_count(number(m.group(1)), len(recipes), "copilot-secret make recipes")
-
-
-@claim
 def the_open_question_count_matches(doc: Doc, tree: Tree) -> list[str]:
     """Questions may evolve or reach zero; the declared count must agree."""
     heading, body = doc.section("Open questions")
@@ -974,7 +963,7 @@ def main(argv) -> int:
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![mark](brand/mark.svg)\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
-                "\t./scripts/copilot-secret.sh\n# scripts/verify-example.py\n"
+                "# scripts/verify-example.py\n"
                 "# scripts/check-example.py\n",
     "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
@@ -993,7 +982,6 @@ SELFTEST_FILES = {
     "scripts/embedded.sh": "true\n",
     "scripts/model-seam-probe.sh": 'seam_ca "$work/ca.crt"\n',
     "scripts/spend-race-probe.sh": 'seam_ca "$work/ca.crt"\n',
-    "scripts/copilot-secret.sh": "true\n",
     "scripts/verify-example.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
@@ -1014,7 +1002,7 @@ Installed does not mean current direction, including one shell scripts.
 
 ## The short version
 | `internal/` | `kmx/` (one packages) |
-| `scripts/` | 2 (1 embedded in the binary, 1 operator) | 2 | 3 |
+| `scripts/` | 1 (1 embedded in the binary, 0 operator) | 2 | 3 |
 | `docs/` | 6 tracked files |
 | `brand/` | 2 identity assets for repository and organization surfaces |
 
@@ -1040,17 +1028,15 @@ Two of `k8s/`'s 6 files are embedded; four are not embedded.
 
 **Checkout — demonstrations (2):** `demo.yaml`, `checkout-data.json`.
 
-## `scripts/` — 7 tracked files
-6 of the 7 are named by something outside themselves, and the one
+## `scripts/` — 6 tracked files
+5 of the 6 are named by something outside themselves, and the one
 `scripts/mutations/*.json` are named by nothing.
 | **Installed** | 1 | `embedded.sh` |
-| **Checkout** | 1 | `copilot-secret.sh` |
 | **Demonstration** | 2 | `model-seam-probe.sh`, `spend-race-probe.sh` |
 | **Scaffolding** | 2 | the one `check-*` files, `verify-example.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
 `embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
-`scripts/copilot-secret.sh`: one make recipe.
 
 ## `docs/` — 6 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
@@ -1111,7 +1097,7 @@ MAP_EDITS = [
      "miscounts the packages under internal/kmx"),
     ("the one `lift*.go` files in `app`", "the two `lift*.go` files in `app`",
      "miscounts the cloud-running half of the AKS lift"),
-    ("2 (1 embedded in the binary, 1 operator)", "2 (1 embedded in the binary, 2 operator)",
+    ("1 (1 embedded in the binary, 0 operator)", "1 (1 embedded in the binary, 1 operator)",
      "has a summary row whose own parts no longer add up"),
     ("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files",
      "miscounts the docs in its summary"),
@@ -1123,15 +1109,13 @@ MAP_EDITS = [
      "miscounts the checkers the mutation harness proves"),
     ("`staticcheck.conf` |", "`staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("6 of the 7 are named", "5 of the 7 are named",
+    ("5 of the 6 are named", "4 of the 6 are named",
      "miscounts which scripts anything outside names"),
     ("One tracked files under `scripts/` contain the literal `k8s/`",
      "Two tracked files under `scripts/` contain the literal `k8s/`",
      "miscounts the scripts naming k8s paths"),
     ("`wc -l` reports it as 0", "`wc -l` reports it as 1",
      "gets the architecture asset's line count wrong"),
-    ("`scripts/copilot-secret.sh`: one make recipe", "`scripts/copilot-secret.sh`: two make recipes",
-     "miscounts the copilot-secret make recipes"),
 ]
 
 
@@ -1286,7 +1270,8 @@ def selftest_fixture(tree: Tree) -> int:
 
     grown = copy.copy(tree)
     grown.files = sorted(tree.files + ["docs/new-guide.md"])
-    expanded = real.replace("6 tracked files", "7 tracked files").replace(
+    expanded = real.replace("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files").replace(
+        "## `docs/` — 6 tracked files", "## `docs/` — 7 tracked files").replace(
         "**Guidance (2):** `README.md`, `getting-started.md`.",
         "**Guidance (3):** `README.md`, `getting-started.md`, `new-guide.md`.",
     )
