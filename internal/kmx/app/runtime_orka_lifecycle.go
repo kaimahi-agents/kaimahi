@@ -175,9 +175,9 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 		Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}, nil
 }
 
-// Status wraps Orka's own workload state — the exact Ready/active-tasks/
-// last-used read `kmx agent show` already exercises through readOrkaAgent —
-// and nothing else. It is unrelated to `kmx status`'s aggregate governance,
+// Status reads Orka's workload state through readOrkaAgent, as `kmx agent
+// show` does, but reports ready only when Orka's Ready condition observes
+// the current generation. It is unrelated to `kmx status`'s aggregate governance,
 // Ollama, MCP and certificate sections, which remain app-owned.
 //
 // The caller's context bounds everything this read does: preflight's probe
@@ -219,8 +219,17 @@ func (a orkaRuntimeAdapter) Status(ctx context.Context, ref agentruntime.AgentRe
 	if err := statusIdentityError(ref, agent); err != nil {
 		return agentruntime.Status{}, err
 	}
+	ready := false
+	if agent.Status.Ready && agent.Metadata.Generation > 0 {
+		for _, condition := range agent.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" && condition.ObservedGeneration == agent.Metadata.Generation {
+				ready = true
+				break
+			}
+		}
+	}
 	return agentruntime.Status{Agent: ref, Fields: []agentruntime.Field{
-		{Label: "ready", Value: readyWord(agent.Status.Ready)},
+		{Label: "ready", Value: readyWord(ready)},
 		{Label: "active tasks", Value: fmt.Sprintf("%d", agent.Status.ActiveTasks)},
 		{Label: "last used", Value: orDash(agent.Status.LastUsed)},
 	}}, nil

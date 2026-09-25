@@ -51,7 +51,8 @@ type orkaAgentSpec struct {
 		// UID is decoded, not displayed: it is the one identity that does
 		// not survive a delete and recreate, so a lifecycle caller holding a
 		// reference can prove this is still the same Agent.
-		UID string `json:"uid"`
+		UID        string `json:"uid"`
+		Generation int64  `json:"generation"`
 	} `json:"metadata"`
 	Spec struct {
 		ProviderRef struct {

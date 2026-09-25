@@ -384,8 +384,8 @@ esac
 exit 0
 `
 
-const statusAgentJSON = `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111"},
-"status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z"}}`
+const statusAgentJSON = `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111","generation":2},
+"status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z","conditions":[{"type":"Ready","status":"True","observedGeneration":2}]}}`
 
 func statusFixture(t *testing.T, agent string) (orkaRuntimeAdapter, string) {
 	t.Helper()
@@ -464,6 +464,37 @@ func TestOrkaStatusReportsTheSameFieldsForEveryValidReference(t *testing.T) {
 			if status.Agent != tc.ref {
 				t.Fatalf("status reported reference %+v, not the one it was given %+v", status.Agent, tc.ref)
 			}
+		})
+	}
+}
+
+// A ready flag from an older reconciliation must not claim the current Agent
+// generation is healthy. The deployment wait already requires a current-
+// generation Ready condition; lifecycle status must not contradict it.
+func TestOrkaStatusDoesNotReportStaleOrUnprovedReady(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent string
+	}{
+		{"stale condition", `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111","generation":2},"status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z","conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}`},
+		{"ready flag false", `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111","generation":2},"status":{"ready":false,"conditions":[{"type":"Ready","status":"True","observedGeneration":2}]}}`},
+		{"missing condition", `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111","generation":2},"status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z"}}`},
+		{"missing generation", `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":0}]}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, _ := statusFixture(t, tc.agent)
+			status, err := adapter.Status(context.Background(), statusRef(t), agentruntime.StatusOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range status.Fields {
+				if field.Label == "ready" {
+					if field.Value != "no" {
+						t.Fatalf("stale or unproved readiness reported %q, want no", field.Value)
+					}
+					return
+				}
+			}
+			t.Fatal("status omitted readiness")
 		})
 	}
 }
