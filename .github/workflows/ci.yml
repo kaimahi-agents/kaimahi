@@ -1707,7 +1707,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KUBECTL: kubectl --context kind-kaimahi-p1
-          SECRET_NAMESPACE: model-client
+          SECRET_NAMESPACE: ${{ env.CLIENT_NS }}
           GOVERNED_SECRET: kaimahi-model-ci-token
           UPSTREAM: ollama
           SEAM_PATH: v1/chat/completions
@@ -1775,7 +1775,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KUBECTL: kubectl --context kind-kaimahi-p1
-          SECRET_NAMESPACE: model-client
+          SECRET_NAMESPACE: ${{ env.CLIENT_NS }}
           GOVERNED_SECRET: kaimahi-model-ci-token
           UPSTREAM: ollama
           SEAM_PATH: v1/chat/completions
@@ -1802,7 +1802,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KUBECTL: kubectl --context kind-kaimahi-p1
-          SECRET_NAMESPACE: model-client
+          SECRET_NAMESPACE: ${{ env.CLIENT_NS }}
           GOVERNED_SECRET: kaimahi-model-ci-token
           UPSTREAM: ollama
           SEAM_PATH: v1/chat/completions
@@ -1828,7 +1828,7 @@ jobs:
           assert body['choices'][0]['message']['content'].strip(), body
           PY
           bin/kmx ledger model-ci | tee ledger-recovered.out
-          grep -E 'model-ci +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-recovered.out
+          test "$(grep -cE 'model-ci +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-recovered.out)" = 2
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -tAc "SELECT count(*) FROM spend_reservation WHERE credential_name = 'model-ci'" | grep -qx 0
           test "$(history_rows)" = 0
