@@ -1,12 +1,12 @@
 """The owner-managed application fixture, proven before a cluster runs it.
 
 `scripts/ci/owner-model-client.py` is the workload `kmx migrate` is proven
-against in the e2e-resilience shard. It stands in for an application this
-project did not write: it reads the four variables the generated patch
-sets and nothing else, and it speaks the Responses API the committed
-`orka` upstream declares as its client path.
+against, shared by the e2e-resilience and e2e-spend shards. It stands in
+for an application this project did not write: it reads the four
+variables the generated patch sets and nothing else, and it speaks the
+Responses API the committed `orka` upstream declares as its client path.
 
-Everything the shard concludes from that fixture depends on three
+Everything both shards conclude from that fixture depends on three
 properties which a live run cannot separate from the plane's own
 behaviour, and which are therefore proven here:
 
@@ -14,10 +14,10 @@ behaviour, and which are therefore proven here:
     this process by any other route — not through `config`, not through
     an error body the seam echoed back;
   * an upstream refusal is REPORTED, not masked. The budget assertion in
-    the shard reads `status` and would pass on a client that swallowed a
+    e2e-spend reads `status` and would pass on a client that swallowed a
     429 and printed a plausible sentence;
   * TLS is verified against the authority the patch mounts. A client that
-    fell back to an unverified connection would keep the shard green on
+    fell back to an unverified connection would keep both shards green on
     the day the seam's certificate stopped being valid — which is the one
     failure the seam's TLS exists to produce.
 """
