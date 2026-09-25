@@ -128,14 +128,16 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 
 ```bash
 kmx up
-kmx agent chat hello-world-agent --runtime orka --namespace orka-system 'Who are you?'
-kmx status
+kmx orka status
+kmx agent chat hello-world-agent --interactive --runtime orka --namespace orka-system
 ```
 
 A bare `up` brings up the **runtime**: kind, the keyless Ollama model server and
 the pinned Orka release with its Provider and Task result-reader account. It
 deploys no agent — `kmx quickstart` is the command that ends with one
-answering, and `kmx agent create` is the one that authors your own.
+answering, and `kmx agent create` is the one that authors your own. The chat
+line above therefore needs an Agent from one of those two commands first; Orka
+chat is interactive, and one-shot chat remains kagent-specific.
 
 The legacy kagent runtime and its two demonstration agents remain reachable
 only as explicit steps, until their retirement slices land:

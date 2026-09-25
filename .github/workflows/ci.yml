@@ -579,6 +579,61 @@ jobs:
               sys.exit(1)
           print(f"{', '.join(converted)}: no legacy bring-up, no legacy commands, namespace tripwire present")
           EOF
+      # The mirror image of the step above, for the one job that still runs
+      # the legacy journey. `kmx-clone-free` is the only proof that the
+      # published binary works with no checkout anywhere, so it must set up
+      # the way a reader is told to: a BARE `kmx up`, which is now the Orka
+      # runtime and which provisions the `orka-result-reader` account its
+      # Task proof reads a result through. An `orka install` step or a
+      # hand-made ServiceAccount beside it would make that proof a statement
+      # about the job's own fixture instead of about the command.
+      #
+      # The legacy runtime no longer arrives with the bare run, so the steps
+      # that install it are named — once each, in dependency order, and
+      # before the govern/chat/preset assertions that need them. Out of
+      # order, `kmx up --step agent` would apply an Agent against CRDs that
+      # do not exist yet; after `kmx govern`, the governance claims would be
+      # about an Agent that was not there.
+      - name: The clone-free journey sets up with a bare `kmx up`, and names the legacy runtime explicitly
+        run: |
+          python3 - <<'EOF'
+          import re, sys, yaml
+          wf = yaml.safe_load(open(".github/workflows/ci.yml"))
+          # Commands, not prose: a step whose COMMENT names `kmx govern` is
+          # explaining itself, and reading it as an invocation would make the
+          # ordering rule below fire on a comment.
+          def commands(step):
+              return "\n".join(line for line in str(step.get("run", "")).splitlines()
+                               if not line.lstrip().startswith("#"))
+          bodies = [commands(s) for s in wf["jobs"]["kmx-clone-free"]["steps"]]
+          joined = "\n".join(bodies)
+          problems = []
+          if not any(re.search(r"^\s*kmx up\s*$", b, re.M) for b in bodies):
+              problems.append("no bare `kmx up`: the job must set the runtime up the way the docs say to")
+          # `kmx --context <ctx> orka install` is the spelling this job used
+          # when the bare run installed kagent instead of Orka.
+          if re.search(r"kmx (?:--\S+[ =]\S+ )*orka install\b", joined):
+              problems.append("a standalone `orka install`: the bare `kmx up` already installs Orka")
+          if "create serviceaccount orka-result-reader" in joined:
+              problems.append("the result account is made by hand: `kmx up --step orka` provisions it")
+          if "--result-service-account orka-result-reader" not in joined:
+              problems.append("no Orka Task proof reading its result through orka-result-reader")
+          named = [(i, m.group(1)) for i, b in enumerate(bodies)
+                   for m in re.finditer(r"kmx up --step (kagent|agent|tools-agent)\b", b)]
+          if [name for _, name in named] != ["kagent", "agent", "tools-agent"]:
+              problems.append("the legacy steps must be named once each, in dependency order "
+                              f"(kagent, agent, tools-agent); found {[n for _, n in named]}")
+          govern = next((i for i, b in enumerate(bodies) if re.search(r"\bkmx govern\b", b)), None)
+          if govern is None:
+              problems.append("no `kmx govern`: the legacy assertions are what those steps exist for")
+          elif named and max(i for i, _ in named) >= govern:
+              problems.append("the legacy runtime is installed at or after `kmx govern`")
+          if problems:
+              print("kmx-clone-free no longer proves the supported setup:", *problems, sep="\n  ")
+              sys.exit(1)
+          print("kmx-clone-free: bare `kmx up` for Orka, its result account unmade by hand, "
+                "legacy runtime named in dependency order before govern")
+          EOF
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
       # and is a required check). A step appended without the guard would run
@@ -996,9 +1051,11 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      # Component steps only: a bare `kmx up` would install the legacy
-      # runtime, and every hosted-upstream claim below would still pass
-      # while proving something this repository no longer supports.
+      # Component steps only: nothing in this shard needs an agent runtime
+      # at all — every hosted-upstream claim below is a direct, authenticated
+      # call to the plane's own model seam. A bare `kmx up` would install the
+      # pinned Orka release on top, which is several minutes and ~1GB of
+      # images no assertion here reads.
       #
       # Ollama and the model are still brought up, even though no call
       # here goes to them: the committed upstream table names the
@@ -1225,10 +1282,12 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      # Component steps only. A full bring-up would install the legacy
-      # runtime, and every credential, budget and ledger claim below would
-      # still pass while proving something this repository no longer
-      # supports.
+      # Component steps only. The Orka install a bare `kmx up` would perform
+      # is run as its own step below, where its digest verification and its
+      # Provider's readiness are ASSERTED — folded into the bring-up they
+      # would merely have happened, and every credential, budget and ledger
+      # claim below would rest on a runtime nothing had checked. No kagent
+      # is installed on this path at all, which the tripwire states.
       - name: Cluster, Ollama and the model — no kagent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1665,11 +1724,11 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      # Component steps only. A bare `kmx up` would install the legacy
-      # runtime, and every metering, budget and onboarding claim below
-      # would still pass while proving something this repository no longer
-      # supports. Nothing in this shard needs an agent runtime at all: the
-      # model seam is called directly, over TLS, with a plane credential.
+      # Component steps only. Nothing in this shard needs an agent runtime at
+      # all: the model seam is called directly, over TLS, with a plane
+      # credential. A bare `kmx up` would install the pinned Orka release
+      # that no metering, budget or onboarding claim below reads, and the
+      # tripwire states the other runtime is absent too.
       - name: Cluster, Ollama and the model — no kagent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2239,9 +2298,12 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      # Component steps only. A bare `kmx up` would install the legacy
-      # runtime, and every governance claim below would still pass while
-      # proving something this repository no longer supports.
+      # Component steps only. The Orka install a bare `kmx up` would perform
+      # is run as its own step below, where its digest verification and its
+      # Provider's readiness are ASSERTED before `kmx migrate` depends on
+      # them — folded into the bring-up, the resilience claims below would
+      # rest on a runtime nothing had checked. No kagent is installed on this
+      # path at all, which the tripwire states.
       - name: Cluster, Ollama and the model — no kagent
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2826,9 +2888,12 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      # Component steps only. `kmx up` with no --step would install the
-      # legacy runtime, and this shard's whole point is that the Orka path
-      # needs none of it: no Helm release, no kagent namespace, no chart.
+      # Component steps only. `kmx orka install` is the command under test
+      # here, and the next step runs it with its digest verification and its
+      # Provider's readiness asserted — a bare `kmx up` would have installed
+      # Orka already, and that step would then be asserting about somebody
+      # else's work. The other half of this shard's point is what the Orka
+      # path does NOT need: no Helm release, no kagent namespace, no chart.
       - name: Cluster, Ollama and the model — no kagent, no Helm release
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3141,35 +3206,28 @@ jobs:
           # above this directory, `kmx plane` would build from it and the
           # job would prove nothing.
           test ! -e ./go.mod && test ! -e /home/runner/go.mod && test ! -e /home/runner/k8s
-      - name: up — cluster, Ollama, the model, kagent, both agents
+      # The setup a reader is told to run, run verbatim: a bare `kmx up` IS
+      # the Orka runtime — kind, Ollama, the model, the pinned Orka release
+      # with its Provider and its `orka-result-reader` account. Nothing here
+      # installs Orka a second time, and nothing creates that account by
+      # hand: the Task proof below reads its result through the account this
+      # one command provisioned, which is the claim the docs make.
+      - name: up — cluster, Ollama, the model and the pinned Orka runtime
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
         env:
           KIND_CLUSTER: kmx-clone-free
         run: kmx up
-      - name: Orka — install beside the existing kagent runtime
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        run: kmx --context kind-kmx-clone-free orka install
-      - name: Orka — separately provision the Task result account
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        run: |
-          # Names only: create never provisions this account or its RBAC.
-          # Main requires Task get; v0.1.3 authenticates result reads but does
-          # not enforce that read RBAC. The token has the SA's full authority.
-          kubectl --context kind-kmx-clone-free -n orka-system create serviceaccount orka-result-reader
-          kubectl --context kind-kmx-clone-free -n orka-system create role orka-result-reader \
-            --verb=get --resource=tasks.core.orka.ai
-          kubectl --context kind-kmx-clone-free -n orka-system create rolebinding orka-result-reader \
-            --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
       - name: agent create — native Orka Task returns an actual local-model answer
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
         run: |
           # Reuse the installer's Secret, never its shared Provider/local.
-          # This proof is additive: later kagent hello-world/hello-tools and
-          # plane probes still exercise the original runtime/tool journey.
+          # `--result-service-account` names the account `kmx up --step orka`
+          # provisioned: create itself provisions no account and no RBAC, so
+          # naming one the bring-up made is the whole point of this step.
+          # This proof is additive: the legacy kagent lane below is installed
+          # by its own named steps and still exercises govern/chat/use.
           kmx --context kind-kmx-clone-free agent create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
@@ -3277,6 +3335,25 @@ jobs:
           if built_at 0000deadbeef; then
             echo "the build_info assertion matches any revision — it proves nothing"; exit 1
           fi
+      # Everything below this step is the LEGACY runtime's journey: govern,
+      # chat, the ledger rows they write and the preset switch. A bare
+      # `kmx up` no longer deploys any of it, so it is named here, once,
+      # in dependency order — kagent installs the CRDs and controller, and
+      # each demonstration Agent is applied against them.
+      - name: The legacy runtime, named step by step — kagent, then its two agents
+        if: steps.changes.outputs.docs_only != 'true'
+        working-directory: /home/runner/journey
+        env:
+          KIND_CLUSTER: kmx-clone-free
+        run: |
+          set -euo pipefail
+          kmx up --step kagent
+          kmx up --step agent
+          kmx up --step tools-agent
+          # Fail closed on what the steps below rest on: an Agent that is not
+          # there yet turns `kmx govern` into a much less legible failure.
+          kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-world >/dev/null
+          kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-tools >/dev/null
       - name: govern — the credential, the presets, the switch
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
