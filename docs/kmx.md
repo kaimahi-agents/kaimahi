@@ -115,7 +115,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no kagent, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` also selects the explicit legacy `kagent`, `agent` and `tools-agent`, which a bare run no longer performs and no flag restores |
-| `kmx aks up` / `kmx aks down` | Provision AKS and land a platform on it, then clean up owned resources. `--payload` defaults to `orka` (no Provider is created); pass `--payload kagent` for the legacy runtime and its demo agents on governed Copilot. Both share cluster phases. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
+| `kmx aks up` / `kmx aks down` | Provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); `--payload kagent` is refused as retired, and an existing kagent lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; `--runtime kagent` is refused by name |
@@ -302,22 +302,15 @@ remains supported when raw mode is unavailable; terminal slash completion is
 local. Malformed history can be skipped and ordinary
 verbose payloads are display-limited; this is not an audit export.
 
-`/govern` creates an agent-specific model credential/Secret/ModelConfig;
-`/ungovern` selects direct Ollama while preserving the model name. Both affect
-**only model routing**, support the existing kind/Ollama routes, preserve audit
-history, wait for pod switch and clear retry history. Other providers refuse.
-Remote contexts require confirmation set before chat, not a second prompt reader.
-A failed Secret write after one-time token issuance needs operator recovery.
-
 Trusted actor/action labels and indented payloads prevent tool/model prose from
 impersonating controls. `[KAIMAHI ROUTE]` shows verified startup configuration,
-not an allowed/ledgered receipt: kagent streams do not carry those receipts.
+not an allowed/ledgered receipt: the stream does not carry those receipts.
 Possible denial text has unverified provenance; inspect `kmx ledger` for model
 refusals. Cap denials file no approval request; recovery is an operator's deliberate
 budget change or the UTC month reset. Direct tool activity has no Kaimahi approval path.
 These records remain visible with `/tools off`.
 
-Native kagent approvals/questions are a **different boundary**: chat may still
+Native approvals/questions are a **different boundary**: chat may still
 submit a structured native decision, not a retired Kaimahi approval. It
 refuses malformed, duplicate-ID, mixed or incomplete batches before submission;
 every call needs explicit consent. Arguments above the 16 KiB inspection limit
@@ -331,12 +324,12 @@ and stop uncertain animation after resize.
 
 ### Retry limits
 
-One-shot **kagent** chat still retries matching connection-refused, EOF and reset
-errors up to three times, **even with an explicit session**. Ambiguous disconnects
-can follow an effect: retries may duplicate tools/spend. Question-only `ask_user`
-resampling is at most twice without an explicit session, recorded tool response
-or another pending confirmation. Interactive
-`/retry` explicitly resends; none of this promises exactly-once execution.
+There is no one-shot chat transport and no retry policy left to describe: the
+legacy runtime's invoke, its connection-refused/EOF/reset retries and its
+resumable `--session` went with it. Question-only `ask_user` resampling is at
+most twice without a recorded tool response or another pending confirmation.
+Interactive `/retry` explicitly resends; that does not promise exactly-once
+execution.
 
 `kmx quickstart` is Orka and does not participate in that policy. It creates one
 Task, polls that Task's result over a single context-pinned connection, and never
@@ -397,18 +390,18 @@ upstream**: there is no per-credential model allowlist.
 ## Governing an agent
 
 `kmx govern` has been removed. An owner-managed application is put behind the
+seam with `kmx migrate`, which issues the credential and routes its model
+traffic.
 plane with `kmx migrate`, and a credential is issued into a named destination
 with `kmx credential issue <name> --secret <secret> --namespace <ns>`. Both
 share one implementation of the pre-issue binding checks, so the one-time
-token cannot be overwritten by either path. Legacy preset governance survives
-only inside the `kmx aks up --payload kagent` agents phase, and goes with it.
+token cannot be overwritten by either path. Legacy preset governance is gone
+with the `kagent` lift payload that was its last caller.
 
 It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued
 credentials are reconciled, not overwritten; wrong/missing bindings refuse.
 An existing Secret with no credential-binding annotation also refuses before issuance.
-Only genuine Agent NotFound skips a switch, and switches wait for exactly one
-pod on the new template rather than allowing old pods to answer unnoticed.
 
 Tool credential capture is removed. Plane-side model Copilot capture remains
 `kmx models credential copilot`: GitHub device login, a private 0600 OAuth cache

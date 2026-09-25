@@ -640,8 +640,8 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 	}
 }
 
-// The orka payload creates no Agent and no Provider, so the closing text must
-// not claim one or send the operator to `agent chat`.
+// The lift creates no Agent and no Provider, so the closing text must not
+// claim one or send the operator to `agent chat`.
 func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 	var buf bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
@@ -650,34 +650,23 @@ func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 
 	for _, forbidden := range []string{"agent chat", "hello-world", "The same agent you ran locally"} {
 		if strings.Contains(got, forbidden) {
-			t.Errorf("the orka payload promises %q, but it created no agent:\n%s", forbidden, got)
+			t.Errorf("the closing text promises %q, but the lift created no agent:\n%s", forbidden, got)
 		}
 	}
 	if !strings.Contains(got, "no Provider and no Agent yet") {
 		t.Errorf("the closing text does not say what is still missing:\n%s", got)
 	}
-
-	// The kagent payload still says its own thing, or this branch broke it.
-	var legacy bytes.Buffer
-	b := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &legacy, Out: &legacy}
-	b.liftNextSteps(lift.Options{Payload: lift.PayloadKagent, Cluster: "demo-cluster"}, nil)
-	if !strings.Contains(legacy.String(), "hello-world") {
-		t.Errorf("the kagent payload lost its next steps:\n%s", legacy.String())
-	}
 }
 
-// A verify with observability off still differs by payload: the orka payload
-// makes no model call, so promising an agent answer there is a false claim.
-func TestTheNoTelemetryPhaseLabelIsPayloadAware(t *testing.T) {
-	orka := liftVerifyPurposeWithoutTelemetry(lift.PayloadOrka)
-	if strings.Contains(orka, "agent answers") {
-		t.Errorf("an orka verify promises an agent answer: %q", orka)
+// A verify with observability off still has to say what it actually proved.
+// The lift makes no model call, so promising an agent answer is a false claim.
+func TestTheNoTelemetryPhaseLabelPromisesNoAnswer(t *testing.T) {
+	label := liftVerifyPurposeWithoutTelemetry()
+	if strings.Contains(label, "agent answers") {
+		t.Errorf("a verify promises an agent answer: %q", label)
 	}
-	if !strings.Contains(orka, "Orka") {
-		t.Errorf("an orka verify does not say what it checked: %q", orka)
-	}
-	if kagent := liftVerifyPurposeWithoutTelemetry(lift.PayloadKagent); !strings.Contains(kagent, "agent answers") {
-		t.Errorf("the kagent verify lost its purpose: %q", kagent)
+	if !strings.Contains(label, "Orka") {
+		t.Errorf("a verify does not say what it checked: %q", label)
 	}
 }
 

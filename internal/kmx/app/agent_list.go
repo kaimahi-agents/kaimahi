@@ -25,9 +25,11 @@ func (a *App) ListAgents(output, namespace string) error {
 
 // listOrkaAgents reports the Orka Agents in one namespace.
 //
-// Orka watches namespaces explicitly, so there is no safe default to guess: a
-// wrong one would report "none" about a namespace nobody meant. The caller
-// names it, the same way `kmx agent show` and `kmx agent create` require it.
+// The namespace is always resolved by the caller above, which defaults it to
+// the one the pinned installer uses. It is a parameter rather than a lookup
+// here so that this stays a report about a named namespace: Orka watches
+// namespaces explicitly, and a report that chose its own would answer about a
+// namespace nobody meant.
 func (a *App) listOrkaAgents(output, namespace string) error {
 	format, err := agentListFormat(output)
 	if err != nil {

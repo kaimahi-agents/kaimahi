@@ -64,7 +64,34 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   host Ollama reached over the kind gateway is the caller's own endpoint, and
   `kmx up` has already verified it is reachable from the cluster.
 
+### Fixed
+
+- **`kmx plane` no longer closes by telling you to run a command that does not
+  exist.** Its "Next" actions and its upgrade note both named `kmx govern`,
+  which was retired with the legacy runtime — worse than an unknown command,
+  because a command that had just succeeded was the thing recommending it.
+  Both now name `kmx migrate <deployment> --namespace <ns>`, which is the
+  route this cluster can actually take. A package-wide test now fails if any
+  production code suggests a retired command through `operationCommand`.
+
 ### Breaking
+
+- **The `kagent` lift payload is retired: `kmx aks up` lands Orka and nothing
+  else.** `--payload kagent` is refused **by name** as retired rather than as
+  an unknown value — a script that still names it asked for a platform this
+  command installed until the legacy runtime went, and a typo message would
+  send its author looking for a spelling instead of a replacement. The `kagent`
+  and `agents` phases are gone with it, as is the in-lift preset governance
+  they were the last caller of; no phase needs Helm any more. **An existing
+  kagent lift is not stranded:** its run record still decodes, so
+  `kmx aks down` tears the cluster down and reports what it could not prove is
+  its own, exactly as before. What is refused is creating or **resuming** one
+  — a resume would run phases that no longer exist — and the refusal says so
+  and names the teardown command. A record written before the payload split
+  carries no payload, still reads as `kagent`, and is treated the same way.
+  **Upgrading:** drop the flag or pass `--payload orka`; tear down any kagent
+  lift with `KAIMAHI_CONFIRM=<group> kmx aks down --resource-group <group>
+  --cluster <cluster>`.
 
 - **The legacy operational commands are gone: `kmx govern`, `kmx use` and
   `kmx agent edit` are no longer commands at all.** They drove the legacy

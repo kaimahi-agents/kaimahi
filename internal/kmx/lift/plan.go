@@ -46,12 +46,12 @@ type Options struct {
 
 	// Payload selects WHAT lands on the cluster this command provisions.
 	//
-	// There is deliberately no default. `lift` bills money and installs a
-	// platform, and the two payloads are different products: one lands Orka,
-	// the other lands the legacy kagent runtime and its demo agents. A
-	// default would mean somebody's existing script silently changed which
-	// platform it deploys the day the project's direction moved, which is
-	// the one outcome worth a one-word break instead.
+	// Only `orka` remains: the kagent payload is retired along with the rest
+	// of the legacy runtime. The flag stays, and stays required on the
+	// deprecated `kmx lift`, because it is still a statement about what a
+	// command that bills money will install — and because an existing script
+	// that says `--payload kagent` must be told its platform is gone rather
+	// than quietly handed a different one.
 	Payload string
 
 	// Plan prints what would happen, where, and stops. It creates nothing
@@ -61,40 +61,41 @@ type Options struct {
 	Plan bool
 }
 
-// Payloads are what a lift can land. Named rather than inferred, and
-// validated against this list, so a typo is a refusal instead of a surprise.
+// PayloadOrka is the only payload a lift can land.
+//
+// PayloadKagent is a HISTORICAL SENTINEL and nothing else. No new lift and no
+// new record may carry it; it exists so a record written by a run that really
+// did land the legacy runtime — or one written before the payload split, which
+// could only have landed it — still reads as what it is. Teardown decides
+// deletions from that record, and those clusters are billing, so the value has
+// to survive the code that produced it.
 const (
 	PayloadOrka   = "orka"
 	PayloadKagent = "kagent"
 )
 
-// Payloads lists them for the flag's help and its completion.
-var Payloads = []string{PayloadOrka, PayloadKagent}
+// Payloads lists what may be selected, for the flag's help and its completion.
+// The retired payload is deliberately absent: offering it would advertise a
+// platform this command no longer installs.
+var Payloads = []string{PayloadOrka}
 
 // Steps are the phases of the lift, in order. Each is re-runnable on its own
 // and each is idempotent, which is what makes a failed lift resumable instead
 // of a cleanup problem.
-//
-// The two payloads share every phase that is about the CLUSTER — provisioning
-// it, proving its boundary, the plane that meters a model seam, monitoring and
-// verification. They differ only in what is installed to run agents, which is
-// the whole point of the distinction.
-var Steps = stepsFor(PayloadKagent)
+var Steps = stepsFor(PayloadOrka)
 
-func stepsFor(payload string) []string {
-	if payload == PayloadOrka {
-		return []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"}
-	}
-	return []string{"cluster", "boundary", "kagent", "credential", "plane", "agents", "observability", "verify"}
+// stepsFor is the phase list. It still takes a payload rather than being a
+// bare list because the callers ask the question that way, and because the
+// answer is a property of the payload rather than of the command.
+func stepsFor(string) []string {
+	return []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"}
 }
 
 // StepsForPayload exposes the phase list for a payload, for the planner and
 // for anything that needs to name the phases before Options exist.
 func StepsForPayload(payload string) []string { return stepsFor(payload) }
 
-// AllSteps is every phase either payload has, in order, each once. Shell
-// completion cannot know which payload is being typed, and offering only one
-// payload's phases would hide valid answers for the other.
+// AllSteps is every phase, in order, each once — what shell completion offers.
 func AllSteps() []string {
 	var out []string
 	seen := map[string]bool{}
@@ -109,18 +110,31 @@ func AllSteps() []string {
 	return out
 }
 
-// ValidPayload refuses anything that is not one of the two, and refuses the
-// empty string with the reasoning rather than a bare usage line: an operator
-// who typed `kmx lift` before this flag existed needs to know that the answer
-// changed, not merely that a flag is missing.
+// ValidPayload refuses anything that is not the remaining payload.
+//
+// The retired one is refused BY NAME rather than falling into "unknown",
+// because those are different facts and only one of them is true. An operator
+// whose script says `--payload kagent` did not misspell anything: they asked
+// for a platform that this command installed until it was retired, and
+// "unknown payload" would send them looking for the right spelling of
+// something that is gone.
+//
+// The empty string keeps its reasoning rather than a bare usage line: the
+// deprecated `kmx lift` still requires the flag, and an operator who typed it
+// before the flag existed needs to know the answer changed.
 func ValidPayload(payload string) error {
 	switch payload {
-	case PayloadOrka, PayloadKagent:
+	case PayloadOrka:
 		return nil
+	case PayloadKagent:
+		return errors.New("kmx lift: --payload kagent is retired — the legacy kagent runtime has been\n" +
+			"  removed from kmx, and this command no longer installs it or its demo agents.\n" +
+			"  Use --payload orka, which lands Orka on the same provisioned cluster.\n" +
+			"  An existing kagent lift can still be inspected and torn down (`kmx aks down`);\n" +
+			"  what is refused is creating or resuming one.")
 	case "":
 		return errors.New("kmx lift: --payload is required, and has no default.\n" +
-			"  --payload orka     Orka, the platform this project now gets agents onto\n" +
-			"  --payload kagent   the legacy kagent runtime and its two demo agents\n" +
+			"  --payload orka     Orka, the platform this project gets agents onto\n" +
 			"  This command bills money and installs a platform. A default would mean an\n" +
 			"  existing script quietly changed which one it deploys, so the choice is yours\n" +
 			"  to state rather than ours to assume.")
@@ -131,28 +145,23 @@ func ValidPayload(payload string) error {
 
 // PurposeOf is what a phase is for, in the words the banner uses.
 //
-// One phase means different things to the two payloads, and saying the wrong
-// one is worse than saying nothing: a plan that promises "the agent answers"
-// on a payload that installs no agent has told the operator it will prove
-// something it cannot.
-func PurposeOf(step, payload string) string {
-	if step == "verify" && payload == PayloadOrka {
-		return "Orka is installed and ready; no model call is made, because the Provider is yours"
-	}
-	return StepPurpose[step]
-}
+// It still takes the payload, because the banner asks the question that way
+// and because what a phase PROVES is a property of what was landed. With one
+// payload left the answer no longer branches, but a plan that promised "the
+// agent answers" about a lift that installs no agent would be telling the
+// operator it will prove something it cannot — so the wording below is the
+// honest one rather than the one inherited from the retired payload.
+func PurposeOf(step, _ string) string { return StepPurpose[step] }
 
 // StepPurpose is what each phase is for, in the words the banner uses.
 var StepPurpose = map[string]string{
 	"cluster":       "resource group, private registry and an AKS cluster with a policy engine",
 	"boundary":      "the network boundary and the ledger, then PROVE the boundary is enforced",
-	"kagent":        "the agent runtime",
 	"orka":          "Orka at the pinned version; the model Provider stays yours to create",
 	"credential":    "check the model credential the managed path needs (captured by you, not by kmx)",
 	"plane":         "build the model-traffic bridge in the registry and deploy it",
-	"agents":        "the same agents you ran locally, governed from the start",
 	"observability": "Azure Monitor workspace, Container Insights, the scrape job and a workbook",
-	"verify":        "the agent answers, and the dashboard has its traffic",
+	"verify":        "Orka is installed and ready; no model call is made, because the Provider is yours",
 }
 
 var (
