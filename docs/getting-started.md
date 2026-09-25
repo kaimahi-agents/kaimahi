@@ -168,7 +168,7 @@ kmx ledger <deployment>
 
 `kmx migrate` puts an owner-managed application behind the plane and gives it an
 opaque plane token, never the real upstream key. It changes model routing only;
-see [kmx](kmx.md#governing-an-agent). The [direct MCP example](tools.md) remains
+see [kmx](kmx.md#governing-model-traffic). The [direct MCP example](tools.md) remains
 available without Kaimahi tool policy, grants or tool audit.
 
 ## An agent of your own

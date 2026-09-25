@@ -387,16 +387,14 @@ Cents budgets refuse unpriced pairs while token budgets can meter them. Admin
 contract 2 is required. **Every plane credential can access a configured model
 upstream**: there is no per-credential model allowlist.
 
-## Governing an agent
+## Governing model traffic
 
-`kmx govern` has been removed. An owner-managed application is put behind the
-seam with `kmx migrate`, which issues the credential and routes its model
-traffic.
-plane with `kmx migrate`, and a credential is issued into a named destination
-with `kmx credential issue <name> --secret <secret> --namespace <ns>`. Both
-share one implementation of the pre-issue binding checks, so the one-time
-token cannot be overwritten by either path. Legacy preset governance is gone
-with the `kagent` lift payload that was its last caller.
+`kmx govern` has been removed. Put an owner-managed application behind the
+plane with `kmx migrate`, or issue a credential into a named destination with
+`kmx credential issue <name> --secret <secret> --namespace <ns>`. Both paths
+share the same pre-issue binding checks, so neither can overwrite a one-time
+token. Legacy preset governance is gone with the `kagent` lift payload that was
+its last caller.
 
 It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued
