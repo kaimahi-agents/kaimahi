@@ -278,7 +278,7 @@ and the separately located historical architecture SVG.
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
 | `embed.go` | **Installed tooling** | Root-module embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
-| `Makefile` | **Scaffolding** | Build and retained model, plane and network-policy checkout commands. |
+| `Makefile` | **Scaffolding** | Build/check targets plus plane-image, AKS-credential, network-policy and egress helpers. |
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. |
 | `.github/workflows/kagent-shim-spike.yml` | **Scaffolding** | Isolated, keyless converter/adapter tests. |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |

@@ -420,8 +420,7 @@ It does not invent a sum across replicas. See [operations](operations.md).
 
 ## What is NOT in `kmx`
 
-Checkout-only Copilot capture and standalone network probes retain paths in
-[models](models.md) and [egress](egress.md).
+Standalone network probes retain checkout paths in [egress](egress.md).
 Plane-side Copilot capture and the full lift do not need a checkout handoff.
 The tool gateway, tool-governance/capture commands and [workflow runner](workflows.md)
 are retired, not checkout alternatives. Use native kmx, with the Makefile only
