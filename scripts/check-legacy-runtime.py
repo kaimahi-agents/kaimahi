@@ -21,29 +21,37 @@ because there are two different ways a claim survives.
   either installing it or claiming something about it.
 
   THE BARE NAME is refused from the surfaces a reader takes as current:
-  product code, configuration, documentation, scripts and manifests. The
-  name in a sentence can be honest ("that runtime is gone") or a claim
-  ("point it at the runtime's namespace"), and no regex tells those apart.
-  So each surviving line is named, one at a time, with a category and a
-  reason, in scripts/legacy-runtime-allowlist.json.
+  product code, configuration, documentation, scripts, manifests AND the
+  workflows. The name in a sentence can be honest ("that runtime is gone")
+  or a claim ("point it at the runtime's namespace"), and no regex tells
+  those apart. So each surviving line is named, one at a time, with a
+  category and a reason, in scripts/legacy-runtime-allowlist.json.
 
-WHAT MAY STAY, AND NOTHING ELSE. The allowlist has four categories and they
-are the whole policy:
+WHAT MAY STAY, AND NOTHING ELSE. The allowlist has four categories, they
+are the whole policy, and each one is bound to the paths where its claim
+could be true — a category is an argument for why a line may stay, and the
+same argument is not available everywhere:
 
-  historical    the three files that ARE the historical record — the
-                changelog, the coordination board and the dated reviews.
-                Named as whole files, because past-tense evidence is what
-                they are for. No current documentation directory may be
-                listed this way, and a floor below fails if one is.
+  historical    the record of what used to be. Two shapes: the files that
+                ARE the record — the changelog and the dated reviews —
+                named as whole files, and the coordination board, whose
+                past-tense rows are named one line at a time because the
+                board also carries live policy. No current documentation
+                directory may be listed as a whole file, and a floor below
+                fails if one is.
   retirement    the exact production lines that refuse the retired runtime
                 BY NAME, plus the historical teardown sentinel. A refusal
-                has to spell what it refuses, or it refuses nothing.
+                has to spell what it refuses, or it refuses nothing. Only
+                in the four production files that do the refusing.
   negative      exact lines asserting the runtime is ABSENT: the CI
-                tripwires, the doc-claim patterns, the bounded test cases.
-                A negative assertion is the opposite of support.
+                tripwires and the bounded test cases. A negative assertion
+                is the opposite of support — but only a test or the CI
+                tripwires can make one, so a document cannot borrow the
+                category to keep an instruction.
   future        exact lines noting an explicitly UNSUPPORTED future: a v1
                 authoring surface that is an open question. A note that
-                something is not supported is not support.
+                something is not supported is not support — and the line
+                or its reason has to SAY so.
 
 HOW IT FAILS, AND WHY THAT MATTERS MORE THAN HOW IT PASSES. A scanner is a
 gate that fails OPEN. Every way this one could quietly stop working is a way
@@ -58,8 +66,10 @@ explicitly rather than trusted:
   - a rule whose pattern stops matching its own example is gone;
   - a rule whose pattern also matches its counterexample is too wide to
     mean anything;
-  - a named current file dropping out of enforcement means the exemptions
-    grew a directory.
+  - an exemption that names a category its path cannot support is an
+    argument borrowed from somewhere it was earned;
+  - a whole file declared historical outside the record itself is a
+    directory-sized exemption wearing a filename.
 
 Run:  python3 scripts/check-legacy-runtime.py
       python3 scripts/check-legacy-runtime.py --selftest
@@ -90,28 +100,85 @@ SELF = {
 # Binary and image files: nothing text-shaped to claim anything.
 SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".ico", ".woff", ".woff2", ".svg"}
 
-# The surfaces a reader takes as current. The bare name is refused here; a
-# workflow is judged by the hard rules alone, because its own job is to run
-# commands and assert what a cluster does NOT have.
+# The surfaces a reader takes as current. The bare name is refused on all of
+# them, workflows included: a workflow runs commands, and `kubectl create
+# namespace <name>` is as much a claim of support as a sentence in a guide.
+# The assertions that a cluster does NOT have the runtime are still allowed,
+# but one line at a time and by name, like every other exemption.
 CURRENT_SURFACES = (
-    "cmd/", "internal/", "plane/", "k8s/", "scripts/", "docs/",
+    "cmd/", "internal/", "plane/", "k8s/", "scripts/", "docs/", ".github/",
     "Makefile", "install.sh", "embed.go", "go.mod", "CONTRIBUTING.md", "README.md",
-)
-
-# Files that must be under the bare-name rule whatever the allowlist says.
-# This is the floor that stops "exempt the docs" being a one-line edit: a
-# historical entry covering any of these fails before any line is judged.
-MUST_ENFORCE = (
-    "docs/README.md", "docs/kmx.md", "docs/getting-started.md", "docs/orka.md",
-    "docs/development.md", "docs/aks.md", "docs/FAQ.md", "docs/repository-map.md",
-    "internal/kmx/config/config.go", "internal/kmx/app/up.go",
-    "Makefile", "k8s/plane/network-policy.yaml", "scripts/kube-guard.sh",
 )
 
 # A tree this size cannot shrink to a handful of files without something
 # being wrong with the enumeration rather than with the tree.
 MIN_TRACKED = 200
 MIN_READ = 150
+
+# The files that ARE the record, whole. Nothing else may be declared
+# history wholesale, and a floor below fails on any other name: a whole
+# file is the widest exemption in this policy, so the set is closed here
+# rather than in the allowlist it judges.
+HISTORICAL_FILES = ("CHANGELOG.md", "docs/reviews/")
+
+# The production files whose job is to REFUSE the retired runtime by name.
+# A retirement exemption anywhere else is a mention arguing it is a refusal.
+RETIREMENT_FILES = (
+    "internal/kmx/app/chat.go", "internal/kmx/app/lift.go",
+    "internal/kmx/lift/plan.go", "internal/kmx/lift/record.go",
+)
+
+# The one current document whose past-tense rows are recorded line by line.
+# The board carries live policy beside its history, so it cannot be a whole
+# historical file — the dated rows are named, the live text is not exempt.
+HISTORICAL_LINE_FILES = ("docs/COORDINATION.md",)
+
+# A `future` entry has to SAY the future is unsupported. Without this the
+# category is a free-form note, and a free-form note beside a mention is
+# indistinguishable from documentation of a supported path.
+UNSUPPORTED = ("unsupported", "not supported", "no support", "remains open", "open question")
+
+CATEGORIES = ("retirement", "negative", "historical", "future")
+
+
+def current_doc(path: str) -> bool:
+    """True for documentation a reader is expected to act on today."""
+    return path.endswith(".md") and (path.startswith("docs/")
+                                     or path in {"README.md", "CONTRIBUTING.md"})
+
+
+def category_problem(entry) -> str | None:
+    """Why this entry's category cannot be true of this entry's path.
+
+    Every category is an ARGUMENT for keeping a line, and an argument is
+    only available where it could hold. A test may assert an absence; a
+    guide may not call an instruction an assertion. Production code may
+    refuse the runtime by name, but only the four files that do. Without
+    this, the widest category in the list is one word away from any line in
+    the tree, and the reason column stops being reviewable.
+    """
+    path, category = entry["path"], entry["category"]
+    if category == "negative":
+        if not (path.endswith("_test.go") or path == ".github/workflows/ci.yml"):
+            return ("only a Go test or the CI tripwires in .github/workflows/ci.yml can assert "
+                    "the runtime is ABSENT; on any other surface the same words are an instruction")
+    elif category == "retirement":
+        if path not in RETIREMENT_FILES:
+            return ("a retirement refusal is production code that refuses the runtime BY NAME, "
+                    f"and only these do so: {', '.join(RETIREMENT_FILES)}")
+    elif category == "historical":
+        if path not in HISTORICAL_LINE_FILES:
+            return ("a past-tense line may only be recorded in "
+                    f"{', '.join(HISTORICAL_LINE_FILES)} — the whole-file record is "
+                    f"{', '.join(HISTORICAL_FILES)}, and everything else is current")
+    elif category == "future":
+        if not current_doc(path):
+            return "a note about an unsupported future belongs in current documentation"
+        said = (entry["text"] + " " + entry["why"]).lower()
+        if not any(marker in said for marker in UNSUPPORTED):
+            return ("neither the line nor its reason says the future is unsupported "
+                    f"(looked for: {', '.join(UNSUPPORTED)})")
+    return None
 
 
 class Rule:
@@ -201,9 +268,13 @@ def load_allowlist(path=ALLOWLIST):
         for field in ("path", "text", "category", "why"):
             if not str(entry.get(field, "")).strip():
                 sys.exit(f"check-legacy-runtime: an allowlist entry is missing {field}: {entry}")
-        if entry["category"] not in {"retirement", "negative", "future"}:
+        if entry["category"] not in CATEGORIES:
             sys.exit(f"check-legacy-runtime: unknown category {entry['category']!r} "
-                     f"for {entry['path']} — allowed: retirement, negative, future")
+                     f"for {entry['path']} — allowed: {', '.join(CATEGORIES)}")
+        wrong = category_problem(entry)
+        if wrong:
+            sys.exit(f"check-legacy-runtime: {entry['path']} may not be exempted as "
+                     f"{entry['category']!r}: {wrong}\n      {entry['text'].strip()!r}")
     return files, lines
 
 
@@ -365,12 +436,17 @@ def floors(paths, read, historical) -> list[str]:
     if set(SELF) != {"scripts/check-legacy-runtime.py",
                      "scripts/legacy-runtime-allowlist.json"}:
         bad.append(f"the self-exemption set is no longer this checker and its allowlist: {sorted(SELF)}")
-    # The one that stops a whole current directory being declared historical.
-    for path in MUST_ENFORCE:
-        if historical_covers(path, historical):
-            bad.append(f"{path} is covered by a historical exemption. The historical record is the "
-                       "changelog, the board and the dated reviews; current documentation and code "
-                       "are not history and may not be exempted wholesale.")
+    # The one that stops a whole current directory — or a whole current
+    # file, which is the same edit one name smaller — being declared
+    # history. A whitelist rather than a list of files to protect: the
+    # record is three known places, and everything else in the tree is
+    # current until somebody argues otherwise line by line.
+    for entry in historical:
+        if entry not in HISTORICAL_FILES:
+            bad.append(f"{entry!r} is declared historical as a WHOLE FILE. Only "
+                       f"{', '.join(HISTORICAL_FILES)} are the record itself; anything else "
+                       "that still carries past-tense evidence is named line by line, "
+                       "with a category and a reason.")
     return bad
 
 
@@ -442,21 +518,23 @@ def selftest():
              "a word starting with the name is refused, underscore or not",
              "the name followed by an underscore was read as clean")
 
-        # The bare name is refused on a current surface and NOT in a
-        # workflow, which is the whole reason there are two rule classes.
+        # The bare name is refused on a current surface AND in a workflow:
+        # a workflow that creates the runtime's namespace is installing it,
+        # whatever the hard identifiers say.
         (d / "docs").mkdir(exist_ok=True)
         (d / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
         (d / "docs" / "guide.md").write_text(f"install the {NAME} runtime\n")
-        (d / ".github" / "workflows" / "ci.yml").write_text(f"          kubectl get ns {NAME}\n")
+        (d / ".github" / "workflows" / "ci.yml").write_text(f"          kubectl create namespace {NAME}\n")
         doc_hits = {r.name for _, _, r, _ in judge(["docs/guide.md"], [], [], root=d)[0] if r}
         wf_hits = {r.name for _, _, r, _ in judge([".github/workflows/ci.yml"], [], [], root=d)[0] if r}
         case("bare-name" in doc_hits, "the bare name on a current surface is refused",
              "the bare name in a document was not refused")
-        case("bare-name" not in wf_hits, "the bare name in a workflow is left to the hard rules",
-             "the bare name in a workflow was refused, which would exempt nothing and refuse everything")
-        # ...but a HARD identifier in that same workflow still is refused,
-        # or "workflows are judged by the hard rules" would be a sentence
-        # with no rule behind it.
+        case("bare-name" in wf_hits, "a workflow creating the runtime's namespace is refused",
+             "a workflow line creating the retired runtime's namespace passed "
+             f"(found: {sorted(wf_hits) or 'nothing'})")
+        # ...and a HARD identifier in that same workflow is refused by its
+        # own rule rather than by the surface, which is what keeps "hard
+        # identifiers are refused everywhere" a rule and not a sentence.
         (d / ".github" / "workflows" / "ci.yml").write_text(f"          helm install oci://ghcr.io/{NAME}-dev/x\n")
         wf_hard = {r.name for _, _, r, _ in judge([".github/workflows/ci.yml"], [], [], root=d)[0] if r}
         case("image" in wf_hard, "a hard identifier in a workflow is still refused",
@@ -468,7 +546,7 @@ def selftest():
         (d / "docs" / "exact.md").write_text(
             f"the {NAME} runtime is gone\nthe {NAME} runtime is gone, so install it from here\n")
         entry = {"path": planted, "text": f"the {NAME} runtime is gone",
-                 "category": "negative", "why": "fixture"}
+                 "category": "future", "why": "fixture: not supported"}
         found, _, used = judge([planted], [], [entry], root=d)
         case(len(found) == 1 and found[0][1] == 2,
              "an exemption matches one exact line and not the line that extends it",
@@ -550,20 +628,49 @@ def selftest():
         case(not floors(["a"] * MIN_TRACKED, MIN_READ, historical),
              "a full enumeration over a sound allowlist clears the floors",
              "the floors refuse a sound scan, so they cannot distinguish anything")
-        for widened in ("docs/", "internal/", "Makefile"):
+        for widened in ("docs/", "internal/", "Makefile", "docs/COORDINATION.md",
+                        "docs/kmx.md", "docs/README.md", "internal/kmx/app/up.go"):
             case(floors(["a"] * MIN_TRACKED, MIN_READ, [widened]),
                  f"declaring {widened!r} historical is refused",
                  f"{widened!r} could be declared historical, exempting current work wholesale")
+        case(not floors(["a"] * MIN_TRACKED, MIN_READ, list(HISTORICAL_FILES)),
+             "the record itself may be declared historical",
+             "the changelog and the dated reviews were refused as history")
 
         # An allowlist that exempts nothing, or names a category nobody
-        # reviewed, is refused rather than silently applied.
-        for doc, why in (({"historical_files": [], "lines": []}, "an allowlist that exempts nothing"),
-                         ({"historical_files": ["CHANGELOG.md"],
-                           "lines": [{"path": "x", "text": "y", "category": "because", "why": "z"}]},
-                          "an unknown exemption category"),
-                         ({"historical_files": ["CHANGELOG.md"],
-                           "lines": [{"path": "x", "text": "y", "category": "negative", "why": ""}]},
-                          "an exemption with no reason")):
+        # reviewed, or claims a category its path cannot support, is refused
+        # rather than silently applied. The doc-instruction case is the one
+        # that matters most: "install the runtime" labelled `negative` is
+        # the single edit that turns this list back into a way of not
+        # fixing things.
+        def allowlist_with(entry):
+            return {"historical_files": ["CHANGELOG.md"], "lines": [entry]}
+
+        for doc, why in (
+                ({"historical_files": [], "lines": []}, "an allowlist that exempts nothing"),
+                (allowlist_with({"path": "internal/kmx/app/x_test.go", "text": "y",
+                                 "category": "because", "why": "z"}),
+                 "an unknown exemption category"),
+                (allowlist_with({"path": "internal/kmx/app/x_test.go", "text": "y",
+                                 "category": "negative", "why": ""}),
+                 "an exemption with no reason"),
+                (allowlist_with({"path": "docs/getting-started.md",
+                                 "text": f"install the {NAME} runtime",
+                                 "category": "negative",
+                                 "why": "planted: an instruction calling itself an assertion"}),
+                 "an active documentation instruction labelled `negative`"),
+                (allowlist_with({"path": "internal/kmx/app/up.go", "text": "y",
+                                 "category": "retirement", "why": "planted"}),
+                 "a `retirement` exemption outside the files that do the refusing"),
+                (allowlist_with({"path": "docs/kmx.md", "text": "y",
+                                 "category": "historical", "why": "planted"}),
+                 "a `historical` line in a document that is not the board"),
+                (allowlist_with({"path": "docs/kmx.md", "text": "y",
+                                 "category": "future", "why": "planted, and silent about support"}),
+                 "a `future` note that never says the future is unsupported"),
+                (allowlist_with({"path": "Makefile", "text": "y",
+                                 "category": "future", "why": "planted: not supported"}),
+                 "a `future` note outside current documentation")):
             f = d / "allowlist.json"
             f.write_text(json.dumps(doc))
             try:
@@ -571,6 +678,27 @@ def selftest():
                 case(False, "", f"{why} was accepted")
             except SystemExit:
                 case(True, f"{why} is refused", "")
+
+        # ...and each category still loads where it IS earned, or the rule
+        # above would be a way of refusing the policy itself.
+        for entry, what in (
+                ({"path": "internal/kmx/app/x_test.go", "text": "y", "category": "negative",
+                  "why": "a bounded assertion"}, "a `negative` line in a test"),
+                ({"path": ".github/workflows/ci.yml", "text": "y", "category": "negative",
+                  "why": "a tripwire"}, "a `negative` line in the CI tripwires"),
+                ({"path": "internal/kmx/lift/plan.go", "text": "y", "category": "retirement",
+                  "why": "the payload refusal"}, "a `retirement` line in a refusing file"),
+                ({"path": "docs/COORDINATION.md", "text": "y", "category": "historical",
+                  "why": "a merged row"}, "a `historical` line on the board"),
+                ({"path": "docs/COORDINATION.md", "text": "remains OPEN", "category": "future",
+                  "why": "an open question"}, "a `future` note that says it is open")):
+            f = d / "allowlist.json"
+            f.write_text(json.dumps(allowlist_with(entry)))
+            try:
+                load_allowlist(f)
+                case(True, f"{what} is accepted", "")
+            except SystemExit:
+                case(False, "", f"{what} was refused, so the policy cannot describe this tree")
 
         # And the verdict itself, through main() rather than through
         # judge(): a finding that is computed correctly and then not acted
@@ -582,20 +710,22 @@ def selftest():
 
         # The floors reach an exit code, not just a list. A verdict that is
         # computed and then not acted on is the same as no verdict, and the
-        # widest exemption there is — a current documentation directory
-        # declared historical — is checked through main() for that reason.
+        # widest exemption there is — a current document declared historical
+        # as a whole file — is checked through main() for that reason.
         #
-        # The fixture is the REAL allowlist with one entry added, so the
-        # only thing that can make this run fail is the widening. Built from
-        # a fresh read rather than from `historical`/`lines` above, because
-        # an entry list that has already been through judge() carries the
-        # identities staleness is tracked by.
+        # The fixture is the REAL allowlist with one entry added, and the
+        # file it widens is deliberately one NO line entry names: a
+        # directory full of exempted lines would go red for staleness
+        # instead, and this case would pass with the floors switched off.
+        # Built from a fresh read rather than from `historical`/`lines`
+        # above, because an entry list that has already been through judge()
+        # carries the identities staleness is tracked by.
         real = json.loads(ALLOWLIST.read_text())
-        real["historical_files"] = list(real["historical_files"]) + ["docs/"]
+        real["historical_files"] = list(real["historical_files"]) + ["docs/kmx.md"]
         widened = d / "widened.json"
         widened.write_text(json.dumps(real))
         case(main([], allowlist=widened) == 1,
-             "a run whose allowlist declares a current docs directory historical exits non-zero",
+             "a run whose allowlist declares a current document historical exits non-zero",
              "a widened exemption reached an exit code of zero, so the floors decide nothing")
 
     # Finally, the real tree, through the real entry point. This is what

@@ -496,7 +496,7 @@ jobs:
               if up.get('internet'):
                   assert url.scheme == 'https', (name, up)
               else:
-                  assert url.hostname.endswith(('.kaimahi', '.kagent', '.svc.cluster.local')), (name, up)
+                  assert url.hostname.endswith(('.kaimahi', '.svc.cluster.local')), (name, up)
           for name in ('orka', 'orka-coordinator'):
               assert t['upstreams'][name]['credential_file'] == '/etc/kaimahi/upstream-creds/orka/token'
           print('model upstreams: hosted entries marked; model credentials in plane custody')
@@ -555,11 +555,11 @@ jobs:
           # let a shard leave it by being rewritten.
           converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models",
                        "e2e-quickstart"]
-          # A bare `kmx up` is no longer what installs kagent — it is the
-          # Orka runtime, which is why `e2e-quickstart` can run one and still
-          # belong here. The legacy install is now reachable only by naming
-          # it, so that is what this forbids: the three explicit steps, which
-          # the previous bare-run rule let through.
+          # A bare `kmx up` installs the Orka runtime, which is why
+          # `e2e-quickstart` can run one and still belong here. The legacy
+          # install is reachable only by naming the retired runtime, so that
+          # is what this forbids: the three explicit steps, which the
+          # previous bare-run rule let through.
           # `kmx agent chat` is NOT on this list. It survived the retirement
           # as an Orka-only session against agents.core.orka.ai, so forbidding
           # it by name would refuse a supported command and say nothing about
@@ -570,11 +570,11 @@ jobs:
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
-               "the legacy governance command repoints a kagent Agent"),
+               "the legacy governance command repoints a legacy Agent"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b"),
                "the retired preset switch selects the legacy runtime"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
-               "the retired source editor edits a kagent Agent"),
+               "the retired source editor edits a legacy Agent"),
               (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
               (re.compile(r"kagent\.dev"), "a resource of the legacy runtime's API group"),
           ]
@@ -621,10 +621,10 @@ jobs:
               for pattern, why in forbidden:
                   if pattern.search(body):
                       problems.append(f"{job}: {pattern.pattern!r} — {why}")
-              # `ns` and `namespace` are the same kubectl request; require the
-              # tripwire without coupling the guard to one spelling.
+              # `ns` and `namespace` are the same request; the tripwire is
+              # required, the spelling the shard happens to use is not.
               if not re.search(r"get (?:ns|namespace) kagent\b", body):
-                  problems.append(f"{job}: no step asserts the kagent namespace is absent")
+                  problems.append(f"{job}: no step asserts the legacy runtime's namespace is absent")
           if problems:
               print("converted shards must prove a path the legacy runtime is absent from:", *problems, sep="\n  ")
               sys.exit(1)
@@ -659,7 +659,7 @@ jobs:
           if not any(re.search(r"^\s*kmx up\s*$", b, re.M) for b in bodies):
               problems.append("no bare `kmx up`: the job must set the runtime up the way the docs say to")
           # `kmx --context <ctx> orka install` is the spelling this job used
-          # when the bare run installed kagent instead of Orka.
+          # when a bare run installed the legacy runtime instead of Orka.
           if re.search(r"kmx (?:--\S+[ =]\S+ )*orka install\b", joined):
               problems.append("a standalone `orka install`: the bare `kmx up` already installs Orka")
           if "create serviceaccount orka-result-reader" in joined:
@@ -908,7 +908,7 @@ jobs:
       - name: The retired runtime is refused by name, not resolved to Orka
         run: |
           set -euo pipefail
-          go test ./internal/kmx/app ./cmd/kmx -run 'Retired|RetiredKagentRuntime' -count=1 -v | tee retirement.out
+          go test ./internal/kmx/app ./cmd/kmx -run 'Retired' -count=1 -v | tee retirement.out
           grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
           grep -q -- '--- PASS: TestLegacyRuntimeCommandsAreRetired' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
@@ -1033,14 +1033,14 @@ jobs:
   # hosted model upstreams, quickstart, owner-managed governance and the
   # Orka runtime. The required aggregator covers every shard; every cluster
   # step has a docs guard. `e2e-orka-runtime` and `e2e-resilience` are
-  # separate, kagent-free boundaries.
+  # separate, legacy-free boundaries.
   #
   # This shard was `e2e-runtime`. A bare `kmx up` installed the legacy
   # runtime there, and the hosted-model evidence below was appended to a
-  # job whose first half was a kagent conversation, a model-preset switch
-  # and an MCP tool call. None of that is a supported path any more, so
-  # what is left is the half that was never about kagent at all — the
-  # plane dialing a PUBLIC-looking model upstream — and the job is named
+  # job whose first half was a legacy-runtime conversation, a model-preset
+  # switch and an MCP tool call. None of that is a supported path any more,
+  # so what is left is the half that was never about that runtime at all —
+  # the plane dialing a PUBLIC-looking model upstream — and the job is named
   # for it. Nothing here needs an agent runtime: every governed call is a
   # direct authenticated TLS call to the plane's own model seam, and the
   # absence of the legacy namespace is asserted after bring-up and again
@@ -1062,9 +1062,9 @@ jobs:
       KUBE_CTX: kind-kaimahi-p1
       CRED: hosted-model
       # The caller's own namespace. The credential this shard issues used
-      # to land in `kagent` because that was the command's default; here
-      # the destination is named at the call site and nothing inherits
-      # one.
+      # to land in the legacy runtime's namespace because that was the
+      # command's default; here the destination is named at the call site
+      # and nothing inherits one.
       CLIENT_NS: hosted-model-client
     defaults:
       run:
@@ -1243,10 +1243,10 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
-            echo "namespace kagent exists: this shard is not proving a direct-seam path" >&2
+            echo "the legacy runtime's namespace exists: this shard is not proving a direct-seam path" >&2
             exit 1
           fi
-          echo "no kagent namespace: every hosted-upstream claim above came from the plane's own seam"
+          echo "no legacy namespace: every hosted-upstream claim above came from the plane's own seam"
       - name: "Hosted models: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1337,9 +1337,9 @@ jobs:
       # is run as its own step below, where its digest verification and its
       # Provider's readiness are ASSERTED — folded into the bring-up they
       # would merely have happened, and every credential, budget and ledger
-      # claim below would rest on a runtime nothing had checked. No kagent
-      # is installed on this path at all, which the tripwire states.
-      - name: Cluster, Ollama and the model — no kagent
+      # claim below would rest on a runtime nothing had checked. No legacy
+      # runtime is installed on this path at all, which the tripwire states.
+      - name: Cluster, Ollama and the model — no legacy runtime
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
@@ -1672,10 +1672,10 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
-            echo "namespace kagent exists: this shard is not proving an owner-managed path" >&2
+            echo "the legacy runtime's namespace exists: this shard is not proving an owner-managed path" >&2
             exit 1
           fi
-          echo "no kagent namespace: every spend, expiry and budget claim above came from Orka, the plane and the owner's Deployment"
+          echo "no legacy namespace: every spend, expiry and budget claim above came from Orka, the plane and the owner's Deployment"
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1712,9 +1712,9 @@ jobs:
   # the job stops proving the thing it exists to prove.
   # Model protocols, overlay safety, ordinary budget recovery, races and metrics.
   #
-  # This shard used to drive the plane through kagent: `kmx up` installed
-  # the chart, `kmx govern` repointed a kagent Agent at the seam, and
-  # `kmx agent chat` was what produced a ledger row. None of that is a
+  # This shard used to drive the plane through the legacy runtime: `kmx up`
+  # installed the chart, `kmx govern` repointed a legacy Agent at the seam,
+  # and `kmx agent chat` was what produced a ledger row. None of that is a
   # supported path any more. Nothing here needs an agent runtime: the
   # governed caller is a direct, authenticated, TLS call to the plane's
   # own model seam under a credential issued into an explicitly named
@@ -1722,12 +1722,12 @@ jobs:
   # committed upstreams do not speak, since an agent's OpenAI client
   # speaks one shape and retries on its own.
   #
-  # What went with kagent rather than being translated: the combined
-  # `kmx status` assertions and the raw MCP inventory (both were counts of
-  # legacy objects), and the cannot-tell status probe, which minted a
-  # reader for kagent CRDs. Status is rebuilt on surviving evidence in its
-  # own change; a rewritten probe here would have asserted less while
-  # looking the same.
+  # What went with the legacy runtime rather than being translated: the
+  # combined `kmx status` assertions and the raw MCP inventory (both were
+  # counts of legacy objects), and the cannot-tell status probe, which
+  # minted a reader for the legacy CRDs. Status is rebuilt on surviving
+  # evidence in its own change; a rewritten probe here would have asserted
+  # less while looking the same.
   e2e-models:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1737,7 +1737,8 @@ jobs:
       CRED: model-ci
       # The caller's own namespace. Every credential this shard issues is
       # written here by name: the destination is stated at each call site
-      # rather than inherited from a default that used to be `kagent`.
+      # rather than inherited from a default that used to be the legacy
+      # runtime's own namespace.
       CLIENT_NS: model-client
     defaults:
       run:
@@ -1780,7 +1781,7 @@ jobs:
       # credential. A bare `kmx up` would install the pinned Orka release
       # that no metering, budget or onboarding claim below reads, and the
       # tripwire states the other runtime is absent too.
-      - name: Cluster, Ollama and the model — no kagent
+      - name: Cluster, Ollama and the model — no legacy runtime
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
@@ -2245,10 +2246,10 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
-            echo "namespace kagent exists: this shard is not proving a direct-seam path" >&2
+            echo "the legacy runtime's namespace exists: this shard is not proving a direct-seam path" >&2
             exit 1
           fi
-          echo "no kagent namespace: every claim above came from the plane's own seam"
+          echo "no legacy namespace: every claim above came from the plane's own seam"
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2288,9 +2289,9 @@ jobs:
   # mid-cycle, a Postgres outage, both replicas restarted, backup and
   # restore.
   #
-  # This shard used to drive the plane through kagent: `kmx up` installed
-  # the chart, `kmx govern` repointed a kagent Agent at the seam, and
-  # `kmx agent chat` was the thing that produced a ledger row. None of
+  # This shard used to drive the plane through the legacy runtime: `kmx up`
+  # installed the chart, `kmx govern` repointed a legacy Agent at the seam,
+  # and `kmx agent chat` was the thing that produced a ledger row. None of
   # that is a supported path any more, and translating those assertions
   # onto Orka would have claimed something this repository cannot claim:
   # the pinned Orka Provider schema has no field naming a private
@@ -2360,9 +2361,9 @@ jobs:
       # is run as its own step below, where its digest verification and its
       # Provider's readiness are ASSERTED before `kmx migrate` depends on
       # them — folded into the bring-up, the resilience claims below would
-      # rest on a runtime nothing had checked. No kagent is installed on this
-      # path at all, which the tripwire states.
-      - name: Cluster, Ollama and the model — no kagent
+      # rest on a runtime nothing had checked. No legacy runtime is
+      # installed on this path at all, which the tripwire states.
+      - name: Cluster, Ollama and the model — no legacy runtime
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
@@ -2606,10 +2607,10 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
-            echo "namespace kagent exists: this shard is not proving an owner-managed path" >&2
+            echo "the legacy runtime's namespace exists: this shard is not proving an owner-managed path" >&2
             exit 1
           fi
-          echo "no kagent namespace: every claim above came from Orka, the plane and the owner's Deployment"
+          echo "no legacy namespace: every claim above came from Orka, the plane and the owner's Deployment"
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2791,7 +2792,7 @@ jobs:
           EOF
           # No legacy runtime was installed by anything on this path.
           if "$k" --context kind-kmx-quickstart get ns kagent >/dev/null 2>&1; then
-            echo "namespace kagent exists on the supported path"; exit 1
+            echo "namespace exists on the supported path: the legacy runtime is installed"; exit 1
           fi
           # No Helm release anywhere: the runtime is a pinned manifest.
           if "$k" --context kind-kmx-quickstart get secret -A \
@@ -2856,14 +2857,14 @@ jobs:
           # image and model bytes coming down the wire.
           #
           # THAT BASELINE IS NOW STALE and deliberately not replaced by a
-          # guess. It measured the kagent journey (a Helm chart, a reduced
-          # release, an A2A invoke); this job now measures the Orka journey (a
-          # pinned manifest, a Provider, an Agent and a Task). The two are not
-          # comparable, and a number nobody measured is worse than an honest
-          # stale one. The ceiling below is UNCHANGED until a green run on this
-          # runner class reports a real figure — whoever sees that run first
-          # should record it here, with the run named, and move the ceiling
-          # with it in the same commit.
+          # guess. It measured the legacy runtime's journey (a Helm chart, a
+          # reduced release, an A2A invoke); this job now measures the Orka
+          # journey (a pinned manifest, a Provider, an Agent and a Task). The
+          # two are not comparable, and a number nobody measured is worse than
+          # an honest stale one. The ceiling below is UNCHANGED until a green
+          # run on this runner class reports a real figure — whoever sees that
+          # run first should record it here, with the run named, and move the
+          # ceiling with it in the same commit.
           #
           # The ceiling is the old baseline doubled. Time from one command to a
           # working agent is the number the front door exists to move, and a
@@ -2895,7 +2896,8 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
-  # The Orka runtime, proved on every pull request and without kagent.
+  # The Orka runtime, proved on every pull request and without the legacy
+  # runtime.
   #
   # This is a SEPARATE boundary from the shards above, and it is additive:
   # nothing here installs, reads or asserts the legacy runtime, and nothing
@@ -2951,8 +2953,8 @@ jobs:
       # Provider's readiness asserted — a bare `kmx up` would have installed
       # Orka already, and that step would then be asserting about somebody
       # else's work. The other half of this shard's point is what the Orka
-      # path does NOT need: no Helm release, no kagent namespace, no chart.
-      - name: Cluster, Ollama and the model — no kagent, no Helm release
+      # path does NOT need: no Helm release, no legacy namespace, no chart.
+      - name: Cluster, Ollama and the model — no legacy runtime, no Helm release
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail

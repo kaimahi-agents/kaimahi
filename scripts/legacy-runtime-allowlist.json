@@ -2,7 +2,6 @@
   "why": "Every line in this tree that may still name the retired legacy agent runtime, one at a time, with the reason it earns its place. scripts/check-legacy-runtime.py refuses every other mention. An entry that stops matching is a failure there, so this file cannot outlive the lines it describes.",
   "historical_files": [
     "CHANGELOG.md",
-    "docs/COORDINATION.md",
     "docs/reviews/"
   ],
   "lines": [
@@ -23,6 +22,108 @@
       "text": "\"kubectl -n kagent get agents.kagent.dev\",",
       "category": "negative",
       "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --container-engine=podman use kagent\",",
+      "category": "negative",
+      "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kubectl get ns kagent\",",
+      "category": "negative",
+      "why": "A negative control the patterns must NOT match: asking a cluster whether the namespace exists is the absence assertion, not an install."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(r\"kagent\\.dev\", \"a resource of the legacy runtime's API group\")]:",
+      "category": "negative",
+      "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
+      "category": "negative",
+      "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"--runtime(?:=|\\s+)kagent\\b\"), \"a surviving command aimed at the legacy runtime\"),",
+      "category": "negative",
+      "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
+      "category": "negative",
+      "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"kagent\\.dev\"), \"a resource of the legacy runtime's API group\"),",
+      "category": "negative",
+      "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "assert \"kagent\" not in r[\"manifest\"], r[\"manifest\"]",
+      "category": "negative",
+      "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "grep -i kagent quickstart.out; exit 1",
+      "category": "negative",
+      "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "grep -i kagent up-after-quickstart.out; exit 1",
+      "category": "negative",
+      "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out",
+      "category": "negative",
+      "why": "Asserts the named refusal test actually PASSED: a renamed or deleted refusal would otherwise leave the step green with nothing proved."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if \"$k\" --context kind-kmx-quickstart get ns kagent >/dev/null 2>&1; then",
+      "category": "negative",
+      "why": "The shard tripwire: the retired runtime's namespace must not exist. The assertion has to name the namespace it is asking a cluster about."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if grep -qi 'kagent' quickstart.out; then",
+      "category": "negative",
+      "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if grep -qi 'kagent' up-after-quickstart.out; then",
+      "category": "negative",
+      "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then",
+      "category": "negative",
+      "why": "The shard tripwire: the retired runtime's namespace must not exist. The assertion has to name the namespace it is asking a cluster about."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if kubectl --context kind-kmx-orka get namespace kagent >/dev/null 2>&1; then",
+      "category": "negative",
+      "why": "The shard tripwire: the retired runtime's namespace must not exist. The assertion has to name the namespace it is asking a cluster about."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "if not re.search(r\"get (?:ns|namespace) kagent\\b\", body):",
+      "category": "negative",
+      "why": "The tripwire the converted shards are required to carry: each one has to assert the legacy namespace is absent rather than leave it to the commands it happens to run."
     },
     {
       "path": "cmd/kmx/lift_commands_test.go",
@@ -47,6 +148,36 @@
       "text": "// were kagent's alone: a resumable server-side session and the raw A2A task",
       "category": "negative",
       "why": "Bounded refusal tests at the command layer for the removed runtime-only commands."
+    },
+    {
+      "path": "docs/COORDINATION.md",
+      "text": "- **Native-Orka-only versus kagent YAML authoring remains OPEN.**",
+      "category": "future",
+      "why": "An explicitly unsupported future: YAML authoring for the retired runtime versus native Orka is an open question, and docs/orka.md is a recommendation rather than a ruling. A note that nothing is settled is not support."
+    },
+    {
+      "path": "docs/COORDINATION.md",
+      "text": "| P1: kagent hello world on kind | W1 worker | PR #2 MERGED | — |",
+      "category": "historical",
+      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
+    },
+    {
+      "path": "docs/COORDINATION.md",
+      "text": "| P2: LLM-enhanced via ModelConfig | W2 worker | PR #3 MERGED | — |",
+      "category": "historical",
+      "why": "The board's record of work that was done: a merged PR naming the legacy API kind it was built on. The row is past tense and names nothing a reader could install."
+    },
+    {
+      "path": "docs/COORDINATION.md",
+      "text": "| Orka authoring and migration research | branch `spike/kagent-orka-compat` | PR #174 MERGED | Research, 2026-09-10 |",
+      "category": "historical",
+      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
+    },
+    {
+      "path": "docs/COORDINATION.md",
+      "text": "| Native Orka recommendation | branch `docs/kagent-on-orka-boundary` | PR #177 MERGED | Recommendation, not a ruling |",
+      "category": "historical",
+      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
     },
     {
       "path": "internal/kmx/app/agent_tui_inference_test.go",

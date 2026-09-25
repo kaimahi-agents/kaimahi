@@ -17,11 +17,29 @@
       "replace": "                if not rule.everywhere:\n                    continue"
     },
     {
-      "name": "the hard rules stop applying to workflows",
-      "breaks": "A workflow could install the retired runtime's chart or its image again. The whole reason hard identifiers are refused EVERYWHERE is that a workflow is where an install would come back.",
+      "name": "the hard rules stop applying off the named surfaces",
+      "breaks": "Every rule becomes a surface rule, so the changelog, a blueprint or any file outside the named surfaces could carry the retired runtime's API group, its image or its version pin untouched. The whole reason hard identifiers are refused EVERYWHERE is that they have no innocent reading anywhere.",
       "find": "                if not rule.everywhere and not current:",
-      "replace": "                if not path.startswith(CURRENT_SURFACES):",
+      "replace": "                if not current:",
       "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"]
+    },
+    {
+      "name": "the workflows drop out of the bare-name rule",
+      "breaks": "A workflow is where an install comes back. With that directory off the named surfaces, a step that CREATES the retired runtime's namespace, or names it in any other command, is judged by the hard identifiers alone and passes.",
+      "find": "\"docs/\", \".github/\",",
+      "replace": "\"docs/\","
+    },
+    {
+      "name": "a category may be claimed on any path",
+      "breaks": "The widest exemption left: an active documentation instruction labelled `negative` keeps its line for ever, because nothing checks that a document cannot make an absence assertion. A category is an argument for keeping a line, and an argument nobody binds to a path is available to every line in the tree.",
+      "find": "        wrong = category_problem(entry)\n        if wrong:",
+      "replace": "        wrong = None\n        if wrong:"
+    },
+    {
+      "name": "any file may be declared historical as a whole",
+      "breaks": "Whole-file history is the widest exemption in the policy. With the set unpinned, a current document goes back to being declared history in one line — the coordination board's live policy included — and every rule stops applying to it.",
+      "find": "    for entry in historical:\n        if entry not in HISTORICAL_FILES:",
+      "replace": "    for entry in []:\n        if entry not in HISTORICAL_FILES:"
     },
     {
       "name": "an exemption matches by substring instead of by exact line",
@@ -46,12 +64,6 @@
       "breaks": "An empty enumeration, a scan that read nothing, or a whole directory declared historical all pass. Every one of those looks exactly like success.",
       "find": "    if bad:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)",
       "replace": "    if False:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)"
-    },
-    {
-      "name": "a current documentation directory can be declared historical",
-      "breaks": "The exemption that costs the most and is easiest to write: one line in the allowlist turns the whole docs tree into 'history' and the gate covers nothing a reader will ever read.",
-      "find": "    for path in MUST_ENFORCE:\n        if historical_covers(path, historical):",
-      "replace": "    for path in []:\n        if historical_covers(path, historical):"
     },
     {
       "name": "a directory exemption is read as a bare prefix",
