@@ -238,7 +238,7 @@ func (a *App) stepQuickstartAgent() error {
 	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
 		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w; keep the drifted resource and run `kmx agent create` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
 		}
 		if id == nil {
 			created, err := a.createOrkaObject(ctx, opt.Namespace, doc)

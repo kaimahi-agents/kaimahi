@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -172,6 +173,37 @@ func TestQuickstartOrkaBundleReusesExactMatchesAndAsksAFreshTask(t *testing.T) {
 	err := a.stepQuickstartAgent()
 	if err == nil || !strings.Contains(err.Error(), "different configuration") {
 		t.Fatalf("a drifted bundle was not refused: %v", err)
+	}
+}
+
+// A drifted fixed bundle is somebody's deliberate change, so quickstart
+// refuses it rather than overwrite it — but it still owes the operator a way
+// out: keep the edit under a different Agent name, or delete the fixed
+// hello-world-agent so a rerun recreates it. The remedy must be reachable by
+// unwrapping (%w), not just readable in the flattened message, so callers
+// that inspect the error chain still see the original cause.
+func TestQuickstartDriftedBundleOffersRemedies(t *testing.T) {
+	a, _ := quickstartOrkaFixture(t)
+	if err := a.stepQuickstartAgent(); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	a.Cfg.Model = "some-other-model"
+	err := a.stepQuickstartAgent()
+	if err == nil {
+		t.Fatal("a drifted bundle was not refused")
+	}
+	if !strings.Contains(err.Error(), "different configuration") {
+		t.Fatalf("lost the underlying drift explanation: %v", err)
+	}
+	if !strings.Contains(err.Error(), "kmx agent create") {
+		t.Fatalf("missing the keep-and-rename remedy: %v", err)
+	}
+	if !strings.Contains(err.Error(), "delete the fixed "+QuickstartAgent) {
+		t.Fatalf("missing the delete-and-recreate remedy: %v", err)
+	}
+	if unwrapped := errors.Unwrap(err); unwrapped == nil || !strings.Contains(unwrapped.Error(), "different configuration") {
+		t.Fatalf("remedies were not wrapped with %%w over matchingOrkaResource's error: %v", err)
 	}
 }
 

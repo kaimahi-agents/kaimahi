@@ -95,9 +95,11 @@ kagent Agent's ModelConfig. Author an Orka Agent with `bin/kmx agent create`, or
 get a first answer with `bin/kmx quickstart`.
 
 The legacy kagent loop is explicit, and keeps `govern` because it deploys the
-agent that command names:
+agent that command names. Start by establishing the live cluster and Orka runtime;
+the component steps require that preceding bare `up`:
 
 ```bash
+bin/kmx up
 bin/kmx up --step kagent
 bin/kmx up --step agent
 bin/kmx plane --source .
