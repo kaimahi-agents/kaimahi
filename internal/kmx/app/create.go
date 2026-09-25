@@ -114,7 +114,7 @@ func (a *App) modelConfigExists(name, namespace string) (bool, error) {
 	case isNotFound(err):
 		return false, nil
 	default:
-		return false, fmt.Errorf("cannot read modelconfig %q in namespace %s — refusing to guess whether this cluster has a governance plane: %w", name, namespace, err)
+		return false, fmt.Errorf("cannot read modelconfig %q in namespace %s — refusing to guess whether this cluster has a model-traffic bridge: %w", name, namespace, err)
 	}
 }
 

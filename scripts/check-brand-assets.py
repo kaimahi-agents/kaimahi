@@ -32,7 +32,7 @@ SVG_REQUIREMENTS = {
     "brand/ketu.svg": "Kaimahi ketu mark",
     "brand/mark.svg": "Kaimahi compact mark",
     "brand/wordmark.svg": "Kaimahi wordmark",
-    "docs/assets/architecture.svg": "Kaimahi governance architecture",
+    "docs/assets/architecture.svg": "Kaimahi model-traffic architecture",
 }
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
