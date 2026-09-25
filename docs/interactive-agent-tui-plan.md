@@ -20,11 +20,11 @@ bin/kmx console --local-context kind-dev --remote-context my-remote --namespace 
 ```
 
 Live reads need `kubectl`, configured credentials, and permission to discover API
-resources and list Agents and Providers/ModelConfigs. Tool details additionally
+resources and list Agents and Providers. Tool details additionally
 read Orka Tools; ConfigMap-backed prompts read their referenced ConfigMap key.
-Orka uses `--namespace`
-(default `orka-system`); kagent uses its fixed `kagent` namespace. Agent kinds are
-always queried by API group and labelled by runtime.
+The console reads `agents.core.orka.ai` in `--namespace` (default `orka-system`)
+and nothing else. It is an Orka workspace: every operation it offers — list,
+create, chat, inference, tools, lift — is an Orka operation.
 
 Without context flags, each column remembers its last `/env` selection. The
 remote column next prefers the last lift destination, then the configured kmx
@@ -55,17 +55,14 @@ across its name and detail rows, with `c` chat and `i` inspect hints on the entr
 Enter opens a popup of available actions. `i` opens an opaque, centered details window
 over the inventory with namespace, endpoint origin and inference readiness.
 The inspector also shows the system prompt and configured tools, including
-enabled/disabled state, Orka tool descriptions/transports, and kagent MCP server
-references and allowlisted tool names. `p` jumps to the prompt, `t` to tools;
+enabled/disabled state and Orka tool descriptions/transports. `p` jumps to the prompt, `t` to tools;
 arrows or `j`/`k`, Page Up/Down, and Home/End scroll the content. Multiline prompts
 retain indentation and wrap at word boundaries to the panel width. Labels are
 highlighted separately from values, and wrapped descriptions/prompts maintain
 their indentation on continuation lines. Unreadable ConfigMaps or tool
 definitions are reported as unavailable.
 
-Each agent entry shows enabled/configured tool counts and tool names. MCP server
-references without an explicit allowlist are marked dynamic (their advertised
-tool count is unknown), rather than being counted as a single tool.
+Each agent entry shows enabled/configured tool counts and tool names.
 
 Esc or Enter closes inspection and restores the same selection. External Orka runtimes
 are identified and have inspection only.
@@ -76,8 +73,8 @@ defaults resolve missing agent model overrides. Missing/unreadable inference
 information is `unknown`. Errors stay visible alongside any successfully read
 agents. Endpoint details omit credentials, paths and query parameters.
 Missing/null Kubernetes list items are reported as errors, not empty inventory.
-kagent ConfigMap-backed `systemMessageFrom` prompts are resolved; Secret-backed
-prompt references are identified without reading their contents.
+ConfigMap-backed prompt references are resolved; other prompt references are
+identified without reading their contents.
 
 Refresh with `r` or `/refresh`; reads run independently for each column. Selection
 is retained by runtime/namespace/name when the selected agent still exists.
@@ -118,12 +115,12 @@ Chat and inspection resolve agents in the focused column. Lift always resolves
 local native Orka agents, then suggests remote environments and `new`. Duplicate
 names within a column use `runtime/namespace/name` completion to disambiguate.
 
-The Enter actions menu also offers **Edit inference** (`f` in the menu) and,
-for native Orka agents, **Edit tools** (`t` in the menu). Inference opens a window
+The Enter actions menu also offers **Edit inference** (`f` in the menu) and
+**Edit tools** (`t` in the menu). Inference opens a window
 over the inventory. Select an existing Provider in the agent namespace plus an
-optional model override for Orka, or an existing ModelConfig for kagent. An empty
-Orka override uses the Provider default. Saving updates the agent reference, not
-the shared Provider or ModelConfig. The review names the agent, context and
+optional model override. An empty
+override uses the Provider default. Saving updates the agent reference, not
+the shared Provider. The review names the agent, context and
 configuration before saving. Saving and cancellation remain inside the overlay.
 The agent's current cross-namespace Orka Provider is included with its namespace,
 which is retained when selected and saved.
@@ -136,11 +133,11 @@ an editable default derived from the source kind/provider and model settings.
 
 | Source | Setup and execution |
 |---|---|
-| Azure (when `az` is installed) | Browse subscriptions, Foundry/OpenAI resources and ready deployments. For local kind, save a Foundry host connector. For remote Kubernetes, retrieve an API key during setup, create a cluster Secret and Provider/ModelConfig, and test a small billed request from a cluster Job. |
+| Azure (when `az` is installed) | Browse subscriptions, Foundry/OpenAI resources and ready deployments. For local kind, save a Foundry host connector. For remote Kubernetes, retrieve an API key during setup, create a cluster Secret and Provider, and test a small billed request from a cluster Job. |
 | Foundry | Local kind: endpoint, deployment and optional tenant using host Azure login. Remote Kubernetes: endpoint, deployment and an existing cluster Secret/key reference; no local Azure CLI required. Remote setup probes inference from the cluster. |
-| Ollama | Enter a connector name, cluster-reachable Ollama endpoint and installed model. Create an Orka Provider or kagent ModelConfig and select it. Orka uses a new, keyless dummy Secret required by its Provider schema. |
-| Copilot | Local kind/native Orka only. Select a model from an installed, authenticated Copilot CLI. Not offered or permitted for remote environments. |
-| API key | Enter connector name, provider type, endpoint, model and an existing Kubernetes Secret/key reference. Create a Provider or ModelConfig. The form does not collect the credential value. Orka supports OpenAI/Anthropic; kagent supports OpenAI-compatible endpoints. |
+| Ollama | Enter a connector name, cluster-reachable Ollama endpoint and installed model. Create an Orka Provider and select it. Orka uses a new, keyless dummy Secret required by its Provider schema. |
+| Copilot | Local kind only. Select a model from an installed, authenticated Copilot CLI. Not offered or permitted for remote environments. |
+| API key | Enter connector name, provider type, endpoint, model and an existing Kubernetes Secret/key reference. Create an Orka Provider. The form does not collect the credential value. OpenAI and Anthropic provider types are supported. |
 
 These forms configure connectors to existing services; they do not provision a
 Foundry resource/deployment, install Ollama/Copilot, or download model weights.
@@ -169,7 +166,7 @@ and Enter saves. Automatic Orka tools remain locked. Both editors use
 resource-version checks to reject concurrent agent edits and refresh inventory
 on return (host-only source changes do not patch the cluster). Demo inference
 forms can be completed and reviewed without writing. External Orka
-runtimes remain inspection-only; kagent tool editing is not exposed.
+runtimes remain inspection-only.
 
 ## Chat and lift
 
@@ -187,7 +184,7 @@ visible until Enter/Esc closes it, and inventory refreshes after the operation.
 form without creating anything. This flow does not run quickstart infrastructure
 provisioning against the selected environment.
 
-Chat opens the existing runtime-specific interactive session; `/exit` returns
+Chat opens the existing Orka interactive session; `/exit` returns
 to the dashboard. Lift opens the existing target prerequisite, inference, tools,
 deployment review and progress panes. Both return to a refreshed overview.
 

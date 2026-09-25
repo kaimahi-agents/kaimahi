@@ -104,6 +104,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Orka Agent is edited with `kubectl edit agents.core.orka.ai <name>` and read
   back with `kmx agent show`.
 
+- **`kmx console` drives Orka Agents only.** The dashboard used to list
+  `agents.kagent.dev` beside Orka Agents and offer chat, inference editing and
+  connector creation on those rows. Every one of those operations was already
+  gone by the time the row was drawn — console chat dispatches
+  `--runtime kagent`, which is refused by name — so the inventory was
+  advertising actions that could not run. The console now reads
+  `agents.core.orka.ai` in `--namespace` and nothing else, even on a cluster
+  that still serves the legacy kinds. Gone with them: the legacy ModelConfig
+  connector creation, its `spec.declarative.modelConfig` patch, its
+  `systemMessageFrom` prompt resolution and its dynamic-MCP tool counting,
+  which had no other producer. The `--namespace` flag no longer claims a
+  second fixed namespace is also read. **Upgrading:** nothing — no console
+  action for those objects reached a cluster successfully.
+
 - **`kmx agent chat` is Orka-only, and is a session.** `--runtime` accepts
   `auto` and `orka`; `--runtime kagent` is **refused by name** rather than
   quietly resolved to Orka, because a caller who named the legacy runtime
@@ -140,12 +154,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   **What deliberately remains, for the slices that retire it:**
   `kmx up --step kagent|agent|tools-agent` still installs the legacy runtime
   and its two demonstration agents, the installer pins and manifests are
-  untouched, `kmx status` still reports the kagent namespace, and the
-  `kmx aks up --payload kagent` agents phase still governs what it deploys —
-  the one remaining caller of the retained internal preset switch, which is
-  explicitly transitional and reachable from no command. What changed is that
-  **nothing in the CLI drives those objects**: what those steps leave on a
-  cluster is now operated with kubectl.
+  untouched, and `kmx status` still reports the kagent namespace. Existing
+  kagent lift records remain readable for teardown, but their retired payload
+  cannot be created or resumed. **Nothing in the CLI drives those runtime
+  objects**: what the retained local steps leave on a cluster is now operated
+  with kubectl.
 
   **CI:** `kmx-clone-free` keeps its no-checkout premise, its bare `kmx up`,
   its Orka `agent create` Task with an exact expected answer read through the

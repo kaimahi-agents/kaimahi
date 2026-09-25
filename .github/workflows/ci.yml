@@ -581,9 +581,12 @@ jobs:
           forbidden = [
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
-              (re.compile(r"kmx govern\b"), "the legacy governance command repoints a kagent Agent"),
-              (re.compile(r"kmx use\b"), "the retired preset switch selects the legacy runtime"),
-              (re.compile(r"kmx agent edit\b"), "the retired source editor edits a kagent Agent"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
+               "the legacy governance command repoints a kagent Agent"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b"),
+               "the retired preset switch selects the legacy runtime"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
+               "the retired source editor edits a kagent Agent"),
               (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
               (re.compile(r"kagent\.dev"), "a v1alpha2 resource of the legacy runtime"),
           ]
@@ -593,9 +596,9 @@ jobs:
           must_match = [
               "kmx up --step kagent",
               "kmx --context kind-x up --step=tools-agent",
-              "kmx govern hello-world",
-              "kmx use kagent",
-              "kmx agent edit hello-world",
+              "kmx --context kind-x govern hello-world",
+              "kmx --container-engine=podman use kagent",
+              "kmx --context=kind-x agent edit hello-world",
               "kmx agent chat --runtime kagent hello-world",
               "kubectl -n kagent get agents.kagent.dev",
           ]
@@ -678,9 +681,12 @@ jobs:
           for pattern, why in [
                   (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
                    "an explicit legacy install step"),
-                  (r"\bkmx govern\b", "the retired governance command"),
-                  (r"\bkmx use\b", "the retired preset switch"),
-                  (r"\bkmx agent edit\b", "the retired source editor"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b",
+                   "the retired governance command"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b",
+                   "the retired preset switch"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
+                   "the retired source editor"),
                   (r"kagent\.dev", "a v1alpha2 resource of the legacy runtime")]:
               if re.search(pattern, joined):
                   problems.append(f"{why}: {pattern!r}")

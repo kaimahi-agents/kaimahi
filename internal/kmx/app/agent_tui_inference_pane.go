@@ -74,9 +74,6 @@ func (p *consoleInferencePane) sourceKinds() []string {
 		}
 		return kinds
 	}
-	if p.agent.Runtime == "kagent" {
-		return []string{"ollama", "apikey"}
-	}
 	kinds := []string{"foundry", "ollama", "copilot", "apikey"}
 	if p.azureAvailable {
 		kinds = append([]string{"azure"}, kinds...)
@@ -145,7 +142,7 @@ func (p *consoleInferencePane) readFields() error {
 		s.Provider, s.Endpoint, s.Model, s.Secret, s.SecretKey = v(0), v(1), v(2), v(3), v(4)
 	}
 	s.Name = consoleInferenceDefaultName(s)
-	if err := s.validate(p.agent.Runtime); err != nil {
+	if err := s.validate(); err != nil {
 		return err
 	}
 	p.source = s
@@ -276,7 +273,7 @@ func (m agentTUIModel) updateInference(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if p.source.Name == "" {
 					p.source.Name = consoleInferenceDefaultName(p.source)
 				}
-				p.err = p.source.validate(p.agent.Runtime)
+				p.err = p.source.validate()
 				if p.err == nil {
 					p.stage = "review"
 					p.selection = 0
@@ -340,7 +337,7 @@ func (m agentTUIModel) updateInference(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					selected := p.snapshot.Sources[p.selection]
 					p.source = selected
-					if selected.Kind == "cluster" && p.agent.Runtime == "orka" {
+					if selected.Kind == "cluster" {
 						p.model, _ = p.snapshot.Model["name"].(string)
 						p.setFields("cluster")
 						p.source = selected

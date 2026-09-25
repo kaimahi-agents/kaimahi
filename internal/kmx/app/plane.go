@@ -226,7 +226,7 @@ func (a *App) refuseForeignImageTag() error {
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
 		"  `kmx plane` is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
-		"  A registry-backed cluster renders the manifest instead — `kmx aks up --payload <orka|kagent> --step plane` (docs/aks.md).",
+		"  A registry-backed cluster renders the manifest instead — `kmx aks up --payload orka --step plane` (docs/aks.md).",
 		set, PlaneImage)
 }
 
