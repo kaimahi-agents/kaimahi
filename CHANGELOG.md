@@ -36,7 +36,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   exercise a protocol the committed upstreams do not speak: an agent's OpenAI
   client sends one shape and retries a 429 on its own. The shard installs no
   kagent and fails closed — after bring-up, after the first credential is
-  issued, and again at the end — if that namespace ever appears.
+  issued, and again at the end — if the legacy `kagent` namespace ever appears.
 
   What it asserts is unchanged in substance: a metered `free` ollama row
   carrying the upstream's own token counts and its caller fields, eight
