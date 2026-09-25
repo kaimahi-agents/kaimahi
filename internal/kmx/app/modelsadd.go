@@ -213,8 +213,8 @@ func (a *App) AddModel(opt AddModelOptions) error {
 	return nil
 }
 
-// seamAddress prints client wiring rather than generating a kagent resource:
-// the owner's runtime may not use kagent.
+// seamAddress prints client wiring rather than generating a runtime resource:
+// kmx does not know what the owner's runtime reads its endpoint from.
 func (a *App) seamAddress(spec scaffold.ModelSpec) {
 	a.notef("Point a client at it:")
 	a.notef("  base URL:   %s", scaffold.SeamBaseURL(spec.Name))

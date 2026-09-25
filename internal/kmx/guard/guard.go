@@ -250,7 +250,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 
 	namespaces := req.Namespaces
 	if namespaces == "" {
-		namespaces = "kagent, kaimahi, ollama"
+		namespaces = "kaimahi, ollama, orka-system"
 	}
 	hostShown := posture.Host
 	if hostShown == "" {

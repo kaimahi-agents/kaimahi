@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -193,6 +195,49 @@ func TestBothEnginesClearInheritedKindProviderBeforeSelecting(t *testing.T) {
 		}
 		if got := c.KindEnv(); !reflect.DeepEqual(got, tc.add) {
 			t.Errorf("%s add = %v, want %v", tc.engine, got, tc.add)
+		}
+	}
+}
+
+// The guard banner's namespace list is a CLAIM about where a command lands,
+// and the only namespaces anything supported writes to are the plane's, the
+// model server's and the Orka runtime's. A fourth name on that line is a
+// namespace no command touches, which makes the banner wrong in the one
+// direction that matters: an operator reads it, sees a runtime that is not
+// installed, and learns the banner is decoration.
+func TestGuardNamespacesAreTheSupportedOnes(t *testing.T) {
+	const want = "kaimahi, ollama, orka-system"
+	if GuardNamespaces != want {
+		t.Fatalf("GuardNamespaces = %q, want %q", GuardNamespaces, want)
+	}
+}
+
+// One list, four readers. The Go constant, the Go guard's own fallback, the
+// Makefile's GUARD_NS and the shell guard's default all print the same
+// sentence to an operator, and three of them are strings nothing else would
+// notice drifting. Before this, they said three different things.
+func TestEveryGuardNamespaceListAgrees(t *testing.T) {
+	for _, tc := range []struct{ path, pattern string }{
+		{"Makefile", "GUARD_NS ?= "},
+		{filepath.Join("scripts", "kube-guard.sh"), `NS="${KUBE_NS:-`},
+		{filepath.Join("internal", "kmx", "guard", "guard.go"), "namespaces = "},
+	} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "..", tc.path))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		var found string
+		for _, line := range strings.Split(string(b), "\n") {
+			if i := strings.Index(line, tc.pattern); i >= 0 {
+				found = strings.Trim(strings.TrimSpace(line[i+len(tc.pattern):]), `"}`)
+				break
+			}
+		}
+		if found == "" {
+			t.Fatalf("%s: no line carrying %q — this test no longer reads anything", tc.path, tc.pattern)
+		}
+		if found != GuardNamespaces {
+			t.Errorf("%s names %q, want the one list %q", tc.path, found, GuardNamespaces)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 -- +goose Up
 -- Inbound connectors: the first INGRESS surface in the plane. An
--- external event (a webhook) may trigger a kagent agent through the
+-- external event (a webhook) may trigger an agent through the
 -- plane — authenticated, replay-protected, rate-limited, approved,
 -- budget-gated, and audited. Two changes:
 --

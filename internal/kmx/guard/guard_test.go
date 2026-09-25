@@ -180,7 +180,7 @@ func TestUnreadableKubeconfigRefuses(t *testing.T) {
 func TestAContextNobodyChoseIsRefusedWhenThereAreClustersToConfuseItWith(t *testing.T) {
 	var out bytes.Buffer
 	err := Check(load(t), Request{
-		Action:  "install kagent",
+		Action:  "install orka",
 		Context: "kind-kaimahi-p1",
 		Source:  config.SourceDefault,
 		Command: "kmx up",
@@ -238,7 +238,7 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 	} {
 		var out bytes.Buffer
 		if err := Check(load(t), Request{
-			Action:  "install kagent",
+			Action:  "install orka",
 			Context: "kind-real",
 			Source:  source,
 			Command: "kmx up",
@@ -263,7 +263,7 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) {
 	var out bytes.Buffer
 	if err := Check(load(t), Request{
-		Action:  "install kagent",
+		Action:  "install orka",
 		Context: "kind-real", // the fixture's current-context
 		Source:  config.SourceDefault,
 		Command: "kmx up",

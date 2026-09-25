@@ -1,5 +1,5 @@
 // Package store is the plane's Postgres layer: credentials (hashes only),
-// budget caps, and the append-only spend ledger. Rewritten for the kagent
+// budget caps, and the append-only spend ledger. Rewritten for the legacy
 // architecture — tomte-old's store carried the replaced control plane
 // (tenants, runs, workflows); only its spend-ledger pattern survives here.
 package store

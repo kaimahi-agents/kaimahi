@@ -56,7 +56,7 @@ func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 
 // Reuse the existing mutation guard, but read its metadata through the same
 // pinned, cancellable adapter as this command's other reads. Namespace is the
-// user's explicit Orka selection, not the legacy kagent banner's fixed list.
+// user's explicit Orka selection, not the wider banner's fixed list.
 func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 	if a.guarded {
 		return nil

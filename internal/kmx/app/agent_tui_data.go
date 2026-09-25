@@ -228,11 +228,11 @@ func decodeConsoleList(raw []byte, dst any) error {
 // Inventory reads are bounded and independent per column. Missing API groups
 // are empty inventories; permission/transport errors remain visible as errors.
 //
-// The console reads Orka Agents and nothing else. The legacy kagent kinds are
-// not listed even when a cluster still serves them: every operation this
+// The console reads Orka Agents and nothing else. The retired runtime's kinds
+// are not listed even when a cluster still serves them: every operation this
 // dashboard offers — chat, create, inference, tools, lift — was removed for
 // that runtime, so listing its Agents would advertise actions that cannot run.
-// What `kmx up --step kagent` leaves on a cluster is outside this command.
+// What an older installation left on a cluster is outside this command.
 func (a *App) agentTUIInventory(ctx context.Context, env agentTUIEnvironment, namespace string) ([]agentTUIAgent, error) {
 	a = env.app(a)
 	raw, err := a.orkaCapture(ctx, nil, "api-resources", "-o", "name")

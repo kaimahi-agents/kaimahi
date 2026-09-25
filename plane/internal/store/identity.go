@@ -8,7 +8,7 @@ package store
 // That window is the only correlation the plane can SUBSTANTIATE. The
 // agent pod authenticates to the model proxy with its
 // credential and nothing else; a header the agent set would be a claim
-// by the thing being governed, and forking kagent to add a trusted one
+// by the thing being governed, and forking a runtime to add a trusted one
 // is exactly what the prime directive exists to stop. So the plane
 // vouches for what the plane itself observed at its own door, and says
 // plainly when it cannot.

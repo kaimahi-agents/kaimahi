@@ -97,7 +97,7 @@ func TestEveryPlaneManifestIsAppliedInKubectlsOrder(t *testing.T) {
 // secret --from-file` reads a path; this is the property that replaces that
 // file, so it is worth asserting rather than commenting.
 func TestSecretManifestCarriesValuesInTheDocumentOnly(t *testing.T) {
-	body := string(secretManifest("kaimahi-governed-token", "kagent",
+	body := string(secretManifest("kaimahi-governed-token", "orka-system",
 		map[string]string{"api-key": "kmh_" + strings.Repeat("a", 64)},
 		map[string]string{"kaimahi.dev/credential": "hello-world"}))
 
@@ -111,7 +111,7 @@ func TestSecretManifestCarriesValuesInTheDocumentOnly(t *testing.T) {
 	for _, want := range []string{
 		"kind: Secret",
 		"name: kaimahi-governed-token",
-		"namespace: kagent",
+		"namespace: orka-system",
 		`kaimahi.dev/credential: "hello-world"`,
 		"type: Opaque",
 	} {

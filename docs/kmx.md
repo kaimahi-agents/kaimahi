@@ -6,8 +6,8 @@ and `kmx migrate` for an existing application's **model traffic**. The Deploymen
 remains owner-managed. Installing Orka alone is not this migration; none of these
 operations silently governs application tools.
 
-The legacy kagent runtime is no longer part of kmx. Its installer steps, its
-manifests and its CLI surface are gone — `kmx up --step kagent|agent|tools-agent`
+The legacy runtime is no longer part of kmx. Its installer steps, its
+manifests and its CLI surface are gone — its three `kmx up --step` names
 are unknown steps, and `kmx govern`, `kmx use` and `kmx agent edit` were removed
 before them. A cluster that still carries that runtime is untouched and is
 operated with kubectl. `orka.harness.v2` is outside the direction.
@@ -44,8 +44,8 @@ an independent signature. See [releases](releases.md) for platforms and upgrades
 
 Local kind commands need Docker or Podman. kmx uses kind and kubectl from
 PATH first, otherwise fetches pinned, checksum-verified tools. Helm is no
-longer fetched or needed: the only thing that used it was the retired kagent
-chart install. No kagent CLI is fetched or cached either. Cached digests are
+longer fetched or needed: the only thing that used it was the retired
+chart install. No runtime CLI is fetched or cached either. Cached digests are
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
@@ -113,13 +113,13 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 
 | Command | Current behavior |
 |---|---|
-| `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no kagent, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no legacy runtime, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the legacy `kagent`, `agent` and `tools-agent` steps are removed and are refused as unknown |
-| `kmx aks up` / `kmx aks down` | Provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); `--payload kagent` is refused as retired, and an existing kagent lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
+| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
+| `kmx aks up` / `kmx aks down` | Provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
-| `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; `--runtime kagent` is refused by name |
+| `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; a `--runtime` naming the legacy runtime is refused by name |
 | `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Delegates entirely to `kmx orka status` — same reads, same answer on an unreadable cluster. `-o table` only |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
@@ -189,8 +189,8 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   not enable governance**, not that existing governance is absent. Success
   requires a completed task with a readable answer; stdout is one JSON document.
 - `status` has no `-o json|yaml`, and refuses them by name rather than printing
-  an empty document. The structured output counted kagent Agents and
-  ModelConfigs; nothing replaces that count, because `kmx migrate` routes the
+  an empty document. The structured output counted the legacy runtime's
+  Agents and model presets; nothing replaces that count, because `kmx migrate` routes the
   owner's own workloads and kmx cannot enumerate them. Read the cluster
   directly for machine-readable runtime facts.
 - Ledger caller claims are unverified client assertions; observed source
@@ -204,7 +204,7 @@ and agents, no guard/download/forward/mutation. Static completion works offline.
 
 ## `kmx agent create`
 
-**This command authors native Orka, not kagent.** Every bundle contains a new,
+**This command authors native Orka, not the legacy runtime.** Every bundle contains a new,
 same-name Provider and referencing Agent in `core.orka.ai/v1alpha1`, a metadata-only
 Secret skeleton, and optionally a fresh Task. It does not install Orka or adopt
 the installer's shared Provider. Start with the [first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
@@ -222,7 +222,7 @@ kmx agent create preview --namespace orka-system \
 Namespace, Provider type (`openai|anthropic`), actual model ID and existing Secret
 name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
 not credential values. `--instructions` reads a system-prompt file; `--tools` and
-`--skills` name Orka references, not kagent `server:tool` selections or translated
+`--skills` name Orka references, not legacy `server:tool` selections or translated
 MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
 - `--out -` prints YAML only and implies offline; `--no-apply` writes an exclusive
@@ -264,7 +264,7 @@ prompts. Non-interactive use requires a name. No agent name is reserved: the
 embedded examples that occupied `hello-world` and `hello-tools` are gone.
 
 `--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
-scaffold, ModelConfig/MCP conversion, injected governance or copied kagent pod
+scaffold, model-preset/MCP conversion, injected governance or copied legacy pod
 hardening. Keep application image/placement/identity in the owner's Deployment;
 [migration](migrate.md) routes its model traffic, not a BYO definition. This
 native implementation does not settle the open authoring-format decision or
@@ -350,7 +350,7 @@ kmx models add house --url http://vllm.demo:8000/v1/responses --classification f
 ```
 
 Writes three documents: an overlay ConfigMap, proxy egress and server ingress;
-no kagent ModelConfig. kmx prints the seam address/CA requirements. Supply the
+no legacy model preset. kmx prints the seam address/CA requirements. Supply the
 **whole POST URL**, including path, over in-cluster HTTP. TLS/keyed endpoints
 need reviewed committed custody configuration. Explicit `free|metered` is
 required; protocol is inferred only from recognized paths, otherwise declared,
@@ -388,7 +388,7 @@ share the same pre-issue binding checks, so neither can overwrite a one-time
 token, and both refuse a destination namespace that is blank or absent before
 anything is minted — there is no default namespace, because a token issued
 into a guessed one cannot be recovered. Legacy preset governance is gone with
-the `kagent` lift payload that was its last caller.
+the legacy lift payload that was its last caller.
 
 It uses cluster access plus the admin bearer on a pod port-forward, not a
 public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued

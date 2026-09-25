@@ -2,7 +2,7 @@
 
 Start with [getting started](getting-started.md). Orka installation, native
 Agent creation and model-traffic migration are the current paths; the final
-section below is for the legacy kagent/plane implementation that still exists.
+section below is for the legacy plane implementation that still exists.
 
 ## Why is `kmx orka` missing?
 
@@ -26,14 +26,15 @@ would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
-## Can kagent YAML create an Orka agent?
+## Can the legacy runtime's YAML create an Orka agent?
 
 There is no supported translation in the current CLI. `kmx agent create`
-authors a native Orka Provider + Agent and optional Task, not kagent resources
+authors a native Orka Provider + Agent and optional Task, not legacy resources
 or BYO images. `agent chat --interactive` and `agent list` are Orka-only, and
 `agent edit` has been removed. See the
 [create contract](kmx.md#kmx-agent-create) and [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer).
-Whether kagent YAML will become an authoring surface over Orka remains open;
+Whether that YAML will ever become an authoring surface over Orka remains
+open and unsupported;
 native Orka resources are the recommendation in [orka.md](orka.md), not a ruling
 that rules out future integration. The isolated conversion spike does not add
 a supported CLI translation.
@@ -48,14 +49,14 @@ continuation incompatibilities, token renewal and owner-applied patches.
 A Helm upgrade can overwrite a one-off patch: retain the change in the
 application owner's deployment source rather than assuming kmx owns it.
 
-## Existing kagent and plane troubleshooting
+## Existing legacy-runtime and plane troubleshooting
 
 The following describes retained legacy code, not Orka's contracts.
 
 ### Empty replies and `input-required`
 
-This was the legacy kagent runtime's human-in-the-loop state, and it went with
-the runtime: kmx no longer drives kagent Agents, so there is no `input-required`
+This was the legacy runtime's human-in-the-loop state, and it went with
+the runtime: kmx no longer drives its Agents, so there is no `input-required`
 turn for it to resolve. An Orka turn is a Task that either returns a result or
 fails. Historical note, for transcripts that still show it: the small-model path
 used to re-sample a question-only response up to twice, but not after a tool call or with

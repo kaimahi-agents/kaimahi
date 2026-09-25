@@ -25,15 +25,19 @@
 # Env:
 #   KUBECTL      kubectl invocation incl. --context
 #   TARGET       host:port that must be unreachable (default acme-model.acme-model:8000)
-#   CONTROL      host:port that must be reachable  (default kagent-tools.kagent:8084)
-#   PROBE_NS     where the probe pod runs (default kagent — where agents live)
+#   CONTROL      host:port that must be reachable  (required: an allowed path)
+#   PROBE_NS     where the probe pod runs (required: the model client's namespace)
 #   PROBE_IMAGE  default busybox:1.36
 set -euo pipefail
 
 KUBECTL="${KUBECTL:-kubectl}"
 TARGET="${TARGET:-acme-model.acme-model:8000}"
-CONTROL="${CONTROL:-kagent-tools.kagent:8084}"
-PROBE_NS="${PROBE_NS:-kagent}"
+# Neither has a default. A negative probe whose CONTROL is unreachable
+# passes for the wrong reason — "blocked" and "not there" look identical
+# from a timed-out connection — so the allowed path is the caller's to
+# name, in the namespace whose boundary is being proved.
+CONTROL="${CONTROL:?set CONTROL to a host:port this namespace IS allowed to reach}"
+PROBE_NS="${PROBE_NS:?set PROBE_NS to the namespace whose egress boundary is under test}"
 PROBE_IMAGE="${PROBE_IMAGE:-busybox:1.36}"
 TIMEOUT="${TIMEOUT:-8}"
 

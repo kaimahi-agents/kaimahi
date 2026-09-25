@@ -13,7 +13,7 @@ published CLI binary and no GitHub Release to fetch.
 itself. Authoring a native Orka Agent is now [`kmx agent create`](kmx.md#kmx-agent-create);
 putting an existing application's model traffic on the governed seam is
 [`kmx migrate`](migrate.md), one owned Deployment at a time. Migration does not
-translate a kagent BYO definition or create Tasks; install, create and migrate
+translate a legacy BYO definition or create Tasks; install, create and migrate
 are deliberately separate commands.
 
 ## The command
@@ -238,12 +238,12 @@ front door — `kmx up` installs Orka itself, so there is no separate
 
 Installing Orka and authoring an agent are separate steps. `kmx agent create`
 now emits native Orka resources; installing Orka does not convert existing
-`kagent.dev/v1alpha2` files.
+files written for the legacy runtime's API group.
 
 For a new agent that will run on Orka, **author Orka's native
 `core.orka.ai/v1alpha1` `Agent` and `Provider` resources and invoke it with
 an Orka `Task`.** This keeps the runtime configuration explicit: changing a
-kagent resource's API group would not translate its referenced model
+legacy resource's API group would not translate its referenced model
 credentials, MCP connections or workload settings. Dropping those settings
 would not preserve the agent, and this project provides no supported
 translation layer. Native authoring is the recommendation for that reason,
@@ -258,7 +258,7 @@ For an application image you already operate, keep its Deployment under your
 own management. [`kmx migrate`](migrate.md) describes the model-traffic path
 for supported applications. That path does not register the application as
 an Orka `Agent` or turn its requests into Orka `Task` resources. The migration
-guide records the exercised behavior and its limits. A kagent BYO definition
+guide records the exercised behavior and its limits. A legacy BYO definition
 is not an input to `kmx migrate`: the application must already have a
 Deployment it owns. Model-traffic migration is a separate boundary, not BYO
 Agent conversion.

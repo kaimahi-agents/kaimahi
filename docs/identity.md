@@ -10,7 +10,7 @@
 
 The ledger and historical tool/inbound audit carry `acted_for`.
 The retired inbound bridge recorded signed Slack event user identifiers and
-opened run windows around kagent turns. That producer is removed; its stored
+opened run windows around the legacy runtime's turns. That producer is removed; its stored
 records are history. Retirement adds no verified human identity for model
 clients; the gateway no longer accepts MCP traffic.
 
@@ -69,7 +69,7 @@ sanitize cells too. `X-Forwarded-For` is ignored. The retired gateway did not
 carry MCP `clientInfo.name` across calls; historical rows do not establish it.
 
 Neither column controls authorization or actor attribution. A User-Agent
-that says kagent does **not** distinguish a genuine agent from a script
+that says the runtime does **not** distinguish a genuine agent from a script
 imitating it. Pod addresses are reused and port-forwarding can show a
 loopback peer. These columns aid investigation, not identity verification.
 

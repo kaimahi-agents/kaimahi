@@ -64,16 +64,16 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 // checkChatRuntime answers an explicit --runtime before anything reaches a
 // cluster.
 //
-// `kagent` is refused BY NAME rather than resolved to Orka. A caller who
-// named the legacy runtime asked for a different platform; answering from
-// Orka instead would answer a question nobody put, against an agent that is
-// not the one they meant.
+// The retired runtime is refused BY NAME rather than resolved to Orka. A
+// caller who named it asked for a different platform; answering from Orka
+// instead would answer a question nobody put, against an agent that is not
+// the one they meant. That one word is why it appears below at all.
 func checkChatRuntime(name string) error {
 	switch name {
 	case "", "auto", "orka":
 		return nil
 	case "kagent":
-		return fmt.Errorf("--runtime kagent is not supported: the legacy kagent runtime has been removed from kmx.\n" +
+		return fmt.Errorf("--runtime kagent is not supported: that runtime has been removed from kmx.\n" +
 			"  kmx chats with Orka Agents — drop the flag, or say --runtime orka explicitly.")
 	default:
 		return fmt.Errorf("unknown chat runtime %q; use auto or orka", name)

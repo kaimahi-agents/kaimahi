@@ -81,7 +81,7 @@ func validateOrkaResultOptions(opt *CreateOptions) error {
 		opt.ResultPort = "19180"
 	}
 	// Services use DNS labels with an alphabetic first character (RFC 1035),
-	// not the embedded kagent Agent reservations in scaffold.ValidateName.
+	// which is stricter than the RFC 1123 label scaffold.ValidateName accepts.
 	if err := scaffold.ValidateNamespace(opt.OrkaAPIService); err != nil || opt.OrkaAPIService[0] < 'a' || opt.OrkaAPIService[0] > 'z' {
 		return fmt.Errorf("--orka-api-service must be a valid Service name")
 	}

@@ -10,12 +10,12 @@ import (
 
 // `kmx status` is the runtime report, and the runtime is Orka.
 //
-// It used to read `agents.kagent.dev`, `modelconfigs` and the kagent
+// It used to read the retired runtime's Agents, its model presets and its
 // namespace's pods, and assemble a governance document beside them. Every one
 // of those reads described a runtime kmx no longer installs, drives or
 // deploys: the tables were confidently about objects this repository has
-// nothing to do with, which reads as coverage and is not. What replaced the
-// kagent runtime is Orka, so that is what this reports.
+// nothing to do with, which reads as coverage and is not. What replaced that
+// runtime is Orka, so that is what this reports.
 //
 // It DELEGATES rather than reimplements. `kmx orka status` already answers
 // "what is installed, and what can it resolve", separates an unreachable
@@ -43,8 +43,8 @@ func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
 //
 // `table` is the only format there is, and json/yaml are refused BY NAME
 // rather than quietly falling back to the table or emitting an empty
-// document. They used to publish a governance envelope counted off kagent
-// Agents and ModelConfigs. Nothing owner-managed replaces that count:
+// document. They used to publish a governance envelope counted off the
+// retired runtime's Agents and model presets. Nothing owner-managed replaces that count:
 // `kmx migrate` points somebody's own Deployment at the seam, and those
 // workloads have no discovery index — there is no query that lists them, so
 // any document kmx published would be a tally of what it happened to be told
@@ -56,7 +56,7 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 	case "", "table":
 	case "json", "yaml":
 		return fmt.Errorf("status has no %s output: use table.\n"+
-			"  The structured document counted kagent Agents and ModelConfigs, and that runtime is gone.\n"+
+			"  The structured document counted the retired runtime's Agents and model presets, and it is gone.\n"+
 			"  Nothing replaces the count: `kmx migrate` routes your own workloads, which kmx cannot enumerate,\n"+
 			"  so a document here would report what it was told rather than what is on the cluster.\n"+
 			"  For machine-readable runtime facts, read the cluster directly:\n"+

@@ -1,0 +1,526 @@
+{
+  "why": "Every line in this tree that may still name the retired legacy agent runtime, one at a time, with the reason it earns its place. scripts/check-legacy-runtime.py refuses every other mention. An entry that stops matching is a failure there, so this file cannot outlive the lines it describes.",
+  "historical_files": [
+    "CHANGELOG.md",
+    "docs/COORDINATION.md",
+    "docs/reviews/"
+  ],
+  "lines": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx agent chat --runtime kagent hello-world\",",
+      "category": "negative",
+      "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx up --step kagent\",",
+      "category": "negative",
+      "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kubectl -n kagent get agents.kagent.dev\",",
+      "category": "negative",
+      "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+    },
+    {
+      "path": "cmd/kmx/lift_commands_test.go",
+      "text": "[]string{\"--payload kagent is retired\", \"--payload orka\"},",
+      "category": "negative",
+      "why": "Bounded refusal test: the retired lift payload is refused with a message naming it."
+    },
+    {
+      "path": "cmd/kmx/lift_commands_test.go",
+      "text": "[]string{\"lift\", \"--payload\", \"kagent\", \"--resource-group\", \"rg\", \"--cluster\", \"c\", \"--registry\", \"reg12345\"},",
+      "category": "negative",
+      "why": "Bounded refusal test: the retired lift payload is refused with a message naming it."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "// The legacy kagent runtime is gone, and so are the commands that only ever",
+      "category": "negative",
+      "why": "Bounded refusal tests at the command layer for the removed runtime-only commands."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "// were kagent's alone: a resumable server-side session and the raw A2A task",
+      "category": "negative",
+      "why": "Bounded refusal tests at the command layer for the removed runtime-only commands."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_inference_test.go",
+      "text": "if strings.Contains(body, \"ModelConfig\") || strings.Contains(body, \"kagent.dev\") {",
+      "category": "negative",
+      "why": "Bounded inference tests: a legacy model preset is refused as an inference source and never appears in a written body."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_inference_test.go",
+      "text": "{Kind: \"modelconfig\", Name: \"demo\", Endpoint: \"https://example.com\", Model: \"x\"},",
+      "category": "negative",
+      "why": "Bounded inference tests: a legacy model preset is refused as an inference source and never appears in a written body."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "*'api-resources'*) printf 'agents.core.orka.ai\\nagents.kagent.dev\\n' ;;",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "*'api-resources'*) printf 'agents.core.orka.ai\\nproviders.core.orka.ai\\nagents.kagent.dev\\nmodelconfigs.kagent.dev\\n' ;;",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "*api-resources*) printf 'agents.core.orka.ai\\nagents.kagent.dev\\n' ;;",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "for _, forbidden := range []string{\"kagent.dev\", \"ModelConfig\", `\"kagent\"`} {",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "if strings.Contains(line, \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_tui_test.go",
+      "text": "t.Fatalf(\"the update still patches a retired ModelConfig reference: %s\", raw)",
+      "category": "negative",
+      "why": "Bounded console tests: a cluster still SERVING the legacy kinds is the fixture, and the assertion is that the console lists and patches none of them."
+    },
+    {
+      "path": "internal/kmx/app/agent_wizard_linux_test.go",
+      "text": "if !strings.Contains(stdout.String(), \"core.orka.ai/v1alpha1\") || !strings.Contains(stdout.String(), \"kind: Task\") || strings.Contains(stdout.String(), \"kagent.dev\") {",
+      "category": "negative",
+      "why": "Bounded wizard test: the authored bundle is native Orka and carries nothing from the legacy API group."
+    },
+    {
+      "path": "internal/kmx/app/agent_wizard_orka_test.go",
+      "text": "if !strings.Contains(output.String(), \"core.orka.ai/v1alpha1\") || strings.Contains(output.String(), \"kagent.dev\") {",
+      "category": "negative",
+      "why": "Bounded wizard test: the authored bundle is native Orka and carries nothing from the legacy API group."
+    },
+    {
+      "path": "internal/kmx/app/chat.go",
+      "text": "case \"kagent\":",
+      "category": "retirement",
+      "why": "The `--runtime` refusal. Refusing by name is the point: resolving it to Orka would answer a question nobody asked."
+    },
+    {
+      "path": "internal/kmx/app/chat.go",
+      "text": "return fmt.Errorf(\"--runtime kagent is not supported: that runtime has been removed from kmx.\\n\" +",
+      "category": "retirement",
+      "why": "The `--runtime` refusal. Refusing by name is the point: resolving it to Orka would answer a question nobody asked."
+    },
+    {
+      "path": "internal/kmx/app/guard_namespaces_test.go",
+      "text": "if strings.Contains(strings.ToLower(banner), \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded banner test: no guard banner may name the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/lift.go",
+      "text": "return nil, nil, fmt.Errorf(\"kmx lift: %s/%s was lifted onto with --payload kagent, which is retired.\\n\"+",
+      "category": "retirement",
+      "why": "The resume refusal for a record that landed the retired payload, naming the payload the operator's script still passes."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "// A record written before the split carries no payload, and only kagent",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "// could have written it. A record that names kagent landed the runtime that",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "// to produce a kagent record now that nothing will write one.",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "for _, want := range []string{\"kagent\", \"retired\", \"aks down\"} {",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "t.Fatal(\"a kagent lift was resumed after the payload was retired\")",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "t.Fatalf(\"a kagent lift could not be torn down: %v\\n%s\", err, out)",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "t.Fatalf(\"teardown of a kagent lift removed nothing: %s\", calls)",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/lift_audit_test.go",
+      "text": "{\"recorded as kagent\", lift.PayloadKagent},",
+      "category": "negative",
+      "why": "Bounded audit tests: a pre-retirement lift record is refused for resume and still permitted for teardown."
+    },
+    {
+      "path": "internal/kmx/app/manifests_test.go",
+      "text": "for _, name := range []string{\"kagent-values.yaml\", \"hello-world.yaml\", \"tools-agent.yaml\",",
+      "category": "negative",
+      "why": "Bounded packaging test: the retired runtime's chart values, demo agents and model presets must stay deleted from the tree."
+    },
+    {
+      "path": "internal/kmx/app/manifests_test.go",
+      "text": "t.Error(\"k8s/models still exists; every preset in it was a kagent v1alpha2 ModelConfig\")",
+      "category": "negative",
+      "why": "Bounded packaging test: the retired runtime's chart values, demo agents and model presets must stay deleted from the tree."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "// There is no fourth document: a ModelConfig is a kagent CRD, and a",
+      "category": "negative",
+      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "// foreign runtime has no kagent. The base URL is printed instead.",
+      "category": "negative",
+      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "if strings.Contains(doc, \"kind: ModelConfig\") {",
+      "category": "negative",
+      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/modelsadd_test.go",
+      "text": "t.Fatalf(\"a kagent custom resource reached a manifest a non-kagent adopter must apply:\\n%s\", doc)",
+      "category": "negative",
+      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/notfound_test.go",
+      "text": "// The CRD is not installed yet — kagent has not been deployed.",
+      "category": "negative",
+      "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
+    },
+    {
+      "path": "internal/kmx/app/notfound_test.go",
+      "text": "`exit status 1: Error from server (Forbidden): agents.kagent.dev is forbidden: User \"x\" cannot get resource \"agents\"`,",
+      "category": "negative",
+      "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
+    },
+    {
+      "path": "internal/kmx/app/notfound_test.go",
+      "text": "`exit status 1: Error from server (NotFound): agents.kagent.dev \"hello-world\" not found`,",
+      "category": "negative",
+      "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
+    },
+    {
+      "path": "internal/kmx/app/notfound_test.go",
+      "text": "`exit status 1: Error from server (NotFound): modelconfigs.kagent.dev \"governed-ollama\" not found`,",
+      "category": "negative",
+      "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
+    },
+    {
+      "path": "internal/kmx/app/plane_test.go",
+      "text": "if strings.Contains(err.Error(), \"<orka|kagent>\") {",
+      "category": "negative",
+      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
+    },
+    {
+      "path": "internal/kmx/app/plane_test.go",
+      "text": "t.Errorf(\"the refusal still offers the retired kagent payload: %v\", err)",
+      "category": "negative",
+      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "// no --legacy-kagent, and no step name that installs one either.",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "for _, flag := range []string{\"--legacy-kagent\", \"legacy-kagent\"} {",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "for _, step := range []string{\"kagent\", \"agent\", \"tools-agent\"} {",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") {",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "if strings.Contains(result.Manifest, \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/quickstart_orka_test.go",
+      "text": "if strings.Contains(strings.ToLower(name), \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "if strings.Contains(string(body), \"pass `--payload kagent`\") {",
+      "category": "negative",
+      "why": "Bounded documentation test: docs/kmx.md must not offer the retired payload as a choice."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "t.Error(\"docs/kmx.md still offers the retired kagent payload as a choice\")",
+      "category": "negative",
+      "why": "Bounded documentation test: docs/kmx.md must not offer the retired payload as a choice."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "// One-shot chat was kagent's transport: a port-forward to its controller and",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "// `--runtime kagent` was the only way to ask for the legacy runtime by name,",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "// format: a JSON or YAML list that still reached for agents.kagent.dev would",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "// kagent asked for a different platform, and answering from Orka instead",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "err := a.ChatWithOptions(ChatOptions{Agent: \"demo\", Runtime: \"kagent\", Interactive: true})",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "for _, want := range []string{\"kagent\", \"orka\"} {",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/retirement_test.go",
+      "text": "if strings.Contains(string(calls), \"kagent.dev\") {",
+      "category": "negative",
+      "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
+    },
+    {
+      "path": "internal/kmx/app/status_test.go",
+      "text": "// `kmx status` reports the runtime this repository installs. The kagent",
+      "category": "negative",
+      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/status_test.go",
+      "text": "// published a governance shape assembled from kagent objects, and no",
+      "category": "negative",
+      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/status_test.go",
+      "text": "if strings.Contains(string(asked), \"kagent\") || strings.Contains(string(asked), \"modelconfigs\") {",
+      "category": "negative",
+      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "*kagent.dev*)",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "// cluster WITHOUT the kagent CRDs answers — \"the server doesn't have a",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "// cluster with no kagent CRD answers — the command completing at all is the",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "// steps are gone, so `--step kagent` is an unknown step that fails locally",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "for _, step := range []string{\"kagent\", \"agent\", \"tools-agent\"} {",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/app/up_orka_test.go",
+      "text": "if strings.Contains(calls, \"kagent\") || strings.Contains(calls, \"modelconfigs\") {",
+      "category": "negative",
+      "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "// A record of a kagent lift must still DECODE. Teardown is the whole reason",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "// vocabulary. A `--step kagent` that still validated would run a phase whose",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "// whose script still says `--payload kagent` asked for a platform that this",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "`\"payload\":\"kagent\",\"resource_group\":\"rg\",\"cluster\":\"c\",` +",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "for _, legacy := range []string{\"kagent\", \"agents\"} {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "for _, want := range []string{\"--payload kagent\", \"retired\", \"--payload orka\"} {",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "t.Fatal(\"a new lift was accepted with the retired kagent payload\")",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "t.Fatalf(\"a kagent record no longer decodes, so its resources cannot be torn down: %v\", err)",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/payload_test.go",
+      "text": "t.Fatalf(\"a record that landed kagent reads as %q\", got)",
+      "category": "negative",
+      "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "\"  An existing kagent lift can still be inspected and torn down (`kmx aks down`);\\n\" +",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "// Only `orka` remains: the kagent payload is retired along with the rest",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "// that says `--payload kagent` must be told its platform is gone rather",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "// whose script says `--payload kagent` did not misspell anything: they asked",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "PayloadKagent = \"kagent\"",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/plan.go",
+      "text": "return errors.New(\"kmx lift: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
+      "category": "retirement",
+      "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
+    },
+    {
+      "path": "internal/kmx/lift/record.go",
+      "text": "// because it is not unknown — it is history. The kagent payload is now",
+      "category": "retirement",
+      "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
+    },
+    {
+      "path": "internal/kmx/lift/record.go",
+      "text": "// ever landed kagent. That is treated as kagent rather than as unknown,",
+      "category": "retirement",
+      "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
+    },
+    {
+      "path": "internal/kmx/lift/record.go",
+      "text": "// kagent record must tear down, and must not resume.",
+      "category": "retirement",
+      "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
+    },
+    {
+      "path": "internal/kmx/scaffold/orka_test.go",
+      "text": "for _, bad := range []string{\"kagent\", \"ModelConfig\", \"podTemplate\", \"\\nstringData:\", \"\\ndata:\"} {",
+      "category": "negative",
+      "why": "Bounded scaffolder tests: the emitted Orka document and its refusals must name nothing of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/scaffold/orka_test.go",
+      "text": "} else if strings.Contains(err.Error(), shape.Example) || strings.Contains(err.Error(), \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded scaffolder tests: the emitted Orka document and its refusals must name nothing of the retired runtime."
+    },
+    {
+      "path": "internal/kmx/seamcert/seamcert_test.go",
+      "text": "if strings.Contains(err.Error(), \"kagent\") {",
+      "category": "negative",
+      "why": "Bounded recovery test: certificate recovery must not delegate trust redistribution to the retired runtime."
+    }
+  ]
+}

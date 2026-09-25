@@ -114,6 +114,28 @@ jobs:
         run: python3 scripts/check-board.py --selftest
       - name: The coordination board still agrees with itself
         run: python3 scripts/check-board.py
+      # A runtime this repository removed stays removed. What survives a
+      # removal is not code but CLAIMS: a comment explaining a namespace
+      # nothing writes to, a probe defaulting to one nothing creates, a
+      # manifest rule admitting traffic from it, a doc row linking it. Each
+      # reads as support, and the cost is paid by a reader months later who
+      # believes it.
+      #
+      # Hard identifiers — the API group and kinds, the images, the version
+      # pin, the three command spellings — are refused in EVERY tracked
+      # file, workflows included, because a workflow is where an install
+      # would come back. The bare name is refused from the surfaces a reader
+      # takes as current, one approved line at a time in
+      # scripts/legacy-runtime-allowlist.json, because prose can refuse a
+      # runtime or advertise it and no pattern tells those apart.
+      #
+      # The scanner is itself a gate that fails OPEN, so it proves it still
+      # catches each class, and still refuses an empty enumeration, a
+      # widened exemption and a stale one, before its verdict is trusted.
+      - name: Legacy-runtime scanner still catches every class
+        run: python3 scripts/check-legacy-runtime.py --selftest
+      - name: No support for the retired legacy runtime in tree
+        run: python3 scripts/check-legacy-runtime.py
       # And the checkers themselves: each one is copied, broken on purpose
       # in a named way, and required to notice. A self-test built from
       # fixture pairs proves a checker gets today's answer right; it does
@@ -515,9 +537,9 @@ jobs:
       # caller.
       #
       # A shard joins this list the moment it stops installing the legacy
-      # runtime, and this step is what keeps it there: a reinstated full
-      # `kmx up`, a legacy governance command or a v1alpha2 resource would
-      # make every claim in it a claim about kagent again, and nothing else
+      # runtime, and this step is what keeps it there: a reinstated legacy
+      # bring-up, a legacy governance command or a legacy API resource would
+      # make every claim in it a claim about that runtime again, and nothing else
       # in this file would notice — the shard would go on passing.
       #
       # The namespace tripwire is required rather than assumed for the same
@@ -542,8 +564,8 @@ jobs:
           # as an Orka-only session against agents.core.orka.ai, so forbidding
           # it by name would refuse a supported command and say nothing about
           # the legacy runtime. What is forbidden is the legacy runtime
-          # itself: its install steps, its retired commands, its v1alpha2
-          # resources, and any attempt to aim a surviving command at it.
+          # itself: its install steps, its retired commands, its own API
+          # group, and any attempt to aim a surviving command at it.
           forbidden = [
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
@@ -554,7 +576,7 @@ jobs:
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
                "the retired source editor edits a kagent Agent"),
               (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
-              (re.compile(r"kagent\.dev"), "a v1alpha2 resource of the legacy runtime"),
+              (re.compile(r"kagent\.dev"), "a resource of the legacy runtime's API group"),
           ]
           # Negative controls, checked before the shards are: a guard whose
           # patterns have drifted either refuses supported commands or
@@ -655,7 +677,7 @@ jobs:
                    "the retired preset switch"),
                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
                    "the retired source editor"),
-                  (r"kagent\.dev", "a v1alpha2 resource of the legacy runtime")]:
+                  (r"kagent\.dev", "a resource of the legacy runtime's API group")]:
               if re.search(pattern, joined):
                   problems.append(f"{why}: {pattern!r}")
           if problems:
@@ -2011,9 +2033,9 @@ jobs:
             --classification free --out house.yaml 2>&1 | tee models-add.out
           grep -q 'The plane validated the table' models-add.out
           grep -qF 'house speaks responses: the meter reads input_tokens / output_tokens' models-add.out
-          # The seam address is PRINTED, because a model has no
-          # RemoteMCPServer to put it in — and getting it wrong is the
-          # same silent hazard.
+          # The seam address is PRINTED, because a model has no runtime
+          # object to put it in — and getting it wrong is the same silent
+          # hazard.
           grep -qF 'https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/house' models-add.out
           # A model seam has no per-credential upstream allowlist.
           grep -q 'no allowlist' models-add.out

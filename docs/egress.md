@@ -13,7 +13,7 @@ allowances. **NetworkPolicy is additive and CNI-enforced**: another policy
 can widen access, and an installed object proves nothing if the CNI ignores
 it. Pod/node identity and Kubernetes API authority are separate boundaries.
 
-The base policy does not isolate the `kagent` or `ollama` namespaces.
+The base policy does not isolate the `ollama` or `orka-system` namespaces.
 A direct-provider agent or direct MCP client is not made governed by the
 existence of plane policies. An application migrated
 in its own namespace keeps its owner's network responsibilities.
@@ -22,7 +22,7 @@ in its own namespace keeps its owner's network responsibilities.
 
 | From | To | Port |
 |---|---|---|
-| `kagent` namespace | proxy's model seam | 8080 |
+| a migrated namespace | proxy's model seam | 8080 |
 | proxy | Postgres | 5432 |
 | proxy | ollama | 11434 |
 | proxy | Orka API pods selected in `orka-system` | 8080 |

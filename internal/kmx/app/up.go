@@ -11,10 +11,9 @@ import (
 )
 
 // UpSteps are the individually addressable steps of `kmx up`, and they are
-// exactly the supported sequence. The legacy installer steps that once sat
-// beyond them — `kagent`, `agent`, `tools-agent` — are gone rather than
-// hidden: naming one is an unknown step, refused locally, not a runtime kmx
-// still knows how to put on a cluster.
+// exactly the supported sequence. The three legacy installer steps that once
+// sat beyond them are gone rather than hidden: naming one is an unknown step,
+// refused locally, not a runtime kmx still knows how to put on a cluster.
 var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // UpDefaultSteps is what a bare `kmx up` runs: a cluster, a keyless model
@@ -73,8 +72,9 @@ func (a *App) Up(step string) error {
 	}
 	// Every step writes to the Orka path's two namespaces, so the banner
 	// names them exactly — for a bare run and for a single step alike. The
-	// wider list existed for the legacy install, which landed in kagent as
-	// well, and naming a namespace nothing is written to is its own untruth.
+	// wider list existed for the legacy install, which landed in a namespace
+	// of its own as well, and naming a namespace nothing is written to is its
+	// own untruth.
 	guard := func(action, command string) error {
 		return a.GuardCreateIn(action, command, OrkaPathNamespaces)
 	}
@@ -101,7 +101,7 @@ func (a *App) Up(step string) error {
 		// second step, and saying nothing here would leave an operator to
 		// infer it from an empty ledger.
 		// The route offered is the one this cluster can take. A bare run
-		// deploys no kagent Agent, so `kmx govern <credential>` would name
+		// deploys no governed Agent, so `kmx govern <credential>` would name
 		// nothing; putting an application's model traffic on the seam is
 		// `kmx migrate`, one workload at a time.
 		if a.selectedLocalModel == nil {

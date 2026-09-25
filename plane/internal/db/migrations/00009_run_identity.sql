@@ -33,9 +33,9 @@
 -- inbound bridge opens it before the A2A call and closes it when the
 -- call returns, so every governed call the agent makes in between is
 -- inside the window. That window is the ONLY correlation available —
--- kagent's agent pod authenticates to the proxy and the gateway with
+-- An agent pod authenticates to the proxy and the gateway with
 -- its credential and nothing else, and the prime directive says we do
--- not fork kagent to add a header it would have to be trusted not to
+-- not fork a runtime to add a header it would have to be trusted not to
 -- forge. What the plane vouches for is therefore what the plane itself
 -- observed at the door.
 --

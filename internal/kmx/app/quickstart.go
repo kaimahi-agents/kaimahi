@@ -68,7 +68,7 @@ type quickstartStep struct {
 // with the same waits and the same fail-closed checks — what it ADDS is the
 // one thing `up` deliberately does not: a fixed Orka Agent and a question
 // put to it. The runtime is Orka; nothing on this path installs, reads or
-// depends on the legacy kagent runtime.
+// depends on the retired runtime.
 //
 // It is deterministic and non-interactive on purpose. There is no model
 // picker and no prompt: the same command on the same machine produces the
@@ -221,7 +221,7 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 // Reuse is EXACT-MATCH ONLY. A live Provider or Agent whose spec differs
 // from the one quickstart would write is somebody's deliberate change — an
 // edited endpoint, a different model, a hand-applied bundle — so this stops
-// rather than overwrite it, exactly as a rerun over a full kagent release
+// rather than overwrite it, exactly as a rerun over a full legacy release
 // used to preserve that release. A half-finished run resumes: whichever of
 // the two already matches is kept, and the other is created.
 func (a *App) stepQuickstartAgent() error {

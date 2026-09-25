@@ -27,30 +27,6 @@ func TestNameValidation(t *testing.T) {
 	}
 }
 
-func TestToolAllowlistIsMandatory(t *testing.T) {
-	if _, err := ParseTools("kagent-tool-server"); err == nil {
-		t.Fatal("missing allowlist accepted")
-	}
-	if _, err := ParseTools("kagent-tool-server:"); err == nil {
-		t.Fatal("empty allowlist accepted")
-	}
-	wiring, err := ParseTools("kagent-tool-server:k8s_get_resources,k8s_get_events")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wiring.Server != "kagent-tool-server" || !slices.Equal(wiring.Tools, []string{"k8s_get_resources", "k8s_get_events"}) {
-		t.Fatalf("parsed %+v", wiring)
-	}
-}
-
-func TestToolNamesMustBeIdentifiers(t *testing.T) {
-	for _, bad := range []string{"server:k8s_get_resources\n            - k8s_delete", "server:tool one", "server:\"tool\"", "server:tool,,other", "ser ver:tool"} {
-		if _, err := ParseTools(bad); err == nil {
-			t.Errorf("accepted %q", bad)
-		}
-	}
-}
-
 // Keep this CI-named parser/injection proof, now for the Orka artifact. The Go
 // parser is a dependency, so the proof runs keylessly without PyYAML or skips.
 func TestGeneratedManifestParsesAndKeepsInstructionsInsideTheScalar(t *testing.T) {

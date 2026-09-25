@@ -48,29 +48,11 @@ JSON
   *"get secret "*)
     printf 'Error from server (NotFound): secret not found\n' >&2
     exit 1 ;;
-  *"get modelconfig custom"*)
-    if [ -n "$KMX_TEST_MODEL_ERR" ]; then printf '%s\n' "$KMX_TEST_MODEL_ERR" >&2; exit 1; fi
-    printf '%s' "$KMX_TEST_MODEL"; exit 0 ;;
   *port-forward*)
     # A real kubectl announces the bind before anything may be sent through
     # it; kmx waits for exactly this line, so the fake has to print it.
     printf 'Forwarding from 127.0.0.1:%s -> 9091\n' "$KMX_TEST_ADMIN_PORT"
     exec sleep 30 ;;
-  *"get agents.kagent.dev hello-world"*)
-    if [ -n "$KMX_TEST_AGENT_ERR" ]; then
-      printf '%s\n' "$KMX_TEST_AGENT_ERR" >&2
-      exit 1
-    fi
-    printf 'agent.kagent.dev/hello-world\n'; exit 0 ;;
-  *"get remotemcpserver"*)
-    if [ -n "$KMX_TEST_TOOL_SERVER" ]; then printf '%s' "$KMX_TEST_TOOL_SERVER"; exit 0; fi
-    [ -z "$KMX_TEST_SEAM" ] && exit 0
-    printf '%s' "$KMX_TEST_SEAM"; exit 0 ;;
-  *"get crd remotemcpservers.kagent.dev"*)
-    case "$KMX_TEST_NO_KAGENT" in
-      1) printf 'Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io "remotemcpservers.kagent.dev" not found\n' >&2; exit 1 ;;
-      *) printf 'customresourcedefinition.apiextensions.k8s.io/remotemcpservers.kagent.dev\n'; exit 0 ;;
-    esac ;;
   *"get namespace"*)
     for missing in $KMX_TEST_NO_NAMESPACES; do
       case "$*" in
@@ -99,7 +81,7 @@ type credentialFixture struct {
 	stdin   string
 }
 
-func newCredentialFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *credentialFixture {
+func newCredentialFixture(t *testing.T, issue http.HandlerFunc) *credentialFixture {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake kubectl is a shell script")
@@ -126,7 +108,6 @@ func newCredentialFixture(t *testing.T, agentErr string, issue http.HandlerFunc)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("KMX_TEST_ARGS", f.argsLog)
 	t.Setenv("KMX_TEST_STDIN", f.stdin)
-	t.Setenv("KMX_TEST_AGENT_ERR", agentErr)
 	t.Setenv("KMX_TEST_ADMIN_B64", base64.StdEncoding.EncodeToString([]byte("admin-bearer")))
 	t.Setenv("KMX_TEST_ADMIN_PORT", u.Port())
 	t.Setenv("KMX_TEST_BOUND", os.Getenv("KMX_TEST_BOUND"))
@@ -178,7 +159,7 @@ func TestCredentialIssueAppliesWhetherOrNotTheSecretExists(t *testing.T) {
 				// Bound to the same credential, so the pre-POST check passes.
 				t.Setenv("KMX_TEST_BOUND", "hello-world")
 			}
-			f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("f", 64)))
+			f := newCredentialFixture(t, issued("kmh_"+strings.Repeat("f", 64)))
 			if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil); err != nil {
 				t.Fatalf("issue: %v", err)
 			}
@@ -237,7 +218,7 @@ func TestCredentialIssueHasNoInteractiveMode(t *testing.T) {
 // shell script needed a 0600 file and a dry-run pipe to approximate.
 func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 	token := "kmh_" + strings.Repeat("c", 64)
-	f := newCredentialFixture(t, "", issued(token))
+	f := newCredentialFixture(t, issued(token))
 	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -268,7 +249,7 @@ func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 func TestCredentialIssueStoresTokenWithGovernSafetyWithoutLoggingIt(t *testing.T) {
 	token := "kmh_" + strings.Repeat("e", 64)
 	var request map[string]any
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Errorf("decode issue request: %v", err)
 		}
@@ -308,7 +289,7 @@ func TestCredentialIssueStoresTokenWithGovernSafetyWithoutLoggingIt(t *testing.T
 func TestCredentialIssueChecksSecretBindingBeforePost(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "other-agent")
 	posted := false
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
@@ -335,7 +316,7 @@ func TestCredentialIssueRefusesAnImpossibleNamespaceBeforeMintingTheToken(t *tes
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("KMX_TEST_NO_NAMESPACES", "gone")
 			posted := false
-			f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+			f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 				posted = true
 				w.WriteHeader(http.StatusCreated)
 				json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + strings.Repeat("e", 64)})
@@ -364,7 +345,7 @@ func TestCredentialIssueRefusesAnImpossibleNamespaceBeforeMintingTheToken(t *tes
 // ""` fails for a reason that has nothing to do with the namespace, and the
 // operator would be shown that instead of the flag they omitted.
 func TestABlankNamespaceIsRefusedWithoutReachingTheCluster(t *testing.T) {
-	f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("e", 64)))
+	f := newCredentialFixture(t, issued("kmh_"+strings.Repeat("e", 64)))
 	if err := f.app.requireNamespace("  ", "--namespace"); err == nil {
 		t.Fatal("a blank namespace was accepted")
 	}
@@ -376,7 +357,7 @@ func TestABlankNamespaceIsRefusedWithoutReachingTheCluster(t *testing.T) {
 func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
 	t.Setenv("KMX_TEST_SECRET_EXISTS", "true")
 	posted := false
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
@@ -391,7 +372,7 @@ func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
 
 func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "batch-agent")
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write([]byte(`{"error":"credential exists"}`))
 	})
@@ -408,7 +389,7 @@ func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
 
 func TestCredentialIssueNeverPrintsUnexpectedResponseBody(t *testing.T) {
 	token := "kmh_" + strings.Repeat("f", 64)
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte(`{"token":"` + token + `"}`))
 	})
@@ -446,7 +427,7 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write([]byte(`{"error":"credential exists"}`))
 	}
-	f := newCredentialFixture(t, "", conflict)
+	f := newCredentialFixture(t, conflict)
 	// The fake kubectl answers the annotation read with an empty string,
 	// which is the "exists in the plane, Secret missing or unlabeled" case:
 	// the token cannot be recovered, so the operator is told exactly how to
@@ -472,7 +453,7 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 func TestASecondCredentialWillNotOverwriteAnotherOnesToken(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "hello-world")
 	issuedAnyway := false
-	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		issuedAnyway = true
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + strings.Repeat("d", 64)})
@@ -496,7 +477,7 @@ func TestASecondCredentialWillNotOverwriteAnotherOnesToken(t *testing.T) {
 // conflict.
 func TestIssuingTheSameCredentialAgainIsFine(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "hello-world")
-	f := newCredentialFixture(t, "",
+	f := newCredentialFixture(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(`{"error":"credential exists"}`))
@@ -541,7 +522,7 @@ func seamTLSSecret(t *testing.T) string {
 // governed route whose Secret is absent, which reads as a broken seam rather
 // than as a missing step.
 func TestMigrateRefusesWhenThePlaneHasNoSeamCertificate(t *testing.T) {
-	f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("a", 64)))
+	f := newCredentialFixture(t, issued("kmh_"+strings.Repeat("a", 64)))
 	t.Setenv("KMX_TEST_SEAM_TLS", `{"data":{}}`)
 	err := f.app.publishPlaneAuthority(issueNamespace)
 	if err == nil {

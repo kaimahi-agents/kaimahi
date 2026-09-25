@@ -9,7 +9,8 @@ No source edit, rebuilt image or chart fork is required for the supported
 application shape. kmx writes four environment variables and one mounted CA file
 as a Deployment patch; **the workload owner reviews and applies that patch**.
 This bridge should shrink as Orka supplies the needed capabilities. Whether new
-agents should use native Orka authoring only or kagent YAML over Orka is open;
+agents should use native Orka authoring only, or the legacy runtime's YAML
+over Orka, is open and unsupported;
 this migration does not settle it. `orka.harness.v2` is outside the direction.
 
 ## Prerequisites

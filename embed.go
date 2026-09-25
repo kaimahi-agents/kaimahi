@@ -9,8 +9,8 @@ import "embed"
 // checkout additions.
 //
 // What is NOT here any more: the legacy runtime's Helm values, its two demo
-// agents, and the k8s/models ModelConfig presets. All five were kagent
-// v1alpha2 objects for a runtime kmx no longer installs, and nothing applied
+// agents, and the k8s/models model presets. All five belonged to a
+// runtime kmx no longer installs, and nothing applied
 // them — `kmx plane` applies k8s/plane/, and `kmx migrate` writes a Secret
 // into the operator's own namespace.
 //

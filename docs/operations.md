@@ -68,7 +68,7 @@ Contract **4** marked the earlier gateway/tool API retirement; current upgrades
 also require the contract-5 review above.
 
 1. Back up the database and stop jobs relying on the gateway or workflow runner.
-   Inventory owner-managed Agents, RemoteMCPServers, Deployment sidecars, URLs,
+   Inventory owner-managed Agents, MCP server objects, Deployment sidecars, URLs,
    Secret references and Helm/GitOps source before rollout. Decide with each
    application owner whether to stop or replace its tool integration. **Do not
    automatically repoint tools to direct access or widen their network reach.**
@@ -92,11 +92,11 @@ also require the contract-5 review above.
    - Retired fixtures in `kaimahi`: MCPServer `kaimahi-slack-mcp`, Deployment
      `kaimahi-erp`, Service `kaimahi-erp-mcp` and ConfigMap `kaimahi-erp-fixtures`.
      Review controller-owned children rather than assuming apply removed them.
-   - In `kagent`: gateway RemoteMCPServers `kaimahi-tools`, `kaimahi-slack`,
+   - In the legacy runtime's namespace: the gateway's MCP server objects `kaimahi-tools`, `kaimahi-slack`,
      `kaimahi-github`, `kaimahi-erp`, `kaimahi-release-github` and
      `kaimahi-release-ado`; fixture Agents `hello-slack`, `hello-github`,
      `ap-agent` and `release-agent`. Review operator-created equivalents too.
-     **Keep the direct `hello-tools` Agent and chart-managed `kagent-tool-server`**;
+     **Keep the direct `hello-tools` Agent and its chart-managed tool server**;
      if an owner repointed them at the old gateway, that owner must resolve it.
 4. Review tool-only custody separately: plane Secrets `kaimahi-slack-bot`,
    `kaimahi-slack-mcp-key`, `kaimahi-github-pat`, `kaimahi-release-pat` and
