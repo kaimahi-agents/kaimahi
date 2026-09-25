@@ -213,10 +213,12 @@ the mutation harness breaks on purpose. Model fixtures are synthetic test
 systems, not providers deployed for users.
 
 `verify-chat.py` is a checker: every occurrence in the Makefile is a comment
-line rather than a recipe. Its existing callers include
-`.github/workflows/ci.yml` (four invocations among five mentions — one
-is a comment). Existing agent tool-call verification concerns the retained
-direct kagent path, not a removed gateway assertion.
+line rather than a recipe. Its only caller is
+`.github/workflows/ci.yml` (one invocation among two mentions — the other
+is a comment), and that invocation is its own `--selftest`. No cluster shard
+runs it against a live agent any more: the `kmx agent chat` turns it verified
+belonged to the legacy runtime and retired with it, so what remains is a
+verifier proven against fixtures rather than against a cluster.
 
 `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload the
 `e2e-resilience` and `e2e-spend` shards migrate with `kmx migrate`. The Python half is a
@@ -227,10 +229,16 @@ header, an upstream refusal keeps its status, and the seam's authority is
 verified with no unverified fallback.
 
 `model-seam-probe.sh` and `spend-race-probe.sh` are also the `e2e-models`
-shard's only governed callers: it holds no agent, so every turn it meters is
-a direct TLS call under a credential in the caller's own namespace. Their
-`SECRET_NAMESPACE` defaults name the legacy runtime's namespace, so that
-shard passes the destination at each call site.
+shard's only governed callers, and `model-seam-probe.sh` alone is
+`e2e-hosted-models`'. Neither shard holds an agent, so every turn either
+meters is a direct TLS call under a credential in the caller's own
+namespace. Their `SECRET_NAMESPACE` defaults name the legacy runtime's
+namespace, so both shards pass the destination at each call site.
+
+`scripts/ci/synthetic-model.sh` is the `e2e-hosted-models` fixture: a
+throwaway CA and a documentation-range address routed over kind's network,
+so a public-looking hosted upstream can be dialed without a hosted account.
+CI holds no hosted credential.
 
 ## `docs/` — 50 tracked files, guides and retirement records
 

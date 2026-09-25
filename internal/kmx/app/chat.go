@@ -129,8 +129,8 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return err
 	}
 
-	// A terminal gets the readable view; a pipe gets the bytes, because CI
-	// and scripts/verify-chat.py parse them. Rendering is best-effort: if
+	// A terminal gets the readable view; a pipe gets the bytes, because
+	// scripts/verify-chat.py parses them. Rendering is best-effort: if
 	// this is not a task we recognise, print what kagent printed.
 	if status == 0 && !a.chatJSON && isTerminal(a.Out) && renderChat(a.Out, out) {
 		return nil

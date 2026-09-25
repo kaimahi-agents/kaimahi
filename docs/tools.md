@@ -72,16 +72,21 @@ owner decision. [Tool governance](tool-governance.md) is a retirement pointer.
 
 ## Evidence of an actual call
 
-A Ready Agent or fluent answer is insufficient. The retained verification
-pattern creates a ConfigMap with an unpredictable name, asks the agent to
-list it, and requires the structured A2A task history to contain:
+A Ready Agent or fluent answer is insufficient. The verification pattern creates
+a ConfigMap with an unpredictable name, asks the agent to list it, and requires
+the structured A2A task history to contain:
 
 1. a completed task;
 2. a `function_call` for the requested tool;
 3. a successful `function_response` with that unpredictable value in its
    payload, not merely in the model's reply.
 
-[scripts/verify-chat.py](../scripts/verify-chat.py) implements that check.
+[scripts/verify-chat.py](../scripts/verify-chat.py) implements that check. It is
+now run only against its own fixtures, in `hygiene`: the shard that drove it
+against a live cluster retired with the runtime whose agent it conversed with,
+so no CI job verifies a tool round-trip on a real cluster today. The verifier is
+kept because the rule is the durable part and a future runtime's proof should be
+held to it.
 It does not certify every future turn. A small model can call the tool
 correctly and still summarize the response incorrectly; inspect structured
 history rather than accepting prose as the system of record.

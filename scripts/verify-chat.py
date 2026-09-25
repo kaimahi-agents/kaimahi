@@ -8,13 +8,21 @@ Optional positional args cover the tool path:
 With TOOL, the task history must additionally contain a function_call for
 that tool name AND a successful (isError == false) function_response for it
 — a plausible-sounding reply without a real MCP invocation fails. With
-SUBSTRING, that successful function_response's payload must contain it (CI
-passes an unguessable probe ConfigMap name, so the payload can only have
-come from a live cluster round-trip). The model's prose is printed but not
-asserted on: a 3B model garbles unguessable strings when relaying them
+SUBSTRING, that successful function_response's payload must contain it (the
+retired runtime shard passed an unguessable probe ConfigMap name, so the
+payload could only have come from a live cluster round-trip). The model's
+prose is printed but not asserted on: a 3B model garbles unguessable strings
+when relaying them
 (CI flake class 2 — PR #24 saw `probe-46649d55` in the tool payload and
 `probe-466448a247` in the reply), and requiring a verbatim copy tests the
 model, not the tool path.
+
+No CI job runs this against a live cluster any more: the shard that did
+conversed with the legacy runtime's agent and retired with it, so the only
+caller left is `--selftest` in `hygiene`. What that costs is recorded in
+docs/development.md — the verdicts below are proven against fixtures, not
+against a cluster. The file is kept because the rule it encodes is the durable
+part: a future runtime's tool proof should be held to it rather than to prose.
 
 An unanswered question is the other way a chat ends without an answer: the
 agent calls the runtime's built-in `ask_user` tool and the task ends
