@@ -145,7 +145,7 @@ Definition replaces the source read:
 
 | Step | What it does |
 |---|---|
-| Definition | Resolve the bundle. Capture one first if the agent has none |
+| Definition | Resolve the supplied bundle. An agent with no bundle needs a separate, reviewed capture first |
 | Target | Resolve the destination context, via kubeconfig or AKS |
 | Orka | Check destination CRDs and controller readiness; install only if permitted |
 | Inference | Resolve the destination Provider |
@@ -155,7 +155,13 @@ Definition replaces the source read:
 Lift would be **defined in terms of deploy, not beside it**: the Deploy step is
 #202's `Render` and `Deploy` for the resolved target, unchanged. Lift owns only
 what deploy should not — definition resolution, target resolution, prerequisite
-installation, and the stricter guard below.
+installation, and the stricter guard below. With `--plan`, resolve the bundle
+and inspect destination resources and prerequisites, using server-side dry-run
+where a comparison is possible; do not install prerequisites, create
+Provider/Agent resources, or write a captured bundle as a side effect. Where
+missing CRDs or other prerequisites prevent a reuse comparison, report that
+outcome as unknown until prerequisites are installed, rather than installing
+just to make the plan definitive.
 
 That matters for more than tidiness. There is one implementation of
 deployment, so there is nothing to drift; and if lift later proves
@@ -170,12 +176,12 @@ a separate verb is [open](#open-questions).
 
 | Decision in `/lift` | Where asked | Flag |
 |---|---|---|
-| Target source, then context or subscription+cluster | `chat_lift.go:62,77,98,118` | `--to-context` XOR `--subscription`+`--resource-group`+`--cluster` |
+| Target source, then context or subscription+cluster | `chat_lift.go:88,103,124,144` | `--to-context` XOR `--subscription`+`--resource-group`+`--cluster` |
 | Orka CRDs missing — install? | `chat_lift_prerequisites.go:55` | `--install-orka`, else refuse |
 | Orka controller unavailable — repair? | `chat_lift_prerequisites.go:75` | `--install-orka`, else refuse |
 | Which inference | `chat_lift_prerequisites.go:136` | `--inference`, **required** |
 | Kubernetes tool missing — install? | `chat_lift_prerequisites.go:170` | `--install-k8s-tool`, else refuse |
-| Final deployment review | `chat_lift.go:221` | `--plan`, then re-run without it |
+| Final deployment review | `chat_lift.go:245-250` | `--plan`, then re-run without it |
 | Retry after failure | `chat_lift_deploy.go:60-63` | re-run the command |
 
 `--inference` has **no default**, for the reason `--payload` has none. Keeping
@@ -183,9 +189,17 @@ the bundle's own configuration is frequently wrong: a Provider naming a
 cluster-local Ollama Service resolves to nothing at the destination. The
 command would not guess which of those two an operator meant.
 
+The existing Kubernetes tool installer writes resources into `orka-system`
+(`orka_k8s_tool.go:24-48`) and `prepareLiftTools` already refuses installation
+outside that namespace (`chat_lift_prerequisites.go:167-169`). The proposed
+`--install-k8s-tool` keeps that limit: installation stays confined to
+`orka-system` unless namespace-aware installation is separately built; in any
+other `--to-namespace`, the tool must already be present there or the command
+refuses. `--to-namespace` continues to select where the Agent itself deploys.
+
 ### The guard is not bypassed
 
-`/lift` sets `worker.guarded = true` (`chat_lift.go:202`), which suppresses
+`/lift` sets `worker.guarded = true` (`chat_lift.go:228`), which suppresses
 `guardOrkaCreate` (`orka_create_online.go:60-88`). That is correct there: the
 operator selected the destination from a list of live clusters, saw it in the
 header, and confirmed a review pane naming it.
@@ -234,7 +248,10 @@ not proposed here.
 
 Prints the resolved bundle and its digest, the destination, the inference
 selection, every prerequisite that is absent, and what would be created versus
-reused — then stops. No cluster write occurs.
+reused — then stops. The planning pass may read the destination and use
+server-side dry-run for reuse comparisons, but never installs prerequisites,
+creates resources, or writes a captured bundle; this document does not
+implement `--plan` itself.
 
 The precedent is `kmx lift --plan`: *"print what would be created, where, and
 stop"* (`lift_commands.go`).
@@ -277,14 +294,16 @@ is phase 1 below and is independent of everything else in this document.
 and of #202. AKS target resolution needs `az`, and the seam above is the
 prerequisite for testing any of it.
 
-**2 — Capture: a running agent to a portable bundle.** The new work. Refuses
+**2 — Capture: a running agent to a portable bundle.** Optional on-ramp for
+agents without a bundle, not a prerequisite when a bundle is supplied. Refuses
 rather than warns on anything the portable format cannot carry, names a
-`secretRef` rather than a value, and writes a bundle the operator commits.
-Depends on #202 for `PortableAgent`.
+`secretRef` rather than a value, and writes a bundle the operator reviews and
+commits. Depends on #202 for `PortableAgent`.
 
-**3 — `kmx agent lift`.** Resolve bundle → target → prerequisites → render →
-deploy, with the guard, `--plan` and outcome reporting. Depends on 2 and on
-#202's `Render`/`Deploy`.
+**3 — `kmx agent lift`.** Resolve a supplied bundle → target → prerequisites →
+render → deploy, with the guard, `--plan` and outcome reporting. Depends on
+#202's `Render`/`Deploy`, not on capture; a bundle that already exists deploys
+without it.
 
 **4 — Point `/lift` at the same path.** Not proposed here, and David's call:
 the TUI would supply the same resolved options from its pickers, removing the
@@ -326,8 +345,11 @@ work is unguarded by existing coverage and must bring its own.
    configured one. That justifies a separate verb only while deploy stays
    single-target: once deploy grows `--to-context` for promotion between
    environments, lift's remaining content is prerequisite installation.
-   Against a separate verb: #194 does not mention lift, and `kmx lift` already
-   exists taking a different object. For it: `README.md:28` commits to
+   #194's opening names `kmx agent lift` explicitly as using the same bundle
+   and lifecycle operations as the rest of the design, so that issue does not
+   argue against a separate verb. #203 names the active cluster-provisioning
+   command `kmx aks up`, retaining `kmx lift` as a deprecated alias; neither
+   PR has merged into this one. For a separate verb: `README.md:28` commits to
    `kmx agent lift` and `scripts/check-readme-front-door.py:36` enforces the
    line, so reversing is a product decision.
 4. **Does v1 refuse Foundry, or accept fully-specified Foundry?** This document
