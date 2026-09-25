@@ -261,7 +261,7 @@ func (b *orkaChatBackend) alternativeFoundryRegions(ctx context.Context, cluster
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				raw, e := liftDiscovery(ctx, "az", "cognitiveservices", "model", "list", "--subscription", cluster.Subscription, "--location", region, "-o", "json", "--only-show-errors")
+				raw, e := b.app.liftDiscovery(ctx, "az", "cognitiveservices", "model", "list", "--subscription", cluster.Subscription, "--location", region, "-o", "json", "--only-show-errors")
 				if e != nil {
 					results[i].err = e
 					return
@@ -271,7 +271,7 @@ func (b *orkaChatBackend) alternativeFoundryRegions(ctx context.Context, cluster
 					results[i].err = e
 					return
 				}
-				raw, e = liftDiscovery(ctx, "az", "cognitiveservices", "usage", "list", "--subscription", cluster.Subscription, "--location", region, "-o", "json", "--only-show-errors")
+				raw, e = b.app.liftDiscovery(ctx, "az", "cognitiveservices", "usage", "list", "--subscription", cluster.Subscription, "--location", region, "-o", "json", "--only-show-errors")
 				if e != nil {
 					results[i].err = e
 					return
