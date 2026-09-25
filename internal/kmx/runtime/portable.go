@@ -494,6 +494,26 @@ type OrkaShorthand struct {
 	ProviderRateLimit, AgentRateLimit                   *OrkaRateLimit
 }
 
+// cloneOrkaRateLimit returns a deep copy of limit — a new struct with its
+// own copies of RequestsPerMinute and TokensPerMinute, not the caller's
+// pointers — so that encoding never aliases a caller-owned value. A nil
+// limit stays nil, because an unstated limit is not a stated empty one.
+func cloneOrkaRateLimit(limit *OrkaRateLimit) *OrkaRateLimit {
+	if limit == nil {
+		return nil
+	}
+	clone := &OrkaRateLimit{}
+	if limit.RequestsPerMinute != nil {
+		rpm := *limit.RequestsPerMinute
+		clone.RequestsPerMinute = &rpm
+	}
+	if limit.TokensPerMinute != nil {
+		tpm := *limit.TokensPerMinute
+		clone.TokensPerMinute = &tpm
+	}
+	return clone
+}
+
 // EncodeOrkaShorthand deterministically encodes flag-shaped input into a
 // closed portable document and retains those exact encoded bytes as its
 // source. Struct field order fixes key order, so the same shorthand always
@@ -519,7 +539,7 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 					Type:      s.ProviderType,
 					BaseURL:   s.BaseURL,
 					SecretRef: OrkaSecretRefExtension{Name: s.SecretName, Key: s.SecretKey},
-					RateLimit: s.ProviderRateLimit,
+					RateLimit: cloneOrkaRateLimit(s.ProviderRateLimit),
 				},
 			},
 		},
@@ -527,7 +547,7 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	// Only state an agent block the caller actually asked for: an empty one
 	// would be a field a renderer then has to decide what to do with.
 	if len(s.Tools) > 0 || len(s.Skills) > 0 || s.AgentRateLimit != nil {
-		block := &OrkaAgentExtension{RateLimit: s.AgentRateLimit}
+		block := &OrkaAgentExtension{RateLimit: cloneOrkaRateLimit(s.AgentRateLimit)}
 		for _, name := range s.Tools {
 			block.Tools = append(block.Tools, OrkaNamedRef{Name: name})
 		}

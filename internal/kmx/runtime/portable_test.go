@@ -670,3 +670,78 @@ func TestEncodeOrkaShorthandRejectsInvalidUTF8(t *testing.T) {
 		t.Errorf("the refusal echoed the invalid value: %v", err)
 	}
 }
+
+// EncodeOrkaShorthand must not alias the caller's rate limit structs or the
+// pointed-to limit values: mutating any of them after encoding must never
+// change the returned document, its source bytes, or its digest, because a
+// portable identity fixed at encode time cannot depend on what a caller does
+// afterward.
+func TestEncodeOrkaShorthandCopiesRateLimitsDefensively(t *testing.T) {
+	rpm := int32(10)
+	tpm := int64(1000)
+	s := validShorthand()
+	s.ProviderRateLimit = &OrkaRateLimit{RequestsPerMinute: &rpm}
+	s.AgentRateLimit = &OrkaRateLimit{TokensPerMinute: &tpm}
+
+	agent, err := EncodeOrkaShorthand(s)
+	if err != nil {
+		t.Fatalf("valid shorthand must encode: %v", err)
+	}
+	sourceBefore := string(agent.Source())
+	digestBefore := PortableBundleDigest(agent.Source())
+	providerRPMBefore := *agent.Extensions.Orka.Provider.RateLimit.RequestsPerMinute
+	agentTPMBefore := *agent.Extensions.Orka.Agent.RateLimit.TokensPerMinute
+
+	// Mutate the caller's structs and the values their pointers reach.
+	rpm = 999
+	tpm = 999999
+	s.ProviderRateLimit.RequestsPerMinute = nil
+	s.AgentRateLimit.TokensPerMinute = nil
+	s.ProviderRateLimit = &OrkaRateLimit{}
+	s.AgentRateLimit = &OrkaRateLimit{}
+
+	if got := string(agent.Source()); got != sourceBefore {
+		t.Errorf("mutating the caller's rate limits changed Source():\n%s\n---\n%s", got, sourceBefore)
+	}
+	if got := PortableBundleDigest(agent.Source()); got != digestBefore {
+		t.Errorf("mutating the caller's rate limits changed the digest: %s != %s", got, digestBefore)
+	}
+	if got := *agent.Extensions.Orka.Provider.RateLimit.RequestsPerMinute; got != providerRPMBefore {
+		t.Errorf("mutating the caller's rpm value changed the encoded field: %d != %d", got, providerRPMBefore)
+	}
+	if got := *agent.Extensions.Orka.Agent.RateLimit.TokensPerMinute; got != agentTPMBefore {
+		t.Errorf("mutating the caller's tpm value changed the encoded field: %d != %d", got, agentTPMBefore)
+	}
+}
+
+// A nil rate limit, or one with only one of its two fields set, must encode
+// (and clone) without panicking or fabricating the field the caller omitted.
+func TestEncodeOrkaShorthandClonesNilAndPartialRateLimits(t *testing.T) {
+	rpm := int32(5)
+	for _, tc := range []struct {
+		name              string
+		providerRateLimit *OrkaRateLimit
+		agentRateLimit    *OrkaRateLimit
+	}{
+		{"both nil", nil, nil},
+		{"provider partial, agent nil", &OrkaRateLimit{RequestsPerMinute: &rpm}, nil},
+		{"provider empty", &OrkaRateLimit{}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := validShorthand()
+			s.ProviderRateLimit = tc.providerRateLimit
+			s.AgentRateLimit = tc.agentRateLimit
+			agent, err := EncodeOrkaShorthand(s)
+			if err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			if tc.providerRateLimit == nil {
+				if agent.Extensions.Orka.Provider.RateLimit != nil {
+					t.Errorf("nil provider rate limit was encoded as non-nil")
+				}
+			} else if agent.Extensions.Orka.Provider.RateLimit == tc.providerRateLimit {
+				t.Errorf("provider rate limit was aliased, not cloned")
+			}
+		})
+	}
+}
