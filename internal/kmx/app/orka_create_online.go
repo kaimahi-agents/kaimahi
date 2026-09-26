@@ -87,7 +87,32 @@ func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 	return nil
 }
 
-func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle) (err error) {
+// createOrkaOnline deploys a bundle that was not rendered from a portable
+// document. Lift is its caller: lift assembles its bundle from objects that
+// already exist in the source cluster, so there is no portable source to
+// render and no rendered bytes to emit — the artifact is serialized from the
+// bundle itself, exactly as it always was.
+func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle) error {
+	_, err := a.createOrkaStaged(ctx, opt, bundle, bundle.YAML)
+	return err
+}
+
+// createOrkaStaged runs the staged online create: mutation guard, installed
+// CRD validation, collision checks, the separately provisioned Secret's key
+// proof, strict server dry-runs, artifact emission, and Provider → Ready →
+// Agent → Ready → optional Task/result in that order. Nothing about that
+// sequence changed when the seam was added.
+//
+// artifact renders the reviewable document for the provenance this deploy
+// resolved. It is a function rather than a string because the provenance is
+// only known here, after the installed CRDs have been read — and it is a
+// parameter rather than a call to bundle.YAML so that a caller holding the
+// exact bytes it is deploying can emit those bytes instead of a
+// re-serialized copy of them.
+//
+// It returns the created Agent's identity so a lifecycle Deploy can name what
+// it created. A --dry-run create writes nothing and returns a zero identity.
+func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error)) (agent orkaIdentity, err error) {
 	stage := "Validate schemas and prerequisites"
 	report := func(status string, err error) {
 		if a.operationProgress != nil {
@@ -101,37 +126,37 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		}
 	}()
 	if err := a.guardOrkaCreate(ctx, opt); err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	crds := map[string][]byte{}
 	for _, kind := range []string{"Agent", "Provider", "Task"} {
 		name := strings.ToLower(kind) + "s.core.orka.ai"
 		raw, err := a.orkaCapture(ctx, nil, "get", "crd", name, "-o", "json")
 		if err != nil {
-			return fmt.Errorf("cannot read installed %s CRD (no offline fallback): %w", name, err)
+			return orkaIdentity{}, fmt.Errorf("cannot read installed %s CRD (no offline fallback): %w", name, err)
 		}
 		crds[kind] = raw
 	}
 	validator, err := orkaschema.Installed(crds)
 	if err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	if err := validateOrkaBundle(bundle, validator); err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
-	document, err := bundle.YAML(validator.Provenance())
+	document, err := artifact(validator.Provenance())
 	if err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	existing := map[string]*orkaIdentity{}
 	if a.liftReuse && bundle.Task != nil {
-		return fmt.Errorf("lift cannot reuse or resubmit Tasks")
+		return orkaIdentity{}, fmt.Errorf("lift cannot reuse or resubmit Tasks")
 	}
 	for _, doc := range bundle.Documents()[1:] {
 		if a.liftReuse {
 			id, err := a.matchingLiftResource(ctx, opt.Namespace, doc)
 			if err != nil {
-				return err
+				return orkaIdentity{}, err
 			}
 			if id != nil {
 				existing[id.Kind] = id
@@ -139,7 +164,7 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 			continue
 		}
 		if err := a.orkaAbsent(ctx, opt.Namespace, doc); err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 	}
 	key := bundle.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"].(string)
@@ -148,16 +173,16 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
 	marker, err := a.orkaCapture(ctx, nil, "-n", opt.Namespace, "get", "secret", opt.Secret, "--ignore-not-found=true", "-o", template)
 	if err != nil {
-		return fmt.Errorf("cannot read Provider Secret key presence: %w", err)
+		return orkaIdentity{}, fmt.Errorf("cannot read Provider Secret key presence: %w", err)
 	}
 	switch string(marker) {
 	case "":
-		return fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", opt.Namespace, opt.Secret)
+		return orkaIdentity{}, fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", opt.Namespace, opt.Secret)
 	case "secret\n":
-		return fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
+		return orkaIdentity{}, fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
 	case "secret\npresent":
 	default:
-		return fmt.Errorf("Provider Secret key check returned an invalid presence marker")
+		return orkaIdentity{}, fmt.Errorf("Provider Secret key check returned an invalid presence marker")
 	}
 	report("done", nil)
 	stage = "Validate server admission"
@@ -168,36 +193,36 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		}
 		body, err := json.Marshal(doc)
 		if err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 		if _, err := a.orkaCapture(ctx, body, "-n", opt.Namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json"); err != nil {
-			return fmt.Errorf("%s strict server create preflight failed: %w", doc["kind"], err)
+			return orkaIdentity{}, fmt.Errorf("%s strict server create preflight failed: %w", doc["kind"], err)
 		}
 	}
 	if opt.DryRun {
 		if err := a.emitOrka(opt, document); err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 		a.notef("Orka bundle validated against installed schemas and server admission; not applied; result access and execution were not tested.")
-		return nil
+		return orkaIdentity{}, nil
 	}
 	var session *orkaResultSession
 	if bundle.Task != nil {
 		session, err = a.openOrkaResultSession(ctx, opt)
 		if err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 		defer session.close()
 		// Stop dependency waits and later writes if the forward or its sole
 		// result connection is lost. Never recover by resubmitting the Task.
 		ctx = session.ctx
 		if err := session.probe(ctx, opt.Namespace, orkaObjectName(bundle.Task)); err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 	}
 	if !a.liftReuse {
 		if err := a.emitOrka(opt, document); err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 	}
 	report("done", nil)
@@ -216,7 +241,7 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		if a.liftReuse {
 			match, checkErr := a.matchingLiftResource(ctx, opt.Namespace, doc)
 			if checkErr != nil {
-				return checkErr
+				return orkaIdentity{}, checkErr
 			}
 			if match != nil {
 				id = *match
@@ -229,7 +254,10 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 			a.notef("Reusing matching %s/%s", id.Kind, id.Name)
 		}
 		if err != nil {
-			return err
+			return orkaIdentity{}, err
+		}
+		if id.Kind == "Agent" {
+			agent = id
 		}
 		created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
 		if reused {
@@ -241,29 +269,29 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		report("active", nil)
 		a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", id.Kind, id.Name, id.UID)
 		if err := a.waitOrkaReady(ctx, opt.Namespace, id); err != nil {
-			return err
+			return orkaIdentity{}, err
 		}
 		report("done", nil)
 	}
 	if bundle.Task == nil {
 		a.notef("Orka Provider and Agent are Ready; no model response was tested.")
-		return nil
+		return agent, nil
 	}
 	id, err := a.createOrkaObject(ctx, opt.Namespace, bundle.Task)
 	if err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	created = append(created, "Task/"+id.Name+" UID "+id.UID)
 	a.notef("Created Task/%s (UID %s); waiting for execution and a retrievable answer.", id.Name, id.UID)
 	answer, err := a.waitOrkaTaskResult(ctx, opt.Namespace, id, session)
 	if err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	if _, err := fmt.Fprintln(a.Out, answer); err != nil {
-		return err
+		return orkaIdentity{}, err
 	}
 	a.notef("Task/%s UID %s succeeded and its answer was retrieved. Fresh-name and UID checks do not bind the result bytes to a UID.", id.Name, id.UID)
-	return nil
+	return agent, nil
 }
 
 func orkaObjectName(doc map[string]any) string {

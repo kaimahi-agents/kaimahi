@@ -112,6 +112,25 @@ func (a *App) operationContext() context.Context {
 	return context.Background()
 }
 
+// withRunContext returns a copy of this App whose Runner is bound to ctx, so
+// a caller that supplied one cancels the child commands this copy runs.
+//
+// A copy, rather than rebinding a.Run.Context in place: the Runner is shared
+// by every caller holding this App, and one entry point's context must not
+// silently become the deadline of a command someone else started. It is the
+// same shallow App+Runner copy appAtAgentLocation already makes to aim a
+// subset of reads somewhere else without moving the original.
+func (a *App) withRunContext(ctx context.Context) *App {
+	if a.Run == nil || a.Run.Context == ctx {
+		return a
+	}
+	app := *a
+	runner := *a.Run
+	runner.Context = ctx
+	app.Run = &runner
+	return &app
+}
+
 // kubectl returns a kubectl argument list carrying the explicit --context.
 //
 // Every read and every write kmx makes goes through this. The Makefile's

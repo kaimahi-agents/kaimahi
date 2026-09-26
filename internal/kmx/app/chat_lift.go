@@ -267,6 +267,9 @@ func (b *orkaChatBackend) liftAgentTo(ctx context.Context, renderer *chatRendere
 	err = b.runLiftDeployment(ctx, &worker, "Deploy Agent", []string{"Validate schemas and prerequisites", "Validate server admission", "Create Provider", "Wait for Provider Ready", "Create Agent", "Wait for Agent Ready"}, func(worker *App) error {
 		deployCtx, cancel := context.WithTimeout(worker.operationContext(), 5*time.Minute)
 		defer cancel()
+		// Lift has no portable source: its bundle is assembled from objects
+		// that already exist in the source cluster, so it cannot render and
+		// deploys the bundle it built directly.
 		return worker.createOrkaOnline(deployCtx, opt, bundle)
 	})
 	if err != nil {

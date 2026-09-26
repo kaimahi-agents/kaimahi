@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -34,7 +34,15 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := resolveOrkaInstructions(&opt); err != nil {
 		return err
 	}
-	bundle, err := createOrkaBundle(opt)
+	// One adapter instance serves this whole create: Render and Deploy are
+	// declared by it because they act on these flags, and Deploy consumes
+	// only what this Render produced.
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
+	source, err := portableOrkaSource(opt)
+	if err != nil {
+		return err
+	}
+	rendered, provenance, err := adapter.renderOrka(source)
 	if err != nil {
 		return err
 	}
@@ -46,23 +54,20 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		return a.createOrkaOnline(ctx, opt, bundle)
-	}
-	validator, err := orkaschema.Offline(opt.SchemaTarget)
-	if err != nil {
+		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{})
 		return err
 	}
-	if err := validateOrkaBundle(bundle, validator); err != nil {
-		return err
-	}
-	document, err := bundle.YAML(validator.Provenance())
+	// Offline: renderOrka already validated against the pinned snapshot and
+	// returned its provenance, so the artifact is assembled from the exact
+	// bytes it rendered rather than from a re-serialized copy of them.
+	document, err := scaffold.OrkaArtifact(provenance, rendered.Documents())
 	if err != nil {
 		return err
 	}
 	if err := a.emitOrka(opt, document); err != nil {
 		return err
 	}
-	a.notef("Orka bundle not applied. Schema: %s", validator.Provenance())
+	a.notef("Orka bundle not applied. Schema: %s", provenance)
 	a.notef("Use the namespace the Orka controller watches. Provision the Secret key separately; never write the skeleton.\nCreate Provider only, wait for current-generation Ready; then Agent and wait; then optional Task.\nLocal schema validation does not test admission, result access or execution.")
 	return nil
 }
@@ -132,6 +137,9 @@ func resolveOrkaInstructions(opt *CreateOptions) error {
 
 // Bundle construction is memory-only, including when called from Bubble Tea's
 // synchronous Update. Callers resolve file inputs before entering that loop.
+// It is the wizard's validation path: the create command itself renders
+// through the Orka lifecycle adapter, which parses the portable document
+// these same flags encode.
 func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	agentLimits, err := parseOrkaLimits(opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, "agent")
 	if err != nil {
@@ -141,33 +149,34 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	instructions := opt.InstructionText
-	if opt.Instructions != "" {
-		if instructions != "" {
-			return nil, fmt.Errorf("supply only one instructions source")
-		}
-		if opt.instructionFileText == nil {
-			return nil, fmt.Errorf("instructions file must be resolved before validation")
-		}
-		instructions = *opt.instructionFileText
-	}
-	names := func(value string) []string {
-		if value == "" {
-			return nil
-		}
-		items := strings.Split(value, ",")
-		for i := range items {
-			items[i] = strings.TrimSpace(items[i])
-		}
-		return items
+	instructions, err := resolveOrkaInstructionText(opt)
+	if err != nil {
+		return nil, err
 	}
 	return scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: opt.Name, Namespace: opt.Namespace, Description: opt.Description,
 		ProviderType: opt.ProviderType, Model: opt.Model, BaseURL: opt.BaseURL,
 		SecretName: opt.Secret, SecretKey: opt.SecretKey, Instructions: instructions,
-		Tools: names(opt.Tools), Skills: names(opt.Skills), TaskPrompt: opt.Task,
+		Tools: orkaNameList(opt.Tools), Skills: orkaNameList(opt.Skills), TaskPrompt: opt.Task,
 		AgentRateLimit: agentLimits, ProviderRateLimit: providerLimits,
 	})
+}
+
+// resolveOrkaInstructionText returns the instructions these flags state,
+// from whichever single source stated them. It is shared by the wizard's
+// validation and by the portable document the create command renders from,
+// so neither can read a different prompt than the other.
+func resolveOrkaInstructionText(opt CreateOptions) (string, error) {
+	if opt.Instructions == "" {
+		return opt.InstructionText, nil
+	}
+	if opt.InstructionText != "" {
+		return "", fmt.Errorf("supply only one instructions source")
+	}
+	if opt.instructionFileText == nil {
+		return "", fmt.Errorf("instructions file must be resolved before validation")
+	}
+	return *opt.instructionFileText, nil
 }
 
 func parseOrkaLimits(requests, tokens, owner string) (*scaffold.OrkaRateLimit, error) {
