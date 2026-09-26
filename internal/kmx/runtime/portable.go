@@ -8,7 +8,8 @@
 //
 // The Orka extension states only what internal/kmx/scaffold can render:
 // namespace, Provider type/baseURL/secretRef/rateLimit, and the optional
-// Agent tools/skills/rateLimit. It deliberately does not restate the model —
+// Agent tools/skills/rateLimit. The optional common spec.description is
+// rendered as the Agent description annotation. It deliberately does not restate the model —
 // spec.model.name is the document's one statement of which model to use, and
 // the adapter renders it into the Orka Provider's defaultModel — so a
 // document cannot say two different things about the same model.
@@ -59,6 +60,7 @@ type PortableMetadata struct {
 // and which model it uses. Anything platform-specific belongs in an extension.
 type PortableSpec struct {
 	Instructions string        `yaml:"instructions"`
+	Description  string        `yaml:"description,omitempty"`
 	Model        PortableModel `yaml:"model"`
 }
 
@@ -296,6 +298,9 @@ func (p *PortableAgent) validate() error {
 	if err := scaffold.ValidateBlockText(p.Spec.Instructions); err != nil {
 		return fmt.Errorf("spec.instructions %w", err)
 	}
+	if err := scaffold.ValidateSingleLineText(p.Spec.Description); err != nil {
+		return fmt.Errorf("spec.description %w", err)
+	}
 	if strings.TrimSpace(p.Spec.Model.Name) == "" {
 		return fmt.Errorf("spec.model.name is required")
 	}
@@ -385,6 +390,7 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 		{"kind", p.Kind},
 		{"metadata.name", p.Metadata.Name},
 		{"spec.instructions", p.Spec.Instructions},
+		{"spec.description", p.Spec.Description},
 		{"spec.model.name", p.Spec.Model.Name},
 	}
 	if orka := p.Extensions.Orka; orka != nil {
@@ -420,7 +426,7 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 // check can quote one. It is also the shorthand's only scan, because every
 // shorthand field reaches one of these strings.
 func refusePortableSecretShapes(p *PortableAgent) error {
-	values := []string{p.APIVersion, p.Kind, p.Metadata.Name, p.Spec.Instructions, p.Spec.Model.Name}
+	values := []string{p.APIVersion, p.Kind, p.Metadata.Name, p.Spec.Instructions, p.Spec.Description, p.Spec.Model.Name}
 	if orka := p.Extensions.Orka; orka != nil {
 		values = append(values, orka.APIVersion, orka.Namespace, orka.Provider.Type,
 			orka.Provider.BaseURL, orka.Provider.SecretRef.Name, orka.Provider.SecretRef.Key)
@@ -488,7 +494,7 @@ func refusePortableSecretShape(value string) error {
 // state. It is a distinct type so that a field added to OrkaSpec cannot be
 // silently dropped from an encoded document.
 type OrkaShorthand struct {
-	Name, Namespace, Instructions                       string
+	Name, Namespace, Instructions, Description          string
 	ProviderType, Model, BaseURL, SecretName, SecretKey string
 	Tools, Skills                                       []string
 	ProviderRateLimit, AgentRateLimit                   *OrkaRateLimit
@@ -529,6 +535,7 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 		Metadata:   PortableMetadata{Name: s.Name},
 		Spec: PortableSpec{
 			Instructions: s.Instructions,
+			Description:  s.Description,
 			Model:        PortableModel{Name: s.Model},
 		},
 		Extensions: PortableExtensions{

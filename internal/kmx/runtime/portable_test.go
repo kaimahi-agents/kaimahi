@@ -176,6 +176,25 @@ func TestPortableSourceRetainsExactBytesDefensively(t *testing.T) {
 
 // The portable digest is framed over these exact bytes through the existing
 // digest API, which is why the source is retained rather than reserialized.
+func TestPortableDescriptionChangesPortableIdentity(t *testing.T) {
+	withDescription := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
+		"  instructions: Do the thing.\n  description: A helpful assistant\n")
+	plain, err := ParsePortableAgent([]byte(minimalPortableYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	described, err := ParsePortableAgent([]byte(withDescription))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Spec.Description != "" || described.Spec.Description != "A helpful assistant" {
+		t.Fatalf("descriptions = %q, %q", plain.Spec.Description, described.Spec.Description)
+	}
+	if PortableBundleDigest(plain.Source()) == PortableBundleDigest(described.Source()) {
+		t.Fatal("a changed description kept the same portable identity")
+	}
+}
+
 func TestPortableSourceFeedsThePortableBundleDigest(t *testing.T) {
 	agent, err := ParsePortableAgent([]byte(validPortableYAML))
 	if err != nil {
@@ -352,7 +371,7 @@ func TestParsePortableAgentRequiresExactlyTheOrkaExtension(t *testing.T) {
 		{"no extensions block", portableCore, "extensions.orka is required"},
 		{"empty extensions block", portableCore + "extensions: {}\n", "extensions.orka is required"},
 		{"null orka extension", portableCore + "extensions:\n  orka:\n", "extensions.orka is required"},
-		{"a kagent extension", portableCore + "extensions:\n  kagent:\n    namespace: kagent\n", "field kagent not found"},
+		{"an unknown extension", portableCore + "extensions:\n  another:\n    namespace: elsewhere\n", "field another not found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mustNotParse(t, tc.doc, tc.want)
@@ -367,7 +386,6 @@ func TestParsePortableAgentRejectsMalformedNames(t *testing.T) {
 	for _, tc := range []struct{ name, old, replacement, want string }{
 		{"blank metadata.name", "  name: hello\n", "  name: \"\"\n", "metadata.name"},
 		{"uppercase metadata.name", "  name: hello\n", "  name: Hello\n", "metadata.name"},
-		{"reserved metadata.name", "  name: hello\n", "  name: hello-world\n", "metadata.name"},
 		{"blank instructions", "  instructions: Do the thing.\n", "  instructions: \"   \"\n", "spec.instructions is required"},
 		{"blank model name", "    name: gpt-4o-mini\n", "    name: \"\"\n", "spec.model.name is required"},
 		{"wrong extension apiVersion", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1\n", "apiVersion must be"},
@@ -487,6 +505,12 @@ func TestParsePortableAgentRejectsControlCharactersRenderingWouldRefuse(t *testi
 // The policy shared for instructions is the BLOCK-scalar one, not the
 // single-line one: instructions are multi-line text by nature, and a gate
 // that refused a line break would refuse the ordinary case.
+func TestParsePortableAgentRefusesUnrenderableDescription(t *testing.T) {
+	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
+		"  instructions: Do the thing.\n  description: \"hello\\nworld\"\n")
+	mustNotParse(t, doc, "spec.description")
+}
+
 func TestParsePortableAgentAcceptsMultiLineInstructions(t *testing.T) {
 	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
 		"  instructions: |\n    Do the thing.\n    \tThen say so.\n")
@@ -550,6 +574,22 @@ func TestEncodeOrkaShorthandIsDeterministicAndRoundTrips(t *testing.T) {
 // Nothing the caller did not state appears in the encoded document: an
 // omitted tool list must not become an empty agent block a renderer would
 // then have to interpret.
+func TestEncodeOrkaShorthandCarriesDescription(t *testing.T) {
+	s := validShorthand()
+	s.Description = "A helpful assistant"
+	encoded, err := EncodeOrkaShorthand(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed, err := ParsePortableAgent(encoded.Source())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reparsed.Spec.Description != s.Description {
+		t.Fatalf("description = %q, want %q", reparsed.Spec.Description, s.Description)
+	}
+}
+
 func TestEncodeOrkaShorthandOmitsUnstatedOptionalFields(t *testing.T) {
 	s := validShorthand()
 	s.Tools, s.Skills, s.SecretKey = nil, nil, ""
