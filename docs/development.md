@@ -90,12 +90,12 @@ bin/kmx down
 A bare `bin/kmx up` is the Orka runtime: kind, Ollama, the model and the pinned
 Orka with its keyless `local` Provider. It deploys no kagent Agent, so the
 model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
-owner-managed application rather than with `kmx govern`, which configures a
-kagent Agent's ModelConfig. Author an Orka Agent with `bin/kmx agent create`, or
+owner-managed application. Author an Orka Agent with `bin/kmx agent create`, or
 get a first answer with `bin/kmx quickstart`.
 
-The legacy kagent loop is explicit, and keeps `govern` because it deploys the
-agent that command names. Start by establishing the live cluster and Orka runtime;
+The legacy kagent runtime can still be INSTALLED explicitly, but nothing in kmx
+drives it: `govern`, `use`, `agent chat`, `agent list` and `agent edit` no
+longer reach it. Start by establishing the live cluster and Orka runtime;
 the component steps require that preceding bare `up`:
 
 ```bash
@@ -103,12 +103,11 @@ bin/kmx up
 bin/kmx up --step kagent
 bin/kmx up --step agent
 bin/kmx plane --source .
-bin/kmx govern hello-world
-bin/kmx agent chat hello-world 'Who are you?'
+bin/kmx credential issue hello-world --secret kaimahi-governed-token --namespace kagent
 bin/kmx ledger hello-world
 ```
 
-This exercises the existing kagent plane path, not Orka authoring. For migration,
+This leaves the legacy objects on the cluster for kubectl. For migration,
 use [getting started](getting-started.md#current-orka-path) and an owner-managed
 application. Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories

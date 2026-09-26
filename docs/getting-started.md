@@ -129,47 +129,46 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 ```bash
 kmx up
 kmx orka status
-kmx agent chat hello-world-agent --interactive --runtime orka --namespace orka-system
+kmx agent chat --interactive --namespace orka-system hello-world-agent
 ```
 
 A bare `up` brings up the **runtime**: kind, the keyless Ollama model server and
 the pinned Orka release with its Provider and Task result-reader account. It
 deploys no agent — `kmx quickstart` is the command that ends with one
 answering, and `kmx agent create` is the one that authors your own. The chat
-line above therefore needs an Agent from one of those two commands first; Orka
-chat is interactive, and one-shot chat remains kagent-specific.
+line above therefore needs an Agent from one of those two commands first. Orka
+chat is a session: `--interactive` is required, and a one-shot invocation is
+refused with the command that works.
 
-The legacy kagent runtime and its two demonstration agents remain reachable
-only as explicit steps, until their retirement slices land:
+The legacy kagent runtime and its two demonstration agents can still be
+INSTALLED as explicit steps, until their retirement slice lands:
 
 ```bash
 kmx up --step kagent
 kmx up --step agent
 kmx up --step tools-agent
-kmx agent chat hello-world 'Who are you?'
 ```
 
 Those steps install the full kagent application profile, including the tool
 server and original `hello-tools` agent from
-[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Its MCP wiring is direct to the
-kagent tool server, not the retired Kaimahi gateway. Both setup paths preserve
-existing non-default routing rather than silently repointing an owner's tools.
+[`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Nothing in kmx drives those
+agents any more: `kmx agent edit`, `kmx govern` and `kmx use` were removed with
+the runtime adapter, and `kmx agent chat` and `kmx agent list` remain but are
+Orka-only, so what these steps leave on the cluster is operated with kubectl.
 An old gateway reference needs [explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
-Interactive `/help` lists local controls; [retry limits](kmx.md#retry-limits)
-explain why an ambiguous one-shot disconnect can repeat effects or spend.
+Interactive `/help` lists local controls.
 
-### Governing that agent
+### Governing an application
 
 ```bash
 kmx plane
-kmx govern hello-world
-kmx agent chat hello-world 'Who are you?'
-kmx ledger hello-world
+kmx migrate <deployment> --namespace <ns> --model local/qwen2.5:3b
+kmx ledger <deployment>
 ```
 
-This existing model-seam path switches the kagent Agent's preset and gives it an
+`kmx migrate` puts an owner-managed application behind the plane and gives it an
 opaque plane token, never the real upstream key. It changes model routing only;
-see [kmx](kmx.md#governing-an-agent). The [direct MCP example](tools.md) remains
+see [kmx](kmx.md#governing-model-traffic). The [direct MCP example](tools.md) remains
 available without Kaimahi tool policy, grants or tool audit.
 
 ## An agent of your own
@@ -190,10 +189,10 @@ the bundle**. Online creation uses installed schemas and ordered readiness waits
 existing result ServiceAccount tests a real model answer. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
 and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
-No-name terminal invocation offers a wizard. Interactive `agent chat` supports
-Orka and kagent; one-shot chat and `agent edit` remain kagent-specific.
-`agent list --namespace <ns>` lists Orka Agents. BYO images, ModelConfig and
-MCP conversion are not provided.
+No-name terminal invocation offers a wizard. `agent chat --interactive` and
+`agent list --namespace <ns>` are Orka-only; a live Agent is edited with
+`kubectl edit agents.core.orka.ai`. BYO images, ModelConfig and MCP conversion
+are not provided.
 
 ## Using Podman instead of Docker
 

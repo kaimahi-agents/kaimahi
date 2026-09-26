@@ -126,7 +126,7 @@ func TestChatPTYRawInput(t *testing.T) {
 		{name: "reason", prompt: "Rejection reason (optional):", keys: "no thanks\r", want: "no thanks", width: 12},
 		{name: "wrapped delete", keys: "abcdefghijklmnop\x7f\x7f\r", want: "abcdefghijklmn", width: 10},
 		{name: "shrink wrapped input", keys: "abcdefghijklmnop" + strings.Repeat("\x7f", 16) + "x\r", want: "x", width: 10},
-		{name: "hint submit", keys: "/hi\t\r", want: "/history", width: 10},
+		{name: "hint submit", keys: "/li\t\r", want: "/lift", width: 10},
 		{name: "transient backend hint", keys: "hello\r", want: "hello", width: 40},
 		{name: "tiny hint", keys: "/\x7fx\r", want: "x", width: 3},
 		{name: "grapheme delete", keys: "e\u0301👩‍💻\x7f\x7fx\r", want: "x", width: 12},
@@ -312,7 +312,7 @@ func TestChatPTYResizeAbortsWithoutStaleRedraw(t *testing.T) {
 	}{
 		{"idle shrink", "", 12, 24, false},
 		{"wrapped grow", "abcdefghijklmnopqrstuv", 40, 24, false},
-		{"hint height change", "/hi", 20, 8, false},
+		{"hint height change", "/li", 20, 8, false},
 		{"approval", "y", 12, 24, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -489,63 +489,6 @@ func TestQuickstartChatHandoffDoesNotTripFirstRawPrompt(t *testing.T) {
 	}
 }
 
-func TestChatPTYSpinnerUsesRendererDestination(t *testing.T) {
-	t.Setenv("TERM", "xterm-256color")
-	t.Setenv("NO_COLOR", "")
-	master, slave := chatPTY(t, 20)
-	dir := t.TempDir()
-	fakeTool(t, dir, "kagent", `sleep 0.4
-printf '%s\n' '{"status":{"state":"completed"},"artifact":{"parts":[{"kind":"text","text":"first"}]}}'
-printf '%s\n' '{"artifact":{"parts":[{"kind":"text","text":" second"}]}}'`)
-	var stderr bytes.Buffer
-	a := &App{Out: slave, Err: &stderr}
-	r := newChatRenderer(slave)
-	r.verbose = true
-	r.beginAssistant("agent")
-	if _, err := a.invokeStream(context.Background(), dir+"/kagent", "", "agent", "hello", "", "off", r, nil); err != nil {
-		t.Fatal(err)
-	}
-	r.finish()
-	if _, err := io.WriteString(slave, "END\n"); err != nil {
-		t.Fatal(err)
-	}
-	fds := []unix.PollFd{{Fd: int32(master.Fd()), Events: unix.POLLIN}}
-	var captured strings.Builder
-	deadline := time.Now().Add(2 * time.Second)
-	for !strings.Contains(captured.String(), "END\r\n") {
-		if n, err := unix.Poll(fds, 100); err != nil || time.Now().After(deadline) {
-			t.Fatalf("incomplete terminal output: %v: %q", err, captured.String())
-		} else if n == 0 {
-			continue
-		}
-		var buf [8192]byte
-		n, err := unix.Read(int(master.Fd()), buf[:])
-		if err != nil {
-			t.Fatal(err)
-		}
-		captured.Write(buf[:n])
-	}
-	output := captured.String()
-	if !strings.Contains(output, "WORKING") || stderr.Len() != 0 {
-		t.Fatalf("spinner used stderr capabilities/destination: %q / %q", output, stderr.String())
-	}
-	screen := chatScreen(output, 20)
-	if strings.Contains(screen, "WORKING") || !strings.Contains(screen, "  first second") || strings.Contains(screen, "  | ") {
-		t.Fatalf("spinner or chunks damaged screen:\n%s\nraw: %q", screen, output)
-	}
-	// A terminal stderr must never enable a spinner in a plain stdout transcript.
-	var plain bytes.Buffer
-	a.Out, a.Err = &plain, slave
-	r = newChatRenderer(&plain)
-	if _, err := a.invokeStream(context.Background(), dir+"/kagent", "", "agent", "hello", "", "off", r, nil); err != nil {
-		t.Fatal(err)
-	}
-	r.finish()
-	if plain.String() != "AGENT (agent)\n  | first second\n\n" {
-		t.Fatalf("plain transcript changed: %q", plain.String())
-	}
-}
-
 func chatPTYReadUntil(t *testing.T, master *os.File, captured *strings.Builder, ready func(string) bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -616,79 +559,6 @@ func TestChatPTYStaticCalloutPromptTransitions(t *testing.T) {
 	}
 }
 
-func TestChatPTYHelpAndExitDispatch(t *testing.T) {
-	for _, tc := range []struct{ name, keys, reason string }{
-		{"exit", "/exit\r", "exit requested"},
-		{"eof", "\x04", "end of input"},
-		{"cancel", "\x03", "cancelled"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("TERM", "xterm-256color")
-			t.Setenv("NO_COLOR", "")
-			a := chatUXFixture(t)
-			a.chatVerbose = true
-			master, slave := chatPTY(t, 100)
-			a.Out, a.Stdin = slave, slave
-			done := make(chan error, 1)
-			go func() { done <- a.interactiveChat("/must-not-invoke", "agent", "", "") }()
-			var captured strings.Builder
-			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "\x1b[2K") })
-			io.WriteString(master, "/he\t\r")
-			chatPTYReadUntil(t, master, &captured, func(s string) bool {
-				_, after, found := strings.Cut(s, "[CHAT HELP]")
-				return found && strings.Contains(after, "\x1b[2K")
-			})
-			io.WriteString(master, tc.keys)
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Fatal(err)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("chat did not exit")
-			}
-			io.WriteString(slave, "END\n")
-			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
-			text := ansi.Strip(captured.String())
-			if !strings.Contains(text, "Chat ended ("+tc.reason+").") || !strings.Contains(text, "Session:") || !strings.Contains(text, "Connecting to agent") || !strings.Contains(text, "Checking model and tool posture") {
-				t.Fatalf("chat dispatch/startup: %s", text)
-			}
-		})
-	}
-}
-
-func TestChatPTYSpinnerContinuesAfterToolEvent(t *testing.T) {
-	t.Setenv("TERM", "xterm-256color")
-	t.Setenv("NO_COLOR", "")
-	for _, mode := range []string{"off", "summary"} {
-		t.Run(mode, func(t *testing.T) {
-			master, slave := chatPTY(t, 80)
-			dir := t.TempDir()
-			fakeTool(t, dir, "kagent", `printf '%s\n' '{"status":{"state":"working","message":{"role":"agent","parts":[{"kind":"text","text":"checking"},{"kind":"data","metadata":{"kagent_type":"function_call"},"data":{"id":"one","name":"read","args":{}}}]}}}'
-sleep 0.6
-printf '%s\n' '{"status":{"state":"completed"},"artifact":{"parts":[{"kind":"text","text":"finished"}]}}'`)
-			r := newChatRenderer(slave)
-			a := &App{Out: slave}
-			r.verbose = true
-			if _, err := a.invokeStream(context.Background(), dir+"/kagent", "", "agent", "hello", "", mode, r, nil); err != nil {
-				t.Fatal(err)
-			}
-			r.finish()
-			io.WriteString(slave, "END\n")
-			var captured strings.Builder
-			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
-			text := ansi.Strip(captured.String())
-			if !strings.Contains(text, "WORKING agent") || r.transient {
-				t.Fatalf("missing/stale post-tool spinner: %q", text)
-			}
-			screen := chatScreen(captured.String(), 80)
-			if strings.Contains(screen, "WORKING agent") || !strings.Contains(screen, "checking") || !strings.Contains(screen, "finished") {
-				t.Fatalf("post-tool spinner damaged transcript: %s", screen)
-			}
-		})
-	}
-}
-
 func TestChatPTYSpinnerResizeNeverErasesReflowedRows(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
@@ -711,33 +581,6 @@ func TestChatPTYSpinnerResizeNeverErasesReflowedRows(t *testing.T) {
 	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
 	if strings.Contains(captured.String()[boundary:], "\x1b[2K") || r.transient || !r.spinnerDisabled {
 		t.Fatalf("resize erased old rows or restarted stale spinner: %q", captured.String())
-	}
-}
-
-func TestChatPTYNoColorKeepsScannerTranscript(t *testing.T) {
-	t.Setenv("TERM", "xterm-256color")
-	t.Setenv("NO_COLOR", "1")
-	a := chatUXFixture(t)
-	master, slave := chatPTY(t, 100)
-	a.Out, a.Stdin = slave, slave
-	done := make(chan error, 1)
-	go func() { done <- a.interactiveChat("/must-not-invoke", "agent", "", "") }()
-	var captured strings.Builder
-	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "YOU > ") })
-	io.WriteString(master, "/help\n/exit\n")
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("scanner chat did not exit")
-	}
-	io.WriteString(slave, "END\n")
-	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
-	text := captured.String()
-	if !strings.HasPrefix(text, "CHAT STATUS\r\n------------\r\n  Agent: agent") || !strings.Contains(text, "[CHAT HELP]") || !strings.Contains(text, "Status: ended") || strings.Contains(text, "\x1b") || strings.Contains(text, "WORKING") {
-		t.Fatalf("NO_COLOR scanner transcript changed: %q", text)
 	}
 }
 

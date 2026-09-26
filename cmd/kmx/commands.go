@@ -93,28 +93,6 @@ func newPlaneCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-func newGovernCommand(state *commandState) *cobra.Command {
-	var opt app.GovernOptions
-	var ttl string
-	cmd := &cobra.Command{Use: "govern [credential]", Short: "Issue a credential and govern an agent", Args: usageArgs(0, 1, "kmx govern [<credential>] [flags]")}
-	cmd.Flags().StringVar(&opt.Agent, "agent", config.DefaultAgent, "agent to put behind the plane")
-	cmd.Flags().StringVar(&opt.Preset, "preset", config.GovernedModelConfig, "governed ModelConfig")
-	cmd.Flags().StringVar(&opt.Secret, "secret", config.GovernedSecret, "agent-side Secret")
-	cmd.Flags().StringVar(&opt.SecretNamespace, "secret-namespace", config.DefaultNamespace, "Secret namespace")
-	cmd.Flags().StringVar(&ttl, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
-	_ = cmd.RegisterFlagCompletionFunc("agent", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return completeLiveAgents(cmd, nil, toComplete)
-	})
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		var err error
-		if opt.TTLSeconds, err = admin.ParseTTL(ttl); err != nil {
-			return err
-		}
-		return a.Govern(parseOptionalCredential(cmd.Flags().Args(), a.Cfg.Credential), opt)
-	})
-	return cmd
-}
-
 func newCredentialsCommand(state *commandState) *cobra.Command {
 	return &cobra.Command{Use: "credentials", Short: "List governed credentials and expiry", Args: cobra.NoArgs, RunE: appRun(state, func(a *app.App) error { return a.Credentials() })}
 }
@@ -185,15 +163,6 @@ func newLedgerCommand(state *commandState) *cobra.Command {
 func newFlowCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{Use: "flow [credential]", Short: "Show model activity in one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
-	return cmd
-}
-
-func newUseCommand(state *commandState) *cobra.Command {
-	var agent string
-	cmd := &cobra.Command{Use: "use <preset>", Short: "Switch an agent to an embedded model preset", Args: usageArgs(1, 1, "kmx use <preset> [--agent <name>]")}
-	cmd.Flags().StringVar(&agent, "agent", config.DefaultAgent, "agent to switch")
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Use(cmd.Flags().Arg(0), app.UseOptions{Agent: agent}) })
-	cmd.ValidArgsFunction = completePresets
 	return cmd
 }
 

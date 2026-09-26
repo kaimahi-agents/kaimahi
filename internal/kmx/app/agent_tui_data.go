@@ -63,7 +63,6 @@ type agentTUIAgent struct {
 type agentTUITool struct {
 	Name, Kind, Detail string
 	Disabled           bool
-	Dynamic            bool // An MCP server with no explicit allowlist has an unknown tool count.
 }
 
 type agentTUISystemPrompt struct {
@@ -72,31 +71,21 @@ type agentTUISystemPrompt struct {
 }
 
 func (a agentTUIAgent) toolSummary() string {
-	enabled, configured, dynamic := 0, 0, false
+	enabled := 0
 	var names []string
 	for _, tool := range a.Tools {
-		if !tool.Dynamic {
-			configured++
-		}
 		name := tool.Name
 		if tool.Disabled {
 			name += " (off)"
-		} else if tool.Dynamic {
-			dynamic = true
-			name += " (*)"
 		} else {
 			enabled++
 		}
 		names = append(names, name)
 	}
-	count := fmt.Sprintf("%d/%d enabled", enabled, configured)
-	if dynamic {
-		count += " + dynamic MCP"
-	}
 	if len(a.Tools) == 0 {
 		return "Tools: 0"
 	}
-	return "Tools: " + count + " · " + strings.Join(names, ", ")
+	return "Tools: " + fmt.Sprintf("%d/%d enabled", enabled, len(a.Tools)) + " · " + strings.Join(names, ", ")
 }
 
 func (a *App) agentTUIPrompt(ctx context.Context, namespace string, prompt agentTUISystemPrompt, row *agentTUIAgent) {
@@ -126,7 +115,7 @@ func (a *App) agentTUIPrompt(ctx context.Context, namespace string, prompt agent
 
 func (a agentTUIAgent) key() string   { return a.Runtime + "/" + a.Namespace + "/" + a.Name }
 func (a agentTUIAgent) canChat() bool { return !a.External }
-func (a agentTUIAgent) canLift() bool { return a.Runtime == "orka" && !a.External }
+func (a agentTUIAgent) canLift() bool { return !a.External }
 
 type agentTUIColumn struct {
 	Env       agentTUIEnvironment
@@ -238,6 +227,12 @@ func decodeConsoleList(raw []byte, dst any) error {
 
 // Inventory reads are bounded and independent per column. Missing API groups
 // are empty inventories; permission/transport errors remain visible as errors.
+//
+// The console reads Orka Agents and nothing else. The legacy kagent kinds are
+// not listed even when a cluster still serves them: every operation this
+// dashboard offers — chat, create, inference, tools, lift — was removed for
+// that runtime, so listing its Agents would advertise actions that cannot run.
+// What `kmx up --step kagent` leaves on a cluster is outside this command.
 func (a *App) agentTUIInventory(ctx context.Context, env agentTUIEnvironment, namespace string) ([]agentTUIAgent, error) {
 	a = env.app(a)
 	raw, err := a.orkaCapture(ctx, nil, "api-resources", "-o", "name")
@@ -363,83 +358,6 @@ func (a *App) agentTUIInventory(ctx context.Context, env agentTUIEnvironment, na
 			}
 		}
 	}
-	if kinds["agents.kagent.dev"] {
-		var list objectList[struct {
-			Metadata agentTUIMetadata
-			Spec     struct {
-				Type        string
-				Declarative struct {
-					ModelConfig, SystemMessage string
-					SystemMessageFrom          *struct{ Type, Name, Key string }
-					Tools                      []struct {
-						Type      string
-						MCPServer *struct {
-							Name, Kind, Namespace string
-							ToolNames             []string
-						}
-						Agent *struct{ Name, Namespace string }
-					}
-				}
-			}
-			Status struct{ Conditions []statusCondition }
-		}]
-		if read("agents.kagent.dev", "kagent", &list) {
-			var models objectList[modelStatus]
-			if len(list.Items) > 0 {
-				read("modelconfigs.kagent.dev", "kagent", &models)
-			}
-			for _, item := range list.Items {
-				row := agentTUIAgent{Name: item.Metadata.Name, Namespace: "kagent", Runtime: "kagent", Version: item.Metadata.version(), Ready: condition(item.Status.Conditions, "Ready"), Provider: item.Spec.Declarative.ModelConfig, InferenceReady: "unknown"}
-				row.SystemPrompt, row.PromptSource = item.Spec.Declarative.SystemMessage, "spec.declarative.systemMessage"
-				if ref := item.Spec.Declarative.SystemMessageFrom; ref != nil {
-					if ref.Type == "ConfigMap" {
-						prompt := agentTUISystemPrompt{ConfigMapRef: &struct{ Name, Key string }{ref.Name, ref.Key}}
-						a.agentTUIPrompt(ctx, "kagent", prompt, &row)
-					} else {
-						row.SystemPrompt = ""
-						row.PromptSource = ref.Type + " " + ref.Name + " · key " + ref.Key
-						row.PromptError = "System prompt reference is not a ConfigMap; contents are not read by the console"
-					}
-				}
-				for _, ref := range item.Spec.Declarative.Tools {
-					if ref.MCPServer != nil {
-						server := ref.MCPServer
-						detail := valueOr(server.Kind, "MCP server") + " " + valueOr(server.Namespace, "kagent") + "/" + server.Name
-						if len(server.ToolNames) == 0 {
-							row.Tools = append(row.Tools, agentTUITool{Name: server.Name, Kind: "MCP", Detail: detail + " · all advertised tools (count unknown)", Dynamic: true})
-						}
-						for _, name := range server.ToolNames {
-							row.Tools = append(row.Tools, agentTUITool{Name: name, Kind: "MCP", Detail: detail})
-						}
-					} else if ref.Agent != nil {
-						row.Tools = append(row.Tools, agentTUITool{Name: ref.Agent.Name, Kind: "Agent", Detail: valueOr(ref.Agent.Namespace, "kagent") + "/" + ref.Agent.Name})
-					} else {
-						row.Tools = append(row.Tools, agentTUITool{Name: valueOr(ref.Type, "unknown"), Kind: ref.Type, Detail: "Unrecognized tool reference", Dynamic: true})
-					}
-				}
-				for _, model := range models.Items {
-					if model.Metadata.Name != row.Provider {
-						continue
-					}
-					row.Provider += " (" + model.Spec.Provider + ")"
-					row.Model, row.Endpoint = model.Spec.Model, agentTUIEndpoint(model.Spec.OpenAI.BaseURL)
-					if strings.EqualFold(model.Spec.Provider, "Ollama") {
-						row.Endpoint = agentTUIEndpoint(model.Spec.Ollama.Host)
-					}
-					row.InferenceConfig = "Accepted: " + condition(model.Status.Conditions, "Accepted")
-					row.InferenceReady = "not reported (health not checked)"
-					for _, c := range model.Status.Conditions {
-						if c.Type == "Ready" {
-							row.InferenceReady = condition(model.Status.Conditions, "Ready")
-							break
-						}
-					}
-					break
-				}
-				agents = append(agents, row)
-			}
-		}
-	}
 	sort.Slice(agents, func(i, j int) bool {
 		if agents[i].Name == agents[j].Name {
 			return agents[i].key() < agents[j].key()
@@ -491,7 +409,7 @@ func agentTUIDemoColumns() [2]agentTUIColumn {
 				SystemPrompt: "You are a helpful cluster assistant.\nUse available tools to inspect resources before answering.\nExplain what you observed and distinguish facts from assumptions.", PromptSource: "inline",
 				Tools: []agentTUITool{{Name: "k8s-get-resources", Kind: "HTTP POST", Detail: "List Kubernetes resources"}, {Name: "web-fetch", Kind: "HTTP POST", Detail: "Retrieve a web page", Disabled: true}}},
 			{Name: "researcher", Namespace: OrkaNamespace, Runtime: "orka", Version: "unversioned · gen 3", Ready: "no", Provider: "foundry (openai)", Model: "gpt-4.1", InferenceReady: "unknown"},
-			{Name: "hello-world", Namespace: "kagent", Runtime: "kagent", Version: "unversioned · gen 1", Ready: "yes", Provider: "ollama", Model: "llama3.2:3b", InferenceReady: "yes", SystemPrompt: "Answer briefly and plainly.", PromptSource: "spec.declarative.systemMessage"},
+			{Name: "reporter", Namespace: OrkaNamespace, Runtime: "orka", Version: "unversioned · gen 1", Ready: "yes", Provider: "local-model (openai)", Model: "qwen3:8b", InferenceReady: "yes", External: true, SystemPrompt: "Answer briefly and plainly.", PromptSource: "inline"},
 		}},
 		{Env: agentTUIEnvironment{Name: "remote-demo"}, Agents: []agentTUIAgent{
 			{Name: "assistant", Namespace: OrkaNamespace, Runtime: "orka", Version: "v1.1.0", Ready: "yes", Provider: "hosted (openai)", Model: "gpt-4.1", Endpoint: "https://inference.example.com", InferenceReady: "yes"},

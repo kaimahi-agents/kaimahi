@@ -190,7 +190,6 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		argv []string
 		want string
 	}{
-		{"chat output modes", []string{"agent", "chat", "demo", "--interactive", "--json"}, "--interactive and --json"},
 		{"credential destination required", []string{"credential", "issue", "demo"}, "at least one of the flags"},
 		{"credential destinations conflict", []string{"credential", "issue", "demo", "--discard", "--secret", "demo"}, "none of the others can be"},
 		{"credential secret is non-empty", []string{"credential", "issue", "demo", "--secret="}, "non-empty --secret"},
@@ -281,10 +280,11 @@ func commandPaths(root *cobra.Command) []string {
 }
 
 // The command tree is the product surface: every path in it is something an
-// operator can type, and every one of them needs a help line, a document and,
-// where it mutates, a guard. A command that arrives without anyone noticing
-// gets none of those. So this list is checked in both directions — each path
-// named here must resolve, and each command in the tree must be named here.
+// operator can type, including hidden retirement stubs. Active paths need a
+// help line, a document and, where they mutate, a guard. A command that
+// arrives without anyone noticing gets none of those. So this list is checked
+// in both directions — each path named here must resolve, and each command in
+// the tree must be named here.
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
@@ -339,7 +339,7 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		path []string
 		want []string
 	}{
-		{[]string{"agent", "chat", "hello", "who", "--json"}, []string{"hello", "who"}},
+		{[]string{"agent", "chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
 		{[]string{"budget", "demo", "--tokens", "1"}, []string{"demo"}},
 		{[]string{"credential", "renew", "demo", "--ttl", "1d"}, []string{"demo"}},
 		{[]string{"credential", "issue", "demo", "--discard", "--ttl", "1d"}, []string{"demo"}},

@@ -362,3 +362,29 @@ func modelOpts(dir string) AddModelOptions {
 		Out:            filepath.Join(dir, "model-house.yaml"),
 	}
 }
+
+// The wiring `models add` prints is the whole handover to a client the
+// adopter owns, so the credential line has to name a command that exists.
+// It named `kmx govern`, which was retired with the runtime adapter: an
+// operator following the success output would have typed an unknown command
+// with a live, unusable seam in front of them.
+func TestTheSeamWiringNamesACredentialCommandThatExists(t *testing.T) {
+	f := newModelFixture(t, vllmService, "notfound", nil)
+	opt := modelOpts(f.dir)
+	opt.NoApply = true
+	if err := f.app.AddModel(opt); err != nil {
+		t.Fatal(err)
+	}
+	printed := f.out.String() + f.errOut.String()
+	for _, want := range []string{
+		"kmx credential issue <name> --secret <secret> --namespace <ns>",
+		"kmx migrate",
+	} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("the credential line does not name %q:\n%s", want, printed)
+		}
+	}
+	if strings.Contains(printed, "kmx govern") {
+		t.Errorf("the credential line still names the retired governance command:\n%s", printed)
+	}
+}

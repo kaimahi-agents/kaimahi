@@ -95,8 +95,9 @@ jobs:
       # downgrade is the one this checks for, and it proves it can still
       # catch each mistake before its verdict on the tree is trusted.
       #
-      # Scope is COMMITTED model manifests. The interactive ModelConfig
-      # `kmx govern` generates is held to the same rule by its Go tests.
+      # Scope is COMMITTED model manifests, which is now all of them: the
+      # generated seam ModelConfig went with `kmx govern` and the legacy chat
+      # runtime, so nothing produces one outside this tree.
       #
       # Keyless: the committed manifests and nothing else.
       - name: Seam-TLS checker still catches every downgrade
@@ -564,14 +565,64 @@ jobs:
           # Named, not derived: a shard is on this list because its
           # conversion was reviewed. Deriving the list from the file would
           # let a shard leave it by being rewritten.
-          converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models"]
+          converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models",
+                       "e2e-quickstart"]
+          # A bare `kmx up` is no longer what installs kagent — it is the
+          # Orka runtime, which is why `e2e-quickstart` can run one and still
+          # belong here. The legacy install is now reachable only by naming
+          # it, so that is what this forbids: the three explicit steps, which
+          # the previous bare-run rule let through.
+          # `kmx agent chat` is NOT on this list. It survived the retirement
+          # as an Orka-only session against agents.core.orka.ai, so forbidding
+          # it by name would refuse a supported command and say nothing about
+          # the legacy runtime. What is forbidden is the legacy runtime
+          # itself: its install steps, its retired commands, its v1alpha2
+          # resources, and any attempt to aim a surviving command at it.
           forbidden = [
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
-              (re.compile(r"kmx govern\b"), "the legacy governance command repoints a kagent Agent"),
-              (re.compile(r"kmx agent chat\b"), "the legacy chat command drives a kagent Agent"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
+               "the legacy governance command repoints a kagent Agent"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b"),
+               "the retired preset switch selects the legacy runtime"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
+               "the retired source editor edits a kagent Agent"),
+              (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
               (re.compile(r"kagent\.dev"), "a v1alpha2 resource of the legacy runtime"),
           ]
+          # Negative controls, checked before the shards are: a guard whose
+          # patterns have drifted either refuses supported commands or
+          # notices nothing, and both failures look like a passing step.
+          must_match = [
+              "kmx up --step kagent",
+              "kmx --context kind-x up --step=tools-agent",
+              "kmx --context kind-x govern hello-world",
+              "kmx --container-engine=podman use kagent",
+              "kmx --context=kind-x agent edit hello-world",
+              "kmx agent chat --runtime kagent hello-world",
+              "kubectl -n kagent get agents.kagent.dev",
+          ]
+          must_not_match = [
+              "kmx agent chat --interactive --namespace orka-system hello-world-agent",
+              "kmx agent chat --interactive --runtime orka hello-world-agent",
+              "kmx agent list --namespace orka-system",
+              "kmx agent create orka-hello --namespace orka-system",
+              "kmx up",
+              "kmx migrate demo --namespace demo --model local/qwen2.5:3b",
+              "kubectl get ns kagent",
+              "kubectl get agents.core.orka.ai -n orka-system",
+          ]
+          control = []
+          for sample in must_match:
+              if not any(p.search(sample) for p, _ in forbidden):
+                  control.append(f"no pattern catches the legacy sample {sample!r}")
+          for sample in must_not_match:
+              for p, _ in forbidden:
+                  if p.search(sample):
+                      control.append(f"{p.pattern!r} refuses the supported command {sample!r}")
+          if control:
+              print("the legacy-runtime patterns are wrong:", *control, sep="\n  ")
+              sys.exit(1)
           wf = yaml.safe_load(open(".github/workflows/ci.yml"))
           problems = []
           for job in converted:
@@ -582,29 +633,28 @@ jobs:
               for pattern, why in forbidden:
                   if pattern.search(body):
                       problems.append(f"{job}: {pattern.pattern!r} — {why}")
-              if "get namespace kagent" not in body:
+              # `ns` and `namespace` are the same kubectl request; require the
+              # tripwire without coupling the guard to one spelling.
+              if not re.search(r"get (?:ns|namespace) kagent\b", body):
                   problems.append(f"{job}: no step asserts the kagent namespace is absent")
           if problems:
               print("converted shards must prove a path the legacy runtime is absent from:", *problems, sep="\n  ")
               sys.exit(1)
           print(f"{', '.join(converted)}: no legacy bring-up, no legacy commands, namespace tripwire present")
           EOF
-      # The mirror image of the step above, for the one job that still runs
-      # the legacy journey. `kmx-clone-free` is the only proof that the
-      # published binary works with no checkout anywhere, so it must set up
-      # the way a reader is told to: a BARE `kmx up`, which is now the Orka
-      # runtime and which provisions the `orka-result-reader` account its
-      # Task proof reads a result through. An `orka install` step or a
-      # hand-made ServiceAccount beside it would make that proof a statement
-      # about the job's own fixture instead of about the command.
+      # `kmx-clone-free` is the only proof that the published binary works
+      # with no checkout anywhere, so it must set up the way a reader is told
+      # to: a BARE `kmx up`, which is the Orka runtime and which provisions
+      # the `orka-result-reader` account its Task proof reads a result
+      # through. An `orka install` step or a hand-made ServiceAccount beside
+      # it would make that proof a statement about the job's own fixture
+      # instead of about the command.
       #
-      # The legacy runtime no longer arrives with the bare run, so the steps
-      # that install it are named — once each, in dependency order, and
-      # before the govern/chat/preset assertions that need them. Out of
-      # order, `kmx up --step agent` would apply an Agent against CRDs that
-      # do not exist yet; after `kmx govern`, the governance claims would be
-      # about an Agent that was not there.
-      - name: The clone-free journey sets up with a bare `kmx up`, and names the legacy runtime explicitly
+      # The legacy journey this job used to run — the three explicit install
+      # steps, `kmx govern` and the `kmx use` preset switch — went with the
+      # commands themselves. The job must not grow them back: there is
+      # nothing left to run them against.
+      - name: The clone-free journey sets up with a bare `kmx up`, and runs no retired command
         run: |
           python3 - <<'EOF'
           import re, sys, yaml
@@ -628,21 +678,25 @@ jobs:
               problems.append("the result account is made by hand: `kmx up --step orka` provisions it")
           if "--result-service-account orka-result-reader" not in joined:
               problems.append("no Orka Task proof reading its result through orka-result-reader")
-          named = [(i, m.group(1)) for i, b in enumerate(bodies)
-                   for m in re.finditer(r"kmx up --step (kagent|agent|tools-agent)\b", b)]
-          if [name for _, name in named] != ["kagent", "agent", "tools-agent"]:
-              problems.append("the legacy steps must be named once each, in dependency order "
-                              f"(kagent, agent, tools-agent); found {[n for _, n in named]}")
-          govern = next((i for i, b in enumerate(bodies) if re.search(r"\bkmx govern\b", b)), None)
-          if govern is None:
-              problems.append("no `kmx govern`: the legacy assertions are what those steps exist for")
-          elif named and max(i for i, _ in named) >= govern:
-              problems.append("the legacy runtime is installed at or after `kmx govern`")
+          # Retired commands, forbidden by name. A step that reached for one
+          # would fail at runtime; refusing it here says why.
+          for pattern, why in [
+                  (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
+                   "an explicit legacy install step"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b",
+                   "the retired governance command"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b",
+                   "the retired preset switch"),
+                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
+                   "the retired source editor"),
+                  (r"kagent\.dev", "a v1alpha2 resource of the legacy runtime")]:
+              if re.search(pattern, joined):
+                  problems.append(f"{why}: {pattern!r}")
           if problems:
               print("kmx-clone-free no longer proves the supported setup:", *problems, sep="\n  ")
               sys.exit(1)
           print("kmx-clone-free: bare `kmx up` for Orka, its result account unmade by hand, "
-                "legacy runtime named in dependency order before govern")
+                "no retired command anywhere in the job")
           EOF
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
@@ -745,7 +799,7 @@ jobs:
           "$(go env GOPATH)/bin/staticcheck" ./...
       - name: kmx — build
         run: go build ./...
-      - name: kmx — test (guard port, scaffolder, kagent checksum)
+      - name: kmx — test (guard port, scaffolder, toolchain digests)
         run: |
           # This job does not set `shell: bash`, so it runs under `bash -e`
           # with NO pipefail: without this line `go test | tee` reports tee's
@@ -773,11 +827,9 @@ jobs:
               "internal/kmx/guard": "the context guard's port decisions",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
               "internal/kmx/orkaschema": "pinned Orka schemas and unknown-field refusals",
-              "internal/kmx/kagentcli": "the pinned kagent CLI's checksum",
-              # kmx downloads kind, kubectl and Helm as well as the kagent
-              # CLI — the difference between five prerequisites and one. A
-              # binary it fetches runs with the operator's kubeconfig, so
-              # the digest checks are not decoration.
+              # kmx downloads kind, kubectl and Helm. A binary it fetches
+              # runs with the operator's kubeconfig, so the digest checks
+              # are not decoration.
               "internal/kmx/toolchain": "the fetched toolchain's digests",
               # Which revision the plane is fetched at, the GOBIN
               # cross-compile refusal, and the credential custody the shell
@@ -865,12 +917,13 @@ jobs:
           grep -q -- '--- PASS: TestCreateWizardPTYNativeCompletionRestoresTerminal' wizard-pty.out
           grep -q -- '--- PASS: TestCreateWizardPTYSIGTERMRestoresTerminal' wizard-pty.out
           ! grep -q -- '--- SKIP:' wizard-pty.out
-      - name: Legacy kagent operations survive dual Orka discovery
+      - name: The retired runtime is refused by name, not resolved to Orka
         run: |
           set -euo pipefail
-          go test ./internal/kmx/app -run '^TestLegacyAgentsWithOrkaDiscovery$' -count=1 -v | tee agent-discovery.out
-          grep -q -- '--- PASS: TestLegacyAgentsWithOrkaDiscovery' agent-discovery.out
-          ! grep -q -- '--- SKIP:' agent-discovery.out
+          go test ./internal/kmx/app ./cmd/kmx -run 'Retired|RetiredKagentRuntime' -count=1 -v | tee retirement.out
+          grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
+          grep -q -- '--- PASS: TestLegacyRuntimeCommandsAreRetired' retirement.out
+          ! grep -q -- '--- SKIP:' retirement.out
 
   # The governance plane's Go module — build, vet, gofmt, tests.
   # A separate quick job so proxy logic failures surface in seconds, not
@@ -3238,8 +3291,9 @@ jobs:
           # `--result-service-account` names the account `kmx up --step orka`
           # provisioned: create itself provisions no account and no RBAC, so
           # naming one the bring-up made is the whole point of this step.
-          # This proof is additive: the legacy kagent lane below is installed
-          # by its own named steps and still exercises govern/chat/use.
+          # There is no legacy lane left in this job to contrast it with:
+          # govern/chat/use went with the retirement, and the step above
+          # forbids reinstating any of them.
           kmx --context kind-kmx-clone-free agent create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
@@ -3347,74 +3401,6 @@ jobs:
           if built_at 0000deadbeef; then
             echo "the build_info assertion matches any revision — it proves nothing"; exit 1
           fi
-      # Everything below this step is the LEGACY runtime's journey: govern,
-      # chat, the ledger rows they write and the preset switch. A bare
-      # `kmx up` no longer deploys any of it, so it is named here, once,
-      # in dependency order — kagent installs the CRDs and controller, and
-      # each demonstration Agent is applied against them.
-      - name: The legacy runtime, named step by step — kagent, then its two agents
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          set -euo pipefail
-          kmx up --step kagent
-          kmx up --step agent
-          kmx up --step tools-agent
-          # Fail closed on what the steps below rest on: an Agent that is not
-          # there yet turns `kmx govern` into a much less legible failure.
-          kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-world >/dev/null
-          kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-tools >/dev/null
-      - name: govern — the credential, the presets, the switch
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx govern hello-world
-          # The agent-side Secret holds a kmh_ token and nothing else: the
-          # real upstream keys stay with the proxy. The value never leaves
-          # the pipe — grep -c prints a count.
-          n=$(kubectl --context kind-kmx-clone-free -n kagent get secret kaimahi-governed-token \
-            -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
-          test "$n" = 1
-          preset=$(kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-world \
-            -o jsonpath='{.spec.declarative.modelConfig}')
-          test "$preset" = governed-ollama
-      - name: chat — the governed conversation
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat.out
-          grep -q '"state":"completed"' chat.out
-      - name: ledger — the governed chat was metered
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx ledger | tee ledger.out
-          grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger.out
-          python3 - <<'EOF'
-          import re, sys
-          m = re.search(r"month to date: (\d+) cents, (\d+) tokens", open("ledger.out").read())
-          sys.exit(0 if m and int(m.group(2)) > 0 else 1)
-          EOF
-      - name: "budget — the caps a credential spends under, set and cleared"
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx budget hello-world --tokens 1 2>&1 | tee budget.out
-          grep -q 'cap_tokens=1' budget.out
-          # No flags CLEARS both caps, so the steps below are not run under
-          # a cap this one left behind.
-          kmx budget hello-world 2>&1 | tee budget-clear.out
-          grep -q 'cap_cents=null cap_tokens=null' budget-clear.out
       - name: "metrics — one replica's exposition, from a port on no Service"
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
@@ -3436,78 +3422,21 @@ jobs:
             cat metrics.err >&2
             exit "$rc"
           fi
-          grep -q '^# TYPE kaimahi_decisions_total counter' metrics.out
+          # No governed model call happens on this path any more, so
+          # kaimahi_decisions_total is a CounterVec with no children and
+          # prints no TYPE line. What this step proves is the published
+          # binary reaching one replica's exposition; the decision counter
+          # is asserted by e2e-models, which makes governed calls.
           grep -q '^kaimahi_build_info' metrics.out
           grep -q '^# replica: ' metrics.err
           test "$(grep -c '^# replica: ' metrics.out)" = 0
-      - name: "use — the switch returns only once ONE pod is on the new template"
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          kmx use ollama
-          test "$(kubectl --context kind-kmx-clone-free -n kagent get agents.kagent.dev hello-world \
-            -o jsonpath='{.spec.declarative.modelConfig}')" = ollama
-          # Exactly one pod, on the template the current revision names —
-          # `rollout status` returns while the old one is still draining,
-          # and an invoke landing there answers from the OLD preset.
-          hashes=$(kubectl --context kind-kmx-clone-free -n kagent get pods -l kagent=hello-world \
-            -o jsonpath='{range .items[*]}{.metadata.labels.pod-template-hash}{"\n"}{end}')
-          test "$(printf '%s' "$hashes" | grep -c .)" = 1
-          # An unknown preset is refused with the list, not turned into a path.
-          if kmx use nonesuch 2>use-bad.out; then echo "an unknown preset was applied"; exit 1; fi
-          grep -q 'unknown model preset "nonesuch"' use-bad.out
-          kmx use governed-ollama
-      - name: "backup and restore — a ledger row survives an empty database"
-        if: steps.changes.outputs.docs_only != 'true'
-        working-directory: /home/runner/journey
-        env:
-          KIND_CLUSTER: kmx-clone-free
-        run: |
-          rows() { kubectl --context kind-kmx-clone-free -n kaimahi exec deploy/kaimahi-postgres -- \
-                     psql -U kaimahi -d kaimahi -tAc 'SELECT count(*) FROM ledger_entry'; }
-          before=$(rows); test "$before" -gt 0
-          kmx backup kmx-backup.sql | tee backup.out
-          grep -q 'plane-backup: wrote kmx-backup.sql' backup.out
-          # A dump holds hashes, never a token (no hosted key exists here).
-          if grep -qE 'kmh_[0-9a-f]{64}' kmx-backup.sql; then echo 'a token in the backup' >&2; exit 1; fi
-          # It is 0600 the moment it exists: it carries the ledger and the
-          # audit trails.
-          test "$(stat -c %a kmx-backup.sql)" = 600
-          # A truncated dump is refused, and the plane is never quiesced for
-          # it — the fail-closed half of the pair.
-          head -5 kmx-backup.sql > truncated.sql
-          if kmx restore truncated.sql 2>truncated.out; then echo "a truncated dump was restored"; exit 1; fi
-          grep -q 'not a complete pg_dump' truncated.out
-          # Wipe for real: the Deployment AND its PVC go, and a fresh, empty
-          # database comes up in their place.
-          kubectl --context kind-kmx-clone-free -n kaimahi delete deploy kaimahi-postgres --wait=true
-          kubectl --context kind-kmx-clone-free -n kaimahi delete pvc kaimahi-postgres-data --wait=true
-          # No checkout here, so the manifests come from the binary: this is
-          # the same `kubectl apply -f k8s/plane/` the e2e does, embedded.
-          # `--step deploy` re-applies the plane and restarts the proxy, so
-          # the migrations run against the new, empty volume: the schema is
-          # back and the DATA is gone. Assert that, rather than "no tables" —
-          # the shard e2e asserts the no-tables case, and asserting it here
-          # would only be asserting that the proxy had not restarted yet.
-          kmx plane --step deploy
-          kubectl --context kind-kmx-clone-free -n kaimahi rollout status deploy/kaimahi-postgres --timeout=300s
-          test "$(rows)" = 0
-          kmx restore kmx-backup.sql | tee restore.out
-          test "$(rows)" = "$before"
-          grep -q "ledger_entry has $before rows; plane serving again" restore.out
-          # The restored hashes admit the same agent-side token: the plane
-          # works again, end to end.
-          kmx ledger | tee ledger-restored.out
-          grep -E 'hello-world +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200' ledger-restored.out
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
           kubectl --context kind-kmx-clone-free get pods -A || true
           kubectl --context kind-kmx-clone-free -n kaimahi get pods -o wide || true
           kubectl --context kind-kmx-clone-free -n kaimahi logs -l app=kaimahi-proxy --tail=100 --prefix || true
-          kubectl --context kind-kmx-clone-free -n kagent describe agents.kagent.dev hello-world || true
+          kubectl --context kind-kmx-clone-free -n orka-system get agents.core.orka.ai,tasks.core.orka.ai || true
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: kind delete cluster --name kmx-clone-free || true

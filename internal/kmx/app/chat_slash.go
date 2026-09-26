@@ -79,21 +79,12 @@ func slashPopup(matches []slashCommand, selected, width, maxRows int) []string {
 	return append(rows, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
 
-var slashCommandList = []slashCommand{
-	{"/exit", "/exit"},
-	{"/govern", "/govern"},
-	{"/help", "/help"},
-	{"/history", "/history"},
-	{"/new", "/new"},
-	{"/resume", "/resume <id>"},
-	{"/retry", "/retry"},
-	{"/session", "/session"},
-	{"/sessions", "/sessions"},
-	{"/tools", "/tools off|summary|verbose"},
-	{"/ungovern", "/ungovern"},
-	{"/verbose-on", "/verbose-on"},
-	{"/verbose-off", "/verbose-off"},
-}
+// slashCommandList is the default completion/summary set. It is the Orka
+// session's commands: the legacy runtime's session verbs (/sessions,
+// /resume, /history, /govern, /ungovern) went with the runtime that served
+// them. A session that offers its own extra commands supplies them through
+// Session.Commands and slashMatchesFrom.
+var slashCommandList = orkaSlashCommands
 
 type slashTrie struct {
 	children map[rune]*slashTrie
@@ -141,29 +132,6 @@ func slashCommandSummary() string {
 		values = append(values, command.usage)
 	}
 	return strings.Join(values, " ")
-}
-
-func slashCommandReference() string {
-	var groups []string
-	for _, group := range []string{"Session", "Display", "Governance", "Conversation"} {
-		var commands []string
-		for _, command := range slashCommandList {
-			category := "Conversation"
-			switch command.name {
-			case "/new", "/resume", "/session", "/sessions", "/history":
-				category = "Session"
-			case "/tools", "/verbose-on", "/verbose-off":
-				category = "Display"
-			case "/govern", "/ungovern":
-				category = "Governance"
-			}
-			if category == group {
-				commands = append(commands, command.usage)
-			}
-		}
-		groups = append(groups, group+":\n  "+strings.Join(commands, "\n  "))
-	}
-	return strings.Join(groups, "\n\n") + "\n\n/quit is an alias for /exit."
 }
 
 func slashMatches(line string) []slashCommand {

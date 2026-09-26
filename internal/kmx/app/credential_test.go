@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,8 +24,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
-// A fake kubectl on PATH, so `kmx govern` can be driven end to end without a
-// cluster: every argument list and everything piped into it is recorded.
+// A fake kubectl on PATH, so credential issue can be driven end to end
+// without a cluster: every argument list and everything piped into it is
+// recorded.
 const fakeKubectl = `#!/bin/sh
 printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
@@ -80,7 +85,7 @@ esac
 exit 0
 `
 
-type governFixture struct {
+type credentialFixture struct {
 	app     *App
 	out     *bytes.Buffer
 	errOut  *bytes.Buffer
@@ -88,7 +93,7 @@ type governFixture struct {
 	stdin   string
 }
 
-func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *governFixture {
+func newCredentialFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *credentialFixture {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake kubectl is a shell script")
@@ -106,7 +111,7 @@ func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *go
 		t.Fatal(err)
 	}
 
-	f := &governFixture{
+	f := &credentialFixture{
 		out:     &bytes.Buffer{},
 		errOut:  &bytes.Buffer{},
 		argsLog: filepath.Join(dir, "args"),
@@ -138,12 +143,12 @@ func newGovernFixture(t *testing.T, agentErr string, issue http.HandlerFunc) *go
 	return f
 }
 
-func (f *governFixture) args() string {
+func (f *credentialFixture) args() string {
 	b, _ := os.ReadFile(f.argsLog)
 	return string(b)
 }
 
-func (f *governFixture) piped() string {
+func (f *credentialFixture) piped() string {
 	b, _ := os.ReadFile(f.stdin)
 	return string(b)
 }
@@ -155,267 +160,67 @@ func issued(token string) http.HandlerFunc {
 	}
 }
 
-func governOptions() GovernOptions {
-	return GovernOptions{
-		Agent:           config.DefaultAgent,
-		Preset:          config.GovernedModelConfig,
-		Secret:          config.GovernedSecret,
-		SecretNamespace: config.DefaultNamespace,
-	}
-}
-
-func TestGovernRejectsUnsupportedRoutesAndSecretsBeforeClusterAccess(t *testing.T) {
-	for _, change := range []struct {
-		name string
-		edit func(*GovernOptions)
-	}{
-		{"custom secret", func(o *GovernOptions) { o.Secret = "custom" }},
-		{"custom namespace", func(o *GovernOptions) { o.SecretNamespace = "other" }},
-		{"copilot custom secret", func(o *GovernOptions) { o.Preset, o.Secret = "governed-copilot", "custom" }},
-		{"copilot custom namespace", func(o *GovernOptions) { o.Preset, o.SecretNamespace = "governed-copilot", "other" }},
-		{"zero ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(0) }},
-		{"short ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(59) }},
-		{"long ttl", func(o *GovernOptions) { o.TTLSeconds = lifecycleInt(31536001) }},
-	} {
-		t.Run(change.name, func(t *testing.T) {
-			opt := governOptions()
-			change.edit(&opt)
-			// No runner: validation must complete before preflight or the guard.
-			a := &App{}
-			if err := a.Govern("demo", opt); err == nil {
-				t.Fatal("unsupported governance accepted")
+// Every surviving issue path is non-interactive, so the Secret write is
+// `apply` whether or not one exists. The old `create`-when-absent arm belonged
+// to in-chat governance, and a `create` losing a race to a Secret written
+// since secretBinding read it would fail with the one-time token already
+// minted and nowhere left to put it.
+func TestCredentialIssueAppliesWhetherOrNotTheSecretExists(t *testing.T) {
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprint(exists), func(t *testing.T) {
+			if exists {
+				// Bound to the same credential, so the pre-POST check passes.
+				t.Setenv("KMX_TEST_BOUND", "hello-world")
+			}
+			f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("f", 64)))
+			if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+				t.Fatalf("issue: %v", err)
+			}
+			if !strings.Contains(f.args(), "apply -f -") {
+				t.Errorf("Secret was not applied:\n%s", f.args())
+			}
+			if strings.Contains(f.args(), "create -f -") {
+				t.Errorf("a non-interactive issue used create:\n%s", f.args())
+			}
+			if !strings.Contains(f.errOut.String(), "apply -f -") {
+				t.Errorf("the echoed command disagrees with what ran:\n%s", f.errOut.String())
 			}
 		})
 	}
 }
 
-func TestGovernValidatesCustomPresetBeforeIssuance(t *testing.T) {
-	for _, tc := range []struct {
-		name, provider, base, secret, namespace, key, readError string
-		valid                                                   bool
-	}{
-		{name: "custom ollama", valid: true},
-		{name: "custom copilot", base: "http://kaimahi-proxy.kaimahi:8080/upstream/copilot", valid: true},
-		{name: "service DNS alias", base: "http://kaimahi-proxy.kaimahi.svc:8080/upstream/ollama/v1", valid: true},
-		{name: "direct", base: "http://ollama.ollama:11434/v1"},
-		{name: "wrong provider", provider: "Ollama"},
-		{name: "wrong secret", secret: "other-token"},
-		{name: "wrong namespace", namespace: "other"},
-		{name: "wrong secret namespace"},
-		{name: "wrong key", key: "token"},
-		{name: "missing key"},
-		{name: "wrong port", base: "http://kaimahi-proxy.kaimahi:9091/upstream/ollama/v1"},
-		{name: "wrong scheme", base: "https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1"},
-		{name: "wrong path", base: "http://kaimahi-proxy.kaimahi:8080/v1"},
-		{name: "missing upstream", base: "http://kaimahi-proxy.kaimahi:8080/upstream/"},
-		{name: "path traversal", base: "http://kaimahi-proxy.kaimahi:8080/upstream/../admin"},
-		{name: "lookalike host", base: "http://kaimahi-proxy.kaimahi.evil.com:8080/upstream/ollama/v1"},
-		{name: "missing", readError: `Error from server (NotFound): modelconfigs "custom" not found`},
-		{name: "forbidden", readError: "Error from server (Forbidden): cannot get modelconfigs"},
-		{name: "unreachable", readError: "connection refused"},
-		{name: "invalid JSON"},
-		{name: "invalid URL", base: "://broken"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			opt := governOptions()
-			opt.Preset, opt.Secret = "custom", "custom-token"
-			provider, base, secret, namespace, key := "OpenAI", "http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", opt.Secret, opt.SecretNamespace, "api-key"
-			if tc.provider != "" {
-				provider = tc.provider
-			}
-			if tc.base != "" {
-				base = tc.base
-			}
-			if tc.secret != "" {
-				secret = tc.secret
-			}
-			if tc.namespace != "" {
-				namespace = tc.namespace
-			}
-			if tc.key != "" {
-				key = tc.key
-			}
-			if tc.name == "missing key" {
-				key = ""
-			}
-			if tc.name == "wrong secret namespace" {
-				opt.SecretNamespace = "other"
-			}
-			raw, err := json.Marshal(map[string]any{
-				"metadata": map[string]string{"name": opt.Preset, "namespace": namespace},
-				"spec":     map[string]any{"provider": provider, "model": "custom-model", "apiKeySecret": secret, "apiKeySecretKey": key, "openAI": map[string]string{"baseUrl": base}},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if tc.name == "invalid JSON" {
-				raw = []byte("invalid")
-			}
-			var f *governFixture
-			issuedCount := 0
-			f = newGovernFixture(t, `Error from server (NotFound): agents.kagent.dev "hello-world" not found`, func(w http.ResponseWriter, r *http.Request) {
-				issuedCount++
-				if !strings.Contains(f.args(), "-n kagent get modelconfig custom -o json") {
-					t.Error("credential issued before reading the custom preset")
-				}
-				issued("kmh_"+strings.Repeat("c", 64))(w, r)
-			})
-			t.Setenv("KMX_TEST_MODEL", string(raw))
-			t.Setenv("KMX_TEST_MODEL_ERR", tc.readError)
-			err = f.app.Govern("demo", opt)
-			if tc.valid {
-				if err != nil || issuedCount != 1 {
-					t.Fatalf("valid custom governance failed: issued=%d, error=%v", issuedCount, err)
-				}
-				if !strings.Contains(f.piped(), "name: custom-token") {
-					t.Fatalf("custom token destination not used: %s", f.piped())
-				}
-				if strings.Contains(f.piped(), "custom-model") {
-					t.Fatal("operator-owned ModelConfig was rewritten")
-				}
-			} else {
-				if err == nil || issuedCount != 0 || !strings.Contains(err.Error(), "nothing issued") {
-					t.Fatalf("invalid custom governance: issued=%d, error=%v", issuedCount, err)
-				}
-				if strings.Contains(f.args(), "port-forward") || f.piped() != "" {
-					t.Fatalf("invalid preset reached mutation: %s", f.args())
-				}
-			}
-		})
-	}
-}
-
-func TestInteractiveGovernanceResourcesAreAgentSpecific(t *testing.T) {
-	secret := governedResourceName("kmx-token", "hello-tools")
-	preset := governedResourceName("kmx-governed-ollama", "hello-tools")
-	credential := governedResourceName("kmx-model", "hello-tools")
-	if secret != "kmx-token-hello-tools" || preset != "kmx-governed-ollama-hello-tools" {
-		t.Fatalf("unexpected resource names: secret=%q preset=%q", secret, preset)
-	}
-	if credential != "kmx-model-hello-tools" {
-		t.Fatalf("unexpected credential name: %q", credential)
-	}
-	raw, err := interactiveModelManifest(preset, secret, "qwen2.5:3b", true, "hello-tools")
+// The interactive arms are gone because nothing could reach them: both
+// callers of issueCredential are non-interactive, and an unreachable refusal
+// is a claim about behavior no test can exercise. Held here so one cannot be
+// reintroduced without a caller that needs it.
+func TestCredentialIssueHasNoInteractiveMode(t *testing.T) {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "credential.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := string(raw)
-	for _, want := range []string{`"name":"` + preset + `"`, `"apiKeySecret":"` + secret + `"`, `"model":"qwen2.5:3b"`, "kaimahi-proxy.kaimahi.svc.cluster.local", `"kaimahi.dev/chat-agent":"hello-tools"`} {
-		if !strings.Contains(manifest, want) {
-			t.Errorf("agent-specific ModelConfig lacks %q:\n%s", want, manifest)
+	found := false
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "issueCredential" {
+			return true
 		}
+		found = true
+		if got := fn.Type.Params.NumFields(); got != 3 {
+			t.Errorf("issueCredential takes %d parameter groups; an interactivity flag has no caller", got)
+		}
+		return false
+	})
+	if !found {
+		t.Fatal("issueCredential is not in credential.go")
 	}
-	if strings.Contains(manifest, config.GovernedSecret) {
-		t.Fatalf("agent-specific ModelConfig reused singleton Secret:\n%s", manifest)
-	}
-}
-
-func TestInteractiveModelManifestCannotBeInjectedByModelName(t *testing.T) {
-	raw, err := interactiveModelManifest("preset", "secret", "qwen\n---\nkind: Secret", true, "agent")
+	body, err := os.ReadFile("credential.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var resource map[string]any
-	if err := json.Unmarshal(raw, &resource); err != nil {
-		t.Fatalf("generated manifest is not one JSON document: %v\n%s", err, raw)
-	}
-	if strings.Contains(string(raw), "\n---\n") {
-		t.Fatalf("model name escaped into a YAML document boundary:\n%s", raw)
-	}
-}
-
-func TestInteractiveDirectModelManifestPreservesModelWithoutASecret(t *testing.T) {
-	raw, err := interactiveModelManifest("kmx-direct-ollama-agent", "", "custom:latest", false, "agent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var resource struct {
-		Spec map[string]any `json:"spec"`
-	}
-	if err := json.Unmarshal(raw, &resource); err != nil {
-		t.Fatal(err)
-	}
-	if resource.Spec["model"] != "custom:latest" || resource.Spec["provider"] != "Ollama" {
-		t.Fatalf("direct manifest changed model/provider: %s", raw)
-	}
-	if _, exists := resource.Spec["apiKeySecret"]; exists {
-		t.Fatalf("direct manifest retained governed Secret: %s", raw)
-	}
-}
-
-func TestGovernedResourceNamesRemainValidKubernetesNames(t *testing.T) {
-	name := governedResourceName("kmx-governed-ollama", strings.Repeat("a", 63))
-	if len(name) > 63 || !agentNameRE.MatchString(name) {
-		t.Fatalf("invalid generated resource name %q", name)
-	}
-}
-
-func TestInteractiveCredentialReplacesOnlyPrevalidatedOwnedSecret(t *testing.T) {
-	if got := credentialSecretVerb(true, false); got != "create" {
-		t.Fatalf("absent interactive Secret uses %q", got)
-	}
-	if got := credentialSecretVerb(true, true); got != "apply" {
-		t.Fatalf("existing owned interactive Secret uses %q", got)
-	}
-	if got := credentialSecretVerb(false, false); got != "apply" {
-		t.Fatalf("ordinary govern behavior changed to %q", got)
-	}
-}
-
-// The rule `make govern` states in a comment and enforces with a grep, here
-// enforced by construction: ONLY a genuine NotFound may skip the switch.
-// Every other failure — an unreachable API server, an expired credential, an
-// RBAC denial, a wrong context — must abort. Collapsing them prints a
-// reassuring NOTE, exits 0, and leaves the agent on an UNGOVERNED preset,
-// spending outside the plane.
-func TestGovernRefusesToSkipTheSwitchOnAnAmbiguousRead(t *testing.T) {
-	for _, ambiguous := range []string{
-		"The connection to the server 127.0.0.1:6443 was refused - did you specify the right host or port?",
-		`Error from server (Forbidden): agents.kagent.dev is forbidden: User "x" cannot get resource "agents"`,
-		`error: the server doesn't have a resource type "agent"`,
-		"error: You must be logged in to the server (Unauthorized)",
-	} {
-		t.Run(ambiguous[:20], func(t *testing.T) {
-			f := newGovernFixture(t, ambiguous, issued("kmh_"+strings.Repeat("a", 64)))
-			err := f.app.Govern("hello-world", governOptions())
-			if err == nil {
-				t.Fatal("govern succeeded without switching the agent")
-			}
-			if !strings.Contains(err.Error(), "refusing to leave it ungoverned") {
-				t.Errorf("wrong refusal: %v", err)
-			}
-			if strings.Contains(f.errOut.String(), "does not exist yet") {
-				t.Errorf("an unreadable agent was reported as absent:\n%s", f.errOut.String())
-			}
-		})
-	}
-}
-
-// A genuine NotFound is the ordering where governance is stood up before the
-// agents exist. It proceeds and still applies the presets — and it must be
-// honest about what happens next: `kmx up` creates hello-world on the
-// KEYLESS preset, so an agent created after this runs ungoverned until
-// govern is run again. A NOTE promising otherwise would be the same
-// "reassuring message, exit 0, agent spending outside the plane" the
-// NotFound discrimination above exists to prevent.
-func TestGovernNotesAGenuinelyAbsentAgentAndStillAppliesThePresets(t *testing.T) {
-	f := newGovernFixture(t,
-		`Error from server (NotFound): agents.kagent.dev "hello-world" not found`,
-		issued("kmh_"+strings.Repeat("b", 64)))
-	if err := f.app.Govern("hello-world", governOptions()); err != nil {
-		t.Fatalf("govern: %v", err)
-	}
-	note := f.errOut.String()
-	if !strings.Contains(note, "does not exist yet") {
-		t.Errorf("the absent agent was not reported:\n%s", note)
-	}
-	if !strings.Contains(note, config.KeylessModelConfig) || !strings.Contains(note, "kmx govern hello-world") {
-		t.Errorf("the NOTE promises governance the runtime will not deliver:\n%s", note)
-	}
-	piped := f.piped()
-	for _, want := range []string{"governed-ollama", "governed-copilot"} {
-		if !strings.Contains(piped, want) {
-			t.Errorf("preset %s was not applied:\n%s", want, piped)
+	for _, dead := range []string{"credentialSecretVerb", "kaimahi.dev/chat-agent", "opt.Agent"} {
+		if strings.Contains(string(body), dead) {
+			t.Errorf("credential.go still carries %q, which no caller reaches", dead)
 		}
 	}
 }
@@ -426,11 +231,9 @@ func TestGovernNotesAGenuinelyAbsentAgentAndStillAppliesThePresets(t *testing.T)
 // shell script needed a 0600 file and a dry-run pipe to approximate.
 func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 	token := "kmh_" + strings.Repeat("c", 64)
-	f := newGovernFixture(t,
-		`Error from server (NotFound): agents.kagent.dev "hello-world" not found`,
-		issued(token))
-	if err := f.app.Govern("hello-world", governOptions()); err != nil {
-		t.Fatalf("govern: %v", err)
+	f := newCredentialFixture(t, "", issued(token))
+	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+		t.Fatalf("issue: %v", err)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(token))
@@ -459,7 +262,7 @@ func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 func TestCredentialIssueStoresTokenWithGovernSafetyWithoutLoggingIt(t *testing.T) {
 	token := "kmh_" + strings.Repeat("e", 64)
 	var request map[string]any
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Errorf("decode issue request: %v", err)
 		}
@@ -499,7 +302,7 @@ func TestCredentialIssueStoresTokenWithGovernSafetyWithoutLoggingIt(t *testing.T
 func TestCredentialIssueChecksSecretBindingBeforePost(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "other-agent")
 	posted := false
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
@@ -515,7 +318,7 @@ func TestCredentialIssueChecksSecretBindingBeforePost(t *testing.T) {
 func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
 	t.Setenv("KMX_TEST_SECRET_EXISTS", "true")
 	posted := false
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
@@ -530,7 +333,7 @@ func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
 
 func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "batch-agent")
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write([]byte(`{"error":"credential exists"}`))
 	})
@@ -547,7 +350,7 @@ func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
 
 func TestCredentialIssueNeverPrintsUnexpectedResponseBody(t *testing.T) {
 	token := "kmh_" + strings.Repeat("f", 64)
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte(`{"token":"` + token + `"}`))
 	})
@@ -585,12 +388,12 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write([]byte(`{"error":"credential exists"}`))
 	}
-	f := newGovernFixture(t, "", conflict)
+	f := newCredentialFixture(t, "", conflict)
 	// The fake kubectl answers the annotation read with an empty string,
 	// which is the "exists in the plane, Secret missing or unlabeled" case:
 	// the token cannot be recovered, so the operator is told exactly how to
 	// clear the row rather than being handed a half-governed agent.
-	err := f.app.Govern("hello-world", governOptions())
+	err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil)
 	if err == nil {
 		t.Fatal("a 409 with no bound Secret was accepted")
 	}
@@ -603,7 +406,7 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 // Two credentials, one Secret: the second must be refused BEFORE it is
 // issued.
 //
-// `kmx govern demo` while kaimahi-governed-token holds hello-world's token
+// Issuing `demo` while kaimahi-governed-token holds hello-world's token
 // would otherwise mint demo's credential, overwrite the Secret, and destroy
 // the only copy of hello-world's token — the plane keeps only its hash, so
 // hello-world would stay live and permanently unusable. Refusing before the
@@ -611,14 +414,14 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 func TestASecondCredentialWillNotOverwriteAnotherOnesToken(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "hello-world")
 	issuedAnyway := false
-	f := newGovernFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+	f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
 		issuedAnyway = true
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + strings.Repeat("d", 64)})
 	})
-	err := f.app.Govern("demo", governOptions())
+	err := f.app.IssueCredentialToSecret("demo", config.GovernedSecret, config.DefaultNamespace, nil)
 	if err == nil {
-		t.Fatal("govern demo overwrote the Secret holding hello-world's token")
+		t.Fatal("issuing demo overwrote the Secret holding hello-world's token")
 	}
 	if !strings.Contains(err.Error(), `not "demo"`) || !strings.Contains(err.Error(), "--secret") {
 		t.Errorf("the refusal does not name the conflict and the way out: %v", err)
@@ -633,15 +436,15 @@ func TestASecondCredentialWillNotOverwriteAnotherOnesToken(t *testing.T) {
 
 // The same Secret, the same credential, re-run: that is idempotence, not a
 // conflict.
-func TestGoverningTheSameCredentialAgainIsFine(t *testing.T) {
+func TestIssuingTheSameCredentialAgainIsFine(t *testing.T) {
 	t.Setenv("KMX_TEST_BOUND", "hello-world")
-	f := newGovernFixture(t, `Error from server (NotFound): agents.kagent.dev "hello-world" not found`,
+	f := newCredentialFixture(t, "",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(`{"error":"credential exists"}`))
 		})
-	if err := f.app.Govern("hello-world", governOptions()); err != nil {
-		t.Fatalf("re-governing the same credential failed: %v", err)
+	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+		t.Fatalf("re-issuing the same credential failed: %v", err)
 	}
 	if !strings.Contains(f.errOut.String(), "keeping both") {
 		t.Errorf("the already-issued case was not reconciled:\n%s", f.errOut.String())
@@ -650,9 +453,9 @@ func TestGoverningTheSameCredentialAgainIsFine(t *testing.T) {
 
 // seamTLSSecret is the plane's seam-certificate Secret as kubectl prints it.
 //
-// `kmx govern` reads it to republish the authority into the agent namespace
-// before it points anything at a seam, so a fixture without one stands in for
-// a plane that has not been deployed — which is a different test, below.
+// `kmx migrate` reads it to republish the authority into a workload's
+// namespace before it points anything at a seam, so a fixture without one
+// stands in for a plane that has not been deployed.
 func seamTLSSecret(t *testing.T) string {
 	t.Helper()
 	authority, err := seamcert.MintAuthority(time.Now())
@@ -674,17 +477,17 @@ func seamTLSSecret(t *testing.T) string {
 	return string(body)
 }
 
-// Pointing an agent at a seam it cannot verify is not a partial success. A
+// Pointing a workload at a seam it cannot verify is not a partial success. A
 // plane with no certificate has to stop the whole operation, and say which
-// command produces one — the alternative is an agent switched onto a governed
-// preset whose ModelConfig kagent then refuses for a missing Secret, which
-// reads as a broken seam rather than as a missing step.
-func TestGoverningRefusesWhenThePlaneHasNoSeamCertificate(t *testing.T) {
-	f := newGovernFixture(t, "", issued("kmh_"+strings.Repeat("a", 64)))
+// command produces one — the alternative is a workload switched onto a
+// governed route whose Secret is absent, which reads as a broken seam rather
+// than as a missing step.
+func TestMigrateRefusesWhenThePlaneHasNoSeamCertificate(t *testing.T) {
+	f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("a", 64)))
 	t.Setenv("KMX_TEST_SEAM_TLS", `{"data":{}}`)
-	err := f.app.Govern("hello-world", governOptions())
+	err := f.app.publishPlaneAuthority(config.DefaultNamespace)
 	if err == nil {
-		t.Fatal("an agent was governed against a plane with no seam certificate")
+		t.Fatal("an authority was published from a plane with no seam certificate")
 	}
 	if !strings.Contains(err.Error(), "no ca.crt") && !strings.Contains(err.Error(), "carries no ca.crt") {
 		t.Errorf("the refusal does not say what is missing: %v", err)

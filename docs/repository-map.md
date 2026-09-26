@@ -3,8 +3,9 @@
 **Orka is the platform; Kaimahi provides tools to get agents onto it.**
 The remaining plane is a model-traffic bridge, not an application runtime or
 tool-governance platform. Migrated applications keep their owner-managed
-Deployment and tools. Agent authoring — Orka-native versus kagent YAML — remains
-open; both existing paths remain in code.
+Deployment and tools. Agent authoring is Orka-native: the legacy operational
+commands and their runtime adapter have been removed, and the remaining kagent
+references are installation, status and lift paths retired in later slices.
 
 Read [the documentation index](README.md) for current guides and retirement
 records. This map describes tracked files, packaging and actual callers, not
@@ -30,7 +31,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (16 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
 | `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 46 (checkers, probes, CI fixtures, mutation specs) |
@@ -41,11 +42,11 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (22 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, retained kagent lifecycle, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (21 files) | **Installed** | CLI and tests: Orka operations, interactive agent dashboard, migration, retained kagent installation steps, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is sixteen packages. Cluster-independent decisions live in
+`internal/kmx/` is fifteen packages. Cluster-independent decisions live in
 packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data; versioned fixtures are not additional Go
@@ -53,8 +54,8 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 82 | Installed | Command orchestration, runtime adapters, interactive agent console, shared chat UI, host inference and native platform operations. |
-| `kmx/runtime` | 5 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests and registry. |
+| `kmx/app` | 79 | Installed | Command orchestration, the Orka runtime adapter, interactive agent console, shared chat UI, host inference and native platform operations. |
+| `kmx/runtime` | 5 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests and registry. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
@@ -63,7 +64,6 @@ packages.
 | `kmx/guard` | 2 | Installed | Context-safety checks and read-only target resolution. |
 | `kmx/seamcert` | 1 | Installed | Model-seam authority and serving certificates. |
 | `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
-| `kmx/kagentcli` | 1 | Installed | Pinned kagent CLI download. |
 | `kmx/planebuild` | 1 | Installed | Separate plane-module image build/fetch. |
 | `kmx/lift` | 2 | Installed | Cloud-independent lift rules. |
 | `kmx/config` | 1 | Installed | Settings resolution. |

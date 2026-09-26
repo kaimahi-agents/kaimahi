@@ -621,12 +621,17 @@ func (a *App) statusTable() error {
 	humanTable(a.Out, []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows)
 	writeGovernance(a.Out, data.governanceOf())
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Accent("Next"))
-	if overall {
-		fmt.Fprintf(a.Out, "  kmx agent chat %s\n", agentRows[0][0])
-	} else {
-		fmt.Fprintf(a.Out, "  kubectl --context %s -n kagent get agents.kagent.dev,pods\n", a.Cfg.KubeContext)
-	}
+	fmt.Fprintf(a.Out, "  %s\n", legacyInspectCommand(a.Cfg.KubeContext))
 	return nil
+}
+
+// legacyInspectCommand is the one truthful next step for what this report
+// listed. `kmx status` reads agents.kagent.dev out of the kagent namespace,
+// and nothing in kmx drives those objects any more: `kmx agent chat` is
+// Orka-only and resolves against orka-system, so offering it here named a
+// command that cannot reach a single row above it. kubectl can.
+func legacyInspectCommand(kubeContext string) string {
+	return fmt.Sprintf("kubectl --context %s -n %s get agents.kagent.dev,pods", kubeContext, config_kagentNamespace)
 }
 
 func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
@@ -668,10 +673,7 @@ func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
 	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Governance"), ui.Fields(governanceFields(g)))
 	fmt.Fprintln(a.Out, ui.Muted("Governed means the cluster object points at the plane; the plane field says whether enforcement is available."))
 
-	next := cliui.Action{Label: "Inspect the runtime", Command: fmt.Sprintf("kubectl --context %s -n kagent get agents.kagent.dev,pods", a.Cfg.KubeContext)}
-	if overall && len(agentRows) > 0 {
-		next = cliui.Action{Label: "Chat with an agent", Command: "kmx agent chat " + agentRows[0][0]}
-	}
+	next := cliui.Action{Label: "Inspect the runtime", Command: legacyInspectCommand(a.Cfg.KubeContext)}
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Actions("Next", []cliui.Action{next}))
 	return nil
 }

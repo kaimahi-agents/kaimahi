@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/kagentcli"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -17,26 +15,15 @@ type runtimeRegistration struct {
 	run     func(context.Context, agentruntime.Session, string) error
 }
 
-func (a *App) registeredChatRuntime(name string) bool {
-	for _, registration := range a.chatRuntimes() {
-		if string(registration.adapter.ID()) == name {
-			return true
-		}
-	}
-	return false
-}
-
-// Preference order is explicit, preserving auto's Orka-before-kagent policy.
-// Registration owns construction and the temporary legacy presentation driver.
+// Registration owns construction. The list is ordered, and stays a list
+// rather than a single entry because auto-detection is an ordered walk: the
+// seam exists so a second platform can be added without the caller learning
+// about it.
 func (a *App) chatRuntimes() []runtimeRegistration {
 	return []runtimeRegistration{
 		{adapter: orkaRuntimeAdapter{app: a}, run: func(ctx context.Context, session agentruntime.Session, initial string) error {
 			s := session.(*orkaRuntimeSession)
 			return a.runInteractiveChatBackendInitial(&runtimeChatBackend{session: s, configure: s.backend.Configure}, initial)
-		}},
-		{adapter: kagentRuntimeAdapter{app: a}, run: func(ctx context.Context, session agentruntime.Session, initial string) error {
-			s := session.(*kagentRuntimeSession)
-			return a.runKagentSession(ctx, s, initial)
 		}},
 	}
 }
@@ -48,7 +35,7 @@ func (a *App) openRuntimeChat(opt ChatOptions, name, namespace string) error {
 		if string(registration.adapter.ID()) != opt.Runtime {
 			continue
 		}
-		session, err := registration.adapter.Open(ctx, agentruntime.Target{Context: a.Cfg.KubeContext, Namespace: namespace, Name: name, Session: opt.Session})
+		session, err := registration.adapter.Open(ctx, agentruntime.Target{Context: a.Cfg.KubeContext, Namespace: namespace, Name: name})
 		if err != nil {
 			return err
 		}
@@ -99,36 +86,7 @@ func (a orkaRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Targe
 	return agentruntime.Probe{Found: true, Agent: agentruntime.AgentRef{Runtime: a.ID(), Context: target.Context, Namespace: namespace, Kind: "agents.core.orka.ai", Name: target.Name, UID: agent.Metadata.UID}}, nil
 }
 func (a orkaRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target) (agentruntime.Session, error) {
-	if target.Session != "" {
-		return nil, fmt.Errorf("--session is kagent-specific; Orka chat uses fresh Tasks")
-	}
 	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace}}, nil
-}
-
-type kagentRuntimeAdapter struct{ app *App }
-
-func (kagentRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Kagent }
-func (a kagentRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Target) (agentruntime.Probe, error) {
-	if target.Namespace != "" && target.Namespace != "kagent" {
-		return agentruntime.Probe{}, nil
-	}
-	// Compatibility fallback is resolved by waitServable at Connect. Do not add
-	// new discovery permissions or latency to legacy one-shot callers.
-	return agentruntime.Probe{Found: true, Agent: agentruntime.AgentRef{Runtime: a.ID(), Context: target.Context, Namespace: "kagent", Kind: "agents.kagent.dev", Name: target.Name}}, nil
-}
-func (a kagentRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target) (agentruntime.Session, error) {
-	if target.Namespace != "" && target.Namespace != "kagent" {
-		return nil, fmt.Errorf("kagent chat requires namespace kagent")
-	}
-	cache, err := config.CacheDir()
-	if err != nil {
-		return nil, err
-	}
-	executable, err := kagentcli.Ensure(kagentcli.Options{Version: a.app.Cfg.KagentVersion, CacheDir: cache, Existing: a.app.Cfg.KagentBin, Log: a.app.Err})
-	if err != nil {
-		return nil, err
-	}
-	return &kagentRuntimeSession{app: a.app, executable: executable, name: target.Name, session: target.Session, toolMode: "summary"}, nil
 }
 
 func resolveRegisteredRuntime(ctx context.Context, registrations []runtimeRegistration, target agentruntime.Target) (agentruntime.AgentRef, error) {

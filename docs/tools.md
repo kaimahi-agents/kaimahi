@@ -61,12 +61,12 @@ Discovery and Agent selection do not establish a server's authorization boundary
 ```sh
 kubectl -n kagent get agent hello-tools -o yaml
 kubectl -n kagent get remotemcpserver kagent-tool-server -o yaml
-kmx agent chat hello-tools "What ConfigMaps are in the default namespace?"
 ```
 
-Chat is not a pure status read: it can spend model tokens and invoke the
-tools currently wired to that agent. Check the model and tool URLs first;
-a running deployment may have been repointed since the committed example.
+kmx no longer drives these agents: `kmx agent chat` is Orka-only, so exercising
+the wiring above means talking to the kagent controller directly. Check the
+model and tool URLs first; a running deployment may have been repointed since
+the committed example, and any invocation spends model tokens.
 The retired gateway commands are not a way to repair stale wiring; that is an
 owner decision. [Tool governance](tool-governance.md) is a retirement pointer.
 

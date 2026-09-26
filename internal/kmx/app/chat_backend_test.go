@@ -5,12 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 type staticChatBackend struct {
@@ -213,5 +216,17 @@ func TestChatAgentSwitchResetsRetryAndReconnects(t *testing.T) {
 	}
 	if b.connections != 2 || len(b.messages) != 1 || !strings.Contains(out.String(), "no previous message") {
 		t.Fatalf("connections=%d messages=%v output=%s", b.connections, b.messages, out.String())
+	}
+}
+
+// chatUXFixture is an App wired for the SHARED terminal driver and nothing
+// else. It deliberately carries no cluster fixture: every remaining caller
+// exercises input handling, dispatch and rendering, which the driver owns.
+func chatUXFixture(t *testing.T) *App {
+	t.Helper()
+	return &App{
+		Cfg: &config.Config{KubeContext: "kind-test"},
+		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
+		Err: io.Discard,
 	}
 }

@@ -1,6 +1,8 @@
 package lift
 
-// The payload split: what a lift lands, and why there is no default.
+// The payload split, after the legacy runtime went: what a lift may still
+// land, and what a record of one that landed the retired payload is allowed
+// to do.
 
 import (
 	"strings"
@@ -9,7 +11,8 @@ import (
 
 // `lift` bills money and installs a platform. A default would mean somebody's
 // existing script quietly changed which one it deploys the day the project's
-// direction moved — so the refusal is the feature.
+// direction moved — so the refusal is the feature. It survives the retirement
+// of the second payload: the reason was never "there are two".
 func TestAPayloadIsRequiredAndNeverDefaulted(t *testing.T) {
 	o := created()
 	o.Payload = ""
@@ -17,7 +20,7 @@ func TestAPayloadIsRequiredAndNeverDefaulted(t *testing.T) {
 	if err == nil {
 		t.Fatal("a lift with no payload was accepted")
 	}
-	for _, want := range []string{"--payload is required", "orka", "kagent", "bills money"} {
+	for _, want := range []string{"--payload is required", "orka", "bills money"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not mention %q: %v", want, err)
 		}
@@ -33,71 +36,72 @@ func TestAnUnknownPayloadIsRefusedByName(t *testing.T) {
 	}
 }
 
-// The two payloads differ only in what runs agents. Everything about the
-// CLUSTER — provisioning it, proving its boundary, the plane, monitoring,
-// verification — is shared, and a change that split those would be a change
-// to what `lift` is for.
-func TestBothPayloadsShareEveryClusterPhase(t *testing.T) {
-	orka := strings.Join(stepsFor(PayloadOrka), " ")
-	kagent := strings.Join(stepsFor(PayloadKagent), " ")
-	for _, shared := range []string{"cluster", "boundary", "credential", "plane", "observability", "verify"} {
-		if !strings.Contains(orka, shared) {
-			t.Errorf("the orka payload dropped the shared phase %q: %s", shared, orka)
-		}
-		if !strings.Contains(kagent, shared) {
-			t.Errorf("the kagent payload dropped the shared phase %q: %s", shared, kagent)
-		}
-	}
-}
-
-// And they differ exactly where they should: one lands Orka, the other lands
-// the legacy runtime and its demo agents.
-func TestEachPayloadLandsOnlyItsOwnPlatform(t *testing.T) {
-	orka := strings.Join(stepsFor(PayloadOrka), " ")
-	kagent := strings.Join(stepsFor(PayloadKagent), " ")
-
-	if !strings.Contains(orka, "orka") {
-		t.Errorf("the orka payload never installs Orka: %s", orka)
-	}
-	for _, legacy := range []string{"kagent", "agents"} {
-		if strings.Contains(orka, legacy) {
-			t.Errorf("the orka payload still lands the legacy phase %q: %s", legacy, orka)
-		}
-	}
-	for _, legacy := range []string{"kagent", "agents"} {
-		if !strings.Contains(kagent, legacy) {
-			t.Errorf("the kagent payload lost %q: %s", legacy, kagent)
-		}
-	}
-	if strings.Contains(kagent, " orka ") {
-		t.Errorf("the kagent payload installs Orka: %s", kagent)
-	}
-}
-
-// A phase belongs to a payload. Judging `--step agents` against an orka lift
-// has to refuse it, and say which phases that lift actually has.
-func TestAStepIsJudgedAgainstItsOwnPayload(t *testing.T) {
+// The retired payload is refused BY NAME, and not as a typo. An operator
+// whose script still says `--payload kagent` asked for a platform that this
+// command no longer installs; "unknown payload" would read as a misspelling
+// and send them looking for the right spelling of something that is gone.
+func TestTheKagentPayloadIsRefusedAsRetiredRatherThanUnknown(t *testing.T) {
 	o := created()
-	o.Payload = PayloadOrka
+	o.Payload = PayloadKagent
+	err := o.Validate()
+	if err == nil {
+		t.Fatal("a new lift was accepted with the retired kagent payload")
+	}
+	if strings.Contains(err.Error(), "unknown --payload") {
+		t.Errorf("the retired payload is reported as a typo: %v", err)
+	}
+	for _, want := range []string{"--payload kagent", "retired", "--payload orka"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if err := ValidPayload(PayloadKagent); err == nil {
+		t.Fatal("ValidPayload still accepts the retired payload")
+	}
+}
+
+// Only one payload remains, and it keeps every phase that is about the
+// CLUSTER. Losing one of those to the retirement would be a change to what
+// `lift` is for, not a removal of the legacy runtime.
+func TestTheOrkaPayloadKeepsEveryClusterPhase(t *testing.T) {
+	steps := strings.Join(stepsFor(PayloadOrka), " ")
+	for _, shared := range []string{"cluster", "boundary", "credential", "plane", "observability", "verify"} {
+		if !strings.Contains(steps, shared) {
+			t.Errorf("the orka payload dropped the shared phase %q: %s", shared, steps)
+		}
+	}
+	if !strings.Contains(steps, "orka") {
+		t.Errorf("the orka payload never installs Orka: %s", steps)
+	}
+}
+
+// The phases that existed only to land the legacy runtime and its demo agents
+// are gone from every list — the phase list, completion, and the banner's
+// vocabulary. A `--step kagent` that still validated would run a phase whose
+// implementation went with the payload.
+func TestTheLegacyOnlyPhasesAreGoneEverywhere(t *testing.T) {
+	for _, legacy := range []string{"kagent", "agents"} {
+		if validStep(legacy, PayloadOrka) {
+			t.Errorf("--step %q is still a phase of the only payload", legacy)
+		}
+		if strings.Contains(strings.Join(AllSteps(), " "), legacy) {
+			t.Errorf("completion still offers the retired phase %q", legacy)
+		}
+		if purpose := StepPurpose[legacy]; purpose != "" {
+			t.Errorf("the banner still describes the retired phase %q as %q", legacy, purpose)
+		}
+	}
+	o := created()
 	o.Step = "agents"
 	err := o.Validate()
 	if err == nil {
-		t.Fatal("a kagent phase was accepted on an orka lift")
+		t.Fatal("a retired phase was accepted")
 	}
-	// "a orka" would be wrong and "an kagent" equally so, hence the article
-	// is avoided rather than guessed per payload.
 	if !strings.Contains(err.Error(), "not a phase of the orka payload") {
 		t.Errorf("the refusal does not name the payload: %v", err)
 	}
 	if !strings.Contains(err.Error(), "orka, observability, verify") {
 		t.Errorf("the refusal does not list the phases this lift has: %v", err)
-	}
-
-	ok := created()
-	ok.Payload = PayloadKagent
-	ok.Step = "agents"
-	if err := ok.Validate(); err != nil {
-		t.Errorf("a kagent phase was refused on a kagent lift: %v", err)
 	}
 }
 
@@ -121,7 +125,7 @@ func TestAMissingPayloadStillReportsTheOtherProblems(t *testing.T) {
 
 // A plan that promises "the agent answers" on a payload that installs no
 // agent has told the operator it will prove something it cannot.
-func TestVerifyDescribesWhatEachPayloadCanActuallyProve(t *testing.T) {
+func TestVerifyDescribesWhatTheRemainingPayloadCanActuallyProve(t *testing.T) {
 	orka := PurposeOf("verify", PayloadOrka)
 	if strings.Contains(orka, "agent answers") {
 		t.Errorf("the orka plan promises an answer it cannot produce: %q", orka)
@@ -129,13 +133,10 @@ func TestVerifyDescribesWhatEachPayloadCanActuallyProve(t *testing.T) {
 	if !strings.Contains(orka, "Provider is yours") {
 		t.Errorf("the orka plan does not say why nothing answers: %q", orka)
 	}
-	if kagent := PurposeOf("verify", PayloadKagent); !strings.Contains(kagent, "agent answers") {
-		t.Errorf("the kagent plan stopped promising its answer: %q", kagent)
-	}
 }
 
 // A record must remember what it landed, or a resumed run installs the other
-// platform on top of it.
+// platform on top of it. New records can only be the one remaining payload.
 func TestARecordRemembersItsPayload(t *testing.T) {
 	r, err := NewRecord("a1b2c3d4", Created, PayloadOrka, "sub", "rg", "cluster")
 	if err != nil {
@@ -147,22 +148,55 @@ func TestARecordRemembersItsPayload(t *testing.T) {
 	if _, err := NewRecord("a1b2c3d4", Created, "orca", "sub", "rg", "cluster"); err == nil {
 		t.Error("a record was started with a payload that is not one")
 	}
-}
-
-// A record written before the split carries no payload, and only one thing
-// could have written it. Reading that as unknown would refuse a resume that
-// is actually fine; reading it as orka would be a lie about history.
-func TestALegacyRecordReadsAsKagent(t *testing.T) {
-	if got := (&Record{}).PayloadOrLegacy(); got != PayloadKagent {
-		t.Fatalf("a record from before the split reads as %q, want %q", got, PayloadKagent)
+	if _, err := NewRecord("a1b2c3d4", Created, PayloadKagent, "sub", "rg", "cluster"); err == nil {
+		t.Error("a new record was started with the retired payload")
 	}
 }
 
-// Shell completion cannot know which payload is being typed, so offering only
-// one payload's phases hides valid answers for the other.
-func TestCompletionOffersEveryPhaseOfBothPayloads(t *testing.T) {
+// PayloadKagent survives as a HISTORICAL sentinel and nothing else: it is
+// what a record written before the split, or by a run that really did land
+// the legacy runtime, reads as. Reading an absent payload as unknown would
+// refuse a teardown that is fine; reading it as orka would be a lie about
+// what is on somebody's cluster, and teardown decides deletions from it.
+func TestARecordFromBeforeTheSplitStillReadsAsKagent(t *testing.T) {
+	if got := (&Record{}).PayloadOrLegacy(); got != PayloadKagent {
+		t.Fatalf("a record from before the split reads as %q, want %q", got, PayloadKagent)
+	}
+	if got := (&Record{Payload: PayloadKagent}).PayloadOrLegacy(); got != PayloadKagent {
+		t.Fatalf("a record that landed kagent reads as %q", got)
+	}
+}
+
+// A record of a kagent lift must still DECODE. Teardown is the whole reason
+// the sentinel is kept: those clusters exist, they are billing, and refusing
+// to read their record would strand the only list of what to delete.
+func TestAKagentRecordStillDecodesSoItsResourcesCanBeRemoved(t *testing.T) {
+	body := `{"run_id":"a1b2c3d4","branch":"created","subscription":"sub",` +
+		`"payload":"kagent","resource_group":"rg","cluster":"c",` +
+		`"created":[{"kind":"Azure Monitor workspace","name":"w","id":"/subscriptions/s/resourceGroups/rg/providers/p/w","in_resource_group":true}]}`
+	r, err := ReadRecord(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("a kagent record no longer decodes, so its resources cannot be torn down: %v", err)
+	}
+	if r.PayloadOrLegacy() != PayloadKagent {
+		t.Errorf("the recorded payload was lost: %q", r.PayloadOrLegacy())
+	}
+	if len(r.Created) != 1 {
+		t.Fatalf("the list teardown deletes by was lost: %+v", r.Created)
+	}
+	// Teardown asks only for the two names that identify the run, and must
+	// not have grown a payload requirement along the way.
+	o := Options{ResourceGroup: "rg", Cluster: "c"}
+	if err := o.ValidateForTeardown(); err != nil {
+		t.Fatalf("teardown of a recorded lift now demands more than it did: %v", err)
+	}
+}
+
+// Shell completion offers the phases that exist. Offering a retired one sends
+// an operator to a phase whose implementation is gone.
+func TestCompletionOffersEveryPhaseOnceAndNoRetiredOne(t *testing.T) {
 	all := strings.Join(AllSteps(), " ")
-	for _, want := range []string{"cluster", "boundary", "kagent", "credential", "plane", "agents", "orka", "observability", "verify"} {
+	for _, want := range []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("completion never offers %q: %s", want, all)
 		}
@@ -176,9 +210,8 @@ func TestCompletionOffersEveryPhaseOfBothPayloads(t *testing.T) {
 	}
 }
 
-// The --byo refusal lists "every other phase", and which those are depends on
-// the payload. Advertising kagent phases to an orka lift sends an operator to
-// a phase their lift does not have.
+// The --byo refusal lists "every other phase", and those must be the phases
+// this lift actually has.
 func TestTheByoRefusalNamesThisPayloadsPhases(t *testing.T) {
 	o := byo()
 	o.Payload = PayloadOrka
@@ -188,7 +221,7 @@ func TestTheByoRefusalNamesThisPayloadsPhases(t *testing.T) {
 		t.Fatal("--byo --step cluster was accepted")
 	}
 	if strings.Contains(err.Error(), "agents") {
-		t.Errorf("an orka lift was offered a kagent phase: %v", err)
+		t.Errorf("the refusal offers a retired phase: %v", err)
 	}
 	if !strings.Contains(err.Error(), "orka") {
 		t.Errorf("the refusal does not list this payload's phases: %v", err)

@@ -30,9 +30,8 @@ inspection, no-write planning, dry-run and upgrade limits.
 
 There is no supported translation in the current CLI. `kmx agent create`
 authors a native Orka Provider + Agent and optional Task, not kagent resources
-or BYO images. Interactive `agent chat` supports both runtimes; one-shot chat
-and `agent edit` remain kagent-specific. `agent list` reads Orka Agents when
-given `--namespace`. See the
+or BYO images. `agent chat --interactive` and `agent list` are Orka-only, and
+`agent edit` has been removed. See the
 [create contract](kmx.md#kmx-agent-create) and [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer).
 Whether kagent YAML will become an authoring surface over Orka remains open;
 native Orka resources are the recommendation in [orka.md](orka.md), not a ruling
@@ -55,11 +54,11 @@ The following describes retained legacy code, not Orka's contracts.
 
 ### Empty replies and `input-required`
 
-The kagent runtime can ask a human a question or request a tool approval.
-That is not an answer. `kmx agent chat --interactive <agent>` handles the
-pending human step. Native kagent HITL is separate from the retired custom
-Kaimahi approval/grant subsystem and remains supported. The small-model path may
-re-sample a question-only response up to twice, but not after a tool call or with
+This was the legacy kagent runtime's human-in-the-loop state, and it went with
+the runtime: kmx no longer drives kagent Agents, so there is no `input-required`
+turn for it to resolve. An Orka turn is a Task that either returns a result or
+fails. Historical note, for transcripts that still show it: the small-model path
+used to re-sample a question-only response up to twice, but not after a tool call or with
 an explicit session;
 there is no guarantee that a system instruction suppresses questions.
 Malformed `ask_user` arguments from smaller models can also fail invocation.
@@ -93,12 +92,13 @@ Never put token values in command arguments or committed YAML.
 An unpriced subscription model is not a free model; use token budgets where
 no defensible money price exists.
 
-### A governed kagent agent vanished from the ledger
+### A governed application vanished from the ledger
 
-Inspect its live `spec.declarative.modelConfig`. Reapplying an ungoverned
-manifest outside the preserving command path can change routing without
-preventing chat. Use `kmx govern <agent>` only if legacy plane governance
-is the intended route. It is not the Orka migration command.
+Inspect the model endpoint the workload actually resolves. Reapplying an
+ungoverned manifest outside the preserving command path can change routing
+without preventing answers. `kmx migrate` is the supported way to put an
+owner-managed application back behind the plane; `kmx govern` was removed with
+the legacy runtime.
 
 ### I lost a plane token or ledger
 

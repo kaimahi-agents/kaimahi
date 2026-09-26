@@ -35,17 +35,19 @@ are outside this ledger and budget enforcement.
 
 ## Existing operator commands
 
-For an already deployed legacy plane and kagent example:
+For an already deployed plane and a migrated application:
 
 ```sh
-kmx govern hello-world
+kmx credential issue hello-world --secret kaimahi-governed-token --namespace <ns>
 kmx ledger hello-world
 kmx budget hello-world --tokens 100000
 kmx credentials
 ```
 
-`kmx govern` issues/reissues credential material and repoints the configured
-agent; it is not a read. `kmx budget` **replaces both caps**: omitted flags
+`kmx credential issue` mints credential material into a named Secret; it is not
+a read, and it refuses rather than overwrite a Secret bound to another
+credential. (`kmx govern`, which did this for a kagent Agent, was removed with
+the legacy runtime.) `kmx budget` **replaces both caps**: omitted flags
 mean no cap for that unit, and no flags removes both. Set `--cents` and
 `--tokens` together to retain both. Defaults and context handling are in
 [commands.go](../cmd/kmx/commands.go), not the retired make walkthroughs.

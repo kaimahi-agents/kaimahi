@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,53 +48,6 @@ func TestTheCASecretIsNamedTheSameWhereverItIsNamed(t *testing.T) {
 	if config.PlaneCAKey != scaffold.PlaneCAKey {
 		t.Errorf("config names the CA key %q and scaffold names it %q",
 			config.PlaneCAKey, scaffold.PlaneCAKey)
-	}
-}
-
-// The ModelConfig `kmx agent chat --interactive` applies is GENERATED, so
-// scripts/check-seam-tls.py cannot see it — that checker reads the tree. This
-// is the rule held over it instead.
-//
-// It is the manifest most able to drift: it was a second copy of the seam URL
-// spelled out in Go while the committed presets moved to TLS, and nothing
-// would have said so. kagent admits an https baseUrl with no authority, and a
-// tls block beside an http one, and refuses neither.
-func TestTheInteractiveGovernedModelConfigIsHttpsAndNamesTheAuthority(t *testing.T) {
-	body, err := interactiveModelManifest("kmx-governed-ollama-demo", "kmx-token-demo", "qwen2.5:3b", true, "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Spec struct {
-			OpenAI map[string]string `json:"openAI"`
-			TLS    map[string]string `json:"tls"`
-		} `json:"spec"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(doc.Spec.OpenAI["baseUrl"], "https://") {
-		t.Errorf("the interactive governed seam is not https: %q", doc.Spec.OpenAI["baseUrl"])
-	}
-	if doc.Spec.TLS["caCertSecretRef"] != scaffold.PlaneCASecret {
-		t.Errorf("caCertSecretRef = %q, want %q", doc.Spec.TLS["caCertSecretRef"], scaffold.PlaneCASecret)
-	}
-	if doc.Spec.TLS["caCertSecretKey"] != scaffold.PlaneCAKey {
-		t.Errorf("caCertSecretKey = %q, want %q", doc.Spec.TLS["caCertSecretKey"], scaffold.PlaneCAKey)
-	}
-	if _, ok := doc.Spec.TLS["disableVerify"]; ok {
-		t.Error("the interactive governed seam carries disableVerify")
-	}
-
-	// An UNGOVERNED preset points at the provider, so it must not name the
-	// plane's authority — a Secret it has no use for, mounted into its pod
-	// for nothing, and absent on a cluster with no plane.
-	body, err = interactiveModelManifest("kmx-ollama-demo", "", "qwen2.5:3b", false, "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(body), scaffold.PlaneCASecret) {
-		t.Errorf("an ungoverned preset names the plane's authority: %s", body)
 	}
 }
 
@@ -215,5 +167,41 @@ func TestACertificateFailureIsRecognisedInASeamVerdict(t *testing.T) {
 		if certificateFailure(message) {
 			t.Errorf("an ordinary failure was reported as a certificate problem: %q", message)
 		}
+	}
+}
+
+// A missing namespace is tolerated, so the note it prints instead is the only
+// instruction an operator gets — and it has to name a command that exists and
+// publishes into THAT namespace. `kmx govern`, which the note used to name,
+// was retired with the runtime adapter; `kmx plane` republishes into the
+// kagent namespace on every run, and every other namespace is reached only by
+// the `kmx migrate` that points a workload there.
+func TestMissingNamespaceNamesTheCommandThatPublishesIntoIt(t *testing.T) {
+	for _, tc := range []struct {
+		namespace string
+		want      string
+	}{
+		{config_kagentNamespace, "`kmx plane --step certificate`"},
+		{"payments", "`kmx migrate <deployment> --namespace payments --model <provider>/<model>`"},
+	} {
+		t.Run(tc.namespace, func(t *testing.T) {
+			a := appWithKubectl(t, `case "$*" in
+*"get namespace "*) printf 'Error from server (NotFound): namespaces "%s" not found\n' "${*##* }" >&2; exit 1 ;;
+*) exit 0 ;;
+esac`)
+			if err := a.publishAuthority(tc.namespace, []byte("-----BEGIN CERTIFICATE-----\n")); err != nil {
+				t.Fatalf("an absent namespace was not tolerated: %v", err)
+			}
+			note := a.Err.(*bytes.Buffer).String()
+			if !strings.Contains(note, tc.want) {
+				t.Errorf("the note does not name the publisher %s:\n%s", tc.want, note)
+			}
+			if strings.Contains(note, "kmx govern") {
+				t.Errorf("the note still names the retired governance command:\n%s", note)
+			}
+			if !strings.Contains(note, config.PlaneCASecret) {
+				t.Errorf("the note does not say what was not published:\n%s", note)
+			}
+		})
 	}
 }

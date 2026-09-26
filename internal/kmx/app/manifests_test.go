@@ -4,8 +4,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
@@ -79,47 +77,6 @@ func TestModelPresetsTravelInTheBinary(t *testing.T) {
 		}
 		if string(embedded) != string(onDisk) {
 			t.Errorf("k8s/%s differs from the embedded copy", name)
-		}
-	}
-}
-
-// Every preset in the tree is a preset `kmx use` will name, and nothing
-// else is. This is the list an operator sees when they mistype one, so a
-// preset added to k8s/models/ that never reached the binary would be
-// advertised and then fail to apply.
-func TestUseOffersExactlyTheEmbeddedPresets(t *testing.T) {
-	entries, err := os.ReadDir(filepath.Join("..", "..", "..", "k8s", "models"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want []string
-	for _, e := range entries {
-		want = append(want, strings.TrimSuffix(e.Name(), ".yaml"))
-	}
-	// Sorted on the NAME, not the filename: ReadDir orders
-	// "openai-compatible.yaml" before "openai.yaml" ('-' sorts below '.'),
-	// and what an operator is offered is the name.
-	sort.Strings(want)
-	got := presetNames()
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("kmx use offers %v, k8s/models/ holds %v", got, want)
-	}
-	for _, preset := range got {
-		name, err := presetManifest(preset)
-		if err != nil {
-			t.Errorf("preset %q is offered but does not resolve: %v", preset, err)
-			continue
-		}
-		if _, err := manifest(name); err != nil {
-			t.Errorf("preset %q resolves to %s, which is not embedded: %v", preset, name, err)
-		}
-	}
-	// And a name that is not a preset is refused rather than turned into a
-	// path: the preset name reaches both the embedded filesystem and the
-	// object the agent is patched onto.
-	for _, bad := range []string{"", "../plane/proxy", "nope", "governed-ollama.yaml"} {
-		if _, err := presetManifest(bad); err == nil {
-			t.Errorf("presetManifest(%q) was accepted", bad)
 		}
 	}
 }

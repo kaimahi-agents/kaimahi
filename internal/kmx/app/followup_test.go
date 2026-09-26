@@ -2,18 +2,14 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 func fakeTool(t *testing.T, dir, name, body string) {
@@ -21,176 +17,6 @@ func fakeTool(t *testing.T, dir, name, body string) {
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestInteractiveStreamShowsToolsAndFinalReply(t *testing.T) {
-	var out bytes.Buffer
-	view := &streamView{agent: "hello-tools", toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "summary"}
-	input := strings.NewReader(strings.Join([]string{
-		`{"kind":"status-update","contextId":"session-1","taskId":"task-1","status":{"state":"working","message":{"role":"agent","parts":[{"kind":"data","metadata":{"kagent_type":"function_call"},"data":{"id":"call-1","name":"get_pods","args":{"namespace":"default"}}}]}}}`,
-		`{"kind":"status-update","contextId":"session-1","taskId":"task-1","status":{"state":"working","message":{"role":"agent","parts":[{"kind":"data","metadata":{"kagent_type":"function_response"},"data":{"id":"call-1","name":"get_pods","response":{"isError":false}}}]}}}`,
-		`{"kind":"artifact-update","contextId":"session-1","taskId":"task-1","artifact":{"parts":[{"kind":"text","text":"pod-a"}]}}`,
-		`{"kind":"status-update","contextId":"session-1","taskId":"task-1","final":true,"status":{"state":"completed"}}`,
-	}, "\n"))
-	a := &App{Out: &out}
-	if err := a.consumeStream(input, view); err != nil {
-		t.Fatal(err)
-	}
-	if view.state != "completed" || view.context != "session-1" || view.reply != "pod-a" {
-		t.Fatalf("unexpected view: %+v", view)
-	}
-	for _, want := range []string{"Tool: get_pods", "completed", "hello-tools: pod-a"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output lacks %q:\n%s", want, out.String())
-		}
-	}
-}
-
-func TestToolDisplayModesDoNotAttributeDenialsToRetiredGateway(t *testing.T) {
-	raw := json.RawMessage(`{"id":"call-1","name":"post","response":{"isError":true,"content":[{"text":"not permitted; approval request filed"}]}}`)
-	for _, mode := range []string{"off", "summary", "verbose"} {
-		var out bytes.Buffer
-		view := &streamView{toolCalls: map[string]string{"call-1": "post"}, messageText: map[string]string{}, toolMode: mode}
-		view.consumeTool("function_response", false, raw, &out)
-		if view.denied {
-			t.Errorf("mode %s attributed a tool error to retired governance", mode)
-		}
-		if mode == "off" && out.Len() != 0 {
-			t.Errorf("off mode printed tool output: %s", out.String())
-		}
-		if mode == "verbose" && !strings.Contains(out.String(), "result:") {
-			t.Errorf("verbose mode omitted result: %s", out.String())
-		}
-	}
-}
-
-func TestDirectToolDoesNotClaimGovernanceCheck(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := &streamView{toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "off", renderer: renderer}
-	view.consumeTool("function_call", false, json.RawMessage(`{"id":"call-1","name":"get_pods","args":{}}`), &out)
-	view.consumeTool("function_response", false, json.RawMessage(`{"id":"call-1","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`), &out)
-	if out.Len() != 0 || view.denied {
-		t.Fatalf("direct tool was presented as governed: output=%q denied=%v", out.String(), view.denied)
-	}
-}
-
-func TestGovernedModelDenialIsVisibleFromFailedStatus(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, renderer: renderer, modelGoverned: true}
-	status := json.RawMessage(`{"state":"failed","message":{"role":"agent","messageId":"m1","parts":[{"kind":"text","text":"monthly token budget reached; approval request filed"}]}}`)
-	view.consume(streamEvent{Status: status}, &out)
-	for _, want := range []string{
-		"[POSSIBLE KAIMAHI DENIAL]",
-		"Seam: model proxy",
-		"Signal: response text matches a Kaimahi denial",
-		"Provenance: unverified",
-		"Reason: monthly token budget reached",
-	} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("model governance output lacks %q:\n%s", want, out.String())
-		}
-	}
-}
-
-func TestModelDenialDoesNotRecommendRetiredApprovals(t *testing.T) {
-	var out bytes.Buffer
-	view := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{modelGoverned: true})
-	status := json.RawMessage(`{"state":"failed","message":{"role":"agent","messageId":"m1","parts":[{"kind":"text","text":"monthly token budget reached; approval request filed"}]}}`)
-	view.consume(streamEvent{Status: status}, &out)
-	for _, retired := range []string{"Approval request:", "make approvals", "kmx approvals"} {
-		if strings.Contains(out.String(), retired) {
-			t.Errorf("retired advice %q: %s", retired, &out)
-		}
-	}
-	if !strings.Contains(out.String(), "Provenance: unverified") || !strings.Contains(out.String(), "monthly token budget reached; approval request filed") {
-		t.Fatalf("denial provenance or original response lost: %s", &out)
-	}
-}
-
-func TestDirectModelFailureDoesNotClaimGovernance(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, renderer: renderer}
-	status := json.RawMessage(`{"state":"failed","message":{"role":"agent","messageId":"m1","parts":[{"kind":"text","text":"monthly token budget reached"}]}}`)
-	view.consume(streamEvent{Status: status}, &out)
-	if strings.Contains(out.String(), "KAIMAHI") {
-		t.Fatalf("direct model failure was presented as governed:\n%s", out.String())
-	}
-}
-
-func TestNonAgentFailureTextDoesNotClaimGovernance(t *testing.T) {
-	var out bytes.Buffer
-	renderer := &chatRenderer{out: &out}
-	view := newStreamView("agent", "off", renderer, &chatGovernancePosture{modelGoverned: true})
-	status := json.RawMessage(`{"state":"failed","message":{"role":"user","messageId":"m1","parts":[{"kind":"text","text":"monthly token budget reached"}]}}`)
-	view.consume(streamEvent{Status: status}, &out)
-	if strings.Contains(out.String(), "POSSIBLE KAIMAHI") {
-		t.Fatalf("non-agent failure text was treated as a model response:\n%s", out.String())
-	}
-}
-
-func TestAmbiguousToolResponsesDoNotClaimGatewayGovernance(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		calls    []json.RawMessage
-		response json.RawMessage
-	}{
-		{"empty id", []json.RawMessage{json.RawMessage(`{"id":"","name":"post","args":{}}`)}, json.RawMessage(`{"id":"","name":"post","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`)},
-		{"reused id", []json.RawMessage{json.RawMessage(`{"id":"call-1","name":"post","args":{}}`), json.RawMessage(`{"id":"call-1","name":"direct","args":{}}`)}, json.RawMessage(`{"id":"call-1","name":"post","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`)},
-		{"mismatched response", []json.RawMessage{json.RawMessage(`{"id":"call-1","name":"post","args":{}}`)}, json.RawMessage(`{"id":"call-1","name":"direct","response":{"isError":true,"content":[{"text":"tool not permitted"}]}}`)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var out bytes.Buffer
-			view := newStreamView("agent", "off", &chatRenderer{out: &out}, &chatGovernancePosture{})
-			for _, call := range tc.calls {
-				view.consumeTool("function_call", false, call, &out)
-			}
-			view.consumeTool("function_response", false, tc.response, &out)
-			if strings.Contains(out.String(), "POSSIBLE KAIMAHI") || view.denied {
-				t.Fatalf("ambiguous call identity was attributed to Kaimahi: output=%q denied=%v", out.String(), view.denied)
-			}
-		})
-	}
-}
-
-func TestStreamLabelsDistinctAgentMessages(t *testing.T) {
-	var out bytes.Buffer
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "summary"}
-	for _, id := range []string{"one", "two"} {
-		status := fmt.Sprintf(`{"state":"working","message":{"role":"agent","messageId":%q,"parts":[{"kind":"text","text":%q}]}}`, id, id)
-		view.consume(streamEvent{Status: json.RawMessage(status)}, &out)
-	}
-	if strings.Count(out.String(), "agent: ") != 2 {
-		t.Fatalf("messages were not separately attributed: %s", out.String())
-	}
-}
-
-func TestInteractiveStreamSurfacesNativeHITL(t *testing.T) {
-	var out bytes.Buffer
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "summary"}
-	raw := `{"kind":"status-update","contextId":"session-1","taskId":"task-1","status":{"state":"input-required","message":{"role":"agent","parts":[{"kind":"data","metadata":{"kagent_type":"function_call","kagent_is_long_running":true},"data":{"name":"adk_request_confirmation","args":{"originalFunctionCall":{"id":"call-1","name":"delete_pod","args":{"name":"pod-a"}}}}}]}}}`
-	a := &App{Out: &out}
-	if err := a.consumeStream(strings.NewReader(raw), view); err != nil {
-		t.Fatal(err)
-	}
-	if view.approval == nil || len(view.approval.Calls) != 1 || view.approval.Calls[0].Name != "delete_pod" {
-		t.Fatalf("approval not parsed: %+v", view.approval)
-	}
-}
-
-func TestInteractiveStreamAcceptsADKMetadataAliases(t *testing.T) {
-	var out bytes.Buffer
-	view := &streamView{agent: "agent", toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "summary"}
-	raw := `{"kind":"status-update","contextId":"session-1","taskId":"task-1","status":{"state":"input-required","message":{"role":"agent","parts":[{"kind":"data","metadata":{"adk_type":"function_call","adk_is_long_running":true},"data":{"name":"adk_request_confirmation","args":{"originalFunctionCall":{"id":"call-1","name":"delete_pod","args":{}}}}}]}}}`
-	a := &App{Out: &out}
-	if err := a.consumeStream(strings.NewReader(raw), view); err != nil {
-		t.Fatal(err)
-	}
-	if view.approval == nil || view.approval.Calls[0].Name != "delete_pod" {
-		t.Fatalf("ADK metadata alias was not parsed: %+v", view.approval)
 	}
 }
 
@@ -235,7 +61,7 @@ func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 
 	wantHeader := "CHAT STATUS\n------------\n" +
 		"  Agent: hello-tools\n" +
-		"  Commands: /exit /govern /help /history /new /resume <id> /retry /session /sessions /tools off|summary|verbose /ungovern /verbose-on /verbose-off\n" +
+		"  Commands: " + slashCommandSummary() + "\n" +
 		"  Model\n" +
 		"    Name: hello-world-model\n" +
 		"    Posture: direct\n" +
@@ -360,16 +186,6 @@ func TestRendererFlattensUntrustedLabels(t *testing.T) {
 	}
 }
 
-func TestVerboseToolArgumentsAreBounded(t *testing.T) {
-	var out bytes.Buffer
-	view := &streamView{toolCalls: map[string]string{}, messageText: map[string]string{}, toolMode: "verbose"}
-	raw := json.RawMessage(`{"id":"call-1","name":"tool","args":"` + strings.Repeat("a", 17<<10) + `"}`)
-	view.consumeTool("function_call", false, raw, &out)
-	if out.Len() >= 17<<10 || !strings.Contains(out.String(), "[truncated; use one-shot --json for full output]") {
-		t.Fatalf("verbose arguments were not bounded: %d bytes", out.Len())
-	}
-}
-
 func TestPlainPromptClosesBeforeNextBlock(t *testing.T) {
 	var out bytes.Buffer
 	renderer := &chatRenderer{out: &out}
@@ -378,47 +194,6 @@ func TestPlainPromptClosesBeforeNextBlock(t *testing.T) {
 	renderer.operation("CHAT", "", colorBlue, "Status: ended")
 	if out.String() != "YOU > \n[CHAT]\n  Status: ended\n\n" {
 		t.Fatalf("prompt and block shared a line: %q", out.String())
-	}
-}
-
-func TestGovernedModelRequiresExactProxyEndpoint(t *testing.T) {
-	for _, tc := range []struct {
-		url  string
-		want bool
-	}{
-		// What this repository writes now.
-		{"https://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", true},
-		{"https://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", true},
-		// Still governed. A cluster deployed before the seam carried a
-		// certificate is metered, allowlisted, bound and audited exactly as
-		// it was; calling it ungoverned would report an enforcing plane as
-		// one that is not. What plaintext costs is confidentiality of the
-		// content on the wire, which `kmx status` reports separately.
-		{"http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", true},
-		{"http://kaimahi-proxy.kaimahi.svc.cluster.local:8080/upstream/ollama/v1", true},
-		// The host is still exact: a scheme that is not a seam's, a host
-		// that only CONTAINS the seam's name, and an unparseable URL are
-		// all somebody else's endpoint.
-		{"ftp://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1", false},
-		{"http://example.invalid/kaimahi-proxy.kaimahi:8080/upstream/x", false},
-		{"https://kaimahi-proxy.kaimahi:9999/upstream/ollama/v1", false},
-		{"http://[::1", false},
-	} {
-		if got := usesKaimahiModelProxy(map[string]any{"openAI": map[string]any{"baseUrl": tc.url}}); got != tc.want {
-			t.Errorf("usesKaimahiModelProxy(%q)=%v, want %v", tc.url, got, tc.want)
-		}
-	}
-}
-
-func TestGovernedModelSearchContinuesPastOtherBaseURLs(t *testing.T) {
-	spec := map[string]any{
-		"direct": map[string]any{"baseUrl": "https://example.invalid/v1"},
-		"nested": []any{map[string]any{"base_url": "http://kaimahi-proxy.kaimahi:8080/upstream/ollama/v1"}},
-	}
-	for i := 0; i < 100; i++ {
-		if !usesKaimahiModelProxy(spec) {
-			t.Fatal("a nonmatching baseUrl stopped discovery of the governed endpoint")
-		}
 	}
 }
 
@@ -442,43 +217,6 @@ func TestUpPreflightReportsAllMissingDependencies(t *testing.T) {
 	}
 }
 
-func TestMissingChatAgentFailsBeforeServabilityPoll(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", `
-case "$*" in
-  *"get agents.kagent.dev hello-tool -o name"*)
-    echo 'Error from server (NotFound): agents.kagent.dev "hello-tool" not found' >&2
-    exit 1
-    ;;
-  *"get agents.kagent.dev -o name"*)
-    printf 'agent.kagent.dev/hello-tools\nagent.kagent.dev/hello-world\n'
-    exit 0
-    ;;
-esac
-exit 99`)
-	t.Setenv("PATH", dir)
-	var out bytes.Buffer
-	a := &App{
-		Cfg: &config.Config{KubeContext: "kind-test"},
-		Run: &run.Runner{Stdout: &out, Stderr: &out},
-		Out: &out,
-		Err: &out,
-	}
-	started := time.Now()
-	err := a.waitServable("hello-tool")
-	if err == nil {
-		t.Fatal("missing agent unexpectedly became servable")
-	}
-	if time.Since(started) > time.Second {
-		t.Fatalf("missing agent did not fail immediately: %s", time.Since(started))
-	}
-	for _, want := range []string{`agent "hello-tool" does not exist`, "available agents: hello-tools, hello-world"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error lacks %q: %v", want, err)
-		}
-	}
-}
-
 func TestInteractiveMutationRequiresRemotePreconfirmation(t *testing.T) {
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `
@@ -496,22 +234,5 @@ exit 99`)
 	a.Cfg.Confirm = "prod"
 	if err := a.prepareInteractiveMutation(); err != nil {
 		t.Fatalf("matching preconfirmation was refused: %v", err)
-	}
-}
-
-func TestValidateToolServer(t *testing.T) {
-	wiring := &scaffold.ToolWiring{Server: "tools", Tools: []string{"get", "events"}}
-	accepted := []serverCondition{{Type: "Accepted", Status: "True", ObservedGeneration: 2}}
-	if err := validateToolServer(wiring, 2, 2, accepted, map[string]bool{"get": true, "events": true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := validateToolServer(wiring, 2, 2, accepted, map[string]bool{"get": true}); err == nil || !strings.Contains(err.Error(), "events") {
-		t.Fatalf("missing tool was not reported: %v", err)
-	}
-	if err := validateToolServer(wiring, 2, 2, []serverCondition{{Type: "Accepted", Status: "False", Message: "dial failed", ObservedGeneration: 2}}, nil); err == nil || !strings.Contains(err.Error(), "dial failed") {
-		t.Fatalf("unaccepted server was not reported: %v", err)
-	}
-	if err := validateToolServer(wiring, 2, 1, accepted, nil); err == nil || !strings.Contains(err.Error(), "still reconciling") {
-		t.Fatalf("stale discovery was not refused: %v", err)
 	}
 }

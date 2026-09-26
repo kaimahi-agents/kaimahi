@@ -53,8 +53,8 @@ func newManagedUpCommand(state *commandState, name, payloadDefault, payloadHelp 
 	cmd.Flags().IntVar(&opt.NodeCount, "node-count", 0, "how many nodes (default 1)")
 	cmd.Flags().StringVar(&opt.NetworkPolicy, "network-policy", "", "NetworkPolicy engine: cilium (default), azure, calico")
 	cmd.Flags().BoolVar(&opt.Observability, "observability", true, "wire Azure Monitor and Container Insights")
-	cmd.Flags().StringVar(&opt.Step, "step", "", "run one phase (the phases depend on --payload): "+
-		strings.Join(lift.StepsForPayload(lift.PayloadOrka), "|")+" — kagent adds kagent|agents")
+	cmd.Flags().StringVar(&opt.Step, "step", "", "run one phase: "+
+		strings.Join(lift.StepsForPayload(lift.PayloadOrka), "|"))
 	cmd.Flags().BoolVar(&opt.Plan, "plan", false, "print what would be created, where, and stop")
 	_ = cmd.RegisterFlagCompletionFunc("payload", staticCompletion(lift.Payloads))
 	_ = cmd.RegisterFlagCompletionFunc("step", staticCompletion(lift.AllSteps()))

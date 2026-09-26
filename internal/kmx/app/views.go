@@ -144,8 +144,8 @@ func (a *App) IssueIdentityCredential(name string, ttl *int64) error {
 }
 
 // IssueCredentialToSecret issues a bearer directly into Kubernetes custody.
-// issueCredential contains the shared pre-POST binding and 409 safety checks
-// used by govern; this entry point deliberately adds no second implementation.
+// issueCredential contains the shared pre-POST binding and 409 safety checks;
+// this entry point deliberately adds no second implementation.
 func (a *App) IssueCredentialToSecret(name, secret, namespace string, ttl *int64) error {
 	if err := validCredentialName(name); err != nil {
 		return err
@@ -158,11 +158,11 @@ func (a *App) IssueCredentialToSecret(name, secret, namespace string, ttl *int64
 		return err
 	}
 	return a.session(func(c *admin.Client) error {
-		return a.issueCredential(c, name, GovernOptions{
+		return a.issueCredential(c, name, CredentialOptions{
 			Secret:          secret,
 			SecretNamespace: namespace,
 			TTLSeconds:      ttl,
 			Command:         command,
-		}, false)
+		})
 	})
 }

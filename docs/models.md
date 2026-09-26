@@ -9,7 +9,7 @@ resources into Orka resources.
 The hello-world agent thinks with an in-cluster Ollama model by default.
 This doc is how to make the same agent think with a hosted endpoint
 instead. Each endpoint is a kagent `ModelConfig` preset committed under
-[`k8s/models/`](../k8s/models/), and `kmx use` switches the agent between
+[`k8s/models/`](../k8s/models/), applied with kubectl to switch between
 them. Nothing else changes: same cluster, same agent YAML, same `kmx agent
 chat`.
 
@@ -32,14 +32,14 @@ chat`.
 | `openrouter` | OpenRouter gateway | `openrouter-api-key` | not live-verified |
 | `azure-foundry` | Azure AI Foundry, v1 GA API (edit `baseUrl` + `model` first) | `azure-foundry-api-key` | not live-verified |
 | `openai-compatible` | any OpenAI-compatible base URL (template, edit first) | `openai-compatible-api-key` | not live-verified |
-| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (via `kmx govern`) | **yes**, live and in CI. See [spend.md](spend.md) |
-| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (via `kmx govern`), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
+| `governed-ollama` | Ollama through the kaimahi proxy | `kaimahi-governed-token` (create with `kmx credential issue <name> --secret kaimahi-governed-token --namespace kagent`) | **yes**, live and in CI. See [spend.md](spend.md) |
+| `governed-copilot` | Copilot through the kaimahi proxy | `kaimahi-governed-token` (create with `kmx credential issue <name> --secret kaimahi-governed-token --namespace kagent`), plus `kmx models credential copilot` for the proxy | **yes**, once, on AKS. See [spend.md](spend.md) and [aks.md](aks.md) |
 
 "Not live-verified" means exactly that. The preset is schema-valid
 against the kagent 0.9.12 CRDs, which CI proves with a server-side
 dry-run on every PR, so the YAML is well-formed and the fields exist. But
 no real completion has been bought through it yet. A preset graduates to
-live-verified only when an actual `kmx agent chat` completes through the
+live-verified only when an actual model call completes through the
 endpoint, and nobody has paid to do that for those five. They should
 work. "Should" is the honest word; schema validation does not prove provider
 availability or successful inference.
@@ -94,28 +94,22 @@ To rotate, `kubectl -n kagent delete secret <name>` and re-run.
 
 ## Switching the agent
 
+`kmx use` has been removed with the rest of the legacy operational CLI. The
+presets below are still carried in `k8s/models/` and still apply with kubectl,
+but kmx no longer switches a kagent Agent onto one:
+
 ```bash
-kmx use anthropic              # apply the preset, point the agent at it, wait Ready
-kmx agent chat hello-world     # same conversation, different brain
-kmx use ollama                 # back to the keyless local model
+kubectl --context <ctx> apply -f k8s/models/anthropic.yaml
+kubectl --context <ctx> -n kagent patch agents.kagent.dev hello-world \
+  --type merge -p '{"spec":{"declarative":{"modelConfig":"anthropic"}}}'
 ```
 
-`kmx use` applies its embedded preset and patches the one field
-that matters on the Agent, `spec.declarative.modelConfig`. The kagent
-controller rolls the agent deployment; the target waits for both the
-rollout and the Agent's Ready condition. The committed
-`k8s/hello-world.yaml` is never edited.
+One thing still bites people: **create the preset's Secret before switching.**
+An agent pointed at a ModelConfig whose Secret is missing never becomes Ready
+([FAQ](FAQ.md#hosted-model-authentication-fails)).
 
-Two things bite people here:
-
-- **Create the preset's Secret before switching.** An agent pointed at a
-  ModelConfig whose Secret is missing never becomes Ready, and `kmx use`
-  hangs waiting for it
-  ([FAQ](FAQ.md#hosted-model-authentication-fails)).
-- **`kmx use` defaults to `hello-world`.** Use `--agent hello-tools` to
-  switch the tools agent; otherwise it keeps its
-  own `modelConfig`; point it at a preset by patching that field
-  yourself if you want it on a hosted model.
+For an owner-managed application, the supported route is `kmx migrate`, which
+changes the model seam without any of this.
 
 ## Azure AI Foundry rides `provider: OpenAI`, deliberately
 
@@ -153,8 +147,6 @@ include API access to OpenAI and other models** at
 
 ```bash
 make copilot-secret               # checkout helper: kagent/github-copilot-token
-kmx use github-copilot
-kmx agent chat hello-world
 ```
 
 The retained checkout helper, `make copilot-secret`, logs you in once via
@@ -179,8 +171,8 @@ Custody properties worth knowing:
   logs, and no keyed call follows redirects. Fail-closed: a failed or
   empty exchange stores nothing.
 - **The exchanged token expires**, typically within hours. For the direct
-  preset, re-run `make copilot-secret` and then `kmx use github-copilot`
-  so the agent picks up the rotated `kagent/github-copilot-token` Secret.
+  preset, re-run `make copilot-secret` so the rotated
+  `kagent/github-copilot-token` Secret is in place.
   For the plane-side route, use `kmx models credential copilot`: it writes
   **only** `kaimahi/kaimahi-copilot-token` and restarts an existing plane.
   That native command does not populate the direct preset's Secret and uses

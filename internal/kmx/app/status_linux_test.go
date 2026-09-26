@@ -102,6 +102,16 @@ esac
 				if strings.Contains(got, "attention required") == tc.wantReady {
 					t.Fatalf("wrong overall readiness: %s", got)
 				}
+				if strings.Contains(got, "kmx agent chat") {
+					// The rows above come from agents.kagent.dev in the
+					// kagent namespace. `agent chat` is Orka-only and
+					// resolves against orka-system, so it cannot reach a
+					// single one of them, ready or not.
+					t.Fatalf("status offered Orka-only chat for legacy listings: %s", got)
+				}
+				if !strings.Contains(got, "kubectl --context kind-test -n kagent get agents.kagent.dev,pods") {
+					t.Fatalf("status did not offer the inspection that works: %s", got)
+				}
 				if mode != "rich" && strings.Contains(text(), "\x1b") {
 					t.Fatal("unexpected ANSI")
 				}
@@ -167,7 +177,7 @@ func TestReadCommandsRichAndPlain(t *testing.T) {
 				out, text := reportOutput(t, rich, 32)
 				a := reportApp(t, out, `case "$*" in
 *"config view"*) printf '%s' '{"clusters":[{"name":"c","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"c"}}]}';;
-*"get agents.kagent.dev"*) printf '%s' '{"items":[]}';;
+*"get agents.core.orka.ai"*) printf '%s' '{"items":[]}';;
 esac
 `)
 				var err error
@@ -187,7 +197,7 @@ esac
 				if !rich {
 					switch command {
 					case "agents":
-						if text() != "Agents\n  none\n" {
+						if text() != "Orka Agents in "+OrkaNamespace+"\n  none\n" {
 							t.Fatalf("changed redirected agents: %q", text())
 						}
 					}

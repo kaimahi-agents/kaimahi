@@ -71,7 +71,7 @@ func loadConsoleInference(env agentTUIEnvironment, agent agentTUIAgent) (*consol
 	if source.Kind != "foundry" && source.Kind != "copilot" {
 		return nil, fmt.Errorf("invalid saved host inference kind")
 	}
-	if err = source.validate(agent.Runtime); err != nil {
+	if err = source.validate(); err != nil {
 		return nil, err
 	}
 	return &source, nil
@@ -92,7 +92,7 @@ func saveConsoleInference(env agentTUIEnvironment, agent agentTUIAgent, source *
 	if !env.Local {
 		return fmt.Errorf("remote environments cannot use host inference overrides")
 	}
-	if err = source.validate(agent.Runtime); err != nil {
+	if err = source.validate(); err != nil {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -105,7 +105,10 @@ func saveConsoleInference(env agentTUIEnvironment, agent agentTUIAgent, source *
 	return writePrivateAgentFile(path, raw)
 }
 
-func (s consoleInferenceSource) validate(runtime string) error {
+// The console operates native Orka Agents only, so every source kind below is
+// validated against Orka's requirements; there is no second runtime to branch
+// on and no retired connector shape to accept.
+func (s consoleInferenceSource) validate() error {
 	if err := refuseWizardCredentials(s.Name, s.Model, s.Endpoint, s.Tenant, s.Provider, s.Secret, s.SecretKey); err != nil {
 		return err
 	}
@@ -117,9 +120,6 @@ func (s consoleInferenceSource) validate(runtime string) error {
 	}
 	switch s.Kind {
 	case "foundry-cluster":
-		if runtime != "orka" && runtime != "kagent" {
-			return fmt.Errorf("unsupported cluster runtime")
-		}
 		if err := scaffold.ValidateObjectName(s.Name); err != nil {
 			return err
 		}
@@ -140,19 +140,10 @@ func (s consoleInferenceSource) validate(runtime string) error {
 		}
 		return nil
 	case "foundry":
-		if runtime != "orka" {
-			return fmt.Errorf("Foundry host inference requires a native Orka agent")
-		}
 		return (foundryChatConfig{Endpoint: s.Endpoint, Deployment: s.Model, Tenant: s.Tenant}).validate()
 	case "copilot":
-		if runtime != "orka" {
-			return fmt.Errorf("Copilot host inference requires a native Orka agent")
-		}
 		return nil
 	case "ollama", "apikey":
-		if runtime != "orka" && runtime != "kagent" {
-			return fmt.Errorf("unsupported runtime")
-		}
 		if err := scaffold.ValidateObjectName(s.Name); err != nil {
 			return err
 		}
@@ -169,9 +160,6 @@ func (s consoleInferenceSource) validate(runtime string) error {
 			}
 			if s.Provider != "openai" && s.Provider != "anthropic" {
 				return fmt.Errorf("provider must be openai or anthropic")
-			}
-			if runtime == "kagent" && s.Provider != "openai" {
-				return fmt.Errorf("kagent connector creation currently supports OpenAI-compatible endpoints")
 			}
 		}
 		return nil
@@ -245,8 +233,7 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 	}
 	snapshot.Server = server
 	worker := env.app(a)
-	kind, configs := consoleInferenceKinds(agent.Runtime)
-	raw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", kind, agent.Name, "-o", "json")
+	raw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", consoleAgentKind, agent.Name, "-o", "json")
 	if err != nil {
 		return snapshot, err
 	}
@@ -264,7 +251,7 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 		return snapshot, fmt.Errorf("Agent has no resourceVersion")
 	}
 	snapshot.Version, snapshot.Model = object.Metadata.ResourceVersion, object.Spec.Model
-	raw, err = worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", configs, "-o", "json")
+	raw, err = worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", consoleProviderKind, "-o", "json")
 	if err != nil {
 		return snapshot, err
 	}
@@ -280,8 +267,8 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 		snapshot.Sources = append(snapshot.Sources, consoleInferenceSource{Kind: "cluster", Namespace: agent.Namespace, Name: c.Metadata.Name, Model: valueOr(c.Spec.DefaultModel, c.Spec.Model), Provider: valueOr(c.Spec.Type, c.Spec.Provider), Endpoint: c.Spec.BaseURL})
 	}
 	ref := object.Spec.ProviderRef
-	if agent.Runtime == "orka" && ref.Namespace != "" && ref.Namespace != agent.Namespace {
-		raw, err = worker.orkaCapture(ctx, nil, "-n", ref.Namespace, "get", configs, ref.Name, "-o", "json")
+	if ref.Namespace != "" && ref.Namespace != agent.Namespace {
+		raw, err = worker.orkaCapture(ctx, nil, "-n", ref.Namespace, "get", consoleProviderKind, ref.Name, "-o", "json")
 		if err != nil {
 			return snapshot, fmt.Errorf("cannot read current shared Provider: %w", err)
 		}
@@ -304,12 +291,12 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 	return snapshot, nil
 }
 
-func consoleInferenceKinds(runtime string) (string, string) {
-	if runtime == "kagent" {
-		return "agents.kagent.dev", "modelconfigs.kagent.dev"
-	}
-	return "agents.core.orka.ai", "providers.core.orka.ai"
-}
+// The console reads and writes Orka Agents and their Providers only. These are
+// the sole kinds any console operation may name.
+const (
+	consoleAgentKind    = "agents.core.orka.ai"
+	consoleProviderKind = "providers.core.orka.ai"
+)
 
 func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, snapshot consoleInferenceSnapshot, source consoleInferenceSource, model string) error {
 	if agent.External {
@@ -319,7 +306,7 @@ func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment,
 		return err
 	}
 	if source.Kind != "cluster" {
-		if err := source.validate(agent.Runtime); err != nil {
+		if err := source.validate(); err != nil {
 			return err
 		}
 	}
@@ -374,8 +361,7 @@ func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment,
 		return fmt.Errorf("environment changed; reopen inference to review the target")
 	}
 	worker := env.app(a)
-	kind, _ := consoleInferenceKinds(agent.Runtime)
-	currentRaw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", kind, agent.Name, "-o", "json")
+	currentRaw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "get", consoleAgentKind, agent.Name, "-o", "json")
 	if err != nil {
 		return err
 	}
@@ -401,30 +387,27 @@ func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment,
 		}
 		model = "" // New connector's default model is the chosen model.
 	}
-	patch, err := consoleInferencePatch(agent.Runtime, snapshot.Version, source.Name, valueOr(source.Namespace, agent.Namespace), model, snapshot.Model)
+	patch, err := consoleInferencePatch(snapshot.Version, source.Name, valueOr(source.Namespace, agent.Namespace), model, snapshot.Model)
 	if err != nil {
 		return err
 	}
-	raw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "patch", kind, agent.Name, "--type=json", "-p", string(patch), "-o", "json")
+	raw, err := worker.orkaCapture(ctx, nil, "-n", agent.Namespace, "patch", consoleAgentKind, agent.Name, "--type=json", "-p", string(patch), "-o", "json")
 	if err != nil {
 		return fmt.Errorf("could not update agent; any new connector remains available: %w", err)
 	}
 	if err = saveConsoleInference(env, agent, nil); err != nil {
 		return fmt.Errorf("agent updated, but clearing host override failed: %w", err)
 	}
-	if agent.Runtime == "orka" {
-		var updated orkaObject
-		if err = json.Unmarshal(raw, &updated); err != nil {
-			return err
-		}
-		if updated.Metadata.UID == "" {
-			return fmt.Errorf("updated Agent returned no identity")
-		}
-		waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-		defer cancel()
-		return worker.waitOrkaReady(waitCtx, agent.Namespace, orkaIdentity{Kind: "Agent", Name: agent.Name, UID: updated.Metadata.UID, Generation: updated.Metadata.Generation})
+	var updated orkaObject
+	if err = json.Unmarshal(raw, &updated); err != nil {
+		return err
 	}
-	return nil
+	if updated.Metadata.UID == "" {
+		return fmt.Errorf("updated Agent returned no identity")
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	return worker.waitOrkaReady(waitCtx, agent.Namespace, orkaIdentity{Kind: "Agent", Name: agent.Name, UID: updated.Metadata.UID, Generation: updated.Metadata.Generation})
 }
 
 // Host inference is a local-kind development feature, never a remote runtime.
@@ -449,7 +432,7 @@ func (a *App) requireLocalHostInference(ctx context.Context) error {
 }
 
 func (a *App) consolePrepareClusterFoundry(ctx context.Context, agent agentTUIAgent, s consoleInferenceSource) (consoleInferenceSource, error) {
-	if err := s.validate(agent.Runtime); err != nil {
+	if err := s.validate(); err != nil {
 		return s, err
 	}
 	if s.Account != "" {
@@ -512,16 +495,7 @@ func (a *App) consolePrepareClusterFoundry(ctx context.Context, agent agentTUIAg
 }
 
 func (a *App) consoleCreateConnector(ctx context.Context, agent agentTUIAgent, s consoleInferenceSource) error {
-	if err := s.validate(agent.Runtime); err != nil {
-		return err
-	}
-	if agent.Runtime == "kagent" {
-		spec := map[string]any{"provider": "OpenAI", "model": s.Model, "apiKeySecret": s.Secret, "apiKeySecretKey": s.SecretKey, "openAI": map[string]any{"baseUrl": s.Endpoint}}
-		if s.Kind == "ollama" {
-			spec = map[string]any{"provider": "Ollama", "model": s.Model, "ollama": map[string]any{"host": consoleOllamaEndpoint(s.Endpoint, false)}}
-		}
-		body, _ := json.Marshal(map[string]any{"apiVersion": "kagent.dev/v1alpha2", "kind": "ModelConfig", "metadata": map[string]string{"name": s.Name, "namespace": agent.Namespace}, "spec": spec})
-		_, err := a.orkaCapture(ctx, body, "-n", agent.Namespace, "create", "--validate=strict", "-f", "-", "-o", "json")
+	if err := s.validate(); err != nil {
 		return err
 	}
 	secret, key, provider, endpoint := s.Secret, s.SecretKey, s.Provider, s.Endpoint
@@ -563,27 +537,22 @@ func consoleOllamaEndpoint(endpoint string, openAI bool) string {
 	return endpoint
 }
 
-func consoleInferencePatch(runtime, version, configuration, namespace, model string, currentModel map[string]any) ([]byte, error) {
+func consoleInferencePatch(version, configuration, namespace, model string, currentModel map[string]any) ([]byte, error) {
 	if version == "" || configuration == "" {
 		return nil, fmt.Errorf("inference update requires an Agent version and configuration")
 	}
-	patch := []map[string]any{{"op": "test", "path": "/metadata/resourceVersion", "value": version}}
-	switch runtime {
-	case "orka":
-		updated := map[string]any{}
-		for k, v := range currentModel {
-			updated[k] = v
-		}
-		if model != "" {
-			updated["name"] = model
-		} else {
-			delete(updated, "name")
-		}
-		patch = append(patch, map[string]any{"op": "add", "path": "/spec/providerRef", "value": map[string]string{"name": configuration, "namespace": namespace}}, map[string]any{"op": "add", "path": "/spec/model", "value": updated})
-	case "kagent":
-		patch = append(patch, map[string]any{"op": "add", "path": "/spec/declarative/modelConfig", "value": configuration})
-	default:
-		return nil, fmt.Errorf("unsupported inference runtime %q", runtime)
+	updated := map[string]any{}
+	for k, v := range currentModel {
+		updated[k] = v
 	}
-	return json.Marshal(patch)
+	if model != "" {
+		updated["name"] = model
+	} else {
+		delete(updated, "name")
+	}
+	return json.Marshal([]map[string]any{
+		{"op": "test", "path": "/metadata/resourceVersion", "value": version},
+		{"op": "add", "path": "/spec/providerRef", "value": map[string]string{"name": configuration, "namespace": namespace}},
+		{"op": "add", "path": "/spec/model", "value": updated},
+	})
 }

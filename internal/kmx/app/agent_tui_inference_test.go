@@ -140,40 +140,46 @@ func TestConsoleInferenceSourcePersistenceAndValidation(t *testing.T) {
 		{Kind: "foundry", Endpoint: "https://untrusted.example.com", Model: "x"},
 		{Kind: "apikey", Name: "demo", Provider: "openai", Endpoint: "https://user:pass@example.com", Model: "x", Secret: "key", SecretKey: "api-key"},
 		{Kind: "ollama", Name: "demo", Endpoint: "http://example.com?token=x", Model: "x"},
+		// The retired runtime's connector kind is not a source the console knows.
+		{Kind: "modelconfig", Name: "demo", Endpoint: "https://example.com", Model: "x"},
 	} {
-		if s.validate("orka") == nil {
+		if s.validate() == nil {
 			t.Fatalf("invalid source accepted: %s", s.Kind)
 		}
 	}
-	if source.validate("kagent") == nil {
-		t.Fatal("host inference exposed for unsupported runtime")
-	}
 }
 
-func TestConsoleInferenceCreatesConnectorWithoutRewritingAgentTools(t *testing.T) {
+// The keyless Ollama connector is the one create path that writes two objects:
+// a dummy Secret Orka's Provider schema requires, then the Provider itself.
+// Neither may be a ModelConfig, and the Secret must never carry a credential.
+func TestConsoleOllamaConnectorCreatesOrkaProviderWithKeylessSecret(t *testing.T) {
 	dir := t.TempDir()
-	log := filepath.Join(dir, "body")
+	log := filepath.Join(dir, "bodies")
 	fakeTool(t, dir, "kubectl", `case "$*" in
- *'create --validate=strict -f -'*) cat > "$BODY_LOG"; printf '%s' '{"kind":"ModelConfig"}' ;;
+ *'--ignore-not-found=true -o name'*) : ;;
+ *'create -f - -o name'*) cat >> "$BODY_LOG"; printf 'secret/local-model-keyless' ;;
+ *'create --validate=strict -f - -o json'*) cat >> "$BODY_LOG"; printf '%s' '{"kind":"Provider","metadata":{"name":"local-model","namespace":"agents","uid":"u-1","generation":1}}' ;;
+ *'get providers.core.orka.ai local-model -o json'*) printf '%s' '{"kind":"Provider","metadata":{"name":"local-model","namespace":"agents","uid":"u-1","generation":1},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}' ;;
  *) exit 1 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{Env: []string{"BODY_LOG=" + log}}}
+	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{Env: []string{"BODY_LOG=" + log}}, Out: io.Discard, Err: io.Discard}
 	s := consoleInferenceSource{Kind: "ollama", Name: "local-model", Endpoint: "http://ollama:11434", Model: "qwen2.5:3b"}
-	if err := a.consoleCreateConnector(t.Context(), agentTUIAgent{Runtime: "kagent", Namespace: "kagent"}, s); err != nil {
+	if err := a.consoleCreateConnector(t.Context(), agentTUIAgent{Runtime: "orka", Namespace: "agents"}, s); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]any
-	if err = json.Unmarshal(raw, &doc); err != nil {
-		t.Fatal(err)
+	body := string(raw)
+	if strings.Contains(body, "ModelConfig") || strings.Contains(body, "kagent.dev") {
+		t.Fatalf("the console created a retired connector: %s", body)
 	}
-	spec := doc["spec"].(map[string]any)
-	if doc["kind"] != "ModelConfig" || spec["provider"] != "Ollama" || spec["ollama"].(map[string]any)["host"] != s.Endpoint {
-		t.Fatalf("connector=%s", raw)
+	for _, want := range []string{"Provider", "core.orka.ai", "http://ollama:11434/v1", "local-model-keyless", "not-used-by-this-endpoint"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("connector missing %q: %s", want, body)
+		}
 	}
 }
 
@@ -301,16 +307,14 @@ esac`)
 
 func TestConsoleRemoteInferenceNeverOffersOrLoadsHostSources(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, runtime := range []string{"orka", "kagent"} {
-		p := consoleInferencePane{env: agentTUIEnvironment{Name: "remote"}, agent: agentTUIAgent{Runtime: runtime}, azureAvailable: true}
-		kinds := strings.Join(p.sourceKinds(), ",")
-		if strings.Contains(kinds, "copilot") || !strings.Contains(kinds, "foundry-cluster") || !strings.Contains(kinds, "azure") {
-			t.Fatalf("remote source kinds=%s", kinds)
-		}
-		p.setFields("foundry-cluster")
-		if p.fields[2].label != "Existing cluster Secret name" {
-			t.Fatal("remote Foundry asks for host login instead of cluster credential")
-		}
+	p := consoleInferencePane{env: agentTUIEnvironment{Name: "remote"}, agent: agentTUIAgent{Runtime: "orka"}, azureAvailable: true}
+	kinds := strings.Join(p.sourceKinds(), ",")
+	if strings.Contains(kinds, "copilot") || !strings.Contains(kinds, "foundry-cluster") || !strings.Contains(kinds, "azure") {
+		t.Fatalf("remote source kinds=%s", kinds)
+	}
+	p.setFields("foundry-cluster")
+	if p.fields[2].label != "Existing cluster Secret name" {
+		t.Fatal("remote Foundry asks for host login instead of cluster credential")
 	}
 	env := agentTUIEnvironment{Name: "remote"}
 	agent := agentTUIAgent{Runtime: "orka", Name: "demo", Namespace: "agents"}
@@ -434,7 +438,7 @@ esac`)
 	if source.Namespace != "inference" || source.Name != "shared" {
 		t.Fatal("lost shared Provider identity")
 	}
-	raw, err := consoleInferencePatch("orka", snapshot.Version, source.Name, source.Namespace, "", nil)
+	raw, err := consoleInferencePatch(snapshot.Version, source.Name, source.Namespace, "", nil)
 	if err != nil || !strings.Contains(string(raw), `"namespace":"inference"`) {
 		t.Fatalf("patch=%s err=%v", raw, err)
 	}
