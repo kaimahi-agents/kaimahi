@@ -1362,7 +1362,7 @@ jobs:
           assert rules[0]["from"] == [{"namespaceSelector": {
               "matchLabels": {"kubernetes.io/metadata.name": ns}}}], rules
           assert rules[0]["ports"] == [{"protocol": "TCP", "port": 8080}], rules
-          print(f"the seam admits {ns} on TCP 8080 and nothing else — the tool port 8081 stays shut")
+          print(f"this migration's policy admits only {ns} on TCP 8080; it does not admit tool port 8081")
           EOF
       # The one step that changes somebody else's workload, run by its
       # owner. Read off the pod afterwards rather than off an exit code:
