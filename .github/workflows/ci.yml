@@ -1358,7 +1358,7 @@ jobs:
           assert rules[0]["from"] == [{"namespaceSelector": {
               "matchLabels": {"kubernetes.io/metadata.name": ns}}}], rules
           assert rules[0]["ports"] == [{"protocol": "TCP", "port": 8080}], rules
-          print(f"the seam admits {ns} on TCP 8080 and nothing else — the tool port 8081 stays shut")
+          print(f"this migration's policy admits only {ns} on TCP 8080; it does not admit tool port 8081")
           EOF
       # The one step that changes somebody else's workload, run by its
       # owner. Read off the pod afterwards rather than off an exit code:
@@ -2908,11 +2908,13 @@ jobs:
           sa=system:serviceaccount:orka-system:kmx-k8s-reader
           for denied in "get secrets" "list secrets" "create pods" "delete pods" \
                         "update pods" "patch pods" "patch configmaps"; do
+            # Split the verb/resource pair for kubectl auth can-i.
+            # shellcheck disable=SC2086
             got=$(kubectl --context kind-kmx-orka auth can-i $denied -n orka-system --as="$sa" || true)
             test "$got" = no || { echo "the tool account may $denied"; exit 1; }
           done
           # The positive control: a denial list that refused everything would
-          # pass the five checks above and prove nothing. Scoped to
+          # pass the seven checks above and prove nothing. Scoped to
           # orka-system to match the namespace the live request above hits.
           kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
       # Provider → Agent → Task, and a REAL answer. The prompt is

@@ -116,11 +116,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   component bring-up, the pinned Orka, an ungoverned `owner-ci` Deployment in
   its own namespace, the plane, [`kmx migrate`](docs/migrate.md), and a patch
   the **owner** applies. It installs no kagent and fails closed — after
-  bring-up and again at the end — if that namespace ever appears.
+  bring-up and again at the end — if that namespace ever appears. This removes
+  the last PR-time live `kmx govern` check while the command still ships;
+  until its retirement in #218, only `kmx-clone-free` live-tests it (on main
+  pushes or manual dispatch), so pull requests no longer catch regressions in
+  that command.
 
   What it asserts, kept apart so a single green tick cannot hide which boundary
-  moved: the migration's NetworkPolicy admits exactly one namespace on exactly
-  TCP 8080, leaving the tool seam's port shut; a real model turn writes an
+  moved: this migration's NetworkPolicy admits only the owner's namespace on
+  TCP 8080 and does not admit tool port 8081; other policies can admit other
+  traffic. A real model turn writes an
   `unpriced` Orka ledger row with the upstream's own token counts, attributed
   to `none` — a complete answer, and a different word from the `unknown` the
   shard fails closed on; an expired credential earns a 403 that names the

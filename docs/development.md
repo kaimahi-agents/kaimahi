@@ -148,9 +148,10 @@ owner's own application, which is the supported path.
 with no kagent either. It reaches the same starting point as `e2e-resilience` —
 component bring-up, pinned Orka, an ungoverned `owner-ci` Deployment, the plane,
 then [`kmx migrate`](migrate.md) and a patch the **owner** applies — and then
-asserts what the plane *charges and refuses*: the migration's NetworkPolicy
-admits exactly one namespace on exactly TCP 8080 (the tool port stays shut); a
-real turn writes an `unpriced` Orka ledger row attributed to `none`, which is a
+asserts what the plane *charges and refuses*: this migration's NetworkPolicy
+admits only the owner's namespace on TCP 8080 and does not admit tool port 8081
+(other policies can admit other traffic); a real turn writes an `unpriced` Orka
+ledger row attributed to `none`, which is a
 complete answer and a different word from `unknown` or `legacy`; an expired
 credential earns a 403 that names the credential and the renewing command, and
 renewal restores service while leaving the mounted Secret's uid, resourceVersion
