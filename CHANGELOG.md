@@ -66,6 +66,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- **The installer's `--quickstart` refuses the current `v0.1.0` release.**
+  That release runs the legacy quickstart, not Orka. A plain v0.1.0 install
+  still succeeds but no longer recommends that legacy journey as the Orka
+  next step. **Upgrading:** until an Orka-capable release is published, run
+  `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main` and then
+  `kmx quickstart`; `@latest` still selects v0.1.0.
 - **`kmx quickstart` no longer deploys the legacy kagent runtime**, and no
   longer reduces, reconciles or preserves a kagent Helm release. Its
   structured output's `agent` key is now `hello-world-agent` (was

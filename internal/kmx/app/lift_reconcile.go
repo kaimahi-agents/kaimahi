@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 )
+
+var errOrkaConfigurationDrift = errors.New("Orka configuration drift")
 
 // Declarative Provider/Agent creation may RESUME: lift and quickstart both
 // rerun, and both must reuse what already matches rather than collide with
@@ -50,7 +53,7 @@ func (a *App) matchingOrkaResource(ctx context.Context, namespace string, desire
 		return nil, err
 	}
 	if !reflect.DeepEqual(existing["spec"], admitted["spec"]) {
-		return nil, fmt.Errorf("%s/%s exists with different configuration; select its inference configuration or use a different Agent name", kind, name)
+		return nil, fmt.Errorf("%w: %s/%s exists with different configuration; select its inference configuration or use a different Agent name", errOrkaConfigurationDrift, kind, name)
 	}
 	return &orkaIdentity{Kind: kind, Name: name, UID: uid, Generation: int64(generation)}, nil
 }

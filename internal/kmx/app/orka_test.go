@@ -63,6 +63,11 @@ case "$*" in
       absent) printf 'Error from server (NotFound): services "ollama" not found\n' >&2; exit 1 ;;
       *) printf 'service/ollama\n'; exit 0 ;;
     esac ;;
+  *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
+    [ -f "$KMX_TEST_STDIN" ] || exit 0
+    grep -q 'kind: Provider' "$KMX_TEST_STDIN" || exit 0
+    printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":1},"spec":{"baseURL":"http://ollama.ollama.svc.cluster.local:11434/v1"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}'
+    exit 0 ;;
   *"apply --dry-run=server -f -"*)
     case "$KMX_TEST_DRYRUN" in
       refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
