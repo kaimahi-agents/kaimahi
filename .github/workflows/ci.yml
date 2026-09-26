@@ -2620,11 +2620,13 @@ jobs:
           sa=system:serviceaccount:orka-system:kmx-k8s-reader
           for denied in "get secrets" "list secrets" "create pods" "delete pods" \
                         "update pods" "patch pods" "patch configmaps"; do
+            # Split the verb/resource pair for kubectl auth can-i.
+            # shellcheck disable=SC2086
             got=$(kubectl --context kind-kmx-orka auth can-i $denied -n orka-system --as="$sa" || true)
             test "$got" = no || { echo "the tool account may $denied"; exit 1; }
           done
           # The positive control: a denial list that refused everything would
-          # pass the five checks above and prove nothing. Scoped to
+          # pass the seven checks above and prove nothing. Scoped to
           # orka-system to match the namespace the live request above hits.
           kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
       # Provider → Agent → Task, and a REAL answer. The prompt is
