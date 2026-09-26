@@ -22,6 +22,48 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Changed
+
+- **Governance evidence now comes from an owner-managed application, not kagent.**
+  The `e2e-resilience` shard used to install the legacy runtime, repoint a
+  kagent Agent at the seam with `kmx govern`, and produce every ledger row
+  through `kmx agent chat`. It now proves the path
+  [`kmx migrate`](docs/migrate.md) actually supports: a Deployment its own
+  owner runs (`owner-ci`, in its own namespace, created before the plane
+  exists), repointed by the patch `kmx migrate` writes and the **owner**
+  applies. The shard installs no kagent and fails closed — after bring-up and
+  again at the end — if that namespace ever appears.
+
+  What it asserts, kept apart so a single green tick cannot hide which
+  boundary moved: the migration leaves the owner's Deployment byte-identical
+  (uid, generation and whole spec) until the owner applies the patch; a real
+  model turn through the TLS seam to Orka returns an answer and writes an
+  `unpriced` Orka ledger row with the upstream's own token counts; an
+  exhausted token budget is reported by the application itself as a 429 and
+  audited as a denied row; and the plane survives a replica killed mid-call —
+  the in-flight call drained, the survivor answering 200, exactly two ledger
+  rows gained, and both replicas back to 2/2 ready — and a Postgres outage,
+  where every replica's readiness drops and returns and no replica's restart
+  count changes across it. It separately proves the owner's application
+  answers again after a simultaneous restart of both replicas and after a
+  backup/wipe/restore.
+
+  It does **not** claim native Orka Agent governance. The pinned Orka Provider
+  schema has no field naming a private certificate authority, so an Orka Agent
+  cannot be told to trust the plane's seam; the governed caller here is the
+  owner's own application. No product behaviour and no default changed — this
+  is CI evidence only.
+
+  - `scripts/replica-kill-probe.sh` takes `CLIENT_PATH` (default
+    `v1/chat/completions`) so it can speak the `v1/responses` client path the
+    committed `orka` upstream declares, and refuses a protocol it has no body
+    for rather than posting a mismatched one.
+  - `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload and
+    its standard-library model client; `scripts/test_owner_model_client.py`
+    pins the properties the shard's conclusions depend on — the credential
+    leaves by no route but the bearer header, an upstream refusal keeps its
+    status, and the seam's authority is verified with no unverified fallback.
+
 ### Added
 
 - **Orka now has its own required pull-request proof.** A new `e2e-orka-runtime`

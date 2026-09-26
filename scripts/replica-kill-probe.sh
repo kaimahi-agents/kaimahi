@@ -11,7 +11,22 @@
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: replica-kill-probe.sh   (env: GOVERNED_SECRET=kaimahi-governed-token
-#        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world)
+#        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world
+#        CLIENT_PATH=v1/chat/completions)
+#
+# The governance-evidence shard invokes this against the owner-managed
+# workload instead, with every default above overridden and none of its
+# defaults relied on: KUBECTL="kubectl --context kind-kaimahi-p1"
+# SECRET_NAMESPACE=owner-app GOVERNED_SECRET=kaimahi-owner-ci-token
+# UPSTREAM=orka MODEL=local/qwen2.5:3b CRED=owner-ci CLIENT_PATH=v1/responses.
+#
+# CLIENT_PATH is the route the CALLER speaks, which is not always the one
+# the upstream is forwarded on: the committed `orka` entry declares
+# `v1/responses` as its client path and translates. The request body
+# differs between the two protocols, so the path selects the body here
+# and an unrecognised one is refused rather than guessed — a probe that
+# posted chat-completions JSON to a Responses route would be measuring a
+# 400 and calling it a drain.
 set -euo pipefail
 umask 077
 
@@ -22,6 +37,7 @@ GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
 UPSTREAM="${UPSTREAM:-ollama}"
 MODEL="${MODEL:-qwen2.5:3b}"
 CRED="${CRED:-hello-world}"
+CLIENT_PATH="${CLIENT_PATH:-v1/chat/completions}"
 PORT_A="${PORT_A:-18380}"
 PORT_B="${PORT_B:-18381}"
 
@@ -72,12 +88,23 @@ for pair in "$a:$PORT_A" "$b:$PORT_B"; do
 done
 
 before=$(ledger_rows)
-printf '{"model": "%s", "messages": [{"role": "user", "content": "Reply with the single word OK."}], "max_tokens": 8}\n' \
-  "$MODEL" > "$workdir/body"
+PROMPT='Reply with the single word OK.'
+case "$CLIENT_PATH" in
+  v1/chat/completions)
+    printf '{"model": "%s", "messages": [{"role": "user", "content": "%s"}], "max_tokens": 8}\n' \
+      "$MODEL" "$PROMPT" > "$workdir/body" ;;
+  v1/responses)
+    # The smallest body the seam's translation accepts: no `store` and no
+    # `previous_response_id`, both of which it refuses outright.
+    printf '{"model": "%s", "input": "%s", "max_output_tokens": 16}\n' \
+      "$MODEL" "$PROMPT" > "$workdir/body" ;;
+  *)
+    echo "CLIENT_PATH=$CLIENT_PATH is not a protocol this probe can write a body for" >&2; exit 1 ;;
+esac
 chat() { # port -> status
   curl -sS --cacert "$workdir/plane-ca.crt" -o "$workdir/resp-$1" -w '%{http_code}' -X POST -H @"$workdir/auth-header" \
     -H 'Content-Type: application/json' --data @"$workdir/body" \
-    "https://127.0.0.1:$1/upstream/$UPSTREAM/v1/chat/completions" 2>/dev/null || echo 000
+    "https://127.0.0.1:$1/upstream/$UPSTREAM/$CLIENT_PATH" 2>/dev/null || echo 000
 }
 
 # 1. A call in flight on A...
@@ -85,14 +112,12 @@ chat "$PORT_A" > "$workdir/status-a" &
 inflight=$!
 sleep 0.2
 # Was the call still open when A went? curl writes the status only on
-# completion, so an empty file means yes. A host fast enough to finish
-# the generation first has not exercised the drain — say so rather
-# than claim it (the survivor and ledger assertions still hold either
-# way; CI's 2-CPU runner is slow enough that the drain is exercised).
+# completion, so an empty file means yes. A host that finishes generation
+# first has not exercised the drain and cannot pass this drain proof.
 drained=1
 if [ -s "$workdir/status-a" ]; then
   drained=0
-  echo "NOTE: the call on $a completed before the delete ($(cat "$workdir/status-a")); the drain is not exercised on this host"
+  echo "the call on $a completed before deletion; the drain was not exercised" >&2
 fi
 # 2. ...A is deleted (a direct delete: no eviction, no PDB — the harsher case)...
 echo "deleting replica $a"
@@ -104,6 +129,7 @@ st_a=$(cat "$workdir/status-a")
 echo "call on the deleted replica: $st_a (drain exercised: $drained); next call on the survivor: $st_b"
 [ "$st_b" = 200 ] || { echo "survivor answered $st_b: $(head -c 300 "$workdir/resp-$PORT_B")" >&2; exit 1; }
 [ "$st_a" = 200 ] || { echo "the in-flight call was not drained (got $st_a)" >&2; exit 1; }
+[ "$drained" = 1 ] || { echo "the call finished before deletion; retry the drain proof" >&2; exit 1; }
 
 # The ledger gained exactly the two rows — nothing lost with the replica.
 after=$(ledger_rows)
@@ -114,8 +140,4 @@ echo "ledger rows for $CRED: $before -> $after"
 $KUBECTL -n "$NAMESPACE" rollout status deploy/kaimahi-proxy --timeout=180s >/dev/null
 ready=$($KUBECTL -n "$NAMESPACE" get deploy kaimahi-proxy -o jsonpath='{.status.readyReplicas}')
 [ "$ready" = 2 ] || { echo "deployment not back at 2 ready replicas ($ready)" >&2; exit 1; }
-if [ "$drained" = 1 ]; then
-  echo "replica-kill: survivor served, in-flight call drained, ledger complete, 2/2 ready again"
-else
-  echo "replica-kill: survivor served, ledger complete, 2/2 ready again (drain not exercised on this host)"
-fi
+echo "replica-kill: survivor served, in-flight call drained, ledger complete, 2/2 ready again"
