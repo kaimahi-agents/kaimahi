@@ -27,7 +27,7 @@ because there are two different ways a claim survives.
   those apart. So each surviving line is named, one at a time, with a
   category and a reason, in scripts/legacy-runtime-allowlist.json.
 
-WHAT MAY STAY, AND NOTHING ELSE. The allowlist has four categories, they
+WHAT MAY STAY, AND NOTHING ELSE. The allowlist has five categories, they
 are the whole policy, and each one is bound to the paths where its claim
 could be true — a category is an argument for why a line may stay, and the
 same argument is not available everywhere:

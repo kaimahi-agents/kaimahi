@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/base64"
 	"io"
 	"os"
@@ -8,7 +9,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
+
+// A successful plane setup recommends inspecting the credential just issued
+// by migrate (the Deployment name), not the old demo credential in CRED.
+func TestPlaneNextStepsInspectTheMigratedDeployment(t *testing.T) {
+	var out bytes.Buffer
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test", Credential: "hello-world"}, Err: &out}
+	a.planeNextSteps()
+	for _, want := range []string{"migrate '<deployment>' --namespace <ns>", "ledger '<deployment>'"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q from follow-up:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "ledger hello-world") {
+		t.Errorf("follow-up still reads the old demo credential:\n%s", out.String())
+	}
+}
 
 // kmx builds and side-loads the image under one tag and deploys a manifest
 // that names another only if these two drift. Nothing would fail at deploy

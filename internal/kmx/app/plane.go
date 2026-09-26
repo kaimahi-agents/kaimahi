@@ -161,19 +161,9 @@ func (a *App) Plane(opt PlaneOptions) error {
 		a.notef("This command does not enable governance for an agent; existing routing is not assessed here.")
 		// The route offered has to be one this cluster can take. The old
 		// governance command was retired with the runtime it repointed.
-		// Naming it here would send an operator to an unknown command; putting an
+		// Naming it here would send an operator to a retired command; putting an
 		// application's model traffic on the seam is `kmx migrate`.
-		ui := cliui.New(a.Err)
-		if ui.Rich() {
-			a.notef("\n%s", ui.Actions("Next", []cliui.Action{
-				{Label: "Route an application", Command: a.operationCommand("migrate", "<deployment>"), Detail: "issue a credential and route its model traffic through the plane"},
-				{Label: "Inspect spend", Command: a.operationCommand("ledger", a.Cfg.Credential)},
-			}))
-		} else {
-			a.notef("\nNEXT\n"+
-				"  %s --namespace <ns>  # issue the credential and put an application behind the plane\n"+
-				"  %s  # what it has spent", a.operationCommand("migrate", "<deployment>"), a.operationCommand("ledger", a.Cfg.Credential))
-		}
+		a.planeNextSteps()
 		// Existing pre-TLS seams fail closed until re-applied with the authority.
 		a.notef("\nUPGRADING an existing cluster? The model seam serves TLS. Older model wiring\n"+
 			"  that points at `http://` and names no certificate authority fails closed\n"+
@@ -185,6 +175,22 @@ func (a *App) Plane(opt PlaneOptions) error {
 			a.operationCommand("migrate", "<deployment>"), a.operationCommand("status"))
 	}
 	return nil
+}
+
+// planeNextSteps keeps both rendered modes pointed at the credential that
+// migrate issues: it uses the Deployment name, not the old demo CRED default.
+func (a *App) planeNextSteps() {
+	ui := cliui.New(a.Err)
+	if ui.Rich() {
+		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
+			{Label: "Route an application", Command: a.operationCommand("migrate", "<deployment>"), Detail: "issue a credential and route its model traffic through the plane"},
+			{Label: "Inspect spend", Command: a.operationCommand("ledger", "<deployment>")},
+		}))
+	} else {
+		a.notef("\nNEXT\n"+
+			"  %s --namespace <ns>  # issue the credential and put an application behind the plane\n"+
+			"  %s  # what it has spent", a.operationCommand("migrate", "<deployment>"), a.operationCommand("ledger", "<deployment>"))
+	}
 }
 
 // ---- the image ------------------------------------------------------------

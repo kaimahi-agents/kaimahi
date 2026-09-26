@@ -13,10 +13,10 @@ import (
 // A retired command must not be SUGGESTED, not merely refused when typed.
 //
 // `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are
-// unknown. That is the easier half. The half that actually reaches an operator
+// refused. That is the easier half. The half that actually reaches an operator
 // is the NEXT-step text a successful command prints: `kmx plane` closed with
 // "Govern the agent — kmx govern <credential>" long after the command it named
-// had gone, which is worse than an unknown command, because the operator has
+// had gone, which is worse than a retirement refusal, because the operator has
 // been told to run it by something that just succeeded.
 //
 // So the rule is checked where such text is produced: every operationCommand

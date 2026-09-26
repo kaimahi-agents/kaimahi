@@ -55,7 +55,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   an exemption that matches nothing, a rule that stops matching its own
   example or starts matching its counterexample. It cannot be disabled by
   declaring a current documentation directory historical — a named floor
-  refuses exactly that. Fourteen deliberate breakages in its mutation
+  refuses exactly that. Sixteen deliberate breakages in its mutation
   specification each make it fail; four of them found real holes in its own
   self-test before they were closed.
 

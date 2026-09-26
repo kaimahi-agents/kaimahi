@@ -96,8 +96,9 @@ also require the contract-5 review above.
      `kaimahi-github`, `kaimahi-erp`, `kaimahi-release-github` and
      `kaimahi-release-ado`; fixture Agents `hello-slack`, `hello-github`,
      `ap-agent` and `release-agent`. Review operator-created equivalents too.
-     **Keep the direct `hello-tools` Agent and its chart-managed tool server**;
-     if an owner repointed them at the old gateway, that owner must resolve it.
+     If an owner still runs a historical `hello-tools` Agent or tool server,
+     check its dependencies and decide whether to retain or retire it; this
+     release does not manage those owner-held resources or remove them.
 4. Review tool-only custody separately: plane Secrets `kaimahi-slack-bot`,
    `kaimahi-slack-mcp-key`, `kaimahi-github-pat`, `kaimahi-release-pat` and
    `kaimahi-ado-token`; old client Secrets such as `kaimahi-tools-token`,
