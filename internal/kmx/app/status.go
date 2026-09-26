@@ -1,35 +1,27 @@
 package app
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
-// `kmx status` is the runtime report, and the runtime is Orka.
-//
-// It used to read the retired runtime's Agents, its model presets and its
-// namespace's pods, and assemble a governance document beside them. Every one
-// of those reads described a runtime kmx no longer installs, drives or
-// deploys: the tables were confidently about objects this repository has
-// nothing to do with, which reads as coverage and is not. What replaced that
-// runtime is Orka, so that is what this reports.
-//
-// It DELEGATES rather than reimplements. `kmx orka status` already answers
-// "what is installed, and what can it resolve", separates an unreachable
-// cluster from an absent install, and reports the running version rather than
-// the pin. Two readings of one cluster is two answers that can disagree about
-// it, and an operator who ran both would have no way to tell which was right.
-//
-// Delegation is the WHOLE table path, preflight included. A context check
-// bolted on in front of it made this command answer a missing context
-// differently from `kmx orka status` — and skipped the toolchain fetch that
-// puts kubectl on PATH, so the report an operator got depended on which of
-// the two names they typed. Validating the requested FORMAT is not that: it
-// decides whether there is a reading to delegate at all, and needs no
-// cluster.
+// `kmx status` reports Orka and the separately deployed model plane, not the
+// retired runtime's Agents, model presets or their unenumerable governance count.
+// It delegates Orka's report, including toolchain preflight and context checks,
+// rather than implementing a second reading that could disagree about the
+// cluster. Additional plane and certificate reads use the same pinned kubectl.
+// Only format validation runs before delegation; it needs no cluster.
+
+// Bound the additional plane reads when the API server is unreachable.
+const statusRequestTimeout = "--request-timeout=15s"
 
 // StatusOptions controls the output format.
 type StatusOptions struct {
@@ -64,7 +56,92 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 	default:
 		return fmt.Errorf("status output %q is not supported — use table", opt.Output)
 	}
-	return a.OrkaStatus()
+	if err := a.OrkaStatus(); err != nil {
+		return err
+	}
+	a.statusPlane()
+	return nil
+}
+
+// statusPlane diagnoses the separately deployed proxy. A missing Deployment
+// is not a failed read, and Postgres pods must never count as ready proxies.
+func (a *App) statusPlane() {
+	fmt.Fprintln(a.Out, "\nModel plane (kaimahi-proxy)")
+	deployment, err := a.kubectlCapture("-n", admin.Namespace, "get", "deploy", planeWorkload, "-o", "json", statusRequestTimeout)
+	switch {
+	case isNotFound(err):
+		fmt.Fprintln(a.Out, "  plane:       not installed (`kmx plane`)")
+	case err != nil:
+		fmt.Fprintf(a.Out, "  plane:       unknown — %s\n", strings.TrimSpace(err.Error()))
+	default:
+		var d struct {
+			Spec struct {
+				Replicas int `json:"replicas"`
+			} `json:"spec"`
+			Status struct {
+				ReadyReplicas int `json:"readyReplicas"`
+			} `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(deployment), &d); err != nil {
+			fmt.Fprintf(a.Out, "  plane:       unknown — unreadable Deployment: %v\n", err)
+		} else {
+			pods, err := a.kubectlCapture("-n", admin.Namespace, "get", "pods", "-l", "app="+planeWorkload, "-o", "json", statusRequestTimeout)
+			if err != nil {
+				fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; pods unknown — %s\n", d.Status.ReadyReplicas, d.Spec.Replicas, strings.TrimSpace(err.Error()))
+			} else {
+				var list struct {
+					Items []struct {
+						Status struct {
+							Conditions []struct{ Type, Status string } `json:"conditions"`
+							Containers []struct {
+								RestartCount int `json:"restartCount"`
+							} `json:"containerStatuses"`
+						} `json:"status"`
+					} `json:"items"`
+				}
+				if err := json.Unmarshal([]byte(pods), &list); err != nil {
+					fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; pods unknown — %v\n", d.Status.ReadyReplicas, d.Spec.Replicas, err)
+				} else {
+					ready, restarts := 0, 0
+					for _, pod := range list.Items {
+						for _, condition := range pod.Status.Conditions {
+							if condition.Type == "Ready" && condition.Status == "True" {
+								ready++
+							}
+						}
+						for _, container := range pod.Status.Containers {
+							restarts += container.RestartCount
+						}
+					}
+					fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; %d/%d pods ready, %d restarts\n", d.Status.ReadyReplicas, d.Spec.Replicas, ready, len(list.Items), restarts)
+				}
+			}
+		}
+	}
+	// Read only the public serving certificate, never the Secret's private key.
+	encoded, err := a.kubectlCapture("-n", admin.Namespace, "get", "secret", config.PlaneSeamTLSSecret, "-o", "jsonpath={.data.tls\\.crt}", statusRequestTimeout)
+	switch {
+	case isNotFound(err):
+		fmt.Fprintln(a.Out, "  certificate: none — serving Secret not installed")
+	case err != nil:
+		fmt.Fprintf(a.Out, "  certificate: unknown — %s\n", strings.TrimSpace(err.Error()))
+	default:
+		pem, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			fmt.Fprintf(a.Out, "  certificate: unknown — invalid certificate encoding: %v\n", err)
+			return
+		}
+		cert, err := seamcert.ParseCertificate(pem)
+		if err != nil {
+			fmt.Fprintf(a.Out, "  certificate: unknown — unreadable serving certificate: %v\n", err)
+			return
+		}
+		report := seamcert.Expiry(cert, a.timeNow())
+		fmt.Fprintf(a.Out, "  certificate: %s\n", report.Line())
+		if report.State == seamcert.Expiring || report.State == seamcert.Expired {
+			fmt.Fprintln(a.Out, "               The model seam stops answering when it expires; `kmx plane --step certificate` renews it.")
+		}
+	}
 }
 
 // ---- shared table rendering ----------------------------------------------

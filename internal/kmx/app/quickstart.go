@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -238,7 +239,10 @@ func (a *App) stepQuickstartAgent() error {
 	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
 		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 		if err != nil {
-			return fmt.Errorf("%w; keep the drifted resource and run `kmx agent create` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
+			if errors.Is(err, errOrkaConfigurationDrift) {
+				return fmt.Errorf("%w; keep the drifted resource and run `kmx agent create` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
+			}
+			return err
 		}
 		if id == nil {
 			created, err := a.createOrkaObject(ctx, opt.Namespace, doc)

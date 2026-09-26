@@ -120,7 +120,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; a `--runtime` naming the legacy runtime is refused by name |
-| `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Delegates entirely to `kmx orka status` — same reads, same answer on an unreadable cluster. `-o table` only |
+| `kmx status` | what Orka has installed on this context and what it can resolve: running version against the kmx pin, deployments, CRDs and Provider readiness. Delegates the Orka report unchanged to `kmx orka status`, then reads the separately deployed plane and serving certificate with the same pinned context; an absent plane is distinct from an unreadable one. `-o table` only |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
 `quickstart` reuses an **exact** live match of the Provider and Agent it would
@@ -304,17 +304,13 @@ refusals. Cap denials file no approval request; recovery is an operator's delibe
 budget change or the UTC month reset. Direct tool activity has no Kaimahi approval path.
 These records remain visible with `/tools off`.
 
-Native approvals/questions are a **different boundary**: chat may still
-submit a structured native decision, not a retired Kaimahi approval. It
-refuses malformed, duplicate-ID, mixed or incomplete batches before submission;
-every call needs explicit consent. Arguments above the 16 KiB inspection limit
-are refused, not truncated. Choices are validated; free text preserves commas.
-
-A working-stream disconnect polls the exact task rather than reinvoking it.
-Enhanced-input resize stops chat without submitting the current message/decision
-and restores terminal state; restart/resume to continue. This is safe abort,
-not live reflow or undo of earlier actions. Renderers keep durable response text
-and stop uncertain animation after resize.
+Orka chat offers no native approval submission. Tools requiring approval are
+unavailable in this client; inspect and configure them through the runtime's
+supported operator path instead. A disconnect does not resume or reinvoke a
+working Task. Enhanced-input resize stops chat without submitting the current
+message and restores terminal state; restart chat to continue. This is a safe
+abort, not live reflow or undo of earlier actions. Renderers keep durable
+response text and stop uncertain animation after resize.
 
 ### Retry limits
 

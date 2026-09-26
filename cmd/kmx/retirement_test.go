@@ -29,20 +29,29 @@ func TestApprovalCommandsAreRetiredBeforeConfiguration(t *testing.T) {
 // before a cluster is reached — rather than arriving at a runtime that is no
 // longer installed.
 func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
-	for _, args := range [][]string{
-		{"govern"}, {"govern", "hello-world"}, {"--context", "kind-stale", "govern"},
-		{"use"}, {"use", "ollama"},
-		{"agent", "edit", "hello-world"},
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"govern"}, "unknown command"},
+		{[]string{"govern", "hello-world"}, "unknown command"},
+		{[]string{"govern", "hello-world", "--model", "governed-ollama"}, "unknown flag: --model"},
+		{[]string{"--context", "kind-stale", "govern"}, "unknown command"},
+		{[]string{"use"}, "unknown command"},
+		{[]string{"use", "ollama"}, "unknown command"},
+		{[]string{"use", "ollama", "--agent", "hello-world"}, "unknown flag: --agent"},
+		{[]string{"agent", "edit", "hello-world"}, "unknown command"},
+		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "unknown flag: --file"},
 	} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
-			err := execute(args, deps)
-			if err == nil || !strings.Contains(err.Error(), "unknown command") {
-				t.Fatalf("retired command must be unknown: %v: %v", args, err)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("retired command must be rejected with %q: %v: %v", tc.want, tc.args, err)
 			}
 			if *loads != 0 {
-				t.Fatalf("retired command loaded operational configuration: %v", args)
+				t.Fatalf("retired command loaded operational configuration: %v", tc.args)
 			}
 		})
 	}
@@ -53,6 +62,25 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 // its one-shot invoke printed. Neither has a meaning against Orka, and a flag
 // that parses and does nothing is worse than one that does not exist.
 func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
+	for _, args := range [][]string{
+		{"agent", "chat", "hello-world", "--session", "abc"},
+		{"agent", "chat", "hello-world", "--json"},
+		{"agent", "chat", "--session", "abc"},
+		{"agent", "chat", "--json"},
+		{"agent", "chat", "hello-world", "--interactive", "--session", "abc"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+				t.Fatalf("retired flag must be unknown: %v: %v", args, err)
+			}
+			if *loads != 0 {
+				t.Fatalf("retired flag loaded operational configuration: %v", args)
+			}
+		})
+	}
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	root := newRootCommand(&commandState{deps: deps})
