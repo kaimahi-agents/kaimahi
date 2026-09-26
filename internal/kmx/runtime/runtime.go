@@ -17,8 +17,13 @@ type AgentRef struct {
 	Context, Namespace, Kind, Name, UID string
 }
 
+// Capabilities is a static declaration, not negotiation. The chat flags come
+// from the session contract; the lifecycle flags declare which LifecycleAdapter
+// verbs a runtime implements, and an undeclared verb returns
+// *UnsupportedVerbError instead of being attempted.
 type Capabilities struct {
 	Streaming, Resume, Approvals, EditTools, SwitchAgent, Lift, SelectInference bool
+	Render, Deploy, Status, Evaluate                                            bool
 }
 
 type Command struct {

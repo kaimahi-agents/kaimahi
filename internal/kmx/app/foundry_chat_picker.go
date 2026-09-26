@@ -81,7 +81,7 @@ func (b *orkaChatBackend) foundryPick(ctx context.Context, title string, items [
 	return m.matches()[m.selection], true, nil
 }
 func (b *orkaChatBackend) foundryFetch(ctx context.Context, label string, args ...string) ([]byte, error) {
-	return runStatusLoading(ctx, b.app.Stdin, b.app.Out, label, nil, nil, func(ctx context.Context) ([]byte, error) { return liftDiscovery(ctx, "az", args...) })
+	return runStatusLoading(ctx, b.app.Stdin, b.app.Out, label, nil, nil, func(ctx context.Context) ([]byte, error) { return b.app.liftDiscovery(ctx, "az", args...) })
 }
 
 func (b *orkaChatBackend) browseFoundryChat(ctx context.Context) (foundryChatConfig, error) {

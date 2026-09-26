@@ -149,6 +149,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   asserted flakily — and it claims nothing about governance: Orka traffic is not
   on the plane seam there. No product default changed.
 
+### Changed
+
+- **The lift's Azure commands go through the same runner as every other
+  subprocess.** `liftDiscovery` and `liftAzureWrite` called `os/exec` directly,
+  so they inherited the process environment but ignored `Runner.Env` and
+  `Runner.Unset`: a caller that removed a variable was not obeyed, and the only
+  way to substitute `az` in a test was to shadow `PATH`. They now prepare through
+  the runner and then take their own deadline, which is the shape `orkaCapture`
+  already uses for kubectl. Deadlines (30s discovery, 10 minutes for writes),
+  the 4 MiB output bound and the fixed failure messages are unchanged, and
+  Azure's own stderr is still dropped rather than propagated because it names
+  subscriptions and resources. These calls are still not echoed: they run
+  underneath a loading pane.
+
 ### Fixed
 
 - **`kmx agent` no longer reports an agent you just created as missing.**
