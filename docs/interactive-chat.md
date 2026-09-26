@@ -22,9 +22,9 @@ verbose controls, response timings and reusable connections. Discovery/read erro
 are reported rather than silently connecting to a different runtime.
 
 If no Orka Agent matches, the command says so. There is nothing left to fall
-back to: the legacy kagent route, its resumable sessions, its A2A approval flow
+back to: the legacy runtime's route, its resumable sessions, its A2A approval flow
 and its in-chat preset governance were removed with the runtime, and
-`--runtime kagent` is now refused by name rather than resolved to Orka. Those
+a `--runtime` naming it is now refused by name rather than resolved to Orka. Those
 runtime-specific semantics are not implemented by the Orka Task API.
 
 An optional message after the Agent name is sent once before the interactive
@@ -35,7 +35,7 @@ the Agent's current Provider; use
 retains its explicitly chosen inference source when entering this same shell.
 
 Shell Agent-name completion reads Orka names in the selected namespace, and respects the
-namespace flags. No additional kagent CLI installation is needed for Orka chat.
+namespace flags. No additional runtime CLI installation is needed for Orka chat.
 
 Typing `/` opens a floating completion menu above the message editor. It filters
 as you type and lists only the active backend's commands. Up/Down selects; Tab

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -193,6 +195,47 @@ func TestBothEnginesClearInheritedKindProviderBeforeSelecting(t *testing.T) {
 		}
 		if got := c.KindEnv(); !reflect.DeepEqual(got, tc.add) {
 			t.Errorf("%s add = %v, want %v", tc.engine, got, tc.add)
+		}
+	}
+}
+
+// These three fixed namespaces are common, but not exhaustive: migrate and
+// credential issue can also write to a caller-selected workload namespace.
+// The generic banner must say so instead of advertising a complete list.
+func TestGuardNamespacesAreTheSupportedOnes(t *testing.T) {
+	const want = "kaimahi, ollama, orka-system"
+	if GuardNamespaces != want {
+		t.Fatalf("GuardNamespaces = %q, want %q", GuardNamespaces, want)
+	}
+	if GuardNamespaceHint != want+" (common, not exhaustive; see action for other namespaces)" {
+		t.Fatalf("generic banner hides caller-selected destinations: %q", GuardNamespaceHint)
+	}
+}
+
+// Makefile and shell guard defaults must carry the same non-exhaustive hint
+// as Go. The Go guard's behavior is exercised by TestBannerNamesWhereTheActionLands
+// rather than inspecting an implementation line in another package.
+func TestEveryGuardNamespaceListAgrees(t *testing.T) {
+	for _, tc := range []struct{ path, pattern string }{
+		{"Makefile", "GUARD_NS ?= "},
+		{filepath.Join("scripts", "kube-guard.sh"), `NS="${KUBE_NS:-`},
+	} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "..", tc.path))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		var found string
+		for _, line := range strings.Split(string(b), "\n") {
+			if i := strings.Index(line, tc.pattern); i >= 0 {
+				found = strings.Trim(strings.TrimSpace(line[i+len(tc.pattern):]), `"}`)
+				break
+			}
+		}
+		if found == "" {
+			t.Fatalf("%s: no line carrying %q — this test no longer reads anything", tc.path, tc.pattern)
+		}
+		if found != GuardNamespaceHint {
+			t.Errorf("%s names %q, want the non-exhaustive hint %q", tc.path, found, GuardNamespaceHint)
 		}
 	}
 }

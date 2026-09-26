@@ -122,7 +122,7 @@ checklist is preserved in the
 For current demonstrations use [native Orka creation](orka.md),
 [model-traffic migration](migrate.md), or the [Orka first-answer
 path](getting-started.md#one-command-and-an-agent-that-answers). The original
-[direct kagent MCP example](tools.md) remains; not all MCP support is retired.
+direct MCP wiring an application owns is untouched by it.
 Model ledger rows prove traffic crossed the model seam, not governance of tools
 or ownership of the application Deployment.
 

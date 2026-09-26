@@ -3,7 +3,7 @@
 The Kaimahi request/approval/grant subsystem is **retired**, including budget
 exceptions. Request filing, approval/denial, grants and approval-audit APIs and
 CLI commands are removed. `kmx flow` and `kmx watch` read the model ledger only.
-Native kagent questions/tool approvals and Orka's own runtime approvals are
+The legacy runtime's questions/tool approvals and Orka's own runtime approvals are
 separate boundaries, not this retired subsystem.
 
 The last source carrying the budget-approval procedure is

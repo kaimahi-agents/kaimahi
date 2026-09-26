@@ -24,6 +24,55 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **Nothing in this tree supports the legacy kagent runtime any more, and a
+  checker keeps it that way.** The removal had already taken the installer,
+  the steps, the manifests, the chart, the CLI pin and the model presets; what
+  it left behind was CLAIMS. A guard banner naming a namespace nothing wrote
+  to. Four probe scripts defaulting to a namespace nothing created. A
+  committed NetworkPolicy admitting model traffic from that namespace, which
+  read as the plane's model door and admitted nobody. Two dead validation
+  paths, a dead test fixture and a dead scaffolder helper whose only caller
+  had been removed. Documentation rows pointing at guides for a platform an
+  operator could not install. Each one reads as support, and the cost of a
+  false claim of support is paid by a reader months later who believes it.
+
+  `scripts/check-legacy-runtime.py` now refuses all of it, on every tracked
+  file, in CI and in `make docs-check`. Hard identifiers — the API group and
+  its kinds, the images, the version pin, the three command spellings — are
+  refused EVERYWHERE, workflows included, because a workflow is where an
+  install would come back. The bare name is refused from the surfaces a
+  reader takes as current, one approved line at a time in
+  `scripts/legacy-runtime-allowlist.json`, because prose can refuse a runtime
+  or advertise it and no pattern tells those apart. Each surviving line is
+  named there with a category and a reason: the production refusals that must
+  spell what an operator typed, the historical teardown sentinel a
+  pre-retirement lift record decodes to, the bounded negative tests, and the
+  CI tripwires' own negative controls. The historical record — this file, the
+  coordination board and the dated reviews — keeps its past tense.
+
+  The scanner fails closed on every way it could quietly stop working: an
+  empty enumeration, files enumerated and none read, a count below the floor,
+  an exemption that matches nothing, a rule that stops matching its own
+  example or starts matching its counterexample. It cannot be disabled by
+  declaring a current documentation directory historical — a named floor
+  refuses exactly that. Sixteen deliberate breakages in its mutation
+  specification each make it fail; four of them found real holes in its own
+  self-test before they were closed.
+
+  **Upgrading:** the plane's committed ingress allowance is gone. It admitted
+  the retired runtime's namespace, which nothing creates; a migrated adopter
+  is admitted by the per-namespace `kaimahi-proxy-ingress-<ns>` policy
+  `kmx migrate` applies, as before. `SECRET_NAMESPACE` on the seam, spend-race
+  and replica-kill probes and `CONTROL`/`PROBE_NS` on the upstream-boundary
+  probe are now REQUIRED rather than defaulted — every caller already passed
+  them, and a default pointing at a namespace that does not exist turned a
+  missing Secret into what looked like a cluster fault. The guard banner's
+  namespace list is `kaimahi, ollama, orka-system` in all four places that
+  print it, pinned together by a test. `docs/tools.md`,
+  `docs/tool-governance.md`, `docs/govern-your-agent.md`, `docs/isolation.md`
+  and the `spikes/` conversion experiment with its workflow are deleted; git
+  retains their history.
+
 - **The front door is Orka.** `kmx quickstart` now goes kind → keyless Ollama
   → the pinned Orka release → a fixed `hello-world-agent` Provider/Agent
   bundle → a fresh Task with a readable answer. Nothing on that path installs,
@@ -216,8 +265,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   it did not — there is nothing left to fall back to. The one-shot transport
   went with it: the kagent CLI download, the controller port-forward, the A2A
   invoke and its retry policy, the resumable `--session`, the raw `--json`
-  task and the question re-sampling are all removed. Hidden `--session` and
-  `--json` flags refuse by name before loading configuration; a chat without
+  task and the question re-sampling are all removed, and a chat without
   `--interactive` is refused with the command that works. **Upgrading:**
   `kmx agent chat --interactive [--namespace <ns>] <name>`. A script that
   parsed the raw A2A task has no replacement on this path; create a Task with

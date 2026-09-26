@@ -22,14 +22,19 @@
 #        SEAM_PATH=v1/chat/completions  the one path that upstream allows
 #        EXPECT=200                 the status this call must produce
 #        GOVERNED_SECRET=kaimahi-governed-token
-#        SECRET_NAMESPACE=kagent
+#        SECRET_NAMESPACE=<the namespace holding that Secret>
 set -euo pipefail
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=kaimahi
-SECRET_NAMESPACE="${SECRET_NAMESPACE:-kagent}"
 GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
+# SECRET_NAMESPACE has no default. It is the namespace the governed
+# credential lives in, which is the caller's own — an application
+# namespace named by whoever migrated it. Guessing one would send the
+# probe looking for a Secret that was never going to be there and report
+# the miss as a cluster fault.
+SECRET_NAMESPACE="${SECRET_NAMESPACE:?set SECRET_NAMESPACE to the namespace holding $GOVERNED_SECRET}"
 UPSTREAM="${UPSTREAM:-ollama}"
 SEAM_PATH="${SEAM_PATH:-v1/chat/completions}"
 EXPECT="${EXPECT:-200}"

@@ -11,7 +11,7 @@
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: replica-kill-probe.sh   (env: GOVERNED_SECRET=kaimahi-governed-token
-#        SECRET_NAMESPACE=kagent UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world
+#        SECRET_NAMESPACE=<its namespace> UPSTREAM=ollama MODEL=qwen2.5:3b CRED=hello-world
 #        CLIENT_PATH=v1/chat/completions)
 #
 # The governance-evidence shard invokes this against the owner-managed
@@ -32,8 +32,13 @@ umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=kaimahi
-SECRET_NAMESPACE="${SECRET_NAMESPACE:-kagent}"
 GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
+# SECRET_NAMESPACE has no default. It is the namespace the governed
+# credential lives in, which is the caller's own — an application
+# namespace named by whoever migrated it. Guessing one would send the
+# probe looking for a Secret that was never going to be there and report
+# the miss as a cluster fault.
+SECRET_NAMESPACE="${SECRET_NAMESPACE:?set SECRET_NAMESPACE to the namespace holding $GOVERNED_SECRET}"
 UPSTREAM="${UPSTREAM:-ollama}"
 MODEL="${MODEL:-qwen2.5:3b}"
 CRED="${CRED:-hello-world}"

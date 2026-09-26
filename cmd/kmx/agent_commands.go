@@ -62,7 +62,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
 	cmd := &cobra.Command{Use: "create [name]", Short: "Create an Orka Agent and Provider, optionally run a Task", Args: usageArgs(0, 1, "kmx agent create [<name>] [flags]"), Long: `Create a declarative Orka Agent and its Provider as reviewable Kubernetes YAML.
 Select explicitly the namespace the Orka controller watches. Provider type, model
-identifier (not a ModelConfig), and a separately provisioned Secret are required.
+identifier such as local/qwen2.5:3b, and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.

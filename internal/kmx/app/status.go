@@ -13,9 +13,12 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
-// `kmx status` delegates Orka's runtime report unchanged, then adds the
-// independently deployed model plane and seam certificate. OrkaStatus owns
-// preflight and context handling; additional reads use the same pinned kubectl.
+// `kmx status` reports Orka and the separately deployed model plane, not the
+// retired runtime's Agents, model presets or their unenumerable governance count.
+// It delegates Orka's report, including toolchain preflight and context checks,
+// rather than implementing a second reading that could disagree about the
+// cluster. Additional plane and certificate reads use the same pinned kubectl.
+// Only format validation runs before delegation; it needs no cluster.
 
 // Bound the additional plane reads when the API server is unreachable.
 const statusRequestTimeout = "--request-timeout=15s"
@@ -32,8 +35,8 @@ func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
 //
 // `table` is the only format there is, and json/yaml are refused BY NAME
 // rather than quietly falling back to the table or emitting an empty
-// document. They used to publish a governance envelope counted off kagent
-// Agents and ModelConfigs. Nothing owner-managed replaces that count:
+// document. They used to publish a governance envelope counted off the
+// retired runtime's Agents and model presets. Nothing owner-managed replaces that count:
 // `kmx migrate` points somebody's own Deployment at the seam, and those
 // workloads have no discovery index — there is no query that lists them, so
 // any document kmx published would be a tally of what it happened to be told
@@ -45,7 +48,7 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 	case "", "table":
 	case "json", "yaml":
 		return fmt.Errorf("status has no %s output: use table.\n"+
-			"  The structured document counted kagent Agents and ModelConfigs, and that runtime is gone.\n"+
+			"  The structured document counted the retired runtime's Agents and model presets, and it is gone.\n"+
 			"  Nothing replaces the count: `kmx migrate` routes your own workloads, which kmx cannot enumerate,\n"+
 			"  so a document here would report what it was told rather than what is on the cluster.\n"+
 			"  For machine-readable runtime facts, read the cluster directly:\n"+

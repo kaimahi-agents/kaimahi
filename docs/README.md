@@ -23,15 +23,16 @@ under its owner's management; the supported migration governs **model
 traffic**, not all activity by the application.
 
 Authoring is a separate, **open** decision: native Orka only versus also
-supporting kagent YAML as an authoring surface over Orka. The native
+supporting the legacy runtime's YAML as an authoring surface over Orka.
+Nothing supports that today. The native
 recommendation in [orka.md](orka.md) is not a ruling. `kmx agent create`
-currently authors native Orka resources, not a conversion. Existing kagent
+currently authors native Orka resources, not a conversion. Existing legacy
 commands/manifests and the isolated conversion spike are not evidence of a
 supported translation layer.
 
 ## References for legacy code still present
 
-These documents distinguish the surviving model seam and direct kagent wiring
+These documents distinguish the surviving model seam
 from retirement pointers. They are not Orka documentation or a platform roadmap.
 The plane has three listeners (model 8080, admin 9091, ops 9092); the MCP gateway,
 workflows, connector fixtures and all custom approvals/grants are removed.
@@ -44,16 +45,14 @@ All twelve SQL migrations and stored data are retained.
 
 | Area | Reference |
 |---|---|
-| kagent model presets and credential wiring | [Models](models.md) |
-| Existing MCP tools agent | [Tools](tools.md) |
+| Retired model presets and credential wiring | [Models](models.md) |
 | Plane model proxy, metering and budget limits | [Spend](spend.md) |
-| Retired gateway and tool onboarding | [Tool governance](tool-governance.md), [govern your agent](govern-your-agent.md), [foreign runtime](foreign-runtime.md) |
+| Retired gateway and tool onboarding | [Foreign runtime](foreign-runtime.md) |
 | Retired custom approvals/grants and preserved history | [Approvals](approvals.md) |
 | Attribution and expiring credentials | [Identity](identity.md) |
 | Plane NetworkPolicy and residual exposure | [Egress](egress.md) |
 | Hosted model dialing and credential custody | [Hosted upstreams](hosted-upstreams.md) |
 | Plane operations, database recovery and metrics | [Operations](operations.md) |
-| Existing isolation mechanisms and limits | [Isolation](isolation.md) |
 | Retired blueprint runner | [Workflows](workflows.md) |
 | Retired webhook bridge and public-edge cleanup | [Inbound](inbound.md) |
 | Retired Slack posting fixture | [Slack](slack.md) |

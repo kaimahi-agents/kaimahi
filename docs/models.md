@@ -4,12 +4,12 @@ This page is about the model endpoints Kaimahi governs and the local model
 the runtime pulls. For Orka installation and model-traffic migration, use
 [orka.md](orka.md) and [migrate.md](migrate.md).
 
-**The committed kagent `ModelConfig` presets are gone.** `k8s/models/` held
+**The committed legacy model presets are gone.** `k8s/models/` held
 nine of them — `ollama`, `github-copilot`, `anthropic`, `openai`,
 `openrouter`, `azure-foundry`, `openai-compatible`, `governed-ollama` and
-`governed-copilot`. Every one was a v1alpha2 object for a runtime kmx no
+`governed-copilot`. Every one was an object of a runtime kmx no
 longer installs, and the commands that applied or switched between them
-(`kmx use`, `kmx govern`, `kmx up --step agent`) were removed before them.
+(preset switching, governance and the old agent install step) were removed before them.
 Nothing in kmx reads, renders or applies a preset any more.
 
 What replaces them is not another list of files. An endpoint becomes
@@ -96,7 +96,7 @@ include API access to OpenAI and other models** at
 `api.githubcopilot.com`, an OpenAI-compatible endpoint.
 
 The plane-side route is `kmx models credential copilot`. The checkout-only
-`make copilot-secret` helper belonged to the deleted direct-to-Copilot kagent
+`make copilot-secret` helper belonged to the deleted direct-to-Copilot legacy
 preset and is no longer available. Use the plane-side command instead.
 
 Custody properties worth knowing:

@@ -14,7 +14,7 @@ when both are real terminals under the command's existing eligibility rule.
 
 The model collects missing description, name, namespace, Provider type, model
 identifier and existing Secret name, then offers the explicit Apply/Cancel
-choice. Namespace and model have no kagent defaults or preset discovery.
+choice. Namespace and model have no legacy defaults or preset discovery.
 Supplied native flags remain authoritative. Executable `--task` also collects a
 missing result-reader ServiceAccount and states its authority at confirmation;
 offline/dry-run never asks for that account. Optional custom/local endpoints

@@ -89,7 +89,7 @@ if install_run "--quickstart installs and runs quickstart" --quickstart; then
   check "the quickstart path never runs 'kmx version'" \
     "$(grep -q '^version' "$workdir/calls" && echo no || echo ok)"
   check "the quickstart path says nothing about the legacy runtime" \
-    "$(grep -qi kagent "$workdir/out" && echo no || echo ok)"
+    "$(grep -qi 'k''agent' "$workdir/out" && echo no || echo ok)"
 fi
 
 # The published v0.1.0 cannot provide the new Orka path. Refuse before

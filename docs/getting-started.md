@@ -7,11 +7,11 @@ or [migration](migrate.md); a migrated application's Deployment stays owner-mana
 Tool traffic remains the application owner's responsibility; the Kaimahi tool
 gateway is retired.
 
-The local quickstart below is the **supported Orka first-answer path**: it
-ends with a native Orka Agent answering a question. It is now the only
-first-answer path kmx has: the legacy `kmx up --step kagent|agent|tools-agent`
-installers have been removed, and naming one is an unknown step. A cluster
-that still runs the legacy runtime is operated with kubectl.
+The local quickstart below is the **supported deterministic Orka first-answer
+path**: it ends with a native Orka Agent answering a question. For guided
+custom authoring and a first answer, use the wizard described below. The three
+legacy install steps have been removed; invoking one is now an unknown step.
+A cluster that still runs the legacy runtime is operated with kubectl.
 `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
@@ -62,8 +62,7 @@ legacy runtime.
 Then install Orka on that selected cluster. Its default Provider points at this
 Ollama server; for an existing cluster use your own model/Provider configuration
 as described in [Orka](orka.md). Installation alone does not govern model traffic.
-For a new native Agent, use [agent create](#an-agent-of-your-own); the kagent
-chat/model-governance sections below are a separate legacy path.
+For a new native Agent, use [agent create](#an-agent-of-your-own).
 
 For an existing application on kind, deploy the plane and follow the owner-reviewed
 [migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
@@ -138,10 +137,10 @@ line above therefore needs an Agent from one of those two commands first. Orka
 chat is a session: `--interactive` is required, and a one-shot invocation is
 refused with the command that works.
 
-kmx no longer installs the legacy kagent runtime or its two demonstration
-agents. `kmx up --step kagent`, `--step agent` and `--step tools-agent` are
+kmx no longer installs the legacy runtime or its two demonstration
+agents. Its three `kmx up --step` names are
 unknown steps, their manifests are no longer shipped in the binary, and
-`kmx agent edit`, `kmx govern` and `kmx use` went with the runtime adapter.
+agent editing, governance and preset switching went with the runtime adapter.
 `kmx agent chat` and `kmx agent list` remain and are Orka-only.
 
 A cluster that still carries that runtime is untouched by any of this, and is
@@ -159,12 +158,12 @@ kmx ledger <deployment>
 
 `kmx migrate` puts an owner-managed application behind the plane and gives it an
 opaque plane token, never the real upstream key. It changes model routing only;
-see [kmx](kmx.md#governing-model-traffic). The [direct MCP example](tools.md) remains
-available without Kaimahi tool policy, grants or tool audit.
+see [kmx](kmx.md#governing-model-traffic). Direct MCP wiring an application
+already owns is untouched, and carries no Kaimahi tool policy, grants or audit.
 
 ## An agent of your own
 
-This is the **native Orka path**, not a new kagent agent for the legacy commands
+This is the **native Orka path**, not a new legacy agent for the commands
 above. Preview a Provider + Agent bundle offline:
 
 ```bash
@@ -182,7 +181,7 @@ existing result ServiceAccount tests a real model answer. Follow the
 and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
 No-name terminal invocation offers a wizard. `agent chat --interactive` and
 `agent list --namespace <ns>` are Orka-only; a live Agent is edited with
-`kubectl edit agents.core.orka.ai`. BYO images, ModelConfig and MCP conversion
+`kubectl edit agents.core.orka.ai`. BYO images, model-preset and MCP conversion
 are not provided.
 
 ## Using Podman instead of Docker
@@ -217,5 +216,5 @@ named nodes and checks API/DNS. kmx supplies
 - `kmx down` deletes the whole local cluster, **including Postgres/ledger**.
   Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
 
-Next: [CLI reference](kmx.md), [migration](migrate.md), [operations](operations.md),
-and the [direct MCP example](tools.md).
+Next: [CLI reference](kmx.md), [migration](migrate.md) and
+[operations](operations.md).

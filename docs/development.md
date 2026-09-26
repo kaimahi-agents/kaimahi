@@ -8,16 +8,17 @@ For work **on** Kaimahi; contribution/PR expectations are in
 
 **Orka is the platform.** Kaimahi tooling helps agents/applications get onto it.
 The current migration governs **model traffic only** and leaves the Deployment
-owner-managed. Native-Orka-only authoring versus kagent YAML over Orka remains
+owner-managed. Native-Orka-only authoring versus the legacy runtime's YAML
+over Orka remains
 open; a recommendation is not a ruling. `kmx agent create` currently authors
-native Provider + Agent resources with an optional Task, not kagent conversion;
+native Provider + Agent resources with an optional Task, not a conversion;
 see its [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside
 the direction. The seam bridge shrinking as upstream capabilities arrive is a
 successful outcome.
 
 The tree retains the model proxy with its operator APIs, ordinary budgets and
-ledger. The legacy kagent installer, Agent/ModelConfig manifests, direct
-RemoteMCPServer example, custom MCP gateway, approvals/grants, workflow runner
+ledger. The legacy installer, its Agent and model-preset manifests, its
+direct MCP example, the custom MCP gateway, approvals/grants, workflow runner
 and connector fixtures are removed. Current authoring is Orka-native; migration
 routes an owner-managed application's model traffic through the bridge. Document
 the bridge as present implementation, not the long-term platform boundary.
@@ -37,9 +38,9 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 | `.github/workflows/` | actual verification jobs and docs-only routing |
 
 The root CLI and plane are separate modules because the plane builds independently.
-The isolated `spikes/kagent-shim/` experiment has its own module and workflow;
-it is not a root dependency or supported authoring interface. `go:embed` cannot
-cross module boundaries; clone-free kmx fetches the plane at its own revision.
+The isolated conversion experiment that once lived under `spikes/` is removed
+from the tree; nothing here is a supported authoring interface for the legacy
+runtime's YAML. `go:embed` cannot cross module boundaries; clone-free kmx fetches the plane at its own revision.
 Use `kmx plane --source .` when exercising checkout changes. Plain `make` builds
 `bin/kmx` only. Development Orka commands are not in the older `v0.1.0` release;
 see [installation](kmx.md#install).
@@ -88,12 +89,12 @@ bin/kmx down
 ```
 
 A bare `bin/kmx up` is the Orka runtime: kind, Ollama, the model and the pinned
-Orka with its keyless `local` Provider. It deploys no kagent Agent, so the
+Orka with its keyless `local` Provider. It deploys no legacy Agent, so the
 model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
 owner-managed application. Author an Orka Agent with `bin/kmx agent create`, or
 get a first answer with `bin/kmx quickstart`.
 
-kmx neither installs nor drives the legacy kagent runtime. Start by
+kmx neither installs nor drives the legacy runtime. Start by
 establishing the live cluster and Orka runtime; the plane and credential steps
 require that preceding bare `up`:
 
@@ -128,7 +129,7 @@ round trip to return an exact, non-empty local-model answer. It then applies the
 committed native Orka [Kubernetes Tool](orka-k8s-tool.md) and proves its boundary
 directly over HTTP: an allowed ConfigMap listing that contains a ConfigMap created
 seconds earlier, and refusal of Secret reads and pod mutation at both the tool's
-own validation and the cluster's RBAC. It installs no kagent and creates no Helm
+own validation and the cluster's RBAC. It installs no legacy runtime and creates no Helm
 release, and fails closed if it ever does.
 
 What that shard does **not** prove: that the local model chose to call the tool
@@ -136,7 +137,7 @@ What that shard does **not** prove: that the local model chose to call the tool
 is left unasserted rather than asserted flakily), and nothing about governance —
 Orka traffic is not on the plane seam there.
 
-`e2e-resilience` is the governance boundary, and it uses no kagent either. It
+`e2e-resilience` is the governance boundary, and it uses no legacy runtime either. It
 brings up kind, Ollama, the model and the pinned Orka with component steps,
 creates an **owner-managed** Deployment (`owner-ci`) in its own namespace
 before the plane exists, deploys the plane, and runs
@@ -151,7 +152,7 @@ survivor answering 200, exactly two ledger rows gained, 2/2 ready again — and
 a Postgres outage, where every replica's readiness drops and returns with no
 replica's restart count changing. The owner's application is separately
 asserted to answer again after a simultaneous restart of both replicas and
-after a backup/wipe/restore. Absence of the `kagent` namespace is asserted after
+after a backup/wipe/restore. Absence of the legacy runtime's namespace is asserted after
 bring-up and again at the end.
 
 What that shard does **not** prove: native Orka Agent governance. The pinned
@@ -160,7 +161,7 @@ Orka Agent cannot be told to trust the plane's seam; the governed caller is the
 owner's own application, which is the supported path.
 
 `e2e-spend` is the spend-control boundary, on the same owner-managed path and
-with no kagent either. It reaches the same starting point as `e2e-resilience` —
+with no legacy runtime either. It reaches the same starting point as `e2e-resilience` —
 component bring-up, pinned Orka, an ungoverned `owner-ci` Deployment, the plane,
 then [`kmx migrate`](migrate.md) and a patch the **owner** applies — and then
 asserts what the plane *charges and refuses*: this migration's NetworkPolicy
@@ -173,7 +174,7 @@ renewal restores service while leaving the mounted Secret's uid, resourceVersion
 and bytes — and the pod holding them — untouched; a credential with no expiry at
 all still authenticates; an exhausted token budget is a 429 the application
 itself reports, and lifting the cap restores service. It ends with
-`make netpol-verify` and the same `kagent`-namespace tripwire.
+`make netpol-verify` and the same legacy-namespace tripwire.
 
 The ledger patterns it greps are pinned in
 `internal/kmx/admin/ledger_format_test.go` against the real renderer, because a
@@ -187,7 +188,7 @@ no price row, so every row it writes is `unpriced` with honestly zero cents. A
 cents-denominated cap is not exercised by any cluster shard — it is covered by
 the meter and proxy unit tests in `plane/`.
 
-`e2e-models` is the model-seam boundary, and it uses no kagent and no agent
+`e2e-models` is the model-seam boundary, and it uses no legacy runtime and no agent
 runtime at all. It brings up kind, Ollama and the model with component steps,
 creates the model client's own namespace, deploys the plane, and issues every
 credential into that namespace **by name** — no command there inherits a
@@ -208,7 +209,7 @@ refused at load, and the entry surviving the next `kmx plane`.
 
 What that shard no longer proves: the combined `kmx status` counts and the raw
 MCP inventory, which were counts of legacy objects, and the cannot-tell status
-branch on a real cluster, whose probe minted a reader for kagent CRDs. Those
+branch on a real cluster, whose probe minted a reader for the legacy CRDs. Those
 were deleted rather than rewritten against surviving objects, which would have
 asserted less while looking the same. The counting itself has since gone too:
 `kmx status` is the Orka runtime report, delegating wholly to `kmx orka
@@ -218,7 +219,7 @@ no structured document: there is no owner-managed population to count, because
 `kmx migrate` routes workloads kmx cannot enumerate.
 
 `e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
-`e2e-runtime`. It uses no kagent and no agent runtime at all. It brings up kind,
+`e2e-runtime`. It uses no legacy runtime and no agent runtime at all. It brings up kind,
 Ollama and the model with `kmx up --step` component steps, creates the
 hosted-model client's own namespace, deploys the plane, and issues its one
 credential into that namespace **by name**. Its governed caller is a direct
@@ -238,12 +239,12 @@ carries the upstream's own token counts and its caller fields; a redirect
 surfaced as 307 rather than followed; DNS rebinding refused as a 502 whose
 public body hides dialer detail while the proxy log names the policy refusal;
 and the allowance removed — on a fresh dial after a restart — failing closed
-with an audited 502. Absence of the `kagent` namespace is asserted after
+with an audited 502. Absence of the legacy runtime's namespace is asserted after
 bring-up and again at the end.
 
 What that shard no longer proves, deleted rather than translated: the
 `kmx agent chat` conversation and its chat-verifier checks, the model preset
-dry-run against live CRDs and the `kmx use` preset switch, the kagent
+dry-run against live CRDs and the retired preset-switch command, the legacy
 tool-server lockdown posture (read-only mode logged, its ServiceAccount denied
 Secrets and writes) and the MCP tool round-trip that required a real
 `k8s_get_resources` call carrying an unguessable probe name, and the two
@@ -259,7 +260,7 @@ nothing else, which is the only thing it can say truthfully.
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as
 a required PR shard. Its native Orka creation journey checks an actual Task answer,
-separately from the retained kagent/plane journey. Tags trigger the separate
+separately from the retained plane journey. Tags trigger the separate
 release workflow. None of these proves an AKS run: no Azure credentials belong
 in fork-exposed CI. A docs-only shortcut is not an end-to-end rerun.
 
@@ -303,7 +304,7 @@ refusals are in [migration](migrate.md#responses-translation-and-refusals).
 
 ## Invariants to preserve
 
-1. Use platform capabilities rather than rebuilding them. Existing kagent-shaped
+1. Use platform capabilities rather than rebuilding them. Existing legacy-shaped
    helpers do not authorize expanding Kaimahi into another agent runtime.
 2. Fail closed on missing proof: HTML with 200 is not a valid endpoint answer,
    unreadable is not absent, and scanner failure is not a clean scan.

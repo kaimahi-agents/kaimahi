@@ -55,7 +55,7 @@ func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 	renderer := &chatRenderer{out: &out, color: true}
 	renderer.statusStart("hello-tools", "")
 	renderer.statusSection("Model", "Name: hello-world-model\nPosture: direct")
-	renderer.statusSection("Tools", "Server: kagent-tool-server\nAllowed:\n  - get_resources")
+	renderer.statusSection("Tools", "Server: cluster-tool-server\nAllowed:\n  - get_resources")
 	renderer.statusEnd()
 	renderer.block("YOU", colorCyan, "hello")
 
@@ -66,7 +66,7 @@ func TestChatStatusHeaderIsUncoloredAndSeparated(t *testing.T) {
 		"    Name: hello-world-model\n" +
 		"    Posture: direct\n" +
 		"  Tools\n" +
-		"    Server: kagent-tool-server\n" +
+		"    Server: cluster-tool-server\n" +
 		"    Allowed:\n" +
 		"      - get_resources\n" +
 		"------------------------------------------------------------\n\n"

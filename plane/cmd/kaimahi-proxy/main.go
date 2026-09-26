@@ -1,5 +1,5 @@
 // kaimahi-proxy is the Kaimahi governance plane: the metering and
-// enforcing LLM proxy mounted at kagent's ModelConfig baseUrl seam.
+// enforcing LLM proxy mounted at the governed model endpoint's base-URL seam.
 // Three listeners: the LLM data plane, the admin plane
 // (credentials, budgets, ledger) on a port no data
 // Service exposes, and the operations listener — Prometheus

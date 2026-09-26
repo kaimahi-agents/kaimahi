@@ -91,7 +91,7 @@ func TestMissingNamespaceNamesTheCommandThatPublishesIntoIt(t *testing.T) {
 		want      string
 	}{
 		{"payments", "`kmx migrate <deployment> --namespace payments --model <provider>/<model>`"},
-		{"kagent", "`kmx migrate <deployment> --namespace kagent --model <provider>/<model>`"},
+		{"orka-system", "`kmx migrate <deployment> --namespace orka-system --model <provider>/<model>`"},
 	} {
 		t.Run(tc.namespace, func(t *testing.T) {
 			a := appWithKubectl(t, `case "$*" in

@@ -513,14 +513,15 @@ func (a *App) openLiftRecord(opt lift.Options, subscription string) (*lift.Recor
 	// so a resume could not finish whatever it was asked to do; and the
 	// operator's way out is not "re-run with the other payload" — there is no
 	// other payload — but teardown. A record with no payload at all is one of
-	// these too: before the split, kagent is the only thing `lift` landed.
+	// these too: before the split, the retired payload is the only thing
+	// `lift` landed.
 	//
 	// Teardown deliberately does NOT come through here. It reads the record
 	// directly, so a cluster carrying the retired payload stays inspectable
 	// and removable; what is refused is adding to it.
 	if recorded := record.PayloadOrLegacy(); recorded == lift.PayloadKagent {
 		return nil, nil, fmt.Errorf("kmx lift: %s/%s was lifted onto with --payload kagent, which is retired.\n"+
-			"  The phases that installed the legacy kagent runtime have been removed, so there is\n"+
+			"  The phases that installed that runtime have been removed, so there is\n"+
 			"  nothing here that could resume it. The cluster and this record are untouched.\n"+
 			"  Tear it down when you are finished with it:\n\n    %s\n",
 			opt.ResourceGroup, opt.Cluster, a.liftCommand(opt, true))

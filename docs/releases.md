@@ -155,7 +155,7 @@ you skipped — below 1.0 a minor bump may change behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
 cluster until you ask it to; `kmx up` is idempotent and re-applies the model
-server and the pinned Orka runtime. kmx no longer installs the legacy kagent
+server and the pinned Orka runtime. kmx no longer installs the legacy
 chart or its agents by any route: those steps, their manifests and the Helm
 dependency they needed are removed. A cluster that already carries that
 runtime is left exactly as it is, for kubectl to operate.

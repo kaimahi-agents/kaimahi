@@ -1,0 +1,105 @@
+{
+  "checker": "check-legacy-runtime.py",
+  "why": "This is the gate that keeps a removed runtime removed, and the only evidence it works is that it fails when it should. Every edit below is a way it could go on reporting a clean tree while the residue is still in it: a rule that stops matching, a verdict that is computed and dropped, an enumeration that shrank, an exemption that widened into a whole directory, or an exemption that outlived the line it was written for.",
+  "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"],
+  "signature": "check-legacy-runtime self-test:",
+  "mutations": [
+    {
+      "name": "every rule's pattern stops matching",
+      "breaks": "The quiet failure every scanner has: the patterns no longer fire on the thing they name, and every file in the tree reads clean with no symptom at all.",
+      "find": "        self.re = re.compile(regexp)",
+      "replace": "        self.re = re.compile(regexp + \"NEVERMATCHESTHIS\")"
+    },
+    {
+      "name": "the bare-name rule is applied nowhere",
+      "breaks": "The surface rule is skipped for every file, so a document or a script may point a reader at the retired runtime and nothing notices. Only the hard identifiers would remain.",
+      "find": "                if not rule.everywhere and not current:\n                    continue",
+      "replace": "                if not rule.everywhere:\n                    continue"
+    },
+    {
+      "name": "the hard rules stop applying off the named surfaces",
+      "breaks": "Every rule becomes a surface rule, so the changelog, a blueprint or any file outside the named surfaces could carry the retired runtime's API group, its image or its version pin untouched. The whole reason hard identifiers are refused EVERYWHERE is that they have no innocent reading anywhere.",
+      "find": "                if not rule.everywhere and not current:",
+      "replace": "                if not current:",
+      "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"]
+    },
+    {
+      "name": "the workflows drop out of the bare-name rule",
+      "breaks": "A workflow is where an install comes back. With that directory off the named surfaces, a step that CREATES the retired runtime's namespace, or names it in any other command, is judged by the hard identifiers alone and passes.",
+      "find": "\"docs/\", \".github/\",",
+      "replace": "\"docs/\","
+    },
+    {
+      "name": "a category may be claimed on any path",
+      "breaks": "The widest exemption left: an active documentation instruction labelled `negative` keeps its line for ever, because nothing checks that a document cannot make an absence assertion. A category is an argument for keeping a line, and an argument nobody binds to a path is available to every line in the tree.",
+      "find": "        wrong = category_problem(entry)\n        if wrong:",
+      "replace": "        wrong = None\n        if wrong:"
+    },
+    {
+      "name": "any file may be declared historical as a whole",
+      "breaks": "Whole-file history is the widest exemption in the policy. With the set unpinned, a current document goes back to being declared history in one line — the coordination board's live policy included — and every rule stops applying to it.",
+      "find": "    for entry in historical:\n        if entry not in HISTORICAL_FILES:",
+      "replace": "    for entry in []:\n        if entry not in HISTORICAL_FILES:"
+    },
+    {
+      "name": "an exemption matches by substring instead of by exact line",
+      "breaks": "An exempted line can be extended with anything at all and keep its exemption: `# the runtime is gone` becomes `# the runtime is gone, install it from here` and stays approved.",
+      "find": "                hit = exact.get(path, {}).get(stripped)",
+      "replace": "                hit = next((v for k, v in exact.get(path, {}).items() if k in stripped), None)"
+    },
+    {
+      "name": "a stale exemption is accepted",
+      "breaks": "An exemption outlives the line it was written for, so the next person to put residue in that file inherits an approval nobody reviewed.",
+      "find": "        if id(entry) not in used:",
+      "replace": "        if False:"
+    },
+    {
+      "name": "findings are collected and then reported as clean",
+      "breaks": "The scan is correct and its verdict is thrown away \u2014 indistinguishable from a clean tree from the outside, and the reason the self-test goes through report() and main() rather than only through judge().",
+      "find": "        print(f\"\\n{len(problems)} place(s). Remove the claim, or \u2014 if the line refuses the runtime, \"\n              \"asserts its absence, or notes an explicitly unsupported future \u2014 name it in \"\n              f\"{ALLOWLIST.relative_to(ROOT)} with a category and a reason.\", file=sys.stderr)\n        return 1",
+      "replace": "        return 0"
+    },
+    {
+      "name": "the floors are computed and ignored",
+      "breaks": "An empty enumeration, a scan that read nothing, or a whole directory declared historical all pass. Every one of those looks exactly like success.",
+      "find": "    if bad:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)",
+      "replace": "    if False:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)"
+    },
+    {
+      "name": "a directory exemption is read as a bare prefix",
+      "breaks": "`docs/reviews/` would also cover `docs/reviews-plan.md`, and an entry for `docs/R` would cover `docs/README.md` \u2014 an exemption wider than the thing it names.",
+      "find": "        if entry.endswith(\"/\"):\n            if path.startswith(entry):\n                return True",
+      "replace": "        if True:\n            if path.startswith(entry):\n                return True"
+    },
+    {
+      "name": "an empty allowlist is accepted",
+      "breaks": "The gate is disabled by emptying its input rather than by editing its code: with no policy loaded, the historical record goes red and somebody deletes the checker instead of the residue.",
+      "find": "    if not files and not lines:\n        sys.exit(f\"check-legacy-runtime: {path} exempts nothing at all \u2014 \"\n                 \"refusing to report a clean tree against a policy that describes no tree.\")",
+      "replace": "    if False:\n        sys.exit(f\"check-legacy-runtime: {path} exempts nothing at all \u2014 \"\n                 \"refusing to report a clean tree against a policy that describes no tree.\")"
+    },
+    {
+      "name": "an exemption needs no category and no reason",
+      "breaks": "An approval with nothing written next to it is an approval nobody can review later, which is how an exemption list becomes a way of not fixing things.",
+      "find": "            if not str(entry.get(field, \"\")).strip():",
+      "replace": "            if False:"
+    },
+    {
+      "name": "an unreadable file is skipped in silence",
+      "breaks": "A permissions problem shrinks the scanned set without saying so, and the report still reads clean over the files it managed to open.",
+      "find": "            findings.append((path, 0, None, f\"could not be read (not scanned): {e}\"))",
+      "replace": "            pass"
+    },
+    {
+      "name": "the self-exemption set can grow",
+      "breaks": "The checker must spell what it forbids, so it skips itself and its allowlist. A third name there is a file that may carry anything, chosen by whoever added it.",
+      "find": "    if set(SELF) != {\"scripts/check-legacy-runtime.py\",",
+      "replace": "    if False and set(SELF) != {\"scripts/check-legacy-runtime.py\","
+    },
+    {
+      "name": "the script's entry point is neutered",
+      "breaks": "The verdict never reaches an exit code. A self-test that calls the functions directly stays green while the script itself always passes.",
+      "find": "    sys.exit(main(sys.argv[1:]))",
+      "replace": "    sys.exit(0)"
+    }
+  ]
+}

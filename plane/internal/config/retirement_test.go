@@ -15,7 +15,7 @@ func TestRetiredConnectorConfigIsRejected(t *testing.T) {
 	for _, tc := range []struct{ name, field, value string }{
 		{"empty hooks", "inbound_hooks", `{}`},
 		{"null hooks", "inbound_hooks", `null`},
-		{"configured hook", "inbound_hooks", `{"demo":{"credential":"hook","auth":"bearer","agent_namespace":"kagent","agent":"demo","budget_credential":"demo"}}`},
+		{"configured hook", "inbound_hooks", `{"demo":{"credential":"hook","auth":"bearer","agent_namespace":"orka-system","agent":"demo","budget_credential":"demo"}}`},
 		{"null notifier", "approval_notifier", `null`},
 		{"configured notifier", "approval_notifier", `{"tool_upstream":"slack","tool":"post","credential_file":"/token","channel_file":"/channel"}`},
 	} {

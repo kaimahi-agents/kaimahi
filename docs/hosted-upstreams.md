@@ -23,7 +23,7 @@ See [explicit cleanup](operations.md#upgrading-after-gateway-retirement).
 
 `kmx models credential copilot` retains its device login, private OAuth cache
 and short-lived exchange into plane custody. It applies egress and restarts an
-existing proxy; it does not populate the direct kagent preset's Secret.
+existing proxy; it does not populate a workload's own model Secret.
 [Models](models.md) and [AKS](aks.md#the-credential-handoff) document the retained
 paths. Tool capture commands and Slack credential helpers are removed.
 

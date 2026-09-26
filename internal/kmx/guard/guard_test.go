@@ -98,7 +98,7 @@ func TestBannerNamesWhereTheActionLands(t *testing.T) {
 	}, &out, nil); err != nil {
 		t.Fatalf("local kind must proceed: %v", err)
 	}
-	for _, needle := range []string{"kind-real", "127.0.0.1", "about to:", "namespace(s):", "posture:"} {
+	for _, needle := range []string{"kind-real", "127.0.0.1", "about to:", "namespace(s):", "not exhaustive", "posture:"} {
 		if !strings.Contains(out.String(), needle) {
 			t.Errorf("banner is missing %q:\n%s", needle, out.String())
 		}
@@ -180,7 +180,7 @@ func TestUnreadableKubeconfigRefuses(t *testing.T) {
 func TestAContextNobodyChoseIsRefusedWhenThereAreClustersToConfuseItWith(t *testing.T) {
 	var out bytes.Buffer
 	err := Check(load(t), Request{
-		Action:  "install kagent",
+		Action:  "install orka",
 		Context: "kind-kaimahi-p1",
 		Source:  config.SourceDefault,
 		Command: "kmx up",
@@ -238,7 +238,7 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 	} {
 		var out bytes.Buffer
 		if err := Check(load(t), Request{
-			Action:  "install kagent",
+			Action:  "install orka",
 			Context: "kind-real",
 			Source:  source,
 			Command: "kmx up",
@@ -263,7 +263,7 @@ func TestAChosenContextIsNeverRefusedForBeingUnchosen(t *testing.T) {
 func TestTheDefaultStandsWhenItIsAlreadyTheContextYouArePointedAt(t *testing.T) {
 	var out bytes.Buffer
 	if err := Check(load(t), Request{
-		Action:  "install kagent",
+		Action:  "install orka",
 		Context: "kind-real", // the fixture's current-context
 		Source:  config.SourceDefault,
 		Command: "kmx up",

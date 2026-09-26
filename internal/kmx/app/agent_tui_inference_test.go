@@ -151,7 +151,7 @@ func TestConsoleInferenceSourcePersistenceAndValidation(t *testing.T) {
 
 // The keyless Ollama connector is the one create path that writes two objects:
 // a dummy Secret Orka's Provider schema requires, then the Provider itself.
-// Neither may be a ModelConfig, and the Secret must never carry a credential.
+// Neither may be a legacy model preset, and the Secret must never carry a credential.
 func TestConsoleOllamaConnectorCreatesOrkaProviderWithKeylessSecret(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "bodies")

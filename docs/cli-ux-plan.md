@@ -107,7 +107,7 @@ The standalone example combines `RoundedBorder`, padding, and
 where the operator must stop and decide:
 
 - a remote-context confirmation;
-- a native kagent decision awaiting explicit consent;
+- a native runtime decision awaiting explicit consent;
 - a destructive restore or teardown summary.
 
 Keep these blocks compact and left-aligned. The command a user copies must stay
@@ -294,7 +294,7 @@ These are safety-semantic and format fixes, not merely color changes:
   governance is unavailable, required credentials are missing/unreadable, an installed
   plane has zero or insufficient ready replicas, or Ollama could not be read.
   A supported direct route alone is not a fault. An obsolete gateway URL must
-  not be reported as healthy direct routing; raw kagent tool inventory remains.
+  not be reported as healthy direct routing; raw runtime tool inventory remains.
 - Flow counts model refusals from `cost_source: denied`, not numeric HTTP status;
   an upstream HTTP error alone is not a plane refusal. The corrected summary
   total is intentional in redirected text too.
@@ -302,7 +302,7 @@ These are safety-semantic and format fixes, not merely color changes:
   question phase done. `governed: false` retains the unchanged JSON key set and
   means this invocation did not enable governance, not that the cluster has none.
   Quickstart/up/plane no longer claim existing routing is absent on a rerun.
-- Quickstart no longer discovers, installs, or reconciles a kagent Helm
+- Quickstart no longer discovers, installs, or reconciles the legacy Helm
   release. It reconciles the pinned Orka runtime, then reuses only an exact
   match of its fixed Provider and Agent; a differing live spec is refused
   rather than overwritten. Every run creates a fresh Task. No setup path uses
@@ -337,7 +337,7 @@ positive per-call governance receipts in chat. Existing chat route labels attest
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.
 
-Residual policies: broad one-shot **kagent** chat transport retries are unchanged
+Residual policies: broad one-shot **legacy-runtime** chat transport retries are unchanged
 (up to three retries for matching connection refusal, EOF, or reset). Ambiguous
 disconnects can repeat effects, including with an explicit one-shot session.
 `kmx quickstart` no longer shares that policy: the Orka path creates one Task and

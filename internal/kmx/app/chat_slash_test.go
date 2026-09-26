@@ -46,7 +46,7 @@ func TestOrkaSlashCompletionOnlyOffersItsCommands(t *testing.T) {
 		}
 	}
 	if strings.Contains(names, "/govern") || strings.Contains(names, "/session") {
-		t.Fatal("kagent commands offered to Orka")
+		t.Fatal("retired-runtime commands offered to Orka")
 	}
 	if got := slashMatchesFrom(orkaSlashCommands, "/inference-"); len(got) != 3 {
 		t.Fatalf("matches=%v", got)

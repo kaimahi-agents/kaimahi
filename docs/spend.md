@@ -46,7 +46,7 @@ kmx credentials
 
 `kmx credential issue` mints credential material into a named Secret; it is not
 a read, and it refuses rather than overwrite a Secret bound to another
-credential. (`kmx govern`, which did this for a kagent Agent, was removed with
+credential. (`kmx govern`, which did this for a legacy Agent, was removed with
 the legacy runtime.) `kmx budget` **replaces both caps**: omitted flags
 mean no cap for that unit, and no flags removes both. Set `--cents` and
 `--tokens` together to retain both. Defaults and context handling are in

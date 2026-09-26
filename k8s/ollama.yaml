@@ -1,4 +1,4 @@
-# In-cluster Ollama model server. kagent needs an LLM endpoint; Ollama keeps
+# In-cluster Ollama model server. An agent runtime needs an LLM endpoint; Ollama keeps
 # the hello-world demo keyless and free (no API key, no Secret, no billing).
 # The model itself is pulled at deploy time (see Makefile `model` target) so
 # the image stays small and the model choice stays a one-line change.
@@ -53,7 +53,7 @@ spec:
               name: http
           resources:
             # Requests stay small so the demo also schedules on a 2-CPU CI
-            # runner (kagent's own pods need ~600m); no CPU limit, so
+            # runner (a runtime's own pods need ~600m); no CPU limit, so
             # inference can still burst to whatever the node has.
             requests:
               cpu: 250m

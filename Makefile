@@ -49,7 +49,7 @@ $(error unknown TARGET '$(TARGET)' — expected 'kind' or 'aks')
 endif
 export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
-GUARD_NS ?= kagent, kaimahi, ollama
+GUARD_NS ?= kaimahi, ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
 .PHONY: build test lint docs-check guard plane-image aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off
@@ -68,6 +68,8 @@ docs-check:
 	python3 scripts/check-doc-links.py
 	python3 scripts/check-readme-front-door-test.py
 	python3 scripts/check-readme-front-door.py
+	python3 scripts/check-legacy-runtime.py --selftest
+	python3 scripts/check-legacy-runtime.py
 
 ## build: build kmx from this checkout and print the resulting path
 build: $(KMX)

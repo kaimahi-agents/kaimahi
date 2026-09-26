@@ -2,8 +2,8 @@
 // and checksum-verified, so that a machine with a container engine and
 // nothing else can still run the journey.
 //
-// This is internal/kmx/kagentcli generalised. That package already had to
-// solve the whole problem for one pinned CLI — a kmx installed with
+// This began as the fetcher for one pinned CLI, generalised. That package
+// already had to solve the whole problem for a single tool — a kmx installed with
 // `go install` or downloaded from a release has no checkout to put a binary
 // in, so the binary is cached, keyed by version and platform, and re-verified
 // on every use rather than only when it was downloaded. The same reasoning
@@ -71,7 +71,7 @@ type Spec struct {
 	// what gets verified, before anything is extracted from it.
 	//
 	// No pin below sets it today — Helm was the archived tool, and it was
-	// fetched for the retired kagent chart alone. The mechanism stays because
+	// fetched for the retired runtime's chart alone. The mechanism stays because
 	// it is the rule ("verify what was published, then extract") rather than
 	// one tool's packaging, and its own test still proves it.
 	ArchiveMember string

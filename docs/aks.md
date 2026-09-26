@@ -3,8 +3,9 @@
 [Orka](orka.md) is the platform; Kaimahi helps applications get onto it.
 For existing applications, start with [model-traffic migration](migrate.md).
 This page documents the **current AKS implementation**, which lands Orka on a
-cluster it provisions. The legacy kagent/Copilot demo journey, once selected
-with `--payload kagent`, is retired; this is not a claim that kagent authoring
+cluster it provisions. The legacy runtime's Copilot demo journey, once
+selected with its own lift payload, is retired; this is not a claim that
+its authoring
 has been ruled out.
 
 AKS is **demonstrated, not maintained**: recorded clusters were short-lived and
@@ -41,10 +42,10 @@ kmx aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
 |---|---|---|
 | `orka` | Orka at the pinned version — the same one `kmx orka install` puts on a local cluster | cluster, boundary, credential, plane, **orka**, observability, verify |
 
-`--payload kagent` is **refused as retired**, by name rather than as an unknown
+The legacy payload is **refused as retired**, by name rather than as an unknown
 value: a script that still names it asked for a platform this command installed
 until the legacy runtime was removed, and a typo message would send its author
-looking for a spelling instead of a replacement. An existing kagent lift can
+looking for a spelling instead of a replacement. An existing legacy lift can
 still be inspected and torn down with `kmx aks down`; what is refused is
 creating or resuming one.
 
@@ -115,7 +116,7 @@ kmx aks up --step plane --resource-group <your-rg> --registry <registry> --clust
 Retain the same identity/options and `--byo` where used. A run is recorded with
 the payload it landed, and resuming with a different one is refused rather than
 reconciled: installing two platforms on one cluster is the outcome the record
-exists to prevent. A record that names `kagent`, or one written before the
+exists to prevent. A record that names the legacy payload, or one written before the
 payload split and therefore carrying none, refuses to **resume** with an
 explicit retirement message — the phases that served it are gone — while
 remaining fully readable so the cluster can still be inspected and torn down.
@@ -166,7 +167,7 @@ an existing token is still valid. See [models](models.md).
 The larger lift disk follows a recorded 32 GiB `DiskPressure`/eviction failure
 with both monitoring add-ons. It is not a sizing guarantee for Orka, a larger
 model, more applications or a production workload. Scheduling isolation is a
-separate concern; see [isolation](isolation.md).
+separate concern, and this repository makes no scheduling-isolation claim.
 
 ## Context and boundary safety
 
@@ -304,7 +305,7 @@ All custom approvals/grants and their APIs/CLI views are retired. Ordinary model
 caps/accounting remain; historical requests/grants/audits remain in SQL/backups.
 Upgrade CLI and plane together and verify every replica's new build: old replicas
 can still consume grants during rollout, and rollback can reactivate them. The
-original direct kagent MCP example remains, not the gateway-backed fixtures.
+gateway-backed fixtures are gone with the gateway.
 
 Chat allocates a free loopback port by default. Fixed-port helpers need distinct
 `CHAT_PORT`, `ADMIN_PORT`, or `OPS_PORT` values when checking two clusters

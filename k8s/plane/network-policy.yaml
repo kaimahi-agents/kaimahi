@@ -7,7 +7,7 @@
 # and still requires cluster credentials, then the admin bearer.
 # Hosted model egress is opt-in: k8s/egress-copilot.yaml and
 # k8s/egress-hosted.yaml both allow only public TCP 443. Neither ships here.
-# The kagent and ollama namespaces are outside this plane's boundary.
+# The ollama and orka-system namespaces are outside this plane's boundary.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -18,8 +18,17 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# Authenticated model calls from kagent, and nothing on admin/ops.
-# Other application namespaces require their own additive allowance.
+# Egress only, and nothing on admin/ops.
+#
+# There is NO committed ingress allowance. There used to be one, admitting
+# the retired runtime's namespace, and it outlived the runtime: nothing in
+# this repository creates that namespace any more, so the rule admitted a
+# namespace that does not exist while reading as the plane's model door.
+# The door is opened one adopter at a time instead — `kmx migrate` applies
+# `kaimahi-proxy-ingress-<namespace>` for the namespace it is pointed at,
+# so revoking one adopter revokes nothing else, and a namespace nobody
+# migrated has no path here at all.
+#
 # Egress selects the actual pods/target ports, not pre-NAT Service ports.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -31,14 +40,6 @@ spec:
     matchLabels:
       app: kaimahi-proxy
   policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kagent
-      ports:
-        - protocol: TCP
-          port: 8080
   egress:
     - to:
         - podSelector:

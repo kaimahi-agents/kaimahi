@@ -77,7 +77,7 @@ type Upstream struct {
 	// BaseURL is the upstream origin plus any path prefix it expects.
 	BaseURL string `json:"base_url"`
 	// Path is the single allowed forwarded remainder (no leading slash) —
-	// exactly what kagent's OpenAI client appends to the governed preset's
+	// exactly what a governed workload's OpenAI client appends to the
 	// baseUrl (e.g. "v1/chat/completions").
 	Path string `json:"path"`
 	// Protocol is the wire shape this upstream speaks — one of

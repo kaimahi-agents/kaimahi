@@ -8,23 +8,28 @@
 # status (a 5xx, a 502, a 403) fails the probe: those are not budget
 # decisions.
 #
-# Drives the proxy directly rather than through kagent because an
-# agent's OpenAI client retries a 429 on its own, which would make the
+# Drives the proxy directly rather than through an agent runtime because
+# an agent's OpenAI client retries a 429 on its own, which would make the
 # denied count a property of the client, not of the plane.
 #
 # Custody rules (docs/COORDINATION.md): the token travels only through
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: spend-race-probe.sh [N]   (env: EXPECT_ADMITTED=1
-#        GOVERNED_SECRET=kaimahi-governed-token SECRET_NAMESPACE=kagent
+#        GOVERNED_SECRET=kaimahi-governed-token SECRET_NAMESPACE=<its namespace>
 #        UPSTREAM=ollama MODEL=qwen2.5:3b)
 set -euo pipefail
 umask 077
 
 KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=kaimahi
-SECRET_NAMESPACE="${SECRET_NAMESPACE:-kagent}"
 GOVERNED_SECRET="${GOVERNED_SECRET:-kaimahi-governed-token}"
+# SECRET_NAMESPACE has no default. It is the namespace the governed
+# credential lives in, which is the caller's own — an application
+# namespace named by whoever migrated it. Guessing one would send the
+# probe looking for a Secret that was never going to be there and report
+# the miss as a cluster fault.
+SECRET_NAMESPACE="${SECRET_NAMESPACE:?set SECRET_NAMESPACE to the namespace holding $GOVERNED_SECRET}"
 UPSTREAM="${UPSTREAM:-ollama}"
 MODEL="${MODEL:-qwen2.5:3b}"
 EXPECT_ADMITTED="${EXPECT_ADMITTED:-1}"

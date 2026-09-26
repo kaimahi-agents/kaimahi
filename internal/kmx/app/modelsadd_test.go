@@ -366,7 +366,7 @@ func modelOpts(dir string) AddModelOptions {
 // The wiring `models add` prints is the whole handover to a client the
 // adopter owns, so the credential line has to name a command that exists.
 // It named `kmx govern`, which was retired with the runtime adapter: an
-// operator following the success output would have typed an unknown command
+// operator following the success output would have reached a retirement refusal
 // with a live, unusable seam in front of them.
 func TestTheSeamWiringNamesACredentialCommandThatExists(t *testing.T) {
 	f := newModelFixture(t, vllmService, "notfound", nil)

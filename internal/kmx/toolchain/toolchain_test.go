@@ -202,7 +202,7 @@ func TestEnsureWritesNothingWhenTheChecksumFails(t *testing.T) {
 // is extracted from it, and the extracted member is what gets installed.
 //
 // The spec is built here rather than taken from Pinned: no pinned tool is
-// archived today (Helm was, and it was fetched for the retired kagent chart
+// archived today (Helm was, and it was fetched for the retired chart
 // alone). The rule outlives the tool that needed it, so it keeps its test.
 func TestAnArchivedToolIsVerifiedBeforeItIsExtracted(t *testing.T) {
 	binary := []byte("#!/bin/sh\necho archived\n")

@@ -27,12 +27,13 @@ whether to apply the printed patch. Governing model traffic does not mean
 adopting the workload, creating an Orka Agent from it, or governing its
 other traffic. See [migrate.md](migrate.md).
 
-Authoring is still open: native Orka only, or kagent YAML as another
+Authoring is still open: native Orka only, or the legacy runtime's YAML as another
 surface over Orka. [orka.md](orka.md) records a native-authoring
 recommendation, not a decision that forbids the latter. Today's
 `kmx agent create` emits native Orka Provider + Agent resources and an
-optional Task; it does not translate existing kagent resources. The isolated
-conversion spike does not settle the supported authoring interface.
+optional Task; it does not translate existing legacy resources. The isolated
+conversion spike that once explored one is removed from the tree, and never
+settled the supported authoring interface.
 
 ## Show where an operation will act
 

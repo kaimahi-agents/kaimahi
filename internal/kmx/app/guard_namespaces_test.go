@@ -14,7 +14,7 @@ import (
 
 // The banner is output, and the supported first-answer path is Orka-only, so
 // a banner naming the legacy runtime is the path advertising something it
-// does not install. CI greps the whole quickstart transcript for "kagent"
+// does not install. CI greps the whole quickstart transcript for that name
 // for exactly that reason; these tests are the same assertion without a
 // cluster. "kaimahi" is checked on the namespace line alone, because the
 // confirmation hint names KAIMAHI_CONFIRM and that is the product, not a
@@ -66,6 +66,9 @@ func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 			if !strings.Contains(banner, config.GuardNamespaces) {
 				t.Errorf("%s no longer names %q:\n%s", tc.name, config.GuardNamespaces, banner)
 			}
+			if !strings.Contains(banner, "not exhaustive") {
+				t.Errorf("%s claims the generic namespace list is complete:\n%s", tc.name, banner)
+			}
 		})
 	}
 }
@@ -94,7 +97,7 @@ func TestBareUpGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 // Every addressable step is on the Orka path now, so every one of them gets
 // the scoped banner. This is the half that stops the wider legacy list
 // surviving behind a step name: naming a namespace nothing is written to is
-// its own untruth, and `kagent` is no longer written to by anything.
+// its own untruth, and the legacy namespace is no longer written to by anything.
 func TestEveryUpStepBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	for _, step := range []string{"ollama", "model", "orka"} {
 		t.Run(step, func(t *testing.T) {
