@@ -93,16 +93,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   lift with `KAIMAHI_CONFIRM=<group> kmx aks down --resource-group <group>
   --cluster <cluster>`.
 
-- **The legacy operational commands are gone: `kmx govern`, `kmx use` and
-  `kmx agent edit` are no longer commands at all.** They drove the legacy
-  kagent runtime and nothing else, and each now fails locally as an unknown
-  command — before configuration is loaded and long before a cluster is
-  reached. **Upgrading:** an owner-managed application is put behind the plane
-  with `kmx migrate`, a credential is issued into a named destination with
-  `kmx credential issue <name> --secret <secret> --namespace <ns>`, a model
-  preset is applied with `kubectl apply -f k8s/models/<preset>.yaml`, and an
-  Orka Agent is edited with `kubectl edit agents.core.orka.ai <name>` and read
-  back with `kmx agent show`.
+- **The legacy operational commands are retired: `kmx govern`, `kmx use` and
+  `kmx agent edit` no longer operate on a runtime.** Hidden compatibility stubs
+  refuse them locally before configuration loads and name supported alternatives.
+  **Upgrading:** route an owner-managed application with `kmx migrate`, issue
+  a credential into a named destination with `kmx credential issue <name>
+  --secret <secret> --namespace <ns>`, onboard a model with `kmx models add`,
+  and edit an Orka Agent with `kubectl edit agents.core.orka.ai <name>` and read
+  it back with `kmx agent show`.
 
 - **`kmx console` drives Orka Agents only.** The dashboard used to list
   `agents.kagent.dev` beside Orka Agents and offer chat, inference editing and
@@ -126,7 +124,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   it did not — there is nothing left to fall back to. The one-shot transport
   went with it: the kagent CLI download, the controller port-forward, the A2A
   invoke and its retry policy, the resumable `--session`, the raw `--json`
-  task and the question re-sampling are all removed, and a chat without
+  task and the question re-sampling are all removed. Hidden `--session` and
+  `--json` flags refuse by name before loading configuration; a chat without
   `--interactive` is refused with the command that works. **Upgrading:**
   `kmx agent chat --interactive [--namespace <ns>] <name>`. A script that
   parsed the raw A2A task has no replacement on this path; create a Task with

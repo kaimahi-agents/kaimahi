@@ -124,8 +124,20 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
 		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state),
+		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
+		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 	)
 	return root
+}
+
+// Keep retired spellings parseable but absent from help and completion.
+// Returning directly avoids loading config for commands with no surviving runtime.
+func retiredCommand(name, replacement string) *cobra.Command {
+	return &cobra.Command{Use: name, Hidden: true,
+		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
+		RunE: func(*cobra.Command, []string) error {
+			return fmt.Errorf("kmx %s is retired; use %s", name, replacement)
+		}}
 }
 
 func appRun(state *commandState, fn func(*app.App) error) func(*cobra.Command, []string) error {

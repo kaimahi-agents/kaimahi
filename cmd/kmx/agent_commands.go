@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -8,7 +10,8 @@ import (
 
 func newAgentCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Create, inspect, and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state))
+	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state),
+		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx agent show <name> --namespace <namespace>"))
 	return group
 }
 
@@ -121,9 +124,22 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().StringVar(&azureDiscovery, "azure-discovery", "cli", "AKS listing for /lift: cli or sdk")
+	cmd.Flags().String("session", "", "retired server-side session flag")
+	cmd.Flags().Bool("json", false, "retired raw A2A task flag")
+	_ = cmd.Flags().MarkHidden("session")
+	_ = cmd.Flags().MarkHidden("json")
 	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"auto", "orka"}))
 	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
 	cmd.ValidArgsFunction = completeLiveAgents
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("session") {
+			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx agent chat --interactive --namespace <ns> <name>")
+		}
+		if cmd.Flags().Changed("json") {
+			return fmt.Errorf("--json is retired: raw A2A tasks are unavailable; use kmx agent chat --interactive --namespace <ns> <name>, or kmx agent create --task to read a Task result")
+		}
+		return usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")(cmd, args)
+	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()
 		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery})
