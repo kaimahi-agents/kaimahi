@@ -105,6 +105,21 @@ Add probes to the shard owning their state lineage, or arrange independent setup
 Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.
 
+`e2e-orka-runtime` is the Orka boundary and runs on every pull request. It brings
+up kind, Ollama and the model with `kmx up --step` component steps only, installs
+the pinned Orka and its keyless Provider, and requires a Provider → Agent → Task
+round trip to return an exact, non-empty local-model answer. It then applies the
+committed native Orka [Kubernetes Tool](orka-k8s-tool.md) and proves its boundary
+directly over HTTP: an allowed ConfigMap listing that contains a ConfigMap created
+seconds earlier, and refusal of Secret reads and pod mutation at both the tool's
+own validation and the cluster's RBAC. It installs no kagent and creates no Helm
+release, and fails closed if it ever does.
+
+What that shard does **not** prove: that the local model chose to call the tool
+(small-model tool selection is a known CI flake class, so model-driven invocation
+is left unasserted rather than asserted flakily), and nothing about governance —
+Orka traffic is not on the plane seam there.
+
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as
 a required PR shard. Its native Orka creation journey checks an actual Task answer,

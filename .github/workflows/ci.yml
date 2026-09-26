@@ -514,6 +514,13 @@ jobs:
         run: |
           bash -n scripts/demo-hello-to-governed.sh
           python3 scripts/test_demo_hello_to_governed.py
+      # The native Orka HTTP Tool's own allow/deny pair, proved keyless and
+      # clusterless: the e2e-orka-runtime shard proves the CLUSTER refuses
+      # (RBAC); this proves the SERVER refuses before a request is ever
+      # made, over every pull request rather than only when that shard
+      # runs. Mocked HTTP only — no live Kubernetes API is reached.
+      - name: Orka k8s-tool self-test (read-only allowlist, secrets and mutation refused)
+        run: python3 scripts/test_orka_k8s_tool.py -v
       # Every cluster job short-circuits docs-only changes at STEP level (the
       # e2e shards must run and report — `e2e-hello-world` aggregates them
       # and is a required check). A step appended without the guard would run
@@ -858,10 +865,11 @@ jobs:
           PGPASSWORD: ci-throwaway
         run: bash scripts/plane-upgrade-probe.sh
 
-  # Five retained shards isolate model budgets, protocol/onboarding safety,
-  # runtime installation, quickstart and storage resilience. The required
-  # aggregator covers every shard; every cluster step has a docs guard.
-  # Runtime retains the original direct-kagent MCP smoke, not a gateway.
+  # Six retained shards isolate model budgets, protocol/onboarding safety,
+  # runtime installation, quickstart, storage resilience and the Orka
+  # runtime. The required aggregator covers every shard; every cluster step
+  # has a docs guard. Runtime retains the original direct-kagent MCP smoke,
+  # not a gateway; e2e-orka-runtime is a separate, kagent-free boundary.
   e2e-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -2204,9 +2212,266 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
+  # The Orka runtime, proved on every pull request and without kagent.
+  #
+  # This is a SEPARATE boundary from the shards above, and it is additive:
+  # nothing here installs, reads or asserts the legacy runtime, and nothing
+  # above changes. Two claims are made, and they are deliberately kept
+  # apart because they can fail independently:
+  #
+  #   1. Orka executes. A pinned install, a keyless Provider, an Agent and a
+  #      Task that returns an exact, non-empty answer from a local model.
+  #   2. The native Orka HTTP Tool's boundary holds. The Tool object is
+  #      admitted by Orka's own CRD, its endpoint returns a live ConfigMap
+  #      listing, and both its own validation and the cluster's RBAC refuse
+  #      Secrets and every pod mutation.
+  #
+  # What is NOT claimed: that the 3B model chose to call the tool. Tool
+  # SELECTION by a small local model is the repository's known CI flake
+  # class 2, so this shard proves the tool's boundary directly over HTTP and
+  # leaves model-driven invocation unasserted rather than asserting it
+  # flakily. It also claims nothing about governance: Orka traffic is not on
+  # the plane seam here, and no step pretends otherwise.
+  e2e-orka-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kmx-orka
+      KUBE_CTX: kind-kmx-orka
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Classify the change (docs-only short-circuit, fail closed)
+        id: changes
+        uses: ./.github/actions/classify-change
+      - name: Install kind
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+      - uses: actions/setup-go@v5
+        if: steps.changes.outputs.docs_only != 'true'
+        with:
+          go-version-file: go.mod
+      - name: Build kmx
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
+      # Component steps only. `kmx up` with no --step would install the
+      # legacy runtime, and this shard's whole point is that the Orka path
+      # needs none of it: no Helm release, no kagent namespace, no chart.
+      - name: Cluster, Ollama and the model — no kagent, no Helm release
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx up --step cluster
+          bin/kmx up --step ollama
+          bin/kmx up --step model
+          # Fail closed on the premise. If a later edit made any of the three
+          # steps above pull in the legacy runtime, every Orka claim below
+          # would still pass while proving something else entirely.
+          if kubectl --context kind-kmx-orka get namespace kagent >/dev/null 2>&1; then
+            echo "the Orka shard created the legacy runtime's namespace; it is not proving an Orka-only path"
+            exit 1
+          fi
+      - name: Orka — install the pinned release and its keyless Provider
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bin/kmx orka install 2>&1 | tee orka-install.out
+          # The digest pin is the point of the command, so require that it
+          # was actually verified rather than that the command exited 0.
+          grep -q 'Installer verified:' orka-install.out
+          for d in orka-controller-manager orka-agent-harness-wrapper; do
+            kubectl --context kind-kmx-orka -n orka-system rollout status "deploy/$d" --timeout=300s
+          done
+          # A Provider that is not Ready resolves no model, and an Agent
+          # bound to it would fail later with a much less legible message.
+          for _ in $(seq 1 60); do
+            ready=$(kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai local \
+              -o jsonpath='{.status.ready}' 2>/dev/null || true)
+            [ "$ready" = true ] && break
+            sleep 5
+          done
+          test "${ready:-}" = true || {
+            echo "Provider local never became Ready; a model call would be refused"
+            kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai local -o yaml || true
+            exit 1
+          }
+      # Names only, created here on purpose: `kmx agent create` provisions
+      # no account and no permissions, and a shard that created them inside
+      # the command under test would be proving its own fixture.
+      - name: Orka — separately provision the Task result account
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-kmx-orka -n orka-system create serviceaccount orka-result-reader
+          kubectl --context kind-kmx-orka -n orka-system create role orka-result-reader \
+            --verb=get --resource=tasks.core.orka.ai
+          kubectl --context kind-kmx-orka -n orka-system create rolebinding orka-result-reader \
+            --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
+      # The committed manifest and the committed server, applied the same
+      # way kmx applies them: the code goes in a ConfigMap and the
+      # Deployment carries that code's sha256, so a server edit rolls the
+      # pod instead of leaving the old bytes running under a new claim.
+      - name: Native Orka Tool — apply the committed Tool, RBAC and server
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-kmx-orka -n orka-system create configmap kmx-k8s-tool \
+            --from-file=server.py=scripts/orka-k8s-tool.py
+          sum=$(sha256sum scripts/orka-k8s-tool.py | cut -d' ' -f1)
+          sed "s/kmx-tool-code-checksum/$sum/" k8s/orka-k8s-tool.yaml \
+            | kubectl --context kind-kmx-orka apply -f -
+          kubectl --context kind-kmx-orka -n orka-system rollout status deploy/kmx-k8s-tool --timeout=180s
+          # Admitted by ORKA's own CRD, not merely by the API server: a Tool
+          # this cluster's Orka would reject is not a native Orka Tool.
+          url=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
+            -o jsonpath='{.spec.http.url}')
+          test "$url" = http://kmx-k8s-tool.orka-system.svc.cluster.local:8080/resources
+          # The running pod is the committed code, stated rather than assumed.
+          annotated=$(kubectl --context kind-kmx-orka -n orka-system get deploy kmx-k8s-tool \
+            -o jsonpath='{.spec.template.metadata.annotations.kaimahi\.dev/tool-code}')
+          test "$annotated" = "$sum"
+      - name: Orka — fail closed on legacy runtime state
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          if kubectl --context kind-kmx-orka get namespace kagent >/dev/null 2>&1; then
+            echo "the Orka shard created the legacy runtime's namespace"
+            exit 1
+          fi
+          releases=$(helm --kube-context kind-kmx-orka list --all-namespaces --short)
+          if [ -n "$releases" ]; then
+            echo "the Orka shard left Helm releases:"
+            printf '%s\n' "$releases"
+            exit 1
+          fi
+      # The allowed half. An unguessable name is created first, so a listing
+      # that contains it can only have come from a live read through the
+      # tool — not from a fixture, a cache or a plausible reply.
+      - name: Native Orka Tool — allowed ConfigMap listing is a live read
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          marker="probe-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          echo "marker=$marker"
+          kubectl --context kind-kmx-orka -n orka-system create configmap "$marker" --from-literal=probe=1
+          # --address pins IPv4: kubectl's default `localhost` can bind the
+          # v6 side only while curl talks to 127.0.0.1. The forward's own
+          # output is kept and printed on failure, and the trap stops it
+          # outliving this step — a background kubectl is not reaped when a
+          # step ends, and the port is reused below.
+          kubectl --context kind-kmx-orka -n orka-system port-forward --address 127.0.0.1 \
+            svc/kmx-k8s-tool 18080:8080 >tool-forward.log 2>&1 &
+          pf=$!
+          trap 'kill "$pf" 2>/dev/null || true' EXIT
+          ready=
+          for _ in $(seq 1 150); do
+            if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:18080/healthz 2>/dev/null; then ready=1; break; fi
+            sleep 0.2
+          done
+          test -n "$ready" || { echo "the tool never answered on 127.0.0.1:18080; kubectl said:"; sed 's/^/  /' tool-forward.log; exit 1; }
+          curl -fsS --max-time 30 -X POST http://127.0.0.1:18080/resources \
+            -H 'Content-Type: application/json' \
+            -d '{"resource":"configmaps","namespace":"orka-system"}' | tee tool-allowed.out
+          python3 - "$marker" <<'EOF'
+          import json, sys
+          marker = sys.argv[1]
+          body = json.load(open("tool-allowed.out"))
+          names = [i["name"] for i in body["items"]]
+          assert body["resource"] == "configmaps", body
+          assert marker in names, f"the live ConfigMap {marker} is not in {names}"
+          # A projection, never contents: a ConfigMap's data must not come
+          # back through a tool a model can call.
+          assert all(set(i) <= {"name", "namespace", "phase", "readyReplicas",
+                                "replicas", "succeeded", "failed"} for i in body["items"]), body
+          print(f"live listing: {len(names)} ConfigMaps, including {marker}")
+          EOF
+      # The denied half, asserted at BOTH boundaries, because either one
+      # alone is a single point of silent failure: the server's own
+      # validation (which a widened allowlist would remove) and the
+      # cluster's RBAC (which a widened ClusterRole would remove).
+      - name: Native Orka Tool — Secrets and pod mutation are refused
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-kmx-orka -n orka-system port-forward --address 127.0.0.1 \
+            svc/kmx-k8s-tool 18080:8080 >tool-forward-deny.log 2>&1 &
+          pf=$!
+          trap 'kill "$pf" 2>/dev/null || true' EXIT
+          ready=
+          for _ in $(seq 1 150); do
+            if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:18080/healthz 2>/dev/null; then ready=1; break; fi
+            sleep 0.2
+          done
+          test -n "$ready" || { echo "the tool never answered; kubectl said:"; sed 's/^/  /' tool-forward-deny.log; exit 1; }
+          for body in '{"resource":"secrets"}' '{"resource":"secrets","namespace":"orka-system"}' '{"resource":"pods","verb":"delete"}'; do
+            code=$(curl -s -o deny.out -w '%{http_code}' --max-time 30 -X POST \
+              http://127.0.0.1:18080/resources -H 'Content-Type: application/json' -d "$body")
+            test "$code" = 400 || { echo "tool answered $code for $body:"; cat deny.out; exit 1; }
+            grep -q 'Invalid resource request' deny.out
+          done
+          # And the authority the tool holds even if its validation were
+          # bypassed. `! cmd` is exempt from errexit, so can-i's answer is
+          # compared explicitly — each check aborts the step on a wrong one.
+          sa=system:serviceaccount:orka-system:kmx-k8s-reader
+          for denied in "get secrets" "list secrets" "create pods" "delete pods" \
+                        "update pods" "patch pods" "patch configmaps"; do
+            # Split the verb/resource pair for kubectl auth can-i.
+            # shellcheck disable=SC2086
+            got=$(kubectl --context kind-kmx-orka auth can-i $denied -n orka-system --as="$sa" || true)
+            test "$got" = no || { echo "the tool account may $denied"; exit 1; }
+          done
+          # The positive control: a denial list that refused everything would
+          # pass the seven checks above and prove nothing. Scoped to
+          # orka-system to match the namespace the live request above hits.
+          kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
+      # Provider → Agent → Task, and a REAL answer. The prompt is
+      # deterministic and the comparison is exact: "a non-empty reply" would
+      # pass on an error string, and a 3B model asked an open question is
+      # the repository's CI flake class 2.
+      - name: Orka — Agent and Task return an exact local-model answer
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          # Reuse the installer's Secret; never invent a Provider key here.
+          bin/kmx --context kind-kmx-orka agent create orka-hello \
+            --namespace orka-system --provider-type openai --model qwen2.5:3b \
+            --secret local-provider-key \
+            --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
+            --task 'Reply with exactly this text: Orka says hello.' \
+            --result-service-account orka-result-reader > orka-answer.out
+          test -f agents/orka-hello.yaml
+          test "$(cat orka-answer.out)" = 'Orka says hello.'
+          # The Task really ran and really succeeded, read from the cluster
+          # rather than from the command's own stdout.
+          phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai \
+            -o jsonpath='{.items[0].status.phase}')
+          test "$phase" = Succeeded
+      - name: Cluster state on failure
+        if: failure() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          kubectl --context kind-kmx-orka get pods -A || true
+          kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai,agents.core.orka.ai,tasks.core.orka.ai,tools.core.orka.ai -o wide || true
+          kubectl --context kind-kmx-orka -n orka-system logs deploy/orka-controller-manager --tail=100 || true
+          kubectl --context kind-kmx-orka -n orka-system logs deploy/kmx-k8s-tool --tail=100 || true
+      - name: down
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: kind delete cluster --name kmx-orka || true
+      - name: Docs-only short-circuit
+        id: docs-only-summary
+        if: steps.changes.outputs.docs_only == 'true'
+        run: echo "every changed file is documentation; no cluster booted"
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-models, e2e-quickstart, e2e-resilience, e2e-runtime, e2e-spend]
+    needs: [e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-runtime, e2e-spend]
     if: always()
     steps:
       - name: Every e2e shard succeeded
