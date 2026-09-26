@@ -17,7 +17,7 @@ import (
 // independently deployed model plane and seam certificate. OrkaStatus owns
 // preflight and context handling; additional reads use the same pinned kubectl.
 
-// A status read must not hang when the API server is unreachable.
+// Bound the additional plane reads when the API server is unreachable.
 const statusRequestTimeout = "--request-timeout=15s"
 
 // StatusOptions controls the output format.
