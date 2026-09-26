@@ -289,8 +289,8 @@ func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, age
 
 // orkaSpecFromPortable maps the closed portable document onto the existing
 // scaffold spec. The document is authoritative for everything it models; only
-// the description and the first Task prompt — which the closed schema
-// deliberately does not carry — come from the create flags.
+// the first Task prompt, which is invocation input rather than the Agent's
+// definition, comes from the create flags.
 //
 // spec.model.name becomes the Provider's defaultModel. It is the document's
 // one statement of which model to use: the Orka extension does not restate
@@ -304,7 +304,7 @@ func orkaSpecFromPortable(portable *agentruntime.PortableAgent, opt CreateOption
 	spec := scaffold.OrkaSpec{
 		Name:              portable.Metadata.Name,
 		Namespace:         extension.Namespace,
-		Description:       opt.Description,
+		Description:       portable.Spec.Description,
 		ProviderType:      extension.Provider.Type,
 		Model:             portable.Spec.Model.Name,
 		BaseURL:           extension.Provider.BaseURL,
@@ -487,6 +487,7 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 		Name:              opt.Name,
 		Namespace:         opt.Namespace,
 		Instructions:      instructions,
+		Description:       opt.Description,
 		ProviderType:      opt.ProviderType,
 		Model:             opt.Model,
 		BaseURL:           opt.BaseURL,

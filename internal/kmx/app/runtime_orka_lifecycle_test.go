@@ -233,6 +233,37 @@ func TestOrkaRenderMintsTaskIdentityOnce(t *testing.T) {
 	}
 }
 
+// A Render caller's flags cannot override authored description: doing so
+// would deploy different Agent objects under the same portable digest.
+func TestOrkaRenderUsesPortableDescriptionNotCreateFlags(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	source, err := portableOrkaSource(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable, err := agentruntime.ParsePortableAgent(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if portable.Spec.Description != "Golden sample agent" {
+		t.Fatalf("create description omitted from document: %q", portable.Spec.Description)
+	}
+	opt.Description = "A different flag value"
+	adapter := lifecycleAdapter(t, opt)
+	rendered, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := orkaBundleFromRendered(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	annotations := bundle.Agent["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if got := annotations["kaimahi.dev/description"]; got != "Golden sample agent" {
+		t.Fatalf("rendered description = %v, not the document value", got)
+	}
+}
+
 // TestOrkaRenderUsesSpecModelAsTheOnlyModelSource pins the closed document's
 // one statement of which model to use. The Orka extension deliberately does
 // not restate it, so nothing but spec.model.name can reach defaultModel.
@@ -278,7 +309,7 @@ func TestOrkaDeployRejectsBundlesItDidNotRender(t *testing.T) {
 	provider := []byte("apiVersion: core.orka.ai/v1alpha1\nkind: Provider\nmetadata:\n    name: sample\n    namespace: orka-system\n")
 	agent := []byte("apiVersion: core.orka.ai/v1alpha1\nkind: Agent\nmetadata:\n    name: sample\n    namespace: orka-system\n")
 	secret := []byte("apiVersion: v1\nkind: Secret\nmetadata:\n    name: model-key\n    namespace: orka-system\n")
-	foreign, err := agentruntime.NewRenderedBundle(agentruntime.Kagent, []byte("source"),
+	foreign, err := agentruntime.NewRenderedBundle(agentruntime.ID("another-runtime"), []byte("source"),
 		[]agentruntime.Document{agentruntime.ReviewDocument(secret), agentruntime.ApplyDocument(provider), agentruntime.ApplyDocument(agent)})
 	if err != nil {
 		t.Fatal(err)
@@ -387,7 +418,7 @@ exit 0
 const statusAgentJSON = `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111","generation":2},
 "status":{"ready":true,"activeTasks":2,"lastUsed":"2026-09-24T18:00:00Z","conditions":[{"type":"Ready","status":"True","observedGeneration":2}]}}`
 
-func statusFixture(t *testing.T, agent string) (orkaRuntimeAdapter, string) {
+func orkaLifecycleStatusFixture(t *testing.T, agent string) (orkaRuntimeAdapter, string) {
 	t.Helper()
 	if goruntime.GOOS == "windows" {
 		t.Skip("the fake kubectl is a shell script")
@@ -453,7 +484,7 @@ func TestOrkaStatusReportsTheSameFieldsForEveryValidReference(t *testing.T) {
 		{"namespace and name only", agentruntime.AgentRef{Namespace: "demo", Name: "concierge"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter, _ := statusFixture(t, statusAgentJSON)
+			adapter, _ := orkaLifecycleStatusFixture(t, statusAgentJSON)
 			status, err := adapter.Status(context.Background(), tc.ref, agentruntime.StatusOptions{})
 			if err != nil {
 				t.Fatalf("status: %v", err)
@@ -481,7 +512,7 @@ func TestOrkaStatusDoesNotReportStaleOrUnprovedReady(t *testing.T) {
 		{"missing generation", `{"metadata":{"name":"concierge","namespace":"demo","uid":"11111111-1111-1111-1111-111111111111"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":0}]}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter, _ := statusFixture(t, tc.agent)
+			adapter, _ := orkaLifecycleStatusFixture(t, tc.agent)
 			status, err := adapter.Status(context.Background(), statusRef(t), agentruntime.StatusOptions{})
 			if err != nil {
 				t.Fatal(err)
@@ -503,7 +534,7 @@ func TestOrkaStatusDoesNotReportStaleOrUnprovedReady(t *testing.T) {
 // claim, and the assertion that matters is the second one: a cancelled status
 // must not preflight (which may FETCH kubectl) or read the cluster at all.
 func TestOrkaStatusStopsBeforeReadingOnACancelledContext(t *testing.T) {
-	adapter, args := statusFixture(t, statusAgentJSON)
+	adapter, args := orkaLifecycleStatusFixture(t, statusAgentJSON)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := adapter.Status(ctx, statusRef(t), agentruntime.StatusOptions{})
@@ -546,12 +577,12 @@ func TestOrkaStatusRefusesAForeignReference(t *testing.T) {
 		name, want string
 		ref        agentruntime.AgentRef
 	}{
-		{"another runtime", "kagent", agentruntime.AgentRef{Runtime: agentruntime.Kagent, Namespace: "demo", Name: "concierge"}},
-		{"another kind", "agents.kagent.dev", agentruntime.AgentRef{Namespace: "demo", Name: "concierge", Kind: "agents.kagent.dev"}},
+		{"another runtime", "another-runtime", agentruntime.AgentRef{Runtime: agentruntime.ID("another-runtime"), Namespace: "demo", Name: "concierge"}},
+		{"another kind", "another.agents.example", agentruntime.AgentRef{Namespace: "demo", Name: "concierge", Kind: "another.agents.example"}},
 		{"another context", "kind-other", agentruntime.AgentRef{Namespace: "demo", Name: "concierge", Context: "kind-other"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter, args := statusFixture(t, statusAgentJSON)
+			adapter, args := orkaLifecycleStatusFixture(t, statusAgentJSON)
 			_, err := adapter.Status(context.Background(), tc.ref, agentruntime.StatusOptions{})
 			if err == nil {
 				t.Fatalf("status accepted a foreign reference %+v", tc.ref)
@@ -572,7 +603,7 @@ func TestOrkaStatusRefusesAForeignReference(t *testing.T) {
 // original one recovered.
 func TestOrkaStatusRefusesAReusedAgentName(t *testing.T) {
 	t.Run("a different object answers", func(t *testing.T) {
-		adapter, _ := statusFixture(t, statusAgentJSON)
+		adapter, _ := orkaLifecycleStatusFixture(t, statusAgentJSON)
 		ref := statusRef(t)
 		ref.UID = "22222222-2222-2222-2222-222222222222"
 		_, err := adapter.Status(context.Background(), ref, agentruntime.StatusOptions{})
@@ -588,7 +619,7 @@ func TestOrkaStatusRefusesAReusedAgentName(t *testing.T) {
 	// A stated UID that cannot be checked is not a confirmed one: reporting
 	// anyway would silently downgrade the caller's identity check.
 	t.Run("the object states no UID", func(t *testing.T) {
-		adapter, _ := statusFixture(t, `{"metadata":{"name":"concierge","namespace":"demo"},"status":{"ready":true}}`)
+		adapter, _ := orkaLifecycleStatusFixture(t, `{"metadata":{"name":"concierge","namespace":"demo"},"status":{"ready":true}}`)
 		_, err := adapter.Status(context.Background(), statusRef(t), agentruntime.StatusOptions{})
 		if err == nil || !strings.Contains(err.Error(), "cannot be confirmed") {
 			t.Fatalf("an unconfirmable UID was accepted: %v", err)
