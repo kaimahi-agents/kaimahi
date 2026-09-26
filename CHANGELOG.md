@@ -96,11 +96,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   project has nothing to do with — which reads as coverage and is not. The
   command keeps its name and now delegates to the same reading as
   `kmx orka status`: running version against the kmx pin, deployments, CRDs
-  and Provider readiness. It delegates *entirely* — there is no context check
-  in front of the delegation, because one made `kmx status` answer a missing
-  context differently from the command it exists to reuse, and skipped the
-  preflight that puts kubectl on PATH. `kmx ctx` is where an incomplete local
-  setup is explained.
+  and Provider readiness. It delegates the Orka portion unchanged, with no
+  separate context check before its toolchain preflight. It also reports
+  `kaimahi-proxy` Deployment and pod readiness/restarts and the serving seam
+  certificate's subject, issuer and expiry, warning when renewal is due.
+  An absent plane is distinguished from an unreadable one; these reads use
+  the same pinned context. `kmx ctx` explains an incomplete local setup.
+  **Upgrading:** the old kagent agent/model counts and governance envelope are
+  gone; the independent plane and certificate health lines remain in the table.
 
   **`kmx credential issue --secret` now requires `--namespace`.** It defaulted
   to the retired runtime's namespace, so an operator who omitted the flag
