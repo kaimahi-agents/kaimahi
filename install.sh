@@ -20,8 +20,9 @@
 # come from the same GitHub release over TLS, so this proves the download was
 # not corrupted or truncated — it is not an independent signature, and a
 # compromised release would publish a matching digest. If you would rather
-# verify by a different route, `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest`
-# goes through the Go module proxy and the Go checksum database instead.
+# verify by a different route, `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main`
+# builds the Orka-capable CLI from source via the Go module proxy and checksum
+# database. @latest currently resolves to v0.1.0, before Orka quickstart.
 set -eu
 
 REPO="kaimahi-agents/kaimahi"
@@ -111,6 +112,12 @@ elif [ "$VERSION" = latest ]; then
   esac
 fi
 
+# v0.1.0 predates the Orka quickstart. Do not install it and then silently
+# run the legacy first-answer journey when the user asked for this one.
+if [ "$RUN_QUICKSTART" = yes ] && [ -z "$BASE_OVERRIDE" ] && [ "$VERSION" = v0.1.0 ]; then
+  die "v0.1.0 does not include Orka quickstart. Until an Orka-capable release is published, run: go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main"
+fi
+
 base="https://github.com/$REPO/releases/download/$VERSION"
 [ -n "$BASE_OVERRIDE" ] && base="$BASE_OVERRIDE"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kmx-install.XXXXXX")
@@ -147,13 +154,26 @@ case ":$PATH:" in
     ;;
 esac
 
-"$BIN_DIR/kmx" version >&2 || true
-
+# Everything below this point is the END of an install that is not going
+# anywhere else. --quickstart is: it hands the shell to `kmx quickstart`
+# before any of it runs. That ordering is load-bearing rather than tidy —
+# `kmx version` names the pinned kagent release, and the supported
+# first-answer path installs no kagent, so printing it here put the legacy
+# runtime into the transcript of a path that never touches it.
 if [ "$RUN_QUICKSTART" = yes ]; then
   say ""
   exec "$BIN_DIR/kmx" quickstart
 fi
 
+# A plain install reports which build landed; there is nothing after it to
+# confuse the line with.
+"$BIN_DIR/kmx" version >&2 || true
+
 say ""
-say "Next:  kmx quickstart      # a cluster and an agent that answers a question"
-say "       kmx quickstart -o json   # the same, for something driving kmx"
+if [ "$VERSION" = v0.1.0 ]; then
+  say "For Orka quickstart, install the current source build:"
+  say "  go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main"
+else
+  say "Next:  kmx quickstart      # a cluster and an agent that answers a question"
+  say "       kmx quickstart -o json   # the same, for something driving kmx"
+fi

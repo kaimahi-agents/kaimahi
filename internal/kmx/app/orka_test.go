@@ -63,6 +63,11 @@ case "$*" in
       absent) printf 'Error from server (NotFound): services "ollama" not found\n' >&2; exit 1 ;;
       *) printf 'service/ollama\n'; exit 0 ;;
     esac ;;
+  *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
+    [ -f "$KMX_TEST_STDIN" ] || exit 0
+    grep -q 'kind: Provider' "$KMX_TEST_STDIN" || exit 0
+    printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":1},"spec":{"baseURL":"http://ollama.ollama.svc.cluster.local:11434/v1"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}'
+    exit 0 ;;
   *"apply --dry-run=server -f -"*)
     case "$KMX_TEST_DRYRUN" in
       refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
@@ -678,5 +683,166 @@ func TestTheNoTelemetryPhaseLabelIsPayloadAware(t *testing.T) {
 	}
 	if kagent := liftVerifyPurposeWithoutTelemetry(lift.PayloadKagent); !strings.Contains(kagent, "agent answers") {
 		t.Errorf("the kagent verify lost its purpose: %q", kagent)
+	}
+}
+
+// `kmx up --step orka` is the step that OWNS the Task result identity.
+//
+// Result reads go over Orka's API with a short-lived token for this account,
+// so it has to exist before any command can retrieve an answer — and the
+// grant has to be reviewable. `kmx agent create` deliberately only NAMES an
+// existing account: minting an identity as a side effect of authoring an
+// agent would hide a grant inside a command nobody reads as a grant.
+func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+	f := newOrkaFixture(t, installer)
+	f.app.orkaInstallerDigest = digestOf(installer)
+	f.app.Cfg.Model = "qwen2.5:3b"
+
+	if err := f.app.stepOrka(); err != nil {
+		t.Fatalf("step orka: %v", err)
+	}
+	applied := f.applied(t)
+	for _, want := range []string{
+		"kind: ServiceAccount",
+		"name: " + orkaResultAccount,
+		"kind: Role",
+		"kind: RoleBinding",
+		`apiGroups: ["core.orka.ai"]`,
+		`resources: ["tasks"]`,
+		`verbs: ["get"]`,
+	} {
+		if !strings.Contains(applied, want) {
+			t.Errorf("the result account manifest is missing %q:\n%s", want, applied)
+		}
+	}
+	// The ceiling, stated. A second verb or a second resource here is a
+	// widened grant, and a token for this account carries its full effective
+	// authority — so the extent is asserted, not merely the presence.
+	for _, forbidden := range []string{"secrets", "pods", `"list"`, `"watch"`, `"create"`, `"delete"`, "ClusterRole"} {
+		if strings.Contains(applied, forbidden) {
+			t.Errorf("the result account grant was widened with %q:\n%s", forbidden, applied)
+		}
+	}
+	// The whole step, not just its last object: a run that skipped the
+	// installer or the Provider would still have written the account.
+	calls := f.calls(t)
+	for _, want := range []string{"get secret harness-wrapper-auth", "rollout status deploy/orka-controller-manager", "get svc ollama"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("the orka step did not %q:\n%s", want, calls)
+		}
+	}
+	if !strings.Contains(applied, "kind: Provider") || !strings.Contains(applied, orkaDefaultModelURL) {
+		t.Errorf("the orka step wired no keyless Provider at the in-cluster endpoint:\n%s", applied)
+	}
+}
+
+// Every path that needs the Task result identity writes the SAME grant.
+//
+// `kmx up --step orka`, `kmx quickstart-wizard` and the lift deployment all
+// provision the account results are read with, and a copy per path is free to
+// drift: a Role whose extent depends on which command wrote it is a grant
+// nobody reviews as one. The wizard used to carry its own literal; both
+// halves are asserted here because the next path is one paste away from a
+// second spelling.
+func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
+	installer := []byte("kind: Namespace\n")
+
+	// The grant itself, applied by nothing else, so the comparison below is
+	// byte-for-byte rather than "mentions the same words somewhere".
+	canonical := newOrkaFixture(t, installer)
+	if err := canonical.app.orkaResultReader(); err != nil {
+		t.Fatalf("result reader: %v", err)
+	}
+	grant := strings.TrimSpace(canonical.applied(t))
+	for _, want := range []string{"kind: ServiceAccount", "kind: Role", "kind: RoleBinding", `resources: ["tasks"]`, `verbs: ["get"]`} {
+		if !strings.Contains(grant, want) {
+			t.Fatalf("the grant to compare against is missing %q:\n%s", want, grant)
+		}
+	}
+
+	step := newOrkaFixture(t, installer)
+	step.app.orkaInstallerDigest = digestOf(installer)
+	step.app.Cfg.Model = "qwen2.5:3b"
+	if err := step.app.stepOrka(); err != nil {
+		t.Fatalf("step orka: %v", err)
+	}
+	if !strings.Contains(step.applied(t), grant) {
+		t.Errorf("`kmx up --step orka` wrote a different result-reader grant:\n%s", step.applied(t))
+	}
+
+	wizard := newOrkaFixture(t, installer)
+	wizard.app.orkaInstallerDigest = digestOf(installer)
+	wizard.app.Cfg.Model = "qwen2.5:3b"
+	if err := wizard.app.quickstartWizardOrka(func(quickstartSetupEvent) {}); err != nil {
+		t.Fatalf("wizard orka: %v", err)
+	}
+	if !strings.Contains(wizard.applied(t), grant) {
+		t.Errorf("the wizard wrote a different result-reader grant:\n%s", wizard.applied(t))
+	}
+
+	// One author in the source, not just one shape in this run: a second
+	// literal elsewhere in the package would pass the comparison above on the
+	// day it is written and drift on some later one.
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var authors []string
+	for _, path := range sources {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text := string(body); strings.Contains(text, "kind: RoleBinding") && strings.Contains(text, `resources: ["tasks"]`) {
+			authors = append(authors, path)
+		}
+	}
+	if len(authors) != 1 || authors[0] != "orka.go" {
+		t.Errorf("the Task-result grant is written in %v; it belongs to orkaResultReader in orka.go alone", authors)
+	}
+}
+
+// A Provider pointed somewhere other than the in-cluster default is the
+// caller's own endpoint — a host Ollama reached over the kind gateway, say,
+// which `kmx up` verified is reachable FROM the cluster and deployed no
+// in-cluster Ollama for. Refusing it because an `ollama` Service that has
+// nothing to do with it is absent would refuse a route that works.
+func TestOrkaProviderChecksTheInClusterServiceOnlyForTheInClusterEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name, url     string
+		wantErr       bool
+		wantServiceOp bool
+	}{
+		{"in-cluster default", orkaDefaultModelURL, true, true},
+		{"host route", "http://172.18.0.1:11434/v1", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOrkaFixture(t, []byte("kind: Namespace\n"))
+			t.Setenv("KMX_TEST_OLLAMA", "absent")
+			err := f.app.orkaProvider(orkaDefaults(OrkaOptions{ModelURL: tc.url}))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error=%v, want error=%v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				if !strings.Contains(err.Error(), "no in-cluster model server") {
+					t.Fatalf("the refusal does not name the missing server: %v", err)
+				}
+				if applied := f.applied(t); strings.Contains(applied, "kind: Provider") {
+					t.Fatalf("a Provider resolving nothing was written:\n%s", applied)
+				}
+				return
+			}
+			if strings.Contains(f.calls(t), "get svc ollama") != tc.wantServiceOp {
+				t.Fatalf("looked for an unrelated in-cluster Service:\n%s", f.calls(t))
+			}
+			applied := f.applied(t)
+			if !strings.Contains(applied, tc.url) || !strings.Contains(applied, "kind: Provider") {
+				t.Fatalf("the host route was not written into the Provider:\n%s", applied)
+			}
+		})
 	}
 }

@@ -33,7 +33,7 @@ checks.
 | `internal/` | `kmx/` (16 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded model/plane/observability and retained kagent artifacts | — | — |
-| `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 45 (checkers, probes, CI fixtures, mutation specs) |
+| `scripts/` | 8 (6 embedded in the binary, 2 operator) | 1 | 46 (checkers, probes, CI fixtures, mutation specs) |
 | `docs/` | 50 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -187,9 +187,9 @@ The retained tools agent uses the direct kagent tool server. Keeping its existin
 installation/authoring path does not restore the removed Kaimahi MCP gateway.
 Model and observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 54 tracked files, three different jobs
+## `scripts/` — 55 tracked files, three different jobs
 
-**Reference coverage:** 42 of the 54 are named by something outside themselves,
+**Reference coverage:** 43 of the 55 are named by something outside themselves,
 and the twelve `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -199,7 +199,7 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 2 | `plane-pods.sh`, `copilot-secret.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers and self-tests | 20 | the twelve `check-*` files, `kube-guard-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
+| **Scaffolding** — checkers and self-tests | 21 | the twelve `check-*` files, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `verify-chat.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures | 5 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py` |
 | **Scaffolding** — mutation specifications | 12 | `scripts/mutations/*.json` |

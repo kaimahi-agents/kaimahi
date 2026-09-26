@@ -50,8 +50,19 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `--quickstart` goes straight on to a running agent;
-`KMX_VERSION=v0.1.0` pins a version; `KMX_BIN_DIR=DIR` installs elsewhere.
+without sudo. `KMX_VERSION=v0.1.0` pins a version; `KMX_BIN_DIR=DIR`
+installs elsewhere. The current latest tag, `v0.1.0`, predates Orka:
+`install.sh --quickstart` refuses it rather than launching its legacy
+quickstart, and a plain v0.1.0 install does not offer Orka quickstart as its
+next action. Until an Orka-capable release is published, install from source:
+
+```bash
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+kmx quickstart
+```
+
+Once an Orka-capable release is tagged, the installer's `--quickstart` option
+will install it and then launch its quickstart.
 
 The other route, if you have a Go toolchain:
 
@@ -143,8 +154,10 @@ own. Re-installing is the whole upgrade. Read the changelog for the versions
 you skipped — below 1.0 a minor bump may change behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to; `kmx up` is idempotent and re-applies the pinned
-kagent chart and the agents.
+cluster until you ask it to; `kmx up` is idempotent and re-applies the model
+server and the pinned Orka runtime. A bare `kmx up` no longer installs the
+legacy kagent chart or its agents — that is `kmx up --step kagent`, which
+exists only until those components are retired.
 
 ## Upgrading the plane
 

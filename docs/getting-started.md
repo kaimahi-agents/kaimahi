@@ -7,10 +7,13 @@ or [migration](migrate.md); a migrated application's Deployment stays owner-mana
 Tool traffic remains the application owner's responsibility; the Kaimahi tool
 gateway is retired.
 
-The local kagent quickstart below is the **existing legacy implementation**,
-pending the code transition, not an Orka-native authoring tutorial. Native Orka
-only versus kagent YAML over Orka remains open. Keeping this runnable path does
-not settle that choice, and `orka.harness.v2` is outside the direction.
+The local quickstart below is the **supported Orka first-answer path**: it
+ends with a native Orka Agent answering a question. The explicit `kmx up
+--step kagent|agent|tools-agent` invocations are the **remaining legacy
+implementation**, kept runnable only until their retirement slices land.
+Native Orka only versus kagent YAML over Orka remains open. Keeping those
+steps runnable does not settle that choice, and `orka.harness.v2` is outside
+the direction.
 
 ## Prerequisites
 
@@ -18,7 +21,8 @@ not settle that choice, and `orka.harness.v2` is outside the direction.
 |---|---|
 | Go 1.26+ | current development `kmx` with Orka commands; also fetched plane builds |
 | Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
-| kind, kubectl, Helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
+| kind, kubectl | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
+| Helm | only the explicit legacy `kmx up --step kagent`; the Orka path is a pinned manifest |
 | git, make | checkout-based development and remaining scripts/helpers |
 | authenticated Azure CLI | AKS only; never installed by kmx |
 
@@ -55,12 +59,13 @@ kmx up --step ollama
 kmx up --step model
 ```
 
-These prepare kind and the keyless model server without installing kagent.
+These prepare kind and the keyless model server without installing Orka or the
+legacy runtime.
 Then install Orka on that selected cluster. Its default Provider points at this
 Ollama server; for an existing cluster use your own model/Provider configuration
 as described in [Orka](orka.md). Installation alone does not govern model traffic.
 For a new native Agent, use [agent create](#an-agent-of-your-own); the kagent
-quickstart/chat/model-governance sections below are a separate legacy path.
+chat/model-governance sections below are a separate legacy path.
 
 For an existing application on kind, deploy the plane and follow the owner-reviewed
 [migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
@@ -77,11 +82,11 @@ rows is evidence of that route, not blanket governance of the application.
 
 ## One command, and an agent that answers
 
-This section is the **legacy kagent first-answer path**. With a current kmx:
+This section is the **supported Orka first-answer path**. With a current kmx:
 
 ```bash
-export KIND_CLUSTER=kagent-local
-export KUBE_CTX=kind-kagent-local
+export KIND_CLUSTER=kmx-local
+export KUBE_CTX=kind-kmx-local
 kmx quickstart
 kmx quickstart --output json --task 'Who are you?'
 ```
@@ -100,17 +105,19 @@ ClusterRole can list the documented resource kinds across namespaces. Cancelling
 the wizard stops active work but leaves completed resources in place. Review the
 [tool and RBAC boundary](orka-k8s-tool.md) before running it on a shared cluster.
 
-In an interactive terminal, `quickstart` checks whether Ollama is already
-running on the host and lists only models it reports as installed. Reuse is
-opt-in; the bundled in-cluster model remains the default. After kind is ready,
-KMX verifies that its node can reach the selected model and falls back to the
-bundled model if it cannot. JSON and redirected runs do not probe or prompt.
+`quickstart` is deterministic and non-interactive: no model picker and no
+prompt, so the same command on the same machine produces the same cluster, the
+same Provider and the same Agent. That is what lets an unattended caller rerun
+it and compare. Choosing your own model is the wizard above.
 
-On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, a reduced kagent
-profile and hello-world, then requires a completed task with a readable answer.
-It deploys no plane. It reconciles its recognized minimal profile, preserves
-deployed full/custom kagent releases and refuses unreadable/malformed release
-state. Other setup steps still reconcile: this is not a read-only probe.
+On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, the pinned Orka
+release with its keyless Provider and Task result-reader account, and the fixed
+`hello-world-agent` Provider/Agent bundle; then it asks a **fresh** Task and
+requires a readable answer. It deploys no plane and installs no Helm chart.
+Rerunning reuses an **exact** match only: a Provider or Agent whose live spec
+differs from the one quickstart would write is somebody's deliberate change, so
+it stops rather than overwrite it. A half-finished run resumes. Other setup
+steps still reconcile: this is not a read-only probe.
 
 JSON stdout is one document; subprocess/progress output goes to stderr.
 `governed: false` means **this invocation did not enable governance**; reruns may
@@ -121,13 +128,29 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 
 ```bash
 kmx up
-kmx agent chat hello-world 'Who are you?'
-kmx agent chat --interactive hello-tools
-kmx status
+kmx orka status
+kmx agent chat hello-world-agent --interactive --runtime orka --namespace orka-system
 ```
 
-`up` explicitly upgrades/installs the full kagent application profile, including
-the tool server and original `hello-tools` agent from
+A bare `up` brings up the **runtime**: kind, the keyless Ollama model server and
+the pinned Orka release with its Provider and Task result-reader account. It
+deploys no agent — `kmx quickstart` is the command that ends with one
+answering, and `kmx agent create` is the one that authors your own. The chat
+line above therefore needs an Agent from one of those two commands first; Orka
+chat is interactive, and one-shot chat remains kagent-specific.
+
+The legacy kagent runtime and its two demonstration agents remain reachable
+only as explicit steps, until their retirement slices land:
+
+```bash
+kmx up --step kagent
+kmx up --step agent
+kmx up --step tools-agent
+kmx agent chat hello-world 'Who are you?'
+```
+
+Those steps install the full kagent application profile, including the tool
+server and original `hello-tools` agent from
 [`k8s/tools-agent.yaml`](../k8s/tools-agent.yaml). Its MCP wiring is direct to the
 kagent tool server, not the retired Kaimahi gateway. Both setup paths preserve
 existing non-default routing rather than silently repointing an owner's tools.

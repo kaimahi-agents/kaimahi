@@ -129,7 +129,7 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 	}
 	for _, doc := range bundle.Documents()[1:] {
 		if a.liftReuse {
-			id, err := a.matchingLiftResource(ctx, opt.Namespace, doc)
+			id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 			if err != nil {
 				return err
 			}
@@ -143,21 +143,8 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		}
 	}
 	key := bundle.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"].(string)
-	// The validated key is quoted for the Go template. Iterate key NAMES only;
-	// even an empty credential value counts as present, never as authenticated.
-	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
-	marker, err := a.orkaCapture(ctx, nil, "-n", opt.Namespace, "get", "secret", opt.Secret, "--ignore-not-found=true", "-o", template)
-	if err != nil {
-		return fmt.Errorf("cannot read Provider Secret key presence: %w", err)
-	}
-	switch string(marker) {
-	case "":
-		return fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", opt.Namespace, opt.Secret)
-	case "secret\n":
-		return fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
-	case "secret\npresent":
-	default:
-		return fmt.Errorf("Provider Secret key check returned an invalid presence marker")
+	if err := a.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, key); err != nil {
+		return err
 	}
 	report("done", nil)
 	stage = "Validate server admission"
@@ -214,7 +201,7 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 		var err error
 		reused := false
 		if a.liftReuse {
-			match, checkErr := a.matchingLiftResource(ctx, opt.Namespace, doc)
+			match, checkErr := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 			if checkErr != nil {
 				return checkErr
 			}
@@ -268,6 +255,32 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 
 func orkaObjectName(doc map[string]any) string {
 	return doc["metadata"].(map[string]any)["name"].(string)
+}
+
+// orkaProviderSecretPresent proves the referenced Secret KEY exists before
+// anything is created, and never reads its value.
+//
+// kmx does not provision Provider credentials: a Secret it wrote a skeleton
+// into would be a credential nobody minted, and an Agent wired to it would
+// fail at the first model call with an authentication error instead of here.
+func (a *App) orkaProviderSecretPresent(ctx context.Context, namespace, secret, key string) error {
+	// The validated key is quoted for the Go template. Iterate key NAMES only;
+	// even an empty credential value counts as present, never as authenticated.
+	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
+	marker, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "secret", secret, "--ignore-not-found=true", "-o", template)
+	if err != nil {
+		return fmt.Errorf("cannot read Provider Secret key presence: %w", err)
+	}
+	switch string(marker) {
+	case "":
+		return fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", namespace, secret)
+	case "secret\n":
+		return fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
+	case "secret\npresent":
+		return nil
+	default:
+		return fmt.Errorf("Provider Secret key check returned an invalid presence marker")
+	}
 }
 func orkaPlural(kind string) string { return strings.ToLower(kind) + "s.core.orka.ai" }
 

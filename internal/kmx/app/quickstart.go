@@ -1,20 +1,31 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
 
+// QuickstartAgent is the Orka Provider and Agent this command creates.
+//
+// It is fixed rather than a flag for the same reason there is no --agent:
+// quickstart deploys one known bundle and then asks THAT agent the question.
+// A name that could differ from the thing being deployed would let the
+// command answer about something it did not create. Authoring your own is
+// `kmx agent create`; asking any agent anything is `kmx agent chat`.
+const QuickstartAgent = "hello-world-agent"
+
 // QuickstartOptions configure the shortest path to a first answer.
 type QuickstartOptions struct {
 	// Output is "text" for a person or "json" for whatever is driving.
 	Output string
-	Agent  string
 	Task   string
 }
 
@@ -45,42 +56,32 @@ type QuickstartResult struct {
 	Next           []string         `json:"next"`
 }
 
-// quickstartValues turns off everything a first question cannot reach, only
-// when creating a release. Existing releases are never reduced to this profile.
-//
-// Measured on the images the chart pulls at kagent 0.9.12 (linux/amd64,
-// compressed): the console is 115MB, the bundled tool server 215MB and the
-// MCP controller 32MB — 362MB and two more pods to become Ready before
-// anybody sees an answer, for three components the hello-world agent never
-// touches. `kmx up` afterwards installs the full set by simply not passing
-// these, and helm reconciles the difference.
-//
-// The console is turned off by replica count rather than a switch because
-// the chart has no `ui.enabled` at this version. That is a fact about kagent
-// 0.9.12, and if a later chart grows the switch this should use it.
-var quickstartValues = []string{
-	"--set-string", "kaimahi.profile=first-answer",
-	"--set", "kagent-tools.enabled=false",
-	"--set", "kmcp.enabled=false",
-	"--set", "ui.replicas=0",
+// quickstartStep is one addressable phase of the first-answer journey.
+type quickstartStep struct {
+	name string
+	fn   func() error
 }
 
 // Quickstart is the whole distance from a machine with a container engine to
 // an agent answering a question, in one command.
 //
 // It is not a new journey. Every step is `kmx up`'s, in `kmx up`'s order,
-// with the same waits and the same fail-closed checks — what it does is
-// DEFER: the tool server, the second agent and the governance plane are not
-// on the path to a first answer, so they are not on this path either. What
-// is left is the shortest thing that can honestly be called a working agent.
+// with the same waits and the same fail-closed checks — what it ADDS is the
+// one thing `up` deliberately does not: a fixed Orka Agent and a question
+// put to it. The runtime is Orka; nothing on this path installs, reads or
+// depends on the legacy kagent runtime.
+//
+// It is deterministic and non-interactive on purpose. There is no model
+// picker and no prompt: the same command on the same machine produces the
+// same cluster, the same Provider and the same Agent, which is what lets an
+// unattended caller rerun it and compare. Choosing your own model and
+// authoring your own agent is `kmx quickstart-wizard`.
+//
 // This command does not enable governance; existing governance may survive
 // a rerun and is not assessed here.
 func (a *App) Quickstart(opt QuickstartOptions) error {
 	started := a.timeNow()
-	agent, task := opt.Agent, opt.Task
-	if agent == "" {
-		agent = config.DefaultAgent
-	}
+	task := opt.Task
 	if task == "" {
 		task = config.DefaultTask
 	}
@@ -95,12 +96,12 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 
 	// Machine-readable means the WHOLE stream, not the last line of it.
 	// Every command kmx shells out to writes its own stdout to kmx's
-	// (cmd/kmx wires Runner.Stdout to it), so `kind create`, `helm upgrade`
-	// and every `kubectl wait` would land in front of the JSON and the
-	// caller would get "Expecting value: line 1 column 1". Under --output
-	// json those go to stderr with everything else humans read, leaving
-	// stdout carrying exactly one document. `kmx metrics` already draws this
-	// line for the same reason.
+	// (cmd/kmx wires Runner.Stdout to it), so `kind create` and every
+	// `kubectl wait` would land in front of the JSON and the caller would
+	// get "Expecting value: line 1 column 1". Under --output json those go
+	// to stderr with everything else humans read, leaving stdout carrying
+	// exactly one document. `kmx metrics` already draws this line for the
+	// same reason.
 	if asJSON {
 		a.Run.Stdout = a.Err
 	}
@@ -108,57 +109,23 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		return err
 	}
 
-	// Equip the machine first. Everything after this point assumes kind,
-	// kubectl and Helm are runnable, and the whole point of the command is
-	// that a machine which had none of them still gets there.
-	if err := a.preflight(depKind, depKubectl, depHelm, a.engineDependency()); err != nil {
+	// Equip the machine first. Everything after this point assumes kind and
+	// kubectl are runnable, and the whole point of the command is that a
+	// machine which had neither still gets there. Helm is not on this path:
+	// the Orka runtime is a pinned manifest, not a chart.
+	if err := a.preflight(depKind, depKubectl, a.engineDependency()); err != nil {
 		return err
 	}
 	if len(a.provisioned) > 0 && !asJSON {
 		a.notef("Tools this run is using:")
 		toolchain.Report(a.Err, a.provisioned)
 	}
-	if err := a.maybeSelectLocalModel(!asJSON); err != nil {
+
+	if err := a.GuardCreateIn("create a local cluster and a first agent", "kmx quickstart", OrkaPathNamespaces); err != nil {
 		return err
 	}
 
-	if err := a.GuardCreate("create a local cluster and a first agent", "kmx quickstart"); err != nil {
-		return err
-	}
-
-	steps := []struct {
-		name string
-		fn   func() error
-	}{
-		{"Prepare kind cluster", func() error {
-			if err := a.stepCluster(); err != nil {
-				return err
-			}
-			a.verifySelectedLocalModel()
-			return nil
-		}},
-		{"Deploy Ollama", func() error {
-			if a.selectedLocalModel != nil {
-				return nil
-			}
-			return a.stepOllama()
-		}},
-		{"Pull model " + a.Cfg.Model, func() error {
-			if a.selectedLocalModel != nil {
-				return nil
-			}
-			return a.stepModel()
-		}},
-	}
-	steps = append(steps,
-		struct {
-			name string
-			fn   func() error
-		}{"Install or verify kagent", a.stepQuickstartKagent},
-		struct {
-			name string
-			fn   func() error
-		}{"Deploy the " + agent + " agent", a.stepAgent})
+	steps := a.quickstartSteps()
 	total := len(steps) + 1
 	for i, step := range steps {
 		if err := a.runPhase(phase{current: i + 1, total: total, name: step.name}, step.fn); err != nil {
@@ -167,36 +134,15 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	}
 
 	var answer string
-	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + agent + " a question"}, func() error {
-		raw, status, err := a.askAgent(agent, task, "", false, ChatRetryable)
-		if err != nil {
-			return err
-		}
-		answer, err = quickstartAnswer(raw, status)
-		if err != nil {
-			fmt.Fprint(a.Err, safeTerminal(raw))
-		}
+	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + QuickstartAgent + " a question"}, func() error {
+		var err error
+		answer, err = a.quickstartAnswer(task)
 		return err
 	}); err != nil {
 		return err
 	}
 
-	result := QuickstartResult{
-		OK:             true,
-		Context:        a.Cfg.KubeContext,
-		Cluster:        a.Cfg.KindCluster,
-		Agent:          agent,
-		Manifest:       "k8s/hello-world.yaml (embedded kagent example; Orka authoring: docs/kmx.md#kmx-agent-create)",
-		Question:       task,
-		Answer:         answer,
-		Governed:       false,
-		Next:           a.quickstartFollowups(agent),
-		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
-	}
-	for _, t := range a.provisioned {
-		result.Tools = append(result.Tools, QuickstartTool{Name: t.Name, Version: t.Version, Source: string(t.Source)})
-	}
-
+	result := a.quickstartResult(task, answer, started)
 	if asJSON {
 		encoder := json.NewEncoder(a.Out)
 		encoder.SetIndent("", "  ")
@@ -205,35 +151,153 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 
 	fmt.Fprintf(a.Out, "\n%s\n", safeTerminal(answer))
 	a.complete("An agent answered", started)
-	if a.selectedLocalModel == nil {
-		a.notef("\n%s  This command does not enable governance.\n"+
-			"Existing governance is not assessed by quickstart. To configure it:\n"+
-			"  %s  # the metering proxy and its ledger\n"+
-			"  %s  # configure agent routing (docs/spend.md)",
-			a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
-	} else {
-		a.notef("\n%s  Host Ollama reuse is a direct route; the bundled plane/govern preset requires in-cluster Ollama.",
-			a.presenter().Warning("GOVERNANCE"))
-	}
+	a.notef("\n%s  This command does not enable governance.\n"+
+		"Existing governance is not assessed by quickstart. To configure it:\n"+
+		"  %s  # the metering proxy and its ledger\n"+
+		"  %s  # put an application's model traffic on the seam (docs/migrate.md)",
+		a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
 	a.quickstartNext(cliui.New(a.Err), result)
 	return nil
 }
 
-func (a *App) quickstartFollowups(agent string) []string {
-	orka := a.operationCommand("orka", "install")
-	if a.selectedLocalModel != nil {
-		orka = a.operationCommand("orka", "install", "--model", a.selectedLocalModel.Model,
-			"--model-url", strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/")+"/v1")
+// quickstartSteps is the supported clean-machine sequence, in order.
+func (a *App) quickstartSteps() []quickstartStep {
+	return []quickstartStep{
+		{"Prepare kind cluster", a.stepCluster},
+		{"Deploy Ollama", a.stepOllama},
+		{"Pull model " + a.Cfg.Model, a.stepModel},
+		{"Install Orka " + OrkaVersion, a.stepOrka},
+		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartAgent},
 	}
-	next := []string{
-		a.operationCommand("agent", "chat", agent, "ask it something else"),
-		orka,
-		a.operationCommand("up"),
+}
+
+func (a *App) quickstartResult(question, answer string, started time.Time) QuickstartResult {
+	result := QuickstartResult{
+		OK:      true,
+		Context: a.Cfg.KubeContext,
+		Cluster: a.Cfg.KindCluster,
+		Agent:   QuickstartAgent,
+		Manifest: fmt.Sprintf("Orka Provider/Agent %s in %s, generated by kmx (authoring: docs/kmx.md#kmx-agent-create)",
+			QuickstartAgent, OrkaNamespace),
+		Question:       question,
+		Answer:         answer,
+		Governed:       false,
+		Next:           a.quickstartFollowups(),
+		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
 	}
-	if a.selectedLocalModel == nil {
-		next = append(next, a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+	for _, t := range a.provisioned {
+		result.Tools = append(result.Tools, QuickstartTool{Name: t.Name, Version: t.Version, Source: string(t.Source)})
 	}
-	return next
+	return result
+}
+
+// quickstartCreateOptions is the one bundle quickstart deploys.
+//
+// The Provider reuses the placeholder key `kmx orka install` already wrote
+// for its own keyless Provider rather than minting a second one: the
+// in-cluster endpoint needs no credential, and Orka's Provider schema
+// requires a secretRef whether or not the endpoint reads it.
+func (a *App) quickstartCreateOptions() CreateOptions {
+	port := a.quickstartResultPort
+	if port == "" {
+		port = "19180"
+	}
+	return CreateOptions{
+		Name:                 QuickstartAgent,
+		Namespace:            OrkaNamespace,
+		Description:          "The agent kmx quickstart deploys to answer a first question",
+		ProviderType:         "openai",
+		Model:                a.Cfg.Model,
+		BaseURL:              orkaDefaultModelURL,
+		Secret:               orkaDefaultProvider + "-provider-key",
+		SecretKey:            "api-key",
+		ResultServiceAccount: orkaResultAccount,
+		OrkaAPIService:       "orka-api",
+		ResultPort:           port,
+	}
+}
+
+// stepQuickstartAgent creates the fixed Provider and Agent, or reuses them.
+//
+// Reuse is EXACT-MATCH ONLY. A live Provider or Agent whose spec differs
+// from the one quickstart would write is somebody's deliberate change — an
+// edited endpoint, a different model, a hand-applied bundle — so this stops
+// rather than overwrite it, exactly as a rerun over a full kagent release
+// used to preserve that release. A half-finished run resumes: whichever of
+// the two already matches is kept, and the other is created.
+func (a *App) stepQuickstartAgent() error {
+	ctx, cancel := context.WithTimeout(a.operationContext(), 10*time.Minute)
+	defer cancel()
+	opt := a.quickstartCreateOptions()
+	bundle, err := createOrkaBundle(opt)
+	if err != nil {
+		return err
+	}
+	if err := a.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, opt.SecretKey); err != nil {
+		return err
+	}
+	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
+		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
+		if err != nil {
+			if errors.Is(err, errOrkaConfigurationDrift) {
+				return fmt.Errorf("%w; keep the drifted resource and run `kmx agent create` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
+			}
+			return err
+		}
+		if id == nil {
+			created, err := a.createOrkaObject(ctx, opt.Namespace, doc)
+			if err != nil {
+				return err
+			}
+			a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", created.Kind, created.Name, created.UID)
+			id = &created
+		} else {
+			a.notef("Reusing matching %s/%s (UID %s).", id.Kind, id.Name, id.UID)
+		}
+		if err := a.waitOrkaReady(ctx, opt.Namespace, *id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// quickstartAnswer creates a FRESH Task and returns its retrieved reply.
+//
+// Fresh every run, never reused: an existing completed Task holds an earlier
+// run's answer, and reporting it as this run's would turn "the agent
+// answered" into "the agent answered once, some time ago". The reply must be
+// non-blank after sanitisation — a Task that completed with nothing readable
+// in it is a failed run, not an answer.
+func (a *App) quickstartAnswer(task string) (string, error) {
+	// Eight minutes, not ten: the result token is minted for ten and the
+	// session refuses to start unless the grant outlasts the deadline by
+	// thirty seconds. A ten-minute deadline here would refuse every run.
+	ctx, cancel := context.WithTimeout(a.operationContext(), 8*time.Minute)
+	defer cancel()
+	opt := a.quickstartCreateOptions()
+	opt.Task = task
+	session, err := a.openOrkaResultSession(ctx, opt)
+	if err != nil {
+		return "", err
+	}
+	defer session.close()
+	return a.runQuickstartOrkaTaskProfile(ctx, QuickstartAgent, OrkaNamespace, task, nil, nil, session)
+}
+
+// quickstartFollowups are the commands this cluster can actually run next.
+//
+// The chat follow-up carries --interactive because Orka chat has no one-shot:
+// `kmx agent chat --runtime orka` without it is refused by name, so printing
+// the shorter command would end the first answer with an instruction that
+// fails.
+func (a *App) quickstartFollowups() []string {
+	return []string{
+		a.operationCommand("agent", "chat", QuickstartAgent, "--interactive", "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
+		a.operationCommand("agent", "create"),
+		a.operationCommand("orka", "status"),
+		a.operationCommand("plane"),
+		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", orkaDefaultProvider+"/"+a.Cfg.Model),
+	}
 }
 
 func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
@@ -241,35 +305,16 @@ func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
-			{Label: "Install Orka", Command: result.Next[1], Detail: "prerequisite for Orka authoring; docs/kmx.md#kmx-agent-create"},
-			{Label: "Install the full runtime", Command: result.Next[2], Detail: "tool server and second agent"},
+			{Label: "Author your own Orka Agent", Command: result.Next[1], Detail: "docs/kmx.md#kmx-agent-create"},
+			{Label: "Inspect the Orka runtime", Command: result.Next[2], Detail: "what is installed, and what it can resolve"},
 			{Label: "Delete this cluster", Command: down, Detail: "delete the cluster and everything in it"},
 		}))
 	} else {
 		a.notef("\nNEXT  %s  # ask it something else\n"+
-			"      %s  # prerequisite for Orka authoring; docs/kmx.md#kmx-agent-create\n"+
-			"      %s  # the rest of the runtime (tool server, second agent)\n"+
+			"      %s  # author your own agent; docs/kmx.md#kmx-agent-create\n"+
+			"      %s  # what is installed, and what it can resolve\n"+
 			"      %s  # delete the cluster and everything in it", result.Next[0], result.Next[1], result.Next[2], down)
 	}
-}
-
-// quickstartKagent keeps the former internal call site on the canonical
-// monotonic implementation; there is intentionally no second Helm flow.
-func (a *App) quickstartKagent() error { return a.stepQuickstartKagent() }
-
-func quickstartAnswer(raw string, status int) (string, error) {
-	if status != 0 {
-		return "", fmt.Errorf("the agent was deployed but did not answer: kagent invoke exited %d", status)
-	}
-	task := parseTask(raw)
-	if task.Status.State != "completed" {
-		return "", fmt.Errorf("the agent was deployed but its task did not complete (state %q)", task.Status.State)
-	}
-	answer := strings.TrimSpace(firstText(task))
-	if strings.TrimSpace(safeTerminal(answer)) == "" {
-		return "", fmt.Errorf("the agent was deployed but no reply could be read from its response")
-	}
-	return answer, nil
 }
 
 // shellArg quotes a POSIX shell argument, not a Go string literal.
@@ -292,18 +337,4 @@ func (a *App) operationCommand(args ...string) string {
 		parts = append(parts, shellArg(arg))
 	}
 	return strings.Join(parts, " ")
-}
-
-// parseTask decodes the A2A task out of kagent's combined output, returning
-// a zero task when there is nothing to decode.
-func parseTask(combined string) a2aTask {
-	var task a2aTask
-	line := lastJSONLine(combined)
-	if line == "" {
-		return task
-	}
-	if err := json.Unmarshal([]byte(line), &task); err != nil {
-		return a2aTask{}
-	}
-	return task
 }

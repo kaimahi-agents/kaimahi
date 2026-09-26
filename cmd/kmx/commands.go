@@ -28,11 +28,12 @@ func newCtxCommand(state *commandState) *cobra.Command {
 // container engine to an agent that has answered a question.
 //
 // It is a sibling of `up` rather than a flag on it because the two make
-// different promises. `up` brings up the RUNTIME — every agent, the tool
-// server, everything a later step might need. `quickstart` promises one
-// thing, an answer, and defers everything that is not on the way to it.
-// Folding them together would mean one command with two contracts and a flag
-// deciding which you got.
+// different promises. `up` brings up the RUNTIME — a cluster, a keyless model
+// server and the pinned Orka release — and deploys no agent. `quickstart`
+// promises one thing, an answer, and adds the one thing `up` deliberately
+// leaves out: a fixed Orka Agent and a question put to it. Folding them
+// together would mean one command with two contracts and a flag deciding
+// which you got.
 func newQuickstartCommand(state *commandState) *cobra.Command {
 	var opt app.QuickstartOptions
 	cmd := &cobra.Command{

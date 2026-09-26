@@ -302,13 +302,11 @@ These are safety-semantic and format fixes, not merely color changes:
   question phase done. `governed: false` retains the unchanged JSON key set and
   means this invocation did not enable governance, not that the cluster has none.
   Quickstart/up/plane no longer claim existing routing is absent on a rerun.
-- Quickstart preserves every deployed kagent application release, with only a
-  controller rollout check. A valid empty release listing permits minimal
-  `helm install`, never application upgrade; concurrent creation therefore fails
-  rather than overwriting. Non-deployed releases and unreadable/unexpected
-  listings refuse. Explicit Helm 3/4 status flags replace `list --all`. New
-  application installs and full-profile `up` use Helm workload/job waits; the
-  shared CRD upgrade/install and other setup mutations are not removed.
+- Quickstart no longer discovers, installs, or reconciles a kagent Helm
+  release. It reconciles the pinned Orka runtime, then reuses only an exact
+  match of its fixed Provider and Agent; a differing live spec is refused
+  rather than overwritten. Every run creates a fresh Task. The explicit
+  legacy `kmx up --step kagent` remains the only setup path that uses Helm.
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
   and context names. Credential bounds and incompatible Secret/preset wiring are
@@ -339,9 +337,11 @@ positive per-call governance receipts in chat. Existing chat route labels attest
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.
 
-Residual policies: broad one-shot chat/quickstart transport retries are unchanged
+Residual policies: broad one-shot **kagent** chat transport retries are unchanged
 (up to three retries for matching connection refusal, EOF, or reset). Ambiguous
 disconnects can repeat effects, including with an explicit one-shot session.
+`kmx quickstart` no longer shares that policy: the Orka path creates one Task and
+polls its result without resubmitting.
 Question-only resampling remains at most twice under its existing exclusions.
 Interactive `/retry` resends a message explicitly, not exactly once. History still
 skips malformed event data and limits verbose payload display; replay deduplication

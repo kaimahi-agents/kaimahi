@@ -14,10 +14,15 @@ import (
 // and an interface over one implementation is the most expensive kind. When
 // a second one earns the abstraction it can have it.
 //
-// It is deliberately NOT part of `kmx up`. `up` brings up this project's own
-// runtime; installing somebody else's platform is a separate decision with a
-// separate blast radius — 17 CRDs, four ValidatingAdmissionPolicies and two
-// Deployments — and folding it in would make one command mean two things.
+// It is a separate command from `kmx up` rather than the only way to get
+// Orka. `up` installs the pinned release as its own runtime step, on the
+// cluster it just created; this group is how the same install reaches a
+// cluster kmx did not bring up, and how that install is inspected. What it
+// does NOT carry is the runtime identity: `kmx up --step orka` provisions the
+// Task result account, and a standalone install deliberately does not, so
+// installing somebody else's platform — 17 CRDs, four
+// ValidatingAdmissionPolicies and two Deployments — never mints a grant as a
+// side effect.
 func newOrkaCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "orka",

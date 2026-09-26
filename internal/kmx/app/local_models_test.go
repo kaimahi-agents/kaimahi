@@ -224,23 +224,6 @@ func TestLiveHostModelConfigIsPreservedAcrossAgentStep(t *testing.T) {
 	}
 }
 
-func TestHostModelFollowupsCarryOrkaRouteAndOmitIncompatibleGovernance(t *testing.T) {
-	a := &App{Cfg: &config.Config{KindCluster: "demo", KubeContext: "kind-demo", ContainerEngine: "docker", Credential: "hello-world"},
-		selectedLocalModel: &localModel{Provider: "ollama", Model: "qwen3:8b", Endpoint: "http://172.18.0.1:11434"}}
-	next := a.quickstartFollowups("hello-world")
-	if len(next) != 3 {
-		t.Fatalf("host followups include incompatible governance: %q", next)
-	}
-	if !strings.Contains(next[1], "--model qwen3:8b") || !strings.Contains(next[1], "--model-url http://172.18.0.1:11434/v1") {
-		t.Fatalf("Orka followup lost verified route: %q", next[1])
-	}
-	for _, command := range next {
-		if strings.Contains(command, " plane") || strings.Contains(command, " govern") {
-			t.Fatalf("incompatible followup offered: %q", command)
-		}
-	}
-}
-
 func TestNoninteractiveAndExplicitModelSkipDetection(t *testing.T) {
 	for name, tc := range map[string]struct {
 		allow    bool

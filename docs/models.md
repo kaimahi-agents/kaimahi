@@ -199,23 +199,36 @@ Custody properties worth knowing:
 
 ## Swapping the local model
 
-An interactive `kmx quickstart` or full `kmx up` first probes the host's
-loopback Ollama API. It offers reuse only when `/api/tags` reports at least one
-installed model. Reuse is opt-in; KMX's bundled model remains the default.
-`--output json`, redirected sessions, `kmx up --step ...`, and an explicit
-`MODEL` never probe or prompt.
+A full `kmx up` first probes the host's loopback Ollama API. It offers reuse
+only when `/api/tags` reports at least one installed model. Reuse is opt-in;
+KMX's bundled model remains the default. `--output json`, redirected sessions,
+`kmx up --step ...`, and an explicit `MODEL` never probe or prompt.
+
+`kmx quickstart` never probes or prompts at all. It is deterministic and
+non-interactive on purpose — there is no host-model picker on that path, so
+it always deploys the in-cluster Ollama and the bundled model, and the same
+command on the same machine produces the same cluster, Provider and Agent.
+Choosing a host model while the runtime starts is `kmx quickstart-wizard`.
 
 Before reusing host Ollama, KMX verifies the selected tag through an endpoint
 reachable from the kind node, trying the engine host alias and kind bridge
 gateway. If neither works, setup installs the bundled model instead. Reuse
 skips both the in-cluster Ollama deployment and model pull. Limit host Ollama's
 exposure to the container network rather than publishing its unauthenticated
-API to the LAN. The verified route is preserved by later `up --step agent`
-runs. Orka follow-up commands include that route explicitly; the bundled
-plane/govern preset is not offered because it requires in-cluster Ollama.
+API to the LAN.
 
-`MODEL=<tag> kmx up --step model` pulls another Ollama model into the pod; then
-full `kmx up` renders that model into the bundled ModelConfig. Test it with
+A bare `kmx up` writes the verified route into the **Orka** `local` Provider
+(`defaultModel` and `baseURL` in `orka-system`), which is the only model
+configuration that run creates. It renders no kagent `ModelConfig`: the bundled
+preset is rendered only by the explicit `kmx up --step agent` (and `--step
+tools-agent`), where a later run also preserves an already-verified host route.
+The follow-up commands printed after a bare run carry no explicit host endpoint —
+the Provider holds it — and the bundled plane preset is not offered because it
+requires in-cluster Ollama.
+
+`MODEL=<tag> kmx up --step model` pulls another Ollama model into the pod; a full
+`kmx up` then resolves that model through the Orka Provider it wires, and
+`kmx up --step agent` renders it into the bundled kagent ModelConfig. Test it with
 several fresh chats before trusting it:
 small models misfire kagent's built-in `ask_user` tool, and small models
 that call a tool correctly can still garble its output in the summary

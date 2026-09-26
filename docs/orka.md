@@ -143,8 +143,10 @@ an adopter should learn that here, not at their first model call.
 ## Author an Orka Agent and get an answer
 
 `agent create` authors Orka resources; it does not install Orka. On the local
-kind path, reuse the Ollama model from `quickstart` or `up`, then install the
-pinned release in that **same** context:
+kind path the runtime is already there: `kmx up` and `kmx quickstart` both
+install the pinned release and leave the Ollama model in place, so author
+against that **same** context. On a cluster kmx did not bring up, install it
+first:
 
 ```bash
 kmx --context kind-kaimahi-p1 orka install
@@ -156,9 +158,16 @@ it never adopts or updates the installer's shared Provider `local`. This is a
 new Agent/Task example, not a continuation command for an Agent you already
 created. Choose unused names and output paths; creation refuses collisions.
 
-Task execution requires an existing result account. An operator with RBAC
-creation permission can provision this dedicated account separately; these
-commands contain names only, not token values:
+Task execution requires an existing result account, and the runtime step owns
+it. `kmx up --step orka` provisions exactly this account, Role and
+RoleBinding, and so does every run that includes that step — a bare `kmx up`
+and `kmx quickstart`. A standalone `kmx orka install` does **not**: it
+installs the release and wires the keyless Provider, and nothing more.
+`agent create` never does either: it only NAMES an account, so authoring an
+agent cannot mint a grant nobody read as a grant. On a cluster whose Orka
+arrived another way — including one where only `kmx orka install` has run —
+an operator with RBAC creation permission can provision the same account
+separately; these commands contain names only, not token values:
 
 ```bash
 kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
@@ -216,14 +225,14 @@ MCP translation, application image deployment or governance is added here.
 ## The whole journey, from nothing
 
 ```console
-$ kmx up                                    # a cluster, a model, an agent runtime
+$ kmx up                                    # a cluster, a model, and the Orka runtime
 $ kmx plane                                 # the model-traffic bridge
-$ kmx orka install                          # Orka, and a Provider with no key
 $ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 ```
 
-The fourth command is the one that governs anything. The first three are the
-front door.
+The third command is the one that governs anything. The first two are the
+front door — `kmx up` installs Orka itself, so there is no separate
+`kmx orka install` on this path.
 
 ## Authoring an agent for Orka
 

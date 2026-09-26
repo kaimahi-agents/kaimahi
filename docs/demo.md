@@ -120,7 +120,7 @@ checklist is preserved in the
 [pre-retirement source at `10c561d`](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/demo.md).
 
 For current demonstrations use [native Orka creation](orka.md),
-[model-traffic migration](migrate.md), or the retained [kagent first-answer
+[model-traffic migration](migrate.md), or the [Orka first-answer
 path](getting-started.md#one-command-and-an-agent-that-answers). The original
 [direct kagent MCP example](tools.md) remains; not all MCP support is retired.
 Model ledger rows prove traffic crossed the model seam, not governance of tools

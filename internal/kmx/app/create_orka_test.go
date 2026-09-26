@@ -99,6 +99,9 @@ func TestOrkaKubectlHelper(t *testing.T) {
 			time.Sleep(time.Hour)
 		}
 		kind, name := args[i+1], args[i+2]
+		if scenario == "denied-provider-read" && kind == "providers.core.orka.ai" {
+			fail()
+		}
 		switch kind {
 		case "crd":
 			if scenario == "missing-crd" {
@@ -208,7 +211,11 @@ func TestOrkaKubectlHelper(t *testing.T) {
 	}
 	if slices.Contains(args, "create") {
 		if slices.Contains(args, "token") {
-			if !slices.Contains(args, "--duration=10m") || !slices.Contains(args, "json") || !slices.Contains(args, "reader") {
+			// The account name is whatever the caller selected (`reader` in the
+			// create tests, `orka-result-reader` on the quickstart path). Match
+			// its suffix so the fake still refuses a token for anything else.
+			if !slices.Contains(args, "--duration=10m") || !slices.Contains(args, "json") ||
+				!slices.ContainsFunc(args, func(s string) bool { return strings.HasSuffix(s, "reader") }) {
 				fail()
 			}
 			if scenario == "token-fail" {
