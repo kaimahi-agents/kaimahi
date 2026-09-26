@@ -143,6 +143,35 @@ Orka Provider schema has no field naming a private certificate authority, so an
 Orka Agent cannot be told to trust the plane's seam; the governed caller is the
 owner's own application, which is the supported path.
 
+`e2e-models` is the model-seam boundary, and it uses no kagent and no agent
+runtime at all. It brings up kind, Ollama and the model with component steps,
+creates the model client's own namespace, deploys the plane, and issues every
+credential into that namespace **by name** — no command there inherits a
+destination. Its governed caller is a direct authenticated TLS call to the
+seam ([`model-seam-probe.sh`](../scripts/model-seam-probe.sh),
+[`spend-race-probe.sh`](../scripts/spend-race-probe.sh)), which is also the
+only way to exercise a protocol the committed upstreams do not speak: an
+agent's OpenAI client sends one shape and retries a 429 on its own. It proves
+a metered `free` ollama row with its caller fields intact, eight concurrent
+calls against a one-token cap admitting exactly one across both replicas, a
+cap denial and ordinary recovery that files no approval request, the ops-port
+metrics, and model onboarding end to end — a Responses-API endpoint that is
+not one of ours, dry-run, overlay precedence and stale-apply refusal, refused
+overlay custody of the admin bearer, metering from the upstream's own token
+fields, the onboarded endpoint reachable only by the proxy, an unmeterable
+answer refused rather than relayed, a protocol contradicting its own path
+refused at load, and the entry surviving the next `kmx plane`.
+
+What that shard no longer proves: the combined `kmx status` counts and the raw
+MCP inventory, which were counts of legacy objects, and the cannot-tell status
+branch on a real cluster, whose probe minted a reader for kagent CRDs. Those
+were deleted rather than rewritten against surviving objects, which would have
+asserted less while looking the same. The rule that branch renders — `unknown`
+is not a zero, it carries kubectl's own reason, and it publishes no counts —
+keeps its unit coverage in `internal/kmx/app/governance_test.go`; what went is
+the proof that a genuinely RBAC-denied reader reaches it. Status is rebuilt on
+its own evidence separately.
+
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as
 a required PR shard. Its native Orka creation journey checks an actual Task answer,

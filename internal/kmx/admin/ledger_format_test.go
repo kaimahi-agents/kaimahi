@@ -46,3 +46,68 @@ func TestOwnerApplicationLedgerRowMatchesTheShardPattern(t *testing.T) {
 		t.Fatalf("a reclassified `free` row satisfies the shard's metered assertion:\n%s", buf.String())
 	}
 }
+
+// The same tie, for the other shard that reads governance evidence out of
+// this table. `e2e-models` no longer produces its rows through an agent
+// client; it calls the TLS seam directly under an explicitly namespaced
+// credential, and the row below is what it greps for. Two columns it
+// depends on are not in the resilience row at all: `free`, which is the
+// committed `ollama` upstream's own classification, and the caller pair
+// the shard asserts was recorded rather than left blank.
+func TestModelShardLedgerRowMatchesTheShardPatterns(t *testing.T) {
+	headers := []string{"created (UTC)", "credential", "upstream", "model", "in", "out", "cents",
+		"source", "status", "caller (claimed)", "from (observed)", "acted for"}
+	row := func(source, claim, addr string) string {
+		var buf bytes.Buffer
+		renderTable(&buf, headers,
+			[][]string{{"2026-09-20 10:00:00", "model-ci", "ollama", trunc("qwen2.5:3b", 16),
+				"11", "3", "0", source, "200", claim, addr, "none"}},
+			ledgerFmt)
+		return buf.String()
+	}
+
+	// Exactly the patterns in .github/workflows/ci.yml's e2e-models job.
+	// `caller` is pinned to the ACTUAL values curl and the port-forwarded
+	// loopback produce, not just to some text sitting before `none`: a
+	// row whose caller pair silently regressed to one of the closed
+	// vocabulary's non-claim words must not satisfy it.
+	metered := regexp.MustCompile(`model-ci +ollama +qwen2\.5:3b +[0-9]+ +[0-9]+ +0 +free +200`)
+	caller := regexp.MustCompile(`(?m)model-ci +ollama .*ua:curl/[0-9].*127\.0\.0\.1 +none *$`)
+	unrecorded := regexp.MustCompile(` (legacy|unrecorded|unknown|none) +(legacy|unrecorded|unknown) +`)
+
+	recorded := row("free", "ua:curl/8.5.0", "127.0.0.1")
+	if !metered.MatchString(recorded) {
+		t.Fatalf("the e2e-models ledger assertion no longer matches this table:\n%s", recorded)
+	}
+	if !caller.MatchString(recorded) {
+		t.Fatalf("the e2e-models caller assertion no longer matches this table:\n%s", recorded)
+	}
+	if unrecorded.MatchString(recorded) {
+		t.Fatalf("a row WITH caller fields satisfies the shard's lost-caller alarm:\n%s", recorded)
+	}
+
+	// The negatives, both of which the shard depends on being able to
+	// fail. A row the plane could not attribute must trip the alarm AND
+	// fail the strengthened positive, for every non-claim word the closed
+	// vocabulary allows in these columns (caller.go: none/unrecorded/legacy
+	// for the claim, unknown/unrecorded/legacy for the observed address) —
+	// not only the `unrecorded` pairing the old, weaker pin exercised. An
+	// `unpriced` row must not pass for the free upstream's either.
+	for _, tc := range []struct{ claim, addr string }{
+		{"legacy", "legacy"},
+		{"unrecorded", "unrecorded"},
+		{"unrecorded", "unknown"},
+		{"none", "unknown"},
+	} {
+		lost := row("free", tc.claim, tc.addr)
+		if !unrecorded.MatchString(lost) {
+			t.Fatalf("a row that lost its caller fields (%s/%s) no longer trips the shard's alarm:\n%s", tc.claim, tc.addr, lost)
+		}
+		if caller.MatchString(lost) {
+			t.Fatalf("a row without a real caller claim (%s/%s) satisfies the strengthened caller assertion:\n%s", tc.claim, tc.addr, lost)
+		}
+	}
+	if metered.MatchString(row("unpriced", "ua:curl/8.5.0", "127.0.0.1")) {
+		t.Fatal("an `unpriced` row satisfies the shard's free-upstream assertion")
+	}
+}
