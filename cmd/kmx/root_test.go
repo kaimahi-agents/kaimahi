@@ -280,22 +280,23 @@ func commandPaths(root *cobra.Command) []string {
 }
 
 // The command tree is the product surface: every path in it is something an
-// operator can type, and every one of them needs a help line, a document and,
-// where it mutates, a guard. A command that arrives without anyone noticing
-// gets none of those. So this list is checked in both directions — each path
-// named here must resolve, and each command in the tree must be named here.
+// operator can type, including hidden retirement stubs. Active paths need a
+// help line, a document and, where they mutate, a guard. A command that
+// arrives without anyone noticing gets none of those. So this list is checked
+// in both directions — each path named here must resolve, and each command in
+// the tree must be named here.
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent list", "agent show",
+		"agent", "agent chat", "agent create", "agent edit", "agent list", "agent show",
 		"aks", "aks up", "aks down", "backup", "budget", "completion",
 		"credential", "credential issue", "credential renew", "credentials",
-		"ctx", "down", "flow", "ledger",
+		"ctx", "down", "flow", "govern", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
 		"plane", "quickstart", "quickstart-wizard",
 		"restore", "status", "console",
-		"up", "version", "watch",
+		"up", "use", "version", "watch",
 	}
 	sort.Strings(want)
 

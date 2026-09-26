@@ -304,17 +304,13 @@ refusals. Cap denials file no approval request; recovery is an operator's delibe
 budget change or the UTC month reset. Direct tool activity has no Kaimahi approval path.
 These records remain visible with `/tools off`.
 
-Native approvals/questions are a **different boundary**: chat may still
-submit a structured native decision, not a retired Kaimahi approval. It
-refuses malformed, duplicate-ID, mixed or incomplete batches before submission;
-every call needs explicit consent. Arguments above the 16 KiB inspection limit
-are refused, not truncated. Choices are validated; free text preserves commas.
-
-A working-stream disconnect polls the exact task rather than reinvoking it.
-Enhanced-input resize stops chat without submitting the current message/decision
-and restores terminal state; restart/resume to continue. This is safe abort,
-not live reflow or undo of earlier actions. Renderers keep durable response text
-and stop uncertain animation after resize.
+Orka chat offers no native approval submission. Tools requiring approval are
+unavailable in this client; inspect and configure them through the runtime's
+supported operator path instead. A disconnect does not resume or reinvoke a
+working Task. Enhanced-input resize stops chat without submitting the current
+message and restores terminal state; restart chat to continue. This is a safe
+abort, not live reflow or undo of earlier actions. Renderers keep durable
+response text and stop uncertain animation after resize.
 
 ### Retry limits
 

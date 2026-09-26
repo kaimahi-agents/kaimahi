@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -27,7 +29,19 @@ case "$*" in
   *kagent.dev*)
     printf 'error: the server doesn'"'"'t have a resource type "agents"\n' >&2
     exit 1 ;;
-  *"apply -f -"*) cat >/dev/null; exit 0 ;;
+  *"apply -f -"*)
+    body=$(cat)
+    case "$body" in *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider" ;; esac
+    exit 0 ;;
+  *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
+    if [ "$KMX_TEST_PROVIDER_READ" = failed ]; then exit 1; fi
+    url="$KMX_TEST_PROVIDER_URL"
+    if [ -z "$url" ] && [ -f "$KMX_TEST_ARGS.provider" ]; then url='http://ollama.ollama.svc.cluster.local:11434/v1'; fi
+    [ -n "$url" ] || exit 0
+    observed=2
+    [ "$KMX_TEST_PROVIDER_READY" = stale ] && observed=1
+    printf '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2},"spec":{"baseURL":"%s"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":%s}]}}' "$url" "$observed"
+    exit 0 ;;
   *"get secret harness-wrapper-auth"*)
     printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2
     exit 1 ;;
@@ -103,6 +117,57 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	}
 	if strings.Contains(errOut.String(), "Collect runtime status") {
 		t.Errorf("a bare `kmx up` still collects the legacy status:\n%s", errOut)
+	}
+}
+
+// A host route shared by migrated workloads cannot be silently replaced by
+// either entry point that runs stepOrka. The refusal identifies both routes
+// and offers an explicit, context-pinned command to deliberately reset it.
+func TestOrkaSetupRefusesToReplaceAnExistingLocalEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(*App) error
+	}{
+		{"quickstart", func(a *App) error { return a.quickstartSteps()[3].fn() }},
+		{"up --step orka", func(a *App) error { return a.Up("orka") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, _, args := upFixture(t)
+			t.Setenv("KMX_TEST_PROVIDER_URL", "http://172.18.0.1:11434/v1")
+			err := tc.run(a)
+			if err == nil {
+				t.Fatal("overwrote the existing host endpoint")
+			}
+			for _, want := range []string{"http://172.18.0.1:11434/v1", orkaDefaultModelURL, "kmx --context kind-test orka install", "--model-url"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("refusal missing %q: %v", want, err)
+				}
+			}
+			if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
+				t.Fatalf("Provider was written despite endpoint drift: %v", err)
+			}
+		})
+	}
+}
+
+// Bare up must not say complete merely because the Provider was submitted;
+// readiness must be observed for the generation just applied.
+func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
+	a, _, args := upFixture(t)
+	if err := a.Up(""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(upCalls(t, args), "get providers.core.orka.ai local -o json") {
+		t.Fatal("no post-apply Provider readiness read")
+	}
+
+	stale, errOut, _ := upFixture(t)
+	t.Setenv("KMX_TEST_PROVIDER_READY", "stale")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	stale.Run.Context = ctx
+	if err := stale.Up(""); err == nil || !strings.Contains(err.Error(), "current-generation Ready") {
+		t.Fatalf("stale Provider was considered ready: %v\n%s", err, errOut)
 	}
 }
 
