@@ -79,15 +79,15 @@
     },
     {
       "path": "docs/kmx.md",
-      "text": "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you",
+      "text": "`kmx agent edit` is retired; its hidden stub points to kubectl.",
       "category": "retired-notice",
-      "why": "Explicitly denies the removed editor and names a supported alternative."
+      "why": "Explicitly retires the editor and names the supported kubectl alternative; its hidden stub only guides callers."
     },
     {
       "path": "docs/kmx.md",
-      "text": "`kmx govern` has been removed. Put an owner-managed application behind the",
+      "text": "`kmx govern` is retired; its hidden stub points to `kmx migrate`.",
       "category": "retired-notice",
-      "why": "Explicitly denies the retired command and names migration as the replacement."
+      "why": "Explicitly retires the command and names migration as the supported replacement; its hidden stub only guides callers."
     },
     {
       "path": "docs/spend.md",
@@ -226,18 +226,6 @@
       "text": "[]string{\"lift\", \"--payload\", \"kagent\", \"--resource-group\", \"rg\", \"--cluster\", \"c\", \"--registry\", \"reg12345\"},",
       "category": "negative",
       "why": "Bounded refusal test: the retired lift payload is refused with a message naming it."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "// The legacy kagent runtime is gone, and so are the commands that only ever",
-      "category": "negative",
-      "why": "Bounded refusal tests at the command layer for the removed runtime-only commands."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "// were kagent's alone: a resumable server-side session and the raw A2A task",
-      "category": "negative",
-      "why": "Bounded refusal tests at the command layer for the removed runtime-only commands."
     },
     {
       "path": "docs/COORDINATION.md",

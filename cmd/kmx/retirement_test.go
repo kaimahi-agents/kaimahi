@@ -24,60 +24,66 @@ func TestApprovalCommandsAreRetiredBeforeConfiguration(t *testing.T) {
 	}
 }
 
-// The legacy kagent runtime is gone, and so are the commands that only ever
-// drove it. Each must fail locally — before configuration is loaded and long
-// before a cluster is reached — rather than arriving at a runtime that is no
-// longer installed.
+// Retired invocations fail locally with a migration path, before configuration
+// loading or cluster access. Hidden stubs remain parseable for old scripts.
 func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"govern"}, "unknown command"},
-		{[]string{"govern", "hello-world"}, "unknown command"},
-		{[]string{"govern", "hello-world", "--model", "governed-ollama"}, "unknown flag: --model"},
-		{[]string{"--context", "kind-stale", "govern"}, "unknown command"},
-		{[]string{"use"}, "unknown command"},
-		{[]string{"use", "ollama"}, "unknown command"},
-		{[]string{"use", "ollama", "--agent", "hello-world"}, "unknown flag: --agent"},
-		{[]string{"agent", "edit", "hello-world"}, "unknown command"},
-		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "unknown flag: --file"},
+		{[]string{"govern"}, "kmx migrate"},
+		{[]string{"govern", "hello-world"}, "kmx migrate"},
+		{[]string{"govern", "hello-world", "--model", "governed-ollama"}, "kmx migrate"},
+		{[]string{"--context", "kind-stale", "govern"}, "kmx migrate"},
+		{[]string{"use"}, "kmx models add"},
+		{[]string{"use", "ollama"}, "kmx models add"},
+		{[]string{"use", "ollama", "--agent", "hello-world"}, "kmx models add"},
+		{[]string{"agent", "edit", "hello-world"}, "kubectl"},
+		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "kubectl"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
 			err := execute(tc.args, deps)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("retired command must be rejected with %q: %v: %v", tc.want, tc.args, err)
+			if err == nil || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("retired command must name replacement %q: %v: %v", tc.want, tc.args, err)
 			}
 			if *loads != 0 {
 				t.Fatalf("retired command loaded operational configuration: %v", tc.args)
 			}
 		})
 	}
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	root := newRootCommand(&commandState{deps: deps})
+	for _, path := range [][]string{{"govern"}, {"use"}, {"agent", "edit"}} {
+		cmd, _, err := root.Find(path)
+		if err != nil || !cmd.Hidden {
+			t.Errorf("retired command %v must exist but be hidden: %v", path, err)
+		}
+	}
 }
 
-// `agent chat` keeps its name and loses the legacy transport. The flags below
-// were kagent's alone: a resumable server-side session and the raw A2A task
-// its one-shot invoke printed. Neither has a meaning against Orka, and a flag
-// that parses and does nothing is worse than one that does not exist.
 func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
-	for _, args := range [][]string{
-		{"agent", "chat", "hello-world", "--session", "abc"},
-		{"agent", "chat", "hello-world", "--json"},
-		{"agent", "chat", "--session", "abc"},
-		{"agent", "chat", "--json"},
-		{"agent", "chat", "hello-world", "--interactive", "--session", "abc"},
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"agent", "chat", "hello-world", "--session", "abc"}, "--session"},
+		{[]string{"agent", "chat", "hello-world", "--json"}, "--json"},
+		{[]string{"agent", "chat", "--session", "abc"}, "--session"},
+		{[]string{"agent", "chat", "--json"}, "--json"},
+		{[]string{"agent", "chat", "hello-world", "--interactive", "--session", "abc"}, "--session"},
 	} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
-			err := execute(args, deps)
-			if err == nil || !strings.Contains(err.Error(), "unknown flag") {
-				t.Fatalf("retired flag must be unknown: %v: %v", args, err)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "--interactive") {
+				t.Fatalf("retired flag must name interactive replacement: %v: %v", tc.args, err)
 			}
 			if *loads != 0 {
-				t.Fatalf("retired flag loaded operational configuration: %v", args)
+				t.Fatalf("retired flag loaded operational configuration: %v", tc.args)
 			}
 		})
 	}
@@ -89,12 +95,10 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"session", "json"} {
-		if cmd.Flags().Lookup(name) != nil {
-			t.Errorf("agent chat still carries the legacy --%s flag", name)
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || !flag.Hidden {
+			t.Errorf("retired --%s must parse but stay out of help", name)
 		}
-	}
-	if err := cmd.ParseFlags([]string{"--session", "abc"}); err == nil {
-		t.Error("agent chat still parses --session")
 	}
 }
 

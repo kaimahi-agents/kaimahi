@@ -148,8 +148,8 @@ CATEGORIES = ("retirement", "negative", "historical", "future", "retired-notice"
 # requires updating both the code and its reasoned exact-line allowlist.
 RETIRED_NOTICES = frozenset({
     ("docs/FAQ.md", "owner-managed application back behind the plane; `kmx govern` was removed with"),
-    ("docs/kmx.md", "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you"),
-    ("docs/kmx.md", "`kmx govern` has been removed. Put an owner-managed application behind the"),
+    ("docs/kmx.md", "`kmx agent edit` is retired; its hidden stub points to kubectl."),
+    ("docs/kmx.md", "`kmx govern` is retired; its hidden stub points to `kmx migrate`."),
     ("docs/spend.md", "credential. (`kmx govern`, which did this for a legacy Agent, was removed with"),
 })
 
@@ -752,12 +752,12 @@ def selftest():
 
         # Honest notices of a retired command are current documentation, not
         # support instructions. They earn a separately bounded category:
-        # current docs only, and the exact line must explicitly deny it.
+        # current docs only, and the exact line must explicitly retire it.
         for entry, allowed, what in (
                 ({"path": "docs/kmx.md",
-                  "text": "There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you",
-                  "category": "retired-notice", "why": "removed operation"}, True,
-                 "a current-doc notice explicitly denying a retired command"),
+                  "text": "`kmx agent edit` is retired; its hidden stub points to kubectl.",
+                  "category": "retired-notice", "why": "retired operation"}, True,
+                 "a current-doc notice explicitly retiring a command"),
                 ({"path": "docs/kmx.md", "text": "Run `kmx agent edit`.",
                   "category": "retired-notice", "why": "this used to be removed"}, False,
                  "a live command instruction disguised as a notice"),

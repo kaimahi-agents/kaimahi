@@ -7,10 +7,11 @@ remains owner-managed. Installing Orka alone is not this migration; none of thes
 operations silently governs application tools.
 
 The legacy runtime is no longer part of kmx. Its installer steps, its
-manifests and its CLI surface are gone — its three `kmx up --step` names
-are unknown steps, and governance, preset switching and agent editing were removed
-before them. A cluster that still carries that runtime is untouched and is
-operated with kubectl. `orka.harness.v2` is outside the direction.
+manifests and its operational CLI surface are gone — its three `kmx up --step`
+names are unknown steps. Governance, preset switching and agent editing are
+retired; hidden command stubs guide old callers to supported replacements.
+A cluster that still carries that runtime is untouched and is operated
+with kubectl. `orka.harness.v2` is outside the direction.
 A shrinking compatibility/governance bridge is success, not a reason to rebuild
 Orka's platform in Kaimahi.
 
@@ -272,8 +273,9 @@ promote the isolated conversion spike to a supported interface.
 
 ### Editing an agent
 
-There is no `kmx agent edit`. `kmx agent create` writes reviewable YAML you
-own, and a live Orka Agent is edited as the Kubernetes resource it is:
+`kmx agent edit` is retired; its hidden stub points to kubectl.
+`kmx agent create` writes reviewable YAML you own, and a live Orka Agent
+is edited as the Kubernetes resource it is:
 
 ```bash
 kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>
@@ -377,8 +379,9 @@ upstream**: there is no per-credential model allowlist.
 
 ## Governing model traffic
 
-`kmx govern` has been removed. Put an owner-managed application behind the
-plane with `kmx migrate`, or issue a credential into a named destination with
+`kmx govern` is retired; its hidden stub points to `kmx migrate`.
+Put an owner-managed application behind the plane with `kmx migrate`, or
+issue a credential into a named destination with
 `kmx credential issue <name> --secret <secret> --namespace <ns>`. Both paths
 share the same pre-issue binding checks, so neither can overwrite a one-time
 token, and both refuse a destination namespace that is blank or absent before
