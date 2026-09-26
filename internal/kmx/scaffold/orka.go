@@ -58,7 +58,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	if err := ValidateNamespace(spec.Namespace); err != nil {
 		return nil, fmt.Errorf("an explicit Orka namespace is required: %w", err)
 	}
-	if err := validateOrkaProvider(spec.ProviderType, spec.Model, spec.BaseURL); err != nil {
+	if err := ValidateOrkaProvider(spec.ProviderType, spec.Model, spec.BaseURL); err != nil {
 		return nil, err
 	}
 	if err := ValidateObjectName(spec.SecretName); err != nil {
@@ -67,7 +67,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	if spec.SecretKey == "" {
 		spec.SecretKey = "api-key"
 	}
-	if err := validateOrkaSecretKey(spec.SecretKey); err != nil {
+	if err := ValidateOrkaSecretKey(spec.SecretKey); err != nil {
 		return nil, err
 	}
 	for _, input := range []string{spec.Description, spec.Model, spec.BaseURL} {
@@ -76,10 +76,8 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		}
 	}
 	for field, refs := range map[string][]string{"tools": spec.Tools, "skills": spec.Skills} {
-		for _, ref := range refs {
-			if !identifierRE.MatchString(ref) {
-				return nil, fmt.Errorf("Orka %s must be explicit names, not server:tool syntax or YAML", field)
-			}
+		if err := ValidateOrkaRefNames(field, refs); err != nil {
+			return nil, err
 		}
 	}
 	if strings.TrimSpace(spec.Instructions) == "" {
@@ -166,7 +164,21 @@ func orkaResource(apiVersion, kind, name, namespace string) map[string]any {
 	}
 }
 
-func validateOrkaProvider(providerType, model, baseURL string) error {
+// ValidateOrkaRefNames checks that every Orka tool or skill reference is an
+// explicit name. It is shared with the portable authoring document so that a
+// reference this repository will not scaffold cannot be authored either.
+func ValidateOrkaRefNames(field string, refs []string) error {
+	for _, ref := range refs {
+		if !identifierRE.MatchString(ref) {
+			return fmt.Errorf("Orka %s must be explicit names, not server:tool syntax or YAML", field)
+		}
+	}
+	return nil
+}
+
+// ValidateOrkaProvider checks the Provider fields this repository can
+// scaffold. It never echoes baseURL: the URL itself may carry credentials.
+func ValidateOrkaProvider(providerType, model, baseURL string) error {
 	switch providerType {
 	case "openai", "anthropic":
 	case "azure-openai":
@@ -190,7 +202,8 @@ func validateOrkaProvider(providerType, model, baseURL string) error {
 	return nil
 }
 
-func validateOrkaSecretKey(key string) error {
+// ValidateOrkaSecretKey checks a Secret key reference, never its value.
+func ValidateOrkaSecretKey(key string) error {
 	if len(key) > 253 || !orkaSecretKeyRE.MatchString(key) || key == "." || strings.HasPrefix(key, "..") {
 		return fmt.Errorf("Secret key must be 1–253 letters, digits, dashes, underscores or dots; it must not be '.' or start with '..'")
 	}
@@ -283,7 +296,7 @@ func (b *OrkaBundle) Validate() error {
 	providerType, _ := providerSpec["type"].(string)
 	model, _ := providerSpec["defaultModel"].(string)
 	baseURL, _ := providerSpec["baseURL"].(string)
-	if err := validateOrkaProvider(providerType, model, baseURL); err != nil {
+	if err := ValidateOrkaProvider(providerType, model, baseURL); err != nil {
 		return err
 	}
 	secretRef, _ := providerSpec["secretRef"].(map[string]any)
@@ -291,7 +304,7 @@ func (b *OrkaBundle) Validate() error {
 		return fmt.Errorf("Provider.spec.secretRef.name must reference the bundle Secret")
 	}
 	secretKey, _ := secretRef["key"].(string)
-	if err := validateOrkaSecretKey(secretKey); err != nil {
+	if err := ValidateOrkaSecretKey(secretKey); err != nil {
 		return fmt.Errorf("Provider.spec.secretRef.key: %w", err)
 	}
 	for _, entry := range []struct {

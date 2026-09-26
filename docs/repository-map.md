@@ -54,7 +54,7 @@ packages.
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
 | `kmx/app` | 82 | Installed | Command orchestration, runtime adapters, interactive agent console, shared chat UI, host inference and native platform operations. |
-| `kmx/runtime` | 5 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests and registry. |
+| `kmx/runtime` | 6 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry and the portable authoring document. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts, retained kagent checks and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
