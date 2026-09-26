@@ -91,18 +91,20 @@ func TestBareUpGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	assertOrkaOnlyBanner(t, "the bare `kmx up` banner", errOut.String())
 }
 
-// An explicitly requested legacy step DOES write to the legacy namespaces,
-// so its banner must keep saying so. This is the half that stops the scoped
-// list being applied by sweeping it over every caller.
-func TestExplicitLegacyUpStepKeepsTheLegacyGuardNamespaces(t *testing.T) {
-	a, errOut, _ := upFixture(t)
-	a.guarded = false
-	t.Setenv("KMX_TEST_KAGENT", "installed")
-	if err := a.Up("agent"); err != nil {
-		t.Fatalf("the explicit legacy step failed: %v\n%s", err, errOut)
-	}
-	if !strings.Contains(errOut.String(), config.GuardNamespaces) {
-		t.Errorf("the legacy step's banner no longer names %q:\n%s", config.GuardNamespaces, errOut)
+// Every addressable step is on the Orka path now, so every one of them gets
+// the scoped banner. This is the half that stops the wider legacy list
+// surviving behind a step name: naming a namespace nothing is written to is
+// its own untruth, and `kagent` is no longer written to by anything.
+func TestEveryUpStepBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
+	for _, step := range []string{"ollama", "model", "orka"} {
+		t.Run(step, func(t *testing.T) {
+			a, errOut, _ := upFixture(t)
+			a.guarded = false
+			if err := a.Up(step); err != nil {
+				t.Fatalf("the %s step failed: %v\n%s", step, err, errOut)
+			}
+			assertOrkaOnlyBanner(t, "the `kmx up --step "+step+"` banner", errOut.String())
+		})
 	}
 }
 

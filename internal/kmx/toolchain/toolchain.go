@@ -3,15 +3,15 @@
 // nothing else can still run the journey.
 //
 // This is internal/kmx/kagentcli generalised. That package already had to
-// solve the whole problem for the kagent CLI — a kmx installed with
+// solve the whole problem for one pinned CLI — a kmx installed with
 // `go install` or downloaded from a release has no checkout to put a binary
 // in, so the binary is cached, keyed by version and platform, and re-verified
 // on every use rather than only when it was downloaded. The same reasoning
-// applies to kind, kubectl and Helm, which is why the prerequisite list could
-// be four items long: kmx knew how to fetch exactly one of the five things it
+// applies to kind and kubectl, which is why the prerequisite list could be
+// several items long: kmx knew how to fetch exactly one of the things it
 // needs.
 //
-// Two rules the kagent path established, kept here because they are the whole
+// Two rules that path established, kept here because they are the whole
 // value of the mechanism:
 //
 //   - A CACHE HIT IS RE-VERIFIED. "Checksum-verified" has to mean the bytes
@@ -25,8 +25,7 @@
 // download host, not an independent signature. The digest and the bytes come
 // from the same origin, so a compromised origin defeats both. It buys
 // integrity against a corrupted or truncated transfer and against a tampered
-// cache — which is what the kagent CLI path already bought, and refusing to
-// grow it to the other three would have been the odd choice.
+// cache.
 package toolchain
 
 import (
@@ -52,7 +51,6 @@ import (
 const (
 	KubectlVersion = "1.37.0"
 	KindVersion    = "0.33.0"
-	HelmVersion    = "3.20.0"
 )
 
 // Spec is one fetchable binary.
@@ -71,6 +69,11 @@ type Spec struct {
 	// ArchiveMember, when set, is the path inside a .tar.gz whose bytes are
 	// the binary. The published digest covers the ARCHIVE, so the archive is
 	// what gets verified, before anything is extracted from it.
+	//
+	// No pin below sets it today — Helm was the archived tool, and it was
+	// fetched for the retired kagent chart alone. The mechanism stays because
+	// it is the rule ("verify what was published, then extract") rather than
+	// one tool's packaging, and its own test still proves it.
 	ArchiveMember string
 	// Why is the one-line reason this tool is needed, for the fetch line.
 	Why string
@@ -102,21 +105,12 @@ func Pinned(name, goos, goarch string) (Spec, bool) {
 			ChecksumURL: fmt.Sprintf("https://github.com/kubernetes-sigs/kind/releases/download/v%s/kind-%s-%s.sha256sum", KindVersion, goos, goarch),
 			Why:         "to manage the local Kubernetes cluster",
 		}, true
-	case "helm":
-		return Spec{
-			Name:          "helm",
-			Version:       HelmVersion,
-			URL:           fmt.Sprintf("https://get.helm.sh/helm-v%s-%s-%s.tar.gz", HelmVersion, goos, goarch),
-			ChecksumURL:   fmt.Sprintf("https://get.helm.sh/helm-v%s-%s-%s.tar.gz.sha256sum", HelmVersion, goos, goarch),
-			ArchiveMember: fmt.Sprintf("%s-%s/helm", goos, goarch),
-			Why:           "to install kagent",
-		}, true
 	}
 	return Spec{}, false
 }
 
 // Fetchable lists the tools Pinned knows, in the order an operator meets them.
-var Fetchable = []string{"kind", "kubectl", "helm"}
+var Fetchable = []string{"kind", "kubectl"}
 
 // ExpectedDigest extracts the digest from a published checksum file.
 //

@@ -146,14 +146,22 @@ func (a *App) IssueIdentityCredential(name string, ttl *int64) error {
 // IssueCredentialToSecret issues a bearer directly into Kubernetes custody.
 // issueCredential contains the shared pre-POST binding and 409 safety checks;
 // this entry point deliberately adds no second implementation.
+//
+// The destination namespace is confirmed to EXIST before anything is issued.
+// The token is shown exactly once, so a namespace that is missing or blank
+// has to refuse here — after the POST it is a live credential whose only
+// copy has nowhere to go.
 func (a *App) IssueCredentialToSecret(name, secret, namespace string, ttl *int64) error {
 	if err := validCredentialName(name); err != nil {
 		return err
 	}
-	if secret == "" || namespace == "" {
-		return fmt.Errorf("kmx credential issue: secret and namespace must be named")
+	if secret == "" {
+		return fmt.Errorf("kmx credential issue: the Secret the token is stored in must be named")
 	}
-	command := "kmx credential issue " + name + " --secret " + secret
+	if err := a.requireNamespace(namespace, "kmx credential issue --namespace"); err != nil {
+		return err
+	}
+	command := "kmx credential issue " + name + " --secret " + secret + " --namespace " + namespace
 	if err := a.Guard(fmt.Sprintf("issue credential %q into Secret %s/%s", name, namespace, secret), command); err != nil {
 		return err
 	}

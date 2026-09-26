@@ -1,155 +1,153 @@
 package app
 
 import (
-	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
 	"strings"
-	"time"
 
-	yaml "go.yaml.in/yaml/v3"
-
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
-// statusRequestTimeout bounds every read status makes.
-//
-// Re-landed from #37, whose reasoning holds and had nowhere to live once
-// scripts/status.py went: this is the command people run when something is
-// wrong, and an API server that is unreachable rather than refusing leaves a
-// bare `kubectl get` waiting on TCP. A status command that hangs is the same
-// failure as one that needs the thing being diagnosed.
+// `kmx status` delegates Orka's runtime report unchanged, then adds the
+// independently deployed model plane and seam certificate. OrkaStatus owns
+// preflight and context handling; additional reads use the same pinned kubectl.
+
+// Bound the additional plane reads when the API server is unreachable.
 const statusRequestTimeout = "--request-timeout=15s"
 
-// StatusOptions controls the human table or the structured document.
+// StatusOptions controls the output format.
 type StatusOptions struct {
 	Output string
 }
 
+// Status prints the runtime report.
+func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
+
+// StatusWithOptions validates the requested format and reports.
+//
+// `table` is the only format there is, and json/yaml are refused BY NAME
+// rather than quietly falling back to the table or emitting an empty
+// document. They used to publish a governance envelope counted off kagent
+// Agents and ModelConfigs. Nothing owner-managed replaces that count:
+// `kmx migrate` points somebody's own Deployment at the seam, and those
+// workloads have no discovery index — there is no query that lists them, so
+// any document kmx published would be a tally of what it happened to be told
+// about rather than of what is on the cluster. Keeping the old shape filled
+// with zeros would be the false zero this report has always refused; keeping
+// the flag and saying what it does not support is the honest half.
+func (a *App) StatusWithOptions(opt StatusOptions) error {
+	switch format := strings.ToLower(strings.TrimSpace(opt.Output)); format {
+	case "", "table":
+	case "json", "yaml":
+		return fmt.Errorf("status has no %s output: use table.\n"+
+			"  The structured document counted kagent Agents and ModelConfigs, and that runtime is gone.\n"+
+			"  Nothing replaces the count: `kmx migrate` routes your own workloads, which kmx cannot enumerate,\n"+
+			"  so a document here would report what it was told rather than what is on the cluster.\n"+
+			"  For machine-readable runtime facts, read the cluster directly:\n"+
+			"    kubectl --context %s -n %s get deploy,%s -o json", format, a.Cfg.KubeContext, OrkaNamespace, orkaProviderKind)
+	default:
+		return fmt.Errorf("status output %q is not supported — use table", opt.Output)
+	}
+	if err := a.OrkaStatus(); err != nil {
+		return err
+	}
+	a.statusPlane()
+	return nil
+}
+
+// statusPlane diagnoses the separately deployed proxy. A missing Deployment
+// is not a failed read, and Postgres pods must never count as ready proxies.
+func (a *App) statusPlane() {
+	fmt.Fprintln(a.Out, "\nModel plane (kaimahi-proxy)")
+	deployment, err := a.kubectlCapture("-n", admin.Namespace, "get", "deploy", planeWorkload, "-o", "json", statusRequestTimeout)
+	switch {
+	case isNotFound(err):
+		fmt.Fprintln(a.Out, "  plane:       not installed (`kmx plane`)")
+	case err != nil:
+		fmt.Fprintf(a.Out, "  plane:       unknown — %s\n", strings.TrimSpace(err.Error()))
+	default:
+		var d struct {
+			Spec struct {
+				Replicas int `json:"replicas"`
+			} `json:"spec"`
+			Status struct {
+				ReadyReplicas int `json:"readyReplicas"`
+			} `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(deployment), &d); err != nil {
+			fmt.Fprintf(a.Out, "  plane:       unknown — unreadable Deployment: %v\n", err)
+		} else {
+			pods, err := a.kubectlCapture("-n", admin.Namespace, "get", "pods", "-l", "app="+planeWorkload, "-o", "json", statusRequestTimeout)
+			if err != nil {
+				fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; pods unknown — %s\n", d.Status.ReadyReplicas, d.Spec.Replicas, strings.TrimSpace(err.Error()))
+			} else {
+				var list struct {
+					Items []struct {
+						Status struct {
+							Conditions []struct{ Type, Status string } `json:"conditions"`
+							Containers []struct {
+								RestartCount int `json:"restartCount"`
+							} `json:"containerStatuses"`
+						} `json:"status"`
+					} `json:"items"`
+				}
+				if err := json.Unmarshal([]byte(pods), &list); err != nil {
+					fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; pods unknown — %v\n", d.Status.ReadyReplicas, d.Spec.Replicas, err)
+				} else {
+					ready, restarts := 0, 0
+					for _, pod := range list.Items {
+						for _, condition := range pod.Status.Conditions {
+							if condition.Type == "Ready" && condition.Status == "True" {
+								ready++
+							}
+						}
+						for _, container := range pod.Status.Containers {
+							restarts += container.RestartCount
+						}
+					}
+					fmt.Fprintf(a.Out, "  plane:       %d/%d replicas ready; %d/%d pods ready, %d restarts\n", d.Status.ReadyReplicas, d.Spec.Replicas, ready, len(list.Items), restarts)
+				}
+			}
+		}
+	}
+	// Read only the public serving certificate, never the Secret's private key.
+	encoded, err := a.kubectlCapture("-n", admin.Namespace, "get", "secret", config.PlaneSeamTLSSecret, "-o", "jsonpath={.data.tls\\.crt}", statusRequestTimeout)
+	switch {
+	case isNotFound(err):
+		fmt.Fprintln(a.Out, "  certificate: none — serving Secret not installed")
+	case err != nil:
+		fmt.Fprintf(a.Out, "  certificate: unknown — %s\n", strings.TrimSpace(err.Error()))
+	default:
+		pem, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			fmt.Fprintf(a.Out, "  certificate: unknown — invalid certificate encoding: %v\n", err)
+			return
+		}
+		cert, err := seamcert.ParseCertificate(pem)
+		if err != nil {
+			fmt.Fprintf(a.Out, "  certificate: unknown — unreadable serving certificate: %v\n", err)
+			return
+		}
+		report := seamcert.Expiry(cert, a.timeNow())
+		fmt.Fprintf(a.Out, "  certificate: %s\n", report.Line())
+		if report.State == seamcert.Expiring || report.State == seamcert.Expired {
+			fmt.Fprintln(a.Out, "               The model seam stops answering when it expires; `kmx plane --step certificate` renews it.")
+		}
+	}
+}
+
+// ---- shared table rendering ----------------------------------------------
+//
+// Used by `kmx agent list` as well as here; kept in one place so two
+// listings cannot align their columns differently.
+
 type objectList[T any] struct {
 	Items []T `json:"items"`
-}
-
-type statusCondition struct {
-	Type, Status string
-	// LastTransitionTime is when kagent reached this verdict. Printed
-	// because the column is a CACHED reconcile result and not a live check:
-	// a credential written since is one this answer says nothing about, and
-	// an operator reading a bare "yes" cannot tell the two apart
-	// (seamverdict.go).
-	LastTransitionTime string `json:"lastTransitionTime"`
-}
-
-type agentStatus struct {
-	Metadata struct{ Name string } `json:"metadata"`
-	Spec     struct {
-		Declarative struct {
-			ModelConfig string `json:"modelConfig"`
-			Tools       []struct {
-				MCPServer struct{ Name string } `json:"mcpServer"`
-			} `json:"tools"`
-		} `json:"declarative"`
-	} `json:"spec"`
-	Status struct{ Conditions []statusCondition } `json:"status"`
-}
-
-type modelStatus struct {
-	Metadata struct{ Name string } `json:"metadata"`
-	Spec     struct {
-		Provider, Model string
-		// The governed presets differ from the direct ones in exactly one
-		// place: baseUrl is the plane's proxy. That is what makes the model
-		// seam classifiable from the cluster alone.
-		OpenAI struct {
-			BaseURL string `json:"baseUrl"`
-		} `json:"openAI"`
-		Ollama struct {
-			Host string `json:"host"`
-		} `json:"ollama"`
-		APIKeySecret string `json:"apiKeySecret"`
-	} `json:"spec"`
-	Status struct{ Conditions []statusCondition } `json:"status"`
-}
-
-// planeDeployment is the proxy workload: its existence is what "installed"
-// means, and its replicas are what "ready" means.
-type planeDeployment struct {
-	Metadata struct{ Name string } `json:"metadata"`
-	Spec     struct {
-		Replicas int `json:"replicas"`
-	} `json:"spec"`
-	Status struct {
-		ReadyReplicas int `json:"readyReplicas"`
-	} `json:"status"`
-}
-
-type podStatus struct {
-	Metadata struct{ Name string } `json:"metadata"`
-	Status   struct {
-		Phase             string
-		Conditions        []statusCondition
-		ContainerStatuses []struct {
-			RestartCount int `json:"restartCount"`
-		} `json:"containerStatuses"`
-	} `json:"status"`
-}
-
-// condition renders one condition as yes / no / unknown.
-//
-// `unknown` rather than `-`: a condition nothing has recorded is not a no,
-// it is nothing, which is the same distinction the governance counts draw.
-func condition(conditions []statusCondition, name string) string {
-	for _, value := range conditions {
-		if value.Type == name {
-			switch value.Status {
-			case "True":
-				return "yes"
-			case "False":
-				return "no"
-			}
-			return "unknown"
-		}
-	}
-	return "unknown"
-}
-
-// conditionAged is condition() plus when the verdict was reached, for the
-// kagent CRD conditions that are CACHED reconcile results rather than live
-// checks.
-//
-// The age is not decoration. kagent records these when it last tried and
-// does not retry on its own, so "yes" alone reads as a live check and is not
-// one — that is what let a credential written minutes ago show as working
-// when it could not be used at all. A pod's Ready condition is genuinely
-// live and gets plain condition(); these do not.
-func age(now, then time.Time) string {
-	if then.IsZero() {
-		return "an unknown time"
-	}
-	d := now.Sub(then).Round(time.Second)
-	if d < 0 {
-		d = 0
-	}
-	return d.String()
-}
-
-func conditionAged(conditions []statusCondition, name string, now time.Time) string {
-	answer := condition(conditions, name)
-	for _, value := range conditions {
-		if value.Type != name {
-			continue
-		}
-		at, err := time.Parse(time.RFC3339, strings.TrimSpace(value.LastTransitionTime))
-		if err != nil {
-			return answer
-		}
-		return answer + " (" + age(now, at) + " ago)"
-	}
-	return answer
 }
 
 func table(out io.Writer, headers []string, rows [][]string) {
@@ -186,518 +184,6 @@ func humanTable(out io.Writer, headers []string, rows [][]string) {
 		return
 	}
 	fmt.Fprintln(out, ui.Table(headers, rows))
-}
-
-// statusTolerant reads a population that may not exist on this cluster at
-// all: a CRD kagent has not installed, a namespace that was never created,
-// an RBAC denial. It returns a REASON rather than an error, and never turns
-// a failure into an empty list — the caller reports `unknown`, which is a
-// different answer from "0" and the word the audit trail already uses for it.
-//
-// The reason is the first line of kubectl's own complaint, so an operator
-// reads what kubectl said rather than a paraphrase of it.
-func (a *App) statusTolerant(namespace, resource string, target any) string {
-	raw, err := a.kubectlCapture("-n", namespace, "get", resource, "-o", "json", statusRequestTimeout)
-	if err == nil {
-		if err := json.Unmarshal([]byte(raw), target); err != nil {
-			return firstLine(err.Error())
-		}
-		return ""
-	}
-	if isNotFound(err) {
-		// The namespace or the resource is genuinely absent, which for
-		// these reads means an empty population rather than a mystery.
-		return ""
-	}
-	return firstLine(err.Error())
-}
-
-func firstLine(message string) string {
-	message = strings.TrimSpace(message)
-	if i := strings.IndexByte(message, '\n'); i >= 0 {
-		message = strings.TrimSpace(message[:i])
-	}
-	return message
-}
-
-// secretNames lists the Secret NAMES in a namespace. Names only: `-o name`
-// returns metadata, never a value, and status reads no Secret value
-// anywhere. This exists so a governed seam whose token Secret is missing is
-// reported as missing instead of failing at the next call.
-func (a *App) secretNames(namespace string) ([]string, string) {
-	// EVERY failure is a reason, NotFound included. A namespace with no
-	// Secrets succeeds and prints nothing; a NotFound here means the
-	// listing did not happen, and an empty list would become a confident
-	// accusation naming Secrets that may well exist.
-	raw, err := a.kubectlCapture("-n", namespace, "get", "secrets", "-o", "name", statusRequestTimeout)
-	if err != nil {
-		return nil, firstLine(err.Error())
-	}
-	var names []string
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		names = append(names, strings.TrimPrefix(line, "secret/"))
-	}
-	return names, ""
-}
-
-func podSummary(pods []podStatus) (ready, restarts int, rows [][]string) {
-	sort.Slice(pods, func(i, j int) bool { return pods[i].Metadata.Name < pods[j].Metadata.Name })
-	for _, pod := range pods {
-		isReady := condition(pod.Status.Conditions, "Ready") == "yes"
-		if isReady {
-			ready++
-		}
-		podRestarts := 0
-		for _, container := range pod.Status.ContainerStatuses {
-			podRestarts += container.RestartCount
-		}
-		restarts += podRestarts
-		rows = append(rows, []string{pod.Metadata.Name, condition(pod.Status.Conditions, "Ready"), pod.Status.Phase, fmt.Sprint(podRestarts)})
-	}
-	return
-}
-
-func statusReady(allAgents, allModels bool, kReady, kTotal, oReady, oTotal, pReady, pTotal int) bool {
-	ready := allAgents && allModels && kTotal > 0 && kReady == kTotal
-	if oTotal > 0 {
-		ready = ready && oReady == oTotal
-	}
-	if pTotal > 0 {
-		ready = ready && pReady == pTotal
-	}
-	return ready
-}
-
-// Status prints a grouped human view or kubectl-native JSON/YAML.
-func (a *App) StatusWithOptions(opt StatusOptions) error {
-	format := strings.ToLower(strings.TrimSpace(opt.Output))
-	if format != "" && format != "table" && format != "json" && format != "yaml" {
-		return fmt.Errorf("status output %q is not supported — use table, json, or yaml", opt.Output)
-	}
-	if err := a.preflight(depKubectl); err != nil {
-		return err
-	}
-	if err := a.requireExistingContext(); err != nil {
-		return err
-	}
-	if format == "" || format == "table" {
-		return a.statusTable()
-	}
-	return a.statusStructured(format)
-}
-
-// statusDocument is what `kmx status -o json|yaml` publishes.
-//
-// CHANGED, deliberately: this output used to be kubectl's own List, and the
-// governance count has to survive automation or it is only a message on a
-// screen — the same reasoning as #71, where the machine-readable half was
-// the load-bearing one. The kubectl objects are still here, VERBATIM, under
-// `items`, so the idiom that reads them (`jq '.items[]'`) is unchanged; what
-// is new is the envelope around them.
-type statusDocument struct {
-	Context       string            `json:"context"`
-	ContextSource string            `json:"contextSource"`
-	Governance    governance        `json:"governance"`
-	Items         []json.RawMessage `json:"items"`
-}
-
-func (a *App) statusStructured(format string) error {
-	data, err := a.collectStatus()
-	if err != nil {
-		return err
-	}
-	document := statusDocument{
-		Context:       a.Cfg.KubeContext,
-		ContextSource: a.Cfg.ContextSource,
-		Governance:    data.governanceOf(),
-		Items:         data.items,
-	}
-	if format == "yaml" {
-		// json.Marshal first so the struct tags decide the field names
-		// once: one shape, two encodings. UseNumber keeps integers exact
-		// through the generic form — a round trip through float64 would
-		// silently round a large counter in some CRD's status.
-		intermediate, err := json.Marshal(document)
-		if err != nil {
-			return err
-		}
-		decoder := json.NewDecoder(bytes.NewReader(intermediate))
-		decoder.UseNumber()
-		var generic any
-		if err := decoder.Decode(&generic); err != nil {
-			return err
-		}
-		encoded, err := yaml.Marshal(exactNumbers(generic))
-		if err != nil {
-			return err
-		}
-		_, err = a.Out.Write(encoded)
-		return err
-	}
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = a.Out.Write(append(encoded, '\n'))
-	return err
-}
-
-// exactNumbers turns json.Number back into a Go integer or float so YAML
-// emits `3`, not `"3"`. Integers that do not fit an int64 keep their exact
-// decimal text rather than being rounded into one.
-func exactNumbers(value any) any {
-	switch typed := value.(type) {
-	case json.Number:
-		if i, err := typed.Int64(); err == nil {
-			return i
-		}
-		if f, err := typed.Float64(); err == nil && !strings.ContainsAny(typed.String(), "eE") {
-			if json.Number(strconv.FormatFloat(f, 'f', -1, 64)) == typed {
-				return f
-			}
-			return typed.String()
-		} else if err == nil {
-			return f
-		}
-		return typed.String()
-	case map[string]any:
-		for key, item := range typed {
-			typed[key] = exactNumbers(item)
-		}
-		return typed
-	case []any:
-		for i, item := range typed {
-			typed[i] = exactNumbers(item)
-		}
-		return typed
-	}
-	return value
-}
-
-func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
-
-// statusData is everything one `kmx status` reads, gathered once so the
-// human table and the structured document are the same facts — not two
-// reads of a cluster that may have changed between them.
-type statusData struct {
-	agents     objectList[agentStatus]
-	models     objectList[modelStatus]
-	servers    objectList[json.RawMessage]
-	kagentPods objectList[podStatus]
-	ollamaPods objectList[podStatus]
-	planePods  objectList[podStatus]
-	// items is the combined kagent read exactly as kubectl returned it,
-	// carried so `-o json` can publish the objects verbatim without asking
-	// the cluster a second time.
-	items      []json.RawMessage
-	secrets    []string
-	planeThere bool
-	// planeDesired and planeReady come from the proxy Deployment, so a
-	// proxy scaled to zero beside a running Postgres is not reported ready.
-	planeDesired int
-	planeReady   int
-	// certificate is what the plane serves the model seam with. Read
-	// tolerantly like everything else here: an absent one is a plane that
-	// has not been deployed, not a reason for status to fail.
-	certificate SeamCertificate
-	serverErr   string
-	planeErr    string
-	secretErr   string
-	ollamaErr   string
-}
-
-// collectStatus reads the cluster once.
-//
-// The kagent objects come from ONE combined get — the same one the old
-// kubectl-native output printed — and are demultiplexed by kind here. That
-// is not only three fewer calls: it is what makes `items` and the counts
-// beside them a single snapshot, so a consumer cannot find an Agent in
-// `items` that the count never saw.
-func (a *App) collectStatus() (*statusData, error) {
-	d := &statusData{}
-	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get",
-		"agents.kagent.dev,modelconfigs,pods", "-o", "json", statusRequestTimeout)
-	if err != nil {
-		return nil, err
-	}
-	var combined struct {
-		Items []json.RawMessage `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(raw), &combined); err != nil {
-		return nil, err
-	}
-	d.items = combined.Items
-	if d.items == nil {
-		// An empty cluster publishes `[]`, not `null`: a consumer iterates
-		// items, and null makes them vanish with a zero exit code.
-		d.items = []json.RawMessage{}
-	}
-	for _, item := range d.items {
-		var kind struct {
-			Kind string `json:"kind"`
-		}
-		if err := json.Unmarshal(item, &kind); err != nil {
-			return nil, err
-		}
-		switch kind.Kind {
-		case "Agent":
-			var agent agentStatus
-			if err := json.Unmarshal(item, &agent); err != nil {
-				return nil, err
-			}
-			d.agents.Items = append(d.agents.Items, agent)
-		case "ModelConfig":
-			var model modelStatus
-			if err := json.Unmarshal(item, &model); err != nil {
-				return nil, err
-			}
-			d.models.Items = append(d.models.Items, model)
-		case "Pod":
-			var pod podStatus
-			if err := json.Unmarshal(item, &pod); err != nil {
-				return nil, err
-			}
-			d.kagentPods.Items = append(d.kagentPods.Items, pod)
-		}
-	}
-	// The plane, the tool servers and the Secret names are read
-	// TOLERANTLY: none of them exists on the ungoverned fast path, which is
-	// the default, and a status command that fails because the thing it is
-	// diagnosing is absent is worthless. Each failure becomes a stated
-	// `unknown`, never a silent zero — with one deliberate exception, noted
-	// on statusTolerant: a NotFound namespace or resource is a genuine
-	// absence and reads as an empty population.
-	d.ollamaErr = a.statusTolerant("ollama", "pods", &d.ollamaPods)
-	var deployments objectList[planeDeployment]
-	d.planeErr = a.statusTolerant(planeNamespace, "deployments", &deployments)
-	for _, deployment := range deployments.Items {
-		if deployment.Metadata.Name == planeWorkload {
-			d.planeThere = true
-			d.planeDesired = deployment.Spec.Replicas
-			d.planeReady = deployment.Status.ReadyReplicas
-		}
-	}
-	if d.planeErr == "" {
-		d.planeErr = a.statusTolerant(planeNamespace, "pods", &d.planePods)
-	}
-	d.serverErr = a.statusTolerant(config_kagentNamespace, "remotemcpservers", &d.servers)
-	if d.serverErr != "" {
-		a.notef("RemoteMCPServer inventory unavailable: %s (not model readiness evidence)", d.serverErr)
-	}
-	// Inventory only: preserve owner URLs verbatim, without treating old
-	// gateway references as either managed or healthy direct routing.
-	d.items = append(d.items, d.servers.Items...)
-	d.secrets, d.secretErr = a.secretNames(config_kagentNamespace)
-	d.certificate = a.seamCertificate()
-	return d, nil
-}
-
-// governanceOf assembles model routing, credential evidence and plane presence.
-func (d *statusData) governanceOf() governance {
-	plane := planePresence{State: stateNone}
-	switch {
-	case d.planeErr != "":
-		plane = planePresence{State: stateUnknown, Reason: d.planeErr}
-	case d.planeThere || len(d.planePods.Items) > 0:
-		// INSTALLED is the Deployment existing. A plane scaled to zero, or
-		// mid-rollout, or with every pod evicted, is installed and DOWN —
-		// telling that operator to run `kmx plane` would be a false absence
-		// and the wrong instruction.
-		plane = planePresence{State: stateInstalled, Ready: d.planeReady, Desired: d.planeDesired}
-	}
-	return governance{
-		Plane:       plane,
-		Certificate: d.certificate,
-		ModelSeams:  modelSeams(d.agents.Items, d.models.Items),
-		Credentials: credentialSeams(d.models.Items, d.secrets, d.secretErr),
-	}
-}
-
-func (a *App) statusTable() error {
-	data, err := a.collectStatus()
-	if err != nil {
-		return err
-	}
-	agents, models := data.agents, data.models
-	kagentPods, ollamaPods, planePods := data.kagentPods, data.ollamaPods, data.planePods
-	sort.Slice(kagentPods.Items, func(i, j int) bool { return kagentPods.Items[i].Metadata.Name < kagentPods.Items[j].Metadata.Name })
-
-	agentRows := make([][]string, 0, len(agents.Items))
-	allAgents := len(agents.Items) > 0
-	for _, agent := range agents.Items {
-		servers := make([]string, 0, len(agent.Spec.Declarative.Tools))
-		for _, tool := range agent.Spec.Declarative.Tools {
-			if tool.MCPServer.Name != "" {
-				servers = append(servers, tool.MCPServer.Name)
-			}
-		}
-		now := a.timeNow()
-		ready, accepted := condition(agent.Status.Conditions, "Ready"), conditionAged(agent.Status.Conditions, "Accepted", now)
-		allAgents = allAgents && ready == "yes" && strings.HasPrefix(accepted, "yes")
-		agentRows = append(agentRows, []string{agent.Metadata.Name, ready, accepted, agent.Spec.Declarative.ModelConfig, valueOr(strings.Join(servers, ","), "none")})
-	}
-	sort.Slice(agentRows, func(i, j int) bool { return agentRows[i][0] < agentRows[j][0] })
-
-	modelRows := make([][]string, 0, len(models.Items))
-	allModels := len(models.Items) > 0
-	for _, model := range models.Items {
-		accepted := conditionAged(model.Status.Conditions, "Accepted", a.timeNow())
-		allModels = allModels && strings.HasPrefix(accepted, "yes")
-		modelRows = append(modelRows, []string{model.Metadata.Name, model.Spec.Provider, model.Spec.Model, accepted})
-	}
-	sort.Slice(modelRows, func(i, j int) bool { return modelRows[i][0] < modelRows[j][0] })
-
-	kReady, kRestarts, podRows := podSummary(kagentPods.Items)
-	oReady, oRestarts, _ := podSummary(ollamaPods.Items)
-	pReady, pRestarts, _ := podSummary(planePods.Items)
-	overall := statusReady(allAgents, allModels,
-		kReady, len(kagentPods.Items), oReady, len(ollamaPods.Items), pReady, len(planePods.Items))
-	overall = overall && governanceReady(data.governanceOf()) && data.ollamaErr == ""
-
-	ui := cliui.New(a.Out)
-	if ui.Rich() {
-		return a.statusRich(ui, data, overall, agentRows, modelRows, podRows,
-			kReady, kRestarts, oReady, oRestarts, pReady, pRestarts)
-	}
-	fmt.Fprintln(a.Out, ui.Heading("Kaimahi status"))
-	// The source is not decoration. `default` means nothing named this
-	// cluster and kmx picked the name, which is a different fact from an
-	// operator having typed it, and status is where a confused operator
-	// looks first.
-	//
-	// It states that fact and does not predict the guard's decision. Whether
-	// a mutation is refused depends on what else is in the kubeconfig, and
-	// restating that rule here would be a second copy of it in the one
-	// command that deliberately reads no kubeconfig — free to drift, and
-	// wrong the moment the rule moves, which it already has once.
-	if a.Cfg.ContextSource == config.SourceDefault {
-		fmt.Fprintf(a.Out, "  context: %s (nothing chose this — pick one with `kmx ctx <name>`)\n",
-			a.Cfg.KubeContext)
-	} else {
-		fmt.Fprintf(a.Out, "  context: %s (from %s)\n", a.Cfg.KubeContext, a.Cfg.ContextSource)
-	}
-	if overall {
-		fmt.Fprintf(a.Out, "  result:  %s (%d agents available)\n", ui.Success("ready"), len(agents.Items))
-	} else {
-		fmt.Fprintf(a.Out, "  result:  %s\n", ui.Warning("attention required"))
-	}
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Agents"))
-	humanTable(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows)
-	fmt.Fprintln(a.Out, "  Ready = can serve requests; Accepted = kagent accepted the configuration.")
-	fmt.Fprintln(a.Out, "  Accepted is what kagent decided when it last looked, not a live check: a credential")
-	fmt.Fprintln(a.Out, "  written since then has not been tested, however old that answer is.")
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Models"))
-	humanTable(a.Out, []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows)
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Runtime"))
-	fmt.Fprintf(a.Out, "  kagent:     %d/%d pods ready, %d restarts\n", kReady, len(kagentPods.Items), kRestarts)
-	switch {
-	case data.ollamaErr != "":
-		fmt.Fprintf(a.Out, "  ollama:     unknown — %s\n", data.ollamaErr)
-	case len(ollamaPods.Items) > 0:
-		fmt.Fprintf(a.Out, "  ollama:     %d/%d pods ready, %d restarts\n", oReady, len(ollamaPods.Items), oRestarts)
-	default:
-		fmt.Fprintln(a.Out, "  ollama:     not installed")
-	}
-	// Presence comes from the SAME fact the Governance section below uses —
-	// the proxy Deployment — or the two lines contradict each other for a
-	// plane that is installed and scaled to zero, and this one tells the
-	// operator to install what they already have.
-	switch {
-	case data.planeErr != "":
-		// Not "not installed": we could not look. Saying the plane is
-		// absent here would be the same false zero the governance counts
-		// below refuse to print.
-		fmt.Fprintf(a.Out, "  governance: unknown — %s\n", data.planeErr)
-	case data.planeThere || len(planePods.Items) > 0:
-		fmt.Fprintf(a.Out, "  governance: %d/%d pods ready, %d restarts\n", pReady, len(planePods.Items), pRestarts)
-	default:
-		fmt.Fprintln(a.Out, "  governance: not installed (run `kmx plane` for budgets and audit)")
-	}
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("Runtime pods"))
-	humanTable(a.Out, []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows)
-	writeGovernance(a.Out, data.governanceOf())
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Accent("Next"))
-	fmt.Fprintf(a.Out, "  %s\n", legacyInspectCommand(a.Cfg.KubeContext))
-	return nil
-}
-
-// legacyInspectCommand is the one truthful next step for what this report
-// listed. `kmx status` reads agents.kagent.dev out of the kagent namespace,
-// and nothing in kmx drives those objects any more: `kmx agent chat` is
-// Orka-only and resolves against orka-system, so offering it here named a
-// command that cannot reach a single row above it. kubectl can.
-func legacyInspectCommand(kubeContext string) string {
-	return fmt.Sprintf("kubectl --context %s -n %s get agents.kagent.dev,pods", kubeContext, config_kagentNamespace)
-}
-
-func (a *App) statusRich(ui cliui.Output, data *statusData, overall bool,
-	agentRows, modelRows, podRows [][]string, kReady, kRestarts, oReady, oRestarts, pReady, pRestarts int) error {
-	result := ui.Warning("attention required")
-	if overall {
-		result = ui.Success(fmt.Sprintf("ready (%d agents available)", len(agentRows)))
-	}
-	contextValue := fmt.Sprintf("%s (from %s)", a.Cfg.KubeContext, a.Cfg.ContextSource)
-	if a.Cfg.ContextSource == config.SourceDefault {
-		contextValue = a.Cfg.KubeContext + " (nothing chose this — pick one with `kmx ctx <name>`)"
-	}
-	fmt.Fprintln(a.Out, ui.Heading("Kaimahi status"))
-	fmt.Fprintln(a.Out, ui.Fields([]cliui.Field{{Label: "context", Value: contextValue}, {Label: "result", Value: result}}))
-
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Agents", []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, agentRows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState))
-	fmt.Fprintln(a.Out, ui.Muted("Ready = can serve requests; Accepted = kagent's last configuration decision."))
-	fmt.Fprintln(a.Out, ui.Muted("A credential written since that decision has not yet been tested."))
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Models", []string{"CONFIG", "PROVIDER", "MODEL", "ACCEPTED"}, modelRows, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState))
-
-	runtime := []cliui.Field{{Label: "kagent", Value: fmt.Sprintf("%d/%d pods ready, %d restarts", kReady, len(data.kagentPods.Items), kRestarts)}}
-	ollama := "not installed"
-	if data.ollamaErr != "" {
-		ollama = "unknown — " + data.ollamaErr
-	} else if len(data.ollamaPods.Items) > 0 {
-		ollama = fmt.Sprintf("%d/%d pods ready, %d restarts", oReady, len(data.ollamaPods.Items), oRestarts)
-	}
-	plane := "not installed (run `kmx plane` for budgets and audit)"
-	if data.planeErr != "" {
-		plane = "unknown — " + data.planeErr
-	} else if data.planeThere || len(data.planePods.Items) > 0 {
-		plane = fmt.Sprintf("%d/%d pods ready, %d restarts", pReady, len(data.planePods.Items), pRestarts)
-	}
-	runtime = append(runtime, cliui.Field{Label: "ollama", Value: ollama}, cliui.Field{Label: "governance", Value: plane})
-	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Runtime"), ui.Fields(runtime))
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Runtime pods", []string{"NAME", "READY", "PHASE", "RESTARTS"}, podRows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnNumber))
-
-	g := data.governanceOf()
-	fmt.Fprintf(a.Out, "\n%s\n%s\n", ui.Heading("Governance"), ui.Fields(governanceFields(g)))
-	fmt.Fprintln(a.Out, ui.Muted("Governed means the cluster object points at the plane; the plane field says whether enforcement is available."))
-
-	next := cliui.Action{Label: "Inspect the runtime", Command: legacyInspectCommand(a.Cfg.KubeContext)}
-	fmt.Fprintf(a.Out, "\n%s\n", ui.Actions("Next", []cliui.Action{next}))
-	return nil
-}
-
-func governanceFields(g governance) []cliui.Field {
-	plane := "not installed — nothing is enforced in front of these seams (`kmx plane`)"
-	switch g.Plane.State {
-	case stateUnknown:
-		plane = "unknown — " + g.Plane.Reason
-	case stateInstalled:
-		switch {
-		case g.Plane.Desired == 0:
-			plane = "installed but SCALED TO ZERO — nothing behind it is being enforced"
-		case g.Plane.Ready == 0:
-			plane = fmt.Sprintf("installed but DOWN (0/%d replicas ready) — nothing behind it is being enforced", g.Plane.Desired)
-		default:
-			plane = fmt.Sprintf("installed (%d/%d replicas ready)", g.Plane.Ready, g.Plane.Desired)
-		}
-	}
-	return []cliui.Field{
-		{Label: "plane", Value: plane},
-		{Label: "model seams", Value: seamLine(g.ModelSeams, "agents", "agent")},
-		{Label: "credentials", Value: credentialLine(g.Credentials)},
-	}
 }
 
 func valueOr(value, fallback string) string {

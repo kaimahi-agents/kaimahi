@@ -46,7 +46,8 @@ Machine-readable result, selected events and image identities are in
 
 ## Refusal at conversion
 
-Using this repository's existing `k8s/tools-agent.yaml`, from the spike directory:
+Using the then-existing `k8s/tools-agent.yaml` during the recorded run, from
+this spike directory:
 
 ```sh
 go run ./cmd/convert ../../k8s/tools-agent.yaml proof/tools.json

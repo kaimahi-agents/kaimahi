@@ -15,12 +15,12 @@ import (
 )
 
 func TestNameValidation(t *testing.T) {
-	for _, good := range []string{"a", "billing", "billing-investigator", "agent-7"} {
+	for _, good := range []string{"a", "billing", "billing-investigator", "agent-7", "hello-world", "hello-tools"} {
 		if err := ValidateName(good); err != nil {
 			t.Errorf("%q should be valid: %v", good, err)
 		}
 	}
-	for _, bad := range []string{"", "Billing", "billing_investigator", "-billing", "billing-", "billing investigator", "billing/investigator", "билл", strings.Repeat("a", 64), "hello-world", "hello-tools"} {
+	for _, bad := range []string{"", "Billing", "billing_investigator", "-billing", "billing-", "billing investigator", "billing/investigator", "билл", strings.Repeat("a", 64)} {
 		if err := ValidateName(bad); err == nil {
 			t.Errorf("%q should be refused", bad)
 		}

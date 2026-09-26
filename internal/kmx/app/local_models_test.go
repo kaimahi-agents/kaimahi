@@ -206,24 +206,6 @@ func TestRedirectedOutputDisablesLocalModelPrompt(t *testing.T) {
 	}
 }
 
-func TestLiveHostModelConfigIsPreservedAcrossAgentStep(t *testing.T) {
-	model, err := parseLiveKeylessLocalModel([]byte(`{"spec":{"provider":"Ollama","model":"qwen3:8b","ollama":{"host":"http://172.18.0.1:11434"}}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if model == nil || model.Model != "qwen3:8b" || model.Endpoint != "http://172.18.0.1:11434" {
-		t.Fatalf("model=%#v", model)
-	}
-	a := &App{Cfg: &config.Config{Model: config.DefaultModel}, selectedLocalModel: model}
-	body, err := a.renderModelManifest("hello-world.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "model: qwen3:8b") || !strings.Contains(string(body), model.Endpoint) {
-		t.Fatalf("live route was not preserved:\n%s", body)
-	}
-}
-
 func TestNoninteractiveAndExplicitModelSkipDetection(t *testing.T) {
 	for name, tc := range map[string]struct {
 		allow    bool
@@ -241,21 +223,5 @@ func TestNoninteractiveAndExplicitModelSkipDetection(t *testing.T) {
 				t.Fatalf("detector called %d times", d.calls)
 			}
 		})
-	}
-}
-
-func TestSelectedModelRendersBothRuntimeInputs(t *testing.T) {
-	a := &App{Cfg: &config.Config{Model: config.DefaultModel}, selectedLocalModel: &localModel{
-		Provider: "ollama", Model: "qwen3:8b", Endpoint: "http://host.docker.internal:11434",
-	}}
-	for _, name := range []string{"hello-world.yaml", "kagent-values.yaml"} {
-		body, err := a.renderModelManifest(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := string(body)
-		if !strings.Contains(text, "model: qwen3:8b") || !strings.Contains(text, "http://host.docker.internal:11434") || strings.Contains(text, "model: qwen2.5:3b") {
-			t.Errorf("%s was not rendered with the selection:\n%s", name, text)
-		}
 	}
 }

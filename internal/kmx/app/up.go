@@ -1,9 +1,7 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -12,39 +10,25 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// UpSteps are the individually addressable steps of `kmx up`. The first
-// four are the supported sequence; `kagent`, `agent` and `tools-agent`
-// remain addressable only so the legacy retirement slices that delete them
-// can each be independently green. There is no flag that puts them back
-// into a bare run.
-var UpSteps = []string{"cluster", "ollama", "model", "orka", "kagent", "agent", "tools-agent"}
+// UpSteps are the individually addressable steps of `kmx up`, and they are
+// exactly the supported sequence. The legacy installer steps that once sat
+// beyond them — `kagent`, `agent`, `tools-agent` — are gone rather than
+// hidden: naming one is an unknown step, refused locally, not a runtime kmx
+// still knows how to put on a cluster.
+var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // UpDefaultSteps is what a bare `kmx up` runs: a cluster, a keyless model
 // server and the pinned Orka runtime. It deploys no agent — `kmx quickstart`
 // is the command that ends with one answering, and `kmx agent create` is the
 // one that authors your own.
+//
+// It holds the same four names as UpSteps, and that is the point rather than
+// a duplication: a bare run does everything that can be asked for one step at
+// a time, so there is nothing addressable that a bare run skips. They are
+// separate slices rather than one aliased twice, because two exported
+// variables sharing a backing array is a way for a caller to change one by
+// touching the other; a test pins them equal instead.
 var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
-
-// upLegacySteps are the steps that put the kagent runtime on the cluster.
-// They are the ONLY reason `kmx up` reads `agents.kagent.dev`: the final
-// status collection is a kagent read, and a cluster that never installed
-// kagent answers it with "the server doesn't have a resource type", which
-// would fail an Orka-only run at its last phase over something the run
-// deliberately did not deploy.
-var upLegacySteps = []string{"kagent", "agent", "tools-agent"}
-
-// stepsIncludeLegacy reports whether this invocation asked for the legacy
-// runtime, and so whether the legacy status is about something it did.
-func stepsIncludeLegacy(steps []string) bool {
-	for _, step := range steps {
-		for _, legacy := range upLegacySteps {
-			if step == legacy {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 // Up runs the whole journey, or the single named step.
 //
@@ -87,41 +71,25 @@ func (a *App) Up(step string) error {
 	if step != "" {
 		action, command = "run the '"+step+"' step", "kmx up --step "+step
 	}
-	guard := a.Guard
-	switch step {
-	case "":
-		// A bare run is the Orka runtime and nothing else, so its banner
-		// names the two namespaces it writes to. An explicitly requested
-		// legacy step keeps the wider list, because that step really does
-		// land in kagent and kaimahi.
-		guard = func(action, command string) error {
-			return a.GuardCreateIn(action, command, OrkaPathNamespaces)
-		}
-	case "cluster":
+	// Every step writes to the Orka path's two namespaces, so the banner
+	// names them exactly — for a bare run and for a single step alike. The
+	// wider list existed for the legacy install, which landed in kagent as
+	// well, and naming a namespace nothing is written to is its own untruth.
+	guard := func(action, command string) error {
+		return a.GuardCreateIn(action, command, OrkaPathNamespaces)
+	}
+	if step == "cluster" {
 		guard = a.GuardCreate
 	}
 	if err := guard(action, command); err != nil {
 		return err
 	}
 
-	legacy := stepsIncludeLegacy(steps)
 	if step != "" {
-		total := 1
-		if legacy {
-			total = 2
-		}
-		if err := a.runPhase(phase{current: 1, total: total, name: upPhaseName(step)}, func() error {
+		if err := a.runPhase(phase{current: 1, total: 1, name: upPhaseName(step)}, func() error {
 			return a.runUpStep(step)
 		}); err != nil {
 			return err
-		}
-		if legacy {
-			// Kept exactly here: the legacy runtime is on this cluster
-			// because this invocation asked for it, so the kagent read the
-			// status collection makes is a read of what just happened.
-			if err := a.runPhase(phase{current: 2, total: 2, name: "Collect runtime status"}, a.Status); err != nil {
-				return err
-			}
 		}
 	} else if err := a.upDefault(); err != nil {
 		return err
@@ -153,13 +121,10 @@ func (a *App) Up(step string) error {
 
 func upPhaseName(step string) string {
 	return map[string]string{
-		"cluster":     "Prepare kind cluster",
-		"ollama":      "Deploy Ollama",
-		"model":       "Pull model",
-		"orka":        "Install Orka",
-		"kagent":      "Install kagent",
-		"agent":       "Deploy hello-world agent",
-		"tools-agent": "Deploy hello-tools agent",
+		"cluster": "Prepare kind cluster",
+		"ollama":  "Deploy Ollama",
+		"model":   "Pull model",
+		"orka":    "Install Orka",
 	}[step]
 }
 
@@ -173,12 +138,6 @@ func (a *App) runUpStep(step string) error {
 		return a.stepModel()
 	case "orka":
 		return a.stepOrka()
-	case "kagent":
-		return a.stepKagent()
-	case "agent":
-		return a.stepAgent()
-	case "tools-agent":
-		return a.stepToolsAgent()
 	}
 	return fmt.Errorf("unknown up step %q", step)
 }
@@ -190,10 +149,10 @@ func (a *App) runUpStep(step string) error {
 // Ollama is deployed and its model pulled before Orka is installed, so a
 // cluster that cannot pull at all still fails on the smaller download first.
 // Nothing here overlaps: the earlier two-agent lane existed for the legacy
-// runtime's demonstration agents, which a bare run no longer deploys, and
-// the measurements that lane rested on said the remaining steps gain nothing
-// from running together — they pull ~2GB of images between them, so starting
-// them at once splits the bandwidth instead of saving time.
+// runtime's demonstration agents, which are gone, and the measurements that
+// lane rested on said the remaining steps gain nothing from running together
+// — they pull ~2GB of images between them, so starting them at once splits
+// the bandwidth instead of saving time.
 func (a *App) upDefault() error {
 	if err := a.runPhase(phase{current: 1, total: 4, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
@@ -213,6 +172,14 @@ func (a *App) upDefault() error {
 }
 
 func (a *App) preflightUp(steps []string) error {
+	return a.preflight(a.upDependencies(steps)...)
+}
+
+// upDependencies is what this selection of steps shells out to. It is
+// separate from preflightUp so the list is readable — and assertable —
+// without provisioning anything: Helm was fetched onto operators' machines
+// for the legacy chart alone, and nothing here may quietly ask for it again.
+func (a *App) upDependencies(steps []string) []dependency {
 	wanted := map[string]bool{}
 	for _, step := range steps {
 		wanted[step] = true
@@ -221,13 +188,10 @@ func (a *App) preflightUp(steps []string) error {
 	if wanted["cluster"] {
 		dependencies = append(dependencies, depKind, depKubectl, a.engineDependency())
 	}
-	if wanted["ollama"] || wanted["model"] || wanted["orka"] || wanted["agent"] || wanted["tools-agent"] {
+	if wanted["ollama"] || wanted["model"] || wanted["orka"] {
 		dependencies = append(dependencies, depKubectl)
 	}
-	if wanted["kagent"] {
-		dependencies = append(dependencies, depHelm, depKubectl)
-	}
-	return a.preflight(dependencies...)
+	return dependencies
 }
 
 // ---- cluster --------------------------------------------------------------
@@ -460,256 +424,4 @@ func (a *App) stepModel() error {
 		}
 	}
 	return err
-}
-
-// ---- kagent ---------------------------------------------------------------
-//
-// EXPLICIT ONLY. `kmx up --step kagent` still installs the legacy runtime so
-// the slices that retire it can each be green on their own; nothing a bare
-// `kmx up` or `kmx quickstart` runs reaches this code, and there is no flag
-// that puts it back.
-
-func (a *App) stepKagent() error { return a.installKagent() }
-
-// installKagent installs the chart.
-//
-// It once took `--set` overlays for one caller — the quickstart profile that
-// deferred the console, the bundled tool server and the MCP controller. That
-// caller is gone: the first answer comes from Orka, so there is no longer a
-// reduced kagent release to describe, reconcile or restore.
-func (a *App) installKagent() error {
-	version := a.Cfg.KagentVersion
-	if err := a.Run.Run("helm", "upgrade", "--install", "kagent-crds",
-		"oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds",
-		"--version", version, "--namespace", "kagent", "--create-namespace",
-		"--kube-context", a.Cfg.KubeContext); err != nil {
-		return err
-	}
-
-	// helm -f wants a path, and the values file lives inside the binary.
-	values, err := a.renderModelManifest("kagent-values.yaml")
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp("", "kagent-values-*.yaml")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(values); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	args := []string{"upgrade", "--install", "kagent",
-		"oci://ghcr.io/kagent-dev/kagent/helm/kagent",
-		"--version", version, "--namespace", "kagent",
-		"--kube-context", a.Cfg.KubeContext, "-f", tmp.Name(),
-		"--wait", "--wait-for-jobs", "--timeout", "420s"}
-	return a.Run.Run("helm", args...)
-}
-
-// ---- the agents -----------------------------------------------------------
-
-// isNotFound reports whether a kubectl failure was "the object is not there",
-// as opposed to "the cluster could not be reached" or "you may not read it".
-//
-// The distinction is the whole point of the capture-then-restore dance: a
-// fresh cluster legitimately has no agent yet, but an unreachable API server
-// must NEVER be read as "nothing to preserve" — that is how a re-apply
-// silently un-governs a live agent.
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := err.Error()
-	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
-}
-
-// liveModelConfig reads an agent's current modelConfig.
-//
-// Re-applying the committed YAML must not silently drop governance (or any
-// preset switch) from a live agent, so the current value is captured first
-// and a non-default one is restored after the apply, with a warning. Only a
-// NotFound (fresh cluster) may skip the capture — ANY other read failure
-// aborts rather than risk silently un-governing an agent.
-func (a *App) liveModelConfig(agent string) (string, error) {
-	out, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent,
-		"-o", "jsonpath={.spec.declarative.modelConfig}")
-	if err != nil {
-		if isNotFound(err) {
-			return "", nil
-		}
-		// Deliberately NOT treated as absence, however it reads. The most
-		// common cause is that kagent is not installed yet — the Agent CRD
-		// does not exist, so kubectl says "the server doesn't have a resource
-		// type", not NotFound — and applying an Agent to that cluster would
-		// fail a moment later anyway. Name the likely cause; do not guess.
-		// The hint is on its own line, as every other operator-facing refusal
-		// in this package is: these are printed to a terminal, not wrapped by
-		// a caller.
-		return "", fmt.Errorf("cannot read %s's live modelConfig (refusing to risk un-governing it): %w\n"+
-			"  if kagent is not installed on this cluster yet, that is `kmx up`", agent, err)
-	}
-	return strings.TrimSpace(out), nil
-}
-
-// desiredModelConfig applies the preservation rule: a live non-default
-// modelConfig wins over the committed one.
-func (a *App) desiredModelConfig(agent, current string) (string, bool) {
-	if current != "" && current != config.KeylessModelConfig {
-		a.notef("NOTE: %s was on modelConfig %q — preserving it ('make use PRESET=ollama' resets)", agent, current)
-		return current, true
-	}
-	return config.KeylessModelConfig, false
-}
-
-func (a *App) patchModelConfig(agent, modelConfig string) error {
-	patch := fmt.Sprintf(`{"spec":{"declarative":{"modelConfig":%q}}}`, modelConfig)
-	return a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", agent, "--type", "merge", "-p", patch)
-}
-
-func (a *App) waitAgentReady(agent string) error {
-	return a.kubectlRun("-n", "kagent", "wait",
-		`--for=jsonpath={.status.conditions[?(@.type=="Ready")].status}=True`,
-		"agents.kagent.dev/"+agent, "--timeout=300s")
-}
-
-func (a *App) stepAgent() error {
-	current, err := a.liveModelConfig("hello-world")
-	if err != nil {
-		return err
-	}
-	desired, changed := a.desiredModelConfig("hello-world", current)
-	if current == config.KeylessModelConfig && a.selectedLocalModel == nil && !a.Cfg.ModelExplicit {
-		a.selectedLocalModel, err = a.liveKeylessLocalModel()
-		if err != nil {
-			return err
-		}
-	}
-	body, err := a.renderModelManifest("hello-world.yaml")
-	if err != nil {
-		return err
-	}
-	if err := a.applyBytes("hello-world.yaml", body); err != nil {
-		return err
-	}
-	if changed {
-		if err := a.patchModelConfig("hello-world", desired); err != nil {
-			return err
-		}
-	}
-	return a.waitAgentReady("hello-world")
-}
-
-func (a *App) liveKeylessLocalModel() (*localModel, error) {
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "modelconfig", config.KeylessModelConfig, "-o", "json")
-	if isNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("cannot read live ModelConfig %q: %w", config.KeylessModelConfig, err)
-	}
-	return parseLiveKeylessLocalModel([]byte(raw))
-}
-
-func parseLiveKeylessLocalModel(raw []byte) (*localModel, error) {
-	var live struct {
-		Spec struct {
-			Provider string `json:"provider"`
-			Model    string `json:"model"`
-			Ollama   struct {
-				Host string `json:"host"`
-			} `json:"ollama"`
-		} `json:"spec"`
-	}
-	if err := json.Unmarshal(raw, &live); err != nil {
-		return nil, fmt.Errorf("cannot parse live ModelConfig %q: %w", config.KeylessModelConfig, err)
-	}
-	host := strings.TrimSpace(live.Spec.Ollama.Host)
-	if !strings.EqualFold(strings.TrimSpace(live.Spec.Provider), "ollama") || host == "" || host == "http://ollama.ollama.svc.cluster.local:11434" {
-		return nil, nil
-	}
-	return &localModel{Provider: "ollama", Model: strings.TrimSpace(live.Spec.Model), Endpoint: host}, nil
-}
-
-// agentJSON is the sliver of an Agent kmx reads back.
-type agentJSON struct {
-	Spec struct {
-		Declarative struct {
-			ModelConfig string          `json:"modelConfig"`
-			Tools       json.RawMessage `json:"tools"`
-		} `json:"declarative"`
-	} `json:"spec"`
-}
-
-// stepToolsAgent preserves the non-default model and existing owner tool
-// wiring. A retired gateway reference still belongs to the owner: applying
-// the default manifest must not silently repoint it at a direct server.
-func (a *App) stepToolsAgent() error {
-	// The RemoteMCPServer the chart publishes has to be accepted before an
-	// Agent can wire to it.
-	if err := a.kubectlRun("-n", "kagent", "wait",
-		`--for=jsonpath={.status.conditions[?(@.type=="Accepted")].status}=True`,
-		"remotemcpserver/kagent-tool-server", "--timeout=300s"); err != nil {
-		return err
-	}
-
-	var live agentJSON
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "hello-tools", "-o", "json")
-	switch {
-	case isNotFound(err):
-		// Fresh cluster: nothing to preserve.
-	case err != nil:
-		return fmt.Errorf("cannot read hello-tools' live tool wiring (refusing to risk un-governing it): %w", err)
-	default:
-		if err := json.Unmarshal([]byte(raw), &live); err != nil {
-			return fmt.Errorf("cannot parse hello-tools: %w", err)
-		}
-	}
-
-	// Is the live agent wired to the GATEWAY? Every entry is inspected, not
-	// just the first: an agent with a second tool that happens to sort ahead
-	// of the governed one would otherwise read as ungoverned and be quietly
-	// pointed back at the unaudited server. And a decode failure is an
-	// error, not a "no": failing to understand the live wiring is exactly
-	// when this code must not act.
-	governedByGateway := false
-	if len(live.Spec.Declarative.Tools) > 0 {
-		var tools []struct {
-			McpServer struct {
-				Name string `json:"name"`
-			} `json:"mcpServer"`
-		}
-		if err := json.Unmarshal(live.Spec.Declarative.Tools, &tools); err != nil {
-			return fmt.Errorf("cannot read hello-tools' live tool wiring (refusing to risk un-governing it): %w", err)
-		}
-		for _, tool := range tools {
-			if tool.McpServer.Name == "kaimahi-tools" {
-				governedByGateway = true
-				break
-			}
-		}
-	}
-
-	desired, changed := a.desiredModelConfig("hello-tools", live.Spec.Declarative.ModelConfig)
-	if err := a.apply("tools-agent.yaml"); err != nil {
-		return err
-	}
-	if changed {
-		if err := a.patchModelConfig("hello-tools", desired); err != nil {
-			return err
-		}
-	}
-	if governedByGateway {
-		a.notef("NOTE: preserving hello-tools' existing kaimahi-tools wiring. The gateway is retired; review and replace this owner-managed route deliberately.")
-		patch := fmt.Sprintf(`{"spec":{"declarative":{"tools":%s}}}`, string(live.Spec.Declarative.Tools))
-		if err := a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", "hello-tools", "--type", "merge", "-p", patch); err != nil {
-			return err
-		}
-	}
-	return a.waitAgentReady("hello-tools")
 }

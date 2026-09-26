@@ -206,11 +206,11 @@ func TestUpPreflightReportsAllMissingDependencies(t *testing.T) {
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	a := &App{Cfg: &config.Config{ContainerEngine: "docker"}, Run: &run.Runner{}}
-	err := a.preflightUp([]string{"cluster", "kagent"})
+	err := a.preflightUp([]string{"cluster"})
 	if err == nil {
 		t.Fatal("preflight unexpectedly passed")
 	}
-	for _, want := range []string{"3 missing or unusable dependencies", "kind is not on PATH", "kubectl is not on PATH", "helm is not on PATH"} {
+	for _, want := range []string{"2 missing or unusable dependencies", "kind is not on PATH", "kubectl is not on PATH"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("preflight error lacks %q:\n%s", want, err)
 		}

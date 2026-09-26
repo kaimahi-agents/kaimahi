@@ -16,23 +16,18 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The fake cluster boundary for `kmx up`. The combined kagent read answers
-// the way a cluster WITHOUT the kagent CRDs answers — "the server doesn't
-// have a resource type" — so a bare Orka-only run that touches it fails, and
-// a run that completes has demonstrably not touched it.
+// The fake cluster boundary for `kmx up`. The legacy read answers the way a
+// cluster WITHOUT the kagent CRDs answers — "the server doesn't have a
+// resource type" — so any run that touches it fails, and a run that completes
+// has demonstrably not touched it.
 const fakeUpKubectl = `#!/bin/sh
 printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
   *"config view -o json"*)
     printf '{"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}'
     exit 0 ;;
-  *"get agents.kagent.dev,modelconfigs,pods"*)
-    case "$KMX_TEST_KAGENT" in
-      installed) printf '{"items":[]}'; exit 0 ;;
-      *) printf 'error: the server doesn'"'"'t have a resource type "agents"\n' >&2; exit 1 ;;
-    esac ;;
-  *"get agents.kagent.dev hello-world"*)
-    printf 'Error from server (NotFound): agents.kagent.dev "hello-world" not found\n' >&2
+  *kagent.dev*)
+    printf 'error: the server doesn'"'"'t have a resource type "agents"\n' >&2
     exit 1 ;;
   *"apply -f -"*)
     body=$(cat)
@@ -102,18 +97,17 @@ func upCalls(t *testing.T, args string) string {
 	return string(body)
 }
 
-// A bare `kmx up` is the Orka runtime and nothing else, so it must never ask
-// this cluster about the legacy runtime. The fake answers that read the way a
+// `kmx up` is the Orka runtime and nothing else, so it must never ask this
+// cluster about the legacy runtime. The fake answers that read the way a
 // cluster with no kagent CRD answers — the command completing at all is the
-// proof that it was not asked. The phase count is the same claim from the
-// operator's side: five phases were counted when the fifth was a kagent read.
+// proof that it was not asked.
 func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	a, errOut, args := upFixture(t)
 	if err := a.Up(""); err != nil {
 		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
 	}
 	calls := upCalls(t, args)
-	if strings.Contains(calls, "agents.kagent.dev") || strings.Contains(calls, "modelconfigs") {
+	if strings.Contains(calls, "kagent") || strings.Contains(calls, "modelconfigs") {
 		t.Errorf("a bare `kmx up` read the legacy runtime:\n%s", calls)
 	}
 	for _, want := range []string{"COMPLETE", "Runtime setup finished", "[4/4]"} {
@@ -178,9 +172,8 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 }
 
 // The guidance at the end of an Orka-only run has to be a route this cluster
-// can take. `kmx govern` configures a kagent Agent's ModelConfig, and a bare
-// run deploys no kagent Agent; putting an application's model traffic on the
-// seam is `kmx migrate`.
+// can take. Putting an application's model traffic on the seam is
+// `kmx migrate`, one workload at a time.
 func TestOrkaOnlyUpPointsAtMigrateRatherThanGovern(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	if err := a.Up(""); err != nil {
@@ -194,37 +187,56 @@ func TestOrkaOnlyUpPointsAtMigrateRatherThanGovern(t *testing.T) {
 	}
 }
 
-// The legacy flow keeps its status. An explicitly requested kagent step is
-// the one place that read is about something this run put there, so the
-// summary stays exactly there and nowhere else.
-func TestExplicitLegacyStepStillCollectsTheKagentStatus(t *testing.T) {
-	a, errOut, args := upFixture(t)
-	t.Setenv("KMX_TEST_KAGENT", "installed")
-	if err := a.Up("agent"); err != nil {
-		t.Fatalf("the explicit legacy step failed: %v\n%s", err, errOut)
+// The addressable steps ARE the supported sequence. The legacy installer
+// steps are gone, so `--step kagent` is an unknown step that fails locally
+// rather than a hidden install path behind a name.
+func TestUpStepsAreExactlyTheSupportedSequence(t *testing.T) {
+	want := []string{"cluster", "ollama", "model", "orka"}
+	if strings.Join(UpSteps, ",") != strings.Join(want, ",") {
+		t.Fatalf("UpSteps is %q, want %q", UpSteps, want)
 	}
-	if !strings.Contains(upCalls(t, args), "get agents.kagent.dev,modelconfigs,pods") {
-		t.Errorf("the legacy step lost its status collection:\n%s", upCalls(t, args))
-	}
-	if !strings.Contains(errOut.String(), "Collect runtime status") {
-		t.Errorf("the legacy step reported no status phase:\n%s", errOut)
+	if strings.Join(UpDefaultSteps, ",") != strings.Join(want, ",") {
+		t.Fatalf("UpDefaultSteps is %q, want %q", UpDefaultSteps, want)
 	}
 }
 
-// The predicate itself, so the rule is readable as one list rather than
-// inferred from two integration runs.
-func TestOnlyLegacyStepsAskForTheKagentStatus(t *testing.T) {
-	for _, step := range []string{"cluster", "ollama", "model", "orka"} {
-		if stepsIncludeLegacy([]string{step}) {
-			t.Errorf("step %q was classified as legacy", step)
-		}
-	}
+// Naming a retired installer step must be refused before anything is
+// provisioned, and the refusal must list what can be run instead. Refusing
+// locally matters more than the wording: the step is gone, so reaching a
+// cluster to discover that would be a round trip for nothing.
+func TestRetiredInstallerStepsAreRefusedWithoutReachingACluster(t *testing.T) {
 	for _, step := range []string{"kagent", "agent", "tools-agent"} {
-		if !stepsIncludeLegacy([]string{step}) {
-			t.Errorf("legacy step %q was classified as Orka-only", step)
-		}
+		t.Run(step, func(t *testing.T) {
+			empty := t.TempDir()
+			t.Setenv("PATH", empty)
+			var out bytes.Buffer
+			a := &App{Cfg: &config.Config{KindCluster: "test", KubeContext: "kind-test"},
+				Run: &run.Runner{}, Out: &out, Err: &out}
+			err := a.Up(step)
+			if err == nil {
+				t.Fatalf("the retired step %q was accepted", step)
+			}
+			if !strings.Contains(err.Error(), "unknown step") || !strings.Contains(err.Error(), "orka") {
+				t.Fatalf("the refusal does not name the steps that exist: %v", err)
+			}
+		})
 	}
-	if stepsIncludeLegacy(UpDefaultSteps) {
-		t.Errorf("a bare `kmx up` runs a legacy step: %q", UpDefaultSteps)
+}
+
+// Helm was fetched and preflighted for one reason: installing the legacy
+// chart. With that gone, no step may ask for it — a prerequisite nobody needs
+// is a download on somebody's machine for nothing.
+func TestNoUpStepRequiresHelm(t *testing.T) {
+	for _, step := range append([]string{""}, UpSteps...) {
+		steps := UpDefaultSteps
+		if step != "" {
+			steps = []string{step}
+		}
+		a := &App{Cfg: &config.Config{ContainerEngine: "docker"}}
+		for _, dep := range a.upDependencies(steps) {
+			if dep.name == "helm" {
+				t.Fatalf("step %q still asks for helm", step)
+			}
+		}
 	}
 }

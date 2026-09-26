@@ -175,8 +175,8 @@ func newVersionCommand(state *commandState) *cobra.Command {
 		if rev, err := planebuild.Revision(info, ok); err == nil {
 			revision = rev
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "kmx %s\n  kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md\n  kagent   %s\n  model    %s\n  plane    %s, built from %s\n",
-			version.Resolve(info, ok), config.DefaultKagentVersion, config.DefaultModel, app.PlaneImage, revision)
+		fmt.Fprintf(cmd.OutOrStdout(), "kmx %s\n  kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md\n  orka     %s\n  model    %s\n  plane    %s, built from %s\n",
+			version.Resolve(info, ok), app.OrkaVersion, config.DefaultModel, app.PlaneImage, revision)
 		return nil
 	}}
 }

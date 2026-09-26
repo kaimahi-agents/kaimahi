@@ -66,4 +66,5 @@ go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 Live verification on 2026-09-16 attached the Tool to `hello-world-agent`, ran a
 fresh Orka Task, observed `POST /resources` returning 200, and received the actual
 three deployment names. The reader account's `delete pods` authorization was
-denied. The older `k8s/tools-agent.yaml` remains the kagent/MCP example.
+denied. The former kagent/MCP fixture was removed with the unsupported legacy
+runtime; this native Tool is the maintained example.

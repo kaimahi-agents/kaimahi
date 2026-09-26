@@ -423,13 +423,45 @@ func TestCredentialIssueRequiresExactlyOneDestination(t *testing.T) {
 	}
 }
 
-func TestCredentialIssueSecretDefaultsToKagentNamespace(t *testing.T) {
+// The namespace a one-time token is written into has no default. It used to
+// be the legacy runtime's, so an operator who omitted the flag got a
+// credential minted into a namespace nothing in kmx installs any more, and
+// the token cannot be re-read. The flag is required with --secret, and the
+// refusal happens before any configuration is loaded or anything is issued.
+func TestCredentialIssueToASecretRequiresItsNamespace(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
 	issue, _, err := root.Find([]string{"credential", "issue"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := issue.Flag("namespace").DefValue; got != config.DefaultNamespace {
-		t.Fatalf("--namespace default=%q, want %q", got, config.DefaultNamespace)
+	if got := issue.Flag("namespace").DefValue; got != "" {
+		t.Fatalf("--namespace default=%q, want no default at all", got)
+	}
+
+	for _, args := range [][]string{
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token"},
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", ""},
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", "   "},
+	} {
+		var out, errOut bytes.Buffer
+		deps, loads := testDependencies(&out, &errOut)
+		err := execute(args, deps)
+		if err == nil {
+			t.Fatalf("%v issued a credential with no namespace to put it in", args)
+		}
+		if !strings.Contains(err.Error(), "--namespace") {
+			t.Errorf("%v: the refusal does not name the missing flag: %v", args, err)
+		}
+		if *loads != 0 {
+			t.Fatalf("%v loaded config before enforcing the destination namespace", args)
+		}
+	}
+
+	// --discard stores nothing, so it needs no namespace.
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	if err := execute([]string{"credential", "issue", "inbound-demo", "--discard"}, deps); err != nil &&
+		strings.Contains(err.Error(), "--namespace") {
+		t.Errorf("--discard was asked for a namespace it does not use: %v", err)
 	}
 }

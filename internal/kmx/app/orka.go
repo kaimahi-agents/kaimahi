@@ -56,10 +56,10 @@ const (
 	// OrkaPathNamespaces is the guard banner's namespace list for the
 	// supported Orka path: the model server and the Orka runtime, which are
 	// the only two namespaces `kmx quickstart`, the wizard and a bare
-	// `kmx up` write to. config.GuardNamespaces is the wider legacy list and
-	// stays with the commands that still land in kagent and kaimahi — a
-	// banner naming a namespace the command never touches is the guard
-	// describing somebody else's command.
+	// `kmx up` write to. config.GuardNamespaces is the wider list used by
+	// commands whose target namespaces vary or include the plane — a banner
+	// naming a namespace this path never touches would describe somebody
+	// else's command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
 	// orkaWrapperSecret is the Secret their getting-started tells an

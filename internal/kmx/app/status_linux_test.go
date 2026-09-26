@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"golang.org/x/sys/unix"
@@ -53,107 +51,11 @@ func reportApp(t *testing.T, out io.Writer, script string) *App {
 		Run: &run.Runner{Stdout: out, Stderr: io.Discard}}
 }
 
-func TestStatusCommandReadinessAndReportParity(t *testing.T) {
-	for _, tc := range []struct {
-		name           string
-		governed       bool
-		desired, ready int
-		secrets        string
-		wantReady      bool
-	}{
-		{"direct", false, -1, 0, "", true},
-		{"scaled zero", true, 0, 0, "secret/token", false},
-		{"down", true, 1, 0, "secret/token", false},
-		{"partial rollout", true, 2, 1, "secret/token", false},
-		{"missing credential", true, 1, 1, "", false},
-		{"required absent plane", true, -1, 0, "secret/token", false},
-		{"healthy", true, 1, 1, "secret/token", true},
-	} {
-		for _, mode := range []string{"plain", "rich", "no-color"} {
-			t.Run(tc.name+"/"+mode, func(t *testing.T) {
-				t.Setenv("TERM", "xterm-256color")
-				t.Setenv("NO_COLOR", "")
-				if mode == "no-color" {
-					t.Setenv("NO_COLOR", "1")
-				}
-				out, text := reportOutput(t, mode != "plain", 42)
-				base := ""
-				if tc.governed {
-					base = governedModelURL
-				}
-				deployment := `{"items":[]}`
-				if tc.desired >= 0 {
-					deployment = fmt.Sprintf(`{"items":[{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":%d},"status":{"readyReplicas":%d}}]}`, tc.desired, tc.ready)
-				}
-				combined := fmt.Sprintf(`{"items":[{"kind":"Agent","metadata":{"name":"alpha"},"spec":{"declarative":{"modelConfig":"model"}},"status":{"conditions":[{"type":"Ready","status":"True"},{"type":"Accepted","status":"True"}]}},{"kind":"ModelConfig","metadata":{"name":"model"},"spec":{"openAI":{"baseUrl":%q},"apiKeySecret":"token"},"status":{"conditions":[{"type":"Accepted","status":"True"}]}},{"kind":"Pod","metadata":{"name":"runtime"},"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}}]}`, base)
-				script := fmt.Sprintf(`case "$*" in
-*"config view"*) printf '%%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-*"get agents.kagent.dev,modelconfigs,pods"*) printf '%%s' '%s';;
-*"get deployments"*) printf '%%s' '%s';;
-*"get secrets"*) printf '%%s' '%s';;
-*) printf '%%s' '{"items":[]}';;
-esac
-`, combined, deployment, tc.secrets)
-				a := reportApp(t, out, script)
-				if err := a.Status(); err != nil {
-					t.Fatal(err)
-				}
-				got := ansi.Strip(text())
-				if strings.Contains(got, "attention required") == tc.wantReady {
-					t.Fatalf("wrong overall readiness: %s", got)
-				}
-				if strings.Contains(got, "kmx agent chat") {
-					// The rows above come from agents.kagent.dev in the
-					// kagent namespace. `agent chat` is Orka-only and
-					// resolves against orka-system, so it cannot reach a
-					// single one of them, ready or not.
-					t.Fatalf("status offered Orka-only chat for legacy listings: %s", got)
-				}
-				if !strings.Contains(got, "kubectl --context kind-test -n kagent get agents.kagent.dev,pods") {
-					t.Fatalf("status did not offer the inspection that works: %s", got)
-				}
-				if mode != "rich" && strings.Contains(text(), "\x1b") {
-					t.Fatal("unexpected ANSI")
-				}
-				if mode != "plain" && (!strings.Contains(got, "Agents (1)") || !strings.Contains(got, "Runtime pods (1)")) {
-					t.Fatalf("missing group counts: %s", got)
-				}
-				data, err := a.collectStatus()
-				if err != nil {
-					t.Fatal(err)
-				}
-				g := data.governanceOf()
-				if governanceReady(g) != tc.wantReady {
-					t.Fatalf("report/state mismatch: %+v", g)
-				}
-				var structured bytes.Buffer
-				a.Out = &structured
-				if err := a.StatusWithOptions(StatusOptions{Output: "json"}); err != nil {
-					t.Fatal(err)
-				}
-				var document statusDocument
-				if err := json.Unmarshal(structured.Bytes(), &document); err != nil {
-					t.Fatal(err)
-				}
-				if document.Governance.Plane != g.Plane || document.Governance.Credentials.Present != g.Credentials.Present {
-					t.Fatalf("structured numeric/state mismatch: %s", structured.String())
-				}
-			})
-		}
-	}
-}
-
-func TestStatusExplainsHowToCompleteMissingDefaultSetup(t *testing.T) {
-	a := reportApp(t, io.Discard, `case "$*" in
-*"config view"*) printf '%s' '{"current-context":"other","contexts":[{"name":"other","context":{"cluster":"other"}}],"clusters":[{"name":"other","cluster":{"server":"https://example.test"}}]}';;
-esac`)
-	a.Cfg.ContextSource = config.SourceDefault
-	err := a.Status()
-	if err == nil || !strings.Contains(err.Error(), "setup is incomplete") || !strings.Contains(err.Error(), "kmx quickstart") {
-		t.Fatalf("missing default context did not offer the repair path: %v", err)
-	}
-}
-
+// `kmx ctx` is where an incomplete local setup is explained. `kmx status`
+// used to say it too, from a context check of its own in front of the Orka
+// reading — which made it answer a missing context differently from
+// `kmx orka status`, the command it exists to delegate to. The guidance lives
+// here, on the command whose whole job is the context.
 func TestCtxShowsHowToCompleteMissingDefaultSetup(t *testing.T) {
 	var out bytes.Buffer
 	a := reportApp(t, &out, `case "$*" in

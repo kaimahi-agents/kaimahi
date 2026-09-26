@@ -209,10 +209,13 @@ func TestAnExpiredAuthorityRefusesToSignRatherThanMintingSomethingDead(t *testin
 	if err == nil {
 		t.Fatal("an expired authority signed a certificate")
 	}
-	for _, want := range []string{authorityCommonName, "expired", "kmx plane"} {
+	for _, want := range []string{authorityCommonName, "expired", "kmx plane", "kmx migrate"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not carry %q: %v", want, err)
 		}
+	}
+	if strings.Contains(err.Error(), "kagent") {
+		t.Errorf("the recovery still delegates trust redistribution to the retired runtime: %v", err)
 	}
 }
 

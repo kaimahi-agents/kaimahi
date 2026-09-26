@@ -865,43 +865,6 @@ def model_probes_call_seam_ca_directly(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def nothing_but_ci_and_one_script_runs_verify_chat(doc: Doc, tree: Tree) -> list[str]:
-    """The map's sharpest "a name does not mean ownership" case.
-
-    `verify-chat.py` reads like it belongs to `make chat`, and the reason
-    it does not is that every mention in the Makefile is a comment. That
-    is mechanical, so it is checked; whether a dozen comments are
-    misleading is not.
-    """
-    _, body = doc.section("`scripts/`")
-    m = once(phrase("`.github/workflows/ci.yml` ({n} invocation") + r"s?" +
-             phrase(" among {n} mention") + r"s?",
-             body, "the verify-chat invocation count")
-    once(phrase("every occurrence in the Makefile is a comment line rather than a recipe"), body,
-         "the Makefile claim")
-    ci = [line for line in tree.read(".github/workflows/ci.yml").splitlines()
-          if "verify-chat.py" in line]
-    runs = [line for line in ci if not line.strip().startswith("#")]
-    problems = compare_count(number(m.group(1)), len(runs), "verify-chat.py invocations in ci.yml")
-    problems += compare_count(number(m.group(2)), len(ci), "verify-chat.py mentions in ci.yml")
-    for n, line in enumerate(tree.read("Makefile").splitlines(), 1):
-        if "verify-chat.py" in line and not line.lstrip().startswith("#"):
-            problems.append(f"Makefile:{n} names verify-chat.py outside a comment: {line.strip()!r}")
-    return problems
-
-
-@claim
-def copilot_secret_still_has_one_caller(doc: Doc, tree: Tree) -> list[str]:
-    """Count make recipes without freezing an interpretation of ownership."""
-    _, body = doc.section("`scripts/`")
-    m = once(phrase("`scripts/copilot-secret.sh`: {n} make recipe"), body,
-             "the copilot-secret make caller")
-    recipes = [line for line in tree.read("Makefile").splitlines()
-               if line.startswith("\t") and "scripts/copilot-secret.sh" in line]
-    return compare_count(number(m.group(1)), len(recipes), "copilot-secret make recipes")
-
-
-@claim
 def the_open_question_count_matches(doc: Doc, tree: Tree) -> list[str]:
     """Questions may evolve or reach zero; the declared count must agree."""
     heading, body = doc.section("Open questions")
@@ -1000,7 +963,7 @@ def main(argv) -> int:
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![mark](brand/mark.svg)\n",
     "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
-                "\t./scripts/copilot-secret.sh\n# scripts/verify-chat.py\n"
+                "# scripts/verify-example.py\n"
                 "# scripts/check-example.py\n",
     "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
@@ -1019,8 +982,7 @@ SELFTEST_FILES = {
     "scripts/embedded.sh": "true\n",
     "scripts/model-seam-probe.sh": 'seam_ca "$work/ca.crt"\n',
     "scripts/spend-race-probe.sh": 'seam_ca "$work/ca.crt"\n',
-    "scripts/copilot-secret.sh": "true\n",
-    "scripts/verify-chat.py": "pass\n",
+    "scripts/verify-example.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
     "docs/README.md": "[Start](getting-started.md)\n[Review](reviews/retained.md)\n",
@@ -1032,7 +994,7 @@ SELFTEST_FILES = {
     "brand/hero.png": "image fixture\n",
     "brand/mark.svg": "<svg/>\n",
     "blueprints/release.yaml": "name: release\n",
-    ".github/workflows/ci.yml": "# verify-chat.py\nrun: python3 scripts/verify-chat.py\n",
+    ".github/workflows/ci.yml": "run: python3 scripts/check-example.py\n",
 }
 
 SELFTEST_MAP = """# Fixture repository map
@@ -1040,7 +1002,7 @@ Installed does not mean current direction, including one shell scripts.
 
 ## The short version
 | `internal/` | `kmx/` (one packages) |
-| `scripts/` | 2 (1 embedded in the binary, 1 operator) | 2 | 3 |
+| `scripts/` | 1 (1 embedded in the binary, 0 operator) | 2 | 3 |
 | `docs/` | 6 tracked files |
 | `brand/` | 2 identity assets for repository and organization surfaces |
 
@@ -1066,19 +1028,15 @@ Two of `k8s/`'s 6 files are embedded; four are not embedded.
 
 **Checkout — demonstrations (2):** `demo.yaml`, `checkout-data.json`.
 
-## `scripts/` — 7 tracked files
-6 of the 7 are named by something outside themselves, and the one
+## `scripts/` — 6 tracked files
+5 of the 6 are named by something outside themselves, and the one
 `scripts/mutations/*.json` are named by nothing.
 | **Installed** | 1 | `embedded.sh` |
-| **Checkout** | 1 | `copilot-secret.sh` |
 | **Demonstration** | 2 | `model-seam-probe.sh`, `spend-race-probe.sh` |
-| **Scaffolding** | 2 | the one `check-*` files, `verify-chat.py` |
+| **Scaffolding** | 2 | the one `check-*` files, `verify-example.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
 `embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
-`.github/workflows/ci.yml` (one invocations among two mentions).
-every occurrence in the Makefile is a comment line rather than a recipe.
-`scripts/copilot-secret.sh`: one make recipe.
 
 ## `docs/` — 6 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
@@ -1139,7 +1097,7 @@ MAP_EDITS = [
      "miscounts the packages under internal/kmx"),
     ("the one `lift*.go` files in `app`", "the two `lift*.go` files in `app`",
      "miscounts the cloud-running half of the AKS lift"),
-    ("2 (1 embedded in the binary, 1 operator)", "2 (1 embedded in the binary, 2 operator)",
+    ("1 (1 embedded in the binary, 0 operator)", "1 (1 embedded in the binary, 1 operator)",
      "has a summary row whose own parts no longer add up"),
     ("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files",
      "miscounts the docs in its summary"),
@@ -1151,17 +1109,13 @@ MAP_EDITS = [
      "miscounts the checkers the mutation harness proves"),
     ("`staticcheck.conf` |", "`staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("6 of the 7 are named", "5 of the 7 are named",
+    ("5 of the 6 are named", "4 of the 6 are named",
      "miscounts which scripts anything outside names"),
     ("One tracked files under `scripts/` contain the literal `k8s/`",
      "Two tracked files under `scripts/` contain the literal `k8s/`",
      "miscounts the scripts naming k8s paths"),
-    ("(one invocations among two mentions", "(two invocations among two mentions",
-     "miscounts how often CI runs the chat verifier"),
     ("`wc -l` reports it as 0", "`wc -l` reports it as 1",
      "gets the architecture asset's line count wrong"),
-    ("`scripts/copilot-secret.sh`: one make recipe", "`scripts/copilot-secret.sh`: two make recipes",
-     "miscounts the copilot-secret make recipes"),
 ]
 
 
@@ -1316,7 +1270,8 @@ def selftest_fixture(tree: Tree) -> int:
 
     grown = copy.copy(tree)
     grown.files = sorted(tree.files + ["docs/new-guide.md"])
-    expanded = real.replace("6 tracked files", "7 tracked files").replace(
+    expanded = real.replace("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files").replace(
+        "## `docs/` — 6 tracked files", "## `docs/` — 7 tracked files").replace(
         "**Guidance (2):** `README.md`, `getting-started.md`.",
         "**Guidance (3):** `README.md`, `getting-started.md`, `new-guide.md`.",
     )

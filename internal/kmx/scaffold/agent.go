@@ -21,10 +21,11 @@ type ToolWiring struct {
 var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 var identifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
-var reserved = map[string]string{
-	"hello-world": "the agent `kmx up` creates from k8s/hello-world.yaml",
-	"hello-tools": "the agent `kmx up` creates from k8s/tools-agent.yaml",
-}
+// No name is reserved. `hello-world` and `hello-tools` were, because
+// `kmx up` created agents under those names from k8s/hello-world.yaml and
+// k8s/tools-agent.yaml. Those manifests and the runtime that applied them
+// are gone, so nothing occupies the names — and refusing a name kmx would
+// not collide with is a rule with nothing behind it.
 
 func ValidateName(name string) error {
 	switch {
@@ -34,9 +35,6 @@ func ValidateName(name string) error {
 		return fmt.Errorf("agent name %q is %d characters; Kubernetes allows 63", name, len(name))
 	case !nameRE.MatchString(name):
 		return fmt.Errorf("agent name %q is not a valid Kubernetes name — lowercase letters, digits and dashes, starting and ending with a letter or digit (e.g. billing-investigator)", name)
-	}
-	if why, taken := reserved[name]; taken {
-		return fmt.Errorf("%q is %s — pick another name", name, why)
 	}
 	return nil
 }

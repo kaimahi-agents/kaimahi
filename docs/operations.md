@@ -184,13 +184,15 @@ for that re-sign. Readiness of a workload does not prove its client verifies
 TLS. Never work around expiry by disabling verification.
 
 ```sh
-kmx status
 kmx plane --step certificate
 ```
 
-The certificate step renews as needed, republishes trust and restarts the
-proxy to load material read at startup. An expired certificate makes
-verifying clients fail; kagent may report only a generic connection error.
+The certificate step renews as needed and restarts the proxy to load material
+read at startup. It publishes the authority into no namespace on its own —
+`kmx migrate` is what tells a workload's namespace what to trust, because that
+is the command that is told which namespace. An expired certificate makes
+verifying clients fail, often as a generic connection error rather than a
+named trust failure.
 CA/private-key loss is not fixed by a normal serving-certificate re-sign.
 See [certificate.go](../internal/kmx/app/certificate.go) before replacing
 trust material across a running installation.

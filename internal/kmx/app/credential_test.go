@@ -85,6 +85,12 @@ esac
 exit 0
 `
 
+// issueNamespace is the operator's own namespace in these tests. It is a
+// literal rather than a constant from config: `kmx credential issue` has no
+// default namespace any more, so a test that reached for one would be
+// asserting a default that no longer exists.
+const issueNamespace = "apps"
+
 type credentialFixture struct {
 	app     *App
 	out     *bytes.Buffer
@@ -173,7 +179,7 @@ func TestCredentialIssueAppliesWhetherOrNotTheSecretExists(t *testing.T) {
 				t.Setenv("KMX_TEST_BOUND", "hello-world")
 			}
 			f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("f", 64)))
-			if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+			if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil); err != nil {
 				t.Fatalf("issue: %v", err)
 			}
 			if !strings.Contains(f.args(), "apply -f -") {
@@ -232,7 +238,7 @@ func TestCredentialIssueHasNoInteractiveMode(t *testing.T) {
 func TestTheIssuedTokenTravelsOnlyThroughThePipe(t *testing.T) {
 	token := "kmh_" + strings.Repeat("c", 64)
 	f := newCredentialFixture(t, "", issued(token))
-	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 
@@ -306,12 +312,64 @@ func TestCredentialIssueChecksSecretBindingBeforePost(t *testing.T) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
-	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, issueNamespace, nil)
 	if err == nil || !strings.Contains(err.Error(), `not "batch-agent"`) {
 		t.Fatalf("wrong binding error: %v", err)
 	}
 	if posted {
 		t.Fatal("credential was issued before the conflicting Secret binding was checked")
+	}
+}
+
+// A destination namespace that is missing, empty or whitespace is refused
+// BEFORE the credential is minted. The token is shown exactly once, so a
+// namespace kubectl would reject afterwards leaves a live credential whose
+// only copy has nowhere to go: nothing may be posted to the plane, and
+// nothing may be written to the cluster.
+func TestCredentialIssueRefusesAnImpossibleNamespaceBeforeMintingTheToken(t *testing.T) {
+	for name, namespace := range map[string]string{
+		"missing": "gone",
+		"empty":   "",
+		"blank":   "   ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("KMX_TEST_NO_NAMESPACES", "gone")
+			posted := false
+			f := newCredentialFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+				posted = true
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + strings.Repeat("e", 64)})
+			})
+			err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, namespace, nil)
+			if err == nil {
+				t.Fatal("a credential was issued into a namespace it cannot be stored in")
+			}
+			if !strings.Contains(err.Error(), "--namespace") || !strings.Contains(err.Error(), "Nothing has been issued") {
+				t.Errorf("the refusal does not say what to do and that nothing was minted: %v", err)
+			}
+			if posted {
+				t.Fatal("the admin POST happened before the destination namespace was checked")
+			}
+			if strings.Contains(f.piped(), "kind: Secret") {
+				t.Fatalf("a Secret was written for a refused namespace:\n%s", f.piped())
+			}
+			if strings.Contains(f.args(), "apply -f -") {
+				t.Errorf("the cluster was written to after the refusal:\n%s", f.args())
+			}
+		})
+	}
+}
+
+// Blank is refused without asking the cluster at all: `kubectl get namespace
+// ""` fails for a reason that has nothing to do with the namespace, and the
+// operator would be shown that instead of the flag they omitted.
+func TestABlankNamespaceIsRefusedWithoutReachingTheCluster(t *testing.T) {
+	f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("e", 64)))
+	if err := f.app.requireNamespace("  ", "--namespace"); err == nil {
+		t.Fatal("a blank namespace was accepted")
+	}
+	if strings.Contains(f.args(), "get namespace") {
+		t.Errorf("a blank namespace was sent to kubectl:\n%s", f.args())
 	}
 }
 
@@ -322,7 +380,7 @@ func TestCredentialIssueRefusesUnboundExistingSecretBeforePost(t *testing.T) {
 		posted = true
 		w.WriteHeader(http.StatusCreated)
 	})
-	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, issueNamespace, nil)
 	if err == nil || !strings.Contains(err.Error(), "without a kaimahi.dev/credential binding") {
 		t.Fatalf("wrong unbound Secret error: %v", err)
 	}
@@ -337,7 +395,7 @@ func TestCredentialIssueReconcilesConflictOnlyWithMatchingSecret(t *testing.T) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write([]byte(`{"error":"credential exists"}`))
 	})
-	if err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+	if err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, issueNamespace, nil); err != nil {
 		t.Fatalf("reconcile matching credential: %v", err)
 	}
 	if !strings.Contains(f.errOut.String(), "keeping both") {
@@ -354,7 +412,7 @@ func TestCredentialIssueNeverPrintsUnexpectedResponseBody(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte(`{"token":"` + token + `"}`))
 	})
-	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, config.DefaultNamespace, nil)
+	err := f.app.IssueCredentialToSecret("batch-agent", config.GovernedSecret, issueNamespace, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 502") {
 		t.Fatalf("unexpected issue error: %v", err)
 	}
@@ -393,7 +451,7 @@ func TestAnAlreadyIssuedCredentialIsReconciledNotOverwritten(t *testing.T) {
 	// which is the "exists in the plane, Secret missing or unlabeled" case:
 	// the token cannot be recovered, so the operator is told exactly how to
 	// clear the row rather than being handed a half-governed agent.
-	err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil)
+	err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil)
 	if err == nil {
 		t.Fatal("a 409 with no bound Secret was accepted")
 	}
@@ -419,7 +477,7 @@ func TestASecondCredentialWillNotOverwriteAnotherOnesToken(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"token": "kmh_" + strings.Repeat("d", 64)})
 	})
-	err := f.app.IssueCredentialToSecret("demo", config.GovernedSecret, config.DefaultNamespace, nil)
+	err := f.app.IssueCredentialToSecret("demo", config.GovernedSecret, issueNamespace, nil)
 	if err == nil {
 		t.Fatal("issuing demo overwrote the Secret holding hello-world's token")
 	}
@@ -443,7 +501,7 @@ func TestIssuingTheSameCredentialAgainIsFine(t *testing.T) {
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(`{"error":"credential exists"}`))
 		})
-	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, config.DefaultNamespace, nil); err != nil {
+	if err := f.app.IssueCredentialToSecret("hello-world", config.GovernedSecret, issueNamespace, nil); err != nil {
 		t.Fatalf("re-issuing the same credential failed: %v", err)
 	}
 	if !strings.Contains(f.errOut.String(), "keeping both") {
@@ -485,7 +543,7 @@ func seamTLSSecret(t *testing.T) string {
 func TestMigrateRefusesWhenThePlaneHasNoSeamCertificate(t *testing.T) {
 	f := newCredentialFixture(t, "", issued("kmh_"+strings.Repeat("a", 64)))
 	t.Setenv("KMX_TEST_SEAM_TLS", `{"data":{}}`)
-	err := f.app.publishPlaneAuthority(config.DefaultNamespace)
+	err := f.app.publishPlaneAuthority(issueNamespace)
 	if err == nil {
 		t.Fatal("an authority was published from a plane with no seam certificate")
 	}

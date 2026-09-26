@@ -7,10 +7,10 @@
 # "kmx" it installs is a shell script that records how it was called.
 #
 # What that records is the point. `--quickstart` is the supported first
-# answer and it is Orka-only, so nothing on it may print the legacy runtime;
-# `kmx version` names the pinned kagent release, which put "kagent" into the
-# transcript CI greps before quickstart had even started. The recorded
-# argv is the evidence for both the ordering and the absence.
+# answer and it is Orka-only, so nothing on it may name the retired runtime;
+# a `kmx version` banner ran before quickstart had even started and put its
+# pinned component list into the transcript CI greps. The recorded argv is
+# the evidence for both the ordering and the absence.
 #
 # Run:  bash scripts/install-sh-test.sh
 set -euo pipefail
@@ -80,8 +80,8 @@ check() {
 }
 
 # --quickstart: quickstart is the ONLY thing this path runs kmx for. A
-# `kmx version` here prints the pinned kagent release into the transcript of
-# a path that installs no kagent.
+# `kmx version` here opens the transcript with a pinned component banner
+# instead of with the answer the reader asked for.
 if install_run "--quickstart installs and runs quickstart" --quickstart; then
   first=$(head -n 1 "$workdir/calls")
   check "quickstart is the first thing kmx is asked to do" \
