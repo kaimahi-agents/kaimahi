@@ -633,7 +633,9 @@ jobs:
               for pattern, why in forbidden:
                   if pattern.search(body):
                       problems.append(f"{job}: {pattern.pattern!r} — {why}")
-              if "get namespace kagent" not in body:
+              # `ns` and `namespace` are the same kubectl request; require the
+              # tripwire without coupling the guard to one spelling.
+              if not re.search(r"get (?:ns|namespace) kagent\b", body):
                   problems.append(f"{job}: no step asserts the kagent namespace is absent")
           if problems:
               print("converted shards must prove a path the legacy runtime is absent from:", *problems, sep="\n  ")
