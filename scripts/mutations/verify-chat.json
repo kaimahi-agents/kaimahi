@@ -1,6 +1,6 @@
 {
   "checker": "verify-chat.py",
-  "why": "This is the only thing standing between a chat step that really worked and one where the model produced plausible prose. Every edit below leaves it printing a report that looks the same and passing tasks it exists to reject: a half-finished task, an answer with no tool call behind it, a call to some other tool, a failed tool call, a payload that never carried the probe, or a task still waiting on a human that nothing names.",
+  "why": "This is what stands between a chat step that really worked and one where the model produced plausible prose. No CI shard drives it against a live cluster any longer — the runtime shard that did retired with the legacy runtime's agent — so the only thing keeping these verdicts honest is the self-test, which is what this specification breaks on purpose. Every edit below leaves it printing a report that looks the same and passing tasks it exists to reject: a half-finished task, an answer with no tool call behind it, a call to some other tool, a failed tool call, a payload that never carried the probe, or a task still waiting on a human that nothing names.",
   "verify": ["python3", "scripts/verify-chat.py", "--selftest"],
   "signature": "verify-chat self-test:",
   "mutations": [

@@ -24,6 +24,52 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **The runtime shard is now the hosted-model shard.** `e2e-runtime` installed
+  the legacy runtime with a bare `kmx up` and opened with a kagent
+  conversation, a model-preset switch and an MCP tool call; the hosted-upstream
+  evidence was appended to the end of it. None of that first half is a
+  supported path any more, so the job is now `e2e-hosted-models` and keeps only
+  the half that was never about kagent: the plane dialing a **public-looking**
+  model upstream. It brings up kind, Ollama and the model with `kmx up --step`
+  component steps, creates the caller's own `hosted-model-client` namespace,
+  deploys the plane, and issues its one credential into that namespace **by
+  name** — nothing inherits the old `kagent` default. Its governed caller is a
+  direct authenticated TLS call to the plane's own model seam. It installs no
+  kagent and fails closed — after bring-up and again at the end — if that
+  namespace ever appears, and it is on the hygiene job's list of shards that
+  must prove the legacy runtime absent.
+
+  What it asserts is unchanged in substance: a hosted upstream vetted at boot
+  with the address it resolved and the authority it verifies against both named
+  in the log; an `internet: true` entry resolving *inside* the cluster refused
+  at config load with both replicas still serving; the opt-in `make
+  egress-hosted` allowance admitting one verified, metered Responses call whose
+  ledger row carries the upstream's own token counts and its caller fields; a
+  redirect surfaced as 307 rather than followed; DNS rebinding refused as a 502
+  whose public body hides dialer detail while the proxy log names the policy
+  refusal; and the allowance removed — on a fresh dial after a restart —
+  failing closed with an audited 502. The required `e2e-hello-world` aggregate
+  names the renamed shard. No product behaviour, interface or default changed
+  — this is CI evidence only.
+
+  - **Removed rather than translated:** the `kmx agent chat` turns and their
+    `verify-chat.py` checks, the `k8s/models/` preset dry-run against live CRDs
+    and the `kmx use` preset switch, the kagent tool-server lockdown posture
+    (read-only mode logged, its ServiceAccount denied Secret reads and writes)
+    and the MCP tool round-trip that required a real `k8s_get_resources` call
+    carrying an unguessable probe ConfigMap name, and the two `kmx status`
+    probes — the ungoverned seam count and the no-plane branch. Each asserted
+    something about legacy objects, and rewriting them against surviving ones
+    would have asserted less while looking the same. The honest cost: **no
+    shard verifies an MCP tool round-trip on a live cluster any more**, and
+    `verify-chat.py` now runs only against its own fixtures in `hygiene` — it
+    is kept because the rule it encodes should outlive the runtime it was
+    written for, not because anything still exercises it end to end. The
+    tool-server posture and the preset mechanism went with the release that
+    provided them. The `kmx status` rules keep their unit coverage in
+    `internal/kmx/app/governance_test.go`, and status is rebuilt on defensible
+    evidence in its own change.
+
 - **Model-seam evidence now comes from direct authenticated calls, not kagent.**
   The `e2e-models` shard used to install the legacy runtime with a bare
   `kmx up`, repoint a kagent Agent at the seam with `kmx govern`, and produce

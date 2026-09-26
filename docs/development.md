@@ -100,7 +100,8 @@ first if it matters. Cloud cleanup has different [ownership rules](aks.md#teardo
 
 Required checks are `hygiene`, `go-plane`, and `e2e-hello-world`. The last is an
 aggregator over the retained kind shards. Gateway/workflow/AP scenarios retire
-with their runtime; the original direct kagent MCP test is a separate boundary.
+with their runtime, and so does the agent conversation the runtime shard used to
+open with.
 Add probes to the shard owning their state lineage, or arrange independent setup.
 Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.
@@ -199,6 +200,45 @@ is not a zero, it carries kubectl's own reason, and it publishes no counts —
 keeps its unit coverage in `internal/kmx/app/governance_test.go`; what went is
 the proof that a genuinely RBAC-denied reader reaches it. Status is rebuilt on
 its own evidence separately.
+
+`e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
+`e2e-runtime`. It uses no kagent and no agent runtime at all. It brings up kind,
+Ollama and the model with `kmx up --step` component steps, creates the
+hosted-model client's own namespace, deploys the plane, and issues its one
+credential into that namespace **by name**. Its governed caller is a direct
+authenticated TLS call to the seam
+([`model-seam-probe.sh`](../scripts/model-seam-probe.sh)), and its upstream is
+[`scripts/ci/synthetic-model.sh`](../scripts/ci/synthetic-model.sh): a throwaway
+CA and a documentation-range address routed over kind's network, so
+NetworkPolicy evaluates public-looking TCP 443 while the hardened dialer keeps
+its real private-address refusals. CI holds no hosted credential.
+
+What it proves: a hosted upstream vetted at boot with the address it resolved
+and the authority it will verify against both named in the log; an entry marked
+`internet: true` whose name resolves *inside* the cluster refused at config load
+with both replicas still serving; the opt-in [`make egress-hosted`](egress.md)
+allowance admitting one verified, metered Responses call whose ledger row
+carries the upstream's own token counts and its caller fields; a redirect
+surfaced as 307 rather than followed; DNS rebinding refused as a 502 whose
+public body hides dialer detail while the proxy log names the policy refusal;
+and the allowance removed — on a fresh dial after a restart — failing closed
+with an audited 502. Absence of the `kagent` namespace is asserted after
+bring-up and again at the end.
+
+What that shard no longer proves, deleted rather than translated: the
+`kmx agent chat` conversation and its `verify-chat.py` checks, the `k8s/models/`
+preset dry-run against live CRDs and the `kmx use` preset switch, the kagent
+tool-server lockdown posture (read-only mode logged, its ServiceAccount denied
+Secrets and writes) and the MCP tool round-trip that required a real
+`k8s_get_resources` call carrying an unguessable probe name, and the two
+`kmx status` probes — the ungoverned seam count and the no-plane branch. Every
+one of them asserted something about legacy objects. The real cost is named
+rather than papered over: **no shard verifies an MCP tool round-trip on a live
+cluster any more**, and `verify-chat.py` now runs only against its own fixtures
+in `hygiene`. The tool-server posture and the preset mechanism went with the
+release that provided them; the `kmx status` rules keep their unit coverage in
+`internal/kmx/app/governance_test.go` and status is rebuilt on its own evidence
+separately.
 
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as

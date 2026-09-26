@@ -533,9 +533,10 @@ jobs:
           python3 scripts/test_owner_model_client.py
       # The shards whose evidence no longer comes from the legacy runtime:
       # `e2e-resilience` and `e2e-spend` get theirs from an owner-managed
-      # application, `e2e-models` from direct authenticated calls to the
-      # plane's own model seam. What they have in common is the premise this
-      # step guards, not the shape of their caller.
+      # application, `e2e-models` and `e2e-hosted-models` from direct
+      # authenticated calls to the plane's own model seam. What they have in
+      # common is the premise this step guards, not the shape of their
+      # caller.
       #
       # A shard joins this list the moment it stops installing the legacy
       # runtime, and this step is what keeps it there: a reinstated full
@@ -554,7 +555,7 @@ jobs:
           # Named, not derived: a shard is on this list because its
           # conversion was reviewed. Deriving the list from the file would
           # let a shard leave it by being rewritten.
-          converted = ["e2e-resilience", "e2e-spend", "e2e-models"]
+          converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models"]
           forbidden = [
               (re.compile(r"kmx up(?!\s+--step)"), "a bare `kmx up` installs the legacy runtime"),
               (re.compile(r"kmx govern\b"), "the legacy governance command repoints a kagent Agent"),
@@ -923,23 +924,47 @@ jobs:
         run: bash scripts/plane-upgrade-probe.sh
 
   # Six retained shards isolate model budgets, protocol/onboarding safety,
-  # runtime installation, quickstart, owner-managed governance and the Orka
-  # runtime. The required aggregator covers every shard; every cluster step
-  # has a docs guard. Runtime retains the original direct-kagent MCP smoke,
-  # not a gateway; e2e-orka-runtime and e2e-resilience are separate,
-  # kagent-free boundaries.
-  e2e-runtime:
+  # hosted model upstreams, quickstart, owner-managed governance and the
+  # Orka runtime. The required aggregator covers every shard; every cluster
+  # step has a docs guard. `e2e-orka-runtime` and `e2e-resilience` are
+  # separate, kagent-free boundaries.
+  #
+  # This shard was `e2e-runtime`. A bare `kmx up` installed the legacy
+  # runtime there, and the hosted-model evidence below was appended to a
+  # job whose first half was a kagent conversation, a model-preset switch
+  # and an MCP tool call. None of that is a supported path any more, so
+  # what is left is the half that was never about kagent at all — the
+  # plane dialing a PUBLIC-looking model upstream — and the job is named
+  # for it. Nothing here needs an agent runtime: every governed call is a
+  # direct authenticated TLS call to the plane's own model seam, and the
+  # absence of the legacy namespace is asserted after bring-up and again
+  # at the end rather than left to the commands the job happens to run.
+  #
+  # Deleted rather than translated, and the loss is recorded in
+  # docs/development.md: the `kmx agent chat` turns and their
+  # `verify-chat.py` checks, the `k8s/models/` preset dry-run and the
+  # `kmx use` switch, the kagent tool-server lockdown posture and the MCP
+  # tool round-trip, and the two `kmx status` probes (the ungoverned count
+  # and the no-plane branch). Each of those asserted something about
+  # legacy objects; rewriting them against surviving ones would have
+  # asserted less while looking the same.
+  e2e-hosted-models:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       KIND_CLUSTER: kaimahi-p1
       KUBE_CTX: kind-kaimahi-p1
-      CRED: hello-world
+      CRED: hosted-model
+      # The caller's own namespace. The credential this shard issues used
+      # to land in `kagent` because that was the command's default; here
+      # the destination is named at the call site and nothing inherits
+      # one.
+      CLIENT_NS: hosted-model-client
     defaults:
       run:
         # An explicit bash shell turns on `-o pipefail`, so the
-        # `bin/kmx agent chat | tee` pipelines fail on kmx's exit code instead
-        # of relying solely on the content check in verify-chat.py.
+        # `… | tee` pipelines fail on the command's exit code instead of
+        # relying solely on the content check that follows.
         shell: bash
     steps:
       - uses: actions/checkout@v4
@@ -971,157 +996,118 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
-      - name: Cluster + Ollama + model + kagent + agent
-        if: steps.changes.outputs.docs_only != 'true'
-        run: bin/kmx up
-      - name: Converse with the agent
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat.out
-          # Fail closed: require a completed A2A task with non-empty reply text.
-          python3 scripts/verify-chat.py chat.out
-      # Keyless: the model presets must be schema-valid against the live
-      # CRDs, and the preset-switch mechanism must work end to end. No hosted
-      # keys in CI (public repo, fork-exposed PR CI) — the switch is exercised
-      # with the keyless in-cluster Ollama preset.
-      - name: Validate model presets against live CRDs (server dry-run)
-        if: steps.changes.outputs.docs_only != 'true'
-        run: kubectl --context kind-kaimahi-p1 apply --dry-run=server -f k8s/models/
-      - name: Switch preset and converse again (keyless)
+      # Component steps only: a bare `kmx up` would install the legacy
+      # runtime, and every hosted-upstream claim below would still pass
+      # while proving something this repository no longer supports.
+      #
+      # Ollama and the model are still brought up, even though no call
+      # here goes to them: the committed upstream table names the
+      # in-cluster `ollama` Service, and the proxy's boot-time vet SKIPS a
+      # host it cannot resolve. Without Ollama the vetting evidence below
+      # would be about three fixture entries beside a silently skipped
+      # one, which is a weaker thing than it reads as.
+      - name: Cluster, Ollama and the model — component steps only
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          bin/kmx use ollama
-          bin/kmx agent chat hello-world 'Hello! Who are you and where are you running?' | tee chat-preset.out
-          python3 scripts/verify-chat.py chat-preset.out
-      # Keyless: prove a REAL MCP tool call, not a plausible answer. A
-      # ConfigMap with an unguessable random name is created, the tools
-      # agent is asked to list configmaps, and the verifier requires a
-      # function_call + successful function_response for k8s_get_resources
-      # in the A2A history AND the random name in that function_response's
-      # payload — data that can only come from the live tool round-trip.
-      # The model's prose is printed, not asserted on (CI flake class 2: a
-      # 3B model garbles unguessable strings when relaying). Fail-closed.
-      # Helm never validates values keys against the subchart, so a typo'd
-      # or renamed lockdown knob would silently deploy the tool server wide
-      # open while everything still reads Ready. Assert the posture instead
-      # of trusting the values: read-only mode logged, and the tool server's
-      # ServiceAccount can neither read Secrets nor write anything.
-      - name: Assert tool-server lockdown posture
+          set -euo pipefail
+          bin/kmx up --step cluster
+          bin/kmx up --step ollama
+          bin/kmx up --step model
+          if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
+            echo "the hosted-model shard created the legacy runtime's namespace" >&2
+            exit 1
+          fi
+      # Where the hosted-model caller's credential lives. It is somebody
+      # else's namespace as far as the plane is concerned: kmx writes a
+      # Secret into it because it was NAMED.
+      - name: The hosted-model client's own namespace
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          kubectl --context kind-kaimahi-p1 -n kagent logs deploy/kagent-tools \
-            > tools.log
-          grep -q 'Running in read-only mode' tools.log
-          # `! cmd` is exempt from errexit, so compare can-i's answer
-          # explicitly — each check aborts the step on the wrong answer.
-          secrets=$(kubectl --context kind-kaimahi-p1 auth can-i get secrets \
-            --as=system:serviceaccount:kagent:kagent-tools || true)
-          test "$secrets" = no
-          writes=$(kubectl --context kind-kaimahi-p1 auth can-i create pods \
-            --as=system:serviceaccount:kagent:kagent-tools || true)
-          test "$writes" = no
-          kubectl --context kind-kaimahi-p1 auth can-i list pods \
-            --as=system:serviceaccount:kagent:kagent-tools
-      - name: Tool call through MCP (keyless)
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          probe="probe-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
-          kubectl --context kind-kaimahi-p1 -n default create configmap "$probe" \
-            --from-literal=owner=kaimahi-p3-ci
-          bin/kmx agent chat hello-tools \
-            'List the configmaps in the default namespace.' | tee tool-chat.out
-          python3 scripts/verify-chat.py tool-chat.out k8s_get_resources "$probe"
+          kubectl --context kind-kaimahi-p1 create namespace "$CLIENT_NS" \
+            --dry-run=client -o yaml | kubectl --context kind-kaimahi-p1 apply -f -
       # Keyless: the governance plane in the SAME cluster/job — a
       # separate e2e job would repeat the whole bring-up for no coverage
       # gain; instead the plane's requests are trimmed (postgres 50m,
       # proxy 25m) to fit the 2-CPU runner's request ceiling.
-      # Chat rides the governed ollama path via the proxy; the ledger row
-      # and the budget denial are asserted fail-closed.
-      # Preset switches roll the agent Deployment with maxSurge=1, so the
-      # node must fit a SECOND agent pod's requests while the old one
-      # drains. With the plane deployed the 2-CPU node cannot fit a
-      # second 100m/384Mi hello-world, so shrink its runtime requests to
-      # hello-tools' measured values via the Agent CRD — the committed
-      # artifact k8s/hello-world.yaml stays untouched; this is a CI
-      # sizing patch, not a topology change.
-      - name: Shrink hello-world requests so preset switches can surge
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          kubectl --context kind-kaimahi-p1 -n kagent patch agents.kagent.dev hello-world \
-            --type merge -p '{"spec":{"declarative":{"deployment":{"resources":{"requests":{"cpu":"50m","memory":"320Mi"},"limits":{"memory":"1Gi"}}}}}}'
-          kubectl --context kind-kaimahi-p1 -n kagent rollout status deploy/hello-world --timeout=300s
-      # The ungoverned state has to be COUNTABLE, and honest when
-      # there is no plane at all. This is the one window CI has with kagent
-      # up and the plane not yet deployed, so the no-plane branch is proven
-      # here rather than only in a unit test. `0 governed` and `cannot tell`
-      # are different answers: both are asserted, in the table and in the
-      # document something will parse.
-      - name: Status counts the ungoverned system and says the plane is absent
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          bin/kmx status | tee status-no-plane.out
-          grep -F 'plane:        not installed' status-no-plane.out
-          grep -E 'model seams: +0 of [0-9]+ agents? governed' status-no-plane.out
-          bin/kmx status -o json > status-no-plane.json
-          python3 - <<'PY'
-          import json
-          doc = json.load(open("status-no-plane.json"))
-          g = doc["governance"]
-          assert g["plane"]["state"] == "none", g["plane"]
-          assert g["modelSeams"]["state"] == "counted", g["modelSeams"]
-          assert g["modelSeams"]["governed"] == 0, g["modelSeams"]
-          assert g["modelSeams"]["total"] >= 1, g["modelSeams"]
-          assert g["modelSeams"]["unresolved"] == 0, g["modelSeams"]
-          assert g["credentials"]["state"] == "none", g["credentials"]
-          # The kubectl objects stay verbatim under items, so the idiom that
-          # read the old output still reads this one.
-          assert any(i["kind"] == "Agent" for i in doc["items"]), doc["items"][:1]
-          print("no plane:", g)
-          PY
       - name: Deploy the governance plane
         if: steps.changes.outputs.docs_only != 'true'
         run: bin/kmx plane --source .
+      # A hosted upstream without a hosted account: the fixture serves TLS
+      # on a documentation-range address routed over kind's network, so
+      # NetworkPolicy evaluates public-looking TCP 443 while the hardened
+      # dialer keeps its real private-address refusals
+      # (scripts/ci/synthetic-model.sh). CI holds no hosted credential,
+      # ever.
       - name: "Hosted models: public-looking TLS fixture and boot-time vetting"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/synthetic-model.sh up
           kubectl --context kind-kaimahi-p1 -n kaimahi logs -l app=kaimahi-proxy --tail=60 > hosted-boot.out
+          # The address it resolved and the authority it will verify
+          # against, both named in the log: a vet that printed neither
+          # would be a line, not evidence.
           grep -q 'hosted upstream vetted.*host=model-echo.kaimahi-ci.test addresses=\[203.0.113.10\] trust="ca_file /etc/kaimahi/upstream-ca/model-echo.crt"' hosted-boot.out
+          # And the refusal half, on a real cluster: an entry marked
+          # `internet: true` whose name resolves INSIDE the cluster is
+          # refused at config load rather than dialed, and both replicas
+          # keep serving through the refusal.
           KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/synthetic-model.sh load-refusal
-          bin/kmx credential issue hosted-model --secret kaimahi-hosted-model-token --namespace kagent
-          n=$(kubectl --context kind-kaimahi-p1 -n kagent get secret kaimahi-hosted-model-token -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
+          # The credential the calls below authenticate with, issued into
+          # the namespace it was told to use, and shaped like a plane
+          # bearer rather than merely present.
+          bin/kmx credential issue "$CRED" \
+            --secret kaimahi-hosted-model-token --namespace "$CLIENT_NS"
+          n=$(kubectl --context kind-kaimahi-p1 -n "$CLIENT_NS" get secret kaimahi-hosted-model-token -o jsonpath='{.data.api-key}' | base64 -d | grep -cE '^kmh_[0-9a-f]{64}$')
           test "$n" = 1
+      # The allowance is OPT-IN and has its own explicit inverse: the
+      # plane deploys internet-free, so this is the object that lets a
+      # hosted upstream be reached at all (k8s/egress-hosted.yaml).
       - name: "Hosted models: allowance admits a verified and metered Responses call"
         if: steps.changes.outputs.docs_only != 'true'
+        env:
+          KUBECTL: kubectl --context kind-kaimahi-p1
+          SECRET_NAMESPACE: ${{ env.CLIENT_NS }}
+          GOVERNED_SECRET: kaimahi-hosted-model-token
+          UPSTREAM: model-echo
+          SEAM_PATH: v1/responses
         run: |
+          set -euo pipefail
           make egress-hosted
-          KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-hosted-model-token \
-            UPSTREAM=model-echo SEAM_PATH=v1/responses bash scripts/model-seam-probe.sh \
+          bash scripts/model-seam-probe.sh \
             '{"model":"fixture","input":"one two three four"}' | tee hosted-call.out
+          # Four words in: the count the FIXTURE reported, relayed over a
+          # verified TLS connection to a public-looking address.
           grep -qF '"input_tokens": 4' hosted-call.out
-          bin/kmx ledger hosted-model | tee hosted-ledger.out
+          bin/kmx ledger "$CRED" | tee hosted-ledger.out
           grep -E 'model-echo +fixture +4 +6 +0 +free +200' hosted-ledger.out
           # The same response proves caller attribution without a duplicate request.
           grep -E 'ua:curl/[0-9].*127\.0\.0\.1 +none *$' hosted-ledger.out
+      # Two ways a hosted upstream can move a call somewhere it was never
+      # vetted for, both refused, both audited.
       - name: "Hosted models: redirects are not followed and rebinding is refused"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-hosted-model-token \
-            UPSTREAM=model-echo-redirect SEAM_PATH=redirect EXPECT=307 bash scripts/model-seam-probe.sh \
+            SECRET_NAMESPACE="$CLIENT_NS" UPSTREAM=model-echo-redirect SEAM_PATH=redirect EXPECT=307 \
+            bash scripts/model-seam-probe.sh \
             '{"model":"fixture","input":"redirect"}' | tee redirect.out
           # Model redirects are surfaced, not followed; unlike the retired
           # gateway they remain 307 rather than being rewritten to 502.
           grep -q 'model-seam: POST /upstream/model-echo-redirect/redirect -> 307' redirect.out
+          # DNS rebinding: the name the plane vetted at boot now answers
+          # with an in-cluster address. The dialer checks the address it
+          # is about to connect to, not the one it saw earlier.
           KUBECTL="kubectl --context kind-kaimahi-p1" bash scripts/ci/synthetic-model.sh rebind "$(cat .synthetic-model/sidecar.ip)"
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-hosted-model-token \
-            UPSTREAM=model-echo-rebind SEAM_PATH=v1/responses EXPECT=502 bash scripts/model-seam-probe.sh \
+            SECRET_NAMESPACE="$CLIENT_NS" UPSTREAM=model-echo-rebind SEAM_PATH=v1/responses EXPECT=502 \
+            bash scripts/model-seam-probe.sh \
             '{"model":"fixture","input":"rebind"}' | tee rebind.out
           grep -q 'upstream unreachable' rebind.out
           # The public response deliberately hides dialer details. The log
           # must distinguish a policy refusal from an ordinary outage.
           kubectl --context kind-kaimahi-p1 -n kaimahi logs -l app=kaimahi-proxy --tail=100 > rebind-proxy.out
           grep -q 'upstream=model-echo-rebind.*egress: refused address: model-echo-rebind.kaimahi-ci.test resolves to' rebind-proxy.out
-          bin/kmx ledger hosted-model | tee hosted-refused.out
+          bin/kmx ledger "$CRED" | tee hosted-refused.out
           grep -E 'model-echo-redirect +fixture .*307' hosted-refused.out
           grep -E 'model-echo-rebind +fixture .*502' hosted-refused.out
       - name: "Hosted models: removing the allowance fails closed"
@@ -1135,11 +1121,24 @@ jobs:
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout restart deploy/kaimahi-proxy
           kubectl --context kind-kaimahi-p1 -n kaimahi rollout status deploy/kaimahi-proxy --timeout=300s
           KUBECTL="kubectl --context kind-kaimahi-p1" GOVERNED_SECRET=kaimahi-hosted-model-token \
-            UPSTREAM=model-echo SEAM_PATH=v1/responses EXPECT=502 bash scripts/model-seam-probe.sh \
+            SECRET_NAMESPACE="$CLIENT_NS" UPSTREAM=model-echo SEAM_PATH=v1/responses EXPECT=502 \
+            bash scripts/model-seam-probe.sh \
             '{"model":"fixture","input":"blocked"}' | tee blocked.out
           grep -q 'unreachable' blocked.out
-          bin/kmx ledger hosted-model | tee blocked-ledger.out
+          bin/kmx ledger "$CRED" | tee blocked-ledger.out
           grep -E 'model-echo +fixture .*502' blocked-ledger.out
+      # Asserted again at the END, not only after bring-up: `kmx plane`,
+      # `kmx credential issue` and the fixture's own table edits all
+      # publish objects, and a future edit that made any of them reach for
+      # the legacy namespace would otherwise land silently.
+      - name: No legacy runtime was involved at any point
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
+            echo "namespace kagent exists: this shard is not proving a direct-seam path" >&2
+            exit 1
+          fi
+          echo "no kagent namespace: every hosted-upstream claim above came from the plane's own seam"
       - name: "Hosted models: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1149,19 +1148,16 @@ jobs:
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
           kubectl --context kind-kaimahi-p1 get pods -A || true
-          kubectl --context kind-kaimahi-p1 -n kagent describe agents.kagent.dev hello-world || true
-          kubectl --context kind-kaimahi-p1 -n kagent logs deploy/hello-world --tail=100 || true
-          kubectl --context kind-kaimahi-p1 -n kagent describe agents.kagent.dev hello-tools || true
-          kubectl --context kind-kaimahi-p1 -n kagent logs deploy/hello-tools --tail=100 || true
-          kubectl --context kind-kaimahi-p1 -n kagent describe remotemcpserver kagent-tool-server || true
-          kubectl --context kind-kaimahi-p1 -n kagent logs deploy/kagent-tools --tail=50 || true
+          kubectl --context kind-kaimahi-p1 -n "$CLIENT_NS" get secret -o name || true
           kubectl --context kind-kaimahi-p1 -n kaimahi get pods -o wide || true
           kubectl --context kind-kaimahi-p1 -n kaimahi logs -l app=kaimahi-proxy --tail=100 --prefix || true
           kubectl --context kind-kaimahi-p1 -n kaimahi get pdb,endpoints || true
           kubectl --context kind-kaimahi-p1 -n kaimahi logs deploy/kaimahi-postgres --tail=50 || true
-          kubectl --context kind-kaimahi-p1 -n kaimahi get mcpserver -o wide || true
+          kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams -o yaml || true
           kubectl --context kind-kaimahi-p1 -n kaimahi get networkpolicy || true
+          kubectl --context kind-kaimahi-p1 -n kube-system get configmap coredns -o yaml || true
           kubectl --context kind-kaimahi-p1 -n kube-system logs ds/kindnet --tail=30 || true
+          tail -40 .synthetic-model/server.log || true
       - name: Docs-only change — cluster steps skipped, job reports success
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
@@ -2959,7 +2955,7 @@ jobs:
         run: echo "every changed file is documentation; no cluster booted"
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-runtime, e2e-spend]
+    needs: [e2e-hosted-models, e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-spend]
     if: always()
     steps:
       - name: Every e2e shard succeeded

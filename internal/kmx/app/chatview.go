@@ -23,13 +23,13 @@ import (
 //   - a terminal gets the reply, the tool calls and the token cost;
 //   - a pipe gets the JSON, byte for byte, because things parse it.
 //
-// That second clause is not a nicety. CI captures this output in every
-// end-to-end shard (`make chat | tee chat.out`, then
-// scripts/verify-chat.py) — a dozen-odd places, deliberately not counted
-// here because the count is what went stale last time — and
-// asserts on the task's shape — status.state, the function_call and the
-// function_response payload. Pretty-printing by default would break every
-// one of them, and `--json` forces the raw form when a terminal wants it.
+// That second clause is not a nicety. The output is captured and parsed
+// (`make chat | tee chat.out`, then scripts/verify-chat.py), and the
+// assertion is on the task's shape — status.state, the function_call and
+// the function_response payload. Pretty-printing by default would break
+// that, and `--json` forces the raw form when a terminal wants it. No CI
+// shard captures it today: the one that did retired with the legacy
+// runtime, so the parser this protects now runs only on its own fixtures.
 
 // isTerminal reports whether w is a terminal, not merely a character device.
 // Anything that is not an *os.File — a test buffer, a pipe wrapper — is
