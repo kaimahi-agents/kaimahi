@@ -174,8 +174,8 @@ func TestPortableSourceRetainsExactBytesDefensively(t *testing.T) {
 	}
 }
 
-// The portable digest is framed over these exact bytes through the existing
-// digest API, which is why the source is retained rather than reserialized.
+// The description is deployment input, so changing it changes the portable
+// identity as well as the annotation the renderer produces.
 func TestPortableDescriptionChangesPortableIdentity(t *testing.T) {
 	withDescription := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
 		"  instructions: Do the thing.\n  description: A helpful assistant\n")
@@ -195,6 +195,7 @@ func TestPortableDescriptionChangesPortableIdentity(t *testing.T) {
 	}
 }
 
+// The portable digest is framed over exact authored bytes, not reserialized text.
 func TestPortableSourceFeedsThePortableBundleDigest(t *testing.T) {
 	agent, err := ParsePortableAgent([]byte(validPortableYAML))
 	if err != nil {
@@ -502,15 +503,16 @@ func TestParsePortableAgentRejectsControlCharactersRenderingWouldRefuse(t *testi
 	}
 }
 
-// The policy shared for instructions is the BLOCK-scalar one, not the
-// single-line one: instructions are multi-line text by nature, and a gate
-// that refused a line break would refuse the ordinary case.
+// Descriptions are rendered as single-line annotation values.
 func TestParsePortableAgentRefusesUnrenderableDescription(t *testing.T) {
 	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
 		"  instructions: Do the thing.\n  description: \"hello\\nworld\"\n")
 	mustNotParse(t, doc, "spec.description")
 }
 
+// The policy shared for instructions is the BLOCK-scalar one, not the
+// single-line one: instructions are multi-line text by nature, and a gate
+// that refused a line break would refuse the ordinary case.
 func TestParsePortableAgentAcceptsMultiLineInstructions(t *testing.T) {
 	doc := mustReplace(t, minimalPortableYAML, "  instructions: Do the thing.\n",
 		"  instructions: |\n    Do the thing.\n    \tThen say so.\n")
@@ -571,9 +573,6 @@ func TestEncodeOrkaShorthandIsDeterministicAndRoundTrips(t *testing.T) {
 	}
 }
 
-// Nothing the caller did not state appears in the encoded document: an
-// omitted tool list must not become an empty agent block a renderer would
-// then have to interpret.
 func TestEncodeOrkaShorthandCarriesDescription(t *testing.T) {
 	s := validShorthand()
 	s.Description = "A helpful assistant"
@@ -590,6 +589,9 @@ func TestEncodeOrkaShorthandCarriesDescription(t *testing.T) {
 	}
 }
 
+// Nothing the caller did not state appears in the encoded document: an
+// omitted tool list must not become an empty agent block a renderer would
+// then have to interpret.
 func TestEncodeOrkaShorthandOmitsUnstatedOptionalFields(t *testing.T) {
 	s := validShorthand()
 	s.Tools, s.Skills, s.SecretKey = nil, nil, ""

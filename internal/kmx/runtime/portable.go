@@ -9,8 +9,8 @@
 // The Orka extension states only what internal/kmx/scaffold can render:
 // namespace, Provider type/baseURL/secretRef/rateLimit, and the optional
 // Agent tools/skills/rateLimit. The optional common spec.description is
-// rendered as the Agent description annotation. It deliberately does not restate the model —
-// spec.model.name is the document's one statement of which model to use, and
+// rendered as the Agent description annotation. The extension does not
+// restate the model — spec.model.name is the document's one model, and
 // the adapter renders it into the Orka Provider's defaultModel — so a
 // document cannot say two different things about the same model.
 package runtime
