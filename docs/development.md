@@ -143,6 +143,34 @@ Orka Provider schema has no field naming a private certificate authority, so an
 Orka Agent cannot be told to trust the plane's seam; the governed caller is the
 owner's own application, which is the supported path.
 
+`e2e-spend` is the spend-control boundary, on the same owner-managed path and
+with no kagent either. It reaches the same starting point as `e2e-resilience` —
+component bring-up, pinned Orka, an ungoverned `owner-ci` Deployment, the plane,
+then [`kmx migrate`](migrate.md) and a patch the **owner** applies — and then
+asserts what the plane *charges and refuses*: this migration's NetworkPolicy
+admits only the owner's namespace on TCP 8080 and does not admit tool port 8081
+(other policies can admit other traffic); a real turn writes an `unpriced` Orka
+ledger row attributed to `none`, which is a
+complete answer and a different word from `unknown` or `legacy`; an expired
+credential earns a 403 that names the credential and the renewing command, and
+renewal restores service while leaving the mounted Secret's uid, resourceVersion
+and bytes — and the pod holding them — untouched; a credential with no expiry at
+all still authenticates; an exhausted token budget is a 429 the application
+itself reports, and lifting the cap restores service. It ends with
+`make netpol-verify` and the same `kagent`-namespace tripwire.
+
+The ledger patterns it greps are pinned in
+`internal/kmx/admin/ledger_format_test.go` against the real renderer, because a
+`grep` that stops matching is a red shard but a *negative* assertion that stops
+matching is a green one. Those pins compile with `(?m)`: Go's `$` is end of
+text and `grep`'s is end of line, so an end-anchored expression copied in
+verbatim would match nothing in Go while matching perfectly in the shard.
+
+What that shard does **not** prove: pricing. The committed `orka` upstream has
+no price row, so every row it writes is `unpriced` with honestly zero cents. A
+cents-denominated cap is not exercised by any cluster shard — it is covered by
+the meter and proxy unit tests in `plane/`.
+
 `e2e-models` is the model-seam boundary, and it uses no kagent and no agent
 runtime at all. It brings up kind, Ollama and the model with component steps,
 creates the model client's own namespace, deploys the plane, and issues every
