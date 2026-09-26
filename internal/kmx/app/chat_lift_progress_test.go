@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 func TestAzureFetchLabelsIdentifyPhaseAndScope(t *testing.T) {
@@ -41,7 +43,7 @@ func TestLiftSubscriptionsReportsTenantWithoutFilteringOtherTenants(t *testing.T
 esac`)
 	t.Setenv("PATH", dir)
 	var out bytes.Buffer
-	b := &orkaChatBackend{app: &App{Out: &out}}
+	b := &orkaChatBackend{app: &App{Out: &out, Run: &run.Runner{}}}
 	raw, err := b.liftSubscriptions(t.Context())
 	if err != nil || !strings.Contains(string(raw), "Subscription") {
 		t.Fatalf("raw=%s err=%v", raw, err)
@@ -67,7 +69,7 @@ func TestLiftSubscriptionsStopsOnTenantFailure(t *testing.T) {
 		t.Setenv("AZ_LIST_MARKER", marker)
 		fakeTool(t, dir, "az", `case "$*" in *"account show"*) `+response+`;; *) printf called > "$AZ_LIST_MARKER"; printf '[]';; esac`)
 		t.Setenv("PATH", dir)
-		b := &orkaChatBackend{app: &App{Out: &bytes.Buffer{}}}
+		b := &orkaChatBackend{app: &App{Out: &bytes.Buffer{}, Run: &run.Runner{}}}
 		if _, err := b.liftSubscriptions(t.Context()); err == nil {
 			t.Fatal("tenant failure ignored")
 		}
