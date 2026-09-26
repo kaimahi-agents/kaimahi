@@ -207,6 +207,20 @@ func TestQuickstartDriftedBundleOffersRemedies(t *testing.T) {
 	}
 }
 
+// An API read failure is not evidence of drift. Never propose deleting a
+// healthy fixed Agent or Provider when kubectl could not read it.
+func TestQuickstartReadFailureDoesNotSuggestDeletingTheAgent(t *testing.T) {
+	a, _ := quickstartOrkaFixture(t)
+	t.Setenv("KMX_ORKA_TEST_SCENARIO", "denied-provider-read")
+	err := a.stepQuickstartAgent()
+	if err == nil || !strings.Contains(err.Error(), "kubectl request failed") {
+		t.Fatalf("the read failure was not reported: %v", err)
+	}
+	if strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "kmx agent create") {
+		t.Fatalf("an unreadable object was presented as drift: %v", err)
+	}
+}
+
 // A Task that completed with nothing readable in it is a failed run, not an
 // answer. The result here is terminal control sequences only: it is not blank
 // on the wire, so it is not mistaken for "the result has not been written

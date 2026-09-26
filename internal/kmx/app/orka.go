@@ -19,6 +19,7 @@ package app
 // Installing Orka governs nothing by itself, and this command says so.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -81,9 +82,8 @@ const (
 
 	// orkaDefaultProvider and orkaDefaultModelURL are the keyless Provider
 	// `kmx up --step orka` wires and the in-cluster endpoint it resolves
-	// against. They are named rather than repeated because `kmx quickstart`
-	// builds an Agent against the SAME Provider: a second spelling of either
-	// would produce an Agent pointing at a Provider that does not exist.
+	// against. Quickstart creates its own fixed Provider for its Agent but
+	// shares this endpoint and the placeholder key with the local Provider.
 	orkaDefaultProvider = "local"
 	orkaDefaultModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
 
@@ -315,10 +315,65 @@ func (a *App) stepOrka() error {
 	if err := a.applyOrkaInstaller(installer); err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(a.operationContext(), 5*time.Minute)
+	defer cancel()
+	current, err := a.readStepOrkaProvider(ctx, opt.Provider)
+	if err != nil {
+		return err
+	}
+	if current != nil && current.Endpoint != opt.ModelURL {
+		return fmt.Errorf("Provider %s/%s has a different endpoint:\n  - existing: %s\n  + requested: %s\n  Refusing to overwrite it. To explicitly replace it, run:\n  %s",
+			OrkaNamespace, opt.Provider, current.Endpoint, opt.ModelURL,
+			a.operationCommand("orka", "install", "--provider", opt.Provider, "--model", opt.Model, "--model-url", opt.ModelURL))
+	}
 	if err := a.orkaProvider(opt); err != nil {
 		return err
 	}
+	applied, err := a.readStepOrkaProvider(ctx, opt.Provider)
+	if err != nil {
+		return err
+	}
+	if applied == nil {
+		return fmt.Errorf("Provider %s/%s is absent after apply; cannot prove it is Ready", OrkaNamespace, opt.Provider)
+	}
+	if err := a.waitOrkaReady(ctx, OrkaNamespace, applied.orkaIdentity); err != nil {
+		return err
+	}
 	return a.orkaResultReader()
+}
+
+// readStepOrkaProvider distinguishes absence from an unreadable or malformed
+// Provider. After apply, its returned UID/generation pins the Ready wait.
+func (a *App) readStepOrkaProvider(ctx context.Context, name string) (*stepOrkaProvider, error) {
+	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", orkaProviderKind, name, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return nil, fmt.Errorf("cannot read Provider %s/%s: %w", OrkaNamespace, name, err)
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var obj struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name              string     `json:"name"`
+			Namespace         string     `json:"namespace"`
+			UID               string     `json:"uid"`
+			Generation        int64      `json:"generation"`
+			DeletionTimestamp *time.Time `json:"deletionTimestamp"`
+		} `json:"metadata"`
+		Spec struct {
+			BaseURL string `json:"baseURL"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil || obj.Kind != "Provider" || obj.Metadata.Name != name || obj.Metadata.Namespace != OrkaNamespace || obj.Metadata.UID == "" || obj.Metadata.Generation < 1 || obj.Metadata.DeletionTimestamp != nil || obj.Spec.BaseURL == "" {
+		return nil, fmt.Errorf("Provider %s/%s has an invalid or terminating identity or endpoint; refusing to overwrite it", OrkaNamespace, name)
+	}
+	return &stepOrkaProvider{orkaIdentity: orkaIdentity{Kind: "Provider", Name: name, UID: obj.Metadata.UID, Generation: obj.Metadata.Generation}, Endpoint: obj.Spec.BaseURL}, nil
+}
+
+type stepOrkaProvider struct {
+	orkaIdentity
+	Endpoint string
 }
 
 // orkaResultReader provisions the read-only Task result account.

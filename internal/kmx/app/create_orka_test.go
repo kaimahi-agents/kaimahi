@@ -99,6 +99,9 @@ func TestOrkaKubectlHelper(t *testing.T) {
 			time.Sleep(time.Hour)
 		}
 		kind, name := args[i+1], args[i+2]
+		if scenario == "denied-provider-read" && kind == "providers.core.orka.ai" {
+			fail()
+		}
 		switch kind {
 		case "crd":
 			if scenario == "missing-crd" {
