@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,11 +33,11 @@ func refuseOrkaBundleArtifactOverlap(opt CreateOptions, bundlePath string) error
 	if bundlePath == "" || opt.Out == "-" {
 		return nil
 	}
-	bundle, err := filepath.Abs(bundlePath)
+	bundle, err := resolveOrkaPath(bundlePath)
 	if err != nil {
 		return err
 	}
-	artifact, err := filepath.Abs(orkaArtifactPath(opt))
+	artifact, err := resolveOrkaPath(orkaArtifactPath(opt))
 	if err != nil {
 		return err
 	}
@@ -50,6 +51,35 @@ func refuseOrkaBundleArtifactOverlap(opt CreateOptions, bundlePath string) error
 		}
 	}
 	return nil
+}
+
+// resolveOrkaPath follows existing ancestors while retaining the as-yet
+// unwritten suffix, so aliases cannot hide an artifact inside a bundle.
+func resolveOrkaPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	for parent := absolute; ; parent = filepath.Dir(parent) {
+		resolved, err := filepath.EvalSymlinks(parent)
+		if err == nil {
+			suffix, err := filepath.Rel(parent, absolute)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(resolved, suffix), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		// A dangling symlink is not a missing directory we may create.
+		if _, statErr := os.Lstat(parent); statErr == nil || !errors.Is(statErr, os.ErrNotExist) {
+			return "", fmt.Errorf("cannot resolve bundle or artifact path: %w", err)
+		}
+		if filepath.Dir(parent) == parent {
+			return "", err
+		}
+	}
 }
 
 // preflightOrkaBundle checks whether a directory can be reused without

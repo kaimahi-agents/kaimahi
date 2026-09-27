@@ -262,6 +262,38 @@ func TestCreateRejectsArtifactInsideBundleBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsArtifactInsideSymlinkedBundleBeforeWriting(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		bundlePath func(real, alias string) string
+		outPath    func(real, alias string) string
+	}{
+		{"bundle through alias", func(_, alias string) string { return filepath.Join(alias, "nested", "demo") }, func(real, _ string) string { return filepath.Join(real, "nested", "demo", "rendered.yaml") }},
+		{"artifact through alias", func(real, _ string) string { return filepath.Join(real, "nested", "demo") }, func(_, alias string) string { return filepath.Join(alias, "nested", "demo", "rendered.yaml") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, _, _, _ := orkaCreateFixture(t, "")
+			opt.NoApply = true
+			root := t.TempDir()
+			real, alias := filepath.Join(root, "real"), filepath.Join(root, "alias")
+			if err := os.Mkdir(real, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(real, alias); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			opt.BundlePath = tc.bundlePath(real, alias)
+			opt.Out = tc.outPath(real, alias)
+			if err := a.CreateAgent(opt); err == nil || !strings.Contains(err.Error(), "inside the bundle") {
+				t.Fatalf("symlinked overlap not refused: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(real, "nested")); !os.IsNotExist(err) {
+				t.Fatalf("overlap created files before refusal: %v", err)
+			}
+		})
+	}
+}
+
 func TestOfflineArtifactCollisionDoesNotCreateBundle(t *testing.T) {
 	a, opt, _, _, dir := orkaCreateFixture(t, "")
 	opt.NoApply = true

@@ -1,8 +1,9 @@
 # `kmx agent lift`
 
-> **Status: proposed. Nothing in this document is built.** Behaviour described
-> as existing cites the file and line that establishes it. Behaviour proposed
-> here says "would". No performance, cost or reliability claim is made.
+> **Status: the standalone `kmx agent lift` command is proposed, not built.**
+> Bundle creation and lifecycle foundations described below already exist.
+> Proposed behaviour says "would". No performance, cost or reliability claim
+> is made.
 
 `kmx agent lift` deploys one agent's definition to a destination that can run
 it, without a terminal session. It is the non-interactive form of the `/lift`
