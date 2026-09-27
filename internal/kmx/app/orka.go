@@ -305,14 +305,7 @@ func (a *App) stepOrka() error {
 		opt.Model = a.selectedLocalModel.Model
 		opt.ModelURL = strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/") + "/v1"
 	}
-	installer, err := a.fetchOrkaInstaller()
-	if err != nil {
-		return err
-	}
-	if err := a.orkaWrapperCredential(); err != nil {
-		return err
-	}
-	if err := a.applyOrkaInstaller(installer); err != nil {
+	if err := a.prepareOrkaRuntime(); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(a.operationContext(), 5*time.Minute)
@@ -322,7 +315,7 @@ func (a *App) stepOrka() error {
 		return err
 	}
 	if current != nil && current.Endpoint != opt.ModelURL {
-		return fmt.Errorf("Provider %s/%s has a different endpoint:\n  - existing: %s\n  + requested: %s\n  Refusing to overwrite it. To explicitly replace it, run:\n  %s",
+		return fmt.Errorf("Provider %s/%s has a different endpoint:\n  - existing: %s\n  + requested: %s\n  Refusing to overwrite it. The following command explicitly replaces the host route:\n  %s",
 			OrkaNamespace, opt.Provider, current.Endpoint, opt.ModelURL,
 			a.operationCommand("orka", "install", "--provider", opt.Provider, "--model", opt.Model, "--model-url", opt.ModelURL))
 	}
@@ -340,6 +333,29 @@ func (a *App) stepOrka() error {
 		return err
 	}
 	return a.orkaResultReader()
+}
+
+// Quickstart needs the pinned runtime and placeholder Secret, not the local
+// Provider: its fixed agent bundle creates a separate Provider of its own.
+func (a *App) stepQuickstartOrka() error {
+	if err := a.prepareOrkaRuntime(); err != nil {
+		return err
+	}
+	if err := a.ensureQuickstartProviderSecret(); err != nil {
+		return err
+	}
+	return a.orkaResultReader()
+}
+
+func (a *App) prepareOrkaRuntime() error {
+	installer, err := a.fetchOrkaInstaller()
+	if err != nil {
+		return err
+	}
+	if err := a.orkaWrapperCredential(); err != nil {
+		return err
+	}
+	return a.applyOrkaInstaller(installer)
 }
 
 // readStepOrkaProvider distinguishes absence from an unreadable or malformed
@@ -576,13 +592,10 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		}
 	}
 
-	secret := opt.Provider + "-provider-key"
-	body := secretManifest(secret, OrkaNamespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
-		map[string]string{"app.kubernetes.io/managed-by": "kmx"})
-	if err := a.applySecretIn(OrkaNamespace, body, secret); err != nil {
+	if err := a.orkaKeylessProviderSecret(opt.Provider); err != nil {
 		return err
 	}
-
+	secret := opt.Provider + "-provider-key"
 	provider := fmt.Sprintf(`apiVersion: core.orka.ai/v1alpha1
 kind: Provider
 metadata:
@@ -609,6 +622,37 @@ spec:
 	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
 		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
 	return nil
+}
+
+// Reuse an existing Secret without replacing a host route's key. Only an
+// absent Secret is bootstrapped; a present Secret lacking the key is not ours
+// to repair by overwriting it.
+func (a *App) ensureQuickstartProviderSecret() error {
+	ctx, cancel := context.WithTimeout(a.operationContext(), 30*time.Second)
+	defer cancel()
+	secret := orkaDefaultProvider + "-provider-key"
+	marker, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "secret", secret,
+		"--ignore-not-found=true", "-o", "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key \"api-key\"}}present{{end}}{{end}}")
+	if err != nil {
+		return fmt.Errorf("cannot inspect quickstart Provider Secret: %w", err)
+	}
+	switch string(marker) {
+	case "":
+		return a.orkaKeylessProviderSecret(orkaDefaultProvider)
+	case "secret\npresent":
+		return nil
+	case "secret\n":
+		return fmt.Errorf("Provider Secret %s/%s exists without api-key; refusing to replace it", OrkaNamespace, secret)
+	default:
+		return fmt.Errorf("Provider Secret %s/%s returned an invalid key-presence marker", OrkaNamespace, secret)
+	}
+}
+
+func (a *App) orkaKeylessProviderSecret(provider string) error {
+	secret := provider + "-provider-key"
+	body := secretManifest(secret, OrkaNamespace, map[string]string{"api-key": "not-used-by-this-endpoint"},
+		map[string]string{"app.kubernetes.io/managed-by": "kmx"})
+	return a.applySecretIn(OrkaNamespace, body, secret)
 }
 
 // unreachable conservatively distinguishes a missing object from an API

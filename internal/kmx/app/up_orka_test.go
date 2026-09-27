@@ -36,16 +36,22 @@ case "$*" in
     exit 1 ;;
   *"apply -f -"*)
     body=$(cat)
-    case "$body" in *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider" ;; esac
+    case "$body" in
+      *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider" ;;
+      *"name: local-provider-key"*) printf 'write\n' >> "$KMX_TEST_ARGS.secret" ;;
+    esac
     exit 0 ;;
   *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
     if [ "$KMX_TEST_PROVIDER_READ" = failed ]; then exit 1; fi
     url="$KMX_TEST_PROVIDER_URL"
-    if [ -z "$url" ] && [ -f "$KMX_TEST_ARGS.provider" ]; then url='http://ollama.ollama.svc.cluster.local:11434/v1'; fi
+    if [ -z "$url" ] && [ -f "$KMX_TEST_ARGS.provider" ]; then url=$(grep '  baseURL: ' "$KMX_TEST_ARGS.provider" | head -1 | cut -d' ' -f4); fi
     [ -n "$url" ] || exit 0
     observed=2
     [ "$KMX_TEST_PROVIDER_READY" = stale ] && observed=1
     printf '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2},"spec":{"baseURL":"%s"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":%s}]}}' "$url" "$observed"
+    exit 0 ;;
+  *"get secret local-provider-key"*)
+    [ -f "$KMX_TEST_ARGS.secret" ] && printf 'secret\npresent'
     exit 0 ;;
   *"get secret harness-wrapper-auth"*)
     printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2
@@ -126,33 +132,66 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	}
 }
 
-// A host route shared by migrated workloads cannot be silently replaced by
-// either entry point that runs stepOrka. The refusal identifies both routes
-// and offers an explicit, context-pinned command to deliberately reset it.
-func TestOrkaSetupRefusesToReplaceAnExistingLocalEndpoint(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		run  func(*App) error
-	}{
-		{"quickstart", func(a *App) error { return a.quickstartSteps()[3].fn() }},
-		{"up --step orka", func(a *App) error { return a.Up("orka") }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+// `up --step orka` owns `local`; quickstart owns only its fixed bundle.
+// Neither order may silently replace an existing local host route.
+func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
+	const hostURL = "http://172.18.0.1:11434/v1"
+	for _, order := range []string{"host then quickstart", "quickstart then host"} {
+		t.Run(order, func(t *testing.T) {
 			a, _, args := upFixture(t)
-			t.Setenv("KMX_TEST_PROVIDER_URL", "http://172.18.0.1:11434/v1")
-			err := tc.run(a)
-			if err == nil {
-				t.Fatal("overwrote the existing host endpoint")
+			a.selectedLocalModel = &localModel{Model: "host-model", Endpoint: strings.TrimSuffix(hostURL, "/v1")}
+			if order == "host then quickstart" {
+				if err := a.Up("orka"); err != nil {
+					t.Fatalf("host up: %v", err)
+				}
+				t.Setenv("KMX_TEST_PROVIDER_URL", hostURL)
 			}
-			for _, want := range []string{"http://172.18.0.1:11434/v1", orkaDefaultModelURL, "kmx --context kind-test orka install", "--model-url"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("refusal missing %q: %v", want, err)
+			before := upCalls(t, args)
+			secretBefore, _ := os.ReadFile(args + ".secret")
+			if err := a.quickstartSteps()[3].fn(); err != nil {
+				t.Fatalf("quickstart Orka setup: %v", err)
+			}
+			quickstartCalls := strings.TrimPrefix(upCalls(t, args), before)
+			if strings.Contains(quickstartCalls, "get providers.core.orka.ai local") {
+				t.Errorf("quickstart read local Provider: %s", quickstartCalls)
+			}
+			if strings.Contains(quickstartCalls, "get svc ollama") {
+				t.Errorf("quickstart tried to wire local Provider: %s", quickstartCalls)
+			}
+			secretAfter, err := os.ReadFile(args + ".secret")
+			if err != nil || strings.Count(string(secretAfter), "write\n") != strings.Count(string(secretBefore), "write\n")+map[string]int{"host then quickstart": 0, "quickstart then host": 1}[order] {
+				t.Fatalf("quickstart must create an absent Secret but leave an existing one untouched: before=%q after=%q (%v)", secretBefore, secretAfter, err)
+			}
+			if order == "quickstart then host" {
+				if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
+					t.Fatalf("quickstart wrote local Provider: %v", err)
+				}
+				if err := a.Up("orka"); err != nil {
+					t.Fatalf("host up after quickstart: %v", err)
 				}
 			}
-			if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
-				t.Fatalf("Provider was written despite endpoint drift: %v", err)
+			applied, err := os.ReadFile(args + ".provider")
+			if err != nil || !strings.Contains(string(applied), "baseURL: "+hostURL) {
+				t.Fatalf("host Provider lost: %s (%v)", applied, err)
 			}
 		})
+	}
+}
+
+func TestUpOrkaRefusesToReplaceHostLocalEndpoint(t *testing.T) {
+	a, _, args := upFixture(t)
+	t.Setenv("KMX_TEST_PROVIDER_URL", "http://172.18.0.1:11434/v1")
+	err := a.Up("orka")
+	if err == nil {
+		t.Fatal("overwrote the existing host endpoint")
+	}
+	for _, want := range []string{"http://172.18.0.1:11434/v1", orkaDefaultModelURL, "kmx --context kind-test orka install", "--model-url", "replaces the host route"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal missing %q: %v", want, err)
+		}
+	}
+	if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
+		t.Fatalf("Provider was written despite endpoint drift: %v", err)
 	}
 }
 

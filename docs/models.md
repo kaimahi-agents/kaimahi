@@ -199,8 +199,11 @@ KMX's bundled model remains the default. `--output json`, redirected sessions,
 `kmx quickstart` never probes or prompts at all. It is deterministic and
 non-interactive on purpose — there is no host-model picker on that path, so
 it always deploys the in-cluster Ollama and the bundled model, and the same
-command on the same machine produces the same cluster, Provider and Agent.
-Choosing a host model while the runtime starts is `kmx quickstart-wizard`.
+command on the same machine produces the same fixed Agent bundle. It does
+not read, write or replace the `local` Provider: the bundle has its own
+in-cluster endpoint and only shares the placeholder `local-provider-key`
+Secret. Choosing a host model while the runtime starts is
+`kmx quickstart-wizard`.
 
 Before reusing host Ollama, KMX verifies the selected tag through an endpoint
 reachable from the kind node, trying the engine host alias and kind bridge
@@ -211,7 +214,11 @@ API to the LAN.
 
 A bare `kmx up` writes the verified route into the **Orka** `local` Provider
 (`defaultModel` and `baseURL` in `orka-system`), which is the only model
-configuration that run creates. It renders no kagent `ModelConfig`: the bundled
+configuration that run creates. `kmx up --step orka` refuses to replace an
+existing `local` Provider whose endpoint differs; its error names an explicit
+`kmx orka install --model-url` command that **replaces the host route** if you
+choose to run it. Quickstart does not require that replacement. It renders no
+kagent `ModelConfig`: the bundled
 preset is rendered only by the explicit `kmx up --step agent` (and `--step
 tools-agent`), where a later run also preserves an already-verified host route.
 The follow-up commands printed after a bare run carry no explicit host endpoint —
