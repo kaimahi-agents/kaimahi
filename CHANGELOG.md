@@ -251,8 +251,9 @@ sections, not the intermediate instruction.
   with `kmx migrate`, a credential is issued into a named destination with
   `kmx credential issue <name> --secret <secret> --namespace <ns>`, a model
   upstream is onboarded with `kmx models add`, and an Orka Agent is edited
-  with `kubectl --context <context> edit agents.core.orka.ai <name>` and read
-  back with `kmx agent show`. The old `k8s/models/` presets are removed.
+  with `kubectl --context <context> -n <ns> edit agents.core.orka.ai <name>`
+  and read back with `kmx agent show --namespace <ns> <name>`.
+  The old `k8s/models/` presets are removed.
 
 - **`kmx console` drives Orka Agents only.** The dashboard used to list
   `agents.kagent.dev` beside Orka Agents and offer chat, inference editing and
@@ -1446,8 +1447,8 @@ or `kmx agent edit` must move to the supported Orka and model-seam commands:
 `kmx up` (runtime only), `kmx quickstart` (fixed Agent and fresh Task),
 `kmx agent create --namespace <ns>` (own Agent), `kmx migrate <deployment>
 --namespace <ns> --model <provider>/<model>` (owner model traffic), and
-`kubectl --context <context> edit agents.core.orka.ai <name>` (Agent edits).
-Add `--namespace <ns>` to `kmx credential issue --secret` calls. Use the
+`kubectl --context <context> -n <ns> edit agents.core.orka.ai <name>`
+(Agent edits). Add `--namespace <ns>` to `kmx credential issue --secret` calls. Use the
 `kmx status` table instead of its retired `-o json|yaml` output, with targeted
 `kubectl --context <context>` reads where machine-readable output is needed.
 Interactive Orka chat is `kmx agent chat --interactive [--namespace <ns>] <name>`;

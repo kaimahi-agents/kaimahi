@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the KMX front door without coupling tests to the live README."""
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,8 +15,15 @@ spec.loader.exec_module(front_door)
 JOURNEY = """kmx agent create
 kmx agent lift
 """
-QUICKSTART = """curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
-$HOME/.local/bin/kmx quickstart
+QUICKSTART = """(
+  installer=$(mktemp) || exit
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o "$installer" || exit
+  sh "$installer" --quickstart
+)
+"""
+GO_INSTALL = """go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+kmx quickstart
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 # Kaimahi
@@ -29,6 +37,8 @@ GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 ## Quickstart
 ```bash
 """ + QUICKSTART + """```
+```bash
+""" + GO_INSTALL + """```
 ## Runtime Contract
 Runtimes execute agents; KMX is the developer experience.
 ## Migrate Model Traffic
@@ -72,42 +82,64 @@ for label, literal in [
 for label, literal in [
     ("kmx agent create", "kmx agent create\n"),
     ("kmx agent lift", "kmx agent lift\n"),
-    ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
-    ("installed kmx quickstart", "$HOME/.local/bin/kmx quickstart\n"),
+    ("temporary installer", "  installer=$(mktemp) || exit\n"),
+    ("installer cleanup", "  trap 'rm -f \"$installer\"' EXIT\n"),
+    ("release installer", "  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o \"$installer\" || exit\n"),
+    ("installed kmx quickstart", "  sh \"$installer\" --quickstart\n"),
+    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
 for command, label in (("kmx agent create", "kmx agent create"),
                        ("kmx agent lift", "kmx agent lift"),
-                       ("$HOME/.local/bin/kmx quickstart", "installed kmx quickstart")):
+                       ('  sh "$installer" --quickstart', "installed kmx quickstart")):
     CASES.append((f"hyphen-suffixed {command}", GOOD.replace(command + "\n", command + "-old\n"),
                   f"{label} is missing"))
 
 CASES += [
     ("installer from wrong repository", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"),
      "release installer is missing"),
-    ("unverified direct binary", GOOD.replace(QUICKSTART.splitlines()[0], "curl -fsSL https://example.com/kmx -o kmx"),
+    ("unverified direct binary", GOOD.replace("https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh", "https://example.com/kmx"),
      "release installer is missing"),
+    ("download failure is ignored", GOOD.replace(' -o "$installer" || exit', ' -o "$installer"'),
+     "release installer is missing"),
+    ("subshell wrapper is removed", GOOD.replace("```bash\n(\n", "```bash\n").replace("  sh \"$installer\" --quickstart\n)\n", "  sh \"$installer\" --quickstart\n"),
+     "quickstart subshell is missing"),
+    ("subshell closure is removed", GOOD.replace("  sh \"$installer\" --quickstart\n)\n", "  sh \"$installer\" --quickstart\n"),
+     "quickstart subshell closure is missing"),
+    ("old two-command pipeline can run a stale binary", GOOD.replace(QUICKSTART,
+     "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n$HOME/.local/bin/kmx quickstart\n"),
+     "quickstart subshell is missing"),
+    ("old Go release", GOOD.replace("cmd/kmx@v0.2.0", "cmd/kmx@v0.1.0"),
+     "pinned Go install is missing"),
+    ("moving Go source", GOOD.replace("cmd/kmx@v0.2.0", "cmd/kmx@main"),
+     "pinned Go install is missing"),
+    ("missing Go alternative", GOOD.replace("```bash\n" + GO_INSTALL + "```\n", ""),
+     "pinned Go install is missing"),
+    ("Go alternative out of order", GOOD.replace(GO_INSTALL,
+     "kmx quickstart\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0\n"),
+     "Go-installed kmx quickstart is missing"),
     ("empty document", "", "ketu icon is missing"),
     ("journey commands only in prose", GOOD.replace("```bash\n" + JOURNEY + "```", JOURNEY),
      "create/prove/lift has no fenced command block"),
     ("quickstart commands only in prose", GOOD.replace("```bash\n" + QUICKSTART + "```", QUICKSTART),
-     "Quickstart has no fenced command block"),
+     "quickstart subshell is missing"),
     ("empty journey first block", GOOD.replace("```bash\n", "```bash\n```\n```bash\n", 1),
      "kmx agent create is missing"),
     ("empty quickstart first block", GOOD.replace("```bash\n" + QUICKSTART, "```bash\n```\n```bash\n" + QUICKSTART),
-     "release installer is missing"),
+     "quickstart subshell is missing"),
     ("quickstart commands only in a later section",
      GOOD.replace(QUICKSTART, "kmx version\n").replace("## Status", "```bash\n" + QUICKSTART + "```\n## Status"),
-     "release installer is missing"),
+     "quickstart subshell is missing"),
     ("journey commands out of order", GOOD.replace("kmx agent create\nkmx agent lift", "kmx agent lift\nkmx agent create"),
      "kmx agent lift is missing"),
-    ("quickstart commands out of order", GOOD.replace(QUICKSTART, "$HOME/.local/bin/kmx quickstart\n" + QUICKSTART.splitlines()[0] + "\n"),
+    ("quickstart commands out of order", GOOD.replace(QUICKSTART,
+     '  sh "$installer" --quickstart\n' + QUICKSTART.replace('  sh "$installer" --quickstart\n', '')),
      "installed kmx quickstart is missing"),
-    ("command inside prose", GOOD.replace("\n$HOME/.local/bin/kmx quickstart\n", "\nRun $HOME/.local/bin/kmx quickstart first.\n"),
+    ("command inside prose", GOOD.replace('  sh "$installer" --quickstart\n', '  Run sh "$installer" --quickstart first.\n'),
      "installed kmx quickstart is missing"),
     ("stray command before section", GOOD.replace("## Quickstart", "kmx quickstart\n## Quickstart"), None),
-    ("legacy journey cannot replace KMX quickstart", GOOD.replace("$HOME/.local/bin/kmx quickstart\n", "kmx up\nkmx orka install\n"),
+    ("legacy journey cannot replace KMX quickstart", GOOD.replace('  sh "$installer" --quickstart\n', "  kmx up\n"),
      "installed kmx quickstart is missing"),
     ("headings out of order", GOOD.replace("## Status", "## Documentation").replace("## Documentation\nSee", "## Status\nSee"),
      "documentation heading is missing"),
@@ -134,5 +166,27 @@ with tempfile.TemporaryDirectory() as tmp:
         print(("ok  " if ok else "FAIL") + f" [as a script: {name}] -> exit {got.returncode}, want {want}")
         failed += not ok
 
-print(f"check-readme-front-door self-test: {len(CASES) + 2} case(s), {failed} failure(s)")
+# Run the documented block with a failed download and a stale installed binary.
+# A command that ignores curl's failure must neither invoke that binary nor
+# report successful setup. Only curl is fake; the shell and trap are real.
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    bindir = root / "bin"
+    bindir.mkdir()
+    curl = bindir / "curl"
+    curl.write_text("#!/bin/sh\nexit 22\n")
+    curl.chmod(0o755)
+    stale = root / ".local/bin/kmx"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("#!/bin/sh\nprintf 'stale ran\\n' > \"$HOME/stale-called\"\n")
+    stale.chmod(0o755)
+    tmpdir = root / "tmp"
+    tmpdir.mkdir()
+    env = dict(os.environ, HOME=tmp, TMPDIR=str(tmpdir), PATH=f"{bindir}:{os.environ['PATH']}")
+    got = subprocess.run(["sh", "-c", QUICKSTART], env=env, capture_output=True, text=True)
+    ok = got.returncode == 22 and not (root / "stale-called").exists() and not any(tmpdir.iterdir())
+    print(("ok  " if ok else "FAIL") + f" [failed download stops and cleans up without running stale kmx] -> exit {got.returncode}")
+    failed += not ok
+
+print(f"check-readme-front-door self-test: {len(CASES) + 3} case(s), {failed} failure(s)")
 sys.exit(1 if failed else 0)

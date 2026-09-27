@@ -115,7 +115,7 @@ fi
 
 # v0.1.0 predates the Orka quickstart. Do not install it and then silently
 # run the legacy first-answer journey when the user asked for this one.
-if [ "$RUN_QUICKSTART" = yes ] && [ -z "$BASE_OVERRIDE" ] && [ "$VERSION" = v0.1.0 ]; then
+if [ "$RUN_QUICKSTART" = yes ] && [ "$VERSION" = v0.1.0 ]; then
   die "v0.1.0 does not include Orka quickstart. Install the Orka-capable release: go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0"
 fi
 

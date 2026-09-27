@@ -108,6 +108,23 @@ else
     "$([ ! -e "$workdir/legacy-bin/kmx" ] && echo ok || echo no)"
 fi
 
+# A download-base override changes the source, not the selected version's
+# semantics: explicitly requesting v0.1.0 must still refuse before installing.
+: > "$workdir/calls"
+if KMX_VERSION=v0.1.0 KMX_DOWNLOAD_BASE="file://$release" \
+  KMX_BIN_DIR="$workdir/legacy-override-bin" KMX_CALLS="$workdir/calls" \
+  sh "$installer" --quickstart >"$workdir/out" 2>&1 </dev/null; then
+  fails=$((fails + 1))
+  echo "FAIL [v0.1.0 quickstart with download override should be refused]"
+else
+  check "v0.1.0 override quickstart explains the release gap" \
+    "$(grep -q 'does not include Orka quickstart' "$workdir/out" && echo ok || echo no)"
+  check "v0.1.0 override quickstart installs no binary" \
+    "$([ ! -e "$workdir/legacy-override-bin/kmx" ] && echo ok || echo no)"
+  check "v0.1.0 override quickstart runs no binary" \
+    "$([ ! -s "$workdir/calls" ] && echo ok || echo no)"
+fi
+
 # A plain install still reports what it installed: that line is how an
 # operator learns which build landed, and it is not on the Orka path.
 if install_run "plain install still prints the version"; then

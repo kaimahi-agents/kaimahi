@@ -42,13 +42,18 @@ yet; the current lift is available as `/lift` from interactive chat. See the
 Install Docker, then use the checksum-verified release installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
-$HOME/.local/bin/kmx quickstart
+(
+  installer=$(mktemp) || exit
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o "$installer" || exit
+  sh "$installer" --quickstart
+)
 ```
 
-The explicit path works even when `~/.local/bin` is not yet on your shell's
-`PATH`. On a Podman-only machine, use
-`$HOME/.local/bin/kmx --container-engine podman quickstart` instead.
+A failed download stops before running any installed binary; the temporary
+script is removed after quickstart. On a Podman-only machine, replace the
+last `sh "$installer" --quickstart` with
+`CONTAINER_ENGINE=podman sh "$installer" --quickstart`.
 
 Or, with Go 1.26+ and its binary directory on `PATH`, build the same release:
 

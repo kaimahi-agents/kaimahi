@@ -35,12 +35,19 @@ JOURNEY_COMMANDS = [
     ("kmx agent create", r"^kmx agent create(?=[ \t]*(?:#.*)?$)"),
     ("kmx agent lift", r"^kmx agent lift(?=[ \t]*(?:#.*)?$)"),
 ]
-# The first runnable path uses the checksum-verifying installer, followed by
-# the non-interactive first-answer command. Go-install and the wizard are
-# documented separately; the first block must not send readers to an old tag.
+# Download to a temporary file first: a pipeline can hide curl's failure and
+# launch a stale installed kmx. The second block pins the source-build route.
 QUICKSTART_COMMANDS = [
-    ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh(?=[ \t]*(?:#.*)?$)"),
-    ("installed kmx quickstart", r"^\$HOME/\.local/bin/kmx quickstart(?=[ \t]*(?:#.*)?$)"),
+    ("quickstart subshell", r"^\($"),
+    ("temporary installer", r"^  installer=\$\(mktemp\) \|\| exit$"),
+    ("installer cleanup", r"^  trap 'rm -f \"\$installer\"' EXIT$"),
+    ("release installer", r"^  curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh -o \"\$installer\" \|\| exit$"),
+    ("installed kmx quickstart", r"^  sh \"\$installer\" --quickstart$"),
+    ("quickstart subshell closure", r"^\)$"),
+]
+GO_INSTALL_COMMANDS = [
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.2\.0$"),
+    ("Go-installed kmx quickstart", r"^kmx quickstart$"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
@@ -91,6 +98,11 @@ def check(text: str) -> str | None:
             if not blocks:
                 return "README front door: Quickstart has no fenced command block"
             missing = ordered_in(blocks[0], QUICKSTART_COMMANDS)
+            if missing is not None:
+                return f"README front door: {missing} is missing from the Quickstart command block"
+            if len(blocks) < 2:
+                return "README front door: pinned Go install is missing from the Quickstart command block"
+            missing = ordered_in(blocks[1], GO_INSTALL_COMMANDS)
             if missing is not None:
                 return f"README front door: {missing} is missing from the Quickstart command block"
     for label, pattern in BADGE_PATTERNS:
