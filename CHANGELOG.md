@@ -31,8 +31,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   the Orka runtime is a pinned, digest-checked manifest, not a chart. The
   command is also deterministic and non-interactive — the host-Ollama picker
   is gone from it, so the same command on the same machine produces the same
-  cluster, Provider and Agent, which is what lets an unattended caller rerun
-  it and compare. Choosing your own model and authoring your own agent is
+  cluster and fixed Agent bundle, which is what lets an unattended caller
+  rerun it and compare. It does not read or replace the `local` Provider,
+  even after a host-Ollama `kmx up`: it only shares that Provider's keyless
+  placeholder Secret. `kmx up --step orka` still refuses to replace a
+  different `local` endpoint and offers an explicit command that replaces
+  the host route. Choosing your own model and authoring your own agent is
   `kmx quickstart-wizard` and `kmx agent create`.
 - **A bare `kmx up` is the runtime and deploys no agent.** It now runs
   `cluster`, `ollama`, `model`, `orka` and stops. `kmx quickstart` is the

@@ -46,8 +46,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | `models add` | validation/progress on stderr | `--out -` YAML | Model overlay/policy bundle remains exact and ANSI-free. |
 | `metrics` | none on stdout beyond metrics | Prometheus text | Exposition is permanently raw; replica evidence stays on stderr. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
-| one-shot chat | parsed human reply on a TTY | pipe or `--json` A2A bytes | Raw branch remains byte-for-byte upstream output. |
-| interactive chat | streamed human transcript | none | Enhanced input requires capable input/output terminals; scanner fallback is supported. `--interactive --json` is refused. |
+| agent chat | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
 | ledger, credentials, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns; flow now reads only the model ledger. Custom approval/grant/audit reports are removed. |
@@ -207,10 +206,9 @@ The existing chat state machine remains authoritative for:
 Those indentation levels are not DIY decoration to replace with a snapshot
 tree: they stop model-authored text from occupying renderer-owned provenance
 positions. Lip Gloss styling is applied only after dynamic text is sanitized.
-One-shot piped and `--json` chat output bypasses the human renderer byte-for-byte.
-Explicit `--interactive` selects the human session even with scanner input;
-combining it with `--json` is refused before application loading.
-The one-shot TTY view sanitizes replies, tool names, and state before display.
+Orka chat requires `--interactive`, including with scanner input. Retired `--json`
+is refused before application loading; there is no raw A2A JSON equivalent for
+an existing Agent.
 
 `NO_COLOR` keeps static rich layout on a capable terminal, but chat separately
 disables cursor effects and enhanced input under it. `TERM=dumb`, non-terminal

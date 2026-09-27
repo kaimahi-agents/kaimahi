@@ -5,8 +5,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh -s -- --quickstart
 #
-# The second form is the whole distance: it installs kmx and then runs
-# `kmx quickstart`, which ends with an agent answering a question.
+# The second form launches `kmx quickstart` only when the selected release
+# supports Orka. The current v0.1.0 release predates it: --quickstart refuses
+# and points to the Orka-capable source build instead.
 #
 # What this script needs: curl (or wget), tar-free — the release is a bare
 # binary — and one of sha256sum, shasum or openssl to check the digest. It

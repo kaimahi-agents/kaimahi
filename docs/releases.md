@@ -144,12 +144,17 @@ from:
 
 ## Upgrading kmx
 
+Until an Orka-capable release is tagged, install from the current source;
+`@latest` still resolves to v0.1.0 and would replace an `@main` build with
+one that lacks Orka quickstart.
+
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
 kmx version
 ```
 
-kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
+Once an Orka-capable release is tagged, use `@latest` for the latest stable
+release or pin the tag you want. kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
 own. Re-installing is the whole upgrade. Read the changelog for the versions
 you skipped — below 1.0 a minor bump may change behaviour.
 
