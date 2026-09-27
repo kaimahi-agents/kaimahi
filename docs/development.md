@@ -211,11 +211,13 @@ MCP inventory, which were counts of legacy objects, and the cannot-tell status
 branch on a real cluster, whose probe minted a reader for kagent CRDs. Those
 were deleted rather than rewritten against surviving objects, which would have
 asserted less while looking the same. The counting itself has since gone too:
-`kmx status` is the Orka runtime report, delegating wholly to `kmx orka
-status` — the same reads, including the preflight that fetches kubectl, so
-neither name can give a different answer about one cluster — and it publishes
-no structured document: there is no owner-managed population to count, because
-`kmx migrate` routes workloads kmx cannot enumerate.
+`kmx status` starts with the unchanged `kmx orka status` runtime report —
+including its preflight that fetches kubectl — then separately reports the
+model plane's Deployment and proxy pods and the public serving certificate's
+expiry. An absent plane, an unreadable plane, and a plane scaled to zero are
+distinct outcomes; none implies that Orka is absent. It publishes no structured
+document: there is no owner-managed population to count, because `kmx migrate`
+routes workloads kmx cannot enumerate.
 
 `e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
 `e2e-runtime`. It uses no kagent and no agent runtime at all. It brings up kind,
@@ -253,8 +255,9 @@ rather than papered over: **no shard verifies an MCP tool round-trip on a live
 cluster any more**, and the chat verifier itself has now been deleted — its
 last caller was its own self-test. The tool-server posture, the preset
 mechanism and the seam/credential counting in `kmx status` all went with the
-release that provided them; `kmx status` is now the Orka runtime report and
-nothing else, which is the only thing it can say truthfully.
+release that provided them; `kmx status` now reports Orka plus the separately
+deployed plane's readiness and seam certificate expiry, not legacy object
+counts.
 
 `plane-upgrade` tests schema/data preservation and failed migrations without a
 cluster; it is not a shard. `kmx-clone-free` runs on main/manual dispatch, not as

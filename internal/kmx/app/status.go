@@ -81,6 +81,8 @@ func (a *App) statusPlane() {
 		}
 		if err := json.Unmarshal([]byte(deployment), &d); err != nil {
 			fmt.Fprintf(a.Out, "  plane:       unknown — unreadable Deployment: %v\n", err)
+		} else if d.Spec.Replicas == 0 {
+			fmt.Fprintln(a.Out, "  plane:       scaled to 0 replicas (not serving)")
 		} else {
 			pods, err := a.kubectlCapture("-n", admin.Namespace, "get", "pods", "-l", "app="+planeWorkload, "-o", "json", statusRequestTimeout)
 			if err != nil {
