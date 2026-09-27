@@ -38,8 +38,8 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 		{[]string{"use"}, "kmx models add"},
 		{[]string{"use", "ollama"}, "kmx models add"},
 		{[]string{"use", "ollama", "--agent", "hello-world"}, "kmx models add"},
-		{[]string{"agent", "edit", "hello-world"}, "kubectl"},
-		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "kubectl"},
+		{[]string{"agent", "edit", "hello-world"}, "kmx agent edit is retired; use kubectl"},
+		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "kmx agent edit is retired; use kubectl"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -61,6 +61,31 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 		if err != nil || !cmd.Hidden {
 			t.Errorf("retired command %v must exist but be hidden: %v", path, err)
 		}
+	}
+}
+
+func TestRetiredCommandHelpShowsMigrationBeforeConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"govern", "--help"}, "kmx govern is retired; use kmx migrate"},
+		{[]string{"use", "-h"}, "kmx use is retired; use kmx models add"},
+		{[]string{"agent", "edit", "--help"}, "kmx agent edit is retired; use kubectl --context"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			if err := execute(tc.args, deps); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), tc.want) {
+				t.Fatalf("help did not show migration %q: %q", tc.want, out.String())
+			}
+			if *loads != 0 {
+				t.Fatalf("retired help loaded operational configuration: %v", tc.args)
+			}
+		})
 	}
 }
 
@@ -88,7 +113,14 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 		})
 	}
 	var out, errOut bytes.Buffer
-	deps, _ := testDependencies(&out, &errOut)
+	deps, loads := testDependencies(&out, &errOut)
+	err := execute([]string{"agent", "chat", "hello-world", "--json"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "no raw A2A JSON equivalent for an existing Agent") || strings.Contains(err.Error(), "agent create --task") {
+		t.Fatalf("retired --json must describe the existing-Agent limitation, not suggest creating another: %v", err)
+	}
+	if *loads != 0 {
+		t.Fatal("retired --json loaded operational configuration")
+	}
 	root := newRootCommand(&commandState{deps: deps})
 	cmd, _, err := root.Find([]string{"agent", "chat"})
 	if err != nil {

@@ -136,7 +136,7 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx agent chat --interactive --namespace <ns> <name>")
 		}
 		if cmd.Flags().Changed("json") {
-			return fmt.Errorf("--json is retired: raw A2A tasks are unavailable; use kmx agent chat --interactive --namespace <ns> <name>, or kmx agent create --task to read a Task result")
+			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx agent chat --interactive --namespace <ns> <name> for interactive chat")
 		}
 		return usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")(cmd, args)
 	}

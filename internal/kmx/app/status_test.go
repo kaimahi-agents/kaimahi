@@ -210,10 +210,43 @@ esac`
 			if err := a.Status(); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "plane") || !strings.Contains(out.String(), tc.want) || !strings.Contains(out.String(), "certificate") {
-				t.Fatalf("missing plane %q or certificate:\n%s", tc.want, out)
+			var planeLine string
+			for _, line := range strings.Split(out.String(), "\n") {
+				if strings.HasPrefix(line, "  plane:") {
+					planeLine = line
+					break
+				}
+			}
+			if !strings.Contains(planeLine, tc.want) {
+				t.Fatalf("plane line should say %q, got %q:\n%s", tc.want, planeLine, out)
+			}
+			if !strings.Contains(out.String(), "  certificate:") {
+				t.Fatalf("missing certificate report:\n%s", out)
 			}
 		})
+	}
+}
+
+func TestStatusReportsScaledZeroPlaneAsNotServing(t *testing.T) {
+	script := `case "$*" in
+*"get deploy kaimahi-proxy"*) printf '%s' '{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":0},"status":{"readyReplicas":0}}';;
+*"get pods -l app=kaimahi-proxy"*) printf '%s' '{"items":[]}';;
+*"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
+*"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
+esac`
+	a, out, _ := statusFixture(t, script)
+	if err := a.Status(); err != nil {
+		t.Fatal(err)
+	}
+	var planeLine string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "  plane:") {
+			planeLine = line
+			break
+		}
+	}
+	if !strings.Contains(planeLine, "scaled to 0") || !strings.Contains(planeLine, "not serving") || strings.Contains(planeLine, "0/0 replicas ready") {
+		t.Fatalf("scaled-zero plane must say it is not serving, not report ready replicas: %q\n%s", planeLine, out)
 	}
 }
 

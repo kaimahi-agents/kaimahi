@@ -106,9 +106,11 @@ legacy no-expiry class. The retired grant view is not an expiry inspection path.
 
 A controller's `Accepted` condition is a cached reconcile verdict, not a live
 credential check, and Secret projection is asynchronous. `kmx status` no longer
-reports such conditions at all: it reports what Orka has installed and what it
-can resolve. Pod readiness is a separate signal again.
-TLS certificate expiry can also surface as a generic connection failure; see [certificate renewal](operations.md#the-seam-certificate).
+reports those conditions: it reports Orka's installed runtime and resolution,
+then the model plane's Deployment and proxy pod readiness and the seam serving
+certificate's expiry. Neither Orka nor plane readiness proves a credential is
+valid. TLS certificate expiry can also surface as a generic connection failure;
+see [certificate renewal](operations.md#the-seam-certificate).
 
 ## Privacy and evidence
 

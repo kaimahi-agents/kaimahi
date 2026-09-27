@@ -108,8 +108,8 @@ same Provider and the same Agent. That is what lets an unattended caller rerun
 it and compare. Choosing your own model is the wizard above.
 
 On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, the pinned Orka
-release with its keyless Provider and Task result-reader account, and the fixed
-`hello-world-agent` Provider/Agent bundle; then it asks a **fresh** Task and
+release with a placeholder Provider Secret and Task result-reader account,
+and the fixed `hello-world-agent` Provider/Agent bundle; then it asks a **fresh** Task and
 requires a readable answer. It deploys no plane and installs no Helm chart.
 Rerunning reuses an **exact** match only: a Provider or Agent whose live spec
 differs from the one quickstart would write is somebody's deliberate change, so
