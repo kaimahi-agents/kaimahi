@@ -18,7 +18,7 @@ A cluster that still runs the legacy runtime is operated with kubectl.
 
 | Tool | Needed for |
 |---|---|
-| Go 1.26+ | current development `kmx` with Orka commands; also fetched plane builds |
+| Go 1.26+ | `go install` builds and fetched plane builds; not needed to run the downloaded CLI |
 | Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
 | kind, kubectl | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
 | git, make | checkout-based development and remaining scripts/helpers |
@@ -32,11 +32,11 @@ Choose Podman directly on the command line with
 
 ## Current Orka path
 
-The published `v0.1.0` release predates these commands. Build current main rather
-than assuming `@latest` or the release installer contains them:
+The v0.2.0 release includes these Orka commands. Install the pinned version
+with Go (or use the checksum-verified [release installer](releases.md#install)):
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
 kmx version
 kmx ctx <context>
 kmx orka --help
@@ -44,8 +44,8 @@ kmx orka install
 kmx orka status
 ```
 
-Put Go's binary directory on PATH. `@main` is a development revision, not a
-release pin. From a checkout, `make` builds `bin/kmx` without provisioning.
+Put Go's binary directory on PATH. `@main` remains a moving development option.
+From a checkout, `make` builds `bin/kmx` without provisioning.
 The selected cluster must already exist; for a fresh local cluster the current
 component commands are:
 

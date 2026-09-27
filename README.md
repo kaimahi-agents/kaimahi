@@ -39,17 +39,29 @@ yet; the current lift is available as `/lift` from interactive chat. See the
 
 ## Quickstart
 
-The current end-to-end workflow is interactive. The required commands are on
-`main`; the latest tagged release, `v0.1.0`, predates them. Install Go 1.26+ and
-Docker or Podman, ensure the Go binary directory is on `PATH`, then run:
+Install Docker, then use the checksum-verified release installer:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
-kmx quickstart-wizard
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
+$HOME/.local/bin/kmx quickstart
 ```
 
-The wizard prepares a local Kubernetes target while you describe the agent. To
-complete the journey:
+The explicit path works even when `~/.local/bin` is not yet on your shell's
+`PATH`. On a Podman-only machine, use
+`$HOME/.local/bin/kmx --container-engine podman quickstart` instead.
+
+Or, with Go 1.26+ and its binary directory on `PATH`, build the same release:
+
+```bash
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+kmx quickstart
+```
+
+`kmx quickstart` is a non-interactive Orka path through local kind, Ollama,
+Provider, Agent and a fresh Task to a readable answer. `kmx up` provisions the
+runtime without creating an agent. To choose your own model and agent
+interactively, run `kmx quickstart-wizard`; it prepares a local Kubernetes
+target while you describe the agent. To complete the wizard journey:
 
 1. Choose **Chat with agent** when setup is ready.
 2. Send a prompt and wait for an answer to prove the selected execution path.
@@ -61,9 +73,14 @@ does not replay a task or delete the source. Choosing new cloud inference can
 create billable resources. Read the [interactive lift guide](docs/interactive-lift.md)
 for the complete behavior and recovery boundaries.
 
-Quickstart creates local cluster resources, result-reader RBAC, and a read-only
-Kubernetes inventory tool. Completed setup can remain after cancellation. Read
-[getting started](docs/getting-started.md) before using it on a shared machine.
+Both paths create local cluster resources and result-reader RBAC. The wizard
+also installs a read-only Kubernetes inventory tool, but **Orka v0.1.3 refuses
+its in-cluster Service URL** (`tool URL resolves to private/loopback IP`). The
+tool never becomes Available to Orka-executed Tasks; see
+[known issue #217](https://github.com/kaimahi-agents/kaimahi/issues/217).
+The non-interactive first-answer path does not use that tool. Completed setup
+can remain after cancellation. Read [getting started](docs/getting-started.md)
+before using it on a shared machine.
 
 Use Podman explicitly with:
 
@@ -71,8 +88,8 @@ Use Podman explicitly with:
 kmx --container-engine podman quickstart-wizard
 ```
 
-`@main` is a moving development branch. Use a reviewed commit for a reproducible
-build. From a checkout, `make` builds `bin/kmx` without provisioning anything.
+`@main` remains the moving development option; use `@v0.2.0` for this release.
+From a checkout, `make` builds `bin/kmx` without provisioning anything.
 
 ## Runtime Contract
 
@@ -84,11 +101,13 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 
 | Goal | Current interface | Boundary |
 |---|---|---|
-| Create a complete local agent environment | `kmx quickstart-wizard` | Interactive local workflow |
+| Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
+| Provision the local runtime only | `kmx up` | Does not create an agent |
+| Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
 | Create on a prepared target | `kmx agent create` | Does not install the runtime or provision credentials |
 | Prove an answer | Interactive chat or `kmx agent create --task ...` | Readiness alone is not execution proof |
 | Lift an agent | `/lift` in interactive chat | Uses a live agent and an existing destination |
-| Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; the namespace is explicit and defaults to `orka-system` |
+| Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
 `kmx agent create` writes reviewable YAML, validates it against the selected
@@ -131,9 +150,9 @@ limits.
 Kaimahi is pre-1.0 and incubating. Interactive local creation, creation on the
 first-class runtime, inspection, chat, lift to an existing target, AKS platform
 provisioning, and model-traffic migration are implemented. Standalone agent lift
-and the complete lifecycle remain directional. Legacy commands and the retained
-model-traffic bridge stay available while migration paths mature. AKS paths use
-billable resources and are not continuously re-proved in CI.
+and the complete lifecycle remain directional. The legacy runtime's commands
+are retired; the model-traffic bridge (`kmx plane`, `kmx migrate`) remains.
+AKS paths use billable resources and are not continuously re-proved in CI.
 
 ## Documentation
 

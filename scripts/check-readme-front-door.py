@@ -35,13 +35,12 @@ JOURNEY_COMMANDS = [
     ("kmx agent create", r"^kmx agent create(?=[ \t]*(?:#.*)?$)"),
     ("kmx agent lift", r"^kmx agent lift(?=[ \t]*(?:#.*)?$)"),
 ]
-# Current Agent Builder helpers postdate the latest tagged release. The main build
-# prerequisite is explicit rather than promising these commands in an old tag.
-# Accept main or a commit ID; this verifies syntax, not the contents of a commit.
-# Revisit the prerequisite when a capable tagged CLI is published.
+# The first runnable path uses the checksum-verifying installer, followed by
+# the non-interactive first-answer command. Go-install and the wizard are
+# documented separately; the first block must not send readers to an old tag.
 QUICKSTART_COMMANDS = [
-    ("go install .../cmd/kmx", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@(?:main|[0-9a-f]{7,40})(?=[ \t]*(?:#.*)?$)"),
-    ("kmx quickstart-wizard", r"^kmx quickstart-wizard(?=[ \t]*(?:#.*)?$)"),
+    ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh(?=[ \t]*(?:#.*)?$)"),
+    ("installed kmx quickstart", r"^\$HOME/\.local/bin/kmx quickstart(?=[ \t]*(?:#.*)?$)"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)

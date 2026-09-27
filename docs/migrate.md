@@ -15,8 +15,8 @@ this migration does not settle it. `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
 
-- A current development build of kmx; the published `v0.1.0` predates Orka
-  commands. See [installation](kmx.md#install), not the release quickstart.
+- A v0.2.0 or newer kmx and matching plane build. See
+  [installation](kmx.md#install) and the [plane upgrade procedure](releases.md#upgrading-the-plane).
 - An explicitly selected cluster: `kmx ctx <context>` or `kmx --context <context>`.
   Non-local mutations require confirmation naming that context; see
   [target safety](kmx.md#where-the-command-will-land).

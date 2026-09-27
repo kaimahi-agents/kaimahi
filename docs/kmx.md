@@ -17,29 +17,29 @@ Orka's platform in Kaimahi.
 
 ## Install
 
-The current Orka commands require a development build, with Go 1.26+:
+The v0.2.0 release includes Orka commands. With Go 1.26+:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
 kmx version
 kmx orka --help
 ```
 
-Ensure Go's binary directory is on PATH. `@main` is a moving development
-revision, not a tagged release. From a checkout, `make` builds `bin/kmx` and
-prints its path without changing a cluster; use that binary to exercise edits.
+Ensure Go's binary directory is on PATH. `@latest` follows the newest tagged
+release; `@main` remains a moving development revision. From a checkout,
+`make` builds `bin/kmx` and prints its path without changing a cluster; use
+that binary to exercise edits.
 
-The published `v0.1.0` release predates the Orka commands. `go install ...@latest`
-and the release installer are **not substitutes** for the development build
-above when following the Orka path:
+Alternatively, use the checksum-verified release installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.1.0` pins it, `--bin-dir=DIR` changes the destination, and
-`--quickstart` continues into `kmx quickstart`. It checks the binary against
+`--version=v0.2.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--quickstart` continues into `kmx quickstart`. A new shell may need
+`~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
 an independent signature. See [releases](releases.md) for platforms and upgrades.
 

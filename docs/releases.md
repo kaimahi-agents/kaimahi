@@ -4,10 +4,10 @@ Kaimahi is **pre-1.0 and incubating**. This page is the whole contract: how a
 version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
-As of 2026-09-10, the latest tagged release is `v0.1.0` and predates the
-Orka helpers. The current [getting-started path](getting-started.md) uses a
-build from `main`; `@latest` does not provide those new commands. Orka's own
-installation and upgrade limits are separate: see [orka.md](orka.md).
+From v0.2.0, `@latest` and the installer's default select the Orka-capable
+release. Pin `@v0.2.0` for a repeatable build; `@main` is the moving development
+option. Orka's own installation and upgrade limits are separate: see
+[orka.md](orka.md).
 The plane-upgrade sections below apply only to the retained legacy plane.
 
 Nothing here claims a trademark or a package-manager namespace. The name's
@@ -32,8 +32,8 @@ to publish a binary that does not report its own tag.
 Two tags are pushed for each version, at the same commit:
 
 ```
-v0.1.0          the repository, and the kmx binary
-plane/v0.1.0    the plane, which is a separate Go module under plane/
+v0.2.0          the repository, and the kmx binary
+plane/v0.2.0    the plane, which is a separate Go module under plane/
 ```
 
 Both are needed. `kmx plane` installs the plane through the Go module proxy at
@@ -50,19 +50,10 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.1.0` pins a version; `KMX_BIN_DIR=DIR`
-installs elsewhere. The current latest tag, `v0.1.0`, predates Orka:
-`install.sh --quickstart` refuses it rather than launching its legacy
-quickstart, and a plain v0.1.0 install does not offer Orka quickstart as its
-next action. Until an Orka-capable release is published, install from source:
-
-```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
-kmx quickstart
-```
-
-Once an Orka-capable release is tagged, the installer's `--quickstart` option
-will install it and then launch its quickstart.
+without sudo. `KMX_VERSION=v0.2.0` pins this release; `KMX_BIN_DIR=DIR`
+installs elsewhere. `install.sh --quickstart` installs the latest release and
+then launches the non-interactive Orka quickstart. An explicit v0.1.0
+`--quickstart` is still refused because that release predates Orka.
 
 The other route, if you have a Go toolchain:
 
@@ -71,7 +62,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.1.0`. Both go through the public Go module proxy and the Go
+can name: `@v0.2.0`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -82,7 +73,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.1.0
+version=v0.2.0
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -124,11 +115,11 @@ do it — see [below](#why-no-published-image-yet).
 
 ```console
 $ kmx version
-kmx v0.1.0 (release build)
+kmx v0.2.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.1.3
   model    qwen2.5:3b
-  plane    kaimahi-proxy:p10, built from v0.1.0
+  plane    kaimahi-proxy:p10, built from v0.2.0
 ```
 
 The first line is the binary's own identity and it names its source, because
@@ -137,24 +128,21 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.1.0 (release build)` | a binary from the release for `v0.1.0` |
-| `v0.1.0 (installed with go install)` | `go install …@v0.1.0` — the same code, built on your machine |
+| `v0.2.0 (release build)` | a binary from the release for `v0.2.0` |
+| `v0.2.0 (installed with go install)` | `go install …@v0.2.0` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
 ## Upgrading kmx
 
-Until an Orka-capable release is tagged, install from the current source;
-`@latest` still resolves to v0.1.0 and would replace an `@main` build with
-one that lacks Orka quickstart.
+Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
 kmx version
 ```
 
-Once an Orka-capable release is tagged, use `@latest` for the latest stable
-release or pin the tag you want. kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
+kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
 own. Re-installing is the whole upgrade. Read the changelog for the versions
 you skipped — below 1.0 a minor bump may change behaviour.
 

@@ -14,8 +14,8 @@ spec.loader.exec_module(front_door)
 JOURNEY = """kmx agent create
 kmx agent lift
 """
-QUICKSTART = """go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
-kmx quickstart-wizard
+QUICKSTART = """curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
+$HOME/.local/bin/kmx quickstart
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 # Kaimahi
@@ -72,25 +72,22 @@ for label, literal in [
 for label, literal in [
     ("kmx agent create", "kmx agent create\n"),
     ("kmx agent lift", "kmx agent lift\n"),
-    ("go install .../cmd/kmx", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\n"),
-    ("kmx quickstart-wizard", "kmx quickstart-wizard\n"),
+    ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
+    ("installed kmx quickstart", "$HOME/.local/bin/kmx quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
-for command in ("kmx agent create", "kmx agent lift", "kmx quickstart-wizard"):
+for command, label in (("kmx agent create", "kmx agent create"),
+                       ("kmx agent lift", "kmx agent lift"),
+                       ("$HOME/.local/bin/kmx quickstart", "installed kmx quickstart")):
     CASES.append((f"hyphen-suffixed {command}", GOOD.replace(command + "\n", command + "-old\n"),
-                  f"{command} is missing"))
+                  f"{label} is missing"))
 
 CASES += [
-    ("reviewed commit build", GOOD.replace("cmd/kmx@main", "cmd/kmx@572f3a6"), None),
-    ("release without current helpers", GOOD.replace("cmd/kmx@main", "cmd/kmx@v0.1.0"),
-     "go install .../cmd/kmx is missing"),
-    ("latest tag still predates current helpers", GOOD.replace("cmd/kmx@main", "cmd/kmx@latest"),
-     "go install .../cmd/kmx is missing"),
-    ("missing install revision", GOOD.replace("cmd/kmx@main", "cmd/kmx@"),
-     "go install .../cmd/kmx is missing"),
-    ("revision prefix is not a revision", GOOD.replace("cmd/kmx@main", "cmd/kmx@main-obsolete"),
-     "go install .../cmd/kmx is missing"),
+    ("installer from wrong repository", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"),
+     "release installer is missing"),
+    ("unverified direct binary", GOOD.replace(QUICKSTART.splitlines()[0], "curl -fsSL https://example.com/kmx -o kmx"),
+     "release installer is missing"),
     ("empty document", "", "ketu icon is missing"),
     ("journey commands only in prose", GOOD.replace("```bash\n" + JOURNEY + "```", JOURNEY),
      "create/prove/lift has no fenced command block"),
@@ -99,19 +96,19 @@ CASES += [
     ("empty journey first block", GOOD.replace("```bash\n", "```bash\n```\n```bash\n", 1),
      "kmx agent create is missing"),
     ("empty quickstart first block", GOOD.replace("```bash\n" + QUICKSTART, "```bash\n```\n```bash\n" + QUICKSTART),
-     "go install .../cmd/kmx is missing"),
+     "release installer is missing"),
     ("quickstart commands only in a later section",
      GOOD.replace(QUICKSTART, "kmx version\n").replace("## Status", "```bash\n" + QUICKSTART + "```\n## Status"),
-     "go install .../cmd/kmx is missing"),
+     "release installer is missing"),
     ("journey commands out of order", GOOD.replace("kmx agent create\nkmx agent lift", "kmx agent lift\nkmx agent create"),
      "kmx agent lift is missing"),
-    ("quickstart commands out of order", GOOD.replace("go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main\nkmx quickstart-wizard", "kmx quickstart-wizard\ngo install github.com/kaimahi-agents/kaimahi/cmd/kmx@main"),
-     "kmx quickstart-wizard is missing"),
-    ("command inside prose", GOOD.replace("\nkmx quickstart-wizard\n", "\nRun kmx quickstart-wizard first.\n"),
-     "kmx quickstart-wizard is missing"),
-    ("stray command before section", GOOD.replace("## Quickstart", "kmx quickstart-wizard\n## Quickstart"), None),
-    ("legacy journey cannot replace KMX quickstart", GOOD.replace("kmx quickstart-wizard\n", "kmx up\nkmx orka install\n"),
-     "kmx quickstart-wizard is missing"),
+    ("quickstart commands out of order", GOOD.replace(QUICKSTART, "$HOME/.local/bin/kmx quickstart\n" + QUICKSTART.splitlines()[0] + "\n"),
+     "installed kmx quickstart is missing"),
+    ("command inside prose", GOOD.replace("\n$HOME/.local/bin/kmx quickstart\n", "\nRun $HOME/.local/bin/kmx quickstart first.\n"),
+     "installed kmx quickstart is missing"),
+    ("stray command before section", GOOD.replace("## Quickstart", "kmx quickstart\n## Quickstart"), None),
+    ("legacy journey cannot replace KMX quickstart", GOOD.replace("$HOME/.local/bin/kmx quickstart\n", "kmx up\nkmx orka install\n"),
+     "installed kmx quickstart is missing"),
     ("headings out of order", GOOD.replace("## Status", "## Documentation").replace("## Documentation\nSee", "## Status\nSee"),
      "documentation heading is missing"),
     ("heading mentioned only in prose", GOOD.replace("## Status", "See Status below."),

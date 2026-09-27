@@ -6,10 +6,11 @@ section below is for the legacy plane implementation that still exists.
 
 ## Why is `kmx orka` missing?
 
-The latest tagged release, `v0.1.0`, predates the Orka helpers. `@latest`
-and the release installer do not mean the tip of `main`. Follow the current
-build instructions in [getting started](getting-started.md), then inspect
-`kmx version` and `kmx orka --help`.
+Check `kmx version` and which binary is on your `PATH`. The historical v0.1.0
+release predates Orka; v0.2.0 and newer provide these commands. Install the
+pinned release as described in [getting started](getting-started.md), then
+check `kmx orka --help`. `@latest` and the installer default select the newest
+published tag, not the tip of `main`.
 
 ## Does installing Orka govern my application?
 

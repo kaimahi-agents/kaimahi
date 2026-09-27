@@ -8,6 +8,12 @@ New quickstart agents reference this tool by default. `--tools` replaces that
 default with an explicit list. Default system instructions direct cluster
 questions to the tool; custom instruction files remain user-owned.
 
+**Known issue:** Orka v0.1.3 refuses the tool's in-cluster Service URL
+(`tool URL resolves to private/loopback IP`). The tool never becomes Available
+to Orka-executed Tasks, even though kmx installs and references it. See
+[#217](https://github.com/kaimahi-agents/kaimahi/issues/217). The example
+prompt below does not currently exercise the tool successfully through Orka.
+
 Selecting an existing quickstart Agent adds the tool reference if absent,
 preserving other tools and its system prompt. An explicitly disabled reference
 is preserved. The update checks resourceVersion and waits for the updated Agent
@@ -63,8 +69,10 @@ python3 -B scripts/test_orka_k8s_tool.py
 go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
-Live verification on 2026-09-16 attached the Tool to `hello-world-agent`, ran a
-fresh Orka Task, observed `POST /resources` returning 200, and received the actual
-three deployment names. The reader account's `delete pods` authorization was
-denied. The former MCP fixture was removed with the unsupported legacy
-runtime; this native Tool is the maintained example.
+A historical 2026-09-16 live check recorded a `POST /resources` returning 200,
+actual deployment names, and denial of the reader account's `delete pods`
+authorization. That check does **not** establish availability on the pinned
+Orka v0.1.3 release: #217 blocks this Tool from becoming Available to
+Orka-executed Tasks. The former MCP fixture was removed with the unsupported
+legacy runtime; this native Tool remains a read-only example, not a working
+Orka-executed tool on this version.

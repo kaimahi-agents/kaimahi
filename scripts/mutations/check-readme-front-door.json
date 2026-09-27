@@ -53,10 +53,10 @@
       "replace": "    (\"runtime ownership note\", r\"\"),"
     },
     {
-      "name": "the install revision check is dropped",
-      "breaks": "An obsolete tagged CLI or an empty revision can satisfy the current quickstart prerequisite.",
-      "find": "@(?:main|[0-9a-f]{7,40})(?=[ \\t]*(?:#.*)?$)",
-      "replace": "@"
+      "name": "the verified installer check is dropped",
+      "breaks": "A direct or wrong-repository download can satisfy the quickstart prerequisite.",
+      "find": "^curl -fsSL https://raw\\.githubusercontent\\.com/kaimahi-agents/kaimahi/main/install\\.sh \\| sh(?=[ \\t]*(?:#.*)?$)",
+      "replace": "^curl.*$"
     },
     {
       "name": "the journey create marker matches anything",
@@ -73,8 +73,8 @@
     {
       "name": "a word boundary accepts obsolete quickstart command names",
       "breaks": "A hyphenated non-command can satisfy the runnable quickstart step.",
-      "find": "^kmx quickstart-wizard(?=[ \\t]*(?:#.*)?$)",
-      "replace": "^kmx quickstart-wizard\\b"
+      "find": "^\\$HOME/\\.local/bin/kmx quickstart(?=[ \\t]*(?:#.*)?$)",
+      "replace": "^\\$HOME/\\.local/bin/kmx quickstart\\b"
     },
     {
       "name": "the journey command list is emptied",

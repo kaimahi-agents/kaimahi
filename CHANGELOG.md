@@ -22,6 +22,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.2.0 — 2026-09-27
+
+This is the first Orka-capable release. The entries below include the sequence
+of changes since v0.1.0; where an intermediate entry describes a command that
+was subsequently retired, follow the final **Breaking** and **Upgrading**
+sections, not the intermediate instruction.
+
 ### Changed
 
 - **Nothing in this tree supports the legacy kagent runtime any more, and a
@@ -317,12 +324,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `kaimahi_decisions_total` assertion, which had no children left to count.
   A hygiene check now refuses any retired command anywhere in that job.
 
-- **The installer's `--quickstart` refuses the current `v0.1.0` release.**
-  That release runs the legacy quickstart, not Orka. A plain v0.1.0 install
-  still succeeds but no longer recommends that legacy journey as the Orka
-  next step. **Upgrading:** until an Orka-capable release is published, run
-  `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main` and then
-  `kmx quickstart`; `@latest` still selects v0.1.0.
+- **The installer's `--quickstart` refuses an explicit `v0.1.0` selection.**
+  That historical release runs the legacy quickstart, not Orka. A plain
+  v0.1.0 install still succeeds but recommends the Orka-capable v0.2.0
+  release instead. See **Upgrading** for the current install command.
 
 - **`kmx quickstart` no longer deploys the legacy kagent runtime**, and no
   longer reduces, reconciles or preserves a kagent Helm release. Its
@@ -330,12 +335,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `hello-world`) and `manifest` names the generated Orka bundle in
   `orka-system` rather than the embedded kagent example. Its `next` actions
   are now an Orka chat, `kmx agent create`, `kmx orka status`, `kmx plane` and
-  `kmx migrate`. **Upgrading:** a caller parsing `agent` or `manifest` must be
-  updated. To keep using the legacy runtime, invoke it explicitly with
-  `kmx up --step kagent` (and `--step agent` / `--step tools-agent`); those
-  steps are retained only until their retirement slices land.
-- **A bare `kmx up` no longer installs kagent or the two demonstration
-  agents.** **Upgrading:** run the steps explicitly, as above.
+  `kmx migrate`. A caller parsing `agent` or `manifest` must be updated;
+  there is no longer a legacy-runtime install step.
+- **A bare `kmx up` installs the Orka runtime, not the retired kagent runtime
+  or its demonstration agents.** Use `kmx quickstart` to create a fixed Agent
+  and run a fresh Task, or `kmx agent create` to author your own.
 
 - **The runtime shard is now the hosted-model shard.** `e2e-runtime` installed
   the legacy runtime with a bare `kmx up` and opened with a kagent
@@ -1415,18 +1419,39 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
+Install matching CLI and plane revisions, and back up the plane before rollout:
+
 ```sh
-kmx plane                # mints the certificate; the seams become TLS here
-kmx govern <credential>  # re-applies the model seam with https + spec.tls
-kmx tools govern         # the same for the tool seam
-kmx status               # the certificate, and which seams are governed
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+kmx backup plane-before-upgrade.sql
+kmx plane
+kmx status
 ```
 
-`kmx plane` prints those commands when it finishes, for the same reason they
-are written out here: between the first and the rest, calls fail.
+The checksum-verified `install.sh` also installs v0.2.0 by default once it is
+the latest published tag. Verify every plane replica runs the new build before
+declaring retirement effective: old replicas can still consume stored grants,
+and rollback to an approval-capable build can reactivate historical grants.
+Existing credentials and ledger rows survive, but the retired APIs do not.
+See [the plane retirement upgrade procedure](docs/operations.md#upgrading-after-approval-retirement).
 
-A fresh cluster needs nothing extra — `kmx up` is untouched, and `kmx plane`
-followed by `kmx govern` is the order it already documented.
+Scripts using `kmx up --step kagent|agent|tools-agent`, `kmx govern`, `kmx use`
+or `kmx agent edit` must move to the supported Orka and model-seam commands:
+`kmx up` (runtime only), `kmx quickstart` (fixed Agent and fresh Task),
+`kmx agent create --namespace <ns>` (own Agent), `kmx migrate <deployment>
+--namespace <ns> --model <provider>/<model>` (owner model traffic), and
+`kubectl --context <context> edit agents.core.orka.ai <name>` (Agent edits).
+Add `--namespace <ns>` to `kmx credential issue --secret` calls. Use the
+`kmx status` table instead of its retired `-o json|yaml` output, with targeted
+`kubectl --context <context>` reads where machine-readable output is needed.
+Interactive Orka chat is `kmx agent chat --interactive [--namespace <ns>] <name>`;
+there is no legacy session or raw JSON chat replacement.
+
+### Known issues
+
+- Orka v0.1.3 refuses the quickstart Kubernetes tool's in-cluster Service URL
+  (`tool URL resolves to private/loopback IP`), so the tool never becomes
+  Available to Orka-executed Tasks. Tracked in [#217](https://github.com/kaimahi-agents/kaimahi/issues/217).
 
 ## v0.1.0 — 2026-09-03
 
