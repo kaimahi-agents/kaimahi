@@ -21,7 +21,6 @@ type dependency struct {
 var (
 	depKubectl = dependency{"kubectl", "to read and write Kubernetes resources", "https://kubernetes.io/docs/tasks/tools/", []string{"version", "--client"}, true}
 	depKind    = dependency{"kind", "to manage the local Kubernetes cluster", "https://kind.sigs.k8s.io/docs/user/quick-start/#installation", []string{"version"}, true}
-	depHelm    = dependency{"helm", "to install kagent", "https://helm.sh/docs/intro/install/", []string{"version"}, true}
 	depBash    = dependency{"bash", "to run the embedded scripts used by this lift phase", "https://www.gnu.org/software/bash/", []string{"--version"}, false}
 	depPython3 = dependency{"python3", "to render JSON safely in the embedded boundary probe", "https://www.python.org/downloads/", []string{"--version"}, false}
 	depCurl    = dependency{"curl", "to query Azure Managed Prometheus during verification", "https://curl.se/download.html", []string{"--version"}, false}
@@ -47,13 +46,13 @@ func (a *App) engineDependency() dependency {
 // before this returns nil.
 //
 // "Makes usable" is the part that matters once the front door is `curl |
-// sh` and one command. A missing kind, kubectl
-// or Helm used to be the end of the run: four install pages, and a first
-// agent that was four downloads away from someone who just wanted to see one
-// answer. kmx already knew how to fetch ONE of the tools it shells out to —
-// the pinned kagent CLI, checksum-verified into a cache directory — so the
-// rest are fetched the same way, by the same rules, and what the operator
-// already has on PATH still wins.
+// sh` and one command. A missing kind or kubectl used to be the end of the
+// run: several install pages, and a first agent that was several downloads
+// away from someone who just wanted to see one answer. kmx already knew how
+// to fetch ONE of the tools it shells out to — a pinned CLI,
+// checksum-verified into a cache directory — so the rest are fetched the same
+// way, by the same rules, and what the operator already has on PATH still
+// wins.
 //
 // The container engine stays a genuine prerequisite: it is a daemon and a
 // privileged system package, not a binary that can be dropped into a cache.

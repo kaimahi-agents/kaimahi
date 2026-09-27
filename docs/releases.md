@@ -50,8 +50,19 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `--quickstart` goes straight on to a running agent;
-`KMX_VERSION=v0.1.0` pins a version; `KMX_BIN_DIR=DIR` installs elsewhere.
+without sudo. `KMX_VERSION=v0.1.0` pins a version; `KMX_BIN_DIR=DIR`
+installs elsewhere. The current latest tag, `v0.1.0`, predates Orka:
+`install.sh --quickstart` refuses it rather than launching its legacy
+quickstart, and a plain v0.1.0 install does not offer Orka quickstart as its
+next action. Until an Orka-capable release is published, install from source:
+
+```bash
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
+kmx quickstart
+```
+
+Once an Orka-capable release is tagged, the installer's `--quickstart` option
+will install it and then launch its quickstart.
 
 The other route, if you have a Go toolchain:
 
@@ -92,19 +103,19 @@ fail-closed verification. `install.sh` picks whichever of `sha256sum`,
 `shasum` and `openssl` the machine has, and refuses to install if it finds
 none.
 
-Do not skip the digest check. This project verifies the pinned kagent CLI's
-digest before it will execute it, and now kind's, kubectl's and Helm's too
+Do not skip the digest check. The installer verifies the kmx binary before
+execution, and kmx independently verifies its pinned kind and kubectl downloads
 ([internal/kmx/toolchain](../internal/kmx/toolchain)); applying less care to
 its own binary would be indefensible.
 
 **Platforms**: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
 kmx drives a Linux container runtime, so the machine running it is a Linux
-host or a Mac running one in a VM — and those are the same four platforms the
-pinned kagent CLI publishes, which kmx downloads for the same machine.
-Windows is served through WSL, which is `linux/amd64`; a native
+host or a Mac running one in a VM. Those are the four release platforms the
+installer and pinned toolchain support. Windows is served through WSL, which
+is `linux/amd64`; a native
 `windows/amd64` build would be an untested claim rather than a platform.
 
-**Go is still a prerequisite for the governed half.** `kmx up`, `kmx agent`,
+**Go is still a prerequisite for the plane.** `kmx up`, `kmx agent`,
 `kmx status` and the operator verbs work from a downloaded binary alone.
 `kmx plane` builds the plane's image on your machine and uses `go install` to
 do it — see [below](#why-no-published-image-yet).
@@ -115,7 +126,7 @@ do it — see [below](#why-no-published-image-yet).
 $ kmx version
 kmx v0.1.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
-  kagent   0.9.12
+  orka     v0.1.3
   model    qwen2.5:3b
   plane    kaimahi-proxy:p10, built from v0.1.0
 ```
@@ -133,18 +144,26 @@ from:
 
 ## Upgrading kmx
 
+Until an Orka-capable release is tagged, install from the current source;
+`@latest` still resolves to v0.1.0 and would replace an `@main` build with
+one that lacks Orka quickstart.
+
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main
 kmx version
 ```
 
-kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
+Once an Orka-capable release is tagged, use `@latest` for the latest stable
+release or pin the tag you want. kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
 own. Re-installing is the whole upgrade. Read the changelog for the versions
 you skipped — below 1.0 a minor bump may change behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to; `kmx up` is idempotent and re-applies the pinned
-kagent chart and the agents.
+cluster until you ask it to; `kmx up` is idempotent and re-applies the model
+server and the pinned Orka runtime. kmx no longer installs the legacy
+chart or its agents by any route: those steps, their manifests and the Helm
+dependency they needed are removed. A cluster that already carries that
+runtime is left exactly as it is, for kubectl to operate.
 
 ## Upgrading the plane
 

@@ -144,12 +144,20 @@ env -u KAIMAHI_CONFIRM -u KUBE_NS KUBE_CTX=kind-real \
 banner_fails=0
 # namespace(s) is part of the contract, not decoration: the guard's whole
 # claim is that it says WHERE the action lands.
-for needle in 'kind-real' '127.0.0.1' 'about to:' 'namespace(s):'; do
+for needle in 'kind-real' '127.0.0.1' 'about to:' 'namespace(s):' 'not exhaustive'; do
   if ! grep -q "$needle" "$workdir/banner"; then
     banner_fails=$((banner_fails + 1))
     echo "FAIL [banner]: missing '$needle'"
   fi
 done
+# An explicitly supplied destination must not be labelled as a generic hint.
+KUBE_NS=owner-app KUBE_CTX=kind-real bash "$guard" "scoped banner" \
+  </dev/null >/dev/null 2>"$workdir/scoped-banner"
+if ! grep -q 'namespace(s): owner-app' "$workdir/scoped-banner" || \
+   grep -q 'not exhaustive' "$workdir/scoped-banner"; then
+  banner_fails=$((banner_fails + 1))
+  echo "FAIL [banner]: explicit owner-app destination was replaced by the generic hint"
+fi
 fails=$((fails + banner_fails))
 # `[ ... ] && echo` is a top-level AND list: under `set -e` a false test
 # would end the script right here, so the failure summary below would

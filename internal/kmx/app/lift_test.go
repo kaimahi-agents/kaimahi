@@ -56,9 +56,9 @@ func TestBYORegistryRetryKeepsTheRecordedPayload(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 	a := &App{Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
-	opt := lift.Options{Payload: lift.PayloadKagent, BringYourOwn: true, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345"}
+	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345"}
 	err := a.refuseWithoutRegistryPullRights(opt, opt.Payload)
-	if err == nil || !strings.Contains(err.Error(), "kmx aks up --byo --payload kagent --step plane") {
+	if err == nil || !strings.Contains(err.Error(), "kmx aks up --byo --payload orka --step plane") {
 		t.Fatalf("BYO retry lost the recorded payload: %v", err)
 	}
 }
@@ -468,7 +468,7 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 // re-running a phase must not turn into a refusal.
 func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 	a := &App{}
-	opt := lift.Options{Payload: lift.PayloadKagent, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
+	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
 
 	for _, tc := range []struct {
 		name   string
@@ -488,7 +488,7 @@ func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 				t.Errorf("the refusal does not name %q: %v", tc.says, err)
 			}
 			// It has to say how to get past it, both ways.
-			if !strings.Contains(err.Error(), "--payload kagent --observability=false") || !strings.Contains(err.Error(), "disable-addons") {
+			if !strings.Contains(err.Error(), "--payload orka --observability=false") || !strings.Contains(err.Error(), "disable-addons") {
 				t.Errorf("the refusal offers no way forward: %v", err)
 			}
 		})
@@ -527,7 +527,7 @@ func TestTheBoundaryIsProvenBeforeAnythingIsPutBehindIt(t *testing.T) {
 	for i, s := range lift.Steps {
 		order[s] = i
 	}
-	for _, after := range []string{"credential", "plane", "agents", "observability", "verify"} {
+	for _, after := range []string{"credential", "plane", "orka", "observability", "verify"} {
 		if order[after] < order["boundary"] {
 			t.Errorf("%q runs before the boundary is proven", after)
 		}

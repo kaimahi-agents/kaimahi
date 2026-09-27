@@ -113,7 +113,7 @@ Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
 reported as conflicts. Ordinary `agent create` retains its strict collision policy.
 The operation
-does not create AKS clusters or install the legacy kagent/plane lift stack.
+does not create AKS clusters or install the plane lift stack.
 `kmx aks up` is the separate provisioning workflow. The deprecated `kmx lift`
 still works and requires `--payload`.
 

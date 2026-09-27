@@ -448,10 +448,7 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 		actions = append(actions, agentTUIMenuAction{"c", "Chat with agent"})
 	}
 	if !a.External {
-		actions = append(actions, agentTUIMenuAction{"f", "Edit inference"})
-		if a.Runtime == "orka" {
-			actions = append(actions, agentTUIMenuAction{"t", "Add / edit tools"})
-		}
+		actions = append(actions, agentTUIMenuAction{"f", "Edit inference"}, agentTUIMenuAction{"t", "Add / edit tools"})
 	}
 	if m.focus == 0 && a.canLift() {
 		actions = append(actions, agentTUIMenuAction{"L", "Lift to remote environment"})

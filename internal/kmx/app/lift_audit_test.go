@@ -268,7 +268,7 @@ func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "Other phases were not checked") || strings.Contains(out.String(), "The agent is running on a managed cluster") {
+			if !strings.Contains(out.String(), "Other phases were not checked") || strings.Contains(out.String(), "Orka is running on a managed cluster") {
 				t.Fatalf("one phase claimed entire lift: %s", out)
 			}
 			opt.Step = ""
@@ -293,14 +293,10 @@ func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
 			}
 			want := []string{"Azure metrics and logs were not checked", a.liftCommand(opt, true)}
 			// The spend ledger is offered only where something writes to it.
-			// The orka payload wires no Provider through the plane, so
-			// pointing at a credential's ledger would be pointing at an
-			// empty one; `kmx flow` is the honest view there.
-			if payload == lift.PayloadOrka {
-				want = append(want, a.operationCommand("orka", "status"), a.operationCommand("flow"))
-			} else {
-				want = append(want, a.operationCommand("ledger", a.Cfg.Credential))
-			}
+			// This lift wires no Provider through the plane, so pointing at a
+			// credential's ledger would be pointing at an empty one; `kmx flow`
+			// is the honest view.
+			want = append(want, a.operationCommand("orka", "status"), a.operationCommand("flow"))
 			for _, w := range want {
 				if !strings.Contains(out.String(), w) {
 					t.Errorf("%s: missing %q: %s", payload, w, out)
@@ -389,9 +385,9 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 	}{
 		{"cluster", []string{"az", "kubectl", "bash"}, []string{"helm", "go", "python3", "curl"}},
 		{"boundary", []string{"az", "kubectl", "bash", "python3"}, []string{"helm", "go", "curl"}},
-		{"kagent", []string{"az", "kubectl", "helm"}, []string{"bash", "go", "python3", "curl"}},
 		{"credential", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
 		{"plane", []string{"az", "kubectl", "bash", "go"}, []string{"helm", "curl"}},
+		{"orka", []string{"az", "kubectl"}, []string{"helm", "bash", "go", "python3", "curl"}},
 		{"verify", []string{"az", "kubectl", "curl"}, []string{"bash", "helm", "go", "python3"}},
 	} {
 		t.Run(tc.step, func(t *testing.T) {
@@ -412,15 +408,14 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 	}
 
 	// A full lift preflights everything it will EVENTUALLY need, before it
-	// creates anything — and the payload decides what that is. An Orka lift
-	// never runs Helm, so demanding it would make an operator install a tool
-	// this path has no use for.
+	// creates anything. Helm went with the retired payload — nothing this
+	// path runs needs it — so demanding it would make an operator install a
+	// tool for a phase that no longer exists.
 	for _, tc := range []struct {
 		payload string
 		want    []string
 		not     []string
 	}{
-		{lift.PayloadKagent, []string{"az", "kubectl", "bash", "python3", "helm", "go", "curl"}, nil},
 		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "python3", "go", "curl"}, []string{"helm"}},
 	} {
 		payloadBase := base
@@ -461,42 +456,95 @@ func TestLiftPyYAMLAndScriptPlatformChecksAreStepAware(t *testing.T) {
 	}
 }
 
-// A lift is recorded with the payload it landed. Resuming it with the other
-// one would install BOTH platforms onto a single cluster — the exact outcome
-// the payload split exists to prevent — so the difference is refused rather
-// than reconciled, the same way a branch mismatch is.
+// A lift is recorded with the payload it landed. Resuming it as something
+// else would install a second platform onto a single cluster — the exact
+// outcome the payload split exists to prevent — so the difference is refused
+// rather than reconciled, the same way a branch mismatch is.
 func TestAResumedLiftCannotSwitchPayload(t *testing.T) {
 	a, _, _ := liftAuditApp(t)
 	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo-rg", Cluster: "demo-cluster", Registry: "reg12345"}
-	liftAuditRecord(t, a, opt, lift.Pre{}, false)
+	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
 
-	opt.Payload = lift.PayloadKagent
+	// A record naming a payload this build has never heard of. The guard has
+	// to be about the RECORD disagreeing with the run, not about the retired
+	// name specifically, or it stops protecting anything the day a third
+	// payload is added.
+	writeRecordPayload(t, path, "some-other-platform")
 	_, _, err := a.openLiftRecord(opt, "test-subscription")
 	if err == nil {
-		t.Fatal("a recorded orka lift was resumed as kagent")
+		t.Fatal("a recorded lift was resumed with a different payload")
 	}
-	for _, want := range []string{"orka", "kagent", "both platforms"} {
+	for _, want := range []string{"orka", "some-other-platform", "both platforms"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal never says %q: %v", want, err)
 		}
 	}
 
 	// The matching payload still opens, or the guard would block every resume.
-	opt.Payload = lift.PayloadOrka
+	writeRecordPayload(t, path, lift.PayloadOrka)
 	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
 		t.Fatalf("resuming with the recorded payload was refused: %v", err)
 	}
 }
 
-// A record written before the split carries no payload, and only kagent could
-// have written it. Refusing those would strand every existing lift; reading
-// one as orka would be a lie about what is on the cluster.
-func TestALiftRecordedBeforeThePayloadSplitResumesAsKagent(t *testing.T) {
-	a, _, _ := liftAuditApp(t)
-	opt := lift.Options{Payload: lift.PayloadKagent, ResourceGroup: "old-rg", Cluster: "old-cluster", Registry: "reg12345"}
-	path := liftAuditRecord(t, a, opt, lift.Pre{}, false)
+// A record written before the split carries no payload, and only kagent
+// could have written it. A record that names kagent landed the runtime that
+// has since been retired. Neither may be RESUMED — the phases that served
+// that payload are gone, so a resume would run a lift that cannot finish —
+// and both must still be readable, because those clusters bill and the record
+// is the only list of what to delete.
+func TestAKagentLiftRefusesToResumeAndStillTearsDown(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		recorded any
+	}{
+		{"recorded as kagent", lift.PayloadKagent},
+		{"written before the payload split", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, out, dir := liftAuditApp(t)
+			opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "old-rg", Cluster: "old-cluster", Registry: "reg12345"}
+			path := liftAuditRecord(t, a, opt, lift.Pre{Recorded: true}, true)
+			writeRecordPayload(t, path, tc.recorded)
 
-	// Strip the field, as a record from before it existed has no payload.
+			// Resume, with the only payload the CLI still accepts. It has to
+			// refuse, and it has to say the platform is retired rather than
+			// that two payloads disagree — there is no second payload to
+			// switch to.
+			_, _, err := a.openLiftRecord(opt, "test-subscription")
+			if err == nil {
+				t.Fatal("a kagent lift was resumed after the payload was retired")
+			}
+			for _, want := range []string{"kagent", "retired", "aks down"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not say %q: %v", want, err)
+				}
+			}
+			if _, statErr := os.Stat(path); statErr != nil {
+				t.Fatalf("the refusal destroyed the record teardown needs: %v", statErr)
+			}
+
+			// ...and teardown of that same cluster still works. This is the
+			// whole reason the sentinel is kept.
+			a.Cfg.Confirm = opt.ResourceGroup
+			if err := a.LiftDown(opt); err != nil {
+				t.Fatalf("a kagent lift could not be torn down: %v\n%s", err, out)
+			}
+			calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+			if !strings.Contains(string(calls), "resource delete") || !strings.Contains(string(calls), "group delete") {
+				t.Fatalf("teardown of a kagent lift removed nothing: %s", calls)
+			}
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("completed teardown retained the record: %v", statErr)
+			}
+		})
+	}
+}
+
+// writeRecordPayload rewrites a record's payload field, which is the only way
+// to produce a kagent record now that nothing will write one.
+func writeRecordPayload(t *testing.T, path string, payload any) {
+	t.Helper()
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -505,20 +553,16 @@ func TestALiftRecordedBeforeThePayloadSplitResumesAsKagent(t *testing.T) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		t.Fatal(err)
 	}
-	delete(raw, "payload")
+	if payload == nil {
+		delete(raw, "payload")
+	} else {
+		raw["payload"] = payload
+	}
 	rewritten, err := json.Marshal(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, rewritten, 0o600); err != nil {
 		t.Fatal(err)
-	}
-
-	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
-		t.Fatalf("a legacy record was refused a kagent resume: %v", err)
-	}
-	opt.Payload = lift.PayloadOrka
-	if _, _, err := a.openLiftRecord(opt, "test-subscription"); err == nil {
-		t.Fatal("a legacy kagent record accepted an orka resume")
 	}
 }

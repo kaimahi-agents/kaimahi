@@ -114,7 +114,7 @@ func TestTheContainerEngineIsNeverFetched(t *testing.T) {
 // longer fetches, which is the other way the two drift apart.
 func TestTheFetchableDependenciesAreExactlyTheOnesTheToolchainVerifies(t *testing.T) {
 	declared := map[string]bool{}
-	for _, dep := range []dependency{depKubectl, depKind, depHelm, depGo} {
+	for _, dep := range []dependency{depKubectl, depKind, depGo} {
 		if dep.fetchable {
 			declared[dep.name] = true
 		}

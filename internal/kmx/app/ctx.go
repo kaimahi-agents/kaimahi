@@ -30,7 +30,7 @@ func (a *App) Ctx(context string) error {
 		Action:     "select " + context + " as the context kmx acts on",
 		Context:    context,
 		Source:     config.SourceSelected,
-		Namespaces: config.GuardNamespaces,
+		Namespaces: config.GuardNamespaceHint,
 		Confirm:    a.Cfg.Confirm,
 		Command:    "kmx ctx " + context,
 	}, a.Err, a.Stdin); err != nil {

@@ -76,7 +76,10 @@ type Record struct {
 	//
 	// Empty means the record predates the payload split, when `lift` only
 	// ever landed kagent. That is treated as kagent rather than as unknown,
-	// because it is not unknown — it is history.
+	// because it is not unknown — it is history. The kagent payload is now
+	// retired and no new record can carry it, but an existing one still
+	// decodes: those clusters exist, they bill, and this record is the only
+	// list of what teardown must delete.
 	Payload       string     `json:"payload,omitempty"`
 	ResourceGroup string     `json:"resource_group"`
 	Cluster       string     `json:"cluster"`
@@ -204,6 +207,10 @@ func NewRecord(runID string, branch Branch, payload, subscription, resourceGroup
 
 // PayloadOrLegacy is what this record landed, reading an absent payload as the
 // only thing `lift` could have landed when the record was written.
+//
+// This is the one place PayloadKagent is still produced. Teardown and the
+// resume refusal both ask this question, and both need the true answer: a
+// kagent record must tear down, and must not resume.
 func (r *Record) PayloadOrLegacy() string {
 	if strings.TrimSpace(r.Payload) == "" {
 		return PayloadKagent

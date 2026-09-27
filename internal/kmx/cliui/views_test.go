@@ -63,7 +63,7 @@ func TestLongLabelsAndValuesFitWithoutLosingBytes(t *testing.T) {
 }
 
 func TestActionsWrapProseButKeepCommandsCopyable(t *testing.T) {
-	command := "kubectl --context a-long-context-name -n kagent get agents,pods"
+	command := "kubectl --context a-long-context-name -n orka-system get agents,pods"
 	o := WithCapabilities(Capabilities{Rich: true, Width: 28})
 	got := o.Actions("Next", []Action{{Label: "Inspect the runtime and its configuration", Detail: "This is a long explanation that should wrap", Command: command,
 		Children: []Action{{Label: "Then inspect the configured model and tool seams"}},

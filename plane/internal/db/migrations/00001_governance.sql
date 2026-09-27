@@ -1,6 +1,6 @@
 -- +goose Up
 -- The governance floor: Kaimahi-issued credentials (the opaque tokens the
--- governed ModelConfig presets carry — only their sha256 is stored), the
+-- governed model presets carry — only their sha256 is stored), the
 -- per-credential monthly budget caps, and the append-only spend ledger.
 -- Schema pattern follows tomte-old's spend_entry (13_spend_ledger.sql):
 -- token counts are recorded even when cost is zero, so the ledger is

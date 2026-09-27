@@ -1,6 +1,6 @@
 -- +goose Up
 -- Inbound connectors: the first INGRESS surface in the plane. An
--- external event (a webhook) may trigger a kagent agent through the
+-- external event (a webhook) may trigger an agent through the
 -- plane — authenticated, replay-protected, rate-limited, approved,
 -- budget-gated, and audited. Two changes:
 --
@@ -60,7 +60,7 @@ CREATE TABLE inbound_audit (
     -- The agent the hook targets, as "namespace/name".
     agent           text NOT NULL DEFAULT '',
     -- Token usage the agent runtime REPORTED for this invocation
-    -- (kagent_usage_metadata), on outcome rows — a 'failed' task can
+    -- (its own usage-metadata field), on outcome rows — a 'failed' task can
     -- have spent tokens too, and says so. Spend attribution
     -- only: the spend itself is ledgered by the proxy under the agent's
     -- governed credential; these counts are never priced here.

@@ -1,8 +1,8 @@
 // Package proxy is the governance plane's egress gateway for LLM traffic:
 // the budget meter's enforcement point and the only place real upstream
-// credentials are attached to outbound requests. It mounts at kagent's
-// ModelConfig baseUrl seam — the governed preset points openAI.baseUrl
-// here and carries only a Kaimahi-issued opaque token.
+// credentials are attached to outbound requests. It mounts at a governed
+// workload's base-URL seam — the governed endpoint points there and
+// carries only a Kaimahi-issued opaque token.
 //
 // Adapted from tomte-old's proxy package. Ported patterns: one upstream
 // base and exactly one allowed (method, path) per upstream as the whole

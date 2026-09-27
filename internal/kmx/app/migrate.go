@@ -275,9 +275,9 @@ func (a *App) Migrate(opt MigrateOptions) error {
 	// 4. The credential the application will present, and the authority
 	//    it will verify the seam with.
 	if err := a.session(func(client *admin.Client) error {
-		return a.issueCredential(client, opt.Credential, GovernOptions{
+		return a.issueCredential(client, opt.Credential, CredentialOptions{
 			Secret: opt.Secret, SecretNamespace: opt.Namespace, Command: "kmx migrate",
-		}, false)
+		})
 	}); err != nil {
 		// The credential is named after the Deployment unless --credential
 		// says otherwise, so a plane that already holds this name may be
@@ -591,4 +591,35 @@ func wrote(unchanged bool) string {
 		return "Unchanged"
 	}
 	return "Wrote"
+}
+
+// requireNamespace refuses before minting a one-time credential that cannot
+// be stored in its destination namespace.
+//
+// `kmx migrate` and `kmx credential issue` both go through it, and the check
+// is about the operator's own namespace: the token is shown once, so a
+// destination that is blank or does not exist has to be caught before
+// anything is issued rather than after.
+//
+// Blank is refused without asking the cluster. `kubectl get namespace ""`
+// fails for a reason that has nothing to do with the namespace, and a
+// whitespace-only flag value would otherwise reach the API server as a name
+// nobody typed.
+func (a *App) requireNamespace(namespace, flag string) error {
+	if strings.TrimSpace(namespace) == "" {
+		return fmt.Errorf("no namespace was named, and it is where the credential's Secret would go.\n"+
+			"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
+			"  Name the namespace your runtime reads its Secret from:\n"+
+			"    %s <your namespace>", flag)
+	}
+	if _, err := a.kubectlCapture("get", "namespace", namespace, "-o", "name"); err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("namespace %q does not exist, and it is where the credential's Secret would go.\n"+
+				"  Nothing has been issued — the token is shown once, so this is refused before it is minted.\n"+
+				"  Name the namespace your runtime reads its Secret from:\n"+
+				"    %s <your namespace>", namespace, flag)
+		}
+		return fmt.Errorf("cannot tell whether namespace %q exists (refusing to guess): %w", namespace, err)
+	}
+	return nil
 }

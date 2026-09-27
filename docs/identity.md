@@ -10,7 +10,7 @@
 
 The ledger and historical tool/inbound audit carry `acted_for`.
 The retired inbound bridge recorded signed Slack event user identifiers and
-opened run windows around kagent turns. That producer is removed; its stored
+opened run windows around the legacy runtime's turns. That producer is removed; its stored
 records are history. Retirement adds no verified human identity for model
 clients; the gateway no longer accepts MCP traffic.
 
@@ -69,7 +69,7 @@ sanitize cells too. `X-Forwarded-For` is ignored. The retired gateway did not
 carry MCP `clientInfo.name` across calls; historical rows do not establish it.
 
 Neither column controls authorization or actor attribution. A User-Agent
-that says kagent does **not** distinguish a genuine agent from a script
+that says the runtime does **not** distinguish a genuine agent from a script
 imitating it. Pod addresses are reused and port-forwarding can show a
 loopback peer. These columns aid investigation, not identity verification.
 
@@ -94,7 +94,7 @@ kmx ledger hello-world
 
 Renewal moves a deadline **without changing token material**. For suspected
 compromise, reissue the credential and repoint its Secret; renewal is not
-rotation. `kmx govern --ttl` can set a lifetime at issuance. Model credentials
+rotation. `kmx credential issue --ttl` sets a lifetime at issuance. Model credentials
 are separate from the removed tool-governance commands. Tokens are shown once
 and stored in the database only as hashes.
 
@@ -104,11 +104,13 @@ and stored in the database only as hashes.
 legacy no-expiry class. The retired grant view is not an expiry inspection path.
 [Metrics](operations.md#metrics) retain credential and certificate expiry gauges.
 
-A kagent `Accepted` condition is a cached reconcile verdict, not a live
-credential check. Secret projection is asynchronous. `kmx status` reports cached
-conditions and their age; pod readiness is a separate signal. The retired
-RemoteMCPServer credential-acceptance flow is not a model authentication test.
-TLS certificate expiry can also surface as a generic connection failure; see [certificate renewal](operations.md#the-seam-certificate).
+A controller's `Accepted` condition is a cached reconcile verdict, not a live
+credential check, and Secret projection is asynchronous. `kmx status` no longer
+reports those conditions: it reports Orka's installed runtime and resolution,
+then the model plane's Deployment and proxy pod readiness and the seam serving
+certificate's expiry. Neither Orka nor plane readiness proves a credential is
+valid. TLS certificate expiry can also surface as a generic connection failure;
+see [certificate renewal](operations.md#the-seam-certificate).
 
 ## Privacy and evidence
 

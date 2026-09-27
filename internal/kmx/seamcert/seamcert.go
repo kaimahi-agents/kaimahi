@@ -216,8 +216,8 @@ func (a Authority) Sign(names []string, now time.Time) (Serving, error) {
 	if !now.Before(a.cert.NotAfter) {
 		return Serving{}, fmt.Errorf(
 			"the certificate authority %q expired %s and cannot sign anything.\n"+
-				"  Delete Secret kaimahi/kaimahi-plane-authority and re-run `kmx plane` to mint a new one —\n"+
-				"  every agent's trust changes with it, which kagent rolls them for",
+				"  Delete Secret kaimahi/kaimahi-plane-authority and re-run `kmx plane` to mint a new one.\n"+
+				"  Then re-run `kmx migrate` for every workload so its namespace receives the new authority.",
 			a.cert.Subject.CommonName, a.cert.NotAfter.UTC().Format(time.RFC3339))
 	}
 	notAfter := now.Add(servingLifetime)

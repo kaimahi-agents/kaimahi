@@ -9,7 +9,8 @@ No source edit, rebuilt image or chart fork is required for the supported
 application shape. kmx writes four environment variables and one mounted CA file
 as a Deployment patch; **the workload owner reviews and applies that patch**.
 This bridge should shrink as Orka supplies the needed capabilities. Whether new
-agents should use native Orka authoring only or kagent YAML over Orka is open;
+agents should use native Orka authoring only, or the legacy runtime's YAML
+over Orka, is open and unsupported;
 this migration does not settle it. `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
@@ -255,8 +256,8 @@ is [here](reviews/2026-09-09-orka-composition.md).
 - Tool traffic remains the application owner's responsibility. The Kaimahi tool
   gateway is retired; do not infer tool governance from a model ledger row or
   silently repoint an application's tools during an upgrade.
-- A full `kmx aks up --payload kagent` still installs kagent/Copilot demo agents and obtains a
-  Copilot credential by device login if absent. Orka migration uses selected phases;
+- `kmx aks up` lands Orka and obtains a Copilot credential by device login if
+  absent. Orka migration uses selected phases;
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
 
 ## Retirement regression evidence

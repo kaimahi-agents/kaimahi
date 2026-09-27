@@ -120,7 +120,7 @@ func (m *createWizardModel) startMissingStep() {
 	case strings.TrimSpace(m.opt.ProviderType) == "":
 		m.startReferenceStep(createProviderType, "openai or anthropic", nil)
 	case strings.TrimSpace(m.opt.Model) == "":
-		m.startReferenceStep(createModel, "Provider model identifier (not a ModelConfig)", nil)
+		m.startReferenceStep(createModel, "Provider model identifier (e.g. local/qwen2.5:3b)", nil)
 	case strings.TrimSpace(m.opt.Secret) == "":
 		m.startReferenceStep(createSecret, "Secret name, never its value", scaffold.ValidateObjectName)
 	case m.opt.Task != "" && !m.opt.NoApply && m.opt.Out != "-" && !m.opt.DryRun && m.opt.ResultServiceAccount == "":
@@ -281,7 +281,7 @@ func (m createWizardModel) View() tea.View {
 		labels := map[createWizardStep]string{
 			createNamespace:     "Namespace the Orka controller watches",
 			createProviderType:  "Provider type (openai or anthropic)",
-			createModel:         "Provider model identifier (not a ModelConfig)",
+			createModel:         "Provider model identifier (e.g. local/qwen2.5:3b)",
 			createSecret:        "Existing Provider Secret name (not its value)",
 			createResultAccount: "Existing result-reader ServiceAccount",
 		}

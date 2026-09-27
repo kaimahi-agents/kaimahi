@@ -4,7 +4,7 @@ package scaffold
 //
 // The reviewable artifact contains an overlay fragment and a NetworkPolicy
 // pair pinned to the live Service's selector and container port. Client wiring
-// is printed separately: the owner's runtime need not use kagent resources.
+// is printed separately: the owner's runtime decides how it names a model.
 //
 // A model route names one origin, one forwarded path, its wire protocol and
 // an explicit free/metered classification. Cost is never inferred. Every
@@ -39,19 +39,18 @@ var (
 	objectNameRE   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 )
 
-// ValidateUpstreamName preserves migration's existing name validation.
-// Reserved names remain part of that compatibility contract even though
-// their former tool generators have been retired.
+// ValidateUpstreamName holds a migration target's upstream name to the shape
+// every use of it requires. It reserves nothing: the caller names an upstream
+// the plane's table ALREADY carries, so refusing a committed name here would
+// refuse the ordinary case. (The reservation belongs to ValidateModelName,
+// which creates overlay entries and must not shadow a committed one.) The
+// list this used to carry named four upstreams of the retired gateway, which
+// no manifest in this tree has defined since it was removed.
 func ValidateUpstreamName(name string) error {
 	if !upstreamNameRE.MatchString(name) || len(name) > 40 {
 		return fmt.Errorf("%q is not a usable upstream name: lowercase letters, digits and dashes, "+
 			"starting and ending alphanumeric, at most 40 characters — it becomes a URL path segment, "+
 			"a ConfigMap key and part of three object names", name)
-	}
-	for _, committed := range []string{"kagent-tools", "slack", "github", "erp"} {
-		if name == committed {
-			return fmt.Errorf("%q is one of this repo's committed upstreams — an overlay may not redefine it. Choose another name", name)
-		}
 	}
 	return nil
 }

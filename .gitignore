@@ -27,8 +27,8 @@ backups/
 # This is a PUBLIC repository — an untracked tmp/ is one `git add -A` from being one.
 tmp/
 
-# `kmx tools add` output: the reviewable manifest for an upstream an
-# operator onboarded (docs/govern-your-agent.md). It is theirs, and on a
+# `kmx models add` output: the reviewable manifest for a model upstream an
+# operator onboarded (docs/models.md). It is theirs, and on a
 # CI runner it is job-local — not this repo's source.
 upstreams/
 

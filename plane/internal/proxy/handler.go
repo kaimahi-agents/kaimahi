@@ -37,7 +37,7 @@ type handler struct {
 	ledgerDegraded atomic.Bool
 }
 
-// NewDataMux serves the governed data plane: the surface kagent's OpenAI
+// NewDataMux serves the governed data plane: the surface a workload's OpenAI
 // client talks to. One route — POST /upstream/{name}/{path...} — plus a
 // health probe. Everything else 404s with no upstream contact.
 func NewDataMux(d Deps) *http.ServeMux {

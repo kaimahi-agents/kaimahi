@@ -194,7 +194,7 @@ jobs:
           # Platforms, and why exactly these: kmx drives a Linux container
           # runtime (kind), so the machine running it is a Linux host or a
           # Mac running one in a VM — amd64 and arm64 cover both, and are
-          # the same four platforms the pinned kagent CLI publishes, which
+          # the same four platforms the pinned cluster tools publish, which
           # kmx downloads for the SAME machine. Windows is served through
           # WSL, which is linux/amd64; a native windows/amd64 build would
           # be an untested claim, not a platform.
@@ -239,9 +239,9 @@ jobs:
           # Names only, no directory component: the file is meant to be
           # downloaded next to the binary and checked with
           # `sha256sum --ignore-missing -c checksums.txt`, which is what
-          # docs/releases.md tells an adopter to run. (The kagent CLI's own
-          # .sha256 files carry the BUILDER's path, and kmx has to parse
-          # around it — internal/kmx/kagentcli. Do not repeat that here.)
+          # docs/releases.md tells an adopter to run. (Some upstream .sha256
+          # files carry the BUILDER's path, and internal/kmx/toolchain has to
+          # parse around it. Do not repeat that here.)
           sha256sum kmx-* > checksums.txt
           cat checksums.txt
           # Prove the instruction in the docs actually works, here, before

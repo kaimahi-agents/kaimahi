@@ -1,5 +1,5 @@
-# The Kaimahi proxy: kagent's governed ModelConfigs point their
-# openAI.baseUrl at THIS Service. Real upstream credentials exist only as
+# The Kaimahi proxy: a governed workload's model endpoint points its
+# base URL at THIS Service. Real upstream credentials exist only as
 # Secrets mounted into this pod; agents carry Kaimahi-issued opaque
 # tokens. The admin port (9091) is deliberately NOT exposed by the
 # Service — reaching it takes kubectl port-forward to the pod, i.e.

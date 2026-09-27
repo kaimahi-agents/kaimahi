@@ -24,6 +24,497 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- **Nothing in this tree supports the legacy kagent runtime any more, and a
+  checker keeps it that way.** The removal had already taken the installer,
+  the steps, the manifests, the chart, the CLI pin and the model presets; what
+  it left behind was CLAIMS. A guard banner naming a namespace nothing wrote
+  to. Four probe scripts defaulting to a namespace nothing created. A
+  committed NetworkPolicy admitting model traffic from that namespace, which
+  read as the plane's model door and admitted nobody. Two dead validation
+  paths, a dead test fixture and a dead scaffolder helper whose only caller
+  had been removed. Documentation rows pointing at guides for a platform an
+  operator could not install. Each one reads as support, and the cost of a
+  false claim of support is paid by a reader months later who believes it.
+
+  `scripts/check-legacy-runtime.py` now refuses all of it, on every tracked
+  file, in CI and in `make docs-check`. Hard identifiers — the API group and
+  its kinds, the images, the version pin, the three command spellings — are
+  refused EVERYWHERE, workflows included, because a workflow is where an
+  install would come back. The bare name is refused from the surfaces a
+  reader takes as current, one approved line at a time in
+  `scripts/legacy-runtime-allowlist.json`, because prose can refuse a runtime
+  or advertise it and no pattern tells those apart. Each surviving line is
+  named there with a category and a reason: the production refusals that must
+  spell what an operator typed, the historical teardown sentinel a
+  pre-retirement lift record decodes to, the bounded negative tests, and the
+  CI tripwires' own negative controls. The historical record — this file, the
+  coordination board and the dated reviews — keeps its past tense.
+
+  The scanner fails closed on every way it could quietly stop working: an
+  empty enumeration, files enumerated and none read, a count below the floor,
+  an exemption that matches nothing, a rule that stops matching its own
+  example or starts matching its counterexample. It cannot be disabled by
+  declaring a current documentation directory historical — a named floor
+  refuses exactly that. Sixteen deliberate breakages in its mutation
+  specification each make it fail; four of them found real holes in its own
+  self-test before they were closed.
+
+  **Upgrading:** the plane's committed ingress allowance is gone. It admitted
+  the retired runtime's namespace, which nothing creates; a migrated adopter
+  is admitted by the per-namespace `kaimahi-proxy-ingress-<ns>` policy
+  `kmx migrate` applies, as before. `SECRET_NAMESPACE` on the seam, spend-race
+  and replica-kill probes and `CONTROL`/`PROBE_NS` on the upstream-boundary
+  probe are now REQUIRED rather than defaulted — every caller already passed
+  them, and a default pointing at a namespace that does not exist turned a
+  missing Secret into what looked like a cluster fault. The guard banner's
+  namespace list is `kaimahi, ollama, orka-system` in all four places that
+  print it, pinned together by a test. `docs/tools.md`,
+  `docs/tool-governance.md`, `docs/govern-your-agent.md`, `docs/isolation.md`
+  and the `spikes/` conversion experiment with its workflow are deleted; git
+  retains their history.
+
+- **The front door is Orka.** `kmx quickstart` now goes kind → keyless Ollama
+  → the pinned Orka release → a fixed `hello-world-agent` Provider/Agent
+  bundle → a fresh Task with a readable answer. Nothing on that path installs,
+  reads or waits on the legacy kagent runtime, and nothing on it uses Helm:
+  the Orka runtime is a pinned, digest-checked manifest, not a chart. The
+  command is also deterministic and non-interactive — the host-Ollama picker
+  is gone from it, so the same command on the same machine produces the same
+  cluster and fixed Agent bundle, which is what lets an unattended caller
+  rerun it and compare. It does not read or replace the `local` Provider,
+  even after a host-Ollama `kmx up`: it only shares that Provider's keyless
+  placeholder Secret. `kmx up --step orka` still refuses to replace a
+  different `local` endpoint and offers an explicit command that replaces
+  the host route. Choosing your own model and authoring your own agent is
+  `kmx quickstart-wizard` and `kmx agent create`.
+- **A bare `kmx up` is the runtime and deploys no agent.** It now runs
+  `cluster`, `ollama`, `model`, `orka` and stops. `kmx quickstart` is the
+  command that ends with an agent answering; `kmx agent create` is the one
+  that authors your own. The legacy `kagent`, `agent` and `tools-agent` steps
+  remain individually addressable with `kmx up --step <name>` so the slices
+  that retire them can each be green on their own. **There is no flag that
+  puts them back into a bare run** — deliberately, so no configuration can
+  keep the old default alive past its retirement.
+- **`kmx up --step orka` owns the Task result identity.** It provisions the
+  `orka-result-reader` ServiceAccount and its Role/RoleBinding, whose entire
+  grant is `get` on `tasks.core.orka.ai` in `orka-system`. `kmx agent create`
+  still only NAMES an existing account and creates no RBAC: minting an
+  identity as a side effect of authoring an agent would hide a grant inside a
+  command nobody reads as a grant. Orka v0.1.3 authenticates result reads but
+  does not enforce Task-read RBAC, so this Role is the ceiling kmx can state,
+  not one the server enforces — which is why it is kept this small.
+- **`kmx quickstart` reruns by exact match.** A live Provider or Agent whose
+  spec differs from the one quickstart would write is somebody's deliberate
+  change — an edited endpoint, a different model, a hand-applied bundle — so
+  the command now stops rather than overwrite it, and says `different
+  configuration`. A half-finished run resumes: whichever of the two already
+  matches is kept and the other is created. Every run creates a **fresh**
+  Task; reporting an existing completed Task's answer would turn "the agent
+  answered" into "the agent answered once, some time ago".
+- **A Provider pointed away from the in-cluster endpoint is no longer refused
+  for an unrelated Service.** `kmx orka install --model-url` only checks for
+  the in-cluster `ollama` Service when the URL *is* the in-cluster default. A
+  host Ollama reached over the kind gateway is the caller's own endpoint, and
+  `kmx up` has already verified it is reachable from the cluster.
+
+### Fixed
+
+- **`kmx plane` no longer closes by telling you to run a command that does not
+  exist.** Its "Next" actions and its upgrade note both named `kmx govern`,
+  which was retired with the legacy runtime — worse than an unknown command,
+  because a command that had just succeeded was the thing recommending it.
+  Both now name `kmx migrate <deployment> --namespace <ns>`, which is the
+  route this cluster can actually take. A package-wide test now fails if any
+  production code suggests a retired command through `operationCommand`.
+
+### Breaking
+
+- **The legacy kagent installer, its manifests and its status report are
+  removed.** This is the last slice of the retirement: what earlier slices
+  left addressable is now gone rather than hidden.
+
+  **Commands.** `kmx up --step kagent`, `--step agent` and `--step tools-agent`
+  are no longer steps. `kmx up --step` accepts exactly `cluster`, `ollama`,
+  `model` and `orka` — the same four a bare run performs — and anything else
+  is refused locally as an unknown step, naming the four that exist. There is
+  no flag, environment variable or payload that restores the installer.
+  **Upgrading:** a script naming one of the three retired steps must drop it.
+  A cluster that already runs the legacy runtime is untouched by this release
+  and is operated with kubectl.
+
+  **`kmx status` now reports the runtime kmx installs.** It was a report about
+  `agents.kagent.dev`, `modelconfigs` and the kagent namespace's pods, with a
+  governance envelope counted off them. Nothing in kmx installs, drives or
+  deploys any of that, so the report was confidently describing objects this
+  project has nothing to do with — which reads as coverage and is not. The
+  command keeps its name and now delegates to the same reading as
+  `kmx orka status`: running version against the kmx pin, deployments, CRDs
+  and Provider readiness. It delegates the Orka portion unchanged, with no
+  separate context check before its toolchain preflight. It also reports
+  `kaimahi-proxy` Deployment and pod readiness/restarts and the serving seam
+  certificate's subject, issuer and expiry, warning when renewal is due.
+  An absent plane is distinguished from an unreadable one; these reads use
+  the same pinned context. `kmx ctx` explains an incomplete local setup.
+  **Upgrading:** the old kagent agent/model counts and governance envelope are
+  gone; the independent plane and certificate health lines remain in the table.
+
+  **`kmx credential issue --secret` now requires `--namespace`.** It defaulted
+  to the retired runtime's namespace, so an operator who omitted the flag
+  minted a one-time token into a namespace nothing here installs any more —
+  and that token is shown exactly once. The namespace is now named rather than
+  guessed, and a destination that is blank or does not exist is refused before
+  the credential is issued and before any Secret is written, so a missing
+  namespace can no longer strand a token that cannot be recovered.
+  **Upgrading:** add `--namespace <ns>` to any `kmx credential issue --secret`
+  invocation that relied on the default. `--discard` is unaffected, and
+  `kmx migrate` already took its namespace.
+
+  **`kmx status -o json|yaml` is removed, and refused by name.** The document
+  published `governance` — model-seam, credential and plane populations —
+  assembled from kagent Agents and ModelConfigs. **Nothing replaces that
+  count, deliberately.** `kmx migrate` routes an owner's own Deployments, and
+  those workloads have no discovery index: there is no query that lists them,
+  so any document kmx published would be a tally of what it happened to be
+  told about rather than of what is on the cluster. Emitting the old shape
+  filled with zeros would be exactly the false zero that report always refused.
+  **Upgrading:** a caller pinned to `-o json` gets an error naming `table` and
+  the `kubectl` read that answers the same question. The old `governance`
+  shape has no successor.
+
+  **Helm is no longer a dependency or a download.** The legacy chart install
+  was its only caller, so `kmx` no longer preflights Helm, no longer fetches a
+  pinned copy onto anybody's machine, and no longer names it as a
+  prerequisite. kind and kubectl are still fetched and still digest-checked.
+  The archive-extraction path in the toolchain stays — no pinned tool uses it
+  today, and the rule it encodes (verify what was published, then extract) is
+  the durable part.
+
+  **Embedded manifests.** `k8s/kagent-values.yaml`, `k8s/hello-world.yaml`,
+  `k8s/tools-agent.yaml` and all nine `k8s/models/` presets are deleted from
+  the tree and from the binary. They were kagent v1alpha2 objects and the
+  commands that applied them (`kmx use`, `kmx govern`, the retired install
+  steps) had already gone. `k8s/` is now thirteen files, all embedded.
+  **Upgrading:** a workflow applying a preset with `kubectl` should take it
+  from this repository's history, or onboard the endpoint with
+  `kmx models add` and route a workload onto it with `kmx migrate`.
+
+  **Pins and configuration.** `KAGENT_VERSION` and its `0.9.12` default are
+  removed from the CLI and the Makefile, and `kmx version` now prints the Orka
+  pin in place of the kagent one. `make model-secret`, which captured a preset
+  key into the kagent namespace, is removed with the presets; provider
+  credentials for a governed upstream are `kmx models add`, and the
+  plane-side Copilot token is `kmx models credential copilot`.
+
+  **Certificate publication.** `kmx plane` no longer publishes the seam
+  authority into the `kagent` namespace on every run. No owner-managed
+  workload lives at a namespace kmx can guess, so publication now belongs
+  solely to the command that is *told* which namespace — `kmx migrate`, which
+  is unchanged and still publishes into the workload's namespace before
+  pointing it at the seam.
+
+  **Checkers.** `scripts/check-agent-uid.py` (it read kagent Agent manifests
+  out of `k8s/`), `scripts/check-seam-tls.py` (its entire subject was the
+  `governed-*` presets) and `scripts/verify-chat.py` (its last caller was its
+  own self-test) are deleted with their mutation specifications. The mutation
+  harness now proves nine checkers with 135 deliberate breakages, and the
+  repository map records the new counts.
+
+- **The `kagent` lift payload is retired: `kmx aks up` lands Orka and nothing
+  else.** `--payload kagent` is refused **by name** as retired rather than as
+  an unknown value — a script that still names it asked for a platform this
+  command installed until the legacy runtime went, and a typo message would
+  send its author looking for a spelling instead of a replacement. The `kagent`
+  and `agents` phases are gone with it, as is the in-lift preset governance
+  they were the last caller of; no phase needs Helm any more. **An existing
+  kagent lift is not stranded:** its run record still decodes, so
+  `kmx aks down` tears the cluster down and reports what it could not prove is
+  its own, exactly as before. What is refused is creating or **resuming** one
+  — a resume would run phases that no longer exist — and the refusal says so
+  and names the teardown command. A record written before the payload split
+  carries no payload, still reads as `kagent`, and is treated the same way.
+  **Upgrading:** drop the flag or pass `--payload orka`; tear down any kagent
+  lift with `KAIMAHI_CONFIRM=<group> kmx aks down --resource-group <group>
+  --cluster <cluster>`.
+
+- **The legacy operational commands are gone: `kmx govern`, `kmx use` and
+  `kmx agent edit` are no longer commands at all.** They drove the legacy
+  kagent runtime and nothing else, and each now fails locally as an unknown
+  command — before configuration is loaded and long before a cluster is
+  reached. **Upgrading:** an owner-managed application is put behind the plane
+  with `kmx migrate`, a credential is issued into a named destination with
+  `kmx credential issue <name> --secret <secret> --namespace <ns>`, a model
+  upstream is onboarded with `kmx models add`, and an Orka Agent is edited
+  with `kubectl --context <context> edit agents.core.orka.ai <name>` and read
+  back with `kmx agent show`. The old `k8s/models/` presets are removed.
+
+- **`kmx console` drives Orka Agents only.** The dashboard used to list
+  `agents.kagent.dev` beside Orka Agents and offer chat, inference editing and
+  connector creation on those rows. Every one of those operations was already
+  gone by the time the row was drawn — console chat dispatches
+  `--runtime kagent`, which is refused by name — so the inventory was
+  advertising actions that could not run. The console now reads
+  `agents.core.orka.ai` in `--namespace` and nothing else, even on a cluster
+  that still serves the legacy kinds. Gone with them: the legacy ModelConfig
+  connector creation, its `spec.declarative.modelConfig` patch, its
+  `systemMessageFrom` prompt resolution and its dynamic-MCP tool counting,
+  which had no other producer. The `--namespace` flag no longer claims a
+  second fixed namespace is also read. **Upgrading:** nothing — no console
+  action for those objects reached a cluster successfully.
+
+- **`kmx agent chat` is Orka-only, and is a session.** `--runtime` accepts
+  `auto` and `orka`; `--runtime kagent` is **refused by name** rather than
+  quietly resolved to Orka, because a caller who named the legacy runtime
+  asked for a different platform and answering from Orka would answer a
+  question nobody put. Auto-detection resolves an Orka Agent or reports that
+  it did not — there is nothing left to fall back to. The one-shot transport
+  went with it: the kagent CLI download, the controller port-forward, the A2A
+  invoke and its retry policy, the resumable `--session`, the raw `--json`
+  task and the question re-sampling are all removed, and a chat without
+  `--interactive` is refused with the command that works. **Upgrading:**
+  `kmx agent chat --interactive [--namespace <ns>] <name>`. A script that
+  parsed the raw A2A task has no replacement on this path; create a Task with
+  `kmx agent create --task` and read its exact result instead.
+
+- **`kmx agent list` reports Orka Agents only.** A bare list used to report
+  the legacy runtime in its fixed namespace; it now reads `orka-system`, the
+  namespace the pinned installer uses and the same default `agent chat`
+  resolves against. `--namespace` selects another. The kagent
+  readiness/acceptance/ModelConfig/tool-wiring columns are gone with the kind
+  they described. **Upgrading:** inspect any previously installed objects with
+  `kubectl --context <context> -n kagent get agents.kagent.dev`; this release
+  no longer provides `kmx up --step agent`.
+
+- **In-chat governance is gone.** `/govern`, `/ungovern`, `/sessions`,
+  `/resume`, `/history`, `/new` and `/session` were kagent session and
+  preset-switch controls; the Orka session's controls (`/agent`, `/tools`,
+  `/lift`, the `/inference*` family, `/retry`, `/verbose-*`, `/help`,
+  `/exit`) are now the whole set.
+
+- **`internal/kmx/kagentcli` is deleted**, and with it the pinned kagent CLI
+  download and its checksum verification. kmx still fetches kind and kubectl,
+  both still digest-checked. Nothing on any supported path downloads a kagent
+  binary any more.
+
+  **What deliberately remains, for the slices that retire it:**
+  `kmx up --step kagent|agent|tools-agent` still installs the legacy runtime
+  and its two demonstration agents, the installer pins and manifests are
+  untouched, and `kmx status` still reports the kagent namespace. Existing
+  kagent lift records remain readable for teardown, but their retired payload
+  cannot be created or resumed. **Nothing in the CLI drives those runtime
+  objects**: what the retained local steps leave on a cluster is now operated
+  with kubectl.
+
+  **CI:** `kmx-clone-free` keeps its no-checkout premise, its bare `kmx up`,
+  its Orka `agent create` Task with an exact expected answer read through the
+  account the bring-up provisioned, its module-proxy plane build and the
+  revision that plane reports. Its legacy half — the three install steps,
+  `kmx govern`, the one-shot `kmx agent chat`, the ledger and budget rows that
+  conversation produced, the `kmx use` switch and the backup/restore that
+  needed those rows — is **removed rather than translated**: each asserted
+  something about a command that no longer exists. Budget, ledger and
+  backup/restore keep their coverage in `e2e-models` and `e2e-resilience`,
+  against supported paths. The `kmx metrics` step stays and drops its
+  `kaimahi_decisions_total` assertion, which had no children left to count.
+  A hygiene check now refuses any retired command anywhere in that job.
+
+- **The installer's `--quickstart` refuses the current `v0.1.0` release.**
+  That release runs the legacy quickstart, not Orka. A plain v0.1.0 install
+  still succeeds but no longer recommends that legacy journey as the Orka
+  next step. **Upgrading:** until an Orka-capable release is published, run
+  `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@main` and then
+  `kmx quickstart`; `@latest` still selects v0.1.0.
+
+- **`kmx quickstart` no longer deploys the legacy kagent runtime**, and no
+  longer reduces, reconciles or preserves a kagent Helm release. Its
+  structured output's `agent` key is now `hello-world-agent` (was
+  `hello-world`) and `manifest` names the generated Orka bundle in
+  `orka-system` rather than the embedded kagent example. Its `next` actions
+  are now an Orka chat, `kmx agent create`, `kmx orka status`, `kmx plane` and
+  `kmx migrate`. **Upgrading:** a caller parsing `agent` or `manifest` must be
+  updated. To keep using the legacy runtime, invoke it explicitly with
+  `kmx up --step kagent` (and `--step agent` / `--step tools-agent`); those
+  steps are retained only until their retirement slices land.
+- **A bare `kmx up` no longer installs kagent or the two demonstration
+  agents.** **Upgrading:** run the steps explicitly, as above.
+
+- **The runtime shard is now the hosted-model shard.** `e2e-runtime` installed
+  the legacy runtime with a bare `kmx up` and opened with a kagent
+  conversation, a model-preset switch and an MCP tool call; the hosted-upstream
+  evidence was appended to the end of it. None of that first half is a
+  supported path any more, so the job is now `e2e-hosted-models` and keeps only
+  the half that was never about kagent: the plane dialing a **public-looking**
+  model upstream. It brings up kind, Ollama and the model with `kmx up --step`
+  component steps, creates the caller's own `hosted-model-client` namespace,
+  deploys the plane, and issues its one credential into that namespace **by
+  name** — nothing inherits the old `kagent` default. Its governed caller is a
+  direct authenticated TLS call to the plane's own model seam. It installs no
+  kagent and fails closed — after bring-up and again at the end — if that
+  namespace ever appears, and it is on the hygiene job's list of shards that
+  must prove the legacy runtime absent.
+
+  What it asserts is unchanged in substance: a hosted upstream vetted at boot
+  with the address it resolved and the authority it verifies against both named
+  in the log; an `internet: true` entry resolving *inside* the cluster refused
+  at config load with both replicas still serving; the opt-in `make
+  egress-hosted` allowance admitting one verified, metered Responses call whose
+  ledger row carries the upstream's own token counts and its caller fields; a
+  redirect surfaced as 307 rather than followed; DNS rebinding refused as a 502
+  whose public body hides dialer detail while the proxy log names the policy
+  refusal; and the allowance removed — on a fresh dial after a restart —
+  failing closed with an audited 502. The required `e2e-hello-world` aggregate
+  names the renamed shard. No product behaviour, interface or default changed
+  — this is CI evidence only.
+
+  - **Removed rather than translated:** the `kmx agent chat` turns and their
+    `verify-chat.py` checks, the `k8s/models/` preset dry-run against live CRDs
+    and the `kmx use` preset switch, the kagent tool-server lockdown posture
+    (read-only mode logged, its ServiceAccount denied Secret reads and writes)
+    and the MCP tool round-trip that required a real `k8s_get_resources` call
+    carrying an unguessable probe ConfigMap name, and the two `kmx status`
+    probes — the ungoverned seam count and the no-plane branch. Each asserted
+    something about legacy objects, and rewriting them against surviving ones
+    would have asserted less while looking the same. The honest cost: **no
+    shard verifies an MCP tool round-trip on a live cluster any more**, and
+    `verify-chat.py` now runs only against its own fixtures in `hygiene` — it
+    is kept because the rule it encodes should outlive the runtime it was
+    written for, not because anything still exercises it end to end. The
+    tool-server posture and the preset mechanism went with the release that
+    provided them. The `kmx status` rules keep their unit coverage in
+    `internal/kmx/app/governance_test.go`, and status is rebuilt on defensible
+    evidence in its own change.
+
+- **Model-seam evidence now comes from direct authenticated calls, not kagent.**
+  The `e2e-models` shard used to install the legacy runtime with a bare
+  `kmx up`, repoint a kagent Agent at the seam with `kmx govern`, and produce
+  its ledger rows through `kmx agent chat`. It now brings up kind, Ollama and
+  the model with `kmx up --step` component steps, creates the model client's
+  own namespace, and issues every credential (`model-ci`, `race-cred`,
+  `house-agent`) into that namespace **by name** — no command there inherits a
+  destination. Every governed turn is a direct TLS call to the plane's own
+  model seam under that credential, which is also the only honest way to
+  exercise a protocol the committed upstreams do not speak: an agent's OpenAI
+  client sends one shape and retries a 429 on its own. The shard installs no
+  kagent and fails closed — after bring-up, after the first credential is
+  issued, and again at the end — if the legacy `kagent` namespace ever appears.
+
+  What it asserts is unchanged in substance: a metered `free` ollama row
+  carrying the upstream's own token counts and its caller fields, eight
+  concurrent calls against a one-token cap admitting exactly one across both
+  replicas, a cap denial that relays no answer and files no approval request,
+  ordinary recovery, the ops-port metrics, and model onboarding end to end —
+  dry-run, overlay precedence and stale-apply refusal, refused overlay custody
+  of the admin bearer, Responses-API metering, the onboarded endpoint
+  reachable only by the proxy, an unmeterable answer refused rather than
+  relayed, a protocol contradicting its own path refused at load, and the
+  entry surviving the next `kmx plane`. No product behaviour and no default
+  changed — this is CI evidence only.
+
+  - **Removed rather than translated:** the shard's combined `kmx status`
+    assertions and its raw MCP inventory check, which counted legacy objects,
+    and `scripts/ci/status-unknown-probe.sh`, which minted a reader for kagent
+    CRDs to prove the cannot-tell branch of `kmx status`. Rewriting either
+    against surviving objects would have asserted less while looking the same.
+    What is lost with the probe is the real-cluster half: that a genuinely
+    RBAC-denied reader reaches that branch at all. The rule it rendered still
+    has unit coverage — `TestCredentialsAreUnknownWhenTheSecretsCouldNotBeListed`,
+    `TestGovernanceCannotTellIsNotNotInstalled` and
+    `TestUnknownPopulationsPublishNoCounts` keep `unknown` distinct from a
+    zero, carry kubectl's own reason, and publish no counts — and status is
+    rebuilt on defensible evidence in its own change.
+
+- **Spend, expiry and budget evidence now comes from an owner-managed
+  application too.** The `e2e-spend` shard used to install the legacy runtime,
+  repoint a kagent Agent with `kmx govern` and produce every ledger row through
+  `kmx agent chat`. It now runs the same supported path `e2e-resilience` does:
+  component bring-up, the pinned Orka, an ungoverned `owner-ci` Deployment in
+  its own namespace, the plane, [`kmx migrate`](docs/migrate.md), and a patch
+  the **owner** applies. It installs no kagent and fails closed — after
+  bring-up and again at the end — if that namespace ever appears. This removes
+  the last PR-time live `kmx govern` check while the command still ships;
+  until its retirement in #218, only `kmx-clone-free` live-tests it (on main
+  pushes or manual dispatch), so pull requests no longer catch regressions in
+  that command.
+
+  What it asserts, kept apart so a single green tick cannot hide which boundary
+  moved: this migration's NetworkPolicy admits only the owner's namespace on
+  TCP 8080 and does not admit tool port 8081; other policies can admit other
+  traffic. A real model turn writes an
+  `unpriced` Orka ledger row with the upstream's own token counts, attributed
+  to `none` — a complete answer, and a different word from the `unknown` the
+  shard fails closed on; an expired credential earns a 403 that names the
+  credential and the command that fixes it, and renewal restores service while
+  leaving the mounted Secret's uid, resourceVersion and bytes, and the pod
+  holding them, untouched; a credential with no expiry at all still
+  authenticates; and an exhausted token budget is a 429 the application itself
+  reports, with service restored when the cap is lifted.
+
+  No product behaviour and no default changed — this is CI evidence only.
+
+  - `internal/kmx/admin/ledger_format_test.go` pins the shard's ledger
+    expressions against the real renderer, including the two anchored on the
+    last column: a `grep` that stops matching fails the shard, but a negative
+    assertion that stops matching passes it.
+
+- **Governance evidence now comes from an owner-managed application, not kagent.**
+  The `e2e-resilience` shard used to install the legacy runtime, repoint a
+  kagent Agent at the seam with `kmx govern`, and produce every ledger row
+  through `kmx agent chat`. It now proves the path
+  [`kmx migrate`](docs/migrate.md) actually supports: a Deployment its own
+  owner runs (`owner-ci`, in its own namespace, created before the plane
+  exists), repointed by the patch `kmx migrate` writes and the **owner**
+  applies. The shard installs no kagent and fails closed — after bring-up and
+  again at the end — if that namespace ever appears.
+
+  What it asserts, kept apart so a single green tick cannot hide which
+  boundary moved: the migration leaves the owner's Deployment byte-identical
+  (uid, generation and whole spec) until the owner applies the patch; a real
+  model turn through the TLS seam to Orka returns an answer and writes an
+  `unpriced` Orka ledger row with the upstream's own token counts; an
+  exhausted token budget is reported by the application itself as a 429 and
+  audited as a denied row; and the plane survives a replica killed mid-call —
+  the in-flight call drained, the survivor answering 200, exactly two ledger
+  rows gained, and both replicas back to 2/2 ready — and a Postgres outage,
+  where every replica's readiness drops and returns and no replica's restart
+  count changes across it. It separately proves the owner's application
+  answers again after a simultaneous restart of both replicas and after a
+  backup/wipe/restore.
+
+  It does **not** claim native Orka Agent governance. The pinned Orka Provider
+  schema has no field naming a private certificate authority, so an Orka Agent
+  cannot be told to trust the plane's seam; the governed caller here is the
+  owner's own application. No product behaviour and no default changed — this
+  is CI evidence only.
+
+  - `scripts/replica-kill-probe.sh` takes `CLIENT_PATH` (default
+    `v1/chat/completions`) so it can speak the `v1/responses` client path the
+    committed `orka` upstream declares, and refuses a protocol it has no body
+    for rather than posting a mismatched one.
+  - `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload and
+    its standard-library model client; `scripts/test_owner_model_client.py`
+    pins the properties the shard's conclusions depend on — the credential
+    leaves by no route but the bearer header, an upstream refusal keeps its
+    status, and the seam's authority is verified with no unverified fallback.
+
+### Added
+
+- **Orka now has its own required pull-request proof.** A new `e2e-orka-runtime`
+  CI shard brings up kind, Ollama and the model with component steps only,
+  installs the pinned Orka and its keyless Provider, and requires a
+  Provider → Agent → Task round trip to return an exact local-model answer. It
+  then applies the committed native Orka Kubernetes Tool and proves that
+  boundary directly: an allowed ConfigMap listing that contains a ConfigMap
+  created seconds earlier, and refusal of Secret reads and pod mutation at both
+  the tool's own validation and the cluster's RBAC. The shard installs no kagent
+  and creates no Helm release, and fails closed if it ever does. The required
+  `e2e-hello-world` aggregate depends on it, so it gates merges.
+
+  It does not claim that the local model chose to call the tool — small-model
+  tool selection is a known CI flake class and is left unasserted rather than
+  asserted flakily — and it claims nothing about governance: Orka traffic is not
+  on the plane seam there. No product default changed.
+
+### Changed
+
 - **The lift's Azure commands go through the same runner as every other
   subprocess.** `liftDiscovery` and `liftAzureWrite` called `os/exec` directly,
   so they inherited the process environment but ignored `Runner.Env` and

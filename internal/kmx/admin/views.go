@@ -69,9 +69,17 @@ func (c *Client) Ledger(out io.Writer, credential string) error {
 	if err != nil {
 		return err
 	}
+	entries := rows(doc, "entries")
+	if len(entries) == 0 {
+		if credential == "" {
+			fmt.Fprintln(out, "no ledger entries")
+		} else {
+			fmt.Fprintf(out, "no ledger entries for credential %q\n", credential)
+		}
+	}
 	var viewRows [][]string
 	rich := cliui.New(out).Rich()
-	for _, row := range rows(doc, "entries") {
+	for _, row := range entries {
 		model := str(row["model"])
 		if !rich {
 			model = trunc(model, 16)
@@ -83,7 +91,9 @@ func (c *Client) Ledger(out io.Writer, credential string) error {
 			str(row["cost_source"]), str(row["status"]),
 			callerClaim(row, rich), callerAddr(row, rich), actedFor(row)})
 	}
-	renderTable(out, []string{"created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for"}, viewRows, ledgerFmt)
+	if len(entries) > 0 {
+		renderTable(out, []string{"created (UTC)", "credential", "upstream", "model", "in", "out", "cents", "source", "status", "caller (claimed)", "from (observed)", "acted for"}, viewRows, ledgerFmt)
+	}
 	if _, ok := doc["month_cents"]; ok {
 		fmt.Fprintf(out, "-- month to date: %s cents, %s tokens\n",
 			str(doc["month_cents"]), str(doc["month_tokens"]))

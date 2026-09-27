@@ -159,28 +159,38 @@ func (a *App) Plane(opt PlaneOptions) error {
 	if opt.Step == "" {
 		a.complete("Model-traffic bridge ready", started)
 		a.notef("This command does not enable governance for an agent; existing routing is not assessed here.")
-		ui := cliui.New(a.Err)
-		if ui.Rich() {
-			a.notef("\n%s", ui.Actions("Next", []cliui.Action{
-				{Label: "Govern the agent", Command: a.operationCommand("govern", a.Cfg.Credential), Detail: "issue a credential and route through the plane"},
-				{Label: "Inspect spend", Command: a.operationCommand("ledger", a.Cfg.Credential)},
-			}))
-		} else {
-			a.notef("\nNEXT\n"+
-				"  %s  # issue the credential and put the agent behind the plane\n"+
-				"  %s  # what it has spent", a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("ledger", a.Cfg.Credential))
-		}
+		// The route offered has to be one this cluster can take. The old
+		// governance command was retired with the runtime it repointed.
+		// Naming it here would send an operator to a retired command; putting an
+		// application's model traffic on the seam is `kmx migrate`.
+		a.planeNextSteps()
 		// Existing pre-TLS seams fail closed until re-applied with the authority.
 		a.notef("\nUPGRADING an existing cluster? The model seam serves TLS. Older model wiring\n"+
 			"  that points at `http://` and names no certificate authority fails closed\n"+
 			"  until it is re-applied:\n"+
-			"  %s  # the model seam\n"+
+			"  %s --namespace <ns>  # re-route the application and republish the authority\n"+
 			"  %s  # the certificate and model routing\n"+
 			"  The tool gateway is retired. Review owner-managed tool routes deliberately;\n"+
 			"  this command does not repoint them.",
-			a.operationCommand("govern", a.Cfg.Credential), a.operationCommand("status"))
+			a.operationCommand("migrate", "<deployment>"), a.operationCommand("status"))
 	}
 	return nil
+}
+
+// planeNextSteps keeps both rendered modes pointed at the credential that
+// migrate issues: it uses the Deployment name, not the old demo CRED default.
+func (a *App) planeNextSteps() {
+	ui := cliui.New(a.Err)
+	if ui.Rich() {
+		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
+			{Label: "Route an application", Command: a.operationCommand("migrate", "<deployment>"), Detail: "issue a credential and route its model traffic through the plane"},
+			{Label: "Inspect spend", Command: a.operationCommand("ledger", "<deployment>")},
+		}))
+	} else {
+		a.notef("\nNEXT\n"+
+			"  %s --namespace <ns>  # issue the credential and put an application behind the plane\n"+
+			"  %s  # what it has spent", a.operationCommand("migrate", "<deployment>"), a.operationCommand("ledger", "<deployment>"))
+	}
 }
 
 // ---- the image ------------------------------------------------------------
@@ -222,7 +232,7 @@ func (a *App) refuseForeignImageTag() error {
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
 		"  `kmx plane` is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
-		"  A registry-backed cluster renders the manifest instead — `kmx aks up --payload <orka|kagent> --step plane` (docs/aks.md).",
+		"  A registry-backed cluster renders the manifest instead — `kmx aks up --payload orka --step plane` (docs/aks.md).",
 		set, PlaneImage)
 }
 

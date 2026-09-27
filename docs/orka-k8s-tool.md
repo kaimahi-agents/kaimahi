@@ -1,7 +1,7 @@
 # Orka quickstart Kubernetes tool
 
 The quickstart wizard installs `k8s-get-resources`, an Orka HTTP Tool that ports
-the read-only listing capability of the older kagent `hello-tools` example.
+the read-only listing capability of the older `hello-tools` example.
 The name uses hyphens because it is a Kubernetes Tool resource name.
 
 New quickstart agents reference this tool by default. `--tools` replaces that
@@ -66,4 +66,5 @@ go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 Live verification on 2026-09-16 attached the Tool to `hello-world-agent`, ran a
 fresh Orka Task, observed `POST /resources` returning 200, and received the actual
 three deployment names. The reader account's `delete pods` authorization was
-denied. The older `k8s/tools-agent.yaml` remains the kagent/MCP example.
+denied. The former MCP fixture was removed with the unsupported legacy
+runtime; this native Tool is the maintained example.

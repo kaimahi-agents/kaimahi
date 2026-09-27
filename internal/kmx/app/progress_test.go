@@ -103,7 +103,7 @@ func TestEnhancedProgressKeepsNativeOutputVisible(t *testing.T) {
 		times = times[1:]
 		return value
 	}}
-	if err := a.runPhase(phase{current: 4, total: 6, name: "Install or verify kagent"}, func() error {
+	if err := a.runPhase(phase{current: 4, total: 6, name: "Install or verify orka"}, func() error {
 		out.WriteString("helm output\n")
 		return nil
 	}); err != nil {

@@ -52,7 +52,11 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	named := 0
 	for _, child := range root.Commands() {
 		if child.Hidden {
-			t.Errorf("command %q is hidden, so the usage page cannot name it", child.Name())
+			// The retired spellings are parseable for useful errors, but must
+			// not be offered as commands; retirement_test.go pins their stubs.
+			if child.Name() != "govern" && child.Name() != "use" {
+				t.Errorf("command %q is unexpectedly hidden", child.Name())
+			}
 			continue
 		}
 		// Cobra omits deprecated commands from the available-command list.

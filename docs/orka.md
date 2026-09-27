@@ -13,7 +13,7 @@ published CLI binary and no GitHub Release to fetch.
 itself. Authoring a native Orka Agent is now [`kmx agent create`](kmx.md#kmx-agent-create);
 putting an existing application's model traffic on the governed seam is
 [`kmx migrate`](migrate.md), one owned Deployment at a time. Migration does not
-translate a kagent BYO definition or create Tasks; install, create and migrate
+translate a legacy BYO definition or create Tasks; install, create and migrate
 are deliberately separate commands.
 
 ## The command
@@ -143,8 +143,10 @@ an adopter should learn that here, not at their first model call.
 ## Author an Orka Agent and get an answer
 
 `agent create` authors Orka resources; it does not install Orka. On the local
-kind path, reuse the Ollama model from `quickstart` or `up`, then install the
-pinned release in that **same** context:
+kind path the runtime is already there: `kmx up` and `kmx quickstart` both
+install the pinned release and leave the Ollama model in place, so author
+against that **same** context. On a cluster kmx did not bring up, install it
+first:
 
 ```bash
 kmx --context kind-kaimahi-p1 orka install
@@ -156,9 +158,16 @@ it never adopts or updates the installer's shared Provider `local`. This is a
 new Agent/Task example, not a continuation command for an Agent you already
 created. Choose unused names and output paths; creation refuses collisions.
 
-Task execution requires an existing result account. An operator with RBAC
-creation permission can provision this dedicated account separately; these
-commands contain names only, not token values:
+Task execution requires an existing result account, and the runtime step owns
+it. `kmx up --step orka` provisions exactly this account, Role and
+RoleBinding, and so does every run that includes that step — a bare `kmx up`
+and `kmx quickstart`. A standalone `kmx orka install` does **not**: it
+installs the release and wires the keyless Provider, and nothing more.
+`agent create` never does either: it only NAMES an account, so authoring an
+agent cannot mint a grant nobody read as a grant. On a cluster whose Orka
+arrived another way — including one where only `kmx orka install` has run —
+an operator with RBAC creation permission can provision the same account
+separately; these commands contain names only, not token values:
 
 ```bash
 kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
@@ -200,41 +209,41 @@ trades reconnect availability for protection against later local-port reuse;
 the initial bind and connection are still local trust, not cryptographic process
 authentication. Dry-run does not test access or execution.
 
-`kmx agent list --namespace <ns>` lists Orka Agents; without a namespace it
-lists the legacy kagent runtime. Existing Orka Agents can be used through the
-shared interactive chat:
+`kmx agent list --namespace <ns>` lists Orka Agents; an omitted namespace reads
+`orka-system`, the namespace the pinned installer uses. Existing Orka Agents are
+used through the interactive chat:
 
 ```bash
-kmx agent chat --interactive --runtime orka --namespace <ns> <name>
+kmx agent chat --interactive --namespace <ns> <name>
 ```
 
-One-shot chat remains kagent-specific and now points at that command when the
-name resolves to Orka. `agent edit` remains a kagent source editor and points
-an Orka bundle at explicit `kubectl edit` / `agent show` commands. No automatic
-MCP translation, application image deployment or governance is added here.
+Orka chat is a session, so a one-shot invocation is refused and names that
+command. A live Agent is edited with `kubectl edit agents.core.orka.ai` and read
+back with `kmx agent show`. No automatic MCP translation, application image
+deployment or governance is added here.
 
 ## The whole journey, from nothing
 
 ```console
-$ kmx up                                    # a cluster, a model, an agent runtime
+$ kmx up                                    # a cluster, a model, and the Orka runtime
 $ kmx plane                                 # the model-traffic bridge
-$ kmx orka install                          # Orka, and a Provider with no key
 $ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 ```
 
-The fourth command is the one that governs anything. The first three are the
-front door.
+The third command is the one that governs anything. The first two are the
+front door — `kmx up` installs Orka itself, so there is no separate
+`kmx orka install` on this path.
 
 ## Authoring an agent for Orka
 
 Installing Orka and authoring an agent are separate steps. `kmx agent create`
 now emits native Orka resources; installing Orka does not convert existing
-`kagent.dev/v1alpha2` files.
+files written for the legacy runtime's API group.
 
 For a new agent that will run on Orka, **author Orka's native
 `core.orka.ai/v1alpha1` `Agent` and `Provider` resources and invoke it with
 an Orka `Task`.** This keeps the runtime configuration explicit: changing a
-kagent resource's API group would not translate its referenced model
+legacy resource's API group would not translate its referenced model
 credentials, MCP connections or workload settings. Dropping those settings
 would not preserve the agent, and this project provides no supported
 translation layer. Native authoring is the recommendation for that reason,
@@ -249,7 +258,7 @@ For an application image you already operate, keep its Deployment under your
 own management. [`kmx migrate`](migrate.md) describes the model-traffic path
 for supported applications. That path does not register the application as
 an Orka `Agent` or turn its requests into Orka `Task` resources. The migration
-guide records the exercised behavior and its limits. A kagent BYO definition
+guide records the exercised behavior and its limits. A legacy BYO definition
 is not an input to `kmx migrate`: the application must already have a
 Deployment it owns. Model-traffic migration is a separate boundary, not BYO
 Agent conversion.

@@ -258,26 +258,3 @@ func ollamaTagsContain(body []byte, model string) bool {
 	}
 	return false
 }
-
-func (a *App) renderModelManifest(name string) ([]byte, error) {
-	body, err := manifest(name)
-	if err != nil {
-		return nil, err
-	}
-	model, endpoint := a.Cfg.Model, "http://ollama.ollama.svc.cluster.local:11434"
-	if a.selectedLocalModel != nil {
-		model, endpoint = a.selectedLocalModel.Model, a.selectedLocalModel.Endpoint
-	}
-	rendered := string(body)
-	for _, value := range []struct{ old, replacement string }{
-		{"model: qwen2.5:3b", "model: " + model},
-		{"http://ollama.ollama.svc.cluster.local:11434", endpoint},
-	} {
-		old, replacement := value.old, value.replacement
-		if strings.Count(rendered, old) != 1 {
-			return nil, fmt.Errorf("embedded k8s/%s does not contain exactly one expected %q value", name, old)
-		}
-		rendered = strings.Replace(rendered, old, replacement, 1)
-	}
-	return []byte(rendered), nil
-}

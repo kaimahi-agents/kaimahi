@@ -51,7 +51,7 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 		t.Fatalf("lift shortcut=%q", m.input.Value())
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
-	m.columns[0].Selection = 2 // kagent has chat but no native Orka lift.
+	m.columns[0].Selection = 2 // The external runtime has neither chat nor lift.
 	m = tuiKey(m, 'L', "L")
 	if m.command {
 		t.Fatal("unsupported lift shortcut was offered")
@@ -84,23 +84,23 @@ func TestAgentTUILiftCompletionAndDispatch(t *testing.T) {
 	if m.action == nil || m.action.kind != "lift" || m.action.agent.Name != "assistant" || m.action.source.Name != "kind-local-demo" || m.action.target.Name != "remote-demo" {
 		t.Fatalf("action=%+v", m.action)
 	}
-	// Same-named agents in different runtimes require a qualified identity.
+	// Same-named agents in different namespaces require a qualified identity.
 	m.action = nil
 	a := m.columns[0].Agents[0]
-	a.Runtime, a.Namespace = "kagent", "kagent"
+	a.Namespace = "other-agents"
 	m.columns[0].Agents = append(m.columns[0].Agents, a)
 	updated, _ := m.execute("/chat assistant")
 	if updated.(agentTUIModel).action != nil {
 		t.Fatal("ambiguous agent name dispatched")
 	}
-	updated, _ = m.execute("/chat kagent/kagent/assistant")
-	if updated.(agentTUIModel).action.agent.Runtime != "kagent" {
-		t.Fatal("qualified agent routed to wrong runtime")
+	updated, _ = m.execute("/chat orka/other-agents/assistant")
+	if updated.(agentTUIModel).action.agent.Namespace != "other-agents" {
+		t.Fatal("qualified agent routed to wrong namespace")
 	}
 }
 
 func TestAgentTUICommandsValidateAndDemoDoesNotDispatch(t *testing.T) {
-	for _, line := range []string{"/chat assistant", "/lift assistant remote-demo", "/lift hello-world remote-demo", "/lift assistant kind-local-demo", "/refresh extra", "/unknown", "/quit extra"} {
+	for _, line := range []string{"/chat reporter", "/lift assistant remote-demo", "/lift reporter remote-demo", "/lift assistant kind-local-demo", "/refresh extra", "/unknown", "/quit extra"} {
 		m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 		updated, _ := m.execute(line)
 		m = updated.(agentTUIModel)
@@ -197,31 +197,32 @@ func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 	}
 }
 
+// Two Orka agents, one of them pointing at a Provider in another namespace
+// that cannot be read: the readable agent must survive the unreadable one's
+// error rather than the whole column failing.
 func TestAgentTUIInventoryPinsContextAndPreservesPartialFailures(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" >> %q
 case "$*" in
  *'api-resources'*) printf 'agents.core.orka.ai\nagents.kagent.dev\n' ;;
- *'get agents.core.orka.ai'*) printf '%%s' '{"items":[{"metadata":{"name":"same","generation":3,"labels":{"app.kubernetes.io/version":"v2"}},"spec":{"providerRef":{"name":"hosted"}},"status":{"ready":true}}]}' ;;
- *'get providers.core.orka.ai'*) printf '%%s' '{"items":[{"metadata":{"name":"hosted"},"spec":{"type":"openai","defaultModel":"test-model","baseURL":"https://user:password@inference.example.com/private?token=hidden"},"status":{"ready":false}}]}' ;;
- *'get agents.kagent.dev'*) printf '%%s' '{"items":[{"metadata":{"name":"same","generation":2},"spec":{"declarative":{"modelConfig":"local"}},"status":{"conditions":[{"type":"Ready","status":"True"}]}}]}' ;;
- *'get modelconfigs.kagent.dev'*) exit 1 ;;
+ *'get agents.core.orka.ai'*) printf '%%s' '{"items":[{"metadata":{"name":"same","generation":3,"labels":{"app.kubernetes.io/version":"v2"}},"spec":{"providerRef":{"name":"hosted"}},"status":{"ready":true}},{"metadata":{"name":"shared-ref","generation":1},"spec":{"providerRef":{"name":"elsewhere","namespace":"inference"}}}]}' ;;
+ *'-n agents get providers.core.orka.ai -o json'*) printf '%%s' '{"items":[{"metadata":{"name":"hosted"},"spec":{"type":"openai","defaultModel":"test-model","baseURL":"https://user:password@inference.example.com/private?token=hidden"},"status":{"ready":false}}]}' ;;
+ *'-n inference get providers.core.orka.ai elsewhere'*) exit 1 ;;
  *) exit 1 ;;
 esac`, log))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	a := &App{Cfg: &config.Config{KubeContext: "must-not-use"}, Run: &run.Runner{}}
 	agents, err := a.agentTUIInventory(t.Context(), agentTUIEnvironment{Name: "remote-test"}, "agents")
-	if err == nil || !strings.Contains(err.Error(), "modelconfigs.kagent.dev") || len(agents) != 2 {
+	if err == nil || !strings.Contains(err.Error(), "inference/elsewhere") || len(agents) != 2 {
 		t.Fatalf("agents=%+v err=%v", agents, err)
 	}
 	for _, agent := range agents {
-		if agent.Runtime == "orka" {
-			if agent.Model != "test-model" || agent.Version != "v2" || agent.InferenceReady != "no" || agent.Endpoint != "https://inference.example.com" {
-				t.Fatalf("Orka=%+v", agent)
-			}
-		} else if agent.Version != "unversioned · gen 2" || agent.InferenceReady != "unknown" {
-			t.Fatalf("kagent=%+v", agent)
+		if agent.Runtime != "orka" {
+			t.Fatalf("a non-Orka runtime reached the console: %+v", agent)
+		}
+		if agent.Name == "same" && (agent.Model != "test-model" || agent.Version != "v2" || agent.InferenceReady != "no" || agent.Endpoint != "https://inference.example.com") {
+			t.Fatalf("Orka=%+v", agent)
 		}
 	}
 	raw, err := os.ReadFile(log)
@@ -237,6 +238,89 @@ esac`, log))
 	cancel()
 	if _, err := a.agentTUIInventory(ctx, agentTUIEnvironment{Name: "remote-test"}, "agents"); err == nil {
 		t.Fatal("cancelled inventory succeeded")
+	}
+}
+
+// The console drives Orka Agents and nothing else. A cluster that still serves
+// the legacy runtime's kinds is the case that matters: every console operation
+// for those objects was removed, so listing them would advertise chat, create,
+// inference, tool and lift actions that cannot run. This asserts what the
+// console ASKS FOR, not what it happens to render.
+func TestConsoleNeverRequestsLegacyKagentKinds(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" >> %q
+case "$*" in
+ *'config view'*) printf '%%s' '{"contexts":[{"name":"remote","context":{"cluster":"r"}}],"clusters":[{"name":"r","cluster":{"server":"https://remote.example.com"}}]}' ;;
+ *'api-resources'*) printf 'agents.core.orka.ai\nproviders.core.orka.ai\nagents.kagent.dev\nmodelconfigs.kagent.dev\n' ;;
+ *'get agents.core.orka.ai demo'*) printf '%%s' '{"metadata":{"resourceVersion":"42"},"spec":{"providerRef":{"name":"hosted"}}}' ;;
+ *'get agents.core.orka.ai'*) printf '%%s' '{"items":[{"metadata":{"name":"demo"},"spec":{"providerRef":{"name":"hosted"}}}]}' ;;
+ *'get providers.core.orka.ai'*) printf '%%s' '{"items":[{"metadata":{"name":"hosted"},"spec":{"type":"openai","defaultModel":"test-model"}}]}' ;;
+ *) exit 1 ;;
+esac`, log))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
+	env := agentTUIEnvironment{Name: "remote"}
+	agents, err := a.agentTUIInventory(t.Context(), env, OrkaNamespace)
+	if err != nil || len(agents) != 1 || agents[0].Name != "demo" || agents[0].Runtime != "orka" {
+		t.Fatalf("the Orka inventory regressed: agents=%+v err=%v", agents, err)
+	}
+	snapshot, err := a.consoleLoadInference(t.Context(), env, agentTUIAgent{Runtime: "orka", Name: "demo", Namespace: OrkaNamespace})
+	if err != nil || len(snapshot.Sources) != 1 || snapshot.Sources[0].Name != "hosted" {
+		t.Fatalf("the Orka inference flow regressed: snapshot=%+v err=%v", snapshot, err)
+	}
+	raw, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if strings.Contains(line, "kagent") {
+			t.Fatalf("the console asked the cluster for a legacy resource: %s", line)
+		}
+	}
+}
+
+// The invocation test above proves the paths it walks. This proves the paths it
+// does not: no console source may name the legacy kinds at all, so a new pane,
+// action or connector cannot reintroduce one behind a branch no test reaches.
+// Test files are excluded deliberately — a fixture that serves the legacy kinds
+// is how the test above proves the console ignores them.
+func TestConsoleSourcesNameNoLegacyKagentResource(t *testing.T) {
+	matches, err := filepath.Glob("agent_tui*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sources []string
+	for _, path := range matches {
+		if !strings.HasSuffix(path, "_test.go") {
+			sources = append(sources, path)
+		}
+	}
+	sources = append(sources, filepath.Join("..", "..", "..", "cmd", "kmx", "console_command.go"))
+	if len(sources) < 7 {
+		t.Fatalf("the console source list is too short to be the console: %q", sources)
+	}
+	for _, path := range sources {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"kagent.dev", "ModelConfig", `"kagent"`} {
+			if strings.Contains(string(body), forbidden) {
+				t.Errorf("%s names the retired resource %q", path, forbidden)
+			}
+		}
+	}
+	// The negative control: the constants the console must still be built on.
+	body, err := os.ReadFile("agent_tui_inference.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`consoleAgentKind    = "agents.core.orka.ai"`, `consoleProviderKind = "providers.core.orka.ai"`} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the console no longer pins the Orka kind %q", want)
+		}
 	}
 }
 
@@ -464,27 +548,27 @@ func TestAgentTUIEditActionsAndInferencePatch(t *testing.T) {
 			t.Fatalf("action=%+v", m.action)
 		}
 	}
-	for _, runtime := range []string{"orka", "kagent"} {
-		original := map[string]any{"name": "old", "maxTokens": 100}
-		raw, err := consoleInferencePatch(runtime, "42", "new-config", "agents", "", original)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var patch []map[string]any
-		if err := json.Unmarshal(raw, &patch); err != nil {
-			t.Fatal(err)
-		}
-		if patch[0]["op"] != "test" || patch[0]["value"] != "42" {
-			t.Fatal("update lacks optimistic concurrency")
-		}
-		if runtime == "orka" {
-			model := patch[2]["value"].(map[string]any)
-			if model["name"] != nil || model["maxTokens"] != float64(100) || original["name"] != "old" {
-				t.Fatalf("model patch=%v", model)
-			}
-		} else if patch[1]["path"] != "/spec/declarative/modelConfig" {
-			t.Fatal("wrong kagent path")
-		}
+	original := map[string]any{"name": "old", "maxTokens": 100}
+	raw, err := consoleInferencePatch("42", "new-config", "agents", "", original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var patch []map[string]any
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		t.Fatal(err)
+	}
+	if patch[0]["op"] != "test" || patch[0]["value"] != "42" {
+		t.Fatal("update lacks optimistic concurrency")
+	}
+	if patch[1]["path"] != "/spec/providerRef" {
+		t.Fatalf("the update does not repoint an Orka Provider: %v", patch[1])
+	}
+	model := patch[2]["value"].(map[string]any)
+	if model["name"] != nil || model["maxTokens"] != float64(100) || original["name"] != "old" {
+		t.Fatalf("model patch=%v", model)
+	}
+	if strings.Contains(string(raw), "modelConfig") {
+		t.Fatalf("the update still patches a retired ModelConfig reference: %s", raw)
 	}
 }
 
@@ -565,14 +649,12 @@ func TestAgentTUIInventoryPromptAndToolMetadata(t *testing.T) {
  *'get providers.core.orka.ai'*) printf '%s' '{"items":[]}' ;;
  *'get tools.core.orka.ai'*) printf '%s' '{"items":[{"metadata":{"name":"read"},"spec":{"description":"Read resources","http":{"method":"GET","url":"https://tools.example.com/read"}}}]}' ;;
  *'get configmap instructions'*) printf '%s' '{"data":{"prompt":"First line\n  Indented line"}}' ;;
- *'get agents.kagent.dev'*) printf '%s' '{"items":[{"metadata":{"name":"legacy"},"spec":{"declarative":{"systemMessage":"Legacy instructions","tools":[{"type":"McpServer","mcpServer":{"name":"explicit","toolNames":["one","two"]}},{"type":"McpServer","mcpServer":{"name":"dynamic"}}]}}}]}' ;;
- *'get modelconfigs.kagent.dev'*) printf '%s' '{"items":[]}' ;;
  *) exit 1 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
 	agents, err := a.agentTUIInventory(t.Context(), agentTUIEnvironment{Name: "remote"}, "agents")
-	if err != nil || len(agents) != 3 {
+	if err != nil || len(agents) != 2 {
 		t.Fatalf("agents=%+v err=%v", agents, err)
 	}
 	for _, agent := range agents {
@@ -584,10 +666,6 @@ esac`)
 		case "missing":
 			if agent.PromptError == "" {
 				t.Fatal("missing ConfigMap key presented as empty prompt")
-			}
-		case "legacy":
-			if agent.SystemPrompt != "Legacy instructions" || len(agent.Tools) != 3 || !agent.Tools[2].Dynamic || !strings.Contains(agent.toolSummary(), "2/2 enabled + dynamic MCP") {
-				t.Fatalf("legacy=%+v", agent)
 			}
 		}
 	}
@@ -653,27 +731,46 @@ func TestAgentTUIInspectorWordWrapAndIndentation(t *testing.T) {
 	}
 }
 
-func TestAgentTUIOllamaAvailableInferenceInfo(t *testing.T) {
+// Inference information reaches the inspector from two places: the cluster
+// Provider an Agent names, and a host override saved for console chat. Both
+// are Orka-only now, so both are checked against an Orka Agent.
+func TestAgentTUIProviderAndHostOverrideInferenceInfo(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `case "$*" in
- *api-resources*) printf 'agents.kagent.dev\n' ;;
- *'get agents.kagent.dev'*) printf '%s' '{"items":[{"metadata":{"name":"hello"},"spec":{"declarative":{"modelConfig":"local"}}}]}' ;;
- *'get modelconfigs.kagent.dev'*) printf '%s' '{"items":[{"metadata":{"name":"local"},"spec":{"provider":"Ollama","model":"qwen2.5:3b","ollama":{"host":"http://ollama.ollama.svc.cluster.local:11434"}},"status":{"conditions":[{"type":"Accepted","status":"True"}]}}]}' ;;
+ *api-resources*) printf 'agents.core.orka.ai\n' ;;
+ *'get agents.core.orka.ai'*) printf '%s' '{"items":[{"metadata":{"name":"hello"},"spec":{"providerRef":{"name":"local"}}}]}' ;;
+ *'get providers.core.orka.ai'*) printf '%s' '{"items":[{"metadata":{"name":"local"},"spec":{"type":"openai","defaultModel":"qwen2.5:3b","baseURL":"http://ollama.ollama.svc.cluster.local:11434/v1"},"status":{"ready":true}}]}' ;;
  *) exit 1 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
-	agents, err := a.agentTUIInventory(t.Context(), agentTUIEnvironment{Name: "kind-test"}, OrkaNamespace)
+	env := agentTUIEnvironment{Name: "kind-test", Local: true}
+	agents, err := a.agentTUIInventory(t.Context(), env, OrkaNamespace)
 	if err != nil || len(agents) != 1 {
 		t.Fatalf("agents=%+v err=%v", agents, err)
 	}
 	agent := agents[0]
-	if agent.Endpoint != "http://ollama.ollama.svc.cluster.local:11434" || agent.InferenceConfig != "Accepted: yes" || agent.Model != "qwen2.5:3b" || agent.InferenceReady != "not reported (health not checked)" {
+	if agent.Endpoint != "http://ollama.ollama.svc.cluster.local:11434" || agent.Provider != "local (openai)" || agent.Model != "qwen2.5:3b" || agent.InferenceReady != "yes" {
 		t.Fatalf("inference=%+v", agent)
 	}
+	// A saved host override replaces the cluster reading and says so, rather
+	// than reporting a readiness the console never checked.
+	source := consoleInferenceSource{Kind: "copilot", Name: "host", Model: "gpt-4.1"}
+	if err := saveConsoleInference(env, agent, &source); err != nil {
+		t.Fatal(err)
+	}
+	agents, err = a.agentTUIInventory(t.Context(), env, OrkaNamespace)
+	if err != nil || len(agents) != 1 {
+		t.Fatalf("agents=%+v err=%v", agents, err)
+	}
+	overridden := agents[0]
+	if overridden.Provider != "host copilot" || overridden.Model != "gpt-4.1" || overridden.InferenceReady != "not checked (host chat override)" || overridden.InferenceConfig == "" {
+		t.Fatalf("host override=%+v", overridden)
+	}
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	view := ansi.Strip(strings.Join(m.agentDetailsLines(agent, 100), "\n"))
-	if !strings.Contains(view, "Inference config: Accepted: yes") || !strings.Contains(view, agent.Endpoint) {
+	view := ansi.Strip(strings.Join(m.agentDetailsLines(overridden, 100), "\n"))
+	if !strings.Contains(view, "Inference config: "+overridden.InferenceConfig) || !strings.Contains(view, "Copilot CLI on this host") {
 		t.Fatalf("missing inference information:\n%s", view)
 	}
 }
@@ -782,18 +879,18 @@ func TestConsoleCreationTimerOnlyRunsDuringWork(t *testing.T) {
 	}
 }
 
-func TestConsoleKagentPromptReferenceAndSavedContextPrecedence(t *testing.T) {
+func TestConsolePromptReferenceAndSavedContextPrecedence(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	saved := filepath.Join(dir, "saved-config")
-	if _, err := writeAgentLocation(agentLocation{Agent: "demo", Namespace: "kagent", Context: "remote", Kubeconfig: saved}, nil); err != nil {
+	if _, err := writeAgentLocation(agentLocation{Agent: "demo", Namespace: OrkaNamespace, Context: "remote", Kubeconfig: saved}, nil); err != nil {
 		t.Fatal(err)
 	}
 	fakeTool(t, dir, "kubectl", `case "$*" in
  *'config view'*) printf '%s' '{"contexts":[{"name":"remote","context":{"cluster":"r"}}],"clusters":[{"name":"r","cluster":{"server":"https://remote.example.com"}}]}' ;;
- *api-resources*) printf 'agents.kagent.dev\n' ;;
- *'get agents.kagent.dev'*) printf '%s' '{"items":[{"metadata":{"name":"demo"},"spec":{"declarative":{"systemMessageFrom":{"type":"ConfigMap","name":"instructions","key":"prompt"}}}}]}' ;;
- *'get modelconfigs.kagent.dev'*) printf '%s' '{"items":[]}' ;;
+ *api-resources*) printf 'agents.core.orka.ai\n' ;;
+ *'get agents.core.orka.ai'*) printf '%s' '{"items":[{"metadata":{"name":"demo"},"spec":{"systemPrompt":{"configMapRef":{"name":"instructions","key":"prompt"}}}}]}' ;;
+ *'get providers.core.orka.ai'*) printf '%s' '{"items":[]}' ;;
  *'get configmap instructions'*) printf '%s' '{"data":{"prompt":"Referenced system prompt"}}' ;;
  *) exit 1 ;;
 esac`)

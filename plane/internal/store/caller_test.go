@@ -115,7 +115,7 @@ func TestOrdinaryAuditTextIsBoundedAndOneLined(t *testing.T) {
 	// A real tool name is untouched — no quoting, no escaping, no change.
 	assert.Equal(t, "k8s_get_resources", auditText("k8s_get_resources"))
 	assert.Equal(t, "tools/call", auditText("tools/call"))
-	assert.Equal(t, "kagent-tools", auditText("kagent-tools"))
+	assert.Equal(t, "cluster-tools", auditText("cluster-tools"))
 	// So is an ordinary refusal detail, quotes and all.
 	assert.Equal(t, `tool "x" not permitted`, auditText(`tool "x" not permitted`))
 }

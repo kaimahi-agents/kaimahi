@@ -28,11 +28,12 @@ func newCtxCommand(state *commandState) *cobra.Command {
 // container engine to an agent that has answered a question.
 //
 // It is a sibling of `up` rather than a flag on it because the two make
-// different promises. `up` brings up the RUNTIME — every agent, the tool
-// server, everything a later step might need. `quickstart` promises one
-// thing, an answer, and defers everything that is not on the way to it.
-// Folding them together would mean one command with two contracts and a flag
-// deciding which you got.
+// different promises. `up` brings up the RUNTIME — a cluster, a keyless model
+// server and the pinned Orka release — and deploys no agent. `quickstart`
+// promises one thing, an answer, and adds the one thing `up` deliberately
+// leaves out: a fixed Orka Agent and a question put to it. Folding them
+// together would mean one command with two contracts and a flag deciding
+// which you got.
 func newQuickstartCommand(state *commandState) *cobra.Command {
 	var opt app.QuickstartOptions
 	cmd := &cobra.Command{
@@ -92,28 +93,6 @@ func newPlaneCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-func newGovernCommand(state *commandState) *cobra.Command {
-	var opt app.GovernOptions
-	var ttl string
-	cmd := &cobra.Command{Use: "govern [credential]", Short: "Issue a credential and govern an agent", Args: usageArgs(0, 1, "kmx govern [<credential>] [flags]")}
-	cmd.Flags().StringVar(&opt.Agent, "agent", config.DefaultAgent, "agent to put behind the plane")
-	cmd.Flags().StringVar(&opt.Preset, "preset", config.GovernedModelConfig, "governed ModelConfig")
-	cmd.Flags().StringVar(&opt.Secret, "secret", config.GovernedSecret, "agent-side Secret")
-	cmd.Flags().StringVar(&opt.SecretNamespace, "secret-namespace", config.DefaultNamespace, "Secret namespace")
-	cmd.Flags().StringVar(&ttl, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
-	_ = cmd.RegisterFlagCompletionFunc("agent", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return completeLiveAgents(cmd, nil, toComplete)
-	})
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		var err error
-		if opt.TTLSeconds, err = admin.ParseTTL(ttl); err != nil {
-			return err
-		}
-		return a.Govern(parseOptionalCredential(cmd.Flags().Args(), a.Cfg.Credential), opt)
-	})
-	return cmd
-}
-
 func newCredentialsCommand(state *commandState) *cobra.Command {
 	return &cobra.Command{Use: "credentials", Short: "List governed credentials and expiry", Args: cobra.NoArgs, RunE: appRun(state, func(a *app.App) error { return a.Credentials() })}
 }
@@ -124,16 +103,25 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 	var secret string
 	var namespace string
 	var issueTTL string
-	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name>) [--namespace <namespace>] [--ttl duration]")}
+	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name> --namespace <namespace>) [--ttl duration]")}
 	issue.Flags().BoolVar(&discard, "discard", false, "discard the one-time bearer instead of storing or printing it")
 	issue.Flags().StringVar(&secret, "secret", "", "store the one-time bearer in this Kubernetes Secret")
-	issue.Flags().StringVar(&namespace, "namespace", config.DefaultNamespace, "Secret namespace")
+	// No default. The namespace a one-time token is written into is the
+	// operator's own, and it used to default to the legacy runtime's — a
+	// credential silently issued into a namespace nothing here installs any
+	// more is not a convenience, it is an unrecoverable token in the wrong
+	// place.
+	issue.Flags().StringVar(&namespace, "namespace", "", "namespace the Secret is created in (required with --secret)")
 	issue.Flags().StringVar(&issueTTL, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
 	issue.MarkFlagsOneRequired("discard", "secret")
 	issue.MarkFlagsMutuallyExclusive("discard", "secret")
 	issue.RunE = func(cmd *cobra.Command, _ []string) error {
 		if !discard && secret == "" {
 			return fmt.Errorf("kmx credential issue requires a non-empty --secret <name>")
+		}
+		if !discard && strings.TrimSpace(namespace) == "" {
+			return fmt.Errorf("kmx credential issue --secret %s also requires --namespace <namespace>:\n"+
+				"  the token is shown exactly once, so the namespace its Secret lands in is named rather than guessed", secret)
 		}
 		name := issue.Flags().Arg(0)
 		if err := admin.ValidCredentialName(name); err != nil {
@@ -171,28 +159,19 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 
 func newLedgerCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{Use: "ledger [credential]", Short: "Show spend ledger", Args: usageArgs(0, 1, "kmx ledger [<credential>]")}
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Ledger(parseOptionalCredential(cmd.Flags().Args(), a.Cfg.Credential)) })
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.Ledger(parseOptionalCredential(cmd.Flags().Args(), "")) })
 	return cmd
 }
 
 // newFlowCommand reads the model ledger chronologically.
 //
-// It defaults to ALL credentials, unlike the ledger: the
+// Like the ledger, it defaults to ALL credentials: the
 // question a flow answers is "what has been going on", and an operator who
 // does not yet know which credential misbehaved cannot be asked to name it
 // first. Every row is attributed, so a merged reading stays readable.
 func newFlowCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{Use: "flow [credential]", Short: "Show model activity in one timeline", Args: usageArgs(0, 1, "kmx flow [<credential>]")}
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.Flow(parseOptionalCredential(cmd.Flags().Args(), "")) })
-	return cmd
-}
-
-func newUseCommand(state *commandState) *cobra.Command {
-	var agent string
-	cmd := &cobra.Command{Use: "use <preset>", Short: "Switch an agent to an embedded model preset", Args: usageArgs(1, 1, "kmx use <preset> [--agent <name>]")}
-	cmd.Flags().StringVar(&agent, "agent", config.DefaultAgent, "agent to switch")
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Use(cmd.Flags().Arg(0), app.UseOptions{Agent: agent}) })
-	cmd.ValidArgsFunction = completePresets
 	return cmd
 }
 
@@ -231,11 +210,15 @@ func newMetricsCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
+// `kmx status` is the runtime report. Its -o flag survives with one value,
+// and json/yaml are refused BY NAME rather than dropped: a script pinned to
+// `-o json` has to be told the document is gone, and a flag that silently
+// ignores what it was given is worse than one that says no.
 func newStatusCommand(state *commandState) *cobra.Command {
 	var output string
-	cmd := &cobra.Command{Use: "status", Short: "Show grouped runtime health", Args: cobra.NoArgs}
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
-	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json", "yaml"}))
+	cmd := &cobra.Command{Use: "status", Short: "Show the runtime Orka has installed, and what it can resolve", Args: cobra.NoArgs}
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table")
+	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table"}))
 	cmd.RunE = appRun(state, func(a *app.App) error { return a.StatusWithOptions(app.StatusOptions{Output: output}) })
 	return cmd
 }

@@ -68,7 +68,7 @@ Contract **4** marked the earlier gateway/tool API retirement; current upgrades
 also require the contract-5 review above.
 
 1. Back up the database and stop jobs relying on the gateway or workflow runner.
-   Inventory owner-managed Agents, RemoteMCPServers, Deployment sidecars, URLs,
+   Inventory owner-managed Agents, MCP server objects, Deployment sidecars, URLs,
    Secret references and Helm/GitOps source before rollout. Decide with each
    application owner whether to stop or replace its tool integration. **Do not
    automatically repoint tools to direct access or widen their network reach.**
@@ -92,12 +92,13 @@ also require the contract-5 review above.
    - Retired fixtures in `kaimahi`: MCPServer `kaimahi-slack-mcp`, Deployment
      `kaimahi-erp`, Service `kaimahi-erp-mcp` and ConfigMap `kaimahi-erp-fixtures`.
      Review controller-owned children rather than assuming apply removed them.
-   - In `kagent`: gateway RemoteMCPServers `kaimahi-tools`, `kaimahi-slack`,
+   - In the legacy runtime's namespace: the gateway's MCP server objects `kaimahi-tools`, `kaimahi-slack`,
      `kaimahi-github`, `kaimahi-erp`, `kaimahi-release-github` and
      `kaimahi-release-ado`; fixture Agents `hello-slack`, `hello-github`,
      `ap-agent` and `release-agent`. Review operator-created equivalents too.
-     **Keep the direct `hello-tools` Agent and chart-managed `kagent-tool-server`**;
-     if an owner repointed them at the old gateway, that owner must resolve it.
+     If an owner still runs a historical `hello-tools` Agent or tool server,
+     check its dependencies and decide whether to retain or retire it; this
+     release does not manage those owner-held resources or remove them.
 4. Review tool-only custody separately: plane Secrets `kaimahi-slack-bot`,
    `kaimahi-slack-mcp-key`, `kaimahi-github-pat`, `kaimahi-release-pat` and
    `kaimahi-ado-token`; old client Secrets such as `kaimahi-tools-token`,
@@ -184,13 +185,15 @@ for that re-sign. Readiness of a workload does not prove its client verifies
 TLS. Never work around expiry by disabling verification.
 
 ```sh
-kmx status
 kmx plane --step certificate
 ```
 
-The certificate step renews as needed, republishes trust and restarts the
-proxy to load material read at startup. An expired certificate makes
-verifying clients fail; kagent may report only a generic connection error.
+The certificate step renews as needed and restarts the proxy to load material
+read at startup. It publishes the authority into no namespace on its own —
+`kmx migrate` is what tells a workload's namespace what to trust, because that
+is the command that is told which namespace. An expired certificate makes
+verifying clients fail, often as a generic connection error rather than a
+named trust failure.
 CA/private-key loss is not fixed by a normal serving-certificate re-sign.
 See [certificate.go](../internal/kmx/app/certificate.go) before replacing
 trust material across a running installation.
