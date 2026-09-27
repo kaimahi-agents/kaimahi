@@ -1,0 +1,418 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"go.yaml.in/yaml/v3"
+)
+
+// The subprocess represents the API boundary. State is persisted between calls
+// and between deploys so retries exercise actual read/compare/write sequencing.
+func TestReconcileKubectlHelper(t *testing.T) {
+	dir := os.Getenv("KMX_RECONCILE_DIR")
+	if dir == "" {
+		return
+	}
+	args := os.Args[slices.Index(os.Args, "--")+1:]
+	if slices.Equal(args, []string{"version", "--client"}) {
+		os.Exit(0)
+	}
+	fail := func() { fmt.Fprint(os.Stderr, "private-token-must-not-escape"); os.Exit(1) }
+	if len(args) < 2 || args[0] != "--context" || args[1] != "kind-test" {
+		fail()
+	}
+	call := orkaCall{Args: args}
+	if slices.Contains(args, "-f") {
+		raw, _ := io.ReadAll(os.Stdin)
+		if json.Unmarshal(raw, &call.Document) != nil {
+			fail()
+		}
+	}
+	log, _ := os.OpenFile(filepath.Join(dir, "calls"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	_ = json.NewEncoder(log).Encode(call)
+	_ = log.Close()
+	if slices.Contains(args, "config") {
+		fmt.Print(`{"current-context":"kind-test","clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}]}`)
+		os.Exit(0)
+	}
+	if i := slices.Index(args, "get"); i >= 0 {
+		kind, name := args[i+1], args[i+2]
+		if kind == "crd" {
+			plural, _, _ := strings.Cut(name, ".")
+			raw, e := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
+			if e != nil {
+				fail()
+			}
+			_, _ = os.Stdout.Write(raw)
+			os.Exit(0)
+		}
+		if kind == "secret" {
+			fmt.Print("secret\npresent")
+			os.Exit(0)
+		}
+		raw, e := os.ReadFile(filepath.Join(dir, kind+".json"))
+		if os.IsNotExist(e) && slices.Contains(args, "--ignore-not-found=true") {
+			os.Exit(0)
+		}
+		if e != nil {
+			fail()
+		}
+		var obj map[string]any
+		if json.Unmarshal(raw, &obj) != nil {
+			fail()
+		}
+		if slices.Contains(args, "name") {
+			fmt.Print(kind + "/" + name)
+			os.Exit(0)
+		}
+		meta := obj["metadata"].(map[string]any)
+		obj["status"] = map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": meta["generation"]}}}
+		_ = json.NewEncoder(os.Stdout).Encode(obj)
+		os.Exit(0)
+	}
+	if call.Document == nil {
+		fail()
+	}
+	kind := call.Document["kind"].(string)
+	path := filepath.Join(dir, strings.ToLower(kind)+"s.core.orka.ai.json")
+	meta := call.Document["metadata"].(map[string]any)
+	if slices.Contains(args, "replace") {
+		raw, e := os.ReadFile(path)
+		if e != nil {
+			fail()
+		}
+		var live map[string]any
+		if json.Unmarshal(raw, &live) != nil {
+			fail()
+		}
+		current := live["metadata"].(map[string]any)
+		if !slices.Contains(args, "--dry-run=server") && os.Getenv("KMX_RECONCILE_RACE") == kind {
+			// Simulate a write after Deploy's read but before its conditional replace.
+			current["resourceVersion"] = "concurrent-version"
+			changed, _ := json.Marshal(live)
+			_ = os.WriteFile(path, changed, 0600)
+		}
+		if meta["resourceVersion"] != current["resourceVersion"] {
+			fail()
+		}
+		// Admission defaults an omitted field on both dry-run and real replace.
+		if defaulted, ok := live["spec"].(map[string]any)["rateLimit"]; ok {
+			call.Document["spec"].(map[string]any)["rateLimit"] = defaulted
+		}
+		if slices.Contains(args, "--dry-run=server") {
+			_ = json.NewEncoder(os.Stdout).Encode(call.Document)
+			os.Exit(0)
+		}
+		if os.Getenv("KMX_RECONCILE_FAIL_ONCE") == kind {
+			flag := filepath.Join(dir, "failed-"+kind)
+			if _, e := os.Stat(flag); os.IsNotExist(e) {
+				_ = os.WriteFile(flag, []byte("once"), 0600)
+				fail()
+			}
+		}
+		meta["resourceVersion"] = "2"
+		if fmt.Sprint(live["spec"]) != fmt.Sprint(call.Document["spec"]) {
+			meta["generation"] = current["generation"].(float64) + 1
+		}
+	} else if slices.Contains(args, "create") {
+		if slices.Contains(args, "--dry-run=server") {
+			fmt.Print("{}")
+			os.Exit(0)
+		}
+		if _, e := os.Stat(path); e == nil {
+			fail()
+		}
+		if os.Getenv("KMX_RECONCILE_FAIL_ONCE") == kind {
+			flag := filepath.Join(dir, "failed-"+kind)
+			if _, e := os.Stat(flag); os.IsNotExist(e) {
+				_ = os.WriteFile(flag, []byte("once"), 0600)
+				fail()
+			}
+		}
+		meta["uid"] = strings.ToLower(kind) + "-uid"
+		meta["generation"] = 1
+		meta["resourceVersion"] = "1"
+	} else {
+		fail()
+	}
+	body, _ := json.Marshal(call.Document)
+	if os.WriteFile(path, body, 0600) != nil {
+		fail()
+	}
+	_, _ = os.Stdout.Write(body)
+	os.Exit(0)
+}
+
+func reconcileFixture(t *testing.T) (orkaRuntimeAdapter, agentruntime.RenderedBundle, string) {
+	t.Helper()
+	dir := t.TempDir()
+	exe, e := os.Executable()
+	if e != nil {
+		t.Fatal(e)
+	}
+	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestReconcileKubectlHelper$ -- \"$@\"")
+	fixtures, e := filepath.Abs("../orkaschema/fixtures")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("KMX_RECONCILE_DIR", dir)
+	t.Setenv("KMX_RECONCILE_FIXTURES", fixtures)
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: io.Discard}
+	opt := goldenNoTaskCreate("")
+	opt.Out = filepath.Join(dir, "bundle.yaml")
+	opt.BundlePath = filepath.Join(dir, "agents", "sample")
+	adapter := orkaRuntimeAdapter{app: a, create: &opt}
+	source, e := portableOrkaSource(opt)
+	if e != nil {
+		t.Fatal(e)
+	}
+	rendered, e := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	return adapter, rendered, dir
+}
+
+func reconcileLive(t *testing.T, dir, kind string, rendered agentruntime.RenderedBundle) map[string]any {
+	t.Helper()
+	var desired map[string]any
+	for _, doc := range rendered.DeployDocuments() {
+		var d map[string]any
+		if e := yaml.Unmarshal(doc, &d); e == nil && d["kind"] == kind {
+			desired = d
+			break
+		}
+	}
+	if desired == nil {
+		t.Fatal("missing rendered kind", kind)
+	}
+	meta := desired["metadata"].(map[string]any)
+	meta["uid"] = strings.ToLower(kind) + "-uid"
+	meta["resourceVersion"] = "1"
+	meta["generation"] = float64(1)
+	return desired
+}
+func seedReconcile(t *testing.T, dir string, doc map[string]any) {
+	t.Helper()
+	raw, e := json.Marshal(doc)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(dir, strings.ToLower(doc["kind"].(string))+"s.core.orka.ai.json"), raw, 0600); e != nil {
+		t.Fatal(e)
+	}
+}
+
+func TestReconcileOutcomesAndReceipt(t *testing.T) {
+	for _, tc := range []struct{ name, kind, marker, change, want string }{
+		{"absent", "", "", "", "created"},
+		{"owned identical", "Agent", "own", "", "reused"},
+		{"owned edited", "Agent", "own", "drift", "updated"},
+		{"unmarked identical", "Agent", "", "", "adopted"},
+		{"unmarked different", "Agent", "", "drift", "refused"},
+		{"foreign marked", "Agent", "other", "", "refused"},
+		{"terminating", "Agent", "own", "terminating", "refused"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, bundle, dir := reconcileFixture(t)
+			if tc.kind != "" {
+				provider := reconcileLive(t, dir, "Provider", bundle)
+				seedReconcile(t, dir, provider)
+				agent := reconcileLive(t, dir, "Agent", bundle)
+				meta := agent["metadata"].(map[string]any)
+				if tc.marker != "" {
+					annotations, _ := meta["annotations"].(map[string]any)
+					if annotations == nil {
+						annotations = map[string]any{}
+					}
+					annotations["kaimahi.dev/bundle"] = map[string]string{"own": "sample", "other": "foreign"}[tc.marker]
+					annotations["kaimahi.dev/portable-digest"] = bundle.PortableDigest()
+					annotations["kaimahi.dev/rendered-digest"] = bundle.RenderedDigest()
+					meta["annotations"] = annotations
+				}
+				if tc.change == "drift" {
+					agent["spec"].(map[string]any)["systemPrompt"] = map[string]any{"inline": "edited live"}
+				}
+				if tc.change == "terminating" {
+					meta["deletionTimestamp"] = "2026-01-01T00:00:00Z"
+				}
+				seedReconcile(t, dir, agent)
+			}
+			result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+			if tc.want == "refused" {
+				if err == nil || !strings.Contains(err.Error(), "Agent/sample") {
+					t.Fatalf("expected named refusal: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Ref.UID != "agent-uid" || result.Receipt.PortableDigest != bundle.PortableDigest() || result.Receipt.RenderedDigest != bundle.RenderedDigest() || result.Receipt.Bundle != "sample" || result.Receipt.Target.Context != "kind-test" {
+				t.Fatalf("invalid receipt: %+v", result)
+			}
+			if len(result.Receipt.Resources) != 2 || string(result.Receipt.Resources[1].Outcome) != tc.want || result.Receipt.Resources[1].UID != "agent-uid" || result.Receipt.Resources[1].Generation < 1 {
+				t.Fatalf("wrong outcome: %+v", result.Receipt.Resources)
+			}
+			calls := orkaCalls(t, dir)
+			for _, call := range calls {
+				if !slices.Equal(call.Args[:2], []string{"--context", "kind-test"}) {
+					t.Fatalf("unpinned: %v", call.Args)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileCreatedMarkersSupportNoWriteRerun(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	first, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"providers", "agents"} {
+		raw, e := os.ReadFile(filepath.Join(dir, kind+".core.orka.ai.json"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		var obj map[string]any
+		if e = json.Unmarshal(raw, &obj); e != nil {
+			t.Fatal(e)
+		}
+		ann := obj["metadata"].(map[string]any)["annotations"].(map[string]any)
+		if ann["kaimahi.dev/bundle"] != "sample" || ann["kaimahi.dev/portable-digest"] != bundle.PortableDigest() || ann["kaimahi.dev/rendered-digest"] != bundle.RenderedDigest() {
+			t.Fatalf("missing marker on %s: %v", kind, ann)
+		}
+	}
+	second, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Ref.UID != second.Ref.UID || second.Receipt.Resources[0].Outcome != "reused" || second.Receipt.Resources[1].Outcome != "reused" {
+		t.Fatalf("rerun: %+v", second)
+	}
+	for _, c := range orkaCalls(t, dir) {
+		if slices.Contains(c.Args, "replace") && !slices.Contains(c.Args, "--dry-run=server") {
+			t.Fatalf("rerun wrote existing object: %+v", c)
+		}
+	}
+}
+
+func TestReconcileServerNormalizedEqualityAllowsAdoption(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	provider := reconcileLive(t, dir, "Provider", bundle)
+	provider["spec"].(map[string]any)["rateLimit"] = map[string]any{"requestsPerMinute": float64(12)}
+	seedReconcile(t, dir, provider)
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.Resources[0].Outcome != "adopted" {
+		t.Fatalf("normalized spec not adopted: %+v", result)
+	}
+}
+
+func TestReconcileRefusesConcurrentUpdateAndRerunsAfterPartialFailure(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	provider := reconcileLive(t, dir, "Provider", bundle)
+	seedReconcile(t, dir, provider)
+	agent := reconcileLive(t, dir, "Agent", bundle)
+	agent["spec"].(map[string]any)["systemPrompt"] = map[string]any{"inline": "drift"}
+	meta := agent["metadata"].(map[string]any)
+	meta["annotations"] = map[string]any{"kaimahi.dev/bundle": "sample", "kaimahi.dev/portable-digest": bundle.PortableDigest(), "kaimahi.dev/rendered-digest": bundle.RenderedDigest()}
+	seedReconcile(t, dir, agent)
+	t.Setenv("KMX_RECONCILE_RACE", "Agent")
+	if result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true}); err == nil || !strings.Contains(err.Error(), "Agent/sample") || result.Receipt.Bundle != "" {
+		t.Fatalf("race not refused: %+v %v", result, err)
+	}
+	var unchanged map[string]any
+	body, _ := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
+	_ = json.Unmarshal(body, &unchanged)
+	if unchanged["spec"].(map[string]any)["systemPrompt"].(map[string]any)["inline"] != "drift" {
+		t.Fatal("concurrent edit overwritten")
+	}
+	t.Setenv("KMX_RECONCILE_RACE", "")
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.Resources[1].Outcome != "updated" {
+		t.Fatalf("retry: %+v", result)
+	}
+}
+
+func TestReconcileRerunsAfterPartialCreation(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	t.Setenv("KMX_RECONCILE_FAIL_ONCE", "Agent")
+	if result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true}); err == nil || len(result.Receipt.Resources) != 0 {
+		t.Fatalf("partial failure issued receipt: %+v %v", result, err)
+	}
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.Resources[0].Outcome != "reused" || result.Receipt.Resources[1].Outcome != "created" {
+		t.Fatalf("rerun outcomes: %+v", result.Receipt.Resources)
+	}
+	for _, call := range orkaCalls(t, dir) {
+		if call.Document != nil && call.Document["kind"] == "Provider" && slices.Contains(call.Args, "replace") && !slices.Contains(call.Args, "--dry-run=server") {
+			t.Fatal("rerun modified owned Provider")
+		}
+	}
+}
+
+func TestReconcileRefusesTaskBeforeClusterWrites(t *testing.T) {
+	adapter, _, dir := reconcileFixture(t)
+	opt := *adapter.create
+	opt.Task = "one shot"
+	adapter.create = &opt
+	source, e := portableOrkaSource(opt)
+	if e != nil {
+		t.Fatal(e)
+	}
+	bundle, e := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err == nil || !strings.Contains(err.Error(), "Task") {
+		t.Fatalf("Task not refused: %v", err)
+	}
+	for _, c := range orkaCalls(t, dir) {
+		if slices.Contains(c.Args, "create") || slices.Contains(c.Args, "replace") {
+			t.Fatalf("mutated for Task: %+v", c)
+		}
+	}
+}
+
+func TestCreateOnlyDeployReturnsReadyReceipt(t *testing.T) {
+	adapter, bundle, _ := reconcileFixture(t)
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Ref.UID != "agent-uid" || result.Receipt.Bundle != "sample" || len(result.Receipt.Resources) != 2 || result.Receipt.Resources[0].Outcome != "created" || result.Receipt.Resources[1].Generation != 1 {
+		t.Fatalf("create-only receipt: %+v", result)
+	}
+}
+
+func TestDefaultDeployStillRefusesIdenticalExistingName(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	seedReconcile(t, dir, reconcileLive(t, dir, "Provider", bundle))
+	_, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("create-only collided without refusing: %v", err)
+	}
+}

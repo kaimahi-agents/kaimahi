@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Orka lifecycle Deploy can opt into bundle-owned reconciliation: create absent resources, reuse matching owned resources, update drift with a resourceVersion precondition, or mark an identical unowned resource as adopted. Conflicting or terminating names are refused; a completed deployment returns per-resource outcomes and a receipt with digests and target identities. Reconcile never runs Tasks. Default `kmx agent create` remains create-only.
+
+### Changed
+
+- `kmx agent create` and the quickstart wizard now write `agents/<name>/agent.yaml` and `bindings.yaml` as the portable bundle and creation-target bindings (#227).
+
 ## v0.2.0 — 2026-09-27
 
 This is the first Orka-capable release. The entries below include the sequence

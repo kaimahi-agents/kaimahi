@@ -18,8 +18,8 @@ func (a exampleAdapter) Capabilities() Capabilities                  { return a.
 func (a exampleAdapter) Render(_ context.Context, source []byte, _ RenderOptions) (RenderedBundle, error) {
 	return NewRenderedBundle(a.ID(), source, []Document{ApplyDocument(source)})
 }
-func (a exampleAdapter) Deploy(_ context.Context, bundle RenderedBundle, _ DeployOptions) (AgentRef, error) {
-	return AgentRef{Runtime: a.ID(), Namespace: "example", Name: "agent", UID: bundle.RenderedDigest()}, nil
+func (a exampleAdapter) Deploy(_ context.Context, bundle RenderedBundle, _ DeployOptions) (DeployResult, error) {
+	return DeployResult{Ref: AgentRef{Runtime: a.ID(), Namespace: "example", Name: "agent", UID: bundle.RenderedDigest()}}, nil
 }
 func (a exampleAdapter) Status(_ context.Context, ref AgentRef, _ StatusOptions) (Status, error) {
 	return Status{Agent: ref, Fields: []Field{{Label: "Runtime", Value: string(ref.Runtime)}}}, nil
@@ -46,16 +46,16 @@ func TestLifecycleAdapterEmbedsAdapterAndReusesIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	status, err := lifecycle.Status(ctx, ref, StatusOptions{})
+	status, err := lifecycle.Status(ctx, ref.Ref, StatusOptions{})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if status.Agent != ref {
-		t.Fatalf("Status.Agent = %+v, want the deployed AgentRef %+v", status.Agent, ref)
+	if status.Agent != ref.Ref {
+		t.Fatalf("Status.Agent = %+v, want the deployed AgentRef %+v", status.Agent, ref.Ref)
 	}
 
 	var unsupported *UnsupportedVerbError
-	if _, err = lifecycle.Evaluate(ctx, ref, EvaluationRequest{CaseID: "c1", Input: "hi", ExpectContains: []string{"hello"}}); !errors.As(err, &unsupported) {
+	if _, err = lifecycle.Evaluate(ctx, ref.Ref, EvaluationRequest{CaseID: "c1", Input: "hi", ExpectContains: []string{"hello"}}); !errors.As(err, &unsupported) {
 		t.Fatalf("Evaluate error = %v, want *UnsupportedVerbError", err)
 	}
 	if !lifecycle.Capabilities().Render || lifecycle.Capabilities().Evaluate {

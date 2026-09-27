@@ -93,7 +93,7 @@ func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 // render and no rendered bytes to emit — the artifact is serialized from the
 // bundle itself, exactly as it always was.
 func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle) error {
-	_, err := a.createOrkaStaged(ctx, opt, bundle, bundle.YAML)
+	_, err := a.createOrkaStaged(ctx, opt, bundle, bundle.YAML, nil)
 	return err
 }
 
@@ -112,7 +112,7 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 //
 // It returns the created Agent's identity so a lifecycle Deploy can name what
 // it created. A --dry-run create writes nothing and returns a zero identity.
-func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error)) (agent orkaIdentity, err error) {
+func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error), identities *[]orkaIdentity) (agent orkaIdentity, err error) {
 	stage := "Validate schemas and prerequisites"
 	report := func(status string, err error) {
 		if a.operationProgress != nil {
@@ -259,6 +259,9 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 			return orkaIdentity{}, err
 		}
 		report("done", nil)
+		if identities != nil {
+			*identities = append(*identities, id)
+		}
 	}
 	if bundle.Task == nil {
 		a.notef("Orka Provider and Agent are Ready; no model response was tested.")
@@ -278,6 +281,9 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		return orkaIdentity{}, err
 	}
 	a.notef("Task/%s UID %s succeeded and its answer was retrieved. Fresh-name and UID checks do not bind the result bytes to a UID.", id.Name, id.UID)
+	if identities != nil {
+		*identities = append(*identities, id)
+	}
 	return agent, nil
 }
 

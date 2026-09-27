@@ -7,9 +7,9 @@
 //     bundle once, and returns those
 //     documents inside an immutable RenderedBundle. The optional Task's
 //     random identity is minted there, exactly once.
-//   - Deploy consumes only that bundle. It decodes those exact rendered
-//     bytes back into the bundle shape the unchanged staged path already
-//     takes, so the mutation guard, installed-CRD validation, collision
+//   - Create-only Deploy consumes only that bundle. It decodes those exact
+//     rendered bytes back into the bundle shape the unchanged staged path
+//     already takes, so the mutation guard, installed-CRD validation, collision
 //     checks, the Secret-key proof, strict server dry-runs, artifact
 //     emission and Provider → Ready → Agent → Ready → optional Task ordering
 //     all stay as they were.
@@ -150,40 +150,53 @@ func (a orkaRuntimeAdapter) renderOrka(source []byte) (agentruntime.RenderedBund
 	return rendered, provenance, nil
 }
 
-// Deploy applies exactly what Render produced. It never regenerates the
-// bundle, so the optional Task keeps the single random identity minted at
+// Deploy uses what Render produced without regenerating its spec. In
+// reconcile mode ownership annotations are added to write payloads, not to
+// the immutable rendered digest. The optional Task keeps its identity minted at
 // render time, and the namespace, Agent name and Secret it acts on come from
 // the immutable rendered bytes rather than from the flags this adapter also
 // carries.
 //
-// The returned AgentRef carries the created Agent's UID. A --dry-run deploy
-// creates nothing, so it returns the same reference with an empty UID.
-func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.RenderedBundle, _ agentruntime.DeployOptions) (agentruntime.AgentRef, error) {
+// A --dry-run create returns a reference with no UID and no receipt.
+func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.RenderedBundle, options agentruntime.DeployOptions) (agentruntime.DeployResult, error) {
 	if err := a.lifecycleVerbError(a.Capabilities().Deploy, agentruntime.VerbDeploy); err != nil {
-		return agentruntime.AgentRef{}, err
+		return agentruntime.DeployResult{}, err
 	}
 	bundle, err := orkaBundleFromRendered(rendered)
 	if err != nil {
-		return agentruntime.AgentRef{}, err
+		return agentruntime.DeployResult{}, err
 	}
 	opt := *a.create
 	opt.Namespace = orkaObjectNamespace(bundle.Agent)
 	opt.Name = orkaObjectName(bundle.Agent)
 	opt.Secret = orkaObjectName(bundle.Secret)
+	if options.Reconcile {
+		return a.reconcileOrka(ctx, rendered, bundle, opt)
+	}
+	var identities []orkaIdentity
 	agent, err := a.app.createOrkaStaged(ctx, opt, bundle, func(provenance string) (string, error) {
 		// The artifact an operator reads is assembled from the same exact
 		// bytes this deploy applies, never from a re-serialized copy.
 		return scaffold.OrkaArtifact(provenance, rendered.Documents())
-	})
+	}, &identities)
 	if err != nil {
-		return agentruntime.AgentRef{}, err
+		return agentruntime.DeployResult{}, err
 	}
 	kubeContext := ""
 	if a.app.Cfg != nil {
 		kubeContext = a.app.Cfg.KubeContext
 	}
-	return agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace,
-		Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}, nil
+	result := agentruntime.DeployResult{Ref: agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace,
+		Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}}
+	if !opt.DryRun {
+		result.Receipt = agentruntime.DeployReceipt{Bundle: opt.Name, PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(),
+			Target: agentruntime.DeployTarget{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace}}
+		for _, id := range identities {
+			result.Receipt.Resources = append(result.Receipt.Resources, agentruntime.ResourceResult{Kind: id.Kind, Name: id.Name, Namespace: opt.Namespace,
+				UID: id.UID, Generation: id.Generation, Outcome: agentruntime.ResourceCreated})
+		}
+	}
+	return result, nil
 }
 
 // Status reads Orka's workload state through readOrkaAgent, as `kmx agent
