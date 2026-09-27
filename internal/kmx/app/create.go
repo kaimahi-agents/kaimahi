@@ -8,7 +8,7 @@ type CreateOptions struct {
 	AgentRequestsPerMinute, AgentTokensPerMinute                                  string
 	ProviderRequestsPerMinute, ProviderTokensPerMinute                            string
 	ResultServiceAccount, OrkaAPIService, ResultPort, SchemaTarget                string
-	Out                                                                           string
+	Out, BundlePath                                                               string
 	NoApply, DryRun                                                               bool
 	// Resolved before entering raw terminal mode. Keep the original flags and
 	// distinguish an empty file from an instruction source not yet read.

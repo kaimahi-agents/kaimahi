@@ -50,13 +50,8 @@ func TestParsePortableAgentRefusesCredentialShapesBeforeAnythingCanEchoThem(t *t
 				{"metadata.name", "  name: hello\n", "  name: %s\n"},
 				{"spec.instructions", "  instructions: Do the thing.\n", "  instructions: %s\n"},
 				{"spec.model.name", "    name: gpt-4o-mini\n", "    name: %s\n"},
-				{"extension namespace", "    namespace: orka-system\n", "    namespace: %s\n"},
-				{"provider.type", "      type: openai\n", "      type: %s\n"},
-				{"provider.baseURL", "      type: openai\n", "      type: openai\n      baseURL: https://models.example.invalid/%s\n"},
-				{"provider.secretRef.name", "        name: hello-key\n", "        name: %s\n"},
-				{"provider.secretRef.key", "        name: hello-key\n", "        name: hello-key\n        key: %s\n"},
-				{"agent.tools[0].name", "        name: hello-key\n", "        name: hello-key\n    agent:\n      tools:\n        - name: %s\n"},
-				{"agent.skills[0].name", "        name: hello-key\n", "        name: hello-key\n    agent:\n      skills:\n        - name: %s\n"},
+				{"agent.tools[0].name", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    agent:\n      tools:\n        - name: %s\n"},
+				{"agent.skills[0].name", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    agent:\n      skills:\n        - name: %s\n"},
 				{"an unknown field", "kind: PortableAgent\n", "kind: PortableAgent\nbogus: %s\n"},
 			} {
 				t.Run(tc.field, func(t *testing.T) {

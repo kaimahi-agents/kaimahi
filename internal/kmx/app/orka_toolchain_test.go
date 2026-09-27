@@ -24,10 +24,11 @@ func TestOrkaManagedToolchainHelper(t *testing.T) {
 	toolchainBase = "http://127.0.0.1:1"
 	var out, diagnostics bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: &out, Err: &diagnostics}
-	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml")}
+	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml"), BundlePath: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "agents", "sample")}
 	opt.DryRun = mode == "dry-run"
 	if mode == "offline" {
 		opt.Out = "-"
+		opt.BundlePath = ""
 	}
 	err := a.CreateAgent(opt)
 	if mode == "off" {

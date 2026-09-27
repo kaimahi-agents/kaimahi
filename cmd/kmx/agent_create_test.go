@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +36,25 @@ func TestAgentCreateOrkaOfflineWithoutToolsOnPATH(t *testing.T) {
 	}
 	if !strings.Contains(diagnostics.String(), "not applied") {
 		t.Fatal(diagnostics.String())
+	}
+}
+
+func TestAgentCreateBundlePathEnablesBundleWithStdout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agents", "sample")
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	args := append(orkaCreateArgs(), "--bundle-path", path)
+	if err := execute(args, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "kind: Provider") {
+		t.Fatal("stdout artifact missing")
+	}
+	if _, err := os.Stat(filepath.Join(path, "agent.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "bindings.yaml")); err != nil {
+		t.Fatal(err)
 	}
 }
 

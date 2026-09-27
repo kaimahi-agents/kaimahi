@@ -277,7 +277,7 @@ func orkaCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *byt
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	out, diagnostics := &bytes.Buffer{}, &bytes.Buffer{}
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Out: out, Err: diagnostics, Run: &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}}
-	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(dir, "bundle.yaml")}
+	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(dir, "bundle.yaml"), BundlePath: filepath.Join(dir, "agents", "sample")}
 	return a, opt, out, diagnostics, dir
 }
 

@@ -27,11 +27,6 @@ spec:
 const minimalPortableYAML = portableCore + `extensions:
   orka:
     apiVersion: core.orka.ai/v1alpha1
-    namespace: orka-system
-    provider:
-      type: openai
-      secretRef:
-        name: hello-key
 `
 
 // validPortableYAML states every field the closed schema models.
@@ -46,13 +41,7 @@ spec:
 extensions:
   orka:
     apiVersion: core.orka.ai/v1alpha1
-    namespace: orka-system
     provider:
-      type: openai
-      baseURL: https://models.example.invalid
-      secretRef:
-        name: hello-key
-        key: api-key
       rateLimit:
         requestsPerMinute: 60
         tokensPerMinute: 100000
@@ -109,14 +98,8 @@ func TestParsePortableAgentAcceptsAFullyStatedDocument(t *testing.T) {
 	if orka == nil {
 		t.Fatal("extensions.orka is missing")
 	}
-	if orka.APIVersion != "core.orka.ai/v1alpha1" || orka.Namespace != "orka-system" || orka.Provider.Type != "openai" {
+	if orka.APIVersion != "core.orka.ai/v1alpha1" {
 		t.Errorf("extensions.orka = %+v", *orka)
-	}
-	if orka.Provider.BaseURL != "https://models.example.invalid" {
-		t.Errorf("provider.baseURL = %q", orka.Provider.BaseURL)
-	}
-	if orka.Provider.SecretRef.Name != "hello-key" || orka.Provider.SecretRef.Key != "api-key" {
-		t.Errorf("provider.secretRef = %+v", orka.Provider.SecretRef)
 	}
 	if orka.Provider.RateLimit == nil || *orka.Provider.RateLimit.RequestsPerMinute != 60 ||
 		*orka.Provider.RateLimit.TokensPerMinute != 100000 {
@@ -143,7 +126,7 @@ func TestParsePortableAgentLeavesOmittedOptionalFieldsAbsent(t *testing.T) {
 		t.Fatalf("a minimal document must parse: %v", err)
 	}
 	orka := agent.Extensions.Orka
-	if orka.Provider.BaseURL != "" || orka.Provider.SecretRef.Key != "" || orka.Provider.RateLimit != nil {
+	if orka.Provider.RateLimit != nil {
 		t.Errorf("an omitted provider field was filled in: %+v", orka.Provider)
 	}
 	if orka.Agent != nil {
@@ -214,6 +197,52 @@ func TestPortableSourceOnNilAgent(t *testing.T) {
 	}
 }
 
+// Removing target-specific fields must not make a portable revision invalid.
+func TestPortableRevisionRejectsTargetBindingsInsideAgentYAML(t *testing.T) {
+	if _, err := ParsePortableAgent([]byte(minimalPortableYAML)); err != nil {
+		t.Fatalf("revision-only document rejected: %v", err)
+	}
+	for _, field := range []string{"namespace: another", "provider:\n      type: openai", "provider:\n      baseURL: https://models.example.invalid", "provider:\n      secretRef:\n        name: other"} {
+		doc := mustReplace(t, minimalPortableYAML, "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    "+field+"\n")
+		mustNotParse(t, doc, "not found")
+	}
+}
+
+func TestPortableRevisionDigestChangesForEachBehaviorField(t *testing.T) {
+	baseline := []byte(validPortableYAML)
+	for _, tc := range []struct{ field, old, replacement string }{
+		{"name", "  name: hello\n", "  name: goodbye\n"},
+		{"instructions", "  instructions: Answer briefly", "  instructions: Explain carefully"},
+		{"description", "  model:\n", "  description: Helps with triage\n  model:\n"},
+		{"model", "    name: gpt-4o-mini\n", "    name: other-model\n"},
+		{"provider rate limit", "        requestsPerMinute: 60\n", "        requestsPerMinute: 61\n"},
+		{"agent tool", "        - name: web-search\n", "        - name: map-search\n"},
+		{"agent skill", "        - name: triage\n", "        - name: review\n"},
+		{"agent rate limit", "        requestsPerMinute: 30\n", "        requestsPerMinute: 31\n"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			changed := mustReplace(t, validPortableYAML, tc.old, tc.replacement)
+			if _, err := ParsePortableAgent([]byte(changed)); err != nil {
+				t.Fatalf("changed behavior field did not parse: %v", err)
+			}
+			if PortableBundleDigest(baseline) == PortableBundleDigest([]byte(changed)) {
+				t.Fatal("a behavior change did not change the exact-source digest")
+			}
+		})
+	}
+}
+
+func TestPortableRevisionExactBytesIncludingCommentsChangeDigest(t *testing.T) {
+	first := []byte(minimalPortableYAML)
+	second := append([]byte("# reviewed by an operator\n"), first...)
+	if _, err := ParsePortableAgent(second); err != nil {
+		t.Fatal(err)
+	}
+	if PortableBundleDigest(first) == PortableBundleDigest(second) {
+		t.Fatal("comment-only edits must change the revision")
+	}
+}
+
 func TestParsePortableAgentRequiresExactIdentity(t *testing.T) {
 	for _, tc := range []struct{ name, old, replacement, want string }{
 		{"wrong apiVersion", "apiVersion: kmx.kaimahi.dev/v1alpha1\n", "apiVersion: kmx.kaimahi.dev/v1\n", "apiVersion must be"},
@@ -253,9 +282,7 @@ func TestParsePortableAgentRejectsDuplicateKeysAtEveryLevel(t *testing.T) {
 		{"spec", "  instructions: Answer", "  instructions: Twice.\n  instructions: Answer", "spec.instructions"},
 		{"spec.model", "    name: gpt-4o-mini\n", "    name: gpt-4o-mini\n    name: gpt-4o-mini\n", "spec.model.name"},
 		{"extensions", "extensions:\n  orka:\n", "extensions:\n  orka: {}\n  orka:\n", "extensions.orka"},
-		{"extension", "    namespace: orka-system\n", "    namespace: orka-system\n    namespace: orka-system\n", "extensions.orka.namespace"},
-		{"provider", "      type: openai\n", "      type: openai\n      type: openai\n", "extensions.orka.provider.type"},
-		{"provider.secretRef", "        name: hello-key\n", "        name: hello-key\n        name: hello-key\n", "extensions.orka.provider.secretRef.name"},
+		{"extension", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    apiVersion: core.orka.ai/v1alpha1\n", "extensions.orka.apiVersion"},
 		{"provider.rateLimit", "        requestsPerMinute: 60\n", "        requestsPerMinute: 60\n        requestsPerMinute: 60\n", "extensions.orka.provider.rateLimit.requestsPerMinute"},
 		{"agent", "      skills:\n", "      skills: []\n      skills:\n", "extensions.orka.agent.skills"},
 		{"sequence entry", "        - name: web-search\n", "        - name: web-search\n          name: web-search\n", "extensions.orka.agent.tools[0].name"},
@@ -287,12 +314,12 @@ func TestParsePortableAgentRejectsMergeKeysAnywhere(t *testing.T) {
 		},
 		{
 			"inside the extension",
-			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider: &p\n      type: openai\n    agent:\n      <<: *p\n",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider: &p\n      rateLimit: {}\n    agent:\n      <<: *p\n",
 			"extensions.orka.agent",
 		},
 		{
 			"inside a sequence entry",
-			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider:\n      secretRef: &ref\n        name: hello-key\n    agent:\n      tools:\n        - <<: *ref\n",
+			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider: &ref\n      rateLimit: {}\n    agent:\n      tools:\n        - <<: *ref\n",
 			"extensions.orka.agent.tools[0]",
 		},
 	} {
@@ -378,9 +405,8 @@ func TestParsePortableAgentRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 		{"spec", "  instructions:", "  bogus: true\n  instructions:"},
 		{"spec.model", "    name: gpt-4o-mini\n", "    name: gpt-4o-mini\n    bogus: true\n"},
 		{"extensions", "extensions:\n", "extensions:\n  bogus: true\n"},
-		{"extension", "    namespace: orka-system\n", "    namespace: orka-system\n    bogus: true\n"},
-		{"provider", "      type: openai\n", "      type: openai\n      bogus: true\n"},
-		{"provider.secretRef", "        name: hello-key\n", "        name: hello-key\n        bogus: true\n"},
+		{"extension", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    bogus: true\n"},
+		{"provider", "    provider:\n", "    provider:\n      bogus: true\n"},
 		{"provider.rateLimit", "        requestsPerMinute: 60\n", "        requestsPerMinute: 60\n        bogus: true\n"},
 		{"agent", "      skills:\n", "      bogus: true\n      skills:\n"},
 		{"agent.tools entry", "        - name: web-search\n", "        - name: web-search\n          bogus: true\n"},
@@ -416,11 +442,6 @@ func TestParsePortableAgentRejectsMalformedNames(t *testing.T) {
 		{"blank instructions", "  instructions: Do the thing.\n", "  instructions: \"   \"\n", "spec.instructions is required"},
 		{"blank model name", "    name: gpt-4o-mini\n", "    name: \"\"\n", "spec.model.name is required"},
 		{"wrong extension apiVersion", "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1\n", "apiVersion must be"},
-		{"malformed namespace", "    namespace: orka-system\n", "    namespace: Orka_System\n", "namespace"},
-		{"unknown provider type", "      type: openai\n", "      type: llama\n", "openai or anthropic"},
-		{"unscaffoldable provider type", "      type: openai\n", "      type: azure-openai\n", "azure-openai"},
-		{"malformed secretRef name", "        name: hello-key\n", "        name: Hello_Key\n", "secretRef.name"},
-		{"malformed secretRef key", "        name: hello-key\n", "        name: hello-key\n        key: \"a/b\"\n", "secretRef.key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mustNotParse(t, mustReplace(t, minimalPortableYAML, tc.old, tc.replacement), tc.want)
@@ -430,7 +451,7 @@ func TestParsePortableAgentRejectsMalformedNames(t *testing.T) {
 
 // A baseURL is the one reference that could carry a credential inside it, so
 // the refusal must never quote it.
-func TestParsePortableAgentRejectsMalformedBaseURLsWithoutEchoingThem(t *testing.T) {
+func TestParseOrkaBindingsRejectsMalformedBaseURLsWithoutEchoingThem(t *testing.T) {
 	for _, tc := range []struct{ name, baseURL string }{
 		{"not a URL", "models.example.invalid"},
 		{"not http", "ftp://models.example.invalid"},
@@ -440,9 +461,12 @@ func TestParsePortableAgentRejectsMalformedBaseURLsWithoutEchoingThem(t *testing
 		{"fragment", "https://models.example.invalid/#frag"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := mustReplace(t, minimalPortableYAML, "      type: openai\n",
-				"      type: openai\n      baseURL: \""+tc.baseURL+"\"\n")
-			err := mustNotParse(t, doc, "baseURL")
+			doc := mustReplace(t, validOrkaBindingsYAML, "  baseURL: https://models.example.invalid\n",
+				"  baseURL: \""+tc.baseURL+"\"\n")
+			_, err := ParseOrkaBindings([]byte(doc))
+			if err == nil || !strings.Contains(err.Error(), "baseURL") {
+				t.Fatalf("invalid URL accepted or wrong error: %v", err)
+			}
 			if strings.Contains(err.Error(), tc.baseURL) {
 				t.Errorf("the refusal echoed the URL: %v", err)
 			}
@@ -470,7 +494,7 @@ func TestParsePortableAgentRejectsNonPositiveRateLimits(t *testing.T) {
 		{"provider tokens", "      rateLimit:\n        tokensPerMinute: -1\n", "provider.rateLimit.tokensPerMinute"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := mustReplace(t, minimalPortableYAML, "      type: openai\n", "      type: openai\n"+tc.block)
+			doc := mustReplace(t, minimalPortableYAML, "    apiVersion: core.orka.ai/v1alpha1\n", "    apiVersion: core.orka.ai/v1alpha1\n    provider:\n"+tc.block)
 			mustNotParse(t, doc, tc.want)
 		})
 	}
@@ -591,8 +615,8 @@ func TestEncodeOrkaShorthandIsDeterministicAndRoundTrips(t *testing.T) {
 		t.Error("re-parsing an encoded document changed its source bytes")
 	}
 	orka := reparsed.Extensions.Orka
-	if orka.Namespace != "orka-system" || orka.Provider.SecretRef.Key != "api-key" {
-		t.Errorf("round-tripped extension = %+v", *orka)
+	if strings.Contains(string(reparsed.Source()), "namespace:") || strings.Contains(string(reparsed.Source()), "secretRef:") {
+		t.Errorf("target bindings leaked into source: %s", reparsed.Source())
 	}
 	if orka.Agent == nil || len(orka.Agent.Tools) != 1 || orka.Agent.Tools[0].Name != "web-search" {
 		t.Errorf("round-tripped tools = %+v", orka.Agent)
@@ -628,7 +652,7 @@ func TestEncodeOrkaShorthandOmitsUnstatedOptionalFields(t *testing.T) {
 	if agent.Extensions.Orka.Agent != nil {
 		t.Errorf("an unstated agent block was encoded: %+v", agent.Extensions.Orka.Agent)
 	}
-	for _, unwanted := range []string{"agent:", "tools:", "skills:", "key:", "baseURL:", "rateLimit:"} {
+	for _, unwanted := range []string{"agent:", "tools:", "skills:", "key:", "baseURL:", "namespace:", "rateLimit:"} {
 		if strings.Contains(string(agent.Source()), unwanted) {
 			t.Errorf("encoded document states %q, which the caller did not", unwanted)
 		}

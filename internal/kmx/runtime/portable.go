@@ -6,10 +6,11 @@
 // LifecycleAdapter renders from, and an adapter must render what the
 // document literally says, nothing more.
 //
-// The Orka extension states only what internal/kmx/scaffold can render:
-// namespace, Provider type/baseURL/secretRef/rateLimit, and the optional
-// Agent tools/skills/rateLimit. The optional common spec.description is
-// rendered as the Agent description annotation. The extension does not
+// The Orka extension states only portable behavior: Provider and Agent
+// rate limits, and optional Agent tools/skills. Namespace, Provider endpoint
+// and Secret references belong to a separately validated bindings document.
+// The optional common spec.description is rendered as the Agent description
+// annotation. The extension does not
 // restate the model — spec.model.name is the document's one model, and
 // the adapter renders it into the Orka Provider's defaultModel — so a
 // document cannot say two different things about the same model.
@@ -77,31 +78,16 @@ type PortableExtensions struct {
 	Orka *OrkaExtension `yaml:"orka"`
 }
 
-// OrkaExtension is everything the Orka renderer needs beyond spec: the
-// namespace its objects live in, the Provider to create, and the optional
-// Agent-level tool, skill and rate-limit selections.
+// OrkaExtension holds runtime-specific behavior, never creation-target data.
 type OrkaExtension struct {
 	APIVersion string                `yaml:"apiVersion"`
-	Namespace  string                `yaml:"namespace"`
-	Provider   OrkaProviderExtension `yaml:"provider"`
+	Provider   OrkaProviderExtension `yaml:"provider,omitempty"`
 	Agent      *OrkaAgentExtension   `yaml:"agent,omitempty"`
 }
 
-// OrkaProviderExtension names the model provider and the separately
-// provisioned Secret its credential lives in. It carries a reference, never
-// a value.
+// OrkaProviderExtension carries only behavior-level rate limits.
 type OrkaProviderExtension struct {
-	Type      string                 `yaml:"type"`
-	BaseURL   string                 `yaml:"baseURL,omitempty"`
-	SecretRef OrkaSecretRefExtension `yaml:"secretRef"`
-	RateLimit *OrkaRateLimit         `yaml:"rateLimit,omitempty"`
-}
-
-// OrkaSecretRefExtension names a Secret and, optionally, the key within it.
-// An omitted key means the renderer's default, not an empty key.
-type OrkaSecretRefExtension struct {
-	Name string `yaml:"name"`
-	Key  string `yaml:"key,omitempty"`
+	RateLimit *OrkaRateLimit `yaml:"rateLimit,omitempty"`
 }
 
 // OrkaAgentExtension is optional, and so is each of its fields: omitting one
@@ -312,34 +298,16 @@ func (p *PortableAgent) validate() error {
 	if p.Extensions.Orka == nil {
 		return fmt.Errorf("extensions.orka is required: %q is the only runtime this document targets", Orka)
 	}
-	if err := p.Extensions.Orka.validate(p.Spec.Model.Name); err != nil {
+	if err := p.Extensions.Orka.validate(); err != nil {
 		return fmt.Errorf("extensions.orka.%w", err)
 	}
 	return nil
 }
 
-// validate checks the Orka extension against exactly what internal/kmx/
-// scaffold can render, so a document that validates here cannot fail as an
-// unrenderable surprise later. model comes from spec.model.name, which this
-// extension deliberately does not restate.
-func (e *OrkaExtension) validate(model string) error {
+// validate checks behavior independently of any target bindings.
+func (e *OrkaExtension) validate() error {
 	if e.APIVersion != orkaExtensionAPIVersion {
 		return fmt.Errorf("apiVersion must be %q for the %q runtime (found %q)", orkaExtensionAPIVersion, Orka, e.APIVersion)
-	}
-	if err := scaffold.ValidateNamespace(e.Namespace); err != nil {
-		return fmt.Errorf("namespace: %w", err)
-	}
-	if err := scaffold.ValidateOrkaProvider(e.Provider.Type, model, e.Provider.BaseURL); err != nil {
-		return fmt.Errorf("provider: %w", err)
-	}
-	if err := scaffold.ValidateObjectName(e.Provider.SecretRef.Name); err != nil {
-		return fmt.Errorf("provider.secretRef.name: %w", err)
-	}
-	// An omitted key is the renderer's default; a stated one must be usable.
-	if e.Provider.SecretRef.Key != "" {
-		if err := scaffold.ValidateOrkaSecretKey(e.Provider.SecretRef.Key); err != nil {
-			return fmt.Errorf("provider.secretRef.key: %w", err)
-		}
 	}
 	if err := e.Provider.RateLimit.validate(); err != nil {
 		return fmt.Errorf("provider.rateLimit.%w", err)
@@ -396,14 +364,7 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 		{"spec.model.name", p.Spec.Model.Name},
 	}
 	if orka := p.Extensions.Orka; orka != nil {
-		fields = append(fields,
-			struct{ path, value string }{"extensions.orka.apiVersion", orka.APIVersion},
-			struct{ path, value string }{"extensions.orka.namespace", orka.Namespace},
-			struct{ path, value string }{"extensions.orka.provider.type", orka.Provider.Type},
-			struct{ path, value string }{"extensions.orka.provider.baseURL", orka.Provider.BaseURL},
-			struct{ path, value string }{"extensions.orka.provider.secretRef.name", orka.Provider.SecretRef.Name},
-			struct{ path, value string }{"extensions.orka.provider.secretRef.key", orka.Provider.SecretRef.Key},
-		)
+		fields = append(fields, struct{ path, value string }{"extensions.orka.apiVersion", orka.APIVersion})
 		if orka.Agent != nil {
 			for i, ref := range orka.Agent.Tools {
 				fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.orka.agent.tools[%d].name", i), ref.Name})
@@ -430,8 +391,7 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 func refusePortableSecretShapes(p *PortableAgent) error {
 	values := []string{p.APIVersion, p.Kind, p.Metadata.Name, p.Spec.Instructions, p.Spec.Description, p.Spec.Model.Name}
 	if orka := p.Extensions.Orka; orka != nil {
-		values = append(values, orka.APIVersion, orka.Namespace, orka.Provider.Type,
-			orka.Provider.BaseURL, orka.Provider.SecretRef.Name, orka.Provider.SecretRef.Key)
+		values = append(values, orka.APIVersion)
 		if orka.Agent != nil {
 			for _, ref := range append(append([]OrkaNamedRef(nil), orka.Agent.Tools...), orka.Agent.Skills...) {
 				values = append(values, ref.Name)
@@ -491,10 +451,10 @@ func refusePortableSecretShape(value string) error {
 	return nil
 }
 
-// OrkaShorthand is the flag-shaped input to EncodeOrkaShorthand: the same
-// choices scaffold.OrkaSpec takes, narrowed to what a portable document can
-// state. It is a distinct type so that a field added to OrkaSpec cannot be
-// silently dropped from an encoded document.
+// OrkaShorthand is the flag-shaped creation input to EncodeOrkaShorthand.
+// Target references are checked here but omitted from the portable source.
+// It is distinct from scaffold.OrkaSpec so adding scaffold fields cannot
+// silently change the document's shape.
 type OrkaShorthand struct {
 	Name, Namespace, Instructions, Description          string
 	ProviderType, Model, BaseURL, SecretName, SecretKey string
@@ -528,8 +488,8 @@ func cloneOrkaRateLimit(limit *OrkaRateLimit) *OrkaRateLimit {
 // encodes to the same bytes and therefore to the same portable identity —
 // an encoded document without source bytes would have no identity at all.
 //
-// The document is validated by exactly the rules an authored one faces,
-// credential scan included and first, so shorthand is not a weaker way in.
+// The revision is validated by the authored-document rules; target fields
+// are validated separately before either can be quoted in an error.
 func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	agent := &PortableAgent{
 		APIVersion: PortableAPIVersion,
@@ -543,13 +503,7 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 		Extensions: PortableExtensions{
 			Orka: &OrkaExtension{
 				APIVersion: orkaExtensionAPIVersion,
-				Namespace:  s.Namespace,
-				Provider: OrkaProviderExtension{
-					Type:      s.ProviderType,
-					BaseURL:   s.BaseURL,
-					SecretRef: OrkaSecretRefExtension{Name: s.SecretName, Key: s.SecretKey},
-					RateLimit: cloneOrkaRateLimit(s.ProviderRateLimit),
-				},
+				Provider:   OrkaProviderExtension{RateLimit: cloneOrkaRateLimit(s.ProviderRateLimit)},
 			},
 		},
 	}
@@ -564,6 +518,14 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 			block.Skills = append(block.Skills, OrkaNamedRef{Name: name})
 		}
 		agent.Extensions.Orka.Agent = block
+	}
+	// Flag-shaped target fields are validated separately, never encoded
+	// into agent.yaml or its exact-source digest.
+	if err := (OrkaBindings{Namespace: s.Namespace, Provider: OrkaProviderBindings{
+		Type: s.ProviderType, BaseURL: s.BaseURL,
+		SecretRef: OrkaSecretRefBindings{Name: s.SecretName, Key: s.SecretKey},
+	}}).validate(); err != nil {
+		return nil, fmt.Errorf("Orka creation bindings: %w", err)
 	}
 	if err := agent.validate(); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)

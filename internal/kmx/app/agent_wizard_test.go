@@ -53,7 +53,7 @@ func TestCreateNoApplyDoesNotSuggestBulkApply(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent's $(false).yaml")
 	var out, errOut bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-team's test"}, Out: &out, Err: &errOut}
-	if err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Out: path, NoApply: true}); err != nil {
+	if err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Out: path, BundlePath: filepath.Join(filepath.Dir(path), "agents", "demo"), NoApply: true}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errOut.String(), " apply -f ") || !strings.Contains(errOut.String(), "Create Provider only") {
@@ -452,7 +452,7 @@ func TestCreateNoApplyGroupsArtifactCapabilitiesAndNextStep(t *testing.T) {
 		Cfg: &config.Config{KubeContext: "kind-test"},
 		Run: &run.Runner{Stdout: &out, Stderr: &errOut}, Out: &out, Err: &errOut,
 	}
-	err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Description: "Demo agent", Out: path, NoApply: true})
+	err := a.CreateAgent(CreateOptions{Name: "demo", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "key", Description: "Demo agent", Out: path, BundlePath: filepath.Join(dir, "agents", "demo"), NoApply: true})
 	if err != nil {
 		t.Fatal(err)
 	}

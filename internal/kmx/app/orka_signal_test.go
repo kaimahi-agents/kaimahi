@@ -24,7 +24,7 @@ func TestOrkaSignalHelper(t *testing.T) {
 		return
 	}
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: io.Discard}
-	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml"), Task: "Say hello", ResultServiceAccount: "reader", ResultPort: os.Getenv("KMX_ORKA_SIGNAL_PORT")}
+	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml"), BundlePath: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "agents", "sample"), Task: "Say hello", ResultServiceAccount: "reader", ResultPort: os.Getenv("KMX_ORKA_SIGNAL_PORT")}
 	if err := a.CreateAgent(opt); err == nil {
 		os.Exit(3)
 	}

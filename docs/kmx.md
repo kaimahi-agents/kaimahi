@@ -226,9 +226,25 @@ not credential values. `--instructions` reads a system-prompt file; `--tools` an
 `--skills` name Orka references, not legacy `server:tool` selections or translated
 MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
-- `--out -` prints YAML only and implies offline; `--no-apply` writes an exclusive
-  local artifact only. Default file: `agents/<name>.yaml`. Existing files are
-  never overwritten; input and final YAML reject known credential shapes.
+- `--out -` prints rendered YAML only and implies offline; it writes no files
+  unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
+  writes an exclusive local rendered artifact. Default artifact file:
+  `agents/<name>.yaml`. An existing rendered artifact is never overwritten;
+  input and final YAML reject known credential shapes.
+- When the rendered artifact is written to a file (online creation, offline
+  `--no-apply`, or online `--dry-run`), kmx also writes a Git-friendly agent
+  bundle at `agents/<name>/` by default, or at `--bundle-path <directory>`.
+  `agent.yaml` contains the portable behavior revision (name, description,
+  instructions, model, Orka tools, skills and rate limits); `bindings.yaml`
+  records **only the creation target** (namespace, Provider type and endpoint,
+  Secret name/key reference, never a value). To lift to another target, bindings
+  come from lift's flags and kmx's local state, not additional bundle files.
+  The portable digest covers the **exact bytes** of `agent.yaml`: even changing
+  a comment or whitespace creates a new revision by design. Target bindings
+  do not change it; rendered YAML and its digest do reflect them. A rerun can
+  reuse an existing byte-identical bundle; if either file differs, creation
+  refuses and names the differing file. A failed deploy leaves the bundle for
+  retry, but create does not adopt existing cluster resources.
 - Offline `--schema-target v0.1.3|main` selects [pinned CRD fixtures](../internal/kmx/orkaschema/README.md),
   not a network fetch. Unknown fields refuse; the pinned main snapshot lacks
   Agent/Provider rate limits and refuses those flags rather than dropping fields.

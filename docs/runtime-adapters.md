@@ -93,6 +93,26 @@ unsupported results. They must preserve platform-specific fields they do not
 understand. Git and the selected runtime are the initial state stores; this
 contract does not require a KMX server or controller.
 
+### Portable revision and target bindings
+
+A newly authored Orka agent has a Git-friendly bundle directory at
+`agents/<name>/` by default. `agent.yaml` is the closed, versioned portable
+revision: name, description, instructions, model name, Orka tools and skills,
+and Provider and Agent rate limits are behavior-defining inputs. Its **exact
+bytes**, including comments and whitespace, are hashed for the portable digest;
+even a formatting-only edit creates a new revision. The Orka extension remains
+closed and versioned: unknown fields are errors, not ignored settings.
+
+`bindings.yaml` records **only the creation target**: namespace, Provider type
+and endpoint, and the name and key of a separately provisioned Secret. It holds
+references, never credential values. Neither these bindings nor a target chosen
+later changes the portable digest. Rendering combines the portable revision
+with explicit bindings for a target; the resulting resources and their rendered
+digest do reflect those bindings. For another target, lift will obtain bindings
+from its flags and kmx's local state, not add another file to this directory.
+The bundle is not a Kubernetes manifest: the rendered artifact contains a
+review-only Secret skeleton and must not be bulk-applied.
+
 ## Enforcement contract
 
 KMX is not a generic enforcement plane. It names mutation targets, obtains

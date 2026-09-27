@@ -50,8 +50,9 @@ func (a *App) openRuntimeChat(opt ChatOptions, name, namespace string) error {
 // chat registration leaves it nil, and Capabilities declines Render and
 // Deploy for an instance that has none.
 type orkaRuntimeAdapter struct {
-	app    *App
-	create *CreateOptions
+	app      *App
+	create   *CreateOptions
+	bindings *agentruntime.OrkaBindings
 }
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }

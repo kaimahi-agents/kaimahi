@@ -2,8 +2,9 @@
 // without changing a byte of what this repository renders or the order in
 // which it deploys.
 //
-//   - Render parses the exact portable source it is handed, maps it onto the
-//     existing scaffold spec, generates the bundle once, and returns those
+//   - Render parses the exact portable source it is handed, combines it with
+//     explicit target bindings in the existing scaffold spec, generates the
+//     bundle once, and returns those
 //     documents inside an immutable RenderedBundle. The optional Task's
 //     random identity is minted there, exactly once.
 //   - Deploy consumes only that bundle. It decodes those exact rendered
@@ -30,6 +31,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
@@ -100,7 +103,15 @@ func (a orkaRuntimeAdapter) renderOrka(source []byte) (agentruntime.RenderedBund
 	if err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
-	spec, err := orkaSpecFromPortable(portable, *a.create)
+	bindings := a.bindings
+	if bindings == nil {
+		fromFlags := orkaBindingsFromCreate(*a.create)
+		bindings = &fromFlags
+	}
+	if err := agentruntime.ValidateOrkaBindings(*bindings); err != nil {
+		return agentruntime.RenderedBundle{}, "", fmt.Errorf("Orka bindings: %w", err)
+	}
+	spec, err := orkaSpecFromPortable(portable, *bindings, *a.create)
 	if err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
@@ -296,20 +307,20 @@ func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, age
 // one statement of which model to use: the Orka extension does not restate
 // it, so a document cannot say two different things about the same model and
 // this mapping never has to choose between them.
-func orkaSpecFromPortable(portable *agentruntime.PortableAgent, opt CreateOptions) (scaffold.OrkaSpec, error) {
+func orkaSpecFromPortable(portable *agentruntime.PortableAgent, bindings agentruntime.OrkaBindings, opt CreateOptions) (scaffold.OrkaSpec, error) {
 	extension := portable.Extensions.Orka
 	if extension == nil {
-		return scaffold.OrkaSpec{}, fmt.Errorf("portable agent %q has no extensions.orka block; Orka creation cannot invent a provider, Secret reference or namespace", portable.Metadata.Name)
+		return scaffold.OrkaSpec{}, fmt.Errorf("portable agent %q has no extensions.orka block", portable.Metadata.Name)
 	}
 	spec := scaffold.OrkaSpec{
 		Name:              portable.Metadata.Name,
-		Namespace:         extension.Namespace,
+		Namespace:         bindings.Namespace,
 		Description:       portable.Spec.Description,
-		ProviderType:      extension.Provider.Type,
+		ProviderType:      bindings.Provider.Type,
 		Model:             portable.Spec.Model.Name,
-		BaseURL:           extension.Provider.BaseURL,
-		SecretName:        extension.Provider.SecretRef.Name,
-		SecretKey:         extension.Provider.SecretRef.Key,
+		BaseURL:           bindings.Provider.BaseURL,
+		SecretName:        bindings.Provider.SecretRef.Name,
+		SecretKey:         bindings.Provider.SecretRef.Key,
 		Instructions:      portable.Spec.Instructions,
 		TaskPrompt:        opt.Task,
 		ProviderRateLimit: orkaRateLimitFromExtension(extension.Provider.RateLimit),
@@ -453,16 +464,38 @@ func orkaObjectNamespace(doc map[string]any) string {
 	return namespace
 }
 
-// portableOrkaSource encodes this create's flags into the closed portable
-// document Render parses. The encoding is deterministic, so two creates that
-// state the same thing carry one portable identity rather than one per
-// spelling.
-//
-// The closed schema requires instructions and models an omitted Secret key as
-// absent rather than as "whatever the renderer defaults to", so the two
-// defaults generation would otherwise apply silently are stated here instead.
-// Stating them once, in the document, is what keeps the document from
-// disagreeing with the bytes rendered from it.
+// RenderOrkaBundleFile renders agent.yaml against caller-supplied target
+// bindings using the pinned offline schema. It never reads a cluster or uses
+// the bundle's creation-target bindings.yaml, so lift can supply new bindings.
+func RenderOrkaBundleFile(path string, bindings agentruntime.OrkaBindings) (agentruntime.RenderedBundle, error) {
+	if err := scaffold.RefuseKeyShapes(path); err != nil {
+		return agentruntime.RenderedBundle{}, fmt.Errorf("refusing credential-shaped bundle path")
+	}
+	source, err := os.ReadFile(filepath.Join(path, "agent.yaml"))
+	if err != nil {
+		return agentruntime.RenderedBundle{}, fmt.Errorf("read portable agent: %w", err)
+	}
+	adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true}, bindings: &bindings}
+	rendered, _, err := adapter.renderOrka(source)
+	return rendered, err
+}
+
+// orkaBindingsFromCreate constructs target-only bindings from creation flags.
+func orkaBindingsFromCreate(opt CreateOptions) agentruntime.OrkaBindings {
+	secretKey := opt.SecretKey
+	if secretKey == "" {
+		secretKey = scaffold.DefaultOrkaSecretKey
+	}
+	return agentruntime.OrkaBindings{Namespace: opt.Namespace, Provider: agentruntime.OrkaProviderBindings{
+		Type: opt.ProviderType, BaseURL: opt.BaseURL,
+		SecretRef: agentruntime.OrkaSecretRefBindings{Name: opt.Secret, Key: secretKey},
+	}}
+}
+
+// portableOrkaSource encodes only this create's behavior flags into the
+// closed revision Render parses. Instructions receive their scaffold default
+// here; a missing Secret key is defaulted in orkaBindingsFromCreate instead.
+// Target flags are validated by the shorthand but cannot alter the bytes.
 func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 	agentLimits, err := parseOrkaLimits(opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, "agent")
 	if err != nil {
@@ -479,10 +512,6 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 	if strings.TrimSpace(instructions) == "" {
 		instructions = scaffold.DefaultOrkaInstructions(opt.Name)
 	}
-	secretKey := opt.SecretKey
-	if secretKey == "" {
-		secretKey = scaffold.DefaultOrkaSecretKey
-	}
 	portable, err := agentruntime.EncodeOrkaShorthand(agentruntime.OrkaShorthand{
 		Name:              opt.Name,
 		Namespace:         opt.Namespace,
@@ -492,7 +521,7 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 		Model:             opt.Model,
 		BaseURL:           opt.BaseURL,
 		SecretName:        opt.Secret,
-		SecretKey:         secretKey,
+		SecretKey:         opt.SecretKey,
 		Tools:             orkaNameList(opt.Tools),
 		Skills:            orkaNameList(opt.Skills),
 		AgentRateLimit:    orkaRateLimitExtension(agentLimits),

@@ -46,16 +46,54 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err != nil {
 		return err
 	}
+	bundlePath := bundlePathForCreate(opt)
+	var bindings []byte
+	if !a.liftReuse && bundlePath != "" {
+		bindings, err = encodeOrkaCreationBindings(opt)
+		if err != nil {
+			return err
+		}
+		if err := preflightOrkaBundle(bundlePath, source, bindings); err != nil {
+			return err
+		}
+	}
+	persist := func() error {
+		// Lift adopts existing resources and has no authored portable source.
+		if a.liftReuse || bundlePath == "" {
+			return nil
+		}
+		return writeOrkaBundle(bundlePath, source, bindings)
+	}
 	if !opt.NoApply {
+		if !a.liftReuse {
+			if err := preflightOrkaArtifact(opt); err != nil {
+				return err
+			}
+		}
 		if err := a.preflight(depKubectl); err != nil {
 			return err
+		}
+		if !opt.DryRun {
+			// Keep the revision even when deployment fails; identical reruns
+			// can retry without replacing an operator's edits.
+			if err := persist(); err != nil {
+				return err
+			}
 		}
 		ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{})
-		return err
+		if err != nil {
+			return err
+		}
+		// Dry-run emits its artifact inside Deploy; persist only after it
+		// succeeds, with no cluster resource created.
+		if opt.DryRun {
+			return persist()
+		}
+		return nil
 	}
 	// Offline: renderOrka already validated against the pinned snapshot and
 	// returned its provenance, so the artifact is assembled from the exact
@@ -67,6 +105,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err := a.emitOrka(opt, document); err != nil {
 		return err
 	}
+	if err := persist(); err != nil {
+		return err
+	}
 	a.notef("Orka bundle not applied. Schema: %s", provenance)
 	a.notef("Use the namespace the Orka controller watches. Provision the Secret key separately; never write the skeleton.\nCreate Provider only, wait for current-generation Ready; then Agent and wait; then optional Task.\nLocal schema validation does not test admission, result access or execution.")
 	return nil
@@ -74,7 +115,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 
 func validateOrkaResultOptions(opt *CreateOptions) error {
 	// Scan before validation so error paths never echo credential-shaped flags.
-	for _, value := range []string{opt.Out, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute} {
+	for _, value := range []string{opt.Out, opt.BundlePath, opt.Instructions, opt.SchemaTarget, opt.ResultServiceAccount, opt.OrkaAPIService, opt.ResultPort, opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute} {
 		if err := scaffold.RefuseKeyShapes(value); err != nil {
 			return fmt.Errorf("refusing credential-shaped create input; supply references, never credentials")
 		}
@@ -211,21 +252,44 @@ func validateOrkaBundle(bundle *scaffold.OrkaBundle, validator *orkaschema.Valid
 	return nil
 }
 
+func orkaArtifactPath(opt CreateOptions) string {
+	if opt.Out != "" {
+		return opt.Out
+	}
+	return filepath.Join("agents", opt.Name+".yaml")
+}
+
+func orkaArtifactExistsError(path string) error {
+	return fmt.Errorf("%s already exists — refusing to overwrite it.\n"+
+		"  Keep the existing artifact or choose another --out <path>.\n"+
+		"  Do not bulk-apply an Orka bundle or write its Secret skeleton.\n"+
+		"  Create Provider only and wait for current-generation Ready; then Agent and wait; then optional Task.", path)
+}
+
+func preflightOrkaArtifact(opt CreateOptions) error {
+	if opt.Out == "-" {
+		return nil
+	}
+	path := orkaArtifactPath(opt)
+	_, err := os.Lstat(path)
+	if err == nil {
+		return orkaArtifactExistsError(path)
+	}
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 func (a *App) emitOrka(opt CreateOptions, document string) error {
 	if opt.Out == "-" {
 		_, err := fmt.Fprint(a.Out, document)
 		return err
 	}
-	path := opt.Out
-	if path == "" {
-		path = filepath.Join("agents", opt.Name+".yaml")
-	}
+	path := orkaArtifactPath(opt)
 	if err := scaffold.WriteNew(path, document); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s already exists — refusing to overwrite it.\n"+
-				"  Keep the existing artifact or choose another --out <path>.\n"+
-				"  Do not bulk-apply an Orka bundle or write its Secret skeleton.\n"+
-				"  Create Provider only and wait for current-generation Ready; then Agent and wait; then optional Task.", path)
+			return orkaArtifactExistsError(path)
 		}
 		return err
 	}

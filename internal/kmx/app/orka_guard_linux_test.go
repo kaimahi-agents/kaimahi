@@ -25,7 +25,7 @@ func TestOrkaGuardPromptHelper(t *testing.T) {
 		return
 	}
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: os.Stdout, Stdin: os.Stdin}
-	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml")}
+	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "bundle.yaml"), BundlePath: filepath.Join(os.Getenv("KMX_ORKA_TEST_DIR"), "agents", "sample")}
 	// Observe the actual blocked read, not just a printed prompt followed by
 	// cancellation before the reader starts. The observer exits before return.
 	reading := make(chan struct{})

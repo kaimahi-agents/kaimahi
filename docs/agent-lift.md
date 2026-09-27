@@ -35,9 +35,10 @@ This is the central decision.
 
 [#194](https://github.com/kaimahi-agents/kaimahi/issues/194) decision 1 makes a
 bundle in git the definition of an agent, identified by a digest of the inputs
-that define behaviour. Draft PR #202 implements that as `PortableAgent`
-(`internal/kmx/runtime/portable.go`) with `PortableBundleDigest` and
-`RenderedBundleDigest` as separate identities.
+that define behaviour. The closed `PortableAgent` document
+(`internal/kmx/runtime/portable.go`) is distinct from target bindings:
+`PortableBundleDigest` identifies the exact bytes of `agent.yaml`, while
+`RenderedBundleDigest` identifies the output for a particular target.
 
 Lifting a bundle rather than a cluster read buys four things:
 
@@ -60,15 +61,22 @@ worth paying for the four properties above.
 
 ## Capture
 
-Nothing today produces a bundle from a running agent. `portable.go` parses one
-(`ParsePortableAgent`); there is no cluster-to-portable direction. So an agent
-that has no bundle yet needs one made first, and that is the new work here.
+Newly created agents have a bundle on disk. Nothing produces a bundle from an
+*already running* agent that was created without one: there is no
+cluster-to-portable direction. Such an agent needs a separate, reviewed capture
+before lift can use it.
 
-Capture reads a running Agent and its Provider and writes a portable bundle: a
-file the operator reviews and commits, since #194 decision 4 puts revisions in
-git. It is a translation, not an export — the portable document's spec is
-instructions and a model name, and everything platform-specific belongs in an
-extension block.
+Capture would read a running Agent and its Provider and write a portable
+bundle the operator reviews and commits, since #194 decision 4 puts revisions
+in git. It is a translation, not an export. The portable revision includes the
+name, description, instructions, model name, tools, skills and rate limits; the
+closed Orka extension holds runtime-specific behavior. Namespace, Provider
+type and endpoint, and Secret name/key are **target bindings**, separate from
+the revision. A bundle's `bindings.yaml` describes its creation target only;
+lift would resolve other targets through flags and kmx's local state, not by
+adding target-specific files to the bundle. The exact bytes of `agent.yaml`
+are the portable digest: editing a comment or whitespace creates a new
+revision by design.
 
 Two rules follow from that:
 
@@ -77,9 +85,9 @@ format has no block for. #202's `Loss` type already states the rule: *"Losses
 are normally empty because lossy mappings fail."* A bundle missing a field
 silently is not the agent.
 
-**It carries no secret values.** A captured bundle names a `secretRef`;
-`refusePortableSecretShapes` already refuses credential-shaped input, and the
-destination must hold the Secret itself.
+**It carries no secret values.** A captured bundle would name a Secret
+reference in its creation-target bindings; credential-shaped input is refused,
+and the destination must hold the Secret itself.
 
 Whether capture is a flag on lift, a separate `kmx agent capture`, or both, is
 [open](#open-questions). It is useful on its own: it is the on-ramp for every
@@ -217,8 +225,8 @@ banner, anything else requires typed confirmation naming it or
 
 | Piece | Location | State |
 |---|---|---|
-| Portable bundle, digests | `internal/kmx/runtime/portable.go`, `digest.go` | **Draft PR #202** |
-| Render / Deploy per target | `internal/kmx/runtime/lifecycle.go` | **Draft PR #202** |
+| Portable revision, bindings and digests | `internal/kmx/runtime/portable.go`, `digest.go` | Built in #208; on-disk bundle and binding split added by W102 |
+| Render / Deploy per target | `internal/kmx/runtime/lifecycle.go` | Built in #209; target bindings supplied at render by W102 |
 | Deploy core | `orka_create_online.go:90-267` | Headless. Only seam is `App.operationProgress` (`app.go:42-43`), which may be nil |
 | Reuse compare | `lift_reconcile.go:12-54` | Headless, gated by `App.liftReuse` |
 | Orka CRD check | `chat_lift_prerequisites.go:33-46` | Already an `*App` method, no TUI |
@@ -291,19 +299,19 @@ is phase 1 below and is independent of everything else in this document.
 ## Implementation plan
 
 **1 — Route `az` through `App.Run`.** Independent of the definition question
-and of #202. AKS target resolution needs `az`, and the seam above is the
-prerequisite for testing any of it.
+and of the portable document. AKS target resolution needs `az`, and the seam
+above is the prerequisite for testing any of it.
 
 **2 — Capture: a running agent to a portable bundle.** Optional on-ramp for
 agents without a bundle, not a prerequisite when a bundle is supplied. Refuses
 rather than warns on anything the portable format cannot carry, names a
-`secretRef` rather than a value, and writes a bundle the operator reviews and
-commits. Depends on #202 for `PortableAgent`.
+Secret reference rather than a value in creation-target bindings, and writes
+a bundle the operator reviews and commits. Depends on the portable revision.
 
 **3 — `kmx agent lift`.** Resolve a supplied bundle → target → prerequisites →
 render → deploy, with the guard, `--plan` and outcome reporting. Depends on
-#202's `Render`/`Deploy`, not on capture; a bundle that already exists deploys
-without it.
+the lifecycle `Render`/`Deploy`, not on capture; a bundle that already exists
+deploys without it.
 
 **4 — Point `/lift` at the same path.** Not proposed here, and David's call:
 the TUI would supply the same resolved options from its pickers, removing the

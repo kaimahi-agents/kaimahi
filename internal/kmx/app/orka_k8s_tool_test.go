@@ -2,9 +2,27 @@ package app
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestQuickstartExistingAgentToolAttachmentDoesNotCreateBundle(t *testing.T) {
+	a, _, _, _, dir := orkaCreateFixture(t, "")
+	root := t.TempDir()
+	t.Chdir(root)
+	body := []byte(`{"kind":"Agent","metadata":{"name":"sample","namespace":"orka-system","resourceVersion":"1"},"spec":{"tools":[{"name":"k8s-get-resources"}]}}`)
+	if err := os.WriteFile(filepath.Join(dir, "sample-agents.core.orka.ai.json"), body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.attachQuickstartK8sTool("sample", "orka-system"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join("agents", "sample")); !os.IsNotExist(err) {
+		t.Fatalf("existing-agent attachment wrote an agent bundle: %v", err)
+	}
+}
 
 func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
 	raw := []byte(`{"metadata":{"resourceVersion":"123"},"spec":{"tools":[{"name":"web_fetch","enabled":false}],"systemPrompt":{"inline":"custom"}}}`)
