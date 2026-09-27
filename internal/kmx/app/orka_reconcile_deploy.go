@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
@@ -36,7 +36,7 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 		return agentruntime.DeployResult{}, fmt.Errorf("Orka reconcile requires an online deployment, not create --dry-run")
 	}
 	app := a.app
-	if err := app.guardOrkaCreate(ctx, opt); err != nil {
+	if err := app.guardOrkaMutation(ctx, opt, "create or update owned Orka Provider and Agent in "+opt.Namespace); err != nil {
 		return agentruntime.DeployResult{}, err
 	}
 	crds := map[string][]byte{}
@@ -96,12 +96,33 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 		if err := app.waitOrkaReady(ctx, opt.Namespace, id); err != nil {
 			return agentruntime.DeployResult{}, err
 		}
+		if err := app.verifyOrkaReconcile(ctx, opt.Namespace, doc, rendered, id); err != nil {
+			return agentruntime.DeployResult{}, err
+		}
 		result.Receipt.Resources = append(result.Receipt.Resources, agentruntime.ResourceResult{Kind: id.Kind, Name: id.Name, Namespace: opt.Namespace, UID: id.UID, Generation: id.Generation, Outcome: check.outcome})
 		if id.Kind == "Agent" {
 			result.Ref = agentruntime.AgentRef{Runtime: a.ID(), Context: target.Context, Namespace: opt.Namespace, Kind: orkaPlural("Agent"), Name: id.Name, UID: id.UID}
 		}
 	}
+	// An earlier resource can change while a later resource becomes Ready.
+	for i, doc := range docs {
+		id := result.Receipt.Resources[i]
+		if err := app.verifyOrkaReconcile(ctx, opt.Namespace, doc, rendered, orkaIdentity{Kind: id.Kind, Name: id.Name, UID: id.UID, Generation: id.Generation}); err != nil {
+			return agentruntime.DeployResult{}, err
+		}
+	}
 	return result, nil
+}
+
+func (a *App) verifyOrkaReconcile(ctx context.Context, namespace string, desired map[string]any, rendered agentruntime.RenderedBundle, id orkaIdentity) error {
+	check, err := a.inspectOrkaReconcile(ctx, namespace, desired, rendered)
+	if err != nil {
+		return err
+	}
+	if check.outcome != agentruntime.ResourceReused || check.id != id {
+		return fmt.Errorf("%s/%s changed while waiting for Ready; refusing deployment receipt", id.Kind, id.Name)
+	}
+	return nil
 }
 
 func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desired map[string]any, rendered agentruntime.RenderedBundle) (orkaReconcileCheck, error) {
@@ -114,9 +135,15 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	marker := map[string]any{orkaBundleMarker: orkaObjectName(desired), orkaPortableMarker: rendered.PortableDigest(), orkaRenderedMarker: rendered.RenderedDigest()}
 	if len(raw) == 0 {
 		check.outcome = agentruntime.ResourceCreated
-		doc := cloneOrkaDoc(desired)
+		doc, err := cloneOrkaDoc(desired)
+		if err != nil {
+			return check, fmt.Errorf("prepare %s/%s create: %w", kind, name, err)
+		}
 		addOrkaMarker(doc, marker)
-		body, _ := json.Marshal(doc)
+		body, err := json.Marshal(doc)
+		if err != nil {
+			return check, fmt.Errorf("encode %s/%s create: %w", kind, name, err)
+		}
 		if _, err := a.orkaCapture(ctx, body, "-n", namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json"); err != nil {
 			return check, fmt.Errorf("%s/%s strict server create preflight failed: %w", kind, name, err)
 		}
@@ -145,7 +172,10 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 		return check, fmt.Errorf("%s/%s has incomplete ownership marker; refusing reconciliation", kind, name)
 	}
 	candidate := map[string]any{"apiVersion": desired["apiVersion"], "kind": kind, "metadata": meta, "spec": desired["spec"]}
-	body, _ := json.Marshal(candidate)
+	body, err := json.Marshal(candidate)
+	if err != nil {
+		return check, fmt.Errorf("encode %s/%s server dry-run: %w", kind, name, err)
+	}
 	admittedRaw, err := a.orkaCapture(ctx, body, "-n", namespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
 	if err != nil {
 		return check, fmt.Errorf("cannot normalize %s/%s on server: %w", kind, name, err)
@@ -154,11 +184,18 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	if json.Unmarshal(admittedRaw, &admitted) != nil {
 		return check, fmt.Errorf("invalid server dry-run response for %s/%s", kind, name)
 	}
+	admittedMeta, _ := admitted["metadata"].(map[string]any)
+	if admitted["kind"] != kind || admittedMeta["name"] != name || admittedMeta["namespace"] != namespace || admittedMeta["uid"] != uid || admittedMeta["resourceVersion"] != version || admitted["spec"] == nil {
+		return check, fmt.Errorf("server dry-run returned a different or invalid %s/%s; refusing reconciliation", kind, name)
+	}
 	same := reflect.DeepEqual(live["spec"], admitted["spec"]) && orkaRenderedMetadataEqual(meta, desired["metadata"].(map[string]any))
 	if annotations[orkaBundleMarker] == nil && !same {
 		return check, fmt.Errorf("%s/%s has no bundle marker and differs from rendered fields; refusing reconciliation", kind, name)
 	}
 	if same && annotations[orkaBundleMarker] != nil {
+		// Different digests can render identical fields (for example, a
+		// portable comment edit). Reuse makes no write; the receipt records
+		// this attempt while the marker retains the last written revision.
 		check.outcome = agentruntime.ResourceReused
 		return check, nil
 	}
@@ -167,10 +204,12 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	} else {
 		check.outcome = agentruntime.ResourceUpdated
 	}
-	// Preserve every other metadata field (including the resourceVersion) and
-	// replace only rendered annotations and spec. No update can lose a concurrent
-	// change: the API server rejects stale resourceVersion on replace.
-	replacement := cloneOrkaDoc(candidate)
+	// Preserve other metadata (including resourceVersion), overlay rendered
+	// fields and ownership, and let the API server reject stale replacements.
+	replacement, err := cloneOrkaDoc(candidate)
+	if err != nil {
+		return check, fmt.Errorf("prepare %s/%s replace: %w", kind, name, err)
+	}
 	replacement["spec"] = admitted["spec"]
 	replacementMeta := replacement["metadata"].(map[string]any)
 	currentAnnotations, _ := replacementMeta["annotations"].(map[string]any)
@@ -181,7 +220,21 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	for k, v := range wantedAnnotations {
 		currentAnnotations[k] = v
 	}
+	if _, rendered := wantedAnnotations["kaimahi.dev/description"]; !rendered {
+		delete(currentAnnotations, "kaimahi.dev/description")
+	}
 	replacementMeta["annotations"] = currentAnnotations
+	wantedLabels, _ := desired["metadata"].(map[string]any)["labels"].(map[string]any)
+	if len(wantedLabels) > 0 {
+		currentLabels, _ := replacementMeta["labels"].(map[string]any)
+		if currentLabels == nil {
+			currentLabels = map[string]any{}
+		}
+		for k, v := range wantedLabels {
+			currentLabels[k] = v
+		}
+		replacementMeta["labels"] = currentLabels
+	}
 	addOrkaMarker(replacement, marker)
 	check.existing = live
 	check.candidate = replacement
@@ -200,14 +253,24 @@ func orkaRenderedMetadataEqual(existing, desired map[string]any) bool {
 			}
 		}
 	}
+	wantedAnnotations, _ := desired["annotations"].(map[string]any)
+	actualAnnotations, _ := existing["annotations"].(map[string]any)
+	if _, wanted := wantedAnnotations["kaimahi.dev/description"]; !wanted && actualAnnotations["kaimahi.dev/description"] != nil {
+		return false
+	}
 	return true
 }
 
-func cloneOrkaDoc(doc map[string]any) map[string]any {
-	raw, _ := json.Marshal(doc)
-	var copy map[string]any
-	_ = json.Unmarshal(raw, &copy)
-	return copy
+func cloneOrkaDoc(doc map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	var copied map[string]any
+	if err := json.Unmarshal(raw, &copied); err != nil {
+		return nil, err
+	}
+	return copied, nil
 }
 func addOrkaMarker(doc, marker map[string]any) {
 	meta := doc["metadata"].(map[string]any)
@@ -260,8 +323,11 @@ func orkaChangedFields(live, candidate map[string]any) []string {
 				paths = append(paths, "metadata."+field+"."+k)
 			}
 		}
+		if field == "annotations" && oldFields["kaimahi.dev/description"] != nil && newFields["kaimahi.dev/description"] == nil {
+			paths = append(paths, "metadata.annotations.kaimahi.dev/description")
+		}
 	}
-	sort.Strings(paths)
+	slices.Sort(paths)
 	return paths
 }
 

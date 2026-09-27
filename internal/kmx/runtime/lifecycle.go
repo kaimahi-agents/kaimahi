@@ -21,7 +21,8 @@ type LifecycleAdapter interface {
 	// authoritative portable-identity input. An adapter may decode them to learn
 	// what to render, but must not render from a re-serialized copy.
 	Render(context.Context, []byte, RenderOptions) (RenderedBundle, error)
-	// Deploy applies exactly the bundle Render produced, never a re-render.
+	// Deploy uses Render's bundle without re-rendering; a reconciler may add
+	// ownership metadata to the write payload without changing the digest.
 	Deploy(context.Context, RenderedBundle, DeployOptions) (DeployResult, error)
 	Status(context.Context, AgentRef, StatusOptions) (Status, error)
 	Evaluate(context.Context, AgentRef, EvaluationRequest) (EvaluationReceipt, error)

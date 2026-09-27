@@ -58,6 +58,10 @@ func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 // pinned, cancellable adapter as this command's other reads. Namespace is the
 // user's explicit Orka selection, not the wider banner's fixed list.
 func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
+	return a.guardOrkaMutation(ctx, opt, "")
+}
+
+func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcileAction string) error {
 	if a.guarded {
 		return nil
 	}
@@ -79,6 +83,9 @@ func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 	}
 	if opt.DryRun {
 		action = "server dry-run Orka resources in " + opt.Namespace
+	}
+	if reconcileAction != "" {
+		action = reconcileAction
 	}
 	if err := guard.CheckContext(ctx, cfg, guard.Request{Action: action, Context: a.Cfg.KubeContext, Source: a.Cfg.ContextSource, Namespaces: opt.Namespace, Confirm: a.Cfg.Confirm, Command: command}, a.Err, a.Stdin); err != nil {
 		return err

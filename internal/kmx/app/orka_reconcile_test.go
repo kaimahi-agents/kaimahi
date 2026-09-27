@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 	_ = json.NewEncoder(log).Encode(call)
 	_ = log.Close()
 	if slices.Contains(args, "config") {
-		fmt.Print(`{"current-context":"kind-test","clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}]}`)
+		server := "https://127.0.0.1:6443"
+		if os.Getenv("KMX_RECONCILE_REMOTE") == "1" {
+			server = "https://managed.example.invalid"
+		}
+		fmt.Printf(`{"current-context":"kind-test","clusters":[{"name":"kind-test","cluster":{"server":%q}}],"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}]}`, server)
 		os.Exit(0)
 	}
 	if i := slices.Index(args, "get"); i >= 0 {
@@ -77,6 +82,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			os.Exit(0)
 		}
 		meta := obj["metadata"].(map[string]any)
+		if os.Getenv("KMX_RECONCILE_STEAL") == obj["kind"] && !slices.Contains(args, "--ignore-not-found=true") {
+			meta["annotations"].(map[string]any)["kaimahi.dev/bundle"] = "other-bundle"
+			changed, _ := json.Marshal(obj)
+			_ = os.WriteFile(filepath.Join(dir, kind+".json"), changed, 0600)
+		}
 		obj["status"] = map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": meta["generation"]}}}
 		_ = json.NewEncoder(os.Stdout).Encode(obj)
 		os.Exit(0)
@@ -220,6 +230,7 @@ func TestReconcileOutcomesAndReceipt(t *testing.T) {
 		{"absent", "", "", "", "created"},
 		{"owned identical", "Agent", "own", "", "reused"},
 		{"owned edited", "Agent", "own", "drift", "updated"},
+		{"owned description edited", "Agent", "own", "description", "updated"},
 		{"unmarked identical", "Agent", "", "", "adopted"},
 		{"unmarked different", "Agent", "", "drift", "refused"},
 		{"foreign marked", "Agent", "other", "", "refused"},
@@ -244,6 +255,9 @@ func TestReconcileOutcomesAndReceipt(t *testing.T) {
 				}
 				if tc.change == "drift" {
 					agent["spec"].(map[string]any)["systemPrompt"] = map[string]any{"inline": "edited live"}
+				}
+				if tc.change == "description" {
+					meta["annotations"].(map[string]any)["kaimahi.dev/description"] = "edited live"
 				}
 				if tc.change == "terminating" {
 					meta["deletionTimestamp"] = "2026-01-01T00:00:00Z"
@@ -273,6 +287,100 @@ func TestReconcileOutcomesAndReceipt(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReconcileRefusesOwnershipChangedWhileWaiting(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	provider := reconcileLive(t, dir, "Provider", bundle)
+	annotations, _ := provider["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if annotations == nil {
+		annotations = map[string]any{}
+	}
+	annotations["kaimahi.dev/bundle"] = "sample"
+	annotations["kaimahi.dev/portable-digest"] = bundle.PortableDigest()
+	annotations["kaimahi.dev/rendered-digest"] = bundle.RenderedDigest()
+	provider["metadata"].(map[string]any)["annotations"] = annotations
+	seedReconcile(t, dir, provider)
+	t.Setenv("KMX_RECONCILE_STEAL", "Provider")
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err == nil || !strings.Contains(err.Error(), "Provider/sample") || result.Receipt.Bundle != "" {
+		t.Fatalf("ownership changed during Ready: %+v %v", result, err)
+	}
+}
+
+func TestReconcileRemovesStaleRenderedDescription(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	seedReconcile(t, dir, reconcileLive(t, dir, "Provider", bundle))
+	agent := reconcileLive(t, dir, "Agent", bundle)
+	meta := agent["metadata"].(map[string]any)
+	annotations := meta["annotations"].(map[string]any)
+	annotations["kaimahi.dev/bundle"] = "sample"
+	annotations["kaimahi.dev/portable-digest"] = bundle.PortableDigest()
+	annotations["kaimahi.dev/rendered-digest"] = bundle.RenderedDigest()
+	annotations["kaimahi.dev/description"] = "stale description"
+	seedReconcile(t, dir, agent)
+	var wanted map[string]any
+	if err := yaml.Unmarshal(bundle.DeployDocuments()[1], &wanted); err != nil {
+		t.Fatal(err)
+	}
+	delete(wanted["metadata"].(map[string]any), "annotations")
+	withoutDescription, err := yaml.Marshal(wanted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documents := []agentruntime.Document{agentruntime.ReviewDocument(bundle.Documents()[0]), agentruntime.ApplyDocument(bundle.DeployDocuments()[0]), agentruntime.ApplyDocument(withoutDescription)}
+	changed, err := agentruntime.NewRenderedBundle(agentruntime.Orka, []byte("portable source without description"), documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.Deploy(context.Background(), changed, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.Resources[1].Outcome != "updated" {
+		t.Fatalf("stale description reused: %+v", result)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]any
+	if err = json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored["metadata"].(map[string]any)["annotations"].(map[string]any)["kaimahi.dev/description"]; got != nil {
+		t.Fatalf("stale description remained: %v", got)
+	}
+}
+
+func TestReconcileGuardNamesUpdatesToRemoteTarget(t *testing.T) {
+	adapter, bundle, _ := reconcileFixture(t)
+	t.Setenv("KMX_RECONCILE_REMOTE", "1")
+	adapter.app.Cfg.Confirm = "kind-test"
+	var diagnostics bytes.Buffer
+	adapter.app.Err = &diagnostics
+	if _, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diagnostics.String(), "create or update owned Orka Provider and Agent") {
+		t.Fatalf("guard omitted update action: %s", diagnostics.String())
+	}
+}
+
+func TestReconcileProviderConflictPreventsAgentWrite(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	provider := reconcileLive(t, dir, "Provider", bundle)
+	provider["spec"].(map[string]any)["defaultModel"] = "unrelated"
+	seedReconcile(t, dir, provider)
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err == nil || !strings.Contains(err.Error(), "Provider/sample") || result.Receipt.Bundle != "" {
+		t.Fatalf("unmarked Provider conflict: %+v %v", result, err)
+	}
+	for _, c := range orkaCalls(t, dir) {
+		if c.Document != nil && (slices.Contains(c.Args, "create") || slices.Contains(c.Args, "replace")) && !slices.Contains(c.Args, "--dry-run=server") {
+			t.Fatalf("wrote after conflict: %+v", c)
+		}
 	}
 }
 
@@ -307,6 +415,39 @@ func TestReconcileCreatedMarkersSupportNoWriteRerun(t *testing.T) {
 		if slices.Contains(c.Args, "replace") && !slices.Contains(c.Args, "--dry-run=server") {
 			t.Fatalf("rerun wrote existing object: %+v", c)
 		}
+	}
+}
+
+func TestReconcileSameFieldsNewPortableDigestDoesNotWrite(t *testing.T) {
+	adapter, bundle, dir := reconcileFixture(t)
+	if _, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true}); err != nil {
+		t.Fatal(err)
+	}
+	docs := []agentruntime.Document{agentruntime.ReviewDocument(bundle.Documents()[0])}
+	for _, doc := range bundle.DeployDocuments() {
+		docs = append(docs, agentruntime.ApplyDocument(doc))
+	}
+	revised, err := agentruntime.NewRenderedBundle(agentruntime.Orka, []byte("same authored spec with a comment"), docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.Deploy(context.Background(), revised, agentruntime.DeployOptions{Reconcile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Receipt.PortableDigest != revised.PortableDigest() || result.Receipt.Resources[0].Outcome != "reused" || result.Receipt.Resources[1].Outcome != "reused" {
+		t.Fatalf("same spec should reuse: %+v", result)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err = json.Unmarshal(raw, &obj); err != nil {
+		t.Fatal(err)
+	}
+	if obj["metadata"].(map[string]any)["annotations"].(map[string]any)["kaimahi.dev/portable-digest"] != bundle.PortableDigest() {
+		t.Fatal("no-op reuse rewrote marker")
 	}
 }
 
