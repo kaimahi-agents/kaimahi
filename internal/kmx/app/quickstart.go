@@ -166,7 +166,7 @@ func (a *App) quickstartSteps() []quickstartStep {
 		{"Prepare kind cluster", a.stepCluster},
 		{"Deploy Ollama", a.stepOllama},
 		{"Pull model " + a.Cfg.Model, a.stepModel},
-		{"Install Orka " + OrkaVersion, a.stepOrka},
+		{"Install Orka " + OrkaVersion, a.stepQuickstartOrka},
 		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartAgent},
 	}
 }
@@ -296,7 +296,7 @@ func (a *App) quickstartFollowups() []string {
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
 		a.operationCommand("plane"),
-		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", orkaDefaultProvider+"/"+a.Cfg.Model),
+		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", QuickstartAgent+"/"+a.Cfg.Model),
 	}
 }
 
