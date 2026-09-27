@@ -237,14 +237,17 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   `agent.yaml` contains the portable behavior revision (name, description,
   instructions, model, Orka tools, skills and rate limits); `bindings.yaml`
   records **only the creation target** (namespace, Provider type and endpoint,
-  Secret name/key reference, never a value). To lift to another target, bindings
-  come from lift's flags and kmx's local state, not additional bundle files.
+  Secret name/key reference, never a value). A future lift will obtain other
+  targets' bindings from its flags and kmx's local state, not additional bundle
+  files.
   The portable digest covers the **exact bytes** of `agent.yaml`: even changing
   a comment or whitespace creates a new revision by design. Target bindings
   do not change it; rendered YAML and its digest do reflect them. A rerun can
   reuse an existing byte-identical bundle; if either file differs, creation
   refuses and names the differing file. A failed deploy leaves the bundle for
-  retry, but create does not adopt existing cluster resources.
+  retry; if the rendered artifact was also written, choose a new `--out` path
+  for the retry because artifact files are exclusive. Create does not adopt
+  partially created cluster resources: resolve those separately before retrying.
 - Offline `--schema-target v0.1.3|main` selects [pinned CRD fixtures](../internal/kmx/orkaschema/README.md),
   not a network fetch. Unknown fields refuse; the pinned main snapshot lacks
   Agent/Provider rate limits and refuses those flags rather than dropping fields.

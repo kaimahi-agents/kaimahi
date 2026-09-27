@@ -47,6 +47,9 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		return err
 	}
 	bundlePath := bundlePathForCreate(opt)
+	if err := refuseOrkaBundleArtifactOverlap(opt, bundlePath); err != nil {
+		return err
+	}
 	var bindings []byte
 	if !a.liftReuse && bundlePath != "" {
 		bindings, err = encodeOrkaCreationBindings(opt)
@@ -64,36 +67,27 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		}
 		return writeOrkaBundle(bundlePath, source, bindings)
 	}
-	if !opt.NoApply {
-		if !a.liftReuse {
-			if err := preflightOrkaArtifact(opt); err != nil {
-				return err
-			}
+	if !a.liftReuse {
+		if err := preflightOrkaArtifact(opt); err != nil {
+			return err
 		}
+	}
+	if !opt.NoApply {
 		if err := a.preflight(depKubectl); err != nil {
 			return err
 		}
-		if !opt.DryRun {
-			// Keep the revision even when deployment fails; identical reruns
-			// can retry without replacing an operator's edits.
-			if err := persist(); err != nil {
-				return err
-			}
+		// Keep the revision even when deployment fails; identical reruns
+		// can retry without replacing an operator's edits. Dry-run emits its
+		// artifact during Deploy, so persist before entering that path too.
+		if err := persist(); err != nil {
+			return err
 		}
 		ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{})
-		if err != nil {
-			return err
-		}
-		// Dry-run emits its artifact inside Deploy; persist only after it
-		// succeeds, with no cluster resource created.
-		if opt.DryRun {
-			return persist()
-		}
-		return nil
+		return err
 	}
 	// Offline: renderOrka already validated against the pinned snapshot and
 	// returned its provenance, so the artifact is assembled from the exact
@@ -102,10 +96,10 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := a.emitOrka(opt, document); err != nil {
+	if err := persist(); err != nil {
 		return err
 	}
-	if err := persist(); err != nil {
+	if err := a.emitOrka(opt, document); err != nil {
 		return err
 	}
 	a.notef("Orka bundle not applied. Schema: %s", provenance)

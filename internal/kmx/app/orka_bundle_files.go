@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -22,6 +23,33 @@ func bundlePathForCreate(opt CreateOptions) string {
 		return ""
 	}
 	return filepath.Join("agents", opt.Name)
+}
+
+// refuseOrkaBundleArtifactOverlap keeps the rendered manifest out of the
+// two-file portable bundle; otherwise a later retry would refuse that extra
+// entry or mistake a manifest for the revision.
+func refuseOrkaBundleArtifactOverlap(opt CreateOptions, bundlePath string) error {
+	if bundlePath == "" || opt.Out == "-" {
+		return nil
+	}
+	bundle, err := filepath.Abs(bundlePath)
+	if err != nil {
+		return err
+	}
+	artifact, err := filepath.Abs(orkaArtifactPath(opt))
+	if err != nil {
+		return err
+	}
+	for _, pair := range [][2]string{{bundle, artifact}, {artifact, bundle}} {
+		rel, err := filepath.Rel(pair[0], pair[1])
+		if err != nil {
+			return err
+		}
+		if rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("rendered artifact cannot be inside the bundle or contain it")
+		}
+	}
+	return nil
 }
 
 // preflightOrkaBundle checks whether a directory can be reused without

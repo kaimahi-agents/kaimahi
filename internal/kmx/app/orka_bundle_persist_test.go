@@ -245,6 +245,38 @@ func TestOnlineFailureKeepsBundleForIdenticalRetry(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsArtifactInsideBundleBeforeWriting(t *testing.T) {
+	for _, offline := range []bool{true, false} {
+		t.Run(map[bool]string{true: "offline", false: "online"}[offline], func(t *testing.T) {
+			a, opt, _, _, dir := orkaCreateFixture(t, "")
+			opt.NoApply = offline
+			opt.BundlePath = filepath.Join(dir, "agent-bundle")
+			opt.Out = filepath.Join(opt.BundlePath, "rendered.yaml")
+			if err := a.CreateAgent(opt); err == nil || !strings.Contains(err.Error(), "inside the bundle") {
+				t.Fatalf("overlapping paths not refused: %v", err)
+			}
+			if _, err := os.Stat(opt.BundlePath); !os.IsNotExist(err) {
+				t.Fatalf("overlap created bundle or artifact: %v", err)
+			}
+		})
+	}
+}
+
+func TestOfflineArtifactCollisionDoesNotCreateBundle(t *testing.T) {
+	a, opt, _, _, dir := orkaCreateFixture(t, "")
+	opt.NoApply = true
+	opt.BundlePath = filepath.Join(dir, "agent-bundle")
+	if err := os.WriteFile(opt.Out, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateAgent(opt); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("existing artifact not refused: %v", err)
+	}
+	if _, err := os.Stat(opt.BundlePath); !os.IsNotExist(err) {
+		t.Fatalf("artifact collision created bundle: %v", err)
+	}
+}
+
 func TestDryRunPersistsBundleWhenArtifactWritten(t *testing.T) {
 	a, opt, _, _, _ := orkaCreateFixture(t, "")
 	opt.DryRun = true
