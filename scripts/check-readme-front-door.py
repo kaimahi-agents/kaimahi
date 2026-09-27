@@ -46,7 +46,7 @@ QUICKSTART_COMMANDS = [
     ("quickstart subshell closure", r"^\)$"),
 ]
 GO_INSTALL_COMMANDS = [
-    ("conditional Go quickstart", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.2\.0 && kmx quickstart$"),
+    ("conditional Go quickstart", r"^GOBIN=\"\$HOME/\.local/bin\" go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.2\.0 && \"\$HOME/\.local/bin/kmx\" quickstart$"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)

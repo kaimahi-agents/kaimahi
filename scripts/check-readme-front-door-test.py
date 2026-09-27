@@ -22,7 +22,7 @@ QUICKSTART = """(
   sh "$installer" --quickstart
 )
 """
-GO_INSTALL = """go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart
+GO_INSTALL = """GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && "$HOME/.local/bin/kmx" quickstart
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 # Kaimahi
@@ -85,7 +85,7 @@ for label, literal in [
     ("installer cleanup", "  trap 'rm -f \"$installer\"' EXIT\n"),
     ("release installer", "  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o \"$installer\" || exit\n"),
     ("installed kmx quickstart", "  sh \"$installer\" --quickstart\n"),
-    ("conditional Go quickstart", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart\n"),
+    ("conditional Go quickstart", "GOBIN=\"$HOME/.local/bin\" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && \"$HOME/.local/bin/kmx\" quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
@@ -117,6 +117,9 @@ CASES += [
      "pinned Go install is missing"),
     ("Go install failure can run a stale kmx", GOOD.replace(GO_INSTALL,
      "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0\nkmx quickstart\n"),
+     "conditional Go quickstart is missing"),
+    ("successful Go install can run an older kmx on PATH", GOOD.replace(GO_INSTALL,
+     "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart\n"),
      "conditional Go quickstart is missing"),
     ("empty document", "", "ketu icon is missing"),
     ("journey commands only in prose", GOOD.replace("```bash\n" + JOURNEY + "```", JOURNEY),
@@ -204,5 +207,11 @@ with tempfile.TemporaryDirectory() as tmp:
     print(("ok  " if ok else "FAIL") + f" [failed Go install cannot run stale kmx] -> exit {got.returncode}")
     failed += not ok
 
-print(f"check-readme-front-door self-test: {len(CASES) + 4} case(s), {failed} failure(s)")
+    go.write_text("#!/bin/sh\nmkdir -p \"$GOBIN\"\nprintf '#!/bin/sh\\nprintf fresh > \"$HOME/fresh-called\"\\n' > \"$GOBIN/kmx\"\nchmod +x \"$GOBIN/kmx\"\n")
+    got = subprocess.run(["sh", "-c", GO_INSTALL], env=env, capture_output=True, text=True)
+    ok = got.returncode == 0 and (root / "fresh-called").read_text() == "fresh" and not (root / "stale-called").exists()
+    print(("ok  " if ok else "FAIL") + f" [successful Go install runs its own binary, not PATH's stale kmx] -> exit {got.returncode}")
+    failed += not ok
+
+print(f"check-readme-front-door self-test: {len(CASES) + 5} case(s), {failed} failure(s)")
 sys.exit(1 if failed else 0)

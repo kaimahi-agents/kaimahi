@@ -55,10 +55,10 @@ script is removed after quickstart. On a Podman-only machine, replace the
 last `sh "$installer" --quickstart` with
 `CONTAINER_ENGINE=podman sh "$installer" --quickstart`.
 
-Or, with Go 1.26+ and its binary directory on `PATH`, build the same release:
+Or, with Go 1.26+, build the same release and run that exact binary:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart
+GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && "$HOME/.local/bin/kmx" quickstart
 ```
 
 `kmx quickstart` is a non-interactive Orka path through local kind, Ollama,

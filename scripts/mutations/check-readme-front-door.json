@@ -85,14 +85,14 @@
     {
       "name": "the pinned Go install check accepts any version",
       "breaks": "A secondary Go-install example can silently switch back to v0.1.0 or a moving branch.",
-      "find": "^go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && kmx quickstart$",
-      "replace": "^go install.*$"
+      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
+      "replace": "^GOBIN=.*go install.*$"
     },
     {
-      "name": "the Go install check allows an unconditional quickstart",
-      "breaks": "A failed Go build can run an older kmx on PATH.",
-      "find": "^go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && kmx quickstart$",
-      "replace": "^go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0.*$"
+      "name": "the Go install check accepts a stale kmx on PATH",
+      "breaks": "A failed Go build or earlier PATH entry can run an older kmx.",
+      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
+      "replace": "^.*go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0.*$"
     },
     {
       "name": "the journey command list is emptied",
