@@ -1419,7 +1419,13 @@ sections, not the intermediate instruction.
 
 ### Upgrading
 
-Install matching CLI and plane revisions, and back up the plane before rollout:
+Install matching CLI and plane revisions, and back up the plane before rollout.
+For installations with the old gateway/tool or inbound integrations, first
+follow the [gateway retirement review](docs/operations.md#upgrading-after-gateway-retirement):
+stop or replace owner-managed tool integrations and review their configuration,
+network access and Secrets. The retired tool listener has no supported
+reapplication command; `kmx migrate` handles model traffic only. Do not expect
+`kmx plane` to restore tool calls.
 
 ```sh
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
