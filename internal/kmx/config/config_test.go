@@ -11,7 +11,7 @@ import (
 func TestProductDefaultsAreUsable(t *testing.T) {
 	for name, value := range map[string]string{
 		"kind cluster": DefaultKindCluster,
-		"model":        DefaultModel, "agent": DefaultAgent, "task": DefaultTask,
+		"model":        DefaultModel, "task": DefaultTask,
 		"container engine": DefaultContainerEngine,
 	} {
 		if value == "" {

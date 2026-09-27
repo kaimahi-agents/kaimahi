@@ -27,10 +27,9 @@ const (
 	// DefaultOpsPort is the local side of the metrics forward. Keeping one
 	// default makes a stale forward fail closed at bind time.
 	DefaultOpsPort = "19092"
-	DefaultAgent   = "hello-world"
 	DefaultTask    = "Hello! Who are you and where are you running?"
-	// DefaultCredential is the Makefile's CRED: the credential the ledger is
-	// read for by default.
+	// DefaultCredential is the Makefile's CRED, used by bare budget commands.
+	// Ledger without a credential instead reads across all credentials.
 	DefaultCredential = "hello-world"
 	// GovernedSecret is the workload-side Secret an issued token is stored
 	// in by default.

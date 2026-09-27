@@ -159,13 +159,13 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 
 func newLedgerCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{Use: "ledger [credential]", Short: "Show spend ledger", Args: usageArgs(0, 1, "kmx ledger [<credential>]")}
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Ledger(parseOptionalCredential(cmd.Flags().Args(), a.Cfg.Credential)) })
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.Ledger(parseOptionalCredential(cmd.Flags().Args(), "")) })
 	return cmd
 }
 
 // newFlowCommand reads the model ledger chronologically.
 //
-// It defaults to ALL credentials, unlike the ledger: the
+// Like the ledger, it defaults to ALL credentials: the
 // question a flow answers is "what has been going on", and an operator who
 // does not yet know which credential misbehaved cannot be asked to name it
 // first. Every row is attributed, so a merged reading stays readable.

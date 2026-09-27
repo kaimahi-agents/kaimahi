@@ -3,6 +3,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -10,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
@@ -24,6 +31,60 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	}
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
 	return deps, &loads
+}
+
+func TestLedgerCommandUsesAllCredentialsUnlessNamed(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"ledger"}, want: ""},
+		{args: []string{"ledger", "named-cred"}, want: "named-cred"},
+	} {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/healthz":
+					w.WriteHeader(http.StatusOK)
+				case "/admin/version":
+					fmt.Fprintf(w, `{"version":"test","admin_contract":%d}`, admin.Speaks)
+				case "/admin/ledger":
+					if got := r.URL.Query().Get("credential"); got != tc.want {
+						t.Errorf("ledger credential filter = %q, want %q", got, tc.want)
+					}
+					_, _ = w.Write([]byte(`{"entries":[{"credential":"named-cred","created_at":"2026-09-03T01:37:36Z","upstream":"ollama","model":"model","status":200}]}`))
+				default:
+					t.Errorf("unexpected admin path %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			parsed, err := url.Parse(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := parsed.Port()
+			bin := t.TempDir()
+			// The stub returns a per-process, test-only bearer via stdout, never argv or logs.
+			stub := "#!/bin/sh\ncase \"$*\" in\n  *version*) ;;\n  *'--context kind-test'*) ;;\n  *) exit 2;;\nesac\ncase \"$*\" in\n  *port-forward*) printf 'Forwarding from 127.0.0.1:%s -> 9091\\n' '" + port + "'; exec sleep 60;;\n  *secret*) printf '%s' \"$$\" | base64;;\nesac\n"
+			if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(stub), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("KMX_TOOLCHAIN", "off")
+			var out, diagnostics bytes.Buffer
+			deps, _ := testDependencies(&out, &diagnostics)
+			deps.loadConfig = func(_, _ string) (*config.Config, error) {
+				return &config.Config{KubeContext: "kind-test", AdminPort: port, Credential: "default-cred"}, nil
+			}
+			if err := execute(tc.args, deps); err != nil {
+				t.Fatalf("ledger: %v", err)
+			}
+			if !strings.Contains(out.String(), "named-cred") {
+				t.Errorf("ledger did not print its row: %s", out.String())
+			}
+		})
+	}
 }
 
 func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {

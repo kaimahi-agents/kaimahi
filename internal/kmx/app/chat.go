@@ -1,10 +1,6 @@
 package app
 
-import (
-	"fmt"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-)
+import "fmt"
 
 // ChatOptions selects the Orka Agent a chat session is opened against.
 type ChatOptions struct {
@@ -38,9 +34,6 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
 	agent := opt.Agent
-	if agent == "" {
-		agent = config.DefaultAgent
-	}
 	// Orka chat is a session, not an invocation: a Task is created, polled
 	// for its own result over a single connection, and never resubmitted.
 	// There is no one-shot transport left to fall back to, so say which
