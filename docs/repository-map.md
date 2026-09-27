@@ -56,7 +56,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 78 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, interactive agent console, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 79 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/app/testdata` | 1 | Scaffolding | The committed golden bytes that pin the no-Task Orka artifact. |
 | `kmx/runtime` | 7 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable authoring document and target bindings. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
