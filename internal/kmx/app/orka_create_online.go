@@ -56,7 +56,7 @@ func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 
 // Reuse the existing mutation guard, but read its metadata through the same
 // pinned, cancellable adapter as this command's other reads. Namespace is the
-// user's explicit Orka selection, not the legacy kagent banner's fixed list.
+// user's explicit Orka selection, not the wider banner's fixed list.
 func (a *App) guardOrkaCreate(ctx context.Context, opt CreateOptions) error {
 	if a.guarded {
 		return nil
@@ -154,7 +154,7 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 	}
 	for _, doc := range bundle.Documents()[1:] {
 		if a.liftReuse {
-			id, err := a.matchingLiftResource(ctx, opt.Namespace, doc)
+			id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 			if err != nil {
 				return orkaIdentity{}, err
 			}
@@ -168,21 +168,8 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		}
 	}
 	key := bundle.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"].(string)
-	// The validated key is quoted for the Go template. Iterate key NAMES only;
-	// even an empty credential value counts as present, never as authenticated.
-	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
-	marker, err := a.orkaCapture(ctx, nil, "-n", opt.Namespace, "get", "secret", opt.Secret, "--ignore-not-found=true", "-o", template)
-	if err != nil {
-		return orkaIdentity{}, fmt.Errorf("cannot read Provider Secret key presence: %w", err)
-	}
-	switch string(marker) {
-	case "":
-		return orkaIdentity{}, fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", opt.Namespace, opt.Secret)
-	case "secret\n":
-		return orkaIdentity{}, fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
-	case "secret\npresent":
-	default:
-		return orkaIdentity{}, fmt.Errorf("Provider Secret key check returned an invalid presence marker")
+	if err := a.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, key); err != nil {
+		return orkaIdentity{}, err
 	}
 	report("done", nil)
 	stage = "Validate server admission"
@@ -239,7 +226,7 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		var err error
 		reused := false
 		if a.liftReuse {
-			match, checkErr := a.matchingLiftResource(ctx, opt.Namespace, doc)
+			match, checkErr := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 			if checkErr != nil {
 				return orkaIdentity{}, checkErr
 			}
@@ -297,6 +284,33 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 func orkaObjectName(doc map[string]any) string {
 	return doc["metadata"].(map[string]any)["name"].(string)
 }
+
+// orkaProviderSecretPresent proves the referenced Secret KEY exists before
+// anything is created, and never reads its value.
+//
+// kmx does not provision Provider credentials: a Secret it wrote a skeleton
+// into would be a credential nobody minted, and an Agent wired to it would
+// fail at the first model call with an authentication error instead of here.
+func (a *App) orkaProviderSecretPresent(ctx context.Context, namespace, secret, key string) error {
+	// The validated key is quoted for the Go template. Iterate key NAMES only;
+	// even an empty credential value counts as present, never as authenticated.
+	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
+	marker, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "secret", secret, "--ignore-not-found=true", "-o", template)
+	if err != nil {
+		return fmt.Errorf("cannot read Provider Secret key presence: %w", err)
+	}
+	switch string(marker) {
+	case "":
+		return fmt.Errorf("Provider Secret %s/%s is missing; provision it separately, never create the skeleton", namespace, secret)
+	case "secret\n":
+		return fmt.Errorf("Provider Secret exists but its referenced key is missing; provision that key separately")
+	case "secret\npresent":
+		return nil
+	default:
+		return fmt.Errorf("Provider Secret key check returned an invalid presence marker")
+	}
+}
+
 func orkaPlural(kind string) string { return strings.ToLower(kind) + "s.core.orka.ai" }
 
 func (a *App) orkaAbsent(ctx context.Context, namespace string, doc map[string]any) error {

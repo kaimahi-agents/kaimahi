@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -209,8 +210,8 @@ func (p *PortableAgent) Source() []byte {
 //  3. A plain alias. The same argument without the merge: the bytes where a
 //     field takes effect are not what it means, and nothing here validates
 //     an expanded alias, so none is accepted.
-//  4. A non-scalar key. The closed schema has only plain-name keys, and a
-//     complex key has no name for the duplicate check to compare.
+//  4. A key that is not a plain string name, or contains control characters.
+//     Such a key is unsafe to name in an error or use as a path component.
 func rejectPortableKeyHazards(node *yaml.Node, path string) error {
 	switch node.Kind {
 	case yaml.AliasNode:
@@ -222,7 +223,8 @@ func rejectPortableKeyHazards(node *yaml.Node, path string) error {
 			if keyNode.Kind == yaml.AliasNode {
 				return fmt.Errorf("YAML alias used as a key at %s (line %d): every field must be stated where it applies, not copied in from an anchor", portablePathOrRoot(path), keyNode.Line)
 			}
-			if keyNode.Kind != yaml.ScalarNode {
+			if keyNode.Kind != yaml.ScalarNode || keyNode.Tag != "!!str" ||
+				strings.IndexFunc(keyNode.Value, unicode.IsControl) >= 0 {
 				return fmt.Errorf("key at %s (line %d) must be a plain name", portablePathOrRoot(path), keyNode.Line)
 			}
 			key := keyNode.Value

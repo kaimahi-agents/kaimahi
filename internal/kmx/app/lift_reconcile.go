@@ -3,16 +3,21 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 )
 
-// Lift alone may resume declarative Provider/Agent creation. Tasks never enter
-// this path. Compare server-defaulted desired specs without writing anything.
-func (a *App) matchingLiftResource(ctx context.Context, namespace string, desired map[string]any) (*orkaIdentity, error) {
+var errOrkaConfigurationDrift = errors.New("Orka configuration drift")
+
+// Declarative Provider/Agent creation may RESUME: lift and quickstart both
+// rerun, and both must reuse what already matches rather than collide with
+// it. Tasks never enter this path. Compare server-defaulted desired specs
+// without writing anything.
+func (a *App) matchingOrkaResource(ctx context.Context, namespace string, desired map[string]any) (*orkaIdentity, error) {
 	kind, name := desired["kind"].(string), orkaObjectName(desired)
 	if kind != "Provider" && kind != "Agent" {
-		return nil, fmt.Errorf("lift reuse only supports Provider and Agent")
+		return nil, fmt.Errorf("reuse only supports Provider and Agent")
 	}
 	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", orkaPlural(kind), name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
@@ -41,14 +46,14 @@ func (a *App) matchingLiftResource(ctx context.Context, namespace string, desire
 	}
 	normalized, err := a.orkaCapture(ctx, body, "-n", namespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
 	if err != nil {
-		return nil, fmt.Errorf("cannot validate existing %s/%s for lift reuse: %w", kind, name, err)
+		return nil, fmt.Errorf("cannot validate existing %s/%s for reuse: %w", kind, name, err)
 	}
 	var admitted map[string]any
 	if err = json.Unmarshal(normalized, &admitted); err != nil {
 		return nil, err
 	}
 	if !reflect.DeepEqual(existing["spec"], admitted["spec"]) {
-		return nil, fmt.Errorf("%s/%s exists with different configuration; select its inference configuration or use a different Agent name", kind, name)
+		return nil, fmt.Errorf("%w: %s/%s exists with different configuration; select its inference configuration or use a different Agent name", errOrkaConfigurationDrift, kind, name)
 	}
 	return &orkaIdentity{Kind: kind, Name: name, UID: uid, Generation: int64(generation)}, nil
 }

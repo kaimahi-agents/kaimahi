@@ -298,6 +298,57 @@ func TestLedgerRenderingContract(t *testing.T) {
 	}
 }
 
+func TestLedgerWithoutCredentialShowsEntriesAcrossCredentials(t *testing.T) {
+	c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("credential"); got != "" {
+			t.Errorf("bare ledger filtered by %q", got)
+		}
+		_, _ = w.Write([]byte(`{"entries":[{"created_at":"2026-09-03T01:37:36Z","credential":"team-one","upstream":"ollama","model":"model","input_tokens":2,"output_tokens":3,"cost_cents":0,"cost_source":"free","status":200},{"created_at":"2026-09-03T01:38:36Z","credential":"team-two","upstream":"ollama","model":"model","input_tokens":4,"output_tokens":5,"cost_cents":0,"cost_source":"free","status":200}]}`))
+	}))
+	var out bytes.Buffer
+	if err := c.Ledger(&out, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"team-one", "team-two"} {
+		if !strings.Contains(out.String(), name) {
+			t.Errorf("ledger omitted %s: %s", name, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "month to date") {
+		t.Errorf("all-credential ledger has no single-credential month total: %s", out.String())
+	}
+}
+
+func TestLedgerWithNoEntriesDoesNotLookLikeAnEmptyTable(t *testing.T) {
+	for _, credential := range []string{"", "nothing-issues"} {
+		t.Run(credential, func(t *testing.T) {
+			c, _ := open(t, health(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("credential"); got != credential {
+					t.Errorf("credential filter = %q, want %q", got, credential)
+				}
+				if credential == "" {
+					_, _ = w.Write([]byte(`{"entries":[]}`))
+				} else {
+					_, _ = w.Write([]byte(`{"entries":[],"month_cents":0,"month_tokens":0}`))
+				}
+			}))
+			var out bytes.Buffer
+			if err := c.Ledger(&out, credential); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(out.String(), "created (UTC)") || !strings.Contains(out.String(), "no ledger entries") {
+				t.Errorf("empty ledger should explain absence, not show a table: %q", out.String())
+			}
+			if credential != "" && !strings.Contains(out.String(), credential) {
+				t.Errorf("filtered empty ledger did not identify the credential: %q", out.String())
+			}
+			if credential != "" && !strings.Contains(out.String(), "month to date: 0 cents, 0 tokens") {
+				t.Errorf("filtered ledger lost its month total: %q", out.String())
+			}
+		})
+	}
+}
+
 // Fail closed on a read: anything but 200 is an error carrying the plane's
 // own words, not an empty table that reads as "nothing has happened yet".
 func TestAReadThatIsNot200IsAnError(t *testing.T) {

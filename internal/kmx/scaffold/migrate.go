@@ -223,12 +223,12 @@ subjects:
 // GenerateMigrateSeamAccess renders the NetworkPolicy that admits the
 // application's namespace to the model seam.
 //
-// The plane's namespace is default-deny in both directions and its
-// committed ingress rule admits the agent namespace alone — deliberately,
-// because the namespace an adopter's application runs in is not this
-// repository's to name in a committed manifest. This is that namespace,
-// named by the adopter at the moment they ask for it, on the model port
-// alone: the tool seam is a separate decision with its own command.
+// The plane's namespace is default-deny in both directions and commits NO
+// ingress allowance at all — deliberately, because the namespace an
+// adopter's application runs in is not this repository's to name in a
+// committed manifest. This is that namespace, named by the adopter at the
+// moment they ask for it, on the model port alone: the tool seam is a
+// separate decision with its own command.
 func GenerateMigrateSeamAccess(spec MigrateSpec) (string, error) {
 	if err := spec.validate(); err != nil {
 		return "", err

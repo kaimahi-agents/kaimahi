@@ -48,7 +48,7 @@ func matchLabels(labels map[string]string, indent int) (string, error) {
 //  2. the proxy's egress allowance to it,
 //  3. the endpoint's ingress allowance from the proxy — and nothing else.
 //
-// Client wiring is printed separately rather than requiring a kagent CRD.
+// Client wiring is printed separately rather than requiring a runtime CRD.
 func GenerateModel(spec ModelSpec) (string, error) {
 	if err := ValidateModelName(spec.Name); err != nil {
 		return "", err

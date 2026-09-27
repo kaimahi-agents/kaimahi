@@ -27,51 +27,28 @@ const (
 
 // liftVerify is the phase that turns "it is installed" into "it works".
 //
-// Three claims, checked separately because they fail separately: the agent
-// answers through the plane, a metric the plane exposed has arrived in Azure
-// Monitor, and a log line the plane wrote has arrived in Container Insights.
-// The last two are the ones worth insisting on — enabling an add-on and
-// having its data arrive are different things, and only one of them is
-// visible from the Azure CLI's exit status.
+// Three claims, checked separately because they fail separately: Orka is
+// installed and its controllers are ready, a metric the plane exposed has
+// arrived in Azure Monitor, and a log line the plane wrote has arrived in
+// Container Insights. The last two are the ones worth insisting on — enabling
+// an add-on and having its data arrive are different things, and only one of
+// them is visible from the Azure CLI's exit status.
+//
+// No model call is made, and none can be: this lift creates no Provider, so
+// there is nothing on the cluster that could answer. Asking an agent a
+// question is what the retired payload did, and it went with it.
 func (a *App) liftVerify(opt lift.Options) error {
-	// The kagent payload proves itself by asking its agent a question. The
-	// Orka payload has no agent to ask: the Provider is the operator's, so
-	// there is nothing here that could answer, and chatting to a kagent agent
-	// that was never installed would fail for a reason that has nothing to do
-	// with the lift. Prove what this payload actually put there.
-	if opt.Payload == lift.PayloadOrka {
-		// Strictly, then print. OrkaStatus is a view that returns nil for an
-		// absent Orka; a verify that consulted only the view would announce
-		// "installed and ready" about a cluster with nothing on it.
-		if err := a.OrkaReady(); err != nil {
-			return err
-		}
-		if err := a.OrkaStatus(); err != nil {
-			return err
-		}
-		a.notef("Orka is installed and its controllers are ready. No model call was made:\n" +
-			"  this payload creates no Provider, so there is nothing yet that could answer.")
-		if !opt.Observability {
-			a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
-			return nil
-		}
-		if err := a.verifyMetricsArrived(opt); err != nil {
-			return err
-		}
-		return a.verifyLogsArrived(opt)
-	}
-
-	if err := a.kubectlRun("-n", "kagent", "rollout", "status",
-		"deploy/hello-world", "--timeout=300s"); err != nil {
+	// Strictly, then print. OrkaStatus is a view that returns nil for an
+	// absent Orka; a verify that consulted only the view would announce
+	// "installed and ready" about a cluster with nothing on it.
+	if err := a.OrkaReady(); err != nil {
 		return err
 	}
-	a.notef("asking the agent a question, through the plane")
-	if err := a.Chat("hello-world", "Say hello in one short sentence."); err != nil {
+	if err := a.OrkaStatus(); err != nil {
 		return err
 	}
-	if err := a.Ledger(a.Cfg.Credential); err != nil {
-		return err
-	}
+	a.notef("Orka is installed and its controllers are ready. No model call was made:\n" +
+		"  this lift creates no Provider, so there is nothing yet that could answer.")
 	if !opt.Observability {
 		a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
 		return nil
@@ -287,12 +264,11 @@ func (a *App) managedFile(work, name string) ([]byte, error) {
 // liftNextSteps says what the operator now has, and — the part that is not
 // optional — what it costs until they take it down.
 func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
-	// The orka payload installs the platform and stops. There is no Agent to
-	// chat to and no Provider resolving a model, so the kagent next steps
-	// would send an operator to a command that cannot work and imply an
-	// agent that was never created.
-	if opt.Payload == lift.PayloadOrka {
-		fmt.Fprintf(a.Err, `
+	// The lift installs the platform and stops. There is no Agent to chat to
+	// and no Provider resolving a model, so anything that sent the operator to
+	// `agent chat` would name a command that cannot work and imply an agent
+	// that was never created.
+	fmt.Fprintf(a.Err, `
   Orka is running on AKS. It has no Provider and no Agent yet — those are
   yours to create, because kmx holds no credential for a hosted model and
   this cluster runs no in-cluster one.
@@ -308,21 +284,10 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
     %s
 
 `, a.operationCommand("orka", "status"), a.operationCommand("flow"),
-			shellArg(a.Cfg.KubeContext), OrkaNamespace,
-			a.operationCommand("agent", "create", "<agent>", "--namespace", OrkaNamespace,
-				"--provider-type", "openai", "--model", "<model>", "--secret", "<name>",
-				"--base-url", "<endpoint>"))
-	} else {
-		fmt.Fprintf(a.Err, `
-  The same agent you ran locally is now running on AKS, governed.
-
-    %s      ask it something
-    %s      what it spent
-    %s      the whole audit trail
-
-`, a.operationCommand("agent", "chat", "hello-world", "..."),
-			a.operationCommand("ledger", a.Cfg.Credential), a.operationCommand("flow"))
-	}
+		shellArg(a.Cfg.KubeContext), OrkaNamespace,
+		a.operationCommand("agent", "create", "<agent>", "--namespace", OrkaNamespace,
+			"--provider-type", "openai", "--model", "<model>", "--secret", "<name>",
+			"--base-url", "<endpoint>"))
 	if opt.Observability {
 		fmt.Fprintf(a.Err, `  The dashboard is the workbook named "Kaimahi model-traffic bridge (%s)" in
   the %s resource group, under Monitoring > Workbooks on the cluster.

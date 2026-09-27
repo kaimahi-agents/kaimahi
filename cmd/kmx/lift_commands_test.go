@@ -47,7 +47,16 @@ func TestTheLiftRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 		{
 			"no payload, on a command that bills money",
 			[]string{"lift", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
-			[]string{"--payload is required", "orka", "kagent"},
+			[]string{"--payload is required", "orka"},
+		},
+		{
+			// The retired payload is refused by name rather than falling into
+			// "unknown": a script that still says it asked for a platform that
+			// existed, and a typo message would send its author looking for a
+			// spelling instead of a replacement.
+			"the retired payload, which a live script may still name",
+			[]string{"lift", "--payload", "kagent", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345"},
+			[]string{"--payload kagent is retired", "--payload orka"},
 		},
 		{
 			"teardown with no idea which lift",

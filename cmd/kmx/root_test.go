@@ -3,6 +3,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -10,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
@@ -24,6 +31,60 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	}
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
 	return deps, &loads
+}
+
+func TestLedgerCommandUsesAllCredentialsUnlessNamed(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"ledger"}, want: ""},
+		{args: []string{"ledger", "named-cred"}, want: "named-cred"},
+	} {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/healthz":
+					w.WriteHeader(http.StatusOK)
+				case "/admin/version":
+					fmt.Fprintf(w, `{"version":"test","admin_contract":%d}`, admin.Speaks)
+				case "/admin/ledger":
+					if got := r.URL.Query().Get("credential"); got != tc.want {
+						t.Errorf("ledger credential filter = %q, want %q", got, tc.want)
+					}
+					_, _ = w.Write([]byte(`{"entries":[{"credential":"named-cred","created_at":"2026-09-03T01:37:36Z","upstream":"ollama","model":"model","status":200}]}`))
+				default:
+					t.Errorf("unexpected admin path %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			parsed, err := url.Parse(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := parsed.Port()
+			bin := t.TempDir()
+			// The stub returns a per-process, test-only bearer via stdout, never argv or logs.
+			stub := "#!/bin/sh\ncase \"$*\" in\n  *version*) ;;\n  *'--context kind-test'*) ;;\n  *) exit 2;;\nesac\ncase \"$*\" in\n  *port-forward*) printf 'Forwarding from 127.0.0.1:%s -> 9091\\n' '" + port + "'; exec sleep 60;;\n  *secret*) printf '%s' \"$$\" | base64;;\nesac\n"
+			if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(stub), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("KMX_TOOLCHAIN", "off")
+			var out, diagnostics bytes.Buffer
+			deps, _ := testDependencies(&out, &diagnostics)
+			deps.loadConfig = func(_, _ string) (*config.Config, error) {
+				return &config.Config{KubeContext: "kind-test", AdminPort: port, Credential: "default-cred"}, nil
+			}
+			if err := execute(tc.args, deps); err != nil {
+				t.Fatalf("ledger: %v", err)
+			}
+			if !strings.Contains(out.String(), "named-cred") {
+				t.Errorf("ledger did not print its row: %s", out.String())
+			}
+		})
+	}
 }
 
 func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
@@ -190,7 +251,6 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		argv []string
 		want string
 	}{
-		{"chat output modes", []string{"agent", "chat", "demo", "--interactive", "--json"}, "--interactive and --json"},
 		{"credential destination required", []string{"credential", "issue", "demo"}, "at least one of the flags"},
 		{"credential destinations conflict", []string{"credential", "issue", "demo", "--discard", "--secret", "demo"}, "none of the others can be"},
 		{"credential secret is non-empty", []string{"credential", "issue", "demo", "--secret="}, "non-empty --secret"},
@@ -281,10 +341,11 @@ func commandPaths(root *cobra.Command) []string {
 }
 
 // The command tree is the product surface: every path in it is something an
-// operator can type, and every one of them needs a help line, a document and,
-// where it mutates, a guard. A command that arrives without anyone noticing
-// gets none of those. So this list is checked in both directions — each path
-// named here must resolve, and each command in the tree must be named here.
+// operator can type, including hidden retirement stubs. Active paths need a
+// help line, a document and, where they mutate, a guard. A command that
+// arrives without anyone noticing gets none of those. So this list is checked
+// in both directions — each path named here must resolve, and each command in
+// the tree must be named here.
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
@@ -339,7 +400,7 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		path []string
 		want []string
 	}{
-		{[]string{"agent", "chat", "hello", "who", "--json"}, []string{"hello", "who"}},
+		{[]string{"agent", "chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
 		{[]string{"budget", "demo", "--tokens", "1"}, []string{"demo"}},
 		{[]string{"credential", "renew", "demo", "--ttl", "1d"}, []string{"demo"}},
 		{[]string{"credential", "issue", "demo", "--discard", "--ttl", "1d"}, []string{"demo"}},
@@ -423,13 +484,45 @@ func TestCredentialIssueRequiresExactlyOneDestination(t *testing.T) {
 	}
 }
 
-func TestCredentialIssueSecretDefaultsToKagentNamespace(t *testing.T) {
+// The namespace a one-time token is written into has no default. It used to
+// be the legacy runtime's, so an operator who omitted the flag got a
+// credential minted into a namespace nothing in kmx installs any more, and
+// the token cannot be re-read. The flag is required with --secret, and the
+// refusal happens before any configuration is loaded or anything is issued.
+func TestCredentialIssueToASecretRequiresItsNamespace(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
 	issue, _, err := root.Find([]string{"credential", "issue"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := issue.Flag("namespace").DefValue; got != config.DefaultNamespace {
-		t.Fatalf("--namespace default=%q, want %q", got, config.DefaultNamespace)
+	if got := issue.Flag("namespace").DefValue; got != "" {
+		t.Fatalf("--namespace default=%q, want no default at all", got)
+	}
+
+	for _, args := range [][]string{
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token"},
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", ""},
+		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", "   "},
+	} {
+		var out, errOut bytes.Buffer
+		deps, loads := testDependencies(&out, &errOut)
+		err := execute(args, deps)
+		if err == nil {
+			t.Fatalf("%v issued a credential with no namespace to put it in", args)
+		}
+		if !strings.Contains(err.Error(), "--namespace") {
+			t.Errorf("%v: the refusal does not name the missing flag: %v", args, err)
+		}
+		if *loads != 0 {
+			t.Fatalf("%v loaded config before enforcing the destination namespace", args)
+		}
+	}
+
+	// --discard stores nothing, so it needs no namespace.
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	if err := execute([]string{"credential", "issue", "inbound-demo", "--discard"}, deps); err != nil &&
+		strings.Contains(err.Error(), "--namespace") {
+		t.Errorf("--discard was asked for a namespace it does not use: %v", err)
 	}
 }

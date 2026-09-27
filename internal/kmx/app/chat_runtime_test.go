@@ -10,13 +10,17 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-func TestInteractiveRuntimeDiscoveryPrefersOrkaAndPreservesFailures(t *testing.T) {
+// Auto-detection resolves an Orka Agent or fails. It never falls back to
+// another platform, and "no Orka on this cluster" is not an Agent: with the
+// legacy runtime gone there is nothing left to fall back TO, so an absent
+// kind must be reported rather than answered from somewhere else.
+func TestInteractiveRuntimeDiscoveryResolvesOrkaAndPreservesFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name, script, want string
 		fail               bool
 	}{
 		{"orka", `case "$*" in *api-resources*) printf 'agents.core.orka.ai';; *) printf '{"metadata":{"name":"demo","namespace":"orka-system"},"spec":{}}';; esac`, "orka", false},
-		{"no orka", `exit 0`, "kagent", false},
+		{"no orka", `exit 0`, "", true},
 		{"read failure", `case "$*" in *api-resources*) printf 'agents.core.orka.ai';; *) exit 1;; esac`, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

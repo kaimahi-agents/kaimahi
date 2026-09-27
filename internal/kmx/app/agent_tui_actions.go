@@ -35,10 +35,12 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 				source.copilotModel = saved.Model
 			}
 		}
-		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: action.agent.Runtime, Interactive: true})
+		// Console agents are native Orka Agents; naming the runtime explicitly
+		// keeps chat off the discovery path rather than re-resolving the agent.
+		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Interactive: true})
 	}
 	if action.kind == "tools" {
-		if action.agent.External || action.kind == "tools" && action.agent.Runtime != "orka" {
+		if action.agent.External {
 			return agentTUIEnvironment{}, fmt.Errorf("editor unavailable for this runtime")
 		}
 		b := &orkaChatBackend{app: source, agent: action.agent.Name, namespace: action.agent.Namespace}

@@ -1,12 +1,11 @@
 // Package config resolves kmx's settings.
 //
 // Every knob keeps the name this repository already uses — KIND_CLUSTER,
-// KUBE_CTX, CONTAINER_ENGINE, KAGENT_VERSION, MODEL, CHAT_PORT, CRED and
-// KAIMAHI_CONFIRM and ADMIN_PORT from the Makefile, so delegating targets pass
-// nothing: an operator's `KIND_CLUSTER=mine make up` and their
-// `KIND_CLUSTER=mine kmx up` are the same run. Where the Makefile has a
-// default, that default is repeated here verbatim; the two are pinned
-// together by a test.
+// KUBE_CTX, CONTAINER_ENGINE, MODEL, CHAT_PORT, CRED and KAIMAHI_CONFIRM and
+// ADMIN_PORT from the Makefile, so delegating targets pass nothing: an
+// operator's `KIND_CLUSTER=mine make up` and their `KIND_CLUSTER=mine kmx up`
+// are the same run. Where the Makefile has a default, that default is
+// repeated here verbatim; the two are pinned together by a test.
 package config
 
 import (
@@ -19,27 +18,21 @@ import (
 // Pinned versions and defaults. These are the Makefile's, and
 // TestDefaultsMatchTheMakefile refuses to let them drift.
 const (
-	DefaultKindCluster   = "kaimahi-p1"
-	DefaultKagentVersion = "0.9.12"
-	DefaultModel         = "qwen2.5:3b"
-	DefaultChatPort      = "auto"
+	DefaultKindCluster = "kaimahi-p1"
+	DefaultModel       = "qwen2.5:3b"
+	DefaultChatPort    = "auto"
 	// DefaultAdminPort is the local side of the plane's admin port-forward.
 	// Keeping one default makes a stale forward fail closed at bind time.
 	DefaultAdminPort = "19091"
 	// DefaultOpsPort is the local side of the metrics forward. Keeping one
 	// default makes a stale forward fail closed at bind time.
-	DefaultOpsPort     = "19092"
-	DefaultAgent       = "hello-world"
-	DefaultTask        = "Hello! Who are you and where are you running?"
-	DefaultNamespace   = "kagent"
-	KeylessModelConfig = "hello-world-model"
-	// DefaultCredential is the Makefile's CRED: the credential `govern`
-	// issues and the ledger is read for by default.
+	DefaultOpsPort = "19092"
+	DefaultTask    = "Hello! Who are you and where are you running?"
+	// DefaultCredential is the Makefile's CRED, used by bare budget commands.
+	// Ledger without a credential instead reads across all credentials.
 	DefaultCredential = "hello-world"
-	// DefaultToolsAgent is the retained agent using direct kagent MCP tools.
-	DefaultToolsAgent = "hello-tools"
-	// GovernedSecret is the agent-side Secret the issued token is stored in,
-	// in the kagent namespace.
+	// GovernedSecret is the workload-side Secret an issued token is stored
+	// in by default.
 	GovernedSecret = "kaimahi-governed-token"
 	// The three Secrets the seam certificate lives in, and they are three
 	// on purpose.
@@ -55,17 +48,21 @@ const (
 	// its key, and the authority's certificate so the plane can verify its
 	// own seams over loopback. No issuing power.
 	//
-	// PlaneCASecret is the authority's CERTIFICATE ONLY, copied into the
-	// agent namespace for `spec.tls.caCertSecretRef` to name. It is public
-	// material: it says who to trust, and confers nothing.
+	//   - The AUTHORITY'S CERTIFICATE ALONE is copied into a workload's
+	//     namespace, where its model client verifies the seam against it. It
+	//     is public material: it says who to trust, and confers nothing.
 	PlaneAuthoritySecret = "kaimahi-plane-authority"
 	PlaneSeamTLSSecret   = "kaimahi-plane-seam-tls"
 	PlaneCASecret        = "kaimahi-plane-ca"
-	// PlaneCAKey is the key inside PlaneCASecret, and the one a ModelConfig
-	// or RemoteMCPServer names in `spec.tls.caCertSecretKey`.
-	PlaneCAKey             = "ca.crt"
-	GovernedModelConfig    = "governed-ollama"
-	GuardNamespaces        = "kagent, kaimahi, ollama"
+	// PlaneCAKey is the key inside PlaneCASecret, and the one a workload's
+	// model client verifies the seam against.
+	PlaneCAKey = "ca.crt"
+	// GuardNamespaces names the common fixed namespaces. Some operations also
+	// write to a caller-selected workload namespace; the generic banner must
+	// not present this list as a complete destination set. Known Orka-path
+	// destinations still get their exact list from app.GuardCreateIn.
+	GuardNamespaces        = "kaimahi, ollama, orka-system"
+	GuardNamespaceHint     = GuardNamespaces + " (common, not exhaustive; see action for other namespaces)"
 	DefaultContainerEngine = "docker"
 )
 
@@ -89,7 +86,6 @@ type Config struct {
 	KindCluster     string
 	KubeContext     string
 	ContainerEngine string
-	KagentVersion   string
 	Model           string
 	// ModelExplicit distinguishes an operator's MODEL choice from the default,
 	// so interactive discovery never replaces a value automation supplied.
@@ -99,10 +95,6 @@ type Config struct {
 	OpsPort       string
 	Credential    string
 	Confirm       string
-	// KagentBin, when set, is an existing kagent binary to use instead of
-	// the cached download. The Makefile points it at bin/kagent so a
-	// checkout keeps one copy.
-	KagentBin string
 	// ContextSource records where KubeContext came from, for the banner.
 	ContextSource string
 }
@@ -157,7 +149,6 @@ func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error)
 	c := &Config{
 		KindCluster:     env("KIND_CLUSTER", DefaultKindCluster),
 		ContainerEngine: env("CONTAINER_ENGINE", DefaultContainerEngine),
-		KagentVersion:   env("KAGENT_VERSION", DefaultKagentVersion),
 		Model:           model,
 		ModelExplicit:   modelExplicit,
 		ChatPort:        env("CHAT_PORT", DefaultChatPort),
@@ -165,7 +156,6 @@ func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error)
 		OpsPort:         env("OPS_PORT", DefaultOpsPort),
 		Credential:      env("CRED", DefaultCredential),
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
-		KagentBin:       strings.TrimSpace(os.Getenv("KAGENT")),
 	}
 	engine := c.ContainerEngine
 	if containerEngineFlag != "" {
@@ -231,8 +221,8 @@ func (c *Config) KindUnset() []string {
 	return []string{"KIND_EXPERIMENTAL_PROVIDER"}
 }
 
-// stateDir is where kmx keeps the selected context and the cached kagent
-// binary. Overridable with KMX_HOME, which is what the tests use.
+// stateDir is where kmx keeps the selected context and the binaries kmx had
+// to fetch. Overridable with KMX_HOME, which is what the tests use.
 func stateDir() (string, error) {
 	if home := strings.TrimSpace(os.Getenv("KMX_HOME")); home != "" {
 		return home, nil
@@ -252,8 +242,9 @@ func contextFile() (string, error) {
 	return filepath.Join(dir, "context"), nil
 }
 
-// CacheDir is where the pinned kagent binary is cached, so a kmx installed
-// with `go install` (no clone, no bin/) still has somewhere to put it.
+// CacheDir is where a fetched, checksum-verified binary is cached, so a kmx
+// installed with `go install` (no clone, no bin/) still has somewhere to put
+// it.
 func CacheDir() (string, error) {
 	dir, err := stateDir()
 	if err != nil {
@@ -263,8 +254,8 @@ func CacheDir() (string, error) {
 }
 
 // ToolchainDir is where kmx puts a plain-named symlink for each cluster tool
-// it had to fetch itself (kind, kubectl, Helm). It is prepended to PATH for
-// the life of one command.
+// it had to fetch itself (kind, kubectl). It is prepended to PATH for the
+// life of one command.
 //
 // It cannot be CacheDir: entries there carry their version in the name, so a
 // pin bump can never be served the previous binary, and nothing looks for a

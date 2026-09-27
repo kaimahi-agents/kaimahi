@@ -271,37 +271,43 @@ func TestParsePortableAgentRejectsDuplicateKeysAtEveryLevel(t *testing.T) {
 
 // A merge key is resolved by yaml.v3 before the strict decode sees the
 // mapping, so neither the duplicate walk nor KnownFields can see what it
-// supplied. It is refused wherever it appears rather than resolved.
+// supplied. Implicit merge keys have the non-string !!merge tag and are
+// refused as non-plain names before they can be included in error locations.
 func TestParsePortableAgentRejectsMergeKeysAnywhere(t *testing.T) {
-	for _, tc := range []struct{ name, doc, where string }{
+	for _, tc := range []struct{ name, doc, parent string }{
 		{
 			"top level",
 			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata: &meta\n  name: hello\n<<: *meta\n",
-			"<<",
+			"the document root",
 		},
 		{
 			"supplying a modeled field under spec",
 			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nspec:\n  <<: &base\n    instructions: From the anchor.\n  instructions: Stated here.\n",
-			"spec.<<",
+			"spec",
 		},
 		{
 			"inside the extension",
 			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider: &p\n      type: openai\n    agent:\n      <<: *p\n",
-			"extensions.orka.agent.<<",
+			"extensions.orka.agent",
 		},
 		{
 			"inside a sequence entry",
 			"apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nextensions:\n  orka:\n    provider:\n      secretRef: &ref\n        name: hello-key\n    agent:\n      tools:\n        - <<: *ref\n",
-			"extensions.orka.agent.tools[0].<<",
+			"extensions.orka.agent.tools[0]",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := mustNotParse(t, tc.doc, "merge key")
-			if !strings.Contains(err.Error(), tc.where) {
-				t.Errorf("error %q does not name the path %q", err, tc.where)
+			err := mustNotParse(t, tc.doc, "plain name")
+			if !strings.Contains(err.Error(), "key at "+tc.parent+" (line") || strings.Contains(err.Error(), "<<") {
+				t.Errorf("error %q did not identify the parent without exposing the key", err)
 			}
 		})
 	}
+}
+
+// An explicitly string-tagged "<<" still cannot bypass the merge-key check.
+func TestParsePortableAgentRejectsStringTaggedMergeKey(t *testing.T) {
+	mustNotParse(t, "apiVersion: kmx.kaimahi.dev/v1alpha1\n!!str <<: ignored\n", "merge key")
 }
 
 // A plain alias copies a value in from elsewhere, so the bytes where a field
@@ -343,6 +349,26 @@ func TestParsePortableAgentRejectsAliasesAnywhere(t *testing.T) {
 // modeled nor comparable for the duplicate walk.
 func TestParsePortableAgentRejectsNonScalarKeys(t *testing.T) {
 	mustNotParse(t, "apiVersion: kmx.kaimahi.dev/v1alpha1\n? [a, b]\n: c\n", "plain name")
+}
+
+// A key must be safe to use in an error location before either the key walk
+// or the strict decoder can name it, including inside nested mappings.
+func TestParsePortableAgentRejectsUnsafeScalarKeysWithoutEcho(t *testing.T) {
+	for _, tc := range []struct{ name, key, exposed string }{
+		{"integer tag", "!!int 12", "12"},
+		{"binary tag", "!!binary YWJj", "abc"},
+		{"escaped newline", `"bad\nkey"`, "bad\nkey"},
+		{"escaped tab", `"bad\tkey"`, "bad\tkey"},
+		{"escaped delete", `"bad\x7fkey"`, "bad\x7fkey"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := mustReplace(t, minimalPortableYAML, "  name: hello\n", "  name: hello\n  "+tc.key+": value\n")
+			err := mustNotParse(t, doc, "key at metadata (line")
+			if !strings.Contains(err.Error(), "must be a plain name") || strings.Contains(err.Error(), tc.exposed) {
+				t.Errorf("unsafe key was echoed or wrong error returned: %q", err)
+			}
+		})
+	}
 }
 
 func TestParsePortableAgentRejectsUnknownFieldsAtEveryLevel(t *testing.T) {

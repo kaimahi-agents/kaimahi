@@ -10,7 +10,8 @@ Orka is the platform; Kaimahi is tooling to help people get agents onto it.
 Check Orka, Kubernetes and existing integrations first. In the pull request,
 explain why configuration, integration or an upstream contribution cannot
 provide the requested behavior. The migration bridge should shrink as upstream
-capabilities cover it. Native-only versus kagent YAML authoring remains open.
+capabilities cover it. Native-only versus a v1 YAML authoring surface over
+Orka remains an open question, and no such surface is supported today.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and

@@ -1,20 +1,12 @@
 package app
 
 import (
-	"fmt"
-
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// Explicit selection avoids discovery. Auto uses ordered adapters; errors never
-// fall through to another platform with a same-named Agent.
+// Explicit selection avoids discovery. Auto uses the ordered adapters; an
+// error never falls through to another platform with a same-named Agent.
 func (a *App) resolveInteractiveChat(opt ChatOptions, name string) (string, string, error) {
-	if opt.Runtime == "kagent" {
-		if opt.Namespace != "" && opt.Namespace != "kagent" {
-			return "", "", fmt.Errorf("kagent chat requires namespace kagent")
-		}
-		return "kagent", "kagent", nil
-	}
 	if opt.Runtime == "orka" {
 		namespace := opt.Namespace
 		if namespace == "" {

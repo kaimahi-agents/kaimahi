@@ -1,10 +1,7 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,23 +10,35 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// Steps of `kmx up`, in order. They are addressable individually so the
-// Makefile's `cluster`, `ollama`, `model`, `kagent`, `agent` and
-// `tools-agent` targets can delegate to the same code rather than keeping a
-// second copy of it.
-var UpSteps = []string{"cluster", "ollama", "model", "kagent", "agent", "tools-agent"}
+// UpSteps are the individually addressable steps of `kmx up`, and they are
+// exactly the supported sequence. The three legacy installer steps that once
+// sat beyond them are gone rather than hidden: naming one is an unknown step,
+// refused locally, not a runtime kmx still knows how to put on a cluster.
+var UpSteps = []string{"cluster", "ollama", "model", "orka"}
+
+// UpDefaultSteps is what a bare `kmx up` runs: a cluster, a keyless model
+// server and the pinned Orka runtime. It deploys no agent — `kmx quickstart`
+// is the command that ends with one answering, and `kmx agent create` is the
+// one that authors your own.
+//
+// It holds the same four names as UpSteps, and that is the point rather than
+// a duplication: a bare run does everything that can be asked for one step at
+// a time, so there is nothing addressable that a bare run skips. They are
+// separate slices rather than one aliased twice, because two exported
+// variables sharing a backing array is a way for a caller to change one by
+// touching the other; a test pins them equal instead.
+var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // Up runs the whole journey, or the single named step.
 //
-// On kind this IS the journey: the Makefile's kind `UP_STEPS` is empty and
-// `make up` is one line delegating here, so the sequence CI runs is the
-// sequence this function implements rather than a list of targets that
-// could drift from it. RUNTIME ONLY: `kmx up` does not deploy the
-// governance plane, and says so at the end rather than leaving anyone
-// to discover it from an empty ledger.
+// On kind this IS the journey: `make up` is one line delegating here, so the
+// sequence CI runs is the sequence this function implements rather than a
+// list of targets that could drift from it. RUNTIME ONLY: `kmx up` does not
+// deploy the governance plane, and says so at the end rather than leaving
+// anyone to discover it from an empty ledger.
 func (a *App) Up(step string) error {
 	started := a.timeNow()
-	steps := UpSteps
+	steps := UpDefaultSteps
 	if step != "" {
 		found := false
 		for _, s := range UpSteps {
@@ -56,13 +65,20 @@ func (a *App) Up(step string) error {
 		}
 	}
 
-	action := "bring up the kmx runtime (kind, Ollama, kagent, agents)"
+	action := "bring up the kmx runtime (kind, Ollama, Orka)"
 	command := "kmx up"
 	if step != "" {
 		action, command = "run the '"+step+"' step", "kmx up --step "+step
 	}
-	guard := a.Guard
-	if step == "" || step == "cluster" {
+	// Every step writes to the Orka path's two namespaces, so the banner
+	// names them exactly — for a bare run and for a single step alike. The
+	// wider list existed for the legacy install, which landed in a namespace
+	// of its own as well, and naming a namespace nothing is written to is its
+	// own untruth.
+	guard := func(action, command string) error {
+		return a.GuardCreateIn(action, command, OrkaPathNamespaces)
+	}
+	if step == "cluster" {
 		guard = a.GuardCreate
 	}
 	if err := guard(action, command); err != nil {
@@ -75,43 +91,40 @@ func (a *App) Up(step string) error {
 		}); err != nil {
 			return err
 		}
-	} else if err := a.upOverlapped(); err != nil {
+	} else if err := a.upDefault(); err != nil {
 		return err
 	}
 
 	if step == "" {
-		if err := a.runPhase(phase{current: 6, total: 6, name: "Collect runtime status"}, a.Status); err != nil {
-			return err
-		}
 		a.complete("Runtime setup finished", started)
 		// One line: `kmx up` is the RUNTIME. Governance is a deliberate
 		// second step, and saying nothing here would leave an operator to
 		// infer it from an empty ledger.
-		// The credential is the RESOLVED one, not the default: with CRED set,
-		// a copied `kmx govern hello-world` would govern a different
-		// credential than the one `kmx govern` and `kmx ledger` then use.
+		// The route offered is the one this cluster can take. A bare run
+		// deploys no governed Agent, so the old governance operation would
+		// name nothing; putting an application's model traffic on the seam is
+		// `kmx migrate`, one workload at a time.
 		if a.selectedLocalModel == nil {
 			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
 				"Existing governance is not assessed by this setup. To configure it:\n"+
 				"  %s  # the proxy and its ledger\n"+
-				"  %s  # configure agent routing (docs/spend.md)",
-				a.operationCommand("plane"), a.operationCommand("govern", a.Cfg.Credential))
+				"  %s --namespace <ns> --model %s/%s  # route an application's model traffic (docs/migrate.md)",
+				a.operationCommand("plane"), a.operationCommand("migrate", "<deployment>"),
+				orkaDefaultProvider, a.Cfg.Model)
 		} else {
-			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane/govern preset requires in-cluster Ollama.")
+			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane preset requires in-cluster Ollama.")
 		}
-		a.notef("\nTRY   %s", a.operationCommand("agent", "chat", config.DefaultAgent, config.DefaultTask))
+		a.notef("\nTRY   %s", a.operationCommand("agent", "create"))
 	}
 	return nil
 }
 
 func upPhaseName(step string) string {
 	return map[string]string{
-		"cluster":     "Prepare kind cluster",
-		"ollama":      "Deploy Ollama",
-		"model":       "Pull model",
-		"kagent":      "Install kagent",
-		"agent":       "Deploy hello-world agent",
-		"tools-agent": "Deploy hello-tools agent",
+		"cluster": "Prepare kind cluster",
+		"ollama":  "Deploy Ollama",
+		"model":   "Pull model",
+		"orka":    "Install Orka",
 	}[step]
 }
 
@@ -123,70 +136,50 @@ func (a *App) runUpStep(step string) error {
 		return a.stepOllama()
 	case "model":
 		return a.stepModel()
-	case "kagent":
-		return a.stepKagent()
-	case "agent":
-		return a.stepAgent()
-	case "tools-agent":
-		return a.stepToolsAgent()
+	case "orka":
+		return a.stepOrka()
 	}
 	return fmt.Errorf("unknown up step %q", step)
 }
 
-// upOverlapped is the whole journey, with the two agents brought up
-// together.
+// upDefault is the whole supported journey, in the order the steps are
+// DECLARED in (UpDefaultSteps) — the order an operator reads them in and the
+// order `--step` runs them in.
 //
-// The order the steps are DECLARED in (UpSteps) is the order an operator
-// reads them in and the order `--step` runs them in, and it is kept here:
-// Ollama is deployed and its model pulled before kagent is installed, so a
+// Ollama is deployed and its model pulled before Orka is installed, so a
 // cluster that cannot pull at all still fails on the smaller download first.
-//
-// Only the two agents overlap, and the measurements say why (on a 2-CPU
-// GitHub runner):
-//
-//	hello-world Ready 29s + hello-tools Ready 16s, serially → 33s together
-//	ollama's rollout (41s) overlapped with kagent's five pods (61s) → 116s,
-//	  against 118s serially: nothing gained
-//
-// The second line is the useful finding. Those two are not waiting on each
-// other, they are waiting on the same network: they pull ~2GB of images
-// between them, so running them at once splits the bandwidth instead of
-// saving time. The agents are different — their images are already on the
-// node — and that is where the 12 seconds are.
-//
-// Nothing is skipped and nothing is weakened: every command, wait and
-// preservation check the serial version ran still runs, with the same
-// timeouts.
-func (a *App) upOverlapped() error {
-	if err := a.runPhase(phase{current: 1, total: 6, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
+// Nothing here overlaps: the earlier two-agent lane existed for the legacy
+// runtime's demonstration agents, which are gone, and the measurements that
+// lane rested on said the remaining steps gain nothing from running together
+// — they pull ~2GB of images between them, so starting them at once splits
+// the bandwidth instead of saving time.
+func (a *App) upDefault() error {
+	if err := a.runPhase(phase{current: 1, total: 4, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
 	}
 	a.verifySelectedLocalModel()
 	if a.selectedLocalModel == nil {
-		if err := a.runPhase(phase{current: 2, total: 6, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
+		if err := a.runPhase(phase{current: 2, total: 4, name: upPhaseName("ollama")}, a.stepOllama); err != nil {
 			return err
 		}
-		if err := a.runPhase(phase{current: 3, total: 6, name: upPhaseName("model")}, a.stepModel); err != nil {
+		if err := a.runPhase(phase{current: 3, total: 4, name: upPhaseName("model")}, a.stepModel); err != nil {
 			return err
 		}
 	} else {
 		a.notef("SKIP   Reusing %s/%s; no in-cluster Ollama or model pull", a.selectedLocalModel.Provider, a.selectedLocalModel.Model)
 	}
-	if err := a.runPhase(phase{current: 4, total: 6, name: upPhaseName("kagent")}, a.stepKagent); err != nil {
-		return err
-	}
-	// The two independently addressable agent steps form one operator-facing
-	// phase in a full run because they start and finish as one parallel group.
-	return a.runPhase(phase{current: 5, total: 6, name: "Deploy agents in parallel"}, func() error {
-		a.notef("Two lanes are running; every output line is tagged.")
-		return a.runLanes([]lane{
-			{"agent", func(b *App) error { return b.stepAgent() }},
-			{"tools-agent", func(b *App) error { return b.stepToolsAgent() }},
-		})
-	})
+	return a.runPhase(phase{current: 4, total: 4, name: upPhaseName("orka")}, a.stepOrka)
 }
 
 func (a *App) preflightUp(steps []string) error {
+	return a.preflight(a.upDependencies(steps)...)
+}
+
+// upDependencies is what this selection of steps shells out to. It is
+// separate from preflightUp so the list is readable — and assertable —
+// without provisioning anything: Helm was fetched onto operators' machines
+// for the legacy chart alone, and nothing here may quietly ask for it again.
+func (a *App) upDependencies(steps []string) []dependency {
 	wanted := map[string]bool{}
 	for _, step := range steps {
 		wanted[step] = true
@@ -195,13 +188,10 @@ func (a *App) preflightUp(steps []string) error {
 	if wanted["cluster"] {
 		dependencies = append(dependencies, depKind, depKubectl, a.engineDependency())
 	}
-	if wanted["ollama"] || wanted["model"] || wanted["agent"] || wanted["tools-agent"] {
+	if wanted["ollama"] || wanted["model"] || wanted["orka"] {
 		dependencies = append(dependencies, depKubectl)
 	}
-	if wanted["kagent"] {
-		dependencies = append(dependencies, depHelm, depKubectl)
-	}
-	return a.preflight(dependencies...)
+	return dependencies
 }
 
 // ---- cluster --------------------------------------------------------------
@@ -434,422 +424,4 @@ func (a *App) stepModel() error {
 		}
 	}
 	return err
-}
-
-// ---- kagent ---------------------------------------------------------------
-
-func (a *App) stepKagent() error { return a.installKagent() }
-
-type kagentRelease struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Revision  string `json:"revision"`
-	Status    string `json:"status"`
-}
-
-type kagentReleaseValues struct {
-	Kaimahi struct {
-		Profile string `json:"profile"`
-	} `json:"kaimahi"`
-	KagentTools struct {
-		Enabled *bool `json:"enabled"`
-	} `json:"kagent-tools"`
-	KMCP struct {
-		Enabled *bool `json:"enabled"`
-	} `json:"kmcp"`
-	UI struct {
-		Replicas *int `json:"replicas"`
-	} `json:"ui"`
-}
-
-type helmClient struct {
-	run         *run.Runner
-	kubeContext string
-	namespace   string
-}
-
-func (h helmClient) listReleases(name string) (string, error) {
-	// Helm 3's --all was removed in Helm 4, whose default became all statuses.
-	// Query each status independently: Helm 3 intersects combined status flags,
-	// which can make an existing deployed release look absent.
-	releases := make([]kagentRelease, 0)
-	seen := make(map[string]bool)
-	for _, status := range []string{"--deployed", "--failed", "--pending", "--uninstalled", "--superseded", "--uninstalling"} {
-		out, err := h.run.Capture("helm", "list", status, "--namespace", h.namespace,
-			"--kube-context", h.kubeContext, "--filter", "^"+name+"$", "--output", "json")
-		if err != nil {
-			return "", err
-		}
-		var found []kagentRelease
-		if err := json.Unmarshal([]byte(out), &found); err != nil {
-			return "", fmt.Errorf("cannot decode Helm release state: %w", err)
-		}
-		if found == nil {
-			return "", fmt.Errorf("cannot decode Helm release state: expected a JSON array")
-		}
-		for _, release := range found {
-			key := release.Name + "\x00" + release.Namespace + "\x00" + release.Revision + "\x00" + release.Status
-			if !seen[key] {
-				releases = append(releases, release)
-				seen[key] = true
-			}
-		}
-	}
-	out, err := json.Marshal(releases)
-	return string(out), err
-}
-
-func (h helmClient) releaseValues(name string) (string, error) {
-	return h.run.Capture("helm", "get", "values", name, "--namespace", h.namespace,
-		"--kube-context", h.kubeContext, "--output", "json")
-}
-
-func isFirstAnswerProfile(raw string) (bool, error) {
-	var values kagentReleaseValues
-	if err := json.Unmarshal([]byte(raw), &values); err != nil {
-		return false, err
-	}
-	return values.Kaimahi.Profile == "first-answer" &&
-		values.KagentTools.Enabled != nil && !*values.KagentTools.Enabled &&
-		values.KMCP.Enabled != nil && !*values.KMCP.Enabled &&
-		values.UI.Replicas != nil && *values.UI.Replicas == 0, nil
-}
-
-// inspectKagentRelease distinguishes absence from an unreadable release. Only
-// a successful, empty Helm list means absent; every read or decode failure is
-// returned so quickstart cannot overwrite state it failed to understand.
-func (a *App) inspectKagentRelease() (bool, bool, string, error) {
-	helm := helmClient{run: a.Run, kubeContext: a.Cfg.KubeContext, namespace: "kagent"}
-	out, err := helm.listReleases("kagent")
-	if err != nil {
-		return false, false, "", fmt.Errorf("cannot determine whether Helm release kagent is installed; refusing to apply the quickstart profile: %w", err)
-	}
-	var releases []kagentRelease
-	if err := json.Unmarshal([]byte(out), &releases); err != nil {
-		return false, false, "", fmt.Errorf("cannot decode Helm release state; refusing to apply the quickstart profile: %w", err)
-	}
-	if releases == nil {
-		return false, false, "", fmt.Errorf("cannot decode Helm release state; expected a JSON array, refusing to apply the quickstart profile")
-	}
-	var found *kagentRelease
-	foundRevision := 0
-	for i := range releases {
-		if releases[i].Name == "kagent" && releases[i].Namespace == "kagent" {
-			revision, err := strconv.Atoi(releases[i].Revision)
-			if err != nil || revision < 1 {
-				return false, false, "", fmt.Errorf("Helm returned release kagent with invalid revision %q; refusing to choose one", releases[i].Revision)
-			}
-			if revision == foundRevision && found != nil && releases[i].Status != found.Status {
-				return false, false, "", fmt.Errorf("Helm returned conflicting states for kagent revision %d; refusing to choose one", revision)
-			}
-			if revision > foundRevision {
-				foundRevision = revision
-				found = &releases[i]
-			}
-		}
-	}
-	if found == nil {
-		if len(releases) != 0 {
-			return false, false, "", fmt.Errorf("Helm returned an unexpected release identity for kagent; refusing to change it")
-		}
-		return false, false, "", nil
-	}
-	if found.Status != "deployed" {
-		return true, false, found.Status, nil
-	}
-	valuesJSON, err := helm.releaseValues("kagent")
-	if err != nil {
-		return false, false, "", fmt.Errorf("cannot read Helm release kagent values; refusing to change its profile: %w", err)
-	}
-	minimal, err := isFirstAnswerProfile(valuesJSON)
-	if err != nil {
-		return false, false, "", fmt.Errorf("cannot decode Helm release kagent values; refusing to change its profile: %w", err)
-	}
-	return true, minimal, found.Status, nil
-}
-
-// stepQuickstartKagent is monotonic: it may create or reconcile the known
-// first-answer profile, but never removes capabilities from a full or custom
-// installation.
-func (a *App) stepQuickstartKagent() error {
-	present, minimal, status, err := a.inspectKagentRelease()
-	if err != nil {
-		return err
-	}
-	if !present {
-		return a.installKagentMode(true, quickstartValues...)
-	}
-	if minimal {
-		if status != "deployed" && status != "failed" {
-			return fmt.Errorf("Helm release kagent has status %q; refusing to change it while another operation may be in progress", status)
-		}
-		return a.installKagent(quickstartValues...)
-	}
-	if status != "deployed" {
-		return fmt.Errorf("Helm release kagent has status %q and a full or custom profile; refusing to change it — inspect it with `helm -n kagent status kagent`. Repair the release deliberately before rerunning quickstart", status)
-	}
-	a.notef("kagent is already installed with a full or custom profile; preserving it")
-	return a.waitExistingKagent()
-}
-
-func (a *App) waitExistingKagent() error {
-	if err := a.kubectlRun("-n", "kagent", "rollout", "status", "deployment/kagent-controller", "--timeout=420s"); err != nil {
-		return fmt.Errorf("existing kagent release controller is not ready: %w", err)
-	}
-	return nil
-}
-
-// installKagent installs the chart, optionally with extra `--set` values.
-//
-// The extras exist for exactly one caller — `kmx quickstart`, which turns off
-// the components a first question cannot reach (the console, the bundled tool
-// server, the MCP controller) because they are ~360MB of image pulls and two
-// more pods to become Ready before anyone sees an answer. They are `--set`
-// overlays on the SAME values file rather than a second one: two values files
-// would be two descriptions of one install, and the later `kmx up` restores
-// the full set simply by not passing them. Quickstart checks for absence first
-// and uses install, not upgrade, so a concurrently created release is preserved.
-func (a *App) installKagent(extra ...string) error {
-	return a.installKagentMode(false, extra...)
-}
-
-func (a *App) installKagentMode(newRelease bool, extra ...string) error {
-	version := a.Cfg.KagentVersion
-	if err := a.Run.Run("helm", "upgrade", "--install", "kagent-crds",
-		"oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds",
-		"--version", version, "--namespace", "kagent", "--create-namespace",
-		"--kube-context", a.Cfg.KubeContext); err != nil {
-		return err
-	}
-
-	// helm -f wants a path, and the values file lives inside the binary.
-	values, err := a.renderModelManifest("kagent-values.yaml")
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp("", "kagent-values-*.yaml")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(values); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	args := []string{"upgrade", "--install", "kagent",
-		"oci://ghcr.io/kagent-dev/kagent/helm/kagent",
-		"--version", version, "--namespace", "kagent",
-		"--kube-context", a.Cfg.KubeContext, "-f", tmp.Name(),
-		"--wait", "--wait-for-jobs", "--timeout", "420s"}
-	if newRelease {
-		args = append([]string{"install"}, args[2:]...)
-	}
-	args = append(args, extra...)
-	return a.Run.Run("helm", args...)
-}
-
-// ---- the agents -----------------------------------------------------------
-
-// isNotFound reports whether a kubectl failure was "the object is not there",
-// as opposed to "the cluster could not be reached" or "you may not read it".
-//
-// The distinction is the whole point of the capture-then-restore dance: a
-// fresh cluster legitimately has no agent yet, but an unreachable API server
-// must NEVER be read as "nothing to preserve" — that is how a re-apply
-// silently un-governs a live agent.
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := err.Error()
-	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
-}
-
-// liveModelConfig reads an agent's current modelConfig.
-//
-// Re-applying the committed YAML must not silently drop governance (or any
-// preset switch) from a live agent, so the current value is captured first
-// and a non-default one is restored after the apply, with a warning. Only a
-// NotFound (fresh cluster) may skip the capture — ANY other read failure
-// aborts rather than risk silently un-governing an agent.
-func (a *App) liveModelConfig(agent string) (string, error) {
-	out, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", agent,
-		"-o", "jsonpath={.spec.declarative.modelConfig}")
-	if err != nil {
-		if isNotFound(err) {
-			return "", nil
-		}
-		// Deliberately NOT treated as absence, however it reads. The most
-		// common cause is that kagent is not installed yet — the Agent CRD
-		// does not exist, so kubectl says "the server doesn't have a resource
-		// type", not NotFound — and applying an Agent to that cluster would
-		// fail a moment later anyway. Name the likely cause; do not guess.
-		// The hint is on its own line, as every other operator-facing refusal
-		// in this package is: these are printed to a terminal, not wrapped by
-		// a caller.
-		return "", fmt.Errorf("cannot read %s's live modelConfig (refusing to risk un-governing it): %w\n"+
-			"  if kagent is not installed on this cluster yet, that is `kmx up`", agent, err)
-	}
-	return strings.TrimSpace(out), nil
-}
-
-// desiredModelConfig applies the preservation rule: a live non-default
-// modelConfig wins over the committed one.
-func (a *App) desiredModelConfig(agent, current string) (string, bool) {
-	if current != "" && current != config.KeylessModelConfig {
-		a.notef("NOTE: %s was on modelConfig %q — preserving it ('make use PRESET=ollama' resets)", agent, current)
-		return current, true
-	}
-	return config.KeylessModelConfig, false
-}
-
-func (a *App) patchModelConfig(agent, modelConfig string) error {
-	patch := fmt.Sprintf(`{"spec":{"declarative":{"modelConfig":%q}}}`, modelConfig)
-	return a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", agent, "--type", "merge", "-p", patch)
-}
-
-func (a *App) waitAgentReady(agent string) error {
-	return a.kubectlRun("-n", "kagent", "wait",
-		`--for=jsonpath={.status.conditions[?(@.type=="Ready")].status}=True`,
-		"agents.kagent.dev/"+agent, "--timeout=300s")
-}
-
-func (a *App) stepAgent() error {
-	current, err := a.liveModelConfig("hello-world")
-	if err != nil {
-		return err
-	}
-	desired, changed := a.desiredModelConfig("hello-world", current)
-	if current == config.KeylessModelConfig && a.selectedLocalModel == nil && !a.Cfg.ModelExplicit {
-		a.selectedLocalModel, err = a.liveKeylessLocalModel()
-		if err != nil {
-			return err
-		}
-	}
-	body, err := a.renderModelManifest("hello-world.yaml")
-	if err != nil {
-		return err
-	}
-	if err := a.applyBytes("hello-world.yaml", body); err != nil {
-		return err
-	}
-	if changed {
-		if err := a.patchModelConfig("hello-world", desired); err != nil {
-			return err
-		}
-	}
-	return a.waitAgentReady("hello-world")
-}
-
-func (a *App) liveKeylessLocalModel() (*localModel, error) {
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "modelconfig", config.KeylessModelConfig, "-o", "json")
-	if isNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("cannot read live ModelConfig %q: %w", config.KeylessModelConfig, err)
-	}
-	return parseLiveKeylessLocalModel([]byte(raw))
-}
-
-func parseLiveKeylessLocalModel(raw []byte) (*localModel, error) {
-	var live struct {
-		Spec struct {
-			Provider string `json:"provider"`
-			Model    string `json:"model"`
-			Ollama   struct {
-				Host string `json:"host"`
-			} `json:"ollama"`
-		} `json:"spec"`
-	}
-	if err := json.Unmarshal(raw, &live); err != nil {
-		return nil, fmt.Errorf("cannot parse live ModelConfig %q: %w", config.KeylessModelConfig, err)
-	}
-	host := strings.TrimSpace(live.Spec.Ollama.Host)
-	if !strings.EqualFold(strings.TrimSpace(live.Spec.Provider), "ollama") || host == "" || host == "http://ollama.ollama.svc.cluster.local:11434" {
-		return nil, nil
-	}
-	return &localModel{Provider: "ollama", Model: strings.TrimSpace(live.Spec.Model), Endpoint: host}, nil
-}
-
-// agentJSON is the sliver of an Agent kmx reads back.
-type agentJSON struct {
-	Spec struct {
-		Declarative struct {
-			ModelConfig string          `json:"modelConfig"`
-			Tools       json.RawMessage `json:"tools"`
-		} `json:"declarative"`
-	} `json:"spec"`
-}
-
-// stepToolsAgent preserves the non-default model and existing owner tool
-// wiring. A retired gateway reference still belongs to the owner: applying
-// the default manifest must not silently repoint it at a direct server.
-func (a *App) stepToolsAgent() error {
-	// The RemoteMCPServer the chart publishes has to be accepted before an
-	// Agent can wire to it.
-	if err := a.kubectlRun("-n", "kagent", "wait",
-		`--for=jsonpath={.status.conditions[?(@.type=="Accepted")].status}=True`,
-		"remotemcpserver/kagent-tool-server", "--timeout=300s"); err != nil {
-		return err
-	}
-
-	var live agentJSON
-	raw, err := a.kubectlCapture("-n", "kagent", "get", "agents.kagent.dev", "hello-tools", "-o", "json")
-	switch {
-	case isNotFound(err):
-		// Fresh cluster: nothing to preserve.
-	case err != nil:
-		return fmt.Errorf("cannot read hello-tools' live tool wiring (refusing to risk un-governing it): %w", err)
-	default:
-		if err := json.Unmarshal([]byte(raw), &live); err != nil {
-			return fmt.Errorf("cannot parse hello-tools: %w", err)
-		}
-	}
-
-	// Is the live agent wired to the GATEWAY? Every entry is inspected, not
-	// just the first: an agent with a second tool that happens to sort ahead
-	// of the governed one would otherwise read as ungoverned and be quietly
-	// pointed back at the unaudited server. And a decode failure is an
-	// error, not a "no": failing to understand the live wiring is exactly
-	// when this code must not act.
-	governedByGateway := false
-	if len(live.Spec.Declarative.Tools) > 0 {
-		var tools []struct {
-			McpServer struct {
-				Name string `json:"name"`
-			} `json:"mcpServer"`
-		}
-		if err := json.Unmarshal(live.Spec.Declarative.Tools, &tools); err != nil {
-			return fmt.Errorf("cannot read hello-tools' live tool wiring (refusing to risk un-governing it): %w", err)
-		}
-		for _, tool := range tools {
-			if tool.McpServer.Name == "kaimahi-tools" {
-				governedByGateway = true
-				break
-			}
-		}
-	}
-
-	desired, changed := a.desiredModelConfig("hello-tools", live.Spec.Declarative.ModelConfig)
-	if err := a.apply("tools-agent.yaml"); err != nil {
-		return err
-	}
-	if changed {
-		if err := a.patchModelConfig("hello-tools", desired); err != nil {
-			return err
-		}
-	}
-	if governedByGateway {
-		a.notef("NOTE: preserving hello-tools' existing kaimahi-tools wiring. The gateway is retired; review and replace this owner-managed route deliberately.")
-		patch := fmt.Sprintf(`{"spec":{"declarative":{"tools":%s}}}`, string(live.Spec.Declarative.Tools))
-		if err := a.kubectlRun("-n", "kagent", "patch", "agents.kagent.dev", "hello-tools", "--type", "merge", "-p", patch); err != nil {
-			return err
-		}
-	}
-	return a.waitAgentReady("hello-tools")
 }

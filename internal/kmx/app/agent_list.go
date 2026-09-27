@@ -9,68 +9,27 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// ListAgents prints Agent resources. Which KIND of agent depends on
-// --namespace, and that is not a shortcut.
+// ListAgents prints the Orka Agents in one namespace.
 //
-// Two runtimes are in play. `kmx agent create` writes Orka Agents into a
-// namespace the operator names; the legacy kagent runtime keeps its agents in
-// one fixed namespace. Listing both in one table would merge two different
-// kinds under one set of column headings and imply they are interchangeable.
-//
-// So the namespace selects the question being asked. Without one, this reports
-// the legacy runtime, as it always has. With one, it reports the Orka Agents
-// there — which is what `kmx agent create` and `kmx agent show` operate on.
-//
-// Before this existed, an agent created by `kmx agent create` could not be
-// listed by this inventory command, and `kmx agent show` pointed at a
-// --namespace flag that did not exist.
+// These are the agents `kmx agent create` writes and `kmx agent show`
+// inspects. Orka watches namespaces explicitly, so the namespace is part of
+// the question: an omitted one reads the namespace the pinned installer uses,
+// which is the same default `kmx agent chat` resolves against.
 func (a *App) ListAgents(output, namespace string) error {
-	if strings.TrimSpace(namespace) != "" {
-		return a.listOrkaAgents(output, strings.TrimSpace(namespace))
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = OrkaNamespace
 	}
-	return a.listKagentAgents(output)
-}
-
-// listKagentAgents reports the legacy runtime's agents, in its fixed namespace.
-func (a *App) listKagentAgents(output string) error {
-	format, err := agentListFormat(output)
-	if err != nil {
-		return err
-	}
-	if err := a.preflight(depKubectl); err != nil {
-		return err
-	}
-	if format != "table" {
-		return a.kubectlRun("-n", config_kagentNamespace, "get", "agents.kagent.dev", "-o", format)
-	}
-	raw, err := a.kubectlCapture("-n", config_kagentNamespace, "get", "agents.kagent.dev", "-o", "json")
-	if err != nil {
-		return err
-	}
-	var agents objectList[agentStatus]
-	if err := json.Unmarshal([]byte(raw), &agents); err != nil {
-		return fmt.Errorf("agents returned invalid JSON: %w", err)
-	}
-	rows := agentListRows(agents.Items)
-	ui := cliui.New(a.Out)
-	if ui.Rich() {
-		fmt.Fprintln(a.Out, ui.Report("Agents", []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState))
-		return nil
-	}
-	fmt.Fprintln(a.Out, ui.Heading("Agents"))
-	if len(rows) == 0 {
-		fmt.Fprintln(a.Out, "  none")
-		return nil
-	}
-	humanTable(a.Out, []string{"NAME", "READY", "ACCEPTED", "MODEL CONFIG", "TOOL SERVER"}, rows)
-	return nil
+	return a.listOrkaAgents(output, namespace)
 }
 
 // listOrkaAgents reports the Orka Agents in one namespace.
 //
-// Orka watches namespaces explicitly, so there is no safe default to guess: a
-// wrong one would report "none" about a namespace nobody meant. The caller
-// names it, the same way `kmx agent show` and `kmx agent create` require it.
+// The namespace is always resolved by the caller above, which defaults it to
+// the one the pinned installer uses. It is a parameter rather than a lookup
+// here so that this stays a report about a named namespace: Orka watches
+// namespaces explicitly, and a report that chose its own would answer about a
+// namespace nobody meant.
 func (a *App) listOrkaAgents(output, namespace string) error {
 	format, err := agentListFormat(output)
 	if err != nil {
@@ -98,7 +57,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 		// Anything else is unread, and is returned as it arrived.
 		if noSuchResourceType(err) {
 			return fmt.Errorf("no Orka Agent kind on this cluster, so nothing here is an Orka agent.\n"+
-				"  Install Orka with `%s`, or drop --namespace to list the legacy kagent runtime",
+				"  Install Orka with `%s`",
 				a.operationCommand("orka", "install"))
 		}
 		return err
@@ -154,7 +113,7 @@ func boolState(ready bool) string {
 	return "no"
 }
 
-// agentListFormat validates the output format once for both runtimes.
+// agentListFormat validates the output format.
 func agentListFormat(output string) (string, error) {
 	format := strings.ToLower(strings.TrimSpace(output))
 	if format == "" {
@@ -164,25 +123,4 @@ func agentListFormat(output string) (string, error) {
 		return "", fmt.Errorf("agent list output %q is not supported — use table, json, or yaml", output)
 	}
 	return format, nil
-}
-
-func agentListRows(agents []agentStatus) [][]string {
-	rows := make([][]string, 0, len(agents))
-	for _, agent := range agents {
-		servers := make([]string, 0, len(agent.Spec.Declarative.Tools))
-		for _, tool := range agent.Spec.Declarative.Tools {
-			if tool.MCPServer.Name != "" {
-				servers = append(servers, tool.MCPServer.Name)
-			}
-		}
-		rows = append(rows, []string{
-			agent.Metadata.Name,
-			condition(agent.Status.Conditions, "Ready"),
-			condition(agent.Status.Conditions, "Accepted"),
-			agent.Spec.Declarative.ModelConfig,
-			valueOr(strings.Join(servers, ","), "none"),
-		})
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
-	return rows
 }

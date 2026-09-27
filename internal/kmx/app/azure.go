@@ -11,9 +11,9 @@ import (
 
 // The Azure CLI is a prerequisite and is deliberately NOT fetched.
 //
-// kmx downloads kind, kubectl and Helm when a machine lacks them, pinned and
+// kmx downloads kind and kubectl when a machine lacks them, pinned and
 // checksum-verified, because each is a single binary and the alternative is a
-// first agent that is four downloads away. The Azure CLI is neither of those
+// first agent that is several downloads away. The Azure CLI is neither of those
 // things. It is a Python distribution rather than one file, it has a real
 // package story on every platform it supports, and it must be signed in
 // interactively before it is useful — so fetching it would save an operator

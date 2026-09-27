@@ -46,8 +46,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | `models add` | validation/progress on stderr | `--out -` YAML | Model overlay/policy bundle remains exact and ANSI-free. |
 | `metrics` | none on stdout beyond metrics | Prometheus text | Exposition is permanently raw; replica evidence stays on stderr. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
-| one-shot chat | parsed human reply on a TTY | pipe or `--json` A2A bytes | Raw branch remains byte-for-byte upstream output. |
-| interactive chat | streamed human transcript | none | Enhanced input requires capable input/output terminals; scanner fallback is supported. `--interactive --json` is refused. |
+| agent chat | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
 | ledger, credentials, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns; flow now reads only the model ledger. Custom approval/grant/audit reports are removed. |
@@ -107,7 +106,7 @@ The standalone example combines `RoundedBorder`, padding, and
 where the operator must stop and decide:
 
 - a remote-context confirmation;
-- a native kagent decision awaiting explicit consent;
+- a native runtime decision awaiting explicit consent;
 - a destructive restore or teardown summary.
 
 Keep these blocks compact and left-aligned. The command a user copies must stay
@@ -131,9 +130,9 @@ indentation to imply ownership.
 
 The layout example uses `Width`, `lipgloss.Width`, `JoinHorizontal`, and
 `JoinVertical` to compose columns, then clamps the result to the physical
-terminal width. This can improve `kmx status` on wide terminals:
+terminal width. This can improve wide reports such as `kmx agent list`:
 
-- runtime and governance summaries side by side when there is room;
+- related summaries side by side when there is room;
 - one vertical flow on narrow terminals;
 - a compact next-actions panel below both.
 
@@ -207,10 +206,9 @@ The existing chat state machine remains authoritative for:
 Those indentation levels are not DIY decoration to replace with a snapshot
 tree: they stop model-authored text from occupying renderer-owned provenance
 positions. Lip Gloss styling is applied only after dynamic text is sanitized.
-One-shot piped and `--json` chat output bypasses the human renderer byte-for-byte.
-Explicit `--interactive` selects the human session even with scanner input;
-combining it with `--json` is refused before application loading.
-The one-shot TTY view sanitizes replies, tool names, and state before display.
+Orka chat requires `--interactive`, including with scanner input. Retired `--json`
+is refused before application loading; there is no raw A2A JSON equivalent for
+an existing Agent.
 
 `NO_COLOR` keeps static rich layout on a capable terminal, but chat separately
 disables cursor effects and enhanced input under it. `TERM=dumb`, non-terminal
@@ -294,7 +292,7 @@ These are safety-semantic and format fixes, not merely color changes:
   governance is unavailable, required credentials are missing/unreadable, an installed
   plane has zero or insufficient ready replicas, or Ollama could not be read.
   A supported direct route alone is not a fault. An obsolete gateway URL must
-  not be reported as healthy direct routing; raw kagent tool inventory remains.
+  not be reported as healthy direct routing; raw runtime tool inventory remains.
 - Flow counts model refusals from `cost_source: denied`, not numeric HTTP status;
   an upstream HTTP error alone is not a plane refusal. The corrected summary
   total is intentional in redirected text too.
@@ -302,13 +300,11 @@ These are safety-semantic and format fixes, not merely color changes:
   question phase done. `governed: false` retains the unchanged JSON key set and
   means this invocation did not enable governance, not that the cluster has none.
   Quickstart/up/plane no longer claim existing routing is absent on a rerun.
-- Quickstart preserves every deployed kagent application release, with only a
-  controller rollout check. A valid empty release listing permits minimal
-  `helm install`, never application upgrade; concurrent creation therefore fails
-  rather than overwriting. Non-deployed releases and unreadable/unexpected
-  listings refuse. Explicit Helm 3/4 status flags replace `list --all`. New
-  application installs and full-profile `up` use Helm workload/job waits; the
-  shared CRD upgrade/install and other setup mutations are not removed.
+- Quickstart no longer discovers, installs, or reconciles the legacy Helm
+  release. It reconciles the pinned Orka runtime, then reuses only an exact
+  match of its fixed Provider and Agent; a differing live spec is refused
+  rather than overwritten. Every run creates a fresh Task. No setup path uses
+  Helm any more: the legacy chart install was its only caller and is removed.
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
   and context names. Credential bounds and incompatible Secret/preset wiring are
@@ -339,9 +335,11 @@ positive per-call governance receipts in chat. Existing chat route labels attest
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.
 
-Residual policies: broad one-shot chat/quickstart transport retries are unchanged
+Residual policies: broad one-shot **legacy-runtime** chat transport retries are unchanged
 (up to three retries for matching connection refusal, EOF, or reset). Ambiguous
 disconnects can repeat effects, including with an explicit one-shot session.
+`kmx quickstart` no longer shares that policy: the Orka path creates one Task and
+polls its result without resubmitting.
 Question-only resampling remains at most twice under its existing exclusions.
 Interactive `/retry` resends a message explicitly, not exactly once. History still
 skips malformed event data and limits verbose payload display; replay deduplication

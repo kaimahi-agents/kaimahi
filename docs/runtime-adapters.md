@@ -55,9 +55,11 @@ Events are observations, not completion receipts. Only a successful `Send` retur
 means the runtime's terminal-state checks completed successfully. Terminal input
 and presentation stay outside the Session contract.
 
-The current registry includes Orka and kagent. It preserves explicit namespace
-rules and Orka-first automatic discovery. A third runtime is exercised in tests to
-ensure capabilities and commands do not leak between implementations.
+The current registry contains Orka alone. It preserves explicit namespace rules
+and Orka-first automatic discovery; the ordered walk remains a walk so a second
+platform can be registered without the caller learning about it. A third runtime
+is exercised in tests to ensure capabilities and commands do not leak between
+implementations.
 
 ## Inference provider contract
 

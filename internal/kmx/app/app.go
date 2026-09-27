@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
@@ -46,9 +47,7 @@ type App struct {
 	Out               io.Writer
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
-	InvocationCommand string
-	// chatJSON forces raw A2A JSON from `agent chat` on a terminal.
-	chatJSON           bool
+	InvocationCommand  string
 	chatVerbose        bool
 	chatInference      string
 	azureDiscoveryMode string
@@ -94,6 +93,11 @@ type App struct {
 	// Set only while preparing the Orka result forward, so cancellation and
 	// signals kill a forward even before its bound-port announcement.
 	orkaForwardContext context.Context
+
+	// quickstartResultPort moves quickstart's loopback result forward off the
+	// fixed port so a test can own a listener. Empty in every real
+	// invocation, where the fixed port is the only one.
+	quickstartResultPort string
 }
 
 // New builds an App around the process's own streams.
@@ -153,6 +157,22 @@ func (a *App) kubectlQuiet(args ...string) bool {
 	return a.Run.Quiet("kubectl", a.kubectl(args...)...)
 }
 
+// isNotFound reports whether a kubectl failure was "the object is not there",
+// as opposed to "the cluster could not be reached" or "you may not read it".
+//
+// The distinction is what lets a read be TOLERANT without becoming blind. A
+// fresh cluster legitimately has no plane, no namespace and no Secret yet,
+// but an unreachable API server or an RBAC denial must NEVER be read as
+// "absent" — that is how a second certificate authority gets minted under a
+// plane whose workloads trust the first.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
+}
+
 // Capture and Command make App an admin.Kube: the admin plumbing reaches the
 // cluster through the SAME kubectl every other read and write here uses,
 // carrying the same explicit --context. It cannot be aimed anywhere else.
@@ -185,35 +205,26 @@ func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 	return cfg, nil
 }
 
-func (a *App) requireExistingContext() error {
-	cfg, err := a.kubeconfig()
-	if err != nil {
-		return err
-	}
-	posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
-	if err != nil {
-		return fmt.Errorf("kube-guard: %w", err)
-	}
-	if posture.Host != "" {
-		return nil
-	}
-	if a.Cfg.ContextSource == config.SourceDefault {
-		return fmt.Errorf("setup is incomplete: context %q has not been created yet\n  run `kmx quickstart` to create or repair the local kind cluster", a.Cfg.KubeContext)
-	}
-	return fmt.Errorf("context %q has not been created yet\n  run `kmx quickstart` for the local default, or select an existing context with `kmx ctx <name>`", a.Cfg.KubeContext)
-}
-
 // Guard prints where the action will land and refuses anything that is not a
 // local kind cluster without explicit confirmation. It runs at most once per
 // process.
 func (a *App) Guard(action, command string) error {
-	return a.guardWith(action, command, false, false)
+	return a.guardWith(action, command, config.GuardNamespaceHint, false, false)
 }
 
 // GuardCreate is Guard for bring-up commands that create or repair their
 // exact kind context before performing cluster work.
 func (a *App) GuardCreate(action, command string) error {
-	return a.guardWith(action, command, false, true)
+	return a.guardWith(action, command, config.GuardNamespaceHint, false, true)
+}
+
+// GuardCreateIn is GuardCreate for a caller that knows exactly which
+// namespaces it writes to, and so can say so instead of printing the
+// generic list. The banner's claim is where the action lands; naming
+// namespaces the command never touches weakens it, and on the Orka path it
+// advertises a runtime that path does not install.
+func (a *App) GuardCreateIn(action, command, namespaces string) error {
+	return a.guardWith(action, command, namespaces, false, true)
 }
 
 // GuardKnown is Guard for an action that must not take the "about to be
@@ -221,10 +232,10 @@ func (a *App) GuardCreate(action, command string) error {
 // or the operator confirms it by name. `kmx down` is the caller — see the
 // reasoning there and on guard.Request.MustBeKnown.
 func (a *App) GuardKnown(action, command string) error {
-	return a.guardWith(action, command, true, false)
+	return a.guardWith(action, command, config.GuardNamespaceHint, true, false)
 }
 
-func (a *App) guardWith(action, command string, mustBeKnown, createsContext bool) error {
+func (a *App) guardWith(action, command, namespaces string, mustBeKnown, createsContext bool) error {
 	if a.guarded {
 		return nil
 	}
@@ -239,7 +250,7 @@ func (a *App) guardWith(action, command string, mustBeKnown, createsContext bool
 		Action:         action,
 		Context:        a.Cfg.KubeContext,
 		Source:         a.Cfg.ContextSource,
-		Namespaces:     config.GuardNamespaces,
+		Namespaces:     namespaces,
 		Confirm:        a.Cfg.Confirm,
 		Command:        command,
 		MustBeKnown:    mustBeKnown,

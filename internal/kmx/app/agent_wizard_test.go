@@ -436,48 +436,6 @@ func TestCreateWizardConfirmationSanitizesFlagValues(t *testing.T) {
 	}
 }
 
-func TestEditAgentLeavesOriginalOnInvalidCandidate(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "demo.yaml")
-	original := "apiVersion: kagent.dev/v1alpha2\nkind: Agent\nmetadata:\n  name: demo\n"
-	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	editor := filepath.Join(dir, "editor")
-	if err := os.WriteFile(editor, []byte("#!/bin/sh\nprintf 'not: [valid' > \"$1\"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("EDITOR", editor)
-	t.Setenv("VISUAL", "")
-	fakeTool(t, dir, "kubectl", "exit 1")
-	t.Setenv("PATH", dir)
-	// Validation stops at kubectl; the invalid source must never replace the original.
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
-	if err := a.EditAgent("demo", path); err == nil {
-		t.Fatal("invalid edit was accepted")
-	}
-	got, _ := os.ReadFile(path)
-	if string(got) != original {
-		t.Fatalf("invalid edit replaced original:\n%s", got)
-	}
-}
-
-func TestEditAgentRefusesSymlink(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "target.yaml")
-	link := filepath.Join(dir, "demo.yaml")
-	if err := os.WriteFile(target, []byte("kind: Agent\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}}
-	if err := a.EditAgent("demo", link); err == nil || !strings.Contains(err.Error(), "symlink") {
-		t.Fatalf("symlink edit was not refused: %v", err)
-	}
-}
-
 func TestCreateRejectsDryRunWithoutApply(t *testing.T) {
 	a := &App{}
 	err := a.CreateAgent(CreateOptions{Name: "demo", NoApply: true, DryRun: true})
@@ -558,16 +516,5 @@ func TestCreateWizardRefusesKeyShapedDescriptionBeforePromptEcho(t *testing.T) {
 				t.Fatal("credential echo assertion missed an echo or rejected safe output")
 			}
 		})
-	}
-}
-
-func TestEditorParsingPinsContext(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", `[ "$1" = "--context" ] && [ "$2" = "kind-test" ] || exit 1
- printf '%s' '{"apiVersion":"kagent.dev/v1alpha2","kind":"Agent","metadata":{"name":"demo","namespace":"kagent"},"spec":{"type":"Declarative","declarative":{"modelConfig":"local"}}}'`)
-	t.Setenv("PATH", dir)
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}}
-	if _, err := a.validateAgentEdit("demo.yaml", "demo"); err != nil {
-		t.Fatal(err)
 	}
 }

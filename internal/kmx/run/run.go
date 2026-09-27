@@ -1,5 +1,5 @@
-// Package run is kmx's shell-out layer: kind, kubectl, helm and the kagent
-// CLI, exactly as the Makefile drives them.
+// Package run is kmx's shell-out layer for external tools such as kind,
+// kubectl, container engines and cloud CLIs.
 //
 // kmx shells out rather than linking client-go. That is
 // not a shortcut — it is what keeps the Makefile and kmx the same

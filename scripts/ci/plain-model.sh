@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Deploy the PLAIN, non-Kaimahi model endpoint the model-seam onboarding
-# path is proven against (docs/govern-your-agent.md, docs/spend.md).
+# path is proven against (docs/spend.md).
 #
 # Nothing about this endpoint is Kaimahi's. It has no
-# upstream-table entry, no NetworkPolicy and no ModelConfig committed
+# upstream-table entry, no NetworkPolicy and no committed model preset
 # anywhere in this repo, and it speaks the OpenAI **Responses API** —
 # which the committed model upstreams do not, and which the bundled Ollama
 # image has no route for at all. A proof driven against `ollama` would

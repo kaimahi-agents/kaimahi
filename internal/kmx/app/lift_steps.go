@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
@@ -121,10 +120,6 @@ func (a *App) liftBoundary(opt lift.Options, work string) error {
   underlying failure: %w`, shellArg(a.Cfg.KubeContext), admin.Namespace, err)
 	}
 	return nil
-}
-
-func (a *App) liftKagent() error {
-	return a.installKagent()
 }
 
 // The managed cluster runs a hosted model, so it needs a real provider token.
@@ -251,38 +246,6 @@ func planeRegistryRepoTag() string { return PlaneImage }
 
 func planeRegistryImage(registry string) string {
 	return registry + ".azurecr.io/" + PlaneImage
-}
-
-// liftAgents puts the same two agents on the managed cluster, governed from
-// the start rather than governed afterwards.
-//
-// On the local path agents come up on a keyless model server and are switched
-// to a governed preset later. There is no keyless model server here, so an
-// agent that started ungoverned would not merely be unaudited — it would have
-// no model at all. Governing immediately after applying is what makes the
-// managed cluster's first chat a governed one.
-func (a *App) liftAgents(opt lift.Options) error {
-	resume := opt
-	resume.Step = "agents"
-	if err := a.Guard("create the agents", a.liftCommand(resume, false)); err != nil {
-		return err
-	}
-	for _, name := range []string{"hello-world.yaml", "tools-agent.yaml"} {
-		if err := a.apply(name); err != nil {
-			return err
-		}
-	}
-	if err := a.Govern(a.Cfg.Credential, GovernOptions{
-		Agent:           "hello-world",
-		Preset:          "governed-copilot",
-		Secret:          config.GovernedSecret,
-		SecretNamespace: "kagent",
-	}); err != nil {
-		return err
-	}
-	// The direct MCP agent still needs a hosted model on managed clusters.
-	// Its authored tool wiring is not changed.
-	return a.UsePreset(config.DefaultToolsAgent, "governed-copilot", nil)
 }
 
 // liftOrka installs Orka on the cluster this lift provisioned.
