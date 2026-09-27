@@ -58,8 +58,7 @@ last `sh "$installer" --quickstart` with
 Or, with Go 1.26+ and its binary directory on `PATH`, build the same release:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
-kmx quickstart
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart
 ```
 
 `kmx quickstart` is a non-interactive Orka path through local kind, Ollama,
