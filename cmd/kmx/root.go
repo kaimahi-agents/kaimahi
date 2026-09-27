@@ -133,11 +133,18 @@ func newRootCommand(state *commandState) *cobra.Command {
 // Keep retired spellings parseable but absent from help and completion.
 // Returning directly avoids loading config for commands with no surviving runtime.
 func retiredCommand(name, replacement string) *cobra.Command {
-	return &cobra.Command{Use: name, Hidden: true,
+	notice := func(cmd *cobra.Command) string {
+		return fmt.Sprintf("%s is retired; use %s", cmd.CommandPath(), replacement)
+	}
+	cmd := &cobra.Command{Use: name, Hidden: true,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
-		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("kmx %s is retired; use %s", name, replacement)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return errors.New(notice(cmd))
 		}}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		fmt.Fprintln(cmd.OutOrStdout(), notice(cmd))
+	})
+	return cmd
 }
 
 func appRun(state *commandState, fn func(*app.App) error) func(*cobra.Command, []string) error {
