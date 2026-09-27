@@ -6,6 +6,36 @@
   ],
   "lines": [
     {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"agent\", \"edit\", \"hello-world\"}, \"kmx agent edit is retired; use kubectl\"},",
+      "category": "negative",
+      "why": "Asserts that the retired command names itself and its replacement."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"agent\", \"edit\", \"hello-world\", \"--file\", \"agent.yaml\"}, \"kmx agent edit is retired; use kubectl\"},",
+      "category": "negative",
+      "why": "Asserts that legacy edit flags cannot bypass the retirement notice."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"govern\", \"--help\"}, \"kmx govern is retired; use kmx migrate\"},",
+      "category": "negative",
+      "why": "Asserts help shows the retired command's supported replacement."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"use\", \"-h\"}, \"kmx use is retired; use kmx models add\"},",
+      "category": "negative",
+      "why": "Asserts short help does not hide the retirement notice."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"agent\", \"edit\", \"--help\"}, \"kmx agent edit is retired; use kubectl --context\"},",
+      "category": "negative",
+      "why": "Asserts help names the complete retired command and context-pinned alternative."
+    },
+    {
       "path": "internal/kmx/app/retired_commands_test.go",
       "text": "// \"Govern the agent — kmx govern <credential>\" long after the command it named",
       "category": "negative",
