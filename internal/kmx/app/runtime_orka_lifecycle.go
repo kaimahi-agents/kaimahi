@@ -13,6 +13,10 @@
 //     checks, the Secret-key proof, strict server dry-runs, artifact
 //     emission and Provider → Ready → Agent → Ready → optional Task ordering
 //     all stay as they were.
+//   - The create command deploys in reconcile mode through that same staged
+//     path, so a rerun after a failed create reuses what it wrote: Provider
+//     and Agent go through reconcile Deploy's ownership decisions, and the
+//     optional Task stays create-only.
 //
 // Online creation validates against the target cluster's installed CRDs, so
 // that step stays inside the staged deploy where it has always run — after
@@ -170,15 +174,19 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 	opt.Namespace = orkaObjectNamespace(bundle.Agent)
 	opt.Name = orkaObjectName(bundle.Agent)
 	opt.Secret = orkaObjectName(bundle.Secret)
+	var reconcile *agentruntime.RenderedBundle
 	if options.Reconcile {
-		return a.reconcileOrka(ctx, rendered, bundle, opt)
+		if !a.staged {
+			return a.reconcileOrka(ctx, rendered, bundle, opt)
+		}
+		reconcile = &rendered
 	}
-	var identities []orkaIdentity
+	var resources []orkaStagedResource
 	agent, err := a.app.createOrkaStaged(ctx, opt, bundle, func(provenance string) (string, error) {
 		// The artifact an operator reads is assembled from the same exact
 		// bytes this deploy applies, never from a re-serialized copy.
 		return scaffold.OrkaArtifact(provenance, rendered.Documents())
-	}, &identities)
+	}, &resources, reconcile)
 	if err != nil {
 		return agentruntime.DeployResult{}, err
 	}
@@ -189,19 +197,28 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 	result := agentruntime.DeployResult{Ref: agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace,
 		Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}}
 	if !opt.DryRun {
-		for _, id := range identities {
+		for i, resource := range resources {
+			id := resource.id
 			if id.Kind == "Task" {
 				continue // Task completion is checked by the staged path, not Ready.
 			}
-			if err := a.app.verifyOrkaReadyNow(ctx, opt.Namespace, id); err != nil {
+			// An earlier resource can change while a later one becomes Ready.
+			if reconcile != nil {
+				desired := []map[string]any{bundle.Provider, bundle.Agent}[i]
+				err = a.app.verifyOrkaReconcile(ctx, opt.Namespace, desired, rendered, id)
+			} else {
+				err = a.app.verifyOrkaReadyNow(ctx, opt.Namespace, id)
+			}
+			if err != nil {
 				return agentruntime.DeployResult{}, err
 			}
 		}
 		result.Receipt = agentruntime.DeployReceipt{Bundle: opt.Name, PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(),
 			Target: agentruntime.DeployTarget{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace}}
-		for _, id := range identities {
+		for _, resource := range resources {
+			id := resource.id
 			result.Receipt.Resources = append(result.Receipt.Resources, agentruntime.ResourceResult{Kind: id.Kind, Name: id.Name, Namespace: opt.Namespace,
-				UID: id.UID, Generation: id.Generation, Outcome: agentruntime.ResourceCreated})
+				UID: id.UID, Generation: id.Generation, Outcome: resource.outcome})
 		}
 	}
 	return result, nil

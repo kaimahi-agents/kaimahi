@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -100,15 +101,21 @@ func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcil
 // render and no rendered bytes to emit — the artifact is serialized from the
 // bundle itself, exactly as it always was.
 func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle) error {
-	_, err := a.createOrkaStaged(ctx, opt, bundle, bundle.YAML, nil)
+	_, err := a.createOrkaStaged(ctx, opt, bundle, bundle.YAML, nil, nil)
 	return err
+}
+
+// orkaStagedResource is one Provider, Agent or Task the staged create left
+// current-generation Ready (or, for a Task, succeeded), with what it did to it.
+type orkaStagedResource struct {
+	id      orkaIdentity
+	outcome agentruntime.ResourceOutcome
 }
 
 // createOrkaStaged runs the staged online create: mutation guard, installed
 // CRD validation, collision checks, the separately provisioned Secret's key
 // proof, strict server dry-runs, artifact emission, and Provider → Ready →
-// Agent → Ready → optional Task/result in that order. Nothing about that
-// sequence changed when the seam was added.
+// Agent → Ready → optional Task/result in that order.
 //
 // artifact renders the reviewable document for the provenance this deploy
 // resolved. It is a function rather than a string because the provenance is
@@ -117,9 +124,17 @@ func (a *App) createOrkaOnline(ctx context.Context, opt CreateOptions, bundle *s
 // exact bytes it is deploying can emit those bytes instead of a
 // re-serialized copy of them.
 //
-// It returns the created Agent's identity so a lifecycle Deploy can name what
-// it created. A --dry-run create writes nothing and returns a zero identity.
-func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error), identities *[]orkaIdentity) (agent orkaIdentity, err error) {
+// reconcile, when set, is the rendered bundle a create is applying, and makes
+// that create rerunnable: Provider and Agent go through reconcile Deploy's
+// inspection and writes, so resources carrying this bundle's markers are
+// reused or updated, identical unmarked ones adopted and anything else
+// refused, and an identical existing artifact is kept. The optional Task stays
+// create-only and still runs only after both are Ready. Without it (lift, and
+// --dry-run) every resource must be absent, as it always had to be.
+//
+// It returns the Agent's identity so a lifecycle Deploy can name it. A
+// --dry-run create writes nothing and returns a zero identity.
+func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error), resources *[]orkaStagedResource, reconcile *agentruntime.RenderedBundle) (agent orkaIdentity, err error) {
 	stage := "Validate schemas and prerequisites"
 	report := func(status string, err error) {
 		if a.operationProgress != nil {
@@ -132,6 +147,9 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 			report("failed", err)
 		}
 	}()
+	if reconcile != nil && (opt.DryRun || a.liftReuse) {
+		return orkaIdentity{}, fmt.Errorf("Orka reconcile requires an online create, not --dry-run or lift")
+	}
 	if err := a.guardOrkaCreate(ctx, opt); err != nil {
 		return orkaIdentity{}, err
 	}
@@ -170,6 +188,9 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 			}
 			continue
 		}
+		if reconcile != nil && doc["kind"] != "Task" {
+			continue // Inspected, with its admission dry-run, in the next stage.
+		}
 		if err := a.orkaAbsent(ctx, opt.Namespace, doc); err != nil {
 			return orkaIdentity{}, err
 		}
@@ -183,6 +204,14 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 	report("active", nil)
 	for _, doc := range bundle.Documents()[1:] {
 		if existing[doc["kind"].(string)] != nil {
+			continue
+		}
+		if reconcile != nil && doc["kind"] != "Task" {
+			// Read-only: refuses a resource this bundle may not own before
+			// anything is written, and server dry-runs the write it would make.
+			if _, err := a.inspectOrkaReconcile(ctx, opt.Namespace, doc, *reconcile); err != nil {
+				return orkaIdentity{}, err
+			}
 			continue
 		}
 		body, err := json.Marshal(doc)
@@ -215,7 +244,9 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		}
 	}
 	if !a.liftReuse {
-		if err := a.emitOrka(opt, document); err != nil {
+		// Only a rerunnable create may keep an identical artifact: a Task's
+		// random identity means its artifact never matches a later run.
+		if err := a.emitOrkaArtifact(opt, document, reconcile != nil && bundle.Task == nil); err != nil {
 			return orkaIdentity{}, err
 		}
 	}
@@ -223,7 +254,12 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 	var created []string
 	defer func() {
 		if err != nil {
-			a.notef("Stopped; no later resources attempted, no rollback or adoption. Created: %s", strings.Join(created, ", "))
+			if reconcile == nil {
+				a.notef("Stopped; no later resources attempted, no rollback or adoption. Created: %s", strings.Join(created, ", "))
+				return
+			}
+			a.notef("Stopped; no later resources attempted, nothing rolled back. Created: %s", strings.Join(created, ", "))
+			err = fmt.Errorf("%w\n%s", err, orkaRerunAdvice(bundle.Task != nil))
 		}
 	}()
 	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
@@ -231,7 +267,7 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		report("active", nil)
 		var id orkaIdentity
 		var err error
-		reused := false
+		outcome := agentruntime.ResourceCreated
 		if a.liftReuse {
 			match, checkErr := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 			if checkErr != nil {
@@ -239,12 +275,26 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 			}
 			if match != nil {
 				id = *match
-				reused = true
+				outcome = agentruntime.ResourceReused
 			}
 		}
-		if id.UID == "" {
+		switch {
+		case reconcile != nil:
+			// Reinspect immediately before the write: another writer may have
+			// changed the preflight decision.
+			var check orkaReconcileCheck
+			check, err = a.inspectOrkaReconcile(ctx, opt.Namespace, doc, *reconcile)
+			if err != nil {
+				return orkaIdentity{}, err
+			}
+			outcome = check.outcome
+			if outcome == agentruntime.ResourceAdopted {
+				a.notef("Adopting identical unmarked %s/%s", check.id.Kind, check.id.Name)
+			}
+			id, err = a.applyOrkaReconcile(ctx, opt.Namespace, check)
+		case id.UID == "":
 			id, err = a.createOrkaObject(ctx, opt.Namespace, doc)
-		} else {
+		default:
 			a.notef("Reusing matching %s/%s", id.Kind, id.Name)
 		}
 		if err != nil {
@@ -253,21 +303,30 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		if id.Kind == "Agent" {
 			agent = id
 		}
-		created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
-		if reused {
+		if outcome == agentruntime.ResourceReused {
 			report("skipped", nil)
 		} else {
 			report("done", nil)
 		}
 		stage = "Wait for " + id.Kind + " Ready"
 		report("active", nil)
-		a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", id.Kind, id.Name, id.UID)
+		if outcome == agentruntime.ResourceCreated || reconcile == nil {
+			created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
+			a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", id.Kind, id.Name, id.UID)
+		} else {
+			a.notef("%s/%s (UID %s) %s; waiting for current-generation Ready.", id.Kind, id.Name, id.UID, outcome)
+		}
 		if err := a.waitOrkaReady(ctx, opt.Namespace, id); err != nil {
 			return orkaIdentity{}, err
 		}
+		if reconcile != nil {
+			if err := a.verifyOrkaReconcile(ctx, opt.Namespace, doc, *reconcile, id); err != nil {
+				return orkaIdentity{}, err
+			}
+		}
 		report("done", nil)
-		if identities != nil {
-			*identities = append(*identities, id)
+		if resources != nil {
+			*resources = append(*resources, orkaStagedResource{id: id, outcome: outcome})
 		}
 	}
 	if bundle.Task == nil {
@@ -288,10 +347,21 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		return orkaIdentity{}, err
 	}
 	a.notef("Task/%s UID %s succeeded and its answer was retrieved. Fresh-name and UID checks do not bind the result bytes to a UID.", id.Name, id.UID)
-	if identities != nil {
-		*identities = append(*identities, id)
+	if resources != nil {
+		*resources = append(*resources, orkaStagedResource{id: id, outcome: agentruntime.ResourceCreated})
 	}
 	return agent, nil
+}
+
+// orkaRerunAdvice tells an operator whose create stopped part-way what a
+// rerun does. Provider and Agent carry this bundle's markers from their first
+// write, so the same command reuses them; a Task never is reused, and its
+// fresh identity changes the artifact, so a --task rerun needs a new --out.
+func orkaRerunAdvice(task bool) string {
+	if task {
+		return "Rerunning is safe with a new --out: the Provider and Agent this bundle owns are reused, and a new Task is submitted; the stopped Task is never resubmitted."
+	}
+	return "Rerunning the same command is safe: the Provider and Agent this bundle owns are reused or updated, and nothing else is overwritten."
 }
 
 func orkaObjectName(doc map[string]any) string {

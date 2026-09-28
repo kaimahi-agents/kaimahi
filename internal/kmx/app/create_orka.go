@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,7 +38,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 	// One adapter instance serves this whole create: Render and Deploy are
 	// declared by it because they act on these flags, and Deploy consumes
 	// only what this Render produced.
-	adapter := orkaRuntimeAdapter{app: a, create: &opt}
+	adapter := orkaRuntimeAdapter{app: a, create: &opt, staged: true}
 	source, err := portableOrkaSource(opt)
 	if err != nil {
 		return err
@@ -67,8 +68,15 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		}
 		return writeOrkaBundle(bundlePath, source, bindings)
 	}
+	// An applying create reconciles its Provider and Agent, so rerunning it
+	// after a failure is safe; lift and --dry-run keep create-only semantics.
+	reconcile := !opt.NoApply && !opt.DryRun && !a.liftReuse
 	if !a.liftReuse {
-		if err := preflightOrkaArtifact(opt); err != nil {
+		var identical [][]byte
+		if reconcile {
+			identical = rendered.Documents()
+		}
+		if err := preflightOrkaArtifact(opt, identical); err != nil {
 			return err
 		}
 	}
@@ -86,7 +94,7 @@ func (a *App) CreateAgent(opt CreateOptions) error {
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{})
+		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{Reconcile: reconcile})
 		return err
 	}
 	// Offline: renderOrka already validated against the pinned snapshot and
@@ -260,29 +268,111 @@ func orkaArtifactExistsError(path string) error {
 		"  Create Provider only and wait for current-generation Ready; then Agent and wait; then optional Task.", path)
 }
 
-func preflightOrkaArtifact(opt CreateOptions) error {
+// orkaArtifactDiffersError refuses an existing artifact on a rerunnable
+// create. An identical one is kept, so this one differs from the render — or
+// can never match it, because --task names a fresh Task on every run.
+func orkaArtifactDiffersError(path string, task bool) error {
+	reason := "differs from what this run renders"
+	if task {
+		reason = "cannot match this run: --task names a fresh Task every time"
+	}
+	return fmt.Errorf("%s already exists and %s — refusing to overwrite it.\n"+
+		"  Keep the existing artifact or choose another --out <path>.\n"+
+		"  Do not bulk-apply an Orka bundle or write its Secret skeleton.\n"+
+		"  Create Provider only and wait for current-generation Ready; then Agent and wait; then optional Task.", path, reason)
+}
+
+// preflightOrkaArtifact refuses an existing artifact before anything is
+// written. documents, when set, are the rendered documents of a rerunnable
+// (applying) create, which may keep an existing artifact identical to what it
+// renders. The installed schema's provenance is not known until the cluster is
+// read, so the existing header's provenance stands in here, and the final
+// byte comparison happens again at emission.
+func preflightOrkaArtifact(opt CreateOptions, documents [][]byte) error {
 	if opt.Out == "-" {
 		return nil
 	}
 	path := orkaArtifactPath(opt)
-	_, err := os.Lstat(path)
-	if err == nil {
-		return orkaArtifactExistsError(path)
-	}
+	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if documents == nil {
+		return orkaArtifactExistsError(path)
+	}
+	if opt.Task != "" || !info.Mode().IsRegular() {
+		return orkaArtifactDiffersError(path, opt.Task != "")
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	provenance, ok := orkaArtifactProvenance(string(existing))
+	if !ok {
+		return orkaArtifactDiffersError(path, false)
+	}
+	document, err := scaffold.OrkaArtifact(provenance, documents)
+	if err != nil || document != string(existing) {
+		return orkaArtifactDiffersError(path, false)
+	}
+	return nil
+}
+
+// orkaArtifactProvenance reads the schema provenance back out of the header
+// scaffold.OrkaArtifact writes, so an existing artifact can be re-rendered
+// and compared byte for byte.
+func orkaArtifactProvenance(artifact string) (string, bool) {
+	rest, ok := strings.CutPrefix(artifact, "# Orka bundle, scaffolded by kmx. Schema source:\n")
+	if !ok {
+		return "", false
+	}
+	header, _, ok := strings.Cut(rest, "# Local schema validation does not evaluate CEL")
+	if !ok || header == "" {
+		return "", false
+	}
+	var lines []string
+	for _, line := range strings.SplitAfter(header, "\n") {
+		if line == "" {
+			continue
+		}
+		text, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), "# ")
+		if !ok || !strings.HasSuffix(line, "\n") {
+			return "", false
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n"), true
 }
 
 func (a *App) emitOrka(opt CreateOptions, document string) error {
+	return a.emitOrkaArtifact(opt, document, false)
+}
+
+// emitOrkaArtifact writes the artifact exclusively. keepIdentical lets a
+// rerunnable create keep an existing regular file whose bytes are exactly
+// this document; any other existing file is refused and left unchanged.
+func (a *App) emitOrkaArtifact(opt CreateOptions, document string, keepIdentical bool) error {
 	if opt.Out == "-" {
 		_, err := fmt.Fprint(a.Out, document)
 		return err
 	}
 	path := orkaArtifactPath(opt)
+	if keepIdentical {
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			if existing, err := os.ReadFile(path); err == nil && string(existing) == document {
+				a.notef("kept %s; it matches this render", path)
+				return nil
+			}
+		}
+	}
 	if err := scaffold.WriteNew(path, document); err != nil {
 		if errors.Is(err, os.ErrExist) {
+			if keepIdentical || opt.Task != "" && !opt.NoApply && !opt.DryRun {
+				return orkaArtifactDiffersError(path, opt.Task != "")
+			}
 			return orkaArtifactExistsError(path)
 		}
 		return err

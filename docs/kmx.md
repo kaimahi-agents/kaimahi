@@ -231,8 +231,10 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 - `--out -` prints rendered YAML only and implies offline; it writes no files
   unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
   writes an exclusive local rendered artifact. Default artifact file:
-  `agents/<name>.yaml`. An existing rendered artifact is never overwritten;
-  input and final YAML reject known credential shapes.
+  `agents/<name>.yaml`. An existing rendered artifact is never overwritten:
+  an applying create keeps one that is byte-identical to what it renders and
+  refuses, naming the file, one that differs; offline and `--dry-run` refuse any
+  existing file. Input and final YAML reject known credential shapes.
 - When the rendered artifact is written to a file (online creation, offline
   `--no-apply`, or online `--dry-run`), kmx also writes a Git-friendly agent
   bundle at `agents/<name>/` by default, or at `--bundle-path <directory>`.
@@ -246,25 +248,32 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   a comment or whitespace creates a new revision by design. Target bindings
   do not change it; rendered YAML and its digest do reflect them. A rerun can
   reuse an existing byte-identical bundle; if either file differs, creation
-  refuses and names the differing file. A failed deploy leaves the bundle for
-  retry; if the rendered artifact was also written, choose a new `--out` path
-  for the retry because artifact files are exclusive. Create does not adopt
-  partially created cluster resources: resolve those separately before retrying.
+  refuses and names the differing file. A failed deploy leaves the bundle and
+  the rendered artifact for retry, and **rerunning the same command is safe**:
+  both are kept when identical, and the cluster side reconciles as below.
+  With `--task` the rendered Task name is random, so the old artifact can never
+  match: a `--task` rerun refuses it and needs a new `--out` path.
 - Offline `--schema-target v0.1.3|main` selects [pinned CRD fixtures](../internal/kmx/orkaschema/README.md),
   not a network fetch. Unknown fields refuse; the pinned main snapshot lacks
   Agent/Provider rate limits and refuses those flags rather than dropping fields.
   Offline schema validation is not CEL/admission, readiness or execution proof.
 - Online uses installed CRDs with **no fixture fallback**, checks Secret/key
-  presence and collisions, and strictly server-dry-runs each custom resource.
+  presence and ownership, and strictly server-dry-runs each custom resource.
   `--dry-run` writes the local artifact but no cluster resources, token or forward;
   it tests neither result access nor execution and cannot be combined with offline modes.
 - **Never write the Secret skeleton or bulk-apply the bundle.** Provision the
   referenced key separately through your secret-management path. kmx never creates,
-  replaces or merges that Secret. Online writes use create, not apply/patch/update:
+  replaces or merges that Secret. Online creation never uses apply:
   Provider → current-generation Ready → Agent → current-generation Ready → optional
-  Task. For manual creation split out only those custom resources and preserve
-  that order and the UID/generation readiness checks, using an explicit context
-  and namespace. Failures leave partial state; reruns do not adopt or overwrite it.
+  Task. Provider and Agent are reconciled as `kmx agent lift` does
+  ([ownership](agent-lift.md)): created with the bundle's ownership markers,
+  reused or updated (under a resourceVersion precondition) when they carry them,
+  adopted when unmarked but identical, and refused otherwise — both are
+  inspected before the first write. The optional Task is always newly created,
+  never reused or resubmitted. For manual creation split out only those custom
+  resources and preserve that order and the UID/generation readiness checks,
+  using an explicit context and namespace. Failures leave partial state and
+  nothing is rolled back; the error says so, and a rerun reuses what it wrote.
 - `--task` authorizes a model call and requires an existing
   `--result-service-account` in the selected namespace; `agent create` creates no
   account or RBAC. (`kmx up --step orka` provisions `orka-result-reader`, whose
