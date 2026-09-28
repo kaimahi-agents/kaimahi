@@ -78,7 +78,8 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | author native Provider + Agent and optional Task; retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
 | `kmx agent lift <bundle-dir>` | reconcile an existing portable bundle on a prepared destination; `--plan` checks without writing. [Bundle lift](agent-lift.md) |
-| `kmx agent status <bundle-dir>` | compare the portable Git revision with each recorded target's live Provider and Agent, readiness and drift; `--to-context` selects one target, `-o json` emits structured facts. [Bundle status](agent-lift.md#checking-deployed-status) |
+| `kmx agent status <bundle-dir>` | compare the portable Git revision with each recorded target's live Provider and Agent, readiness, drift and evaluation result; `--to-context` selects one target, `-o json` emits structured facts. [Bundle status](agent-lift.md#checking-deployed-status) |
+| `kmx agent evaluate <bundle-dir>` | run the bundle's `eval/*.yaml` cases as one Task each against the deployed revision, only when it carries the bundle's current portable digest; print answers, write a receipt with answer digests (never text), exit non-zero unless every case passed. [Bundle evaluation](agent-lift.md#evaluating-a-deployed-revision) |
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
@@ -241,7 +242,10 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   records **only the creation target** (namespace, Provider type and endpoint,
   Secret name/key reference, never a value). A future lift will obtain other
   targets' bindings from its flags and kmx's local state, not additional bundle
-  files.
+  files. A new bundle also gets one example evaluation case,
+  `eval/example.yaml`, for [`kmx agent evaluate`](agent-lift.md#evaluating-a-deployed-revision);
+  cases are not part of the portable digest, and a rerun accepts any `eval/`
+  directory.
   The portable digest covers the **exact bytes** of `agent.yaml`: even changing
   a comment or whitespace creates a new revision by design. Target bindings
   do not change it; rendered YAML and its digest do reflect them. A rerun can

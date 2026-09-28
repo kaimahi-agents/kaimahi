@@ -64,8 +64,8 @@ func TestOrkaAdapterSatisfiesLifecycleAdapter(t *testing.T) {
 // TestOrkaAdapterDeclaresOnlyImplementedVerbs pins the capability rule.
 // Render and Deploy act on one create's own flags, so an adapter no create
 // configured must not advertise them: it would otherwise render some other
-// agent out of an empty CreateOptions. Status reads only the AgentRef it is
-// handed, so it is always available. Evaluate is never supported.
+// agent out of an empty CreateOptions. Status and Evaluate read only the
+// AgentRef and request they are handed, so they are always available.
 func TestOrkaAdapterDeclaresOnlyImplementedVerbs(t *testing.T) {
 	unconfigured := orkaRuntimeAdapter{app: lifecycleTestApp(t)}.Capabilities()
 	if unconfigured.Render || unconfigured.Deploy {
@@ -78,14 +78,14 @@ func TestOrkaAdapterDeclaresOnlyImplementedVerbs(t *testing.T) {
 	if !configured.Render || !configured.Deploy || !configured.Status {
 		t.Fatalf("a configured adapter declined an implemented verb: %+v", configured)
 	}
-	if unconfigured.Evaluate || configured.Evaluate {
-		t.Fatal("Orka must never advertise evaluate")
+	if !unconfigured.Evaluate || !configured.Evaluate {
+		t.Fatal("evaluate reads only its AgentRef and request and must always be available")
 	}
 }
 
 // TestOrkaAdapterRefusesUndeclaredVerbs proves the declaration is load
 // bearing: an undeclared verb returns the one shared typed error rather than
-// being attempted, and Evaluate returns it even when everything else works.
+// being attempted.
 func TestOrkaAdapterRefusesUndeclaredVerbs(t *testing.T) {
 	adapter := orkaRuntimeAdapter{app: lifecycleTestApp(t)}
 	for _, tc := range []struct {
@@ -100,10 +100,6 @@ func TestOrkaAdapterRefusesUndeclaredVerbs(t *testing.T) {
 			_, err := adapter.Deploy(context.Background(), agentruntime.RenderedBundle{}, agentruntime.DeployOptions{})
 			return err
 		}},
-		{agentruntime.VerbEvaluate, func() error {
-			_, err := adapter.Evaluate(context.Background(), agentruntime.AgentRef{}, agentruntime.EvaluationRequest{})
-			return err
-		}},
 	} {
 		t.Run(tc.verb, func(t *testing.T) {
 			var unsupported *agentruntime.UnsupportedVerbError
@@ -115,13 +111,6 @@ func TestOrkaAdapterRefusesUndeclaredVerbs(t *testing.T) {
 				t.Fatalf("unsupported error names %s/%s", unsupported.Runtime, unsupported.Verb)
 			}
 		})
-	}
-	// A configured adapter still refuses evaluate: it is not a capability
-	// this runtime has, so no amount of configuration supplies it.
-	var unsupported *agentruntime.UnsupportedVerbError
-	_, err := lifecycleAdapter(t, goldenNoTaskCreate("")).Evaluate(context.Background(), agentruntime.AgentRef{}, agentruntime.EvaluationRequest{})
-	if !errors.As(err, &unsupported) || unsupported.Verb != agentruntime.VerbEvaluate {
-		t.Fatalf("a configured adapter did not refuse evaluate: %v", err)
 	}
 }
 

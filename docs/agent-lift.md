@@ -102,8 +102,64 @@ revision: the portable digest covers **only** the bytes of `agent.yaml`, and
 No receipt is written by `--plan` or by a failed deployment. If deployment and receipt writing succeed but saving the remembered target fails, the command returns an error and the receipt remains on disk.
 
 The receipt binds deployment outcomes and target identities to the portable
-and rendered digests; it is not proof that an Agent answered a Task. Run and
-verify a Task separately if an execution proof is needed.
+and rendered digests; it is not proof that an Agent answered a Task. Use
+[`kmx agent evaluate`](#evaluating-a-deployed-revision) for execution evidence
+bound to the same digest.
+
+## Evaluating a deployed revision
+
+```console
+kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>] [--case-timeout 5m]
+```
+
+Evaluation cases live beside the bundle in `eval/*.yaml`, one case per file:
+
+```yaml
+id: sign-off
+input: Summarize today's plan in one sentence and sign off.
+expectContains:
+  - "— the release agent"
+```
+
+Decoding is strict: `id`, `input` and a non-empty `expectContains` list are
+required, unknown fields are refused, and each file holds exactly one YAML
+mapping with a unique `id`. Cases test a revision; they do not define it, so
+they are **not** part of the portable digest. `kmx agent create` scaffolds one
+trivial `eval/example.yaml` in a new bundle, and a create rerun accepts any
+`eval/` directory without touching its cases.
+
+Evaluate resolves its destination the way lift and status do: an explicit
+`--to-context`, or the bundle's remembered target, whose `kube-system` UID must
+still match. Before any case runs, the live Agent must be owned by this bundle
+and carry exactly the bundle's current portable digest; otherwise evaluate
+refuses with `deployed revision differs; lift first`. Results are bound to
+that digest. Because every case executes a Task, evaluate then passes the same
+remote-context guard as other Orka writes.
+
+Each case is one Orka Task against that Agent, created and read the way
+`kmx agent create --task` does it: the `orka-result-reader` account over a
+pinned loopback port-forward (`--result-port`, default 19180). Each case waits
+for a terminal state within `--case-timeout` (default 5m, at most 9m). A case
+is never retried, because a Task can have side effects, and Tasks are not
+cleaned up.
+
+| Verdict | Meaning |
+|---|---|
+| `pass` | The Task succeeded and its answer contains every `expectContains` string (exact, case-sensitive). |
+| `fail` | The Task ended `Failed` or `Cancelled`, or the answer lacks an expected string. |
+| `unknown` | The outcome could not be observed: the result was unreadable, the case timed out, the create was ambiguous, the case was refused before a Task was created, or the Agent's revision changed while it ran. |
+
+Every answer is printed to the terminal. The receipt,
+`<bundle-dir>/receipts/eval-<target>.json` (the same per-context, namespace
+and cluster key as the lift receipt), records the portable digest, a digest of
+the case files that ran, the Git provenance, the target and live Agent UID,
+and per case the id, verdict, matched and missing expectations, Task name and
+UID, and a SHA-256 of the answer. **It never contains answer text**, so it can
+be committed to a public repository. `--case` runs one case; its receipt covers
+only that case's file, so status does not count it as the bundle's case set.
+
+Evaluate is a gate: it exits non-zero unless every case passed, including when
+any case is `unknown`.
 
 ## Checking deployed status
 
@@ -132,6 +188,13 @@ Field comparison uses the same server-side dry-run admission as lift's
 `--plan`: it does not persist resources, but requires permission to dry-run
 create/replace. If that permission is unavailable, the comparison is
 `unknown`, not proof of an unchanged resource.
+
+Each target also reports its evaluation (`EVAL` in the table, `evaluation` in
+JSON): the recorded `pass`, `fail` or `unknown` result when an evaluation
+receipt exists for that cluster, the live Agent's UID, the bundle's current
+portable digest and the current `eval/` case set; otherwise `none`. A target
+that is behind, or whose cases changed since the last evaluation, shows
+`none`. Status never runs a case.
 
 An identical render whose portable or rendered digest marker is older has its
 ownership markers refreshed by lift with a resourceVersion precondition; lift

@@ -280,7 +280,7 @@ func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, 
 			return "", err
 		}
 		if object.Status.Phase == "Failed" || object.Status.Phase == "Cancelled" {
-			return "", fmt.Errorf("execution ended in %s", object.Status.Phase)
+			return "", &orkaTaskEndedError{Phase: object.Status.Phase}
 		}
 		succeeded = object.Status.Phase == "Succeeded"
 		if succeeded && object.Status.ResultRef.Available {
@@ -358,6 +358,13 @@ func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, 
 		}
 	}
 }
+
+// orkaTaskEndedError is a Task that reached an unsuccessful terminal phase.
+// It is the one wait outcome that says the execution itself did not succeed;
+// every other wait error means the outcome could not be observed.
+type orkaTaskEndedError struct{ Phase string }
+
+func (e *orkaTaskEndedError) Error() string { return "execution ended in " + e.Phase }
 
 func orkaTaskSuccessful(object *orkaObject) bool {
 	return object.Status.Phase == "Succeeded" && object.Status.ResultRef.Available

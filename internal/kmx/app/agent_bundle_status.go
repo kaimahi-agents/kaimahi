@@ -41,7 +41,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // BundleStatusOptions selects a bundle and, optionally, one destination
@@ -99,21 +98,25 @@ type bundleResourceStatus struct {
 // summarizes the whole target; ChangedFields and Behind are populated only
 // for their matching State.
 type bundleTargetStatus struct {
-	Context            string               `json:"context"`
-	Namespace          string               `json:"namespace"`
-	Recorded           bool                 `json:"recorded"`
-	NoReceipt          bool                 `json:"noReceipt,omitempty"`
-	ReceiptID          string               `json:"receiptID,omitempty"`
-	ObservedClusterUID string               `json:"observedClusterUID,omitempty"`
-	State              string               `json:"state"`
-	Detail             string               `json:"detail,omitempty"`
-	Behind             int                  `json:"behind,omitempty"`
-	DeployedCommit     string               `json:"deployedCommit,omitempty"`
-	GitNote            string               `json:"gitNote,omitempty"`
-	LiveDigest         string               `json:"liveDigest,omitempty"`
-	ChangedFields      []string             `json:"changedFields,omitempty"`
-	Provider           bundleResourceStatus `json:"provider"`
-	Agent              bundleResourceStatus `json:"agent"`
+	Context            string   `json:"context"`
+	Namespace          string   `json:"namespace"`
+	Recorded           bool     `json:"recorded"`
+	NoReceipt          bool     `json:"noReceipt,omitempty"`
+	ReceiptID          string   `json:"receiptID,omitempty"`
+	ObservedClusterUID string   `json:"observedClusterUID,omitempty"`
+	State              string   `json:"state"`
+	Detail             string   `json:"detail,omitempty"`
+	Behind             int      `json:"behind,omitempty"`
+	DeployedCommit     string   `json:"deployedCommit,omitempty"`
+	GitNote            string   `json:"gitNote,omitempty"`
+	LiveDigest         string   `json:"liveDigest,omitempty"`
+	ChangedFields      []string `json:"changedFields,omitempty"`
+	// Evaluation is the recorded evaluate result for the deployed revision
+	// when it is the bundle's current digest and case set: pass, fail or
+	// unknown; otherwise none.
+	Evaluation string               `json:"evaluation"`
+	Provider   bundleResourceStatus `json:"provider"`
+	Agent      bundleResourceStatus `json:"agent"`
 }
 
 type bundleStatusReport struct {
@@ -167,37 +170,10 @@ func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, e
 	if err != nil {
 		return bundleStatusReport{}, fmt.Errorf("resolve bundle: %w", err)
 	}
-	if err := scaffold.RefuseKeyShapes(bundle); err != nil {
-		return bundleStatusReport{}, fmt.Errorf("refusing credential-shaped bundle path")
-	}
-	info, err := os.Stat(bundle)
+	name, _, portableDigest, err := readBundlePortableAgent(bundle)
 	if err != nil {
-		return bundleStatusReport{}, fmt.Errorf("read bundle directory: %w", err)
+		return bundleStatusReport{}, err
 	}
-	if !info.IsDir() {
-		return bundleStatusReport{}, fmt.Errorf("bundle must be a directory")
-	}
-	agentFile := filepath.Join(bundle, "agent.yaml")
-	info, err = os.Lstat(agentFile)
-	if err != nil {
-		return bundleStatusReport{}, fmt.Errorf("read portable agent: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return bundleStatusReport{}, fmt.Errorf("agent.yaml must be a regular file")
-	}
-	source, err := os.ReadFile(agentFile)
-	if err != nil {
-		return bundleStatusReport{}, fmt.Errorf("read portable agent: %w", err)
-	}
-	portable, err := agentruntime.ParsePortableAgent(source)
-	if err != nil {
-		return bundleStatusReport{}, fmt.Errorf("invalid portable agent: %w", err)
-	}
-	name := strings.TrimSpace(portable.Metadata.Name)
-	if name == "" {
-		return bundleStatusReport{}, fmt.Errorf("invalid portable agent: metadata.name is required")
-	}
-	portableDigest := agentruntime.PortableBundleDigest(source)
 	gitCommit := liftAgentCommit(ctx, bundle, portableDigest)
 
 	targets, err := bundleStatusTargets(bundle, opt)
@@ -206,8 +182,11 @@ func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, e
 	}
 
 	report := bundleStatusReport{Bundle: name, PortableDigest: portableDigest, GitCommit: gitCommit, Targets: []bundleTargetStatus{}}
+	casesDigest := currentBundleCasesDigest(bundle)
 	for _, target := range targets {
-		report.Targets = append(report.Targets, a.observeBundleTarget(ctx, bundle, name, portableDigest, target))
+		observed := a.observeBundleTarget(ctx, bundle, name, portableDigest, target)
+		observed.Evaluation = bundleEvaluationStatus(bundle, observed, portableDigest, casesDigest)
+		report.Targets = append(report.Targets, observed)
 	}
 	return report, nil
 }
@@ -317,7 +296,8 @@ func loadBundleReceiptTargets(bundle string) ([]bundleStatusTarget, error) {
 	}
 	var targets []bundleStatusTarget
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		// Evaluation receipts share the directory but record no deployment.
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "eval-") {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -708,12 +688,12 @@ func (a *App) printBundleStatusTable(report bundleStatusReport) {
 		}
 		rows = append(rows, []string{
 			target.Context, target.Namespace, target.State, readyWord(target.Provider.Ready), readyWord(target.Agent.Ready),
-			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), detail,
+			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), target.Evaluation, detail,
 		})
 	}
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Targets",
-		[]string{"CONTEXT", "NAMESPACE", "STATE", "PROVIDER READY", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "DETAIL"}, rows,
-		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText))
+		[]string{"CONTEXT", "NAMESPACE", "STATE", "PROVIDER READY", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "EVAL", "DETAIL"}, rows,
+		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnText))
 	for _, target := range report.Targets {
 		if len(target.ChangedFields) == 0 {
 			continue

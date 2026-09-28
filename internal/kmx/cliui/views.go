@@ -138,9 +138,9 @@ func (o Output) cell(value string, role ColumnRole) string {
 	}
 	state, _, _ = strings.Cut(state, " (") // cached condition age is still shown
 	switch state {
-	case "yes", "ready", "ok", "allowed", "approved", "admitted", "running", "succeeded":
+	case "yes", "ready", "ok", "allowed", "approved", "admitted", "running", "succeeded", "pass":
 		return o.Success(value)
-	case "no", "denied", "failed", "expired", "error":
+	case "no", "denied", "failed", "expired", "error", "fail":
 		return o.Failure(value)
 	case "unknown", "pending", "requested", "expiring", "no expiry", "attention required":
 		return o.Warning(value)

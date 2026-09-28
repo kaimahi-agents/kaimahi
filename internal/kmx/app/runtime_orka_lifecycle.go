@@ -30,7 +30,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,14 +48,14 @@ import (
 // declared only by an instance a create command configured: the chat
 // registration builds an adapter with no create behind it, and an
 // unconfigured instance that advertised Render would render some other
-// create's agent out of an empty CreateOptions. Status reads only the
-// AgentRef it is given and is always available. Evaluate is permanently
-// unsupported: a native Orka Task supplies no frozen target revision, and
-// kmx must not fabricate one. Session-level chat flags remain Session's own
-// concern, not this static declaration.
+// create's agent out of an empty CreateOptions. Status and Evaluate read only
+// the AgentRef and request they are given and are always available: Evaluate
+// is bound to a revision because its request names one, and it refuses an
+// Agent not deployed at exactly that portable digest. Session-level chat flags
+// remain Session's own concern, not this static declaration.
 func (a orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
 	configured := a.create != nil
-	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: true}
+	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: true, Evaluate: true}
 }
 
 // lifecycleVerbError returns the one shared typed error for a verb this
@@ -309,14 +311,145 @@ func statusIdentityError(ref agentruntime.AgentRef, agent *orkaAgentSpec) error 
 		ref.Namespace, ref.Name, agent.Metadata.UID, want)
 }
 
-// Evaluate is permanently unsupported for Orka: a native Orka Task supplies
-// no frozen target revision and kmx must not fabricate one. It returns the
-// one shared typed error directly rather than through lifecycleVerbError,
-// which would need a fallback for a capability that is declared false and
-// never set — and that fallback could only be unreachable code claiming an
-// implementation exists.
-func (a orkaRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	return agentruntime.EvaluationReceipt{}, &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: agentruntime.VerbEvaluate}
+// Evaluate runs one case as exactly one Orka Task against the Agent the
+// reference names, and only while that Agent is deployed at the request's
+// portable digest: a result is recorded against a revision, so it must never
+// be taken from a different one.
+//
+// It reuses create --task's execution path: a short-lived orka-result-reader
+// session over a pinned loopback forward, a probe that the result endpoint
+// answers for this Task name before anything is created, one strict create,
+// and a wait for a terminal state bounded by ctx's deadline. The Task is never
+// retried or cleaned up, because a Task can have side effects.
+//
+// An error means nothing was executed: the reference, revision or result
+// access was refused before any Task was created. Once a create is attempted
+// every outcome is a receipt instead — pass or fail when the Task's outcome
+// was observed, unknown when it was not, including an ambiguous create. The
+// answer is written to the terminal and never into the receipt.
+func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.AgentRef, request agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	if err := a.lifecycleVerbError(a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	if strings.TrimSpace(ref.Namespace) == "" || strings.TrimSpace(ref.Name) == "" || strings.TrimSpace(ref.UID) == "" {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires an explicit namespace, Agent name and Agent UID")
+	}
+	if strings.TrimSpace(request.PortableDigest) == "" {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires the portable digest of the revision under test")
+	}
+	if strings.TrimSpace(request.CaseID) == "" || strings.TrimSpace(request.Input) == "" || len(request.ExpectContains) == 0 {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a case id, an input and at least one expected string")
+	}
+	if err := a.statusTargetError(ref); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, bounded := ctx.Deadline(); !bounded {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a per-case deadline")
+	}
+	if err := ctx.Err(); err != nil {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate for %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	app := a.app.withRunContext(ctx)
+	if err := app.preflight(depKubectl); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	if err := app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	suffix, err := randomHex(8)
+	if err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	name := strings.TrimRight(ref.Name[:min(len(ref.Name), 40)], "-.") + "-eval-" + suffix
+	port := a.resultPort
+	if port == "" {
+		port = "19180"
+	}
+	// The session's authority notice is printed once by the caller, not once
+	// per case.
+	quiet := *app
+	quiet.Err = io.Discard
+	session, err := quiet.openOrkaResultSession(ctx, CreateOptions{Namespace: ref.Namespace, ResultServiceAccount: orkaResultAccount, OrkaAPIService: "orka-api", ResultPort: port})
+	if err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	defer session.close()
+	// Losing the forward or its one connection stops the case; it is never
+	// recovered by resubmitting the Task.
+	ctx = session.ctx
+	if err := session.probe(ctx, ref.Namespace, name); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown}
+	task := map[string]any{
+		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task",
+		"metadata": map[string]any{"name": name, "namespace": ref.Namespace},
+		"spec":     map[string]any{"type": "ai", "prompt": request.Input, "agentRef": map[string]any{"name": ref.Name, "namespace": ref.Namespace}, "resources": map[string]any{}},
+	}
+	id, err := app.createOrkaObject(ctx, ref.Namespace, task)
+	if err != nil {
+		receipt.Detail = "Task create failed or was ambiguous; it may exist or be running, and was not retried"
+		return receipt, nil
+	}
+	receipt.TaskUID = id.UID
+	answer, err := app.waitOrkaTaskResult(ctx, ref.Namespace, id, session)
+	var ended *orkaTaskEndedError
+	switch {
+	case errors.As(err, &ended):
+		receipt.Verdict = agentruntime.EvaluationFail
+		receipt.Detail = "Task ended in " + ended.Phase
+		return receipt, nil
+	case errors.Is(err, context.DeadlineExceeded):
+		receipt.Detail = "no readable terminal result within the case timeout"
+		return receipt, nil
+	case err != nil:
+		receipt.Detail = "result could not be read: " + err.Error()
+		return receipt, nil
+	}
+	if _, err := fmt.Fprintln(a.app.Out, answer); err != nil {
+		receipt.Detail = "the answer could not be written to the terminal"
+		return receipt, nil
+	}
+	receipt.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
+	receipt.Matched, receipt.Missing = agentruntime.MatchExpectations(answer, request.ExpectContains)
+	// The answer counts only if the Agent it came from is still the revision
+	// under test: a lift that landed while the Task ran makes it unattributable.
+	if err := app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest); err != nil {
+		receipt.Detail = "the Agent's revision could not be confirmed after the Task finished"
+		return receipt, nil
+	}
+	if len(receipt.Missing) > 0 {
+		receipt.Verdict = agentruntime.EvaluationFail
+		receipt.Detail = fmt.Sprintf("answer lacks %d of %d expected strings", len(receipt.Missing), len(request.ExpectContains))
+		return receipt, nil
+	}
+	receipt.Verdict = agentruntime.EvaluationPass
+	return receipt, nil
+}
+
+// orkaEvaluationRevisionError proves the live Agent is the one the reference
+// names, carries the given portable-digest marker, and is Ready for its
+// current generation.
+func (a *App) orkaEvaluationRevisionError(ctx context.Context, ref agentruntime.AgentRef, portableDigest string) error {
+	raw, err := a.orkaCapture(ctx, nil, "-n", ref.Namespace, "get", orkaPlural("Agent"), ref.Name, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot read Agent %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	live := describeOrkaResource(raw)
+	switch {
+	case !live.Found:
+		return fmt.Errorf("Agent %s/%s is not deployed; lift first", ref.Namespace, ref.Name)
+	case live.UID != ref.UID:
+		return fmt.Errorf("Agent %s/%s is no longer UID %s; the name now belongs to a different Agent", ref.Namespace, ref.Name, ref.UID)
+	case live.PortableDigest != portableDigest:
+		return fmt.Errorf("deployed revision differs; lift first")
+	case !live.Ready:
+		return fmt.Errorf("Agent %s/%s is not Ready for its current generation", ref.Namespace, ref.Name)
+	}
+	return nil
 }
 
 // orkaSpecFromPortable maps the closed portable document onto the existing

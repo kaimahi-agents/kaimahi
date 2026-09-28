@@ -67,19 +67,42 @@ type DeployReceipt struct {
 	Resources                              []ResourceResult
 }
 
-// EvaluationRequest carries one evaluation case: identity, input, and the
-// assertions the terminal answer must satisfy.
+// EvaluationRequest carries one evaluation case: identity, input, the
+// assertions the terminal answer must satisfy, and the portable digest of the
+// revision it must run against. Results are bound to that digest, so an
+// adapter refuses a request whose target is not deployed at exactly it, and
+// refuses one that names no revision at all.
 type EvaluationRequest struct {
 	CaseID         string
 	Input          string
 	ExpectContains []string
+	PortableDigest string
 }
 
-// EvaluationReceipt is Evaluate's result. It stays minimal until a receipt
-// schema exists, fixing the call shape without inventing untested fields.
+// EvaluationVerdict is one case's outcome. Unknown is neither a pass nor a
+// failure: the case ran, or may have, but its outcome could not be observed.
+type EvaluationVerdict string
+
+const (
+	EvaluationPass    EvaluationVerdict = "pass"
+	EvaluationFail    EvaluationVerdict = "fail"
+	EvaluationUnknown EvaluationVerdict = "unknown"
+)
+
+// EvaluationReceipt is one case's recorded outcome. It deliberately carries
+// no answer text: AnswerSHA256 is the only trace of what the agent said, so a
+// receipt can be committed beside a public bundle. Matched and Missing
+// partition ExpectContains only when an answer was read; TaskName and TaskUID
+// name the one execution this case caused, and TaskUID is empty when the
+// create itself was ambiguous. Detail explains a fail or unknown verdict.
 type EvaluationReceipt struct {
-	CaseID  string
-	Verdict string
+	CaseID           string
+	Verdict          EvaluationVerdict
+	Matched, Missing []string
+	TaskName         string
+	TaskUID          string
+	AnswerSHA256     string
+	Detail           string
 }
 
 // Document is one rendered document: the exact bytes plus whether Deploy may

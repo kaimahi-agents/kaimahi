@@ -105,13 +105,16 @@ func preflightOrkaBundle(path string, agent, bindings []byte) error {
 	}
 	files := map[string][]byte{"agent.yaml": agent, "bindings.yaml": bindings}
 	for _, entry := range entries {
-		if entry.Name() == "receipts" {
+		// receipts/ is written by lift and evaluate; eval/ holds the cases an
+		// operator authors. Neither is part of the revision, so their
+		// contents never make a rerun differ, but each must be a directory.
+		if entry.Name() == "receipts" || entry.Name() == agentruntime.EvaluationCaseDir {
 			info, err := entry.Info()
 			if err != nil {
-				return fmt.Errorf("inspect receipts directory: %w", err)
+				return fmt.Errorf("inspect %s directory: %w", entry.Name(), err)
 			}
 			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("bundle receipts must be a directory, not a link")
+				return fmt.Errorf("bundle %s must be a directory, not a link", entry.Name())
 			}
 			continue
 		}
@@ -174,5 +177,28 @@ func writeOrkaBundle(path string, agent, bindings []byte) error {
 			return fmt.Errorf("write bundle %s (partial bundle may remain): %w", name, err)
 		}
 	}
+	// Only a bundle this call created gets the example case; a reused bundle
+	// keeps whatever cases its operator has.
+	if err := os.Mkdir(filepath.Join(path, agentruntime.EvaluationCaseDir), 0o755); err != nil {
+		return fmt.Errorf("create bundle %s directory: %w", agentruntime.EvaluationCaseDir, err)
+	}
+	example := filepath.Join(path, agentruntime.EvaluationCaseDir, "example.yaml")
+	if err := scaffold.WriteNew(example, exampleEvaluationCase); err != nil {
+		return fmt.Errorf("write example evaluation case: %w", err)
+	}
 	return nil
 }
+
+// exampleEvaluationCase is the one case a new bundle starts with. It is
+// deliberately trivial to satisfy, so a first `kmx agent evaluate` shows the
+// loop working before anyone writes a real case.
+const exampleEvaluationCase = `# One evaluation case for kmx agent evaluate. Each eval/*.yaml file is one
+# case: kmx creates one Orka Task with this input against the deployed
+# revision, and the case passes when the Task succeeds and its answer
+# contains every expectContains string (exact, case-sensitive). Unknown
+# fields are refused. Cases test a revision; they are not part of its digest.
+id: example
+input: Reply with exactly the word READY and nothing else.
+expectContains:
+  - READY
+`

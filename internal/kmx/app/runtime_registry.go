@@ -53,6 +53,9 @@ type orkaRuntimeAdapter struct {
 	app      *App
 	create   *CreateOptions
 	bindings *agentruntime.OrkaBindings
+	// resultPort is the loopback port Evaluate forwards Task results through;
+	// empty means the default 19180.
+	resultPort string
 }
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }
