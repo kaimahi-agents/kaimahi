@@ -34,6 +34,38 @@ func TestBundleStatusRememberedUIDChangedReadsNoObjects(t *testing.T) {
 	}
 }
 
+func TestBundleStatusStaleRenderedMarkersAreNotInSync(t *testing.T) {
+	a, opt, dir, rendered, name := bundleStatusFixture(t)
+	seedBundleLiveResources(t, dir, rendered, name, nil)
+	for _, kind := range []string{"providers", "agents"} {
+		path := filepath.Join(dir, kind+".core.orka.ai.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var live map[string]any
+		if err := json.Unmarshal(data, &live); err != nil {
+			t.Fatal(err)
+		}
+		live["metadata"].(map[string]any)["annotations"].(map[string]any)[orkaRenderedMarker] = strings.Repeat("a", 64)
+		data, err = json.Marshal(live)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opt.Context = "kind-test"
+	report, err := a.bundleStatusReport(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State == bundleStateInSync {
+		t.Fatalf("stale rendered markers reported in sync: %+v", report.Targets[0])
+	}
+}
+
 func TestBundleStatusRenderedMarkersDisagree(t *testing.T) {
 	a, opt, dir, rendered, name := bundleStatusFixture(t)
 	seedBundleLiveResources(t, dir, rendered, name, func(agent map[string]any) {
@@ -138,6 +170,23 @@ func TestBundleStatusNeverWritesResourcesReceiptsOrSelection(t *testing.T) {
 
 // A matching live digest need not be in Git: status can still compare fields
 // while reporting that no deployed commit was found.
+func TestBundleStatusCanReadPortableDefinitionWithoutCreationBindings(t *testing.T) {
+	a, opt, _, _, _ := bundleStatusFixture(t)
+	if err := os.Remove(filepath.Join(opt.BundleDir, "bindings.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	opt.Output = "json"
+	var output bytes.Buffer
+	a.Out = &output
+	if err := a.BundleStatus(opt); err != nil {
+		t.Fatalf("agent.yaml is readable; bindings are not status input: %v", err)
+	}
+	var report bundleStatusReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil || report.PortableDigest == "" {
+		t.Fatalf("desired digest missing: %+v %v", report, err)
+	}
+}
+
 func TestBundleStatusUncommittedRevisionNoGitMatch(t *testing.T) {
 	a, opt, dir, rendered, name := bundleStatusFixture(t)
 	seedBundleLiveResources(t, dir, rendered, name, nil)

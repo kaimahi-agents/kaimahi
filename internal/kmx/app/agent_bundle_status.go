@@ -4,7 +4,7 @@
 //
 // Targets come from the bundle's own receipts (one per destination this
 // bundle was ever lifted to), the remembered last-selected target, or an
-// explicit --context. An explicit --context that names no known receipt is
+// explicit --to-context. An explicit --to-context that names no known receipt is
 // still read live; the report shows the cluster identity it actually finds
 // and says plainly that there is no local receipt for it.
 //
@@ -164,10 +164,22 @@ func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, e
 	if err := scaffold.RefuseKeyShapes(bundle); err != nil {
 		return bundleStatusReport{}, fmt.Errorf("refusing credential-shaped bundle path")
 	}
-	if err := checkLiftBundle(bundle); err != nil {
-		return bundleStatusReport{}, err
+	info, err := os.Stat(bundle)
+	if err != nil {
+		return bundleStatusReport{}, fmt.Errorf("read bundle directory: %w", err)
 	}
-	source, err := os.ReadFile(filepath.Join(bundle, "agent.yaml"))
+	if !info.IsDir() {
+		return bundleStatusReport{}, fmt.Errorf("bundle must be a directory")
+	}
+	agentFile := filepath.Join(bundle, "agent.yaml")
+	info, err = os.Lstat(agentFile)
+	if err != nil {
+		return bundleStatusReport{}, fmt.Errorf("read portable agent: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return bundleStatusReport{}, fmt.Errorf("agent.yaml must be a regular file")
+	}
+	source, err := os.ReadFile(agentFile)
 	if err != nil {
 		return bundleStatusReport{}, fmt.Errorf("read portable agent: %w", err)
 	}
@@ -195,8 +207,8 @@ func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, e
 }
 
 // bundleStatusTargets resolves which destinations to observe: an explicit
-// --context names exactly one, matched against known receipts and the
-// remembered selection only to attach recorded history. Otherwise every
+// --to-context names one cluster, matched against known receipts and the
+// remembered selection to attach recorded history. Otherwise every
 // known receipt is observed, plus the remembered selection if it names a
 // target no receipt already covers.
 func bundleStatusTargets(bundle string, opt BundleStatusOptions) ([]bundleStatusTarget, error) {
@@ -555,6 +567,9 @@ func (a *App) bundleFieldDrift(ctx context.Context, bundle, namespace string, pr
 	var changed []string
 	drifted := false
 	for _, check := range checks {
+		if check.markerRefresh {
+			return false, nil, fmt.Errorf("live ownership digests do not match the rendered revision")
+		}
 		if check.outcome == agentruntime.ResourceUpdated {
 			drifted = true
 			for _, field := range orkaChangedFields(check.existing, check.candidate) {
@@ -672,14 +687,21 @@ func (a *App) printBundleStatusTable(report bundleStatusReport) {
 	}
 	rows := make([][]string, 0, len(report.Targets))
 	for _, target := range report.Targets {
+		detail := target.Detail
+		if target.GitNote != "" && !strings.Contains(detail, target.GitNote) {
+			if detail != "" {
+				detail += "; "
+			}
+			detail += target.GitNote
+		}
 		rows = append(rows, []string{
-			target.Context, target.Namespace, target.State, readyWord(target.Agent.Ready),
-			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), target.Detail,
+			target.Context, target.Namespace, target.State, readyWord(target.Provider.Ready), readyWord(target.Agent.Ready),
+			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), detail,
 		})
 	}
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Targets",
-		[]string{"CONTEXT", "NAMESPACE", "STATE", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "DETAIL"}, rows,
-		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText))
+		[]string{"CONTEXT", "NAMESPACE", "STATE", "PROVIDER READY", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "DETAIL"}, rows,
+		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText))
 	for _, target := range report.Targets {
 		if len(target.ChangedFields) == 0 {
 			continue
