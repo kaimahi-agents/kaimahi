@@ -3355,7 +3355,7 @@ jobs:
             --result-service-account orka-result-reader > orka-tool-answer.out
           test "$(cat orka-tool-answer.out)" = "$TOOL_MARKER"
           task=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
-            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i["spec"]["agentRef"]["name"]=="orka-tool-proof"]; assert len(matches)==1; print(matches[0]["metadata"]["name"])')
+            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, matches; print(matches[0]["metadata"]["name"])')
           test "$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded
           job=$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.jobName}')
           kubectl --context kind-kmx-orka -n orka-system logs "job/$job" | tee orka-tool-worker.out
@@ -3379,8 +3379,8 @@ jobs:
           test "$(cat orka-answer.out)" = 'Orka says hello.'
           # The Task really ran and really succeeded, read from the cluster
           # rather than from the command's own stdout.
-          phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai \
-            -o jsonpath='{.items[0].status.phase}')
+          phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
+            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'

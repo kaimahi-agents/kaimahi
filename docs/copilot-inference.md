@@ -31,8 +31,8 @@ retry after execution failures. Ctrl-C cancels the subprocess and active request
 Supported tools are POST HTTP tools pointing to a Service in the Agent namespace,
 without special headers, auth Secrets, outbound policy or MCP configuration.
 Calls use an owned loopback port-forward and the selected Kubernetes context.
-The Kubernetes listing tool is supported and was live-tested: Copilot requested
-it, KMX executed it, and Copilot returned the actual deployment names in 12.8 s.
+The policy-backed Kubernetes listing tool runs through native Orka. Copilot
+reports it unavailable rather than tunnelling around the gateway policy.
 
 Tools requiring Orka approval, built-in memory tools, MCP tools and authenticated
 or policy-backed tools are not executed by this adapter. Explicit unsupported

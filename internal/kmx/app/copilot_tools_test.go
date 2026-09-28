@@ -62,18 +62,14 @@ func TestCopilotToolPathRejectsUnsupportedAuthority(t *testing.T) {
 	}
 }
 
-func TestCopilotToolPathAcceptsOnlyManagedKMXGatewayPolicy(t *testing.T) {
-	raw := `{"http":{"url":"https://example.com/resources","method":"POST","outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`
-	path, err := copilotToolPath(json.RawMessage(raw), OrkaNamespace)
-	if err != nil || path != "/api/v1/namespaces/orka-system/services/http:kmx-k8s-tool:8080/proxy/resources" {
-		t.Fatalf("path=%q err=%v", path, err)
-	}
-	for _, changed := range []string{
-		strings.Replace(raw, "kmx-k8s-tool-gateway", "other-policy", 1),
-		strings.Replace(raw, "https://example.com/resources", "https://other.example/resources", 1),
+func TestCopilotToolPathRejectsEveryPolicyBackedTool(t *testing.T) {
+	for _, raw := range []string{
+		`{"http":{"url":"https://example.com/resources","method":"POST","outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`,
+		`{"http":{"url":"http://kmx-k8s-tool.orka-system.svc.cluster.local:8080/resources","method":"POST","outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`,
+		`{"http":{"url":"http://kmx-k8s-tool.orka-system.svc.cluster.local:8080/resources","method":"POST","outboundAccessPolicyRef":{}}}`,
 	} {
-		if _, err := copilotToolPath(json.RawMessage(changed), OrkaNamespace); err == nil {
-			t.Fatalf("accepted unmanaged policy Tool: %s", changed)
+		if _, err := copilotToolPath(json.RawMessage(raw), OrkaNamespace); err == nil {
+			t.Fatalf("accepted policy-backed Tool: %s", raw)
 		}
 	}
 }
