@@ -22,6 +22,7 @@ import (
 type orkaCall struct {
 	Args     []string
 	Document map[string]any
+	Patch    []map[string]any
 }
 
 // The fake lives at the executable boundary: generation, schemas, ordering,

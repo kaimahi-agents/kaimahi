@@ -23,6 +23,15 @@ type orkaReconcileCheck struct {
 	existing, candidate map[string]any
 	outcome             agentruntime.ResourceOutcome
 	id                  orkaIdentity
+	// markerRefresh distinguishes a reused outcome that still needs a write:
+	// rendered fields are unchanged, but the ownership markers hold a stale
+	// portable or rendered digest and must be rewritten under a resourceVersion
+	// precondition, exactly like every other reconciled write. The refresh is a
+	// JSON Patch that touches only the two digest annotations, never the spec.
+	markerRefresh               bool
+	markerRefreshVersion        string
+	markerRefreshPortableDigest string
+	markerRefreshRenderedDigest string
 }
 
 // reconcileOrka applies ownership annotations outside the immutable rendered
@@ -69,7 +78,12 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 			}
 			id, err = app.replaceOrkaReconcile(ctx, opt.Namespace, check.candidate, id)
 		case agentruntime.ResourceReused:
-			app.notef("Reusing %s/%s", id.Kind, id.Name)
+			if check.markerRefresh {
+				app.notef("Refreshing stale ownership markers on %s/%s", id.Kind, id.Name)
+				id, err = app.patchOrkaMarkers(ctx, opt.Namespace, id, check.markerRefreshVersion, check.markerRefreshPortableDigest, check.markerRefreshRenderedDigest)
+			} else {
+				app.notef("Reusing %s/%s", id.Kind, id.Name)
+			}
 		}
 		if err != nil {
 			return agentruntime.DeployResult{}, err
@@ -136,7 +150,7 @@ func (a *App) verifyOrkaReconcile(ctx context.Context, namespace string, desired
 	if err != nil {
 		return err
 	}
-	if check.outcome != agentruntime.ResourceReused || check.id != id {
+	if check.outcome != agentruntime.ResourceReused || check.markerRefresh || check.id != id {
 		return fmt.Errorf("%s/%s changed while waiting for Ready; refusing deployment receipt", id.Kind, id.Name)
 	}
 	return a.verifyOrkaReadyNow(ctx, namespace, id)
@@ -212,10 +226,21 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 		return check, fmt.Errorf("%s/%s has no bundle marker and differs from rendered fields; refusing reconciliation", kind, name)
 	}
 	if same && annotations[orkaBundleMarker] != nil {
-		// Different digests can render identical fields (for example, a
-		// portable comment edit). Reuse makes no write; the receipt records
-		// this attempt while the marker retains the last written revision.
+		if annotations[orkaPortableMarker] == marker[orkaPortableMarker] && annotations[orkaRenderedMarker] == marker[orkaRenderedMarker] {
+			check.outcome = agentruntime.ResourceReused
+			return check, nil
+		}
+		// A stale digest can accompany identical rendered fields (for example,
+		// a portable comment edit). Reuse refreshes only the ownership markers,
+		// via a JSON Patch guarded by a resourceVersion test precondition, so a
+		// concurrent write is refused rather than silently overwritten. Spec and
+		// other metadata are already known unchanged, so the patch never bumps
+		// generation.
 		check.outcome = agentruntime.ResourceReused
+		check.markerRefresh = true
+		check.markerRefreshVersion = version
+		check.markerRefreshPortableDigest, _ = marker[orkaPortableMarker].(string)
+		check.markerRefreshRenderedDigest, _ = marker[orkaRenderedMarker].(string)
 		return check, nil
 	}
 	if same {
@@ -362,6 +387,38 @@ func orkaChangedFields(live, candidate map[string]any) []string {
 	}
 	slices.Sort(paths)
 	return paths
+}
+
+// patchOrkaMarkers rewrites only the two digest annotations on an otherwise
+// unchanged resource, guarded by a resourceVersion test precondition so a
+// concurrent change is refused rather than silently overwritten. The
+// response's generation must equal the caller's expectation: any change
+// there means the spec moved between inspect and write, which this patch
+// must never cause and must not paper over.
+func (a *App) patchOrkaMarkers(ctx context.Context, namespace string, expected orkaIdentity, resourceVersion, portableDigest, renderedDigest string) (orkaIdentity, error) {
+	patch, err := json.Marshal([]map[string]any{
+		{"op": "test", "path": "/metadata/resourceVersion", "value": resourceVersion},
+		{"op": "replace", "path": "/metadata/annotations/" + orkaAnnotationPointer(orkaPortableMarker), "value": portableDigest},
+		{"op": "replace", "path": "/metadata/annotations/" + orkaAnnotationPointer(orkaRenderedMarker), "value": renderedDigest},
+	})
+	if err != nil {
+		return orkaIdentity{}, err
+	}
+	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "patch", orkaPlural(expected.Kind), expected.Name, "--type=json", "-p", string(patch), "-o", "json")
+	if err != nil {
+		return orkaIdentity{}, fmt.Errorf("patch %s/%s markers refused (possibly concurrent change); rerun deploy: %w", expected.Kind, expected.Name, err)
+	}
+	var object orkaObject
+	if json.Unmarshal(raw, &object) != nil || object.Kind != expected.Kind || object.Metadata.Name != expected.Name || object.Metadata.Namespace != namespace || object.Metadata.UID != expected.UID || object.Metadata.Generation != expected.Generation || object.Metadata.DeletionTimestamp != nil {
+		return orkaIdentity{}, fmt.Errorf("patch %s/%s markers returned a different or invalid identity; refusing continuation", expected.Kind, expected.Name)
+	}
+	return expected, nil
+}
+
+// orkaAnnotationPointer escapes an annotation key for use inside a JSON Patch
+// path (RFC 6901): "~" and then "/" must both escape, in that order.
+func orkaAnnotationPointer(key string) string {
+	return strings.NewReplacer("~", "~0", "/", "~1").Replace(key)
 }
 
 func (a *App) replaceOrkaReconcile(ctx context.Context, namespace string, doc map[string]any, expected orkaIdentity) (orkaIdentity, error) {

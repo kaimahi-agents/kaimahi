@@ -40,6 +40,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			fail()
 		}
 	}
+	if pi := slices.Index(args, "-p"); pi >= 0 && pi+1 < len(args) {
+		if json.Unmarshal([]byte(args[pi+1]), &call.Patch) != nil {
+			fail()
+		}
+	}
 	log, _ := os.OpenFile(filepath.Join(dir, "calls"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	_ = json.NewEncoder(log).Encode(call)
 	_ = log.Close()
@@ -60,6 +65,9 @@ func TestReconcileKubectlHelper(t *testing.T) {
 	}
 	if i := slices.Index(args, "get"); i >= 0 {
 		kind, name := args[i+1], args[i+2]
+		if os.Getenv("KMX_STATUS_FORBIDDEN") == "1" && kind == "agents.core.orka.ai" {
+			fail()
+		}
 		if os.Getenv("KMX_LIFT_TEST") == "1" {
 			switch kind {
 			case "namespace", "namespaces":
@@ -153,6 +161,58 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			}
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(obj)
+		os.Exit(0)
+	}
+	if ki := slices.Index(args, "patch"); ki >= 0 {
+		if !slices.Contains(args, "--type=json") || call.Patch == nil {
+			fail()
+		}
+		kind, name := args[ki+1], args[ki+2]
+		path := filepath.Join(dir, kind+".json")
+		raw, e := os.ReadFile(path)
+		if e != nil {
+			fail()
+		}
+		var live map[string]any
+		if json.Unmarshal(raw, &live) != nil {
+			fail()
+		}
+		meta, _ := live["metadata"].(map[string]any)
+		if meta == nil || meta["name"] != name {
+			fail()
+		}
+		// Every marker-refresh patch is exactly: a resourceVersion test
+		// precondition, then replace ops on only the two digest annotations.
+		// Anything else is refused, matching the real API server rejecting an
+		// unexpected or malformed patch.
+		allowedPaths := map[string]bool{
+			"/metadata/annotations/" + orkaAnnotationPointer(orkaPortableMarker): true,
+			"/metadata/annotations/" + orkaAnnotationPointer(orkaRenderedMarker): true,
+		}
+		if len(call.Patch) != 3 || call.Patch[0]["op"] != "test" || call.Patch[0]["path"] != "/metadata/resourceVersion" {
+			fail()
+		}
+		if fmt.Sprint(call.Patch[0]["value"]) != fmt.Sprint(meta["resourceVersion"]) {
+			fail()
+		}
+		annotations, _ := meta["annotations"].(map[string]any)
+		if annotations == nil {
+			fail()
+		}
+		for _, op := range call.Patch[1:] {
+			path, _ := op["path"].(string)
+			if op["op"] != "replace" || !allowedPaths[path] {
+				fail()
+			}
+			key := strings.NewReplacer("~1", "/", "~0", "~").Replace(strings.TrimPrefix(path, "/metadata/annotations/"))
+			annotations[key] = op["value"]
+		}
+		meta["resourceVersion"] = "2"
+		body, _ := json.Marshal(live)
+		if os.WriteFile(path, body, 0600) != nil {
+			fail()
+		}
+		_, _ = os.Stdout.Write(body)
 		os.Exit(0)
 	}
 	if call.Document == nil {
@@ -415,6 +475,31 @@ func TestReconcileRefusesInvalidOwnedDigests(t *testing.T) {
 	}
 }
 
+// A metadata-only marker change during the final Ready check must not earn a
+// receipt: the spec can still match even though the live digest is stale.
+func TestReconcileVerificationRefusesStaleMarkers(t *testing.T) {
+	adapter, rendered, dir := reconcileFixture(t)
+	provider := reconcileLive(t, dir, "Provider", rendered)
+	meta := provider["metadata"].(map[string]any)
+	annotations, _ := meta["annotations"].(map[string]any)
+	if annotations == nil {
+		annotations = map[string]any{}
+	}
+	annotations[orkaBundleMarker] = "sample"
+	annotations[orkaPortableMarker] = strings.Repeat("a", 64)
+	annotations[orkaRenderedMarker] = rendered.RenderedDigest()
+	meta["annotations"] = annotations
+	seedReconcile(t, dir, provider)
+	bundle, err := orkaBundleFromRendered(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := orkaIdentity{Kind: "Provider", Name: "sample", UID: "provider-uid", Generation: 1}
+	if err := adapter.app.verifyOrkaReconcile(context.Background(), adapter.create.Namespace, bundle.Provider, rendered, id); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("stale markers earned a receipt: %v", err)
+	}
+}
+
 func TestReconcileRefusesOwnershipChangedWhileWaiting(t *testing.T) {
 	adapter, bundle, dir := reconcileFixture(t)
 	provider := reconcileLive(t, dir, "Provider", bundle)
@@ -543,7 +628,12 @@ func TestReconcileCreatedMarkersSupportNoWriteRerun(t *testing.T) {
 	}
 }
 
-func TestReconcileSameFieldsNewPortableDigestDoesNotWrite(t *testing.T) {
+// A stale portable (or rendered) digest with otherwise identical rendered
+// fields is a reused outcome that still refreshes the ownership markers, so a
+// rerun and the receipt observe the digests this deploy actually rendered.
+// The refresh writes under the live resourceVersion precondition and must
+// never bump generation, because the spec did not change.
+func TestReconcileSameFieldsStaleMarkersRefreshWithoutGenerationBump(t *testing.T) {
 	adapter, bundle, dir := reconcileFixture(t)
 	if _, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true}); err != nil {
 		t.Fatal(err)
@@ -556,12 +646,18 @@ func TestReconcileSameFieldsNewPortableDigestDoesNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if revised.PortableDigest() == bundle.PortableDigest() {
+		t.Fatal("fixture did not change the portable digest")
+	}
 	result, err := adapter.Deploy(context.Background(), revised, agentruntime.DeployOptions{Reconcile: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Receipt.PortableDigest != revised.PortableDigest() || result.Receipt.Resources[0].Outcome != "reused" || result.Receipt.Resources[1].Outcome != "reused" {
 		t.Fatalf("same spec should reuse: %+v", result)
+	}
+	if result.Receipt.Resources[0].Generation != 1 || result.Receipt.Resources[1].Generation != 1 {
+		t.Fatalf("marker refresh bumped generation: %+v", result.Receipt.Resources)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
 	if err != nil {
@@ -571,8 +667,35 @@ func TestReconcileSameFieldsNewPortableDigestDoesNotWrite(t *testing.T) {
 	if err = json.Unmarshal(raw, &obj); err != nil {
 		t.Fatal(err)
 	}
-	if obj["metadata"].(map[string]any)["annotations"].(map[string]any)["kaimahi.dev/portable-digest"] != bundle.PortableDigest() {
-		t.Fatal("no-op reuse rewrote marker")
+	meta := obj["metadata"].(map[string]any)
+	annotations := meta["annotations"].(map[string]any)
+	if annotations["kaimahi.dev/portable-digest"] != revised.PortableDigest() || annotations["kaimahi.dev/rendered-digest"] != revised.RenderedDigest() {
+		t.Fatalf("stale markers were not refreshed: %v", annotations)
+	}
+	if meta["resourceVersion"] != "2" {
+		t.Fatalf("marker refresh did not perform a versioned write: %v", meta["resourceVersion"])
+	}
+	if meta["generation"] != float64(1) {
+		t.Fatalf("marker refresh bumped stored generation: %v", meta["generation"])
+	}
+	var sawMarkerRefreshWrite bool
+	for _, call := range orkaCalls(t, dir) {
+		if !slices.Contains(call.Args, "patch") || !slices.Contains(call.Args, "agents.core.orka.ai") {
+			continue
+		}
+		if len(call.Patch) != 3 || call.Patch[0]["op"] != "test" || call.Patch[0]["path"] != "/metadata/resourceVersion" || call.Patch[0]["value"] != "1" {
+			t.Fatalf("marker refresh patch missing resourceVersion precondition: %+v", call)
+		}
+		for _, op := range call.Patch[1:] {
+			path, _ := op["path"].(string)
+			if op["op"] != "replace" || !strings.HasPrefix(path, "/metadata/annotations/kaimahi.dev~1") {
+				t.Fatalf("marker refresh patch touched unexpected field: %+v", call)
+			}
+		}
+		sawMarkerRefreshWrite = true
+	}
+	if !sawMarkerRefreshWrite {
+		t.Fatal("expected exactly one patch call refreshing the Agent markers")
 	}
 }
 

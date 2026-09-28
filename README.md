@@ -111,6 +111,7 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 | Create on a prepared target | `kmx agent create` | Does not install the runtime or provision credentials |
 | Prove an answer | Interactive chat or `kmx agent create --task ...` | Readiness alone is not execution proof |
 | Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Reconciles on an existing Orka target; `--plan` writes nothing |
+| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Read-only per-target revision, readiness and drift |
 | Lift a live agent interactively | `/lift` in interactive chat | Uses a live agent and an existing destination |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |

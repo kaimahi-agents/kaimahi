@@ -104,3 +104,36 @@ No receipt is written by `--plan` or by a failed deployment. If deployment and r
 The receipt binds deployment outcomes and target identities to the portable
 and rendered digests; it is not proof that an Agent answered a Task. Run and
 verify a Task separately if an execution proof is needed.
+
+## Checking deployed status
+
+```console
+kmx agent status <bundle-dir> [--to-context <ctx>] [-o table|json]
+```
+
+Status reads `agent.yaml`, the local Git history, receipts and the remembered
+selection, then inspects the live Provider and Agent per target. The portable
+digest covers the exact file bytes; a clean desired revision must be tracked and
+unchanged against `HEAD`. A live digest is matched against at most the last 200
+commits touching `agent.yaml`; a missing match is reported rather than guessed.
+Readiness means Ready on the current generation and is separate from revision
+or field drift. A rendered-field difference names field paths, never values.
+
+Each target reports one state: `in sync`, `behind`, `drifted`, `not deployed`,
+`belongs to another bundle`, `target changed`, or `unknown` with a reason.
+Status checks a recorded target's `kube-system` UID before reading its objects;
+if the context points at a different cluster, it reads no Provider or Agent.
+An explicitly selected context without a receipt may be inspected: status
+shows its cluster UID and `no receipt for this target`. Receipts are local
+history, not a prerequisite for a read. Target failures and non-ready agents
+are reported in the output rather than as a nonzero exit code. Status writes
+nothing, including cluster objects, receipts, and remembered selection.
+Field comparison uses the same server-side dry-run admission as lift's
+`--plan`: it does not persist resources, but requires permission to dry-run
+create/replace. If that permission is unavailable, the comparison is
+`unknown`, not proof of an unchanged resource.
+
+An identical render whose portable or rendered digest marker is older has its
+ownership markers refreshed by lift with a resourceVersion precondition; lift
+reports the resource as reused. This metadata-only update does not require a
+new generation to become Ready. `--plan` predicts the same marker refresh.

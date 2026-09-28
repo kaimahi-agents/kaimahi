@@ -24,11 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx agent status <bundle-dir>` compares each target's live revision, current-generation readiness and rendered-field drift with the portable definition in Git, with table and JSON output. A recorded cluster UID mismatch blocks object reads; an explicit context can be inspected without a receipt.
 - `kmx agent lift <bundle-dir>` deploys an existing portable bundle to a prepared Orka target with an explicit or locally remembered context and `provider:<name>` inference. It checks prerequisites without installing them, supports a read-only `--plan` using the same reconciliation inspection as deployment, reports per-resource outcomes and update diffs, and writes per-target receipts with Git provenance after success. `/lift` remains the interactive live-agent path.
 - Orka lifecycle Deploy can opt into bundle-owned reconciliation: create absent resources, reuse matching owned resources, update drift with a resourceVersion precondition, or mark an identical unowned resource as adopted. Conflicting or terminating names are refused; a completed deployment returns per-resource outcomes and a receipt with digests and target identities. Reconcile never runs Tasks. Default `kmx agent create` remains create-only.
 
 ### Changed
 
+- Bundle reconcile refreshes stale digest markers on identically rendered owned resources with a resourceVersion precondition, reporting reused while making comment-only revision lifts observable. Lift's uncommitted warning now names the failing Git condition.
 - `kmx agent create` and the quickstart wizard now write `agents/<name>/agent.yaml` and `bindings.yaml` as the portable bundle and creation-target bindings (#227).
 
 ## v0.2.0 — 2026-09-27

@@ -205,8 +205,13 @@ func TestLiftBundleReceiptGitCommitTracksOnlyPortableRevision(t *testing.T) {
 	// Git's skip-worktree hint can hide modified bytes from `git diff`; the
 	// receipt must compare the actual portable file to HEAD instead.
 	runGit("update-index", "--skip-worktree", "portable/agent.yaml")
+	var editedNotes bytes.Buffer
+	a.Err = &editedNotes
 	if err := a.LiftAgentBundle(opt); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(editedNotes.String(), "working file differs from HEAD") {
+		t.Fatalf("warning did not identify edited file: %s", editedNotes.String())
 	}
 	data, err = os.ReadFile(path)
 	if err != nil {
@@ -250,7 +255,7 @@ func TestLiftBundleSavesReceiptAndRefusesStaleRememberedCluster(t *testing.T) {
 	if wrapper.Receipt.PortableDigest != agentruntime.PortableBundleDigest(source) {
 		t.Fatal("receipt directory changed digest of exact agent.yaml bytes")
 	}
-	if strings.Count(notes.String(), "uncommitted") != 1 || !strings.Contains(notes.String(), "untracked or differs from HEAD") {
+	if strings.Count(notes.String(), "uncommitted") != 1 || !strings.Contains(notes.String(), "not in a Git repository") {
 		t.Fatalf("git warning missing, misleading or duplicated: %s", notes.String())
 	}
 	firstDigest := wrapper.Receipt.PortableDigest
