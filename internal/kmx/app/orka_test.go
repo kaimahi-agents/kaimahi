@@ -68,6 +68,12 @@ case "$*" in
     grep -q 'kind: Provider' "$KMX_TEST_STDIN" || exit 0
     printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":1},"spec":{"baseURL":"http://ollama.ollama.svc.cluster.local:11434/v1"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}'
     exit 0 ;;
+  *"get outboundaccesspolicies.core.orka.ai kmx-k8s-tool-gateway -o json"*)
+    printf '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}'
+    exit 0 ;;
+  *"get tools.core.orka.ai k8s-get-resources -o json"*)
+    printf '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}'
+    exit 0 ;;
   *"apply --dry-run=server -f -"*)
     case "$KMX_TEST_DRYRUN" in
       refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;

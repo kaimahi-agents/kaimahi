@@ -10,10 +10,11 @@ Select a saved configuration, browse subscriptions/resources/deployments, or
 enter an endpoint and deployment. The host uses the existing `az login` identity
 with refreshable Entra tokens. No Azure API key or access token is copied into
 Kubernetes or saved settings. Endpoint/deployment/optional tenant and scope are
-stored privately in `$XDG_CONFIG_HOME/kmx/foundry-inference.json` (or the normal
-user config directory). The manual form accepts the Cognitive Services or AI
-token scope; Cognitive Services is the default. Azure inference role assignment
-and endpoint access are still required.
+stored privately at `$KMX_HOME/foundry-inference.json` when `KMX_HOME` is set,
+or under the native KMX config directory (`~/.config/kmx` on Linux and
+`~/Library/Application Support/kmx` on macOS). The manual form accepts the
+Cognitive Services or AI token scope; Cognitive Services is the default. Azure
+inference role assignment and endpoint access are still required.
 
 Setup explicitly tests a model function call before switching. Azure discovery
 is optional, read-only and cancellable; no account/deployment is created. Failed

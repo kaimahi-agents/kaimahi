@@ -101,12 +101,24 @@ spec:
       targetPort: 8080
 ---
 apiVersion: core.orka.ai/v1alpha1
+kind: OutboundAccessPolicy
+metadata:
+  name: kmx-k8s-tool-gateway
+  namespace: orka-system
+spec:
+  gateway:
+    serviceRef:
+      name: kmx-k8s-tool
+      port: 8080
+    scheme: http
+---
+apiVersion: core.orka.ai/v1alpha1
 kind: Tool
 metadata:
   name: k8s-get-resources
   namespace: orka-system
 spec:
-  description: List live Kubernetes resources, read-only. Returns names, namespaces and status. For running pods set resource=pods and phase=Running to exclude completed Jobs. Answer concisely from the returned names; never invent names. Omit namespace for all namespaces.
+  description: List live Kubernetes resources, read-only. Returns names, namespaces and status. To explain why a workload is unhealthy, pods carry the Ready condition, PodScheduled when not scheduled, and per-container ready, restartCount and waiting, terminated or lastTerminated reasons such as ImagePullBackOff, CrashLoopBackOff or OOMKilled; deployments, statefulsets and replicasets carry readyReplicas, updatedReplicas and availableReplicas; daemonsets carry their numberReady and related counts; these and jobs carry conditions as type, status and reason such as Available=False MinimumReplicasUnavailable. No messages are returned. For running pods set resource=pods and phase=Running to exclude completed Jobs. Answer concisely from the returned names; never invent names. Omit namespace for all namespaces.
   parameters:
     type: object
     additionalProperties: false
@@ -123,6 +135,11 @@ spec:
         description: Optional pod phase filter. Use Running when asked which pods are running.
     required: [resource]
   http:
-    url: http://kmx-k8s-tool.orka-system.svc.cluster.local:8080/resources
+    # Orka rejects private Service IPs as direct Tool authorities. This public,
+    # credential-free logical authority passes SSRF validation; the policy
+    # routes execution only to the exact same-namespace Service above.
+    url: https://example.com/resources
     method: POST
     timeout: 15s
+    outboundAccessPolicyRef:
+      name: kmx-k8s-tool-gateway

@@ -129,7 +129,7 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestEvalKubectlHelper$ -- \"$@\"")
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_EVAL_DIR", dir)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "user-state"))
+	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	create := goldenNoTaskCreate("")
 	source, err := portableOrkaSource(create)

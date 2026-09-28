@@ -68,23 +68,7 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 		if err != nil {
 			return agentruntime.DeployResult{}, err
 		}
-		id := check.id
-		switch check.outcome {
-		case agentruntime.ResourceCreated:
-			id, err = app.createOrkaObject(ctx, opt.Namespace, check.candidate)
-		case agentruntime.ResourceAdopted, agentruntime.ResourceUpdated:
-			if check.outcome == agentruntime.ResourceUpdated {
-				app.notef("Updating %s/%s; differing rendered fields: %s", id.Kind, id.Name, strings.Join(orkaChangedFields(check.existing, check.candidate), ", "))
-			}
-			id, err = app.replaceOrkaReconcile(ctx, opt.Namespace, check.candidate, id)
-		case agentruntime.ResourceReused:
-			if check.markerRefresh {
-				app.notef("Refreshing stale ownership markers on %s/%s", id.Kind, id.Name)
-				id, err = app.patchOrkaMarkers(ctx, opt.Namespace, id, check.markerRefreshVersion, check.markerRefreshPortableDigest, check.markerRefreshRenderedDigest)
-			} else {
-				app.notef("Reusing %s/%s", id.Kind, id.Name)
-			}
-		}
+		id, err := app.applyOrkaReconcile(ctx, opt.Namespace, check)
 		if err != nil {
 			return agentruntime.DeployResult{}, err
 		}
@@ -107,6 +91,30 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 		}
 	}
 	return result, nil
+}
+
+// applyOrkaReconcile performs the one write an inspection decided on: create
+// an absent resource, replace an adopted or updated one under its
+// resourceVersion, refresh stale markers, or nothing for a reused resource.
+// Callers inspect immediately beforehand, so the decision is current.
+func (app *App) applyOrkaReconcile(ctx context.Context, namespace string, check orkaReconcileCheck) (orkaIdentity, error) {
+	id := check.id
+	switch check.outcome {
+	case agentruntime.ResourceCreated:
+		return app.createOrkaObject(ctx, namespace, check.candidate)
+	case agentruntime.ResourceAdopted, agentruntime.ResourceUpdated:
+		if check.outcome == agentruntime.ResourceUpdated {
+			app.notef("Updating %s/%s; differing rendered fields: %s", id.Kind, id.Name, strings.Join(orkaChangedFields(check.existing, check.candidate), ", "))
+		}
+		return app.replaceOrkaReconcile(ctx, namespace, check.candidate, id)
+	case agentruntime.ResourceReused:
+		if check.markerRefresh {
+			app.notef("Refreshing stale ownership markers on %s/%s", id.Kind, id.Name)
+			return app.patchOrkaMarkers(ctx, namespace, id, check.markerRefreshVersion, check.markerRefreshPortableDigest, check.markerRefreshRenderedDigest)
+		}
+		app.notef("Reusing %s/%s", id.Kind, id.Name)
+	}
+	return id, nil
 }
 
 // planOrkaReconcile performs the exact installed-schema, server-admission and

@@ -28,11 +28,11 @@ type agentLocation struct {
 }
 
 func agentLocationsDir() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := config.StateDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "kmx", "agentconfigs"), nil
+	return filepath.Join(dir, "agentconfigs"), nil
 }
 
 func (l agentLocation) key() string { return l.Context + "\x00" + l.Namespace + "\x00" + l.Agent }

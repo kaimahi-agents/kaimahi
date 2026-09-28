@@ -56,6 +56,10 @@ type orkaRuntimeAdapter struct {
 	// resultPort is the loopback port Evaluate forwards Task results through;
 	// empty means the default 19180.
 	resultPort string
+	// staged routes a reconcile Deploy through the create command's staged
+	// path, which adds artifact emission, progress and the optional Task
+	// after reconciling Provider and Agent. Lift's reconcile has none of those.
+	staged bool
 }
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }

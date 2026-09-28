@@ -18,7 +18,7 @@ func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *byt
 	t.Helper()
 	adapter, _, dir := reconcileFixture(t)
 	t.Setenv("KMX_LIFT_TEST", "1")
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "user-state"))
+	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	source, err := portableOrkaSource(*adapter.create)
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +42,21 @@ func assertNoLiftWrites(t *testing.T, dir, bundle string) {
 	if _, err := os.Stat(filepath.Join(bundle, "receipts")); !os.IsNotExist(err) {
 		t.Fatalf("lift wrote receipts: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "user-state", "kmx", "bundle-lift")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "user-state", "bundle-lift")); !os.IsNotExist(err) {
 		t.Fatalf("lift wrote preferences: %v", err)
+	}
+}
+
+func TestBundleLiftSelectionPathUsesKMXHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, err := bundleLiftSelectionPath(filepath.Join(t.TempDir(), "agents", "sample"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(path) != filepath.Join(home, "bundle-lift") {
+		t.Fatalf("selection path = %q, want it under KMX_HOME", path)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -39,12 +40,12 @@ type consoleInferenceSnapshot struct {
 }
 
 func consoleInferencePath(env agentTUIEnvironment, agent agentTUIAgent) (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := config.StateDir()
 	if err != nil {
 		return "", err
 	}
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(env.Name+"\x00"+agent.key())))
-	return filepath.Join(dir, "kmx", "console-inference", id+".json"), nil
+	return filepath.Join(dir, "console-inference", id+".json"), nil
 }
 
 func loadConsoleInference(env agentTUIEnvironment, agent agentTUIAgent) (*consoleInferenceSource, error) {

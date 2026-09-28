@@ -110,7 +110,7 @@ func TestConsoleInferenceOverlaySaveCancelAndStaleLoad(t *testing.T) {
 }
 
 func TestConsoleInferenceSourcePersistenceAndValidation(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	env := agentTUIEnvironment{Name: "kind-test", Local: true}
 	agent := agentTUIAgent{Name: "demo", Namespace: "agents", Runtime: "orka"}
 	source := consoleInferenceSource{Kind: "foundry", Name: "test", Endpoint: "https://example.openai.azure.com", Model: "test-model"}
@@ -306,7 +306,7 @@ esac`)
 }
 
 func TestConsoleRemoteInferenceNeverOffersOrLoadsHostSources(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	p := consoleInferencePane{env: agentTUIEnvironment{Name: "remote"}, agent: agentTUIAgent{Runtime: "orka"}, azureAvailable: true}
 	kinds := strings.Join(p.sourceKinds(), ",")
 	if strings.Contains(kinds, "copilot") || !strings.Contains(kinds, "foundry-cluster") || !strings.Contains(kinds, "azure") {

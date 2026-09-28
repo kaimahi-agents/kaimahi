@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 // Configuration contains routing metadata only. Tokens remain host-side and are
@@ -50,8 +51,8 @@ func (c foundryChatConfig) validate() error {
 }
 
 func foundryChatConfigPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	return filepath.Join(dir, "kmx", "foundry-inference.json"), err
+	dir, err := config.StateDir()
+	return filepath.Join(dir, "foundry-inference.json"), err
 }
 func loadFoundryChatConfig() (foundryChatConfig, error) {
 	var c foundryChatConfig

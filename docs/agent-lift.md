@@ -51,12 +51,11 @@ Lift checks prerequisites; it never installs them:
   Tools separately before lifting.
 
 Each missing prerequisite is reported separately with the relevant preparation
-command where one exists. In particular, the quickstart Kubernetes inventory
-tool is **not Available** on Orka v0.1.3
-([#217](https://github.com/kaimahi-agents/kaimahi/issues/217)); a bundle that
-references it is expected to be refused, not silently deployed without it.
-Lift creates no AKS cluster, namespace, Orka installation, Tool, Secret or Task.
-It does not change or delete the source Agent.
+command where one exists. The quickstart Kubernetes inventory Tool requires its
+same-namespace `OutboundAccessPolicy` to be Accepted before the Tool becomes
+Available; a target missing or rejecting that policy is refused until repaired.
+Lift creates no AKS cluster, namespace, Orka installation, Tool, policy, Secret
+or Task. It does not change or delete the source Agent.
 
 ## Plan, reconciliation and outcomes
 

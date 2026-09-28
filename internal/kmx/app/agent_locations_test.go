@@ -12,7 +12,7 @@ import (
 )
 
 func TestAgentLocationsPersistSeparateClustersPrivately(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	for _, cluster := range []string{"kind-local", "aks-remote"} {
 		location, err := writeAgentLocation(agentLocation{Agent: "demo", Namespace: OrkaNamespace, Context: cluster}, []byte("apiVersion: v1\n"))
 		if err != nil {
@@ -91,7 +91,7 @@ func TestPrivateAgentFileReplacesExistingFile(t *testing.T) {
 }
 
 func TestClusterDisplayUsesMetadataNotSubscriptionContext(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	contextName := "aks-subscription-guid-resource-group-cluster-with-hyphens"
 	if _, err := writeAgentLocation(agentLocation{Agent: "demo", Namespace: OrkaNamespace, Context: contextName, Cluster: "cluster-with-hyphens"}, nil); err != nil {
 		t.Fatal(err)

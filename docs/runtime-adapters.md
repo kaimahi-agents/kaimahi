@@ -74,8 +74,11 @@ inference does not prove that a native runtime task executed.
 
 ## Lifecycle contract
 
-The shared adapter above is currently a chat/session boundary. It is **not** a
-universal Agent CRUD, manifest conversion, deployment, or evaluation API.
+The shared adapter is a capability-gated session and lifecycle boundary, not a
+universal Agent CRUD or manifest-conversion API. Each adapter instance declares
+the lifecycle verbs it can execute; unsupported verbs return a typed refusal.
+The configured Orka adapter implements render and deploy, while Orka status and
+revision-bound evaluation do not require create-time configuration.
 
 The broader lifecycle direction is tracked in
 [#194](https://github.com/kaimahi-agents/kaimahi/issues/194):

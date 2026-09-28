@@ -24,12 +24,15 @@ separate picker options; a lone creation entry also has search disabled.
 No Azure default subscription is changed. Every scoped Azure request explicitly
 names the selected subscription; AKS credentials are initially written to a
 temporary kubeconfig. After successful deployment, a private flattened kubeconfig
-snapshot and Agent location are saved under `~/.config/kmx/agentconfigs/`
-(`$XDG_CONFIG_HOME/kmx/agentconfigs/` when configured). The shell's kubeconfig
-and default context are unchanged.
+snapshot and Agent location are saved under `$KMX_HOME/agentconfigs/` when
+`KMX_HOME` is set. Otherwise they use the native KMX config directory:
+`~/.config/kmx/agentconfigs/` on Linux or
+`~/Library/Application Support/kmx/agentconfigs/` on macOS. The shell's
+kubeconfig and default context are unchanged.
 
 Last-selected subscription, kubeconfig context and AKS cluster identities are
-stored in `~/.config/kmx/lift-selections.json` (respecting `XDG_CONFIG_HOME`).
+stored in `$KMX_HOME/lift-selections.json` when set, or beside the other KMX
+state in the native Linux/macOS config directory.
 Discovery still fetches current resources; a matching remembered choice is moved
 to the top and marked “last selected”. Cluster preferences are scoped by
 subscription and resource group. Missing old selections are not added to results.

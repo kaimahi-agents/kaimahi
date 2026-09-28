@@ -50,6 +50,11 @@ see [installation](kmx.md#install).
 Run from the repository root. Formatting checks must test `gofmt` output because
 `gofmt -l` alone exits successfully even when it lists files.
 
+Tests that read or write KMX state must set `KMX_HOME` to `t.TempDir()`. Do not
+use `XDG_CONFIG_HOME` as the test boundary: Go uses it for the native Linux
+config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
+is the repository's explicit cross-platform isolation contract.
+
 ```bash
 test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go build ./... && go test ./...
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)
@@ -118,6 +123,10 @@ Required checks are `hygiene`, `go-plane`, and `e2e-hello-world`. The last is an
 aggregator over the retained kind shards. Gateway/workflow/AP scenarios retire
 with their runtime, and so does the agent conversation the runtime shard used to
 open with.
+`state-paths-macos` is a focused native macOS lane for KMX state routing. Linux
+`hygiene` exercises the same contract under XDG semantics; the macOS lane proves
+the `~/Library/Application Support` default and the shared `KMX_HOME` override
+without duplicating cluster setup or the full Linux suite.
 Add probes to the shard owning their state lineage, or arrange independent setup.
 Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.

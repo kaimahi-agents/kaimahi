@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 // Remember identities, not list positions: Azure names can repeat between
 // subscriptions/resource groups. Preferences never change Azure/kubeconfig defaults.
 func liftPreferencesPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := config.StateDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "kmx", "lift-selections.json"), nil
+	return filepath.Join(dir, "lift-selections.json"), nil
 }
 
 func loadLiftPreferences() (map[string]string, error) {

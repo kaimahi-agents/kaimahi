@@ -143,16 +143,19 @@ func TestOrkaKubectlHelper(t *testing.T) {
 				fail()
 			}
 			if slices.Contains(args, "name") {
-				if scenario == "collision" || scenario == "identical-provider" || scenario == "task-collision" && kind == "tasks.core.orka.ai" {
+				if scenario == "task-collision" && kind == "tasks.core.orka.ai" {
 					fmt.Print(kind + "/" + name)
 				}
 				if scenario == "denied-collision" {
 					fail()
 				}
 			} else {
+				if scenario == "denied-collision" && slices.Contains(args, "--ignore-not-found=true") {
+					fail()
+				}
 				raw, err := os.ReadFile(filepath.Join(dir, name+"-"+kind+".json"))
 				if err != nil {
-					if scenario == "lift-reuse" && os.IsNotExist(err) && slices.Contains(args, "--ignore-not-found=true") {
+					if os.IsNotExist(err) && slices.Contains(args, "--ignore-not-found=true") {
 						os.Exit(0)
 					}
 					fail()
@@ -171,6 +174,9 @@ func TestOrkaKubectlHelper(t *testing.T) {
 					meta["generation"] = 2
 				}
 				status := map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 1}}}
+				if _, err := os.Stat(filepath.Join(dir, "provider-not-ready")); err == nil && obj["kind"] == "Provider" {
+					status = map[string]any{"ready": false, "conditions": []any{map[string]any{"type": "Ready", "status": "False", "observedGeneration": meta["generation"]}}}
+				}
 				if scenario == "stale-ready" || scenario == "stale-agent" && obj["kind"] == "Agent" {
 					status["conditions"] = []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 0}}
 				}
@@ -207,8 +213,59 @@ func TestOrkaKubectlHelper(t *testing.T) {
 		}
 		os.Exit(0)
 	}
-	if scenario == "lift-reuse" && slices.Contains(args, "replace") && slices.Contains(args, "--dry-run=server") {
-		_ = json.NewEncoder(os.Stdout).Encode(call.Document)
+	if pi := slices.Index(args, "patch"); pi >= 0 {
+		// Only the marker refresh patches: a resourceVersion test, then
+		// replace ops on annotations.
+		var ops []map[string]any
+		path := filepath.Join(dir, args[pi+2]+"-"+args[pi+1]+".json")
+		raw, err := os.ReadFile(path)
+		if err != nil || !slices.Contains(args, "--type=json") || json.Unmarshal([]byte(args[slices.Index(args, "-p")+1]), &ops) != nil || len(ops) < 2 {
+			fail()
+		}
+		var live map[string]any
+		_ = json.Unmarshal(raw, &live)
+		meta := live["metadata"].(map[string]any)
+		if ops[0]["op"] != "test" || ops[0]["path"] != "/metadata/resourceVersion" || ops[0]["value"] != meta["resourceVersion"] {
+			fail()
+		}
+		annotations := meta["annotations"].(map[string]any)
+		for _, op := range ops[1:] {
+			key, ok := strings.CutPrefix(fmt.Sprint(op["path"]), "/metadata/annotations/")
+			if op["op"] != "replace" || !ok {
+				fail()
+			}
+			annotations[strings.NewReplacer("~1", "/", "~0", "~").Replace(key)] = op["value"]
+		}
+		meta["resourceVersion"] = fmt.Sprint(meta["resourceVersion"]) + "+"
+		body, _ := json.Marshal(live)
+		_ = os.WriteFile(path, body, 0600)
+		_, _ = os.Stdout.Write(body)
+		os.Exit(0)
+	}
+	if slices.Contains(args, "replace") {
+		if slices.Contains(args, "--dry-run=server") {
+			_ = json.NewEncoder(os.Stdout).Encode(call.Document)
+			os.Exit(0)
+		}
+		meta := call.Document["metadata"].(map[string]any)
+		path := filepath.Join(dir, meta["name"].(string)+"-"+strings.ToLower(call.Document["kind"].(string))+"s.core.orka.ai.json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			fail()
+		}
+		var live map[string]any
+		_ = json.Unmarshal(raw, &live)
+		current := live["metadata"].(map[string]any)
+		if meta["resourceVersion"] != current["resourceVersion"] {
+			fail()
+		}
+		meta["resourceVersion"] = fmt.Sprint(current["resourceVersion"]) + "+"
+		if fmt.Sprint(live["spec"]) != fmt.Sprint(call.Document["spec"]) {
+			meta["generation"] = current["generation"].(float64) + 1
+		}
+		body, _ := json.Marshal(call.Document)
+		_ = os.WriteFile(path, body, 0600)
+		_, _ = os.Stdout.Write(body)
 		os.Exit(0)
 	}
 	if slices.Contains(args, "create") {
@@ -246,9 +303,7 @@ func TestOrkaKubectlHelper(t *testing.T) {
 		meta := call.Document["metadata"].(map[string]any)
 		meta["uid"] = strings.ToLower(call.Document["kind"].(string)) + "-uid"
 		meta["generation"] = 1
-		if scenario == "lift-reuse" {
-			meta["resourceVersion"] = "1"
-		}
+		meta["resourceVersion"] = "1"
 		body, _ := json.Marshal(call.Document)
 		_ = os.WriteFile(filepath.Join(dir, meta["name"].(string)+"-"+strings.ToLower(call.Document["kind"].(string))+"s.core.orka.ai.json"), body, 0600)
 		_, _ = os.Stdout.Write(body)
@@ -280,6 +335,19 @@ func orkaCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *byt
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Out: out, Err: diagnostics, Run: &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}}
 	opt := CreateOptions{Name: "sample", Namespace: "orka-system", ProviderType: "openai", Model: "local", Secret: "model-key", Out: filepath.Join(dir, "bundle.yaml"), BundlePath: filepath.Join(dir, "agents", "sample")}
 	return a, opt, out, diagnostics, dir
+}
+
+// seedOrkaCreateObject stores a live object where the create fake reads it.
+func seedOrkaCreateObject(t *testing.T, dir string, object map[string]any) {
+	t.Helper()
+	body, err := json.Marshal(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := object["metadata"].(map[string]any)
+	if err := os.WriteFile(filepath.Join(dir, meta["name"].(string)+"-"+orkaPlural(object["kind"].(string))+".json"), body, 0600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func orkaCalls(t *testing.T, dir string) []orkaCall {
@@ -320,23 +388,41 @@ func TestOrkaOnlineCreatesSeparateStrictObjectsAndWaitsInOrder(t *testing.T) {
 		}
 		if c.Document != nil {
 			kind := c.Document["kind"].(string)
-			if kind == "Secret" || !slices.Contains(c.Args, "create") || !slices.Contains(c.Args, "--validate=strict") {
+			replace := slices.Contains(c.Args, "replace") && slices.Contains(c.Args, "--dry-run=server")
+			if kind == "Secret" || !slices.Contains(c.Args, "create") && !replace || !slices.Contains(c.Args, "--validate=strict") {
 				t.Fatalf("unsafe write: %+v", c)
 			}
-			if slices.Contains(c.Args, "--dry-run=server") {
+			if annotations, _ := c.Document["metadata"].(map[string]any)["annotations"].(map[string]any); annotations[orkaBundleMarker] != "sample" {
+				t.Fatalf("write without this bundle's ownership marker: %+v", c)
+			}
+			switch {
+			case replace:
+				order = append(order, "own-"+kind)
+			case slices.Contains(c.Args, "--dry-run=server"):
 				order = append(order, "validate-"+kind)
-			} else {
+			default:
 				order = append(order, "create-"+kind)
 			}
-		} else if slices.Contains(c.Args, "get") && !slices.Contains(c.Args, "crd") && slices.Contains(c.Args, "json") && slices.Contains(c.Args, "providers.core.orka.ai") {
-			order = append(order, "ready-Provider")
-		} else if slices.Contains(c.Args, "get") && !slices.Contains(c.Args, "crd") && slices.Contains(c.Args, "json") && slices.Contains(c.Args, "agents.core.orka.ai") {
-			order = append(order, "ready-Agent")
+		} else if slices.Contains(c.Args, "get") && !slices.Contains(c.Args, "crd") && slices.Contains(c.Args, "json") {
+			kind := map[string]string{"providers.core.orka.ai": "Provider", "agents.core.orka.ai": "Agent"}[c.Args[slices.Index(c.Args, "get")+1]]
+			if slices.Contains(c.Args, "--ignore-not-found=true") {
+				order = append(order, "inspect-"+kind)
+			} else {
+				order = append(order, "ready-"+kind)
+			}
 		}
 	}
-	// A successful Deploy now checks both resources again before issuing its
-	// receipt, after the staged create and Ready ordering remain unchanged.
-	want := []string{"validate-Provider", "validate-Agent", "create-Provider", "ready-Provider", "create-Agent", "ready-Agent", "ready-Provider", "ready-Agent"}
+	// Create reconciles: both resources are inspected and admitted before any
+	// write, each is reinspected immediately before its own create, and after
+	// Ready its ownership is confirmed again. Provider is still created and
+	// Ready before the Agent is written, and a successful Deploy checks both
+	// again before issuing its receipt.
+	want := []string{
+		"inspect-Provider", "validate-Provider", "inspect-Agent", "validate-Agent",
+		"inspect-Provider", "validate-Provider", "create-Provider", "ready-Provider", "inspect-Provider", "own-Provider", "ready-Provider",
+		"inspect-Agent", "validate-Agent", "create-Agent", "ready-Agent", "inspect-Agent", "own-Agent", "ready-Agent",
+		"inspect-Provider", "own-Provider", "ready-Provider", "inspect-Agent", "own-Agent", "ready-Agent",
+	}
 	if !slices.Equal(order, want) {
 		t.Fatalf("order=%v", order)
 	}
@@ -398,11 +484,24 @@ func TestOrkaOnlineDeploysExactlyTheRenderedBytes(t *testing.T) {
 		}
 		written := 0
 		for _, c := range orkaCalls(t, dir) {
-			if c.Document == nil {
-				continue
+			if c.Document == nil || slices.Contains(c.Args, "replace") {
+				continue // Replace dry-runs echo the live object, not a render.
 			}
 			if c.Document["kind"] == "Secret" {
 				t.Fatalf("the Secret skeleton was sent to the server: %v", c.Args)
+			}
+			// Ownership markers are written beside the rendered bytes, never
+			// into them: a digest cannot be part of what it hashes.
+			metadata := c.Document["metadata"].(map[string]any)
+			annotations, _ := metadata["annotations"].(map[string]any)
+			for _, marker := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+				if annotations[marker] == nil {
+					t.Fatalf("%s written without %s", c.Document["kind"], marker)
+				}
+				delete(annotations, marker)
+			}
+			if len(annotations) == 0 {
+				delete(metadata, "annotations")
 			}
 			encoded, err := yaml.Marshal(c.Document)
 			if err != nil {
@@ -420,9 +519,16 @@ func TestOrkaOnlineDeploysExactlyTheRenderedBytes(t *testing.T) {
 }
 
 func TestOrkaPreflightFailureNeverEmitsOrMutates(t *testing.T) {
-	for _, scenario := range []string{"guard", "missing-crd", "denied-crd", "collision", "identical-provider", "denied-collision", "missing-secret", "missing-key", "denied-secret", "invalid-marker", "admission", "main", "task-collision"} {
+	// An identical unmarked Provider is no longer a collision: create adopts
+	// it (TestOrkaCreateRerun covers that). A differing one still refuses.
+	for _, scenario := range []string{"guard", "missing-crd", "denied-crd", "collision", "denied-collision", "missing-secret", "missing-key", "denied-secret", "invalid-marker", "admission", "main", "task-collision"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, opt, out, diagnostics, dir := orkaCreateFixture(t, scenario)
+			if scenario == "collision" {
+				seedOrkaCreateObject(t, dir, map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
+					"metadata": map[string]any{"name": "sample", "namespace": "orka-system", "uid": "someone-else", "resourceVersion": "7", "generation": 1},
+					"spec":     map[string]any{"type": "openai", "defaultModel": "theirs", "secretRef": map[string]any{"name": "model-key", "key": "api-key"}}})
+			}
 			if scenario == "main" {
 				opt.AgentRequestsPerMinute = "1"
 			}

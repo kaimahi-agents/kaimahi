@@ -78,13 +78,13 @@ create billable resources. Read the [interactive lift guide](docs/interactive-li
 for the complete behavior and recovery boundaries.
 
 Both paths create local cluster resources and result-reader RBAC. The wizard
-also installs a read-only Kubernetes inventory tool, but **Orka v0.1.3 refuses
-its in-cluster Service URL** (`tool URL resolves to private/loopback IP`). The
-tool never becomes Available to Orka-executed Tasks; see
-[known issue #217](https://github.com/kaimahi-agents/kaimahi/issues/217).
-The non-interactive first-answer path does not use that tool. Completed setup
-can remain after cancellation. Read [getting started](docs/getting-started.md)
-before using it on a shared machine.
+also installs a read-only Kubernetes inventory Tool. Orka v0.1.3 reaches its
+private Service through an exact same-namespace `OutboundAccessPolicy`; KMX
+installs that policy and waits for both it and the Tool to be ready. A missing
+or invalid policy fails closed rather than falling back to the Tool's logical
+public URL. The non-interactive first-answer path does not use that Tool.
+Completed setup can remain after cancellation. Read
+[getting started](docs/getting-started.md) before using it on a shared machine.
 
 Use Podman explicitly with:
 

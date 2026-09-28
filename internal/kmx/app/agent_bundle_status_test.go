@@ -20,7 +20,7 @@ import (
 func bundleStatusFixture(t *testing.T) (*App, BundleStatusOptions, string, agentruntime.RenderedBundle, string) {
 	t.Helper()
 	adapter, rendered, dir := reconcileFixture(t)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "user-state"))
+	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	seedBundleNamespace(t, dir, "cluster-uid")
 	source, err := portableOrkaSource(*adapter.create)
 	if err != nil {

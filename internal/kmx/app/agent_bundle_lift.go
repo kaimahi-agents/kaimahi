@@ -385,12 +385,16 @@ func (a *App) printLiftDecision(check orkaReconcileCheck) {
 }
 
 func bundleLiftSelectionPath(bundle string) (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := config.StateDir()
 	if err != nil {
 		return "", err
 	}
-	key := sha256.Sum256([]byte(bundle))
-	return filepath.Join(dir, "kmx", "bundle-lift", fmt.Sprintf("%x.json", key)), nil
+	canonical, err := resolveOrkaPath(bundle)
+	if err != nil {
+		return "", err
+	}
+	key := sha256.Sum256([]byte(canonical))
+	return filepath.Join(dir, "bundle-lift", fmt.Sprintf("%x.json", key)), nil
 }
 
 func loadBundleLiftSelection(path string) (bundleLiftSelection, error) {
