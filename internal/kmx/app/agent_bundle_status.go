@@ -70,6 +70,8 @@ type bundleStatusTarget struct {
 	// exact context+namespace, which is what makes the cluster-identity
 	// check against its filename possible.
 	HasReceipt bool
+	// ReceiptFile distinguishes physical clusters that reused a context name.
+	ReceiptFile string
 	// ClusterUID is the remembered selection's own recorded cluster identity.
 	// It is set only when this target came from the selection fallback with
 	// no covering receipt: a receipt-covered target is checked against its
@@ -101,6 +103,7 @@ type bundleTargetStatus struct {
 	Namespace          string               `json:"namespace"`
 	Recorded           bool                 `json:"recorded"`
 	NoReceipt          bool                 `json:"noReceipt,omitempty"`
+	ReceiptID          string               `json:"receiptID,omitempty"`
 	ObservedClusterUID string               `json:"observedClusterUID,omitempty"`
 	State              string               `json:"state"`
 	Detail             string               `json:"detail,omitempty"`
@@ -234,14 +237,8 @@ func bundleStatusTargets(bundle string, opt BundleStatusOptions) ([]bundleStatus
 					matches = append(matches, target)
 				}
 			}
-			if selection.Context == explicit {
-				found := false
-				for _, target := range matches {
-					found = found || target.Namespace == selection.Namespace
-				}
-				if !found {
-					matches = append(matches, bundleStatusTarget{Context: explicit, Namespace: selection.Namespace, Recorded: true, ClusterUID: selection.ClusterUID})
-				}
+			if selection.Context == explicit && !selectionHasReceipt(bundle, matches, selection) {
+				matches = append(matches, bundleStatusTarget{Context: explicit, Namespace: selection.Namespace, Recorded: true, ClusterUID: selection.ClusterUID})
 			}
 			if len(matches) > 0 {
 				sortBundleStatusTargets(matches)
@@ -249,13 +246,17 @@ func bundleStatusTargets(bundle string, opt BundleStatusOptions) ([]bundleStatus
 			}
 			namespace = OrkaNamespace
 		}
+		var matches []bundleStatusTarget
 		for _, target := range recorded {
 			if target.Context == explicit && target.Namespace == namespace {
-				return []bundleStatusTarget{target}, nil
+				matches = append(matches, target)
 			}
 		}
-		if selection.Context == explicit && selection.Namespace == namespace {
-			return []bundleStatusTarget{{Context: selection.Context, Namespace: selection.Namespace, Recorded: true, ClusterUID: selection.ClusterUID}}, nil
+		if selection.Context == explicit && selection.Namespace == namespace && !selectionHasReceipt(bundle, matches, selection) {
+			matches = append(matches, bundleStatusTarget{Context: explicit, Namespace: namespace, Recorded: true, ClusterUID: selection.ClusterUID})
+		}
+		if len(matches) > 0 {
+			return matches, nil
 		}
 		// No local history names this destination: still read it live, but
 		// the report shows the cluster it actually finds and says plainly
@@ -264,16 +265,8 @@ func bundleStatusTargets(bundle string, opt BundleStatusOptions) ([]bundleStatus
 	}
 
 	if len(recorded) > 0 {
-		if selection.Context != "" {
-			matched := false
-			for _, target := range recorded {
-				if target.Context == selection.Context && target.Namespace == selection.Namespace {
-					matched = true
-				}
-			}
-			if !matched {
-				recorded = append(recorded, bundleStatusTarget{Context: selection.Context, Namespace: selection.Namespace, Recorded: true, ClusterUID: selection.ClusterUID})
-			}
+		if selection.Context != "" && !selectionHasReceipt(bundle, recorded, selection) {
+			recorded = append(recorded, bundleStatusTarget{Context: selection.Context, Namespace: selection.Namespace, Recorded: true, ClusterUID: selection.ClusterUID})
 		}
 		sortBundleStatusTargets(recorded)
 		return recorded, nil
@@ -284,12 +277,25 @@ func bundleStatusTargets(bundle string, opt BundleStatusOptions) ([]bundleStatus
 	return nil, nil
 }
 
+func selectionHasReceipt(bundle string, targets []bundleStatusTarget, selection bundleLiftSelection) bool {
+	wanted := filepath.Base(bundleReceiptPath(bundle, selection.Context, selection.Namespace, selection.ClusterUID))
+	for _, target := range targets {
+		if target.Context == selection.Context && target.Namespace == selection.Namespace && target.ReceiptFile == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func sortBundleStatusTargets(targets []bundleStatusTarget) {
 	sort.Slice(targets, func(i, j int) bool {
 		if targets[i].Context != targets[j].Context {
 			return targets[i].Context < targets[j].Context
 		}
-		return targets[i].Namespace < targets[j].Namespace
+		if targets[i].Namespace != targets[j].Namespace {
+			return targets[i].Namespace < targets[j].Namespace
+		}
+		return targets[i].ReceiptFile < targets[j].ReceiptFile
 	})
 }
 
@@ -307,7 +313,6 @@ func loadBundleReceiptTargets(bundle string) ([]bundleStatusTarget, error) {
 		return nil, fmt.Errorf("read bundle receipts: %w", err)
 	}
 	var targets []bundleStatusTarget
-	seen := map[string]bool{}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -324,12 +329,7 @@ func loadBundleReceiptTargets(bundle string) ([]bundleStatusTarget, error) {
 		if target.Context == "" || target.Namespace == "" {
 			continue
 		}
-		key := target.Context + "\x00" + target.Namespace
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		targets = append(targets, bundleStatusTarget{Context: target.Context, Namespace: target.Namespace, Recorded: true, HasReceipt: true})
+		targets = append(targets, bundleStatusTarget{Context: target.Context, Namespace: target.Namespace, Recorded: true, HasReceipt: true, ReceiptFile: entry.Name()})
 	}
 	return targets, nil
 }
@@ -367,6 +367,9 @@ func readBundleReceiptAt(path string) (bundleLiftReceipt, bool) {
 // State, never a returned error.
 func (a *App) observeBundleTarget(ctx context.Context, bundle, name, portableDigest string, target bundleStatusTarget) bundleTargetStatus {
 	result := bundleTargetStatus{Context: target.Context, Namespace: target.Namespace, Recorded: target.Recorded, NoReceipt: !target.HasReceipt}
+	if target.HasReceipt {
+		result.ReceiptID = strings.TrimSuffix(target.ReceiptFile, ".json")
+	}
 
 	worker := *a
 	cfg := *a.Cfg
@@ -391,7 +394,13 @@ func (a *App) observeBundleTarget(ctx context.Context, bundle, name, portableDig
 		return result
 	}
 	if target.HasReceipt {
-		receipt, ok := readBundleReceiptAt(bundleReceiptPath(bundle, target.Context, target.Namespace, uid))
+		path := bundleReceiptPath(bundle, target.Context, target.Namespace, uid)
+		if filepath.Base(path) != target.ReceiptFile {
+			result.State = bundleStateChanged
+			result.Detail = fmt.Sprintf("context %s no longer identifies the cluster this bundle's receipt for namespace %s was written for", target.Context, target.Namespace)
+			return result
+		}
+		receipt, ok := readBundleReceiptAt(path)
 		if !ok || receipt.Receipt.Target.Context != target.Context || receipt.Receipt.Target.Namespace != target.Namespace {
 			result.State = bundleStateChanged
 			result.Detail = fmt.Sprintf("context %s no longer identifies the cluster this bundle's receipt for namespace %s was written for", target.Context, target.Namespace)
@@ -725,6 +734,9 @@ func bundleDeployedCell(target bundleTargetStatus) string {
 }
 
 func bundleReceiptCell(target bundleTargetStatus) string {
+	if target.ReceiptID != "" {
+		return "recorded:" + shortSHA(target.ReceiptID)
+	}
 	if target.NoReceipt {
 		return "no receipt"
 	}

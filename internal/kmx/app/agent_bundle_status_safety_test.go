@@ -112,6 +112,51 @@ func TestBundleStatusRecordedNamespaceSelection(t *testing.T) {
 	}
 }
 
+func TestBundleStatusKeepsReceiptsForReplacedClusterSeparate(t *testing.T) {
+	a, opt, dir, rendered, name := bundleStatusFixture(t)
+	seedBundleLiveResources(t, dir, rendered, name, nil)
+	writeBundleReceipt(t, opt.BundleDir, "kind-test", "orka-system", "old-cluster", name, "uncommitted")
+	writeBundleReceipt(t, opt.BundleDir, "kind-test", "orka-system", "cluster-uid", name, "uncommitted")
+	opt.Context = "kind-test"
+	report, err := a.bundleStatusReport(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 2 {
+		t.Fatalf("lost physical target receipt: %+v", report.Targets)
+	}
+	states := map[string]int{}
+	ids := map[string]bool{}
+	for _, target := range report.Targets {
+		states[target.State]++
+		ids[target.ReceiptID] = true
+	}
+	if len(ids) != 2 || ids[""] || states[bundleStateChanged] != 1 || states[bundleStateInSync] != 1 {
+		t.Fatalf("cannot distinguish replaced target: %+v", report.Targets)
+	}
+}
+
+func TestBundleStatusRetainsRememberedNewClusterWithOldReceipt(t *testing.T) {
+	a, opt, dir, rendered, name := bundleStatusFixture(t)
+	seedBundleLiveResources(t, dir, rendered, name, nil)
+	writeBundleReceipt(t, opt.BundleDir, "kind-test", "orka-system", "old-cluster", name, "uncommitted")
+	selection, err := bundleLiftSelectionPath(opt.BundleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBundleLiftSelection(selection, bundleLiftSelection{Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Inference: "provider:inference"}); err != nil {
+		t.Fatal(err)
+	}
+	opt.Context = "kind-test"
+	report, err := a.bundleStatusReport(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 2 || report.Targets[0].State == report.Targets[1].State {
+		t.Fatalf("old receipt hid remembered new target: %+v", report.Targets)
+	}
+}
+
 func TestBundleStatusNeverWritesResourcesReceiptsOrSelection(t *testing.T) {
 	a, opt, dir, rendered, name := bundleStatusFixture(t)
 	seedBundleLiveResources(t, dir, rendered, name, nil)
