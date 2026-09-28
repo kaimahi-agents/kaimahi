@@ -44,7 +44,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (24 files) | **Installed** | CLI and tests: Orka operations, bundle lift and status, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (25 files) | **Installed** | CLI and tests: Orka operations, bundle lift, status and evaluation, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -56,9 +56,9 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 81 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift and status, interactive agent console, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 82 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status and evaluation, interactive agent console, shared chat UI, host inference and native platform operations. |
 | `kmx/app/testdata` | 1 | Scaffolding | The committed golden bytes that pin the no-Task Orka artifact. |
-| `kmx/runtime` | 7 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable authoring document and target bindings. The only registered identity is Orka. |
+| `kmx/runtime` | 8 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable authoring document, target bindings and evaluation cases. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |

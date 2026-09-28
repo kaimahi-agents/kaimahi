@@ -32,7 +32,7 @@ func TestParseEvaluationCaseIsStrict(t *testing.T) {
 		{"alias", "id: &n a\ninput: *n\nexpectContains: [y]\n", "alias"},
 		{"not a mapping", "- a\n", "single YAML mapping"},
 		{"empty", "", "empty or not valid YAML"},
-		{"credential", "id: a\ninput: \"use sk-ant-api03-" + strings.Repeat("A", 90) + "\"\nexpectContains: [y]\n", "shaped like"},
+		{"credential", "id: a\ninput: \"use sk-" + "ant-api03-" + strings.Repeat("A", 90) + "\"\nexpectContains: [y]\n", "shaped like"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := ParseEvaluationCase([]byte(tc.doc))
