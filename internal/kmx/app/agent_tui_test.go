@@ -247,7 +247,7 @@ esac`, log))
 // inference, tool and lift actions that cannot run. This asserts what the
 // console ASKS FOR, not what it happens to render.
 func TestConsoleNeverRequestsLegacyKagentKinds(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" >> %q
@@ -333,7 +333,7 @@ func TestAgentTUINonterminalFailsBeforeDiscovery(t *testing.T) {
 }
 
 func TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	dir := t.TempDir()
 	defaultConfig := filepath.Join(dir, "default-config")
 	savedConfig := filepath.Join(dir, "saved-config")
@@ -735,7 +735,7 @@ func TestAgentTUIInspectorWordWrapAndIndentation(t *testing.T) {
 // Provider an Agent names, and a host override saved for console chat. Both
 // are Orka-only now, so both are checked against an Orka Agent.
 func TestAgentTUIProviderAndHostOverrideInferenceInfo(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `case "$*" in
  *api-resources*) printf 'agents.core.orka.ai\n' ;;
@@ -881,7 +881,7 @@ func TestConsoleCreationTimerOnlyRunsDuringWork(t *testing.T) {
 
 func TestConsolePromptReferenceAndSavedContextPrecedence(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	saved := filepath.Join(dir, "saved-config")
 	if _, err := writeAgentLocation(agentLocation{Agent: "demo", Namespace: OrkaNamespace, Context: "remote", Kubeconfig: saved}, nil); err != nil {
 		t.Fatal(err)

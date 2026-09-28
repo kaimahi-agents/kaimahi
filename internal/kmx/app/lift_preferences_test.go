@@ -7,7 +7,7 @@ import (
 )
 
 func TestLiftPreferencesPersistScopedSelections(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	for scope, value := range map[string]string{"subscription": "sub-a", "cluster/sub-a": "rg/cluster", "cluster/sub-b": "rg/other", "context": "aks-context"} {
 		if err := saveLiftPreference(scope, value); err != nil {
 			t.Fatal(err)

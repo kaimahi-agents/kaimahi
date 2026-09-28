@@ -27,7 +27,7 @@ func TestLiftAzureCommandsPinSubscriptionAndIsolateCredentials(t *testing.T) {
 }
 
 func TestLiftLocationLabels(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	for _, tc := range []struct {
 		local                  bool
 		context, cluster, want string

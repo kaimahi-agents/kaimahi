@@ -221,9 +221,10 @@ func (c *Config) KindUnset() []string {
 	return []string{"KIND_EXPERIMENTAL_PROVIDER"}
 }
 
-// stateDir is where kmx keeps the selected context and the binaries kmx had
-// to fetch. Overridable with KMX_HOME, which is what the tests use.
-func stateDir() (string, error) {
+// StateDir is where kmx keeps its local state and the binaries kmx had to
+// fetch. Overridable with KMX_HOME, which is what tests and isolated
+// invocations use.
+func StateDir() (string, error) {
 	if home := strings.TrimSpace(os.Getenv("KMX_HOME")); home != "" {
 		return home, nil
 	}
@@ -235,7 +236,7 @@ func stateDir() (string, error) {
 }
 
 func contextFile() (string, error) {
-	dir, err := stateDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
@@ -246,7 +247,7 @@ func contextFile() (string, error) {
 // installed with `go install` (no clone, no bin/) still has somewhere to put
 // it.
 func CacheDir() (string, error) {
-	dir, err := stateDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
@@ -261,7 +262,7 @@ func CacheDir() (string, error) {
 // pin bump can never be served the previous binary, and nothing looks for a
 // command under `kind-0.33.0-linux-amd64`.
 func ToolchainDir() (string, error) {
-	dir, err := stateDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
@@ -279,7 +280,7 @@ func ToolchainDir() (string, error) {
 // process, and the only safe way to remove what it made is to read back the
 // ids it recorded when it made them.
 func LiftRecordDir() (string, error) {
-	dir, err := stateDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +292,7 @@ func LiftRecordDir() (string, error) {
 // operator's GOBIN, so building the plane never lands a binary on top of
 // something they installed themselves.
 func (c *Config) PlaneCacheDir() (string, error) {
-	dir, err := stateDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}

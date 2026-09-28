@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -42,7 +40,14 @@ case "$*" in
     if [ -z "$url" ] && [ -f "$KMX_TEST_ARGS.provider" ]; then url=$(grep '  baseURL: ' "$KMX_TEST_ARGS.provider" | head -1 | cut -d' ' -f4); fi
     [ -n "$url" ] || exit 0
     observed=2
-    [ "$KMX_TEST_PROVIDER_READY" = stale ] && observed=1
+    case "$*" in
+      *"--ignore-not-found=true"*) ;;
+      *)
+        if [ "$KMX_TEST_PROVIDER_READY" = stale-once ] && [ ! -f "$KMX_TEST_ARGS.provider-ready" ]; then
+          observed=1
+          : > "$KMX_TEST_ARGS.provider-ready"
+        fi ;;
+    esac
     printf '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2},"spec":{"baseURL":"%s"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":%s}]}}' "$url" "$observed"
     exit 0 ;;
   *"get secret local-provider-key"*)
@@ -200,13 +205,13 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 		t.Fatal("no post-apply Provider readiness read")
 	}
 
-	stale, errOut, _ := upFixture(t)
-	t.Setenv("KMX_TEST_PROVIDER_READY", "stale")
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	stale.Run.Context = ctx
-	if err := stale.Up(""); err == nil || !strings.Contains(err.Error(), "current-generation Ready") {
-		t.Fatalf("stale Provider was considered ready: %v\n%s", err, errOut)
+	stale, errOut, args := upFixture(t)
+	t.Setenv("KMX_TEST_PROVIDER_READY", "stale-once")
+	if err := stale.Up(""); err != nil {
+		t.Fatalf("Provider did not become ready after its current generation was observed: %v\n%s", err, errOut)
+	}
+	if reads := strings.Count(upCalls(t, args), "get providers.core.orka.ai local -o json"); reads < 2 {
+		t.Fatalf("current-generation readiness was not re-read after stale status: %d reads", reads)
 	}
 }
 

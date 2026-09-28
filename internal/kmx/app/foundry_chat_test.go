@@ -95,7 +95,7 @@ func TestFoundryConfigRejectsTokenRedirectDestinations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
 	want := foundryChatConfig{Endpoint: "https://example.openai.azure.com", Deployment: "chat"}
 	if err := saveFoundryChatConfig(want); err != nil {
 		t.Fatal(err)
