@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -147,7 +148,7 @@ func TestLiftBundleReceiptGitCommitTracksOnlyPortableRevision(t *testing.T) {
 	runGit("add", "portable/agent.yaml")
 	runGit("commit", "--quiet", "-m", "agent")
 	commit := runGit("rev-parse", "HEAD")
-	if got := liftAgentCommit(opt.BundleDir, agentruntime.PortableBundleDigest([]byte("stale rendered revision"))); got != "uncommitted" {
+	if got := liftAgentCommit(context.Background(), opt.BundleDir, agentruntime.PortableBundleDigest([]byte("stale rendered revision"))); got != "uncommitted" {
 		t.Fatalf("Git provenance described a different rendered revision: %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "unrelated.tmp"), []byte("not portable"), 0600); err != nil {
@@ -183,10 +184,15 @@ func TestLiftBundleReceiptGitCommitTracksOnlyPortableRevision(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(opt.BundleDir, "agent.yaml"), original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got := liftAgentCommit(opt.BundleDir, wrapper.Receipt.PortableDigest); got != "uncommitted" {
+	if got := liftAgentCommit(context.Background(), opt.BundleDir, wrapper.Receipt.PortableDigest); got != "uncommitted" {
 		t.Fatalf("staged but uncommitted revision reported HEAD: %q", got)
 	}
 	runGit("reset", "--quiet", "HEAD", "--", "portable/agent.yaml")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := liftAgentCommit(cancelled, opt.BundleDir, wrapper.Receipt.PortableDigest); got != "uncommitted" {
+		t.Fatalf("cancelled provenance check returned a commit: %q", got)
+	}
 	before := wrapper.Receipt.PortableDigest
 	agentPath := filepath.Join(opt.BundleDir, "agent.yaml")
 	agent, err := os.ReadFile(agentPath)
@@ -244,8 +250,8 @@ func TestLiftBundleSavesReceiptAndRefusesStaleRememberedCluster(t *testing.T) {
 	if wrapper.Receipt.PortableDigest != agentruntime.PortableBundleDigest(source) {
 		t.Fatal("receipt directory changed digest of exact agent.yaml bytes")
 	}
-	if strings.Count(notes.String(), "uncommitted") != 1 {
-		t.Fatalf("git warning missing or duplicated: %s", notes.String())
+	if strings.Count(notes.String(), "uncommitted") != 1 || !strings.Contains(notes.String(), "untracked or differs from HEAD") {
+		t.Fatalf("git warning missing, misleading or duplicated: %s", notes.String())
 	}
 	firstDigest := wrapper.Receipt.PortableDigest
 	opt.ToContext, opt.Inference = "", ""
@@ -263,8 +269,12 @@ func TestLiftBundleSavesReceiptAndRefusesStaleRememberedCluster(t *testing.T) {
 		t.Fatalf("rerun not reused: %+v", wrapper)
 	}
 	t.Setenv("KMX_LIFT_CLUSTER_UID", "other-cluster-uid")
-	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "stale") {
-		t.Fatalf("context repointed to another cluster: %v", err)
+	statePath, err := bundleLiftSelectionPath(opt.BundleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "stale") || !strings.Contains(err.Error(), statePath) {
+		t.Fatalf("context repointed to another cluster without naming state file to remove: %v", err)
 	}
 	opt.ToContext, opt.Inference = "kind-test", "provider:inference"
 	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "stale") {

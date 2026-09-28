@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
@@ -125,7 +126,7 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		return err
 	}
 	if remembered.Context == contextName && remembered.ClusterUID != "" && remembered.ClusterUID != uid {
-		return fmt.Errorf("stale remembered target: context %s now identifies another cluster; pass --to-context and --inference explicitly", contextName)
+		return fmt.Errorf("stale remembered target: context %s now identifies another cluster; remove local selection %s before retrying with --to-context and --inference", contextName, selectionPath)
 	}
 	worker.notef("Lift destination: context %s, cluster %s, namespace %s", contextName, cluster, namespace)
 	if err := worker.liftPrerequisites(ctx, namespace); err != nil {
@@ -174,9 +175,9 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	for _, resource := range deployed.Receipt.Resources {
 		worker.notef("%s/%s: %s", resource.Kind, resource.Name, resource.Outcome)
 	}
-	gitCommit := liftAgentCommit(bundle, rendered.PortableDigest())
+	gitCommit := liftAgentCommit(ctx, bundle, rendered.PortableDigest())
 	if gitCommit == "uncommitted" {
-		worker.notef("Warning: agent.yaml is uncommitted (not tracked and unchanged against HEAD)")
+		worker.notef("Warning: agent.yaml is uncommitted (untracked or differs from HEAD, including staged changes)")
 	}
 	wrapped := bundleLiftReceipt{Receipt: deployed.Receipt, GitCommit: gitCommit}
 	if err := writeLiftReceipt(bundle, uid, wrapped); err != nil {
@@ -450,8 +451,10 @@ func writeLiftReceipt(bundle, clusterUID string, receipt bundleLiftReceipt) erro
 
 // Determine provenance only from the exact portable file. Unrelated untracked
 // paths and changes outside agent.yaml cannot turn a clean revision dirty.
-func liftAgentCommit(bundle, portableDigest string) string {
-	rootRaw, err := exec.Command("git", "-C", bundle, "rev-parse", "--show-toplevel").Output()
+func liftAgentCommit(ctx context.Context, bundle, portableDigest string) string {
+	gitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	rootRaw, err := exec.CommandContext(gitCtx, "git", "-C", bundle, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return "uncommitted"
 	}
@@ -460,13 +463,13 @@ func liftAgentCommit(bundle, portableDigest string) string {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return "uncommitted"
 	}
-	if exec.Command("git", "-C", root, "ls-files", "--error-unmatch", "--", rel).Run() != nil ||
-		exec.Command("git", "-C", root, "diff", "--cached", "--quiet", "HEAD", "--", rel).Run() != nil {
+	if exec.CommandContext(gitCtx, "git", "-C", root, "ls-files", "--error-unmatch", "--", rel).Run() != nil ||
+		exec.CommandContext(gitCtx, "git", "-C", root, "diff", "--cached", "--quiet", "HEAD", "--", rel).Run() != nil {
 		return "uncommitted"
 	}
 	// Git's skip-worktree/assume-unchanged hints can hide working-tree edits
 	// from diff. Compare HEAD's blob directly to the exact bytes Render reads.
-	committed, err := exec.Command("git", "-C", root, "show", "HEAD:"+filepath.ToSlash(rel)).Output()
+	committed, err := exec.CommandContext(gitCtx, "git", "-C", root, "show", "HEAD:"+filepath.ToSlash(rel)).Output()
 	if err != nil {
 		return "uncommitted"
 	}
@@ -474,7 +477,7 @@ func liftAgentCommit(bundle, portableDigest string) string {
 	if err != nil || !bytes.Equal(portable, committed) || agentruntime.PortableBundleDigest(committed) != portableDigest {
 		return "uncommitted"
 	}
-	commit, err := exec.Command("git", "-C", root, "rev-parse", "--verify", "HEAD").Output()
+	commit, err := exec.CommandContext(gitCtx, "git", "-C", root, "rev-parse", "--verify", "HEAD").Output()
 	if err != nil {
 		return "uncommitted"
 	}
