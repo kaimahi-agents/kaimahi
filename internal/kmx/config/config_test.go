@@ -20,6 +20,26 @@ func TestProductDefaultsAreUsable(t *testing.T) {
 	}
 }
 
+// KMX_HOME is the portable override. The unconfigured path stays native to
+// each OS through os.UserConfigDir rather than hard-coding Linux or macOS.
+func TestStateDirUsesPortableOverrideAndNativeDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "xdg"))
+	if got, err := StateDir(); err != nil || got != home {
+		t.Fatalf("KMX_HOME state dir = %q, %v; want %q", got, err, home)
+	}
+
+	t.Setenv("KMX_HOME", "")
+	native, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := StateDir(); err != nil || got != filepath.Join(native, "kmx") {
+		t.Fatalf("native state dir = %q, %v; want %q", got, err, filepath.Join(native, "kmx"))
+	}
+}
+
 func TestModelRecordsWhetherTheOperatorSelectedIt(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	t.Setenv("MODEL", "")

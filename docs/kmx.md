@@ -145,7 +145,14 @@ access.
 | `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
 | `CRED` | default model/operator credential `hello-world` |
 | `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
-| `KMX_HOME` | kmx state/cache location; otherwise user config directory (`~/.config/kmx` on Linux) |
+| `KMX_HOME` | portable override for all kmx state/cache; otherwise the native user config directory (`~/.config/kmx` on Linux, `~/Library/Application Support/kmx` on macOS) |
+
+Use `KMX_HOME` for isolated runs and tests on both Linux and macOS. KMX follows
+Go's native user-config lookup when it is unset: `XDG_CONFIG_HOME` participates
+in that lookup on Linux, but it is not the macOS override. Changing `KMX_HOME`
+selects a separate set of saved records; it does not migrate files from the
+native location. Point it only at a trusted private directory: KMX state can
+include kubeconfig snapshots and infrastructure resource identifiers.
 
 ### Where the command will land
 

@@ -50,6 +50,11 @@ see [installation](kmx.md#install).
 Run from the repository root. Formatting checks must test `gofmt` output because
 `gofmt -l` alone exits successfully even when it lists files.
 
+Tests that read or write KMX state must set `KMX_HOME` to `t.TempDir()`. Do not
+use `XDG_CONFIG_HOME` as the test boundary: Go uses it for the native Linux
+config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
+is the repository's explicit cross-platform isolation contract.
+
 ```bash
 test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go build ./... && go test ./...
 (cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)

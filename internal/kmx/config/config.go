@@ -222,8 +222,10 @@ func (c *Config) KindUnset() []string {
 }
 
 // StateDir is where kmx keeps its local state and the binaries kmx had to
-// fetch. Overridable with KMX_HOME, which is what tests and isolated
-// invocations use.
+// fetch. Without an override it follows os.UserConfigDir: the XDG config home
+// on Linux and Library/Application Support on macOS. KMX_HOME is the explicit
+// cross-platform override for tests and isolated invocations; app packages
+// should use this function rather than interpreting OS-specific variables.
 func StateDir() (string, error) {
 	if home := strings.TrimSpace(os.Getenv("KMX_HOME")); home != "" {
 		return home, nil

@@ -275,8 +275,10 @@ an owner's cleanup decision. It removes its in-cluster monitoring objects first,
 disables only add-ons it enabled, then removes recorded Azure resources by ID,
 never by a guessed name. Unknown/pre-existing ownership is left unchanged.
 
-Both branches use a run record under `$KMX_HOME` or the user config directory,
-not the checkout. It contains resource IDs: protect it and do not commit it.
+Both branches use a run record under `$KMX_HOME/lift` when `KMX_HOME` is set,
+or under the native KMX config directory (`~/.config/kmx/lift` on Linux,
+`~/Library/Application Support/kmx/lift` on macOS), not the checkout. It
+contains resource IDs: protect it and do not commit it.
 Lost record, subscription/branch mismatch, or unresolvable ownership refuses
 rather than adopting resources. Incomplete cleanup retains the record and names
 what may still bill. Unknown prior monitoring ownership can retain the record
