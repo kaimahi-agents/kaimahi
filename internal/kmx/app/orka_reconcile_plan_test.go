@@ -54,6 +54,11 @@ func TestReconcilePlanAndDeployAgreeOnEveryOutcome(t *testing.T) {
 			}
 			result, deployErr := adapter.Deploy(context.Background(), rendered, agentruntime.DeployOptions{Reconcile: true})
 			if tc.want == "refused" {
+				for _, call := range orkaCalls(t, dir)[before:] {
+					if call.Document != nil && !strings.Contains(strings.Join(call.Args, " "), "--dry-run=server") {
+						t.Fatalf("refused reconciliation wrote a resource: %+v", call)
+					}
+				}
 				if planErr == nil || deployErr == nil {
 					t.Fatalf("plan/deploy disagreement on refusal: %v / %v", planErr, deployErr)
 				}
@@ -65,7 +70,11 @@ func TestReconcilePlanAndDeployAgreeOnEveryOutcome(t *testing.T) {
 			if planErr != nil || deployErr != nil {
 				t.Fatalf("plan/deploy: %v / %v", planErr, deployErr)
 			}
-			if len(decisions) != 2 || len(result.Receipt.Resources) != 2 || string(decisions[1].outcome) != tc.want || string(result.Receipt.Resources[1].Outcome) != tc.want {
+			providerOutcome := agentruntime.ResourceAdopted
+			if tc.marker == "absent" {
+				providerOutcome = agentruntime.ResourceCreated
+			}
+			if len(decisions) != 2 || len(result.Receipt.Resources) != 2 || decisions[0].outcome != providerOutcome || result.Receipt.Resources[0].Outcome != providerOutcome || string(decisions[1].outcome) != tc.want || string(result.Receipt.Resources[1].Outcome) != tc.want {
 				t.Fatalf("plan/deploy disagree: %+v / %+v, want %s", decisions, result.Receipt.Resources, tc.want)
 			}
 		})

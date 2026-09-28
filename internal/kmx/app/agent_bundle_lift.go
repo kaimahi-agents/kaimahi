@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -168,7 +169,7 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	// versioned reinspection immediately before each resource mutation.
 	deployed, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{Reconcile: true})
 	if err != nil {
-		return err
+		return fmt.Errorf("lift deployment failed; Provider or Agent may have been changed before failure (inspect the destination before retrying): %w", err)
 	}
 	for _, resource := range deployed.Receipt.Resources {
 		worker.notef("%s/%s: %s", resource.Kind, resource.Name, resource.Outcome)
@@ -250,31 +251,33 @@ func (a *App) liftClusterUID(ctx context.Context) (string, error) {
 }
 
 func (a *App) liftPrerequisites(ctx context.Context, namespace string) error {
+	var gaps []error
 	missing, err := a.missingLiftOrkaCRDs(ctx)
 	if err != nil {
-		return err
+		return err // Without CRD discovery, other cluster reads may be untrustworthy.
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing Orka CRDs (%s); prepare destination with kmx orka install (or kmx aks up for a new cluster)", strings.Join(missing, ", "))
+		gaps = append(gaps, fmt.Errorf("missing Orka CRDs (%s); prepare destination with kmx orka install (or kmx aks up for a new cluster)", strings.Join(missing, ", ")))
 	}
 	if _, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/orka-controller-manager", "--timeout=10s"); err != nil {
-		return fmt.Errorf("Orka controller is not Ready; prepare destination with kmx orka install")
+		gaps = append(gaps, fmt.Errorf("Orka controller is not Ready; prepare destination with kmx orka install: %w", err))
 	}
 	raw, err := a.orkaCapture(ctx, nil, "get", "namespace", namespace, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
-		return fmt.Errorf("cannot check destination namespace %s: %w", namespace, err)
+		gaps = append(gaps, fmt.Errorf("cannot check destination namespace %s: %w", namespace, err))
+	} else {
+		var ns struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name              string  `json:"name"`
+				DeletionTimestamp *string `json:"deletionTimestamp"`
+			} `json:"metadata"`
+		}
+		if json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != namespace || ns.Metadata.DeletionTimestamp != nil {
+			gaps = append(gaps, fmt.Errorf("destination namespace %s is missing or terminating; create it before lifting (kmx orka install prepares %s)", namespace, OrkaNamespace))
+		}
 	}
-	var ns struct {
-		Kind     string `json:"kind"`
-		Metadata struct {
-			Name              string  `json:"name"`
-			DeletionTimestamp *string `json:"deletionTimestamp"`
-		} `json:"metadata"`
-	}
-	if json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != namespace || ns.Metadata.DeletionTimestamp != nil {
-		return fmt.Errorf("destination namespace %s is missing or terminating; create it before lifting (kmx orka install prepares %s)", namespace, OrkaNamespace)
-	}
-	return nil
+	return errors.Join(gaps...)
 }
 
 func (a *App) liftProviderBindings(ctx context.Context, namespace, provider string) (agentruntime.OrkaBindings, error) {
@@ -457,7 +460,8 @@ func liftAgentCommit(bundle, portableDigest string) string {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return "uncommitted"
 	}
-	if exec.Command("git", "-C", root, "ls-files", "--error-unmatch", "--", rel).Run() != nil {
+	if exec.Command("git", "-C", root, "ls-files", "--error-unmatch", "--", rel).Run() != nil ||
+		exec.Command("git", "-C", root, "diff", "--cached", "--quiet", "HEAD", "--", rel).Run() != nil {
 		return "uncommitted"
 	}
 	// Git's skip-worktree/assume-unchanged hints can hide working-tree edits

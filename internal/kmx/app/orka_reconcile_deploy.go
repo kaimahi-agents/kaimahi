@@ -118,8 +118,8 @@ func (app *App) planOrkaReconcile(ctx context.Context, rendered agentruntime.Ren
 	if err := validateOrkaBundle(bundle, validator); err != nil {
 		return nil, err
 	}
-	// Recheck immediately before each deployment mutation: another writer may
-	// have changed the decision after this complete read-only preflight.
+	// Deploy separately reinspects immediately before each mutation: another
+	// writer may change these read-only decisions after preflight.
 	var checks []orkaReconcileCheck
 	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
 		check, err := app.inspectOrkaReconcile(ctx, namespace, doc, rendered)

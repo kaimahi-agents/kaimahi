@@ -76,6 +76,21 @@ func TestLiftBundlePlanIsReadOnlyAndMapsTargetProvider(t *testing.T) {
 
 // A selected inference Provider with the rendered Agent's name must never be
 // adopted, replaced, or reused as the newly rendered Provider.
+func TestLiftBundleReportsIndependentOrkaAndNamespaceGaps(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	t.Setenv("KMX_LIFT_MISSING", "crd,controller,namespace")
+	err := a.LiftAgentBundle(opt)
+	if err == nil {
+		t.Fatal("missing prerequisites were accepted")
+	}
+	for _, want := range []string{"CRDs", "controller", "namespace", "kmx orka install"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %s refusal: %v", want, err)
+		}
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
 func TestLiftBundleRefusesInferenceProviderNameCollision(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
 	opt.Inference = "provider:sample"
@@ -157,6 +172,21 @@ func TestLiftBundleReceiptGitCommitTracksOnlyPortableRevision(t *testing.T) {
 	if wrapper.GitCommit != commit {
 		t.Fatalf("unrelated untracked file tainted clean agent: %q vs %q", wrapper.GitCommit, commit)
 	}
+	original, err := os.ReadFile(filepath.Join(opt.BundleDir, "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(opt.BundleDir, "agent.yaml"), append(slices.Clone(original), []byte("\n# staged revision\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "portable/agent.yaml")
+	if err := os.WriteFile(filepath.Join(opt.BundleDir, "agent.yaml"), original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := liftAgentCommit(opt.BundleDir, wrapper.Receipt.PortableDigest); got != "uncommitted" {
+		t.Fatalf("staged but uncommitted revision reported HEAD: %q", got)
+	}
+	runGit("reset", "--quiet", "HEAD", "--", "portable/agent.yaml")
 	before := wrapper.Receipt.PortableDigest
 	agentPath := filepath.Join(opt.BundleDir, "agent.yaml")
 	agent, err := os.ReadFile(agentPath)
@@ -242,6 +272,21 @@ func TestLiftBundleSavesReceiptAndRefusesStaleRememberedCluster(t *testing.T) {
 	}
 	if len(orkaCalls(t, dir)) == 0 {
 		t.Fatal("fake kubectl not exercised")
+	}
+}
+
+func TestLiftBundleNamesPartialWritesOnDeployFailure(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	t.Setenv("KMX_RECONCILE_FAIL_ONCE", "Agent")
+	err := a.LiftAgentBundle(opt)
+	if err == nil || !strings.Contains(err.Error(), "may have been changed") {
+		t.Fatalf("deployment failure hid partial resource changes: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "providers.core.orka.ai.json")); statErr != nil {
+		t.Fatalf("fixture did not exercise a partial Provider write: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(opt.BundleDir, "receipts")); !os.IsNotExist(statErr) {
+		t.Fatalf("failed deployment wrote receipt: %v", statErr)
 	}
 }
 

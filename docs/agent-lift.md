@@ -99,7 +99,7 @@ this test. The receipt is local deployment evidence, not part of the portable
 revision: the portable digest covers **only** the bytes of `agent.yaml`, and
 `receipts/` does not affect Git cleanliness of `agent.yaml`. A later
 `kmx agent create` rerun can reuse the bundle even when `receipts/` is present.
-No receipt is written by `--plan` or by a failed lift.
+No receipt is written by `--plan` or by a failed deployment. If deployment and receipt writing succeed but saving the remembered target fails, the command returns an error and the receipt remains on disk.
 
 The receipt binds deployment outcomes and target identities to the portable
 and rendered digests; it is not proof that an Agent answered a Task. Run and

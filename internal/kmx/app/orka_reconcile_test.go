@@ -52,7 +52,7 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	if os.Getenv("KMX_LIFT_TEST") == "1" && slices.Contains(args, "rollout") {
-		if os.Getenv("KMX_LIFT_MISSING") == "controller" {
+		if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "controller") {
 			fail()
 		}
 		fmt.Print("deployment successfully rolled out")
@@ -67,7 +67,7 @@ func TestReconcileKubectlHelper(t *testing.T) {
 					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid"))
 					os.Exit(0)
 				}
-				if os.Getenv("KMX_LIFT_MISSING") == "namespace" {
+				if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "namespace") {
 					fail()
 				}
 				fmt.Printf(`{"kind":"Namespace","metadata":{"name":%q,"uid":"namespace-uid"}}`, name)
@@ -101,7 +101,7 @@ func TestReconcileKubectlHelper(t *testing.T) {
 				}
 			case "crd":
 				if strings.HasPrefix(name, "tools.") {
-					if os.Getenv("KMX_LIFT_MISSING") == "crd" {
+					if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "crd") {
 						os.Exit(0)
 					}
 					fmt.Print("customresourcedefinition.apiextensions.k8s.io/tools.core.orka.ai")

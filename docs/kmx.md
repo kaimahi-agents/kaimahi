@@ -77,6 +77,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka install` | verify pinned Orka installer bytes; create wrapper-auth Secret before apply; wait for both Deployments; optionally create a keyless Provider. Uses upstream manifests unmodified. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | author native Provider + Agent and optional Task; retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
+| `kmx agent lift <bundle-dir>` | reconcile an existing portable bundle on a prepared destination; `--plan` checks without writing. [Bundle lift](agent-lift.md) |
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
