@@ -1,11 +1,18 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestQuickstartExistingAgentToolAttachmentDoesNotCreateBundle(t *testing.T) {
@@ -45,6 +52,78 @@ func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
 		if err != nil || patch != nil {
 			t.Fatalf("existing tool changed: %s %v", patch, err)
 		}
+	}
+}
+
+func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
+	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	var policyOK, toolOK bool
+	for {
+		var document map[string]any
+		if err := decoder.Decode(&document); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		metadata, _ := document["metadata"].(map[string]any)
+		spec, _ := document["spec"].(map[string]any)
+		switch {
+		case document["kind"] == "OutboundAccessPolicy" && metadata["name"] == quickstartK8sToolPolicy:
+			gateway, _ := spec["gateway"].(map[string]any)
+			serviceRef, _ := gateway["serviceRef"].(map[string]any)
+			policyOK = gateway["scheme"] == "http" &&
+				serviceRef["name"] == "kmx-k8s-tool" &&
+				serviceRef["port"] == 8080
+		case document["kind"] == "Tool" && metadata["name"] == quickstartK8sTool:
+			http, _ := spec["http"].(map[string]any)
+			policyRef, _ := http["outboundAccessPolicyRef"].(map[string]any)
+			toolOK = http["url"] == quickstartK8sToolAuthority &&
+				http["method"] == "POST" &&
+				policyRef["name"] == quickstartK8sToolPolicy
+		}
+	}
+	if !policyOK {
+		t.Fatal("OutboundAccessPolicy does not route to the exact managed Tool Service")
+	}
+	if !toolOK {
+		t.Fatal("Tool does not reference the exact managed gateway policy and authority")
+	}
+}
+
+func TestWaitOrkaResourceConditionRejectsAStaleGeneration(t *testing.T) {
+	dir := t.TempDir()
+	countFile := filepath.Join(dir, "count")
+	fakeTool(t, dir, "kubectl", fmt.Sprintf(`
+count=0
+[ ! -f %[1]q ] || count=$(/bin/cat %[1]q)
+count=$((count + 1))
+printf '%%s' "$count" > %[1]q
+if [ "$count" -eq 1 ]; then
+  printf '%%s' '{"metadata":{"generation":2},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}'
+else
+  printf '%%s' '{"metadata":{"generation":2},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":2}]}}'
+fi
+`, countFile))
+	t.Setenv("PATH", dir)
+	a := &App{
+		Cfg: &config.Config{KubeContext: "kind-demo"},
+		Run: &run.Runner{},
+	}
+
+	if err := a.waitOrkaResourceCondition("tools.core.orka.ai", quickstartK8sTool, "Available"); err != nil {
+		t.Fatal(err)
+	}
+	count, err := os.ReadFile(countFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(count) != "2" {
+		t.Fatalf("status reads = %s, want 2; stale generation was accepted", count)
 	}
 }
 

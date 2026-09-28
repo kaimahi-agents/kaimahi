@@ -26,26 +26,39 @@ type copilotTool struct {
 
 // The endpoint comes from a registered Tool, never model output, and execution
 // uses an owned Service port-forward pinned to the selected kube context.
-// Auth/policy/MCP tools require Orka's executor and are not bypassed here.
+// Auth/MCP and arbitrary policy-backed tools require Orka's executor. The one
+// kmx-managed gateway policy maps to the same exact read-only Service this path
+// already allowed before Orka required a gateway for private Service IPs.
 func copilotToolPath(raw json.RawMessage, namespace string) (string, error) {
 	var spec struct {
 		HTTP struct {
-			URL, Method                            string
-			Headers                                map[string]string
-			AuthSecretRef, OutboundAccessPolicyRef json.RawMessage
+			URL, Method             string
+			Headers                 map[string]string
+			AuthSecretRef           json.RawMessage
+			OutboundAccessPolicyRef struct {
+				Name string
+			}
 		}
 		MCP json.RawMessage
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return "", err
 	}
-	if len(spec.MCP) > 0 || len(spec.HTTP.AuthSecretRef) > 0 || len(spec.HTTP.OutboundAccessPolicyRef) > 0 || len(spec.HTTP.Headers) > 0 {
+	if len(spec.MCP) > 0 || len(spec.HTTP.AuthSecretRef) > 0 || len(spec.HTTP.Headers) > 0 {
 		return "", fmt.Errorf("requires Orka MCP/auth/policy executor")
+	}
+	endpoint := spec.HTTP.URL
+	if spec.HTTP.OutboundAccessPolicyRef.Name != "" {
+		if spec.HTTP.OutboundAccessPolicyRef.Name != quickstartK8sToolPolicy ||
+			endpoint != quickstartK8sToolAuthority || namespace != OrkaNamespace {
+			return "", fmt.Errorf("requires Orka MCP/auth/policy executor")
+		}
+		endpoint = "http://kmx-k8s-tool." + OrkaNamespace + ".svc.cluster.local:8080/resources"
 	}
 	if spec.HTTP.Method != "" && spec.HTTP.Method != "POST" {
 		return "", fmt.Errorf("only POST HTTP tools supported")
 	}
-	u, err := url.Parse(spec.HTTP.URL)
+	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("requires a plain in-cluster HTTP Service URL")
 	}

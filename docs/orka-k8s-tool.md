@@ -8,11 +8,13 @@ New quickstart agents reference this tool by default. `--tools` replaces that
 default with an explicit list. Default system instructions direct cluster
 questions to the tool; custom instruction files remain user-owned.
 
-**Known issue:** Orka v0.1.3 refuses the tool's in-cluster Service URL
-(`tool URL resolves to private/loopback IP`). The tool never becomes Available
-to Orka-executed Tasks, even though kmx installs and references it. See
-[#217](https://github.com/kaimahi-agents/kaimahi/issues/217). The example
-prompt below does not currently exercise the tool successfully through Orka.
+Orka v0.1.3 refuses private Service IPs as direct Tool authorities. KMX gives
+the Tool the credential-free logical authority `https://example.com/resources`
+and binds it to an exact same-namespace `OutboundAccessPolicy`; Orka sends the
+request only to the `kmx-k8s-tool` Service on port 8080. Installation waits for
+the current policy generation to be Accepted and the current Tool generation
+to be Available. A missing or invalid policy leaves the Tool unavailable rather
+than falling back to the public logical URL.
 
 Selecting an existing quickstart Agent adds the tool reference if absent,
 preserving other tools and its system prompt. An explicitly disabled reference
@@ -40,7 +42,11 @@ Tool updates take effect on the next Task and preserve other Agent configuration
 
 ## Implementation
 
-- `k8s/orka-k8s-tool.yaml`: Tool, Service, Deployment and read-only RBAC.
+- `k8s/orka-k8s-tool.yaml`: Tool, exact same-namespace
+  `OutboundAccessPolicy` gateway, Service, Deployment and read-only RBAC. Orka
+  rejects private Service IPs as direct Tool authorities; the Tool therefore
+  uses a credential-free public logical authority while Orka routes execution
+  only to the named `kmx-k8s-tool` Service.
 - `scripts/orka-k8s-tool.py`: standard-library HTTP server, embedded into KMX and
   installed in the `kmx-k8s-tool` ConfigMap.
 - `internal/kmx/app/orka_k8s_tool.go`: installation and existing-agent attachment.
@@ -69,10 +75,9 @@ python3 -B scripts/test_orka_k8s_tool.py
 go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
-A historical 2026-09-16 live check recorded a `POST /resources` returning 200,
-actual deployment names, and denial of the reader account's `delete pods`
-authorization. That check does **not** establish availability on the pinned
-Orka v0.1.3 release: #217 blocks this Tool from becoming Available to
-Orka-executed Tasks. The former MCP fixture was removed with the unsupported
-legacy runtime; this native Tool remains a read-only example, not a working
-Orka-executed tool on this version.
+CI creates an unpredictable ConfigMap, executes an Orka Task against the pinned
+v0.1.3 worker, and requires the Task's answer to contain that exact live name.
+It also changes the Tool to reference a missing gateway and requires a
+current-generation `Available=False` result before restoring the managed
+policy. The direct server checks remain as separate evidence for the HTTP
+allowlist and Kubernetes RBAC boundary.

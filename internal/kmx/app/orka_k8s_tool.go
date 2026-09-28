@@ -11,7 +11,11 @@ import (
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 )
 
-const quickstartK8sTool = "k8s-get-resources"
+const (
+	quickstartK8sTool          = "k8s-get-resources"
+	quickstartK8sToolPolicy    = "kmx-k8s-tool-gateway"
+	quickstartK8sToolAuthority = "https://example.com/resources"
+)
 
 const quickstartK8sInstructions = "For questions about live Kubernetes resources, call k8s-get-resources and answer only from its output. Never invent resource names. Copy resource names exactly. This tool lists resources read-only; it cannot change the cluster."
 
@@ -45,7 +49,49 @@ func (a *App) installQuickstartK8sTool() error {
 	if err := a.applyBytes("Orka Kubernetes tool resources", resources); err != nil {
 		return err
 	}
-	return a.kubectlRun("-n", OrkaNamespace, "rollout", "status", "deploy/kmx-k8s-tool", "--timeout=180s")
+	if err := a.kubectlRun("-n", OrkaNamespace, "rollout", "status", "deploy/kmx-k8s-tool", "--timeout=180s"); err != nil {
+		return err
+	}
+	if err := a.waitOrkaResourceCondition("outboundaccesspolicies.core.orka.ai",
+		quickstartK8sToolPolicy, "Accepted"); err != nil {
+		return err
+	}
+	return a.waitOrkaResourceCondition("tools.core.orka.ai", quickstartK8sTool, "Available")
+}
+
+func (a *App) waitOrkaResourceCondition(resource, name, condition string) error {
+	ctx, cancel := context.WithTimeout(a.operationContext(), time.Minute)
+	defer cancel()
+	for {
+		raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", resource, name, "-o", "json")
+		if err != nil {
+			return fmt.Errorf("read %s/%s status: %w", resource, name, err)
+		}
+		var object struct {
+			Metadata struct {
+				Generation int64 `json:"generation"`
+			} `json:"metadata"`
+			Status struct {
+				Conditions []serverCondition `json:"conditions"`
+			} `json:"status"`
+		}
+		if err := json.Unmarshal(raw, &object); err != nil {
+			return fmt.Errorf("read %s/%s status: invalid JSON: %w", resource, name, err)
+		}
+		if object.Metadata.Generation < 1 {
+			return fmt.Errorf("%s/%s has no generation", resource, name)
+		}
+		for _, current := range object.Status.Conditions {
+			if current.Type == condition && current.Status == "True" &&
+				current.ObservedGeneration == object.Metadata.Generation {
+				return nil
+			}
+		}
+		if err := orkaPause(ctx); err != nil {
+			return fmt.Errorf("waiting for %s/%s current-generation %s: %w",
+				resource, name, condition, err)
+		}
+	}
 }
 
 // Preserve existing references and instructions. A resourceVersion test prevents
