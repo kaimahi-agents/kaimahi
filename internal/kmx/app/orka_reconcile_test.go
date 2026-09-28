@@ -82,12 +82,20 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			os.Exit(0)
 		}
 		meta := obj["metadata"].(map[string]any)
+		if os.Getenv("KMX_RECONCILE_READY_REGRESSION") == "1" && kind == "agents.core.orka.ai" && !slices.Contains(args, "--ignore-not-found=true") {
+			_ = os.WriteFile(filepath.Join(dir, "provider-not-ready"), nil, 0600)
+		}
 		if os.Getenv("KMX_RECONCILE_STEAL") == obj["kind"] && !slices.Contains(args, "--ignore-not-found=true") {
 			meta["annotations"].(map[string]any)["kaimahi.dev/bundle"] = "other-bundle"
 			changed, _ := json.Marshal(obj)
 			_ = os.WriteFile(filepath.Join(dir, kind+".json"), changed, 0600)
 		}
 		obj["status"] = map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": meta["generation"]}}}
+		if kind == "providers.core.orka.ai" {
+			if _, err := os.Stat(filepath.Join(dir, "provider-not-ready")); err == nil {
+				obj["status"] = map[string]any{"ready": false, "conditions": []any{map[string]any{"type": "Ready", "status": "False", "observedGeneration": meta["generation"]}}}
+			}
+		}
 		_ = json.NewEncoder(os.Stdout).Encode(obj)
 		os.Exit(0)
 	}
@@ -284,6 +292,60 @@ func TestReconcileOutcomesAndReceipt(t *testing.T) {
 			for _, call := range calls {
 				if !slices.Equal(call.Args[:2], []string{"--context", "kind-test"}) {
 					t.Fatalf("unpinned: %v", call.Args)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileRefusesReceiptAfterProviderLosesReady(t *testing.T) {
+	adapter, bundle, _ := reconcileFixture(t)
+	t.Setenv("KMX_RECONCILE_READY_REGRESSION", "1")
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+	if err == nil || !strings.Contains(err.Error(), "Provider/sample") || result.Receipt.Bundle != "" {
+		t.Fatalf("NotReady Provider received a receipt: %+v %v", result, err)
+	}
+}
+
+func TestCreateOnlyRefusesReceiptAfterProviderLosesReady(t *testing.T) {
+	adapter, bundle, _ := reconcileFixture(t)
+	t.Setenv("KMX_RECONCILE_READY_REGRESSION", "1")
+	result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{})
+	if err == nil || !strings.Contains(err.Error(), "Provider/sample") || result.Receipt.Bundle != "" {
+		t.Fatalf("NotReady Provider received a create receipt: %+v %v", result, err)
+	}
+}
+
+func TestReconcileRefusesInvalidOwnedDigests(t *testing.T) {
+	for _, tc := range []struct{ name, field, digest string }{
+		{"empty portable", "kaimahi.dev/portable-digest", ""},
+		{"short portable", "kaimahi.dev/portable-digest", "abcd"},
+		{"nonhex portable", "kaimahi.dev/portable-digest", strings.Repeat("z", 64)},
+		{"uppercase portable", "kaimahi.dev/portable-digest", strings.Repeat("A", 64)},
+		{"empty rendered", "kaimahi.dev/rendered-digest", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, bundle, dir := reconcileFixture(t)
+			seedReconcile(t, dir, reconcileLive(t, dir, "Provider", bundle))
+			agent := reconcileLive(t, dir, "Agent", bundle)
+			meta := agent["metadata"].(map[string]any)
+			annotations, _ := meta["annotations"].(map[string]any)
+			if annotations == nil {
+				annotations = map[string]any{}
+			}
+			annotations["kaimahi.dev/bundle"] = "sample"
+			annotations["kaimahi.dev/portable-digest"] = bundle.PortableDigest()
+			annotations["kaimahi.dev/rendered-digest"] = bundle.RenderedDigest()
+			annotations[tc.field] = tc.digest
+			meta["annotations"] = annotations
+			seedReconcile(t, dir, agent)
+			result, err := adapter.Deploy(context.Background(), bundle, agentruntime.DeployOptions{Reconcile: true})
+			if err == nil || !strings.Contains(err.Error(), "Agent/sample") || result.Receipt.Bundle != "" {
+				t.Fatalf("invalid ownership digest accepted: %+v %v", result, err)
+			}
+			for _, call := range orkaCalls(t, dir) {
+				if call.Document != nil && (slices.Contains(call.Args, "create") || slices.Contains(call.Args, "replace")) && !slices.Contains(call.Args, "--dry-run=server") {
+					t.Fatalf("wrote before refusing invalid marker: %+v", call)
 				}
 			}
 		})

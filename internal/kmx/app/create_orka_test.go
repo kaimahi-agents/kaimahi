@@ -333,7 +333,9 @@ func TestOrkaOnlineCreatesSeparateStrictObjectsAndWaitsInOrder(t *testing.T) {
 			order = append(order, "ready-Agent")
 		}
 	}
-	want := []string{"validate-Provider", "validate-Agent", "create-Provider", "ready-Provider", "create-Agent", "ready-Agent"}
+	// A successful Deploy now checks both resources again before issuing its
+	// receipt, after the staged create and Ready ordering remain unchanged.
+	want := []string{"validate-Provider", "validate-Agent", "create-Provider", "ready-Provider", "create-Agent", "ready-Agent", "ready-Provider", "ready-Agent"}
 	if !slices.Equal(order, want) {
 		t.Fatalf("order=%v", order)
 	}

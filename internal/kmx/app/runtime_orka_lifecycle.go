@@ -189,6 +189,14 @@ func (a orkaRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.Re
 	result := agentruntime.DeployResult{Ref: agentruntime.AgentRef{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace,
 		Kind: orkaPlural("Agent"), Name: opt.Name, UID: agent.UID}}
 	if !opt.DryRun {
+		for _, id := range identities {
+			if id.Kind == "Task" {
+				continue // Task completion is checked by the staged path, not Ready.
+			}
+			if err := a.app.verifyOrkaReadyNow(ctx, opt.Namespace, id); err != nil {
+				return agentruntime.DeployResult{}, err
+			}
+		}
 		result.Receipt = agentruntime.DeployReceipt{Bundle: opt.Name, PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(),
 			Target: agentruntime.DeployTarget{Runtime: a.ID(), Context: kubeContext, Namespace: opt.Namespace}}
 		for _, id := range identities {

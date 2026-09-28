@@ -122,7 +122,7 @@ func (a *App) verifyOrkaReconcile(ctx context.Context, namespace string, desired
 	if check.outcome != agentruntime.ResourceReused || check.id != id {
 		return fmt.Errorf("%s/%s changed while waiting for Ready; refusing deployment receipt", id.Kind, id.Name)
 	}
-	return nil
+	return a.verifyOrkaReadyNow(ctx, namespace, id)
 }
 
 func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desired map[string]any, rendered agentruntime.RenderedBundle) (orkaReconcileCheck, error) {
@@ -163,12 +163,14 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	}
 	check.id.UID, check.id.Generation = uid, int64(generation)
 	annotations, _ := meta["annotations"].(map[string]any)
-	if owner, ok := annotations[orkaBundleMarker]; ok && owner != name {
-		return check, fmt.Errorf("%s/%s belongs to another bundle; refusing reconciliation", kind, name)
-	}
-	// A resource with partial ownership metadata is not safe to adopt.
-	if annotations[orkaBundleMarker] == nil && (annotations[orkaPortableMarker] != nil || annotations[orkaRenderedMarker] != nil) ||
-		annotations[orkaBundleMarker] != nil && (annotations[orkaPortableMarker] == nil || annotations[orkaRenderedMarker] == nil) {
+	if owner, marked := annotations[orkaBundleMarker]; marked {
+		if owner != name {
+			return check, fmt.Errorf("%s/%s belongs to another bundle; refusing reconciliation", kind, name)
+		}
+		if !validOrkaMarkerDigest(annotations[orkaPortableMarker]) || !validOrkaMarkerDigest(annotations[orkaRenderedMarker]) {
+			return check, fmt.Errorf("%s/%s has incomplete ownership marker; refusing reconciliation", kind, name)
+		}
+	} else if annotations[orkaPortableMarker] != nil || annotations[orkaRenderedMarker] != nil {
 		return check, fmt.Errorf("%s/%s has incomplete ownership marker; refusing reconciliation", kind, name)
 	}
 	candidate := map[string]any{"apiVersion": desired["apiVersion"], "kind": kind, "metadata": meta, "spec": desired["spec"]}
@@ -241,9 +243,23 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	return check, nil
 }
 
+func validOrkaMarkerDigest(value any) bool {
+	digest, ok := value.(string)
+	if !ok || len(digest) != 64 {
+		return false
+	}
+	for _, ch := range digest {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func orkaRenderedMetadataEqual(existing, desired map[string]any) bool {
-	// Only fields actually rendered belong to the bundle. Other annotations or
-	// labels are independently managed; ownership markers are treated separately.
+	// Only rendered fields and kmx's generated description belong to the bundle:
+	// a stale description is removed even when it is absent from the new render.
+	// Other annotations and labels are independently managed.
 	for _, key := range []string{"annotations", "labels"} {
 		wanted, _ := desired[key].(map[string]any)
 		actual, _ := existing[key].(map[string]any)

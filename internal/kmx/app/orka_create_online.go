@@ -403,17 +403,38 @@ func (a *App) waitOrkaReady(ctx context.Context, namespace string, id orkaIdenti
 		if err != nil {
 			return err
 		}
-		if object.Status.Ready {
-			for _, condition := range object.Status.Conditions {
-				if condition.Type == "Ready" && condition.Status == "True" && condition.ObservedGeneration == id.Generation {
-					return nil
-				}
-			}
+		if orkaCurrentGenerationReady(object, id.Generation) {
+			return nil
 		}
 		if err := orkaPause(ctx); err != nil {
 			return fmt.Errorf("waiting for %s/%s UID %s current-generation Ready: %w", id.Kind, id.Name, id.UID, err)
 		}
 	}
+}
+
+// verifyOrkaReadyNow is a bounded final observation, not another wait: a
+// resource that regressed while later resources started cannot earn a receipt.
+func (a *App) verifyOrkaReadyNow(ctx context.Context, namespace string, id orkaIdentity) error {
+	object, err := a.readOrkaObject(ctx, namespace, id)
+	if err != nil {
+		return err
+	}
+	if !orkaCurrentGenerationReady(object, id.Generation) {
+		return fmt.Errorf("%s/%s UID %s is no longer current-generation Ready; refusing deployment receipt", id.Kind, id.Name, id.UID)
+	}
+	return nil
+}
+
+func orkaCurrentGenerationReady(object *orkaObject, generation int64) bool {
+	if !object.Status.Ready {
+		return false
+	}
+	for _, condition := range object.Status.Conditions {
+		if condition.Type == "Ready" && condition.Status == "True" && condition.ObservedGeneration == generation {
+			return true
+		}
+	}
+	return false
 }
 
 func orkaPause(ctx context.Context) error {
