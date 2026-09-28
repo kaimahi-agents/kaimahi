@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,19 +25,33 @@ func TestProductDefaultsAreUsable(t *testing.T) {
 // each OS through os.UserConfigDir rather than hard-coding Linux or macOS.
 func TestStateDirUsesPortableOverrideAndNativeDefault(t *testing.T) {
 	home := t.TempDir()
+	xdg := filepath.Join(t.TempDir(), "xdg")
 	t.Setenv("KMX_HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "xdg"))
+	t.Setenv("XDG_CONFIG_HOME", xdg)
 	if got, err := StateDir(); err != nil || got != home {
 		t.Fatalf("KMX_HOME state dir = %q, %v; want %q", got, err, home)
 	}
 
 	t.Setenv("KMX_HOME", "")
-	native, err := os.UserConfigDir()
-	if err != nil {
-		t.Fatal(err)
+	var want string
+	switch runtime.GOOS {
+	case "linux":
+		want = filepath.Join(xdg, "kmx")
+	case "darwin":
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = filepath.Join(userHome, "Library", "Application Support", "kmx")
+	default:
+		native, err := os.UserConfigDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = filepath.Join(native, "kmx")
 	}
-	if got, err := StateDir(); err != nil || got != filepath.Join(native, "kmx") {
-		t.Fatalf("native state dir = %q, %v; want %q", got, err, filepath.Join(native, "kmx"))
+	if got, err := StateDir(); err != nil || got != want {
+		t.Fatalf("%s native state dir = %q, %v; want %q", runtime.GOOS, got, err, want)
 	}
 }
 

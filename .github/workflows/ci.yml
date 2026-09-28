@@ -930,6 +930,40 @@ jobs:
           grep -q -- '--- PASS: TestLegacyRuntimeCommandsAreRetired' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
 
+  # Linux uses its XDG user-config location while macOS uses
+  # ~/Library/Application Support. Cross-compiling a Darwin binary does not
+  # execute that distinction, so this small native lane protects the
+  # KMX_HOME isolation contract without duplicating the cluster or full Go
+  # suites already run by the Linux jobs.
+  state-paths-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Native macOS state paths honor KMX_HOME
+        run: |
+          set -euo pipefail
+          go test ./internal/kmx/config \
+            -run '^TestStateDirUsesPortableOverrideAndNativeDefault$' \
+            -count=1 -v | tee state-dir.out
+          grep -q -- '--- PASS: TestStateDirUsesPortableOverrideAndNativeDefault' state-dir.out
+
+          go test ./internal/kmx/app \
+            -run '^(TestAgentLocationsPersistSeparateClustersPrivately|TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation|TestAgentTUIProviderAndHostOverrideInferenceInfo|TestConsoleInferenceSourcePersistenceAndValidation|TestLiftPreferencesPersistScopedSelections|TestFoundryConfigRejectsTokenRedirectDestinations)$' \
+            -count=1 -v | tee app-state.out
+          for test in \
+            TestAgentLocationsPersistSeparateClustersPrivately \
+            TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation \
+            TestAgentTUIProviderAndHostOverrideInferenceInfo \
+            TestConsoleInferenceSourcePersistenceAndValidation \
+            TestLiftPreferencesPersistScopedSelections \
+            TestFoundryConfigRejectsTokenRedirectDestinations; do
+            grep -q -- "--- PASS: $test" app-state.out
+          done
+          ! grep -q -- '--- SKIP:' state-dir.out app-state.out
+
   # The governance plane's Go module — build, vet, gofmt, tests.
   # A separate quick job so proxy logic failures surface in seconds, not
   # after a 6-minute cluster bring-up.
