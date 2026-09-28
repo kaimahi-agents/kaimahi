@@ -35,6 +35,42 @@ func TestWriteOrkaBundleAllowsIdenticalRetryAndRefusesEditsByFilename(t *testing
 	}
 }
 
+func TestWriteOrkaBundleAllowsReceiptsDirectoryOnRerun(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agents", "demo")
+	if err := writeOrkaBundle(path, []byte("revision\n"), []byte("bindings\n")); err != nil {
+		t.Fatal(err)
+	}
+	receipts := filepath.Join(path, "receipts")
+	if err := os.Mkdir(receipts, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(receipts, "target.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeOrkaBundle(path, []byte("revision\n"), []byte("bindings\n")); err != nil {
+		t.Fatalf("receipt directory prevented identical create retry: %v", err)
+	}
+}
+
+func TestCreateAgentRerunWithReceiptsDirectory(t *testing.T) {
+	a, opt, _, _, _ := orkaCreateFixture(t, "")
+	opt.Out = "-"
+	opt.BundlePath = filepath.Join(t.TempDir(), "agents", "demo")
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatal(err)
+	}
+	receipts := filepath.Join(opt.BundlePath, "receipts")
+	if err := os.Mkdir(receipts, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(receipts, "target.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatalf("create rerun with lift receipt: %v", err)
+	}
+}
+
 func TestWriteOrkaBundleRejectsIncompleteAndUnexpectedEntries(t *testing.T) {
 	for _, tc := range []struct{ name, file, want string }{{"partial", "agent.yaml", "bindings.yaml"}, {"unexpected", "notes.txt", "notes.txt"}} {
 		t.Run(tc.name, func(t *testing.T) {

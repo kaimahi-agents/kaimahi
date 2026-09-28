@@ -119,7 +119,7 @@ kmx v0.2.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.1.3
   model    qwen2.5:3b
-  plane    kaimahi-proxy:p10, built from v0.2.0
+  plane    kaimahi-proxy:p15, built from v0.2.0
 ```
 
 The first line is the binary's own identity and it names its source, because

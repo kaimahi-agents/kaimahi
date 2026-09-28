@@ -24,6 +24,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx agent lift <bundle-dir>` deploys an existing portable bundle to a prepared Orka target with an explicit or locally remembered context and `provider:<name>` inference. It checks prerequisites without installing them, supports a read-only `--plan` using the same reconciliation inspection as deployment, reports per-resource outcomes and update diffs, and writes per-target receipts with Git provenance after success. `/lift` remains the interactive live-agent path.
 - Orka lifecycle Deploy can opt into bundle-owned reconciliation: create absent resources, reuse matching owned resources, update drift with a resourceVersion precondition, or mark an identical unowned resource as adopted. Conflicting or terminating names are refused; a completed deployment returns per-resource outcomes and a receipt with digests and target identities. Reconcile never runs Tasks. Default `kmx agent create` remains create-only.
 
 ### Changed

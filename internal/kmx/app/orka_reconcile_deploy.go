@@ -39,29 +39,9 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 	if err := app.guardOrkaMutation(ctx, opt, "create or update owned Orka Provider and Agent in "+opt.Namespace); err != nil {
 		return agentruntime.DeployResult{}, err
 	}
-	crds := map[string][]byte{}
-	for _, kind := range []string{"Agent", "Provider", "Task"} {
-		name := strings.ToLower(kind) + "s.core.orka.ai"
-		raw, err := app.orkaCapture(ctx, nil, "get", "crd", name, "-o", "json")
-		if err != nil {
-			return agentruntime.DeployResult{}, fmt.Errorf("cannot read installed %s CRD: %w", name, err)
-		}
-		crds[kind] = raw
-	}
-	validator, err := orkaschema.Installed(crds)
+	_, err := app.planOrkaReconcile(ctx, rendered, bundle, opt.Namespace)
 	if err != nil {
 		return agentruntime.DeployResult{}, err
-	}
-	if err := validateOrkaBundle(bundle, validator); err != nil {
-		return agentruntime.DeployResult{}, err
-	}
-	// Check the entire plan before writing the first resource. Recheck each
-	// resource immediately before mutation; the actual replace is versioned.
-	docs := []map[string]any{bundle.Provider, bundle.Agent}
-	for _, doc := range docs {
-		if _, err := app.inspectOrkaReconcile(ctx, opt.Namespace, doc, rendered); err != nil {
-			return agentruntime.DeployResult{}, err
-		}
 	}
 	key := bundle.Provider["spec"].(map[string]any)["secretRef"].(map[string]any)["key"].(string)
 	if err := app.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, key); err != nil {
@@ -73,6 +53,7 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 	}
 	receipt := agentruntime.DeployReceipt{Bundle: opt.Name, PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(), Target: target}
 	result := agentruntime.DeployResult{Receipt: receipt}
+	docs := []map[string]any{bundle.Provider, bundle.Agent}
 	for _, doc := range docs {
 		check, err := app.inspectOrkaReconcile(ctx, opt.Namespace, doc, rendered)
 		if err != nil {
@@ -112,6 +93,42 @@ func (a orkaRuntimeAdapter) reconcileOrka(ctx context.Context, rendered agentrun
 		}
 	}
 	return result, nil
+}
+
+// planOrkaReconcile performs the exact installed-schema, server-admission and
+// ownership decisions Deploy uses, for every resource before the first write.
+// Inspect is intentionally read-only (server dry-runs do not persist objects).
+func (app *App) planOrkaReconcile(ctx context.Context, rendered agentruntime.RenderedBundle, bundle *scaffold.OrkaBundle, namespace string) ([]orkaReconcileCheck, error) {
+	if bundle.Task != nil {
+		return nil, fmt.Errorf("Orka reconcile refuses Task/%s: Tasks are one-shot executions", orkaObjectName(bundle.Task))
+	}
+	crds := map[string][]byte{}
+	for _, kind := range []string{"Agent", "Provider", "Task"} {
+		name := strings.ToLower(kind) + "s.core.orka.ai"
+		raw, err := app.orkaCapture(ctx, nil, "get", "crd", name, "-o", "json")
+		if err != nil {
+			return nil, fmt.Errorf("cannot read installed %s CRD: %w", name, err)
+		}
+		crds[kind] = raw
+	}
+	validator, err := orkaschema.Installed(crds)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOrkaBundle(bundle, validator); err != nil {
+		return nil, err
+	}
+	// Recheck immediately before each deployment mutation: another writer may
+	// have changed the decision after this complete read-only preflight.
+	var checks []orkaReconcileCheck
+	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
+		check, err := app.inspectOrkaReconcile(ctx, namespace, doc, rendered)
+		if err != nil {
+			return nil, err
+		}
+		checks = append(checks, check)
+	}
+	return checks, nil
 }
 
 func (a *App) verifyOrkaReconcile(ctx context.Context, namespace string, desired map[string]any, rendered agentruntime.RenderedBundle, id orkaIdentity) error {

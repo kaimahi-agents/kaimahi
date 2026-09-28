@@ -32,10 +32,10 @@ kmx agent lift
 from "it works here" to a selected Kubernetes or AKS environment. KMX keeps the
 target and changes explicit while the runtime handles execution.
 
-These are the simple commands KMX is converging on. `kmx agent create` exists
-today for a prepared target. A standalone `kmx agent lift` is not implemented
-yet; the current lift is available as `/lift` from interactive chat. See the
-[lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194).
+`kmx agent create` authors a bundle on a prepared target. `kmx agent lift`
+deploys that bundle to a prepared Orka target; `/lift` remains the
+interactive path from a live Agent. See the [bundle lift guide](docs/agent-lift.md)
+and [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194).
 
 ## Quickstart
 
@@ -110,7 +110,8 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 | Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
 | Create on a prepared target | `kmx agent create` | Does not install the runtime or provision credentials |
 | Prove an answer | Interactive chat or `kmx agent create --task ...` | Readiness alone is not execution proof |
-| Lift an agent | `/lift` in interactive chat | Uses a live agent and an existing destination |
+| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Reconciles on an existing Orka target; `--plan` writes nothing |
+| Lift a live agent interactively | `/lift` in interactive chat | Uses a live agent and an existing destination |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
@@ -152,10 +153,10 @@ limits.
 ## Status
 
 Kaimahi is pre-1.0 and incubating. Interactive local creation, creation on the
-first-class runtime, inspection, chat, lift to an existing target, AKS platform
-provisioning, and model-traffic migration are implemented. Standalone agent lift
-and the complete lifecycle remain directional. The legacy runtime's commands
-are retired; the model-traffic bridge (`kmx plane`, `kmx migrate`) remains.
+first-class runtime, inspection, chat, bundle lift and interactive lift to an
+existing target, AKS platform provisioning, and model-traffic migration are
+implemented. The complete lifecycle remains directional. The legacy runtime's
+commands are retired; the model-traffic bridge (`kmx plane`, `kmx migrate`) remains.
 AKS paths use billable resources and are not continuously re-proved in CI.
 
 ## Documentation
@@ -166,7 +167,8 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
 | [Runtime setup](docs/orka.md) | First-class implementation setup, native creation, and first task |
-| [Interactive lift](docs/interactive-lift.md) | Current agent-to-target behavior |
+| [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
+| [Interactive lift](docs/interactive-lift.md) | Live agent-to-target behavior |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
 | [Migration](docs/migrate.md) | Existing-application model-traffic bridge |
 | [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |

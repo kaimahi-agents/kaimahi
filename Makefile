@@ -35,7 +35,7 @@ KMX_ENV = KIND_CLUSTER="$$KMX_KIND_CLUSTER" KUBE_CTX="$$KMX_KUBE_CTX" \
 	CRED="$$KMX_CRED" KAIMAHI_CONFIRM="$$KMX_CONFIRM"
 
 PLANE_IMAGE_REPO ?= kaimahi-proxy
-PLANE_IMAGE_TAG ?= p10
+PLANE_IMAGE_TAG ?= p15
 PLANE_VERSION ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 
 ifeq ($(TARGET),kind)

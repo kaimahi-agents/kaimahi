@@ -105,6 +105,16 @@ func preflightOrkaBundle(path string, agent, bindings []byte) error {
 	}
 	files := map[string][]byte{"agent.yaml": agent, "bindings.yaml": bindings}
 	for _, entry := range entries {
+		if entry.Name() == "receipts" {
+			info, err := entry.Info()
+			if err != nil {
+				return fmt.Errorf("inspect receipts directory: %w", err)
+			}
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("bundle receipts must be a directory, not a link")
+			}
+			continue
+		}
 		content, expected := files[entry.Name()]
 		if !expected {
 			if err := scaffold.RefuseKeyShapes(entry.Name()); err != nil {

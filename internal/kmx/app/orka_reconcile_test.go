@@ -51,8 +51,64 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		fmt.Printf(`{"current-context":"kind-test","clusters":[{"name":"kind-test","cluster":{"server":%q}}],"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}]}`, server)
 		os.Exit(0)
 	}
+	if os.Getenv("KMX_LIFT_TEST") == "1" && slices.Contains(args, "rollout") {
+		if os.Getenv("KMX_LIFT_MISSING") == "controller" {
+			fail()
+		}
+		fmt.Print("deployment successfully rolled out")
+		os.Exit(0)
+	}
 	if i := slices.Index(args, "get"); i >= 0 {
 		kind, name := args[i+1], args[i+2]
+		if os.Getenv("KMX_LIFT_TEST") == "1" {
+			switch kind {
+			case "namespace", "namespaces":
+				if name == "kube-system" {
+					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid"))
+					os.Exit(0)
+				}
+				if os.Getenv("KMX_LIFT_MISSING") == "namespace" {
+					fail()
+				}
+				fmt.Printf(`{"kind":"Namespace","metadata":{"name":%q,"uid":"namespace-uid"}}`, name)
+				os.Exit(0)
+			case "providers.core.orka.ai":
+				if name == "inference" || name == "sample" && os.Getenv("KMX_LIFT_SELECTED_SAME") == "1" {
+					if os.Getenv("KMX_LIFT_MISSING") == "provider" {
+						os.Exit(0)
+					}
+					ready := os.Getenv("KMX_LIFT_MISSING") != "provider-ready"
+					key := "api-key"
+					if os.Getenv("KMX_LIFT_MISSING") == "provider-key" {
+						key = ""
+					}
+					fmt.Printf(`{"kind":"Provider","metadata":{"name":%q,"namespace":"orka-system","uid":"inference-uid","generation":1},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"target-default","secretRef":{"name":"target-secret","key":%q}},"status":{"ready":%t,"conditions":[{"type":"Ready","status":%q,"observedGeneration":1}]}}`, name, key, ready, map[bool]string{true: "True", false: "False"}[ready])
+					os.Exit(0)
+				}
+			case "tools.core.orka.ai":
+				if os.Getenv("KMX_LIFT_MISSING") == "tool" || os.Getenv("KMX_LIFT_MISSING") == "tool-available" && name == "search" {
+					if os.Getenv("KMX_LIFT_MISSING") == "tool" {
+						os.Exit(0)
+					}
+					fmt.Printf(`{"kind":"Tool","metadata":{"name":%q,"namespace":"orka-system","generation":1},"status":{"conditions":[{"type":"Available","status":"False","observedGeneration":1}]}}`, name)
+					os.Exit(0)
+				}
+				fmt.Printf(`{"kind":"Tool","metadata":{"name":%q,"namespace":"orka-system","generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}`, name)
+				os.Exit(0)
+			case "secret":
+				if os.Getenv("KMX_LIFT_MISSING") == "secret" {
+					os.Exit(0)
+				}
+			case "crd":
+				if strings.HasPrefix(name, "tools.") {
+					if os.Getenv("KMX_LIFT_MISSING") == "crd" {
+						os.Exit(0)
+					}
+					fmt.Print("customresourcedefinition.apiextensions.k8s.io/tools.core.orka.ai")
+					os.Exit(0)
+				}
+			}
+		}
 		if kind == "crd" {
 			plural, _, _ := strings.Cut(name, ".")
 			raw, e := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
@@ -170,6 +226,13 @@ func TestReconcileKubectlHelper(t *testing.T) {
 	}
 	_, _ = os.Stdout.Write(body)
 	os.Exit(0)
+}
+
+func getenvLiftTest(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func reconcileFixture(t *testing.T) (orkaRuntimeAdapter, agentruntime.RenderedBundle, string) {
