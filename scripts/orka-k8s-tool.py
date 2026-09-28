@@ -63,17 +63,89 @@ def list_resources(args):
     if len(raw) > 4 << 20:
         raise ValueError("Resource listing exceeds response limit; select a namespace")
     data = json.loads(raw)
-    # Return a compact projection; never return ConfigMap contents or pod env.
-    items = []
-    for item in data.get("items", []):
-        meta, status = item.get("metadata", {}), item.get("status", {})
-        row = {"name": meta.get("name"), "namespace": meta.get("namespace", "")}
-        for key in ("phase", "readyReplicas", "replicas", "succeeded", "failed"):
-            if key in status:
-                row[key] = status[key]
-        items.append(row)
+    items = [project(args["resource"], item) for item in data.get("items") or () if isinstance(item, dict)]
     return {"resource": args["resource"], "items": items,
             "truncated": bool(data.get("metadata", {}).get("continue"))}
+
+
+# A reason is a machine word (ImagePullBackOff, MinimumReplicasUnavailable),
+# the shape Kubernetes itself validates for condition reasons. Anything else
+# is dropped rather than relayed, so a controller cannot use it as a message.
+REASON = re.compile(r"[A-Za-z](?:[A-Za-z0-9_,:]{0,126}[A-Za-z0-9_])?")
+# Counts a workload omits when zero; defaulted so "none ready" reads as 0.
+REPLICA_COUNTS = {
+    "deployments": ("readyReplicas", "updatedReplicas", "availableReplicas"),
+    "statefulsets": ("readyReplicas", "updatedReplicas", "availableReplicas"),
+    "replicasets": ("readyReplicas", "availableReplicas"),
+    "daemonsets": ("desiredNumberScheduled", "numberReady", "updatedNumberScheduled",
+                   "numberAvailable", "numberUnavailable"),
+}
+
+
+def obj(value):
+    return value if isinstance(value, dict) else {}
+
+
+def reason(value):
+    return value if isinstance(value, str) and REASON.fullmatch(value) else None
+
+
+def conditions(status, keep=lambda cond: True):
+    out = []
+    for cond in status.get("conditions") or ():
+        if not isinstance(cond, dict) or not keep(cond):
+            continue
+        if not reason(cond.get("type")) or cond.get("status") not in ("True", "False", "Unknown"):
+            continue
+        row = {"type": cond["type"], "status": cond["status"]}
+        if reason(cond.get("reason")):
+            row["reason"] = cond["reason"]
+        out.append(row)
+    return out
+
+
+def container_row(status, init):
+    restarts = status.get("restartCount")
+    row = {"name": status.get("name"), "ready": status.get("ready") is True,
+           "restartCount": restarts if isinstance(restarts, int) else 0}
+    if init:
+        row["init"] = True
+    for state in ("waiting", "terminated"):
+        why = reason(obj(obj(status.get("state")).get(state)).get("reason"))
+        if why:
+            row[state] = why
+    last = reason(obj(obj(status.get("lastState")).get("terminated")).get("reason"))
+    if last:
+        row["lastTerminated"] = last
+    return row
+
+
+def project(resource, item):
+    """Return a compact health projection of one listed object.
+
+    Never ConfigMap contents, pod env, images, annotations or any
+    free-text message: every string here is a name, a condition word or a
+    Kubernetes reason word.
+    """
+    meta, status = obj(item.get("metadata")), obj(item.get("status"))
+    row = {"name": meta.get("name"), "namespace": meta.get("namespace", "")}
+    for key in ("phase", "readyReplicas", "replicas", "succeeded", "failed"):
+        if key in status:
+            row[key] = status[key]
+    for key in REPLICA_COUNTS.get(resource, ()):
+        row[key] = status[key] if isinstance(status.get(key), int) else 0
+    if resource == "pods":
+        if reason(status.get("reason")):
+            row["reason"] = status["reason"]
+        # Ready always; PodScheduled only when it explains a Pending pod.
+        row["conditions"] = conditions(status, lambda c: c.get("type") == "Ready" or (
+            c.get("type") == "PodScheduled" and c.get("status") != "True"))
+        row["containers"] = (
+            [container_row(c, True) for c in status.get("initContainerStatuses") or [] if isinstance(c, dict)]
+            + [container_row(c, False) for c in status.get("containerStatuses") or [] if isinstance(c, dict)])
+    elif resource in REPLICA_COUNTS or resource == "jobs":
+        row["conditions"] = conditions(status)
+    return row
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -106,7 +106,7 @@ metadata:
   name: k8s-get-resources
   namespace: orka-system
 spec:
-  description: List live Kubernetes resources, read-only. Returns names, namespaces and status. For running pods set resource=pods and phase=Running to exclude completed Jobs. Answer concisely from the returned names; never invent names. Omit namespace for all namespaces.
+  description: List live Kubernetes resources, read-only. Returns names, namespaces and status. To explain why a workload is unhealthy, pods carry the Ready condition, PodScheduled when not scheduled, and per-container ready, restartCount and waiting, terminated or lastTerminated reasons such as ImagePullBackOff, CrashLoopBackOff or OOMKilled; deployments, statefulsets and replicasets carry readyReplicas, updatedReplicas and availableReplicas; daemonsets carry their numberReady and related counts; these and jobs carry conditions as type, status and reason such as Available=False MinimumReplicasUnavailable. No messages are returned. For running pods set resource=pods and phase=Running to exclude completed Jobs. Answer concisely from the returned names; never invent names. Omit namespace for all namespaces.
   parameters:
     type: object
     additionalProperties: false

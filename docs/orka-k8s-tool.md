@@ -51,6 +51,28 @@ server certificate, and returns names/namespaces plus selected status fields.
 It never invokes a shell, returns Secret data, or exposes ConfigMap contents and
 pod environment values. Lists are limited to 100 items and report truncation.
 
+The status fields are chosen to answer "why is this unhealthy?":
+
+| Resource | Added health fields |
+|---|---|
+| pods | `reason` (e.g. `Evicted`); `conditions` of type `Ready`, plus `PodScheduled` when it is not `True` (e.g. `Unschedulable`); `containers` (init containers marked `init: true`) with `ready`, `restartCount`, and the `waiting`, `terminated` and `lastTerminated` reasons, e.g. `ImagePullBackOff`, `CrashLoopBackOff`, `OOMKilled` |
+| deployments, statefulsets | `readyReplicas`, `updatedReplicas`, `availableReplicas` |
+| replicasets | `readyReplicas`, `availableReplicas` (a ReplicaSet has no updated count) |
+| daemonsets | `desiredNumberScheduled`, `numberReady`, `updatedNumberScheduled`, `numberAvailable`, `numberUnavailable` (a DaemonSet has no `*Replicas` fields) |
+| all four workload kinds and jobs | `conditions` as `type`, `status` and `reason`, e.g. `Available=False MinimumReplicasUnavailable`, `Progressing=False ProgressDeadlineExceeded`, `Failed=True BackoffLimitExceeded` |
+
+Kubernetes omits a zero count; the tool states it as `0`, so a Deployment with
+no ready pod reads `readyReplicas: 0` rather than lacking the field. The earlier
+fields (`phase`, `readyReplicas`, `replicas`, `succeeded`, `failed`) are kept.
+
+No `message` field is returned from any condition or container state, because
+messages can echo arbitrary text. Nor are images, image IDs, container IDs, exit
+codes, env, annotations or spec contents. A reason is returned only when it has
+the machine-word shape Kubernetes validates for condition reasons (a letter,
+then letters, digits, `_`, `,` or `:`, at most 128 characters); any other value is
+dropped instead of relayed. Condition types follow the same rule, and a status
+must be `True`, `False` or `Unknown`.
+
 The Service is cluster-internal and has no application-level authentication;
 its endpoint exposes only these read-only projections. It does not provide
 Kaimahi tool authorization or tool auditing. The worker's own permissions are
