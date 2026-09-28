@@ -373,6 +373,10 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 }
 
 func (a *App) printLiftDecision(check orkaReconcileCheck) {
+	if check.markerRefresh {
+		a.notef("%s/%s: reused; ownership markers would be refreshed", check.id.Kind, check.id.Name)
+		return
+	}
 	if check.outcome == agentruntime.ResourceUpdated {
 		a.notef("%s/%s: updated; differing rendered fields: %s", check.id.Kind, check.id.Name, strings.Join(orkaChangedFields(check.existing, check.candidate), ", "))
 		return

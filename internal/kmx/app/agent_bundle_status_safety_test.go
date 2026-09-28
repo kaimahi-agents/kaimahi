@@ -94,6 +94,14 @@ func TestBundleStatusForbiddenAgentReadIsUnknown(t *testing.T) {
 	}
 }
 
+func TestBundleStatusRejectsNamespaceWithoutContext(t *testing.T) {
+	a, opt, _, _, _ := bundleStatusFixture(t)
+	opt.Namespace = "other-namespace"
+	if err := a.BundleStatus(opt); err == nil || !strings.Contains(err.Error(), "--to-context") {
+		t.Fatalf("status silently ignored --to-namespace: %v", err)
+	}
+}
+
 func TestBundleStatusRecordedNamespaceSelection(t *testing.T) {
 	_, opt, _, _, name := bundleStatusFixture(t)
 	writeBundleReceipt(t, opt.BundleDir, "kind-test", "other-namespace", "cluster-uid", name, "uncommitted")

@@ -156,6 +156,9 @@ func bundleStatusFormat(output string) (string, error) {
 // all returns an error; every per-target observation failure is folded into
 // that target's own State instead.
 func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, error) {
+	if strings.TrimSpace(opt.Namespace) != "" && strings.TrimSpace(opt.Context) == "" {
+		return bundleStatusReport{}, fmt.Errorf("--to-namespace requires --to-context")
+	}
 	ctx := a.operationContext()
 	if a.Cfg == nil || a.Run == nil {
 		return bundleStatusReport{}, fmt.Errorf("status requires configured kubectl and streams")

@@ -239,8 +239,8 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 		check.outcome = agentruntime.ResourceReused
 		check.markerRefresh = true
 		check.markerRefreshVersion = version
-		check.markerRefreshPortableDigest, _ = marker[orkaPortableMarker].(string)
-		check.markerRefreshRenderedDigest, _ = marker[orkaRenderedMarker].(string)
+		check.markerRefreshPortableDigest = rendered.PortableDigest()
+		check.markerRefreshRenderedDigest = rendered.RenderedDigest()
 		return check, nil
 	}
 	if same {

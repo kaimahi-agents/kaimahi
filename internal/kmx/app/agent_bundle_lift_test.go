@@ -75,6 +75,37 @@ func TestLiftBundlePlanIsReadOnlyAndMapsTargetProvider(t *testing.T) {
 	}
 }
 
+// A comment-only portable change leaves rendered fields unchanged, but lift
+// still refreshes both ownership digests. Plan must say that it will write.
+func TestLiftBundlePlanReportsMarkerRefresh(t *testing.T) {
+	a, opt, dir, notes := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(opt.BundleDir, "agent.yaml")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(original, []byte("\n# comment-only revision\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	notes.Reset()
+	before := len(orkaCalls(t, dir))
+	opt.Plan = true
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	if got := notes.String(); strings.Count(got, "reused; ownership markers would be refreshed") != 2 {
+		t.Fatalf("plan hid two planned marker writes: %s", got)
+	}
+	for _, call := range orkaCalls(t, dir)[before:] {
+		if slices.Contains(call.Args, "patch") || call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") {
+			t.Fatalf("plan wrote resource: %+v", call)
+		}
+	}
+}
+
 // A selected inference Provider with the rendered Agent's name must never be
 // adopted, replaced, or reused as the newly rendered Provider.
 func TestLiftBundleReportsIndependentOrkaAndNamespaceGaps(t *testing.T) {
