@@ -275,6 +275,15 @@ func TestLiftBundleSavesReceiptAndRefusesStaleRememberedCluster(t *testing.T) {
 	}
 }
 
+func TestLiftBundleRemoteContextGuardRefusesUnconfirmedWrite(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	t.Setenv("KMX_RECONCILE_REMOTE", "1")
+	if err := a.LiftAgentBundle(opt); err == nil {
+		t.Fatal("remote target accepted without confirmation")
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
 func TestLiftBundleNamesPartialWritesOnDeployFailure(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
 	t.Setenv("KMX_RECONCILE_FAIL_ONCE", "Agent")
