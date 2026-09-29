@@ -23,70 +23,39 @@ move it into a real environment without learning each runtime's manifests first.
 
 ## Create, Prove, Lift
 
-With Orka, the creation namespace and its Secret already prepared, and a Ready
-Provider on the destination, the bundle is the path from creation to deployment
-evidence:
+Install Docker or Podman (set `CONTAINER_ENGINE=podman` for Podman), then
+choose one CLI install route (Go requires 1.26+):
 
 ```bash
-kmx agent create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
-kmx agent lift agents/my-agent --to-context my-target --inference provider:local
-kmx agent status agents/my-agent --to-context my-target
-kmx agent evaluate agents/my-agent --to-context my-target
+brew install kaimahi-agents/tap/kmx
+# or
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
+# or
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0
 ```
 
-Replace `source-context`, `my-target`, `local` and `my-provider-secret` with
-your source and destination contexts, Ready destination Provider and existing
-creation-target Secret. The example URL must also be reachable from the source
-cluster; it is the local Ollama Service endpoint, not an inferred model URL.
-`create` writes an editable `agents/my-agent/` bundle and scaffolds
-`eval/example.yaml`; edit its input and expected answer before evaluating.
-`lift` reconciles the bundle without installing prerequisites or running a Task;
-use `--plan` to inspect its intended changes first. `status` reads deployment
-revision, readiness, drift and evaluation result without writing. `evaluate`
-runs each case as a new Task against the deployed digest, prints answers and
-exits non-zero unless all cases pass. It can have external effects; a passing
-receipt is evidence for that revision and case set, not a general safety proof.
-See the [bundle lift guide](docs/agent-lift.md) for preparation, remembered
-targets, receipts and failure boundaries. `/lift` remains the separate
+With `kmx` on your PATH, run the first-answer path:
+
+```bash
+kmx quickstart
+```
+
+`kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
+`kmx up` provisions the local runtime without creating an Agent.
+`kmx quickstart-wizard` helps you create your own Agent interactively.
+`kmx agent create` writes an editable bundle on a prepared target.
+`kmx agent lift` deploys that bundle to a prepared Orka target.
+`kmx agent status` reads its revision, readiness, drift and evaluation result.
+`kmx agent evaluate` runs the bundle's cases against that deployed revision.
+See the [bundle lift guide](docs/agent-lift.md) for the create example, target
+preparation, receipts and evaluation boundaries; `/lift` remains the separate
 interactive path from a live Agent.
 
 ## Quickstart
 
-Install Docker, then install the stable CLI with Homebrew and run that exact
-binary:
-
-```bash
-brew install kaimahi-agents/tap/kmx && "$(brew --prefix kaimahi-agents/tap/kmx)/bin/kmx" quickstart
-```
-
-The fully qualified formula trusts only `kmx`, not every future item in the
-tap. If Homebrew is unavailable, use the checksum-verified release installer:
-
-```bash
-(
-  installer=$(mktemp) || exit
-  trap 'rm -f "$installer"' EXIT
-  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o "$installer" || exit
-  sh "$installer" --quickstart
-)
-```
-
-A failed download stops before running any installed binary; the temporary
-script is removed after quickstart. On a Podman-only machine, replace the
-last `sh "$installer" --quickstart` with
-`CONTAINER_ENGINE=podman sh "$installer" --quickstart`.
-
-Or, with Go 1.26+, build the same release and run that exact binary:
-
-```bash
-GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0 && "$HOME/.local/bin/kmx" quickstart
-```
-
-`kmx quickstart` is a non-interactive Orka path through local kind, Ollama,
-Provider, Agent and a fresh Task to a readable answer. `kmx up` provisions the
-runtime without creating an agent. To choose your own model and agent
-interactively, run `kmx quickstart-wizard`; it prepares a local Kubernetes
-target while you describe the agent. To complete the wizard journey:
+The fixed first-answer path uses local kind, Ollama, Provider and Agent.
+The wizard prepares a local Kubernetes target while you describe your own agent.
+To complete the wizard journey:
 
 1. Choose **Chat with agent** when setup is ready.
 2. Send a prompt and wait for an answer to prove the selected execution path.

@@ -1,144 +1,114 @@
 {
   "checker": "check-readme-front-door.py",
-  "why": "The KMX front door must retain its create/prove/lift journey, runnable quickstart, and runtime and migration boundaries. Synthetic positive and negative fixtures must detect lost markers, lost ordering, and a neutered command-line verdict without depending on archived README text.",
+  "why": "The KMX front door must retain owned install routes, runnable first answer, the bundle journey, and runtime boundaries; fixture pairs detect lost markers and ordering.",
   "verify": ["python3", "scripts/check-readme-front-door-test.py"],
   "signature": "check-readme-front-door self-test:",
   "mutations": [
     {
-      "name": "the ketu icon marker matches anything",
-      "breaks": "The compact project identity can disappear from the front door unnoticed.",
+      "name": "the ketu icon matches anything",
+      "breaks": "The compact project identity can disappear unnoticed.",
       "find": "    (\"ketu icon\", r'src=\"brand/ketu\\.svg\"'),",
       "replace": "    (\"ketu icon\", r''),"
     },
     {
-      "name": "the product line marker matches anything",
-      "breaks": "The Agent-specific KMX promise stops being required.",
+      "name": "the product line matches anything",
+      "breaks": "The agent-specific promise can disappear unnoticed.",
       "find": "    (\"product line\", r\"^\\*\\*Agent Builder CLI for Kubernetes\\.\\*\\*$\"),",
       "replace": "    (\"product line\", r\"\"),"
     },
     {
-      "name": "the runtime contract marker matches anything",
-      "breaks": "The page can lose the link between the simple journey and its runtime boundary.",
+      "name": "the runtime contract matches anything",
+      "breaks": "The runtime ownership boundary may disappear.",
       "find": "    (\"runtime contract heading\", r\"^## Runtime Contract$\"),",
       "replace": "    (\"runtime contract heading\", r\"\"),"
     },
     {
-      "name": "the migration marker matches anything",
-      "breaks": "The page can omit the separate migration section.",
+      "name": "the migration heading matches anything",
+      "breaks": "The separate model bridge may disappear.",
       "find": "    (\"migration heading\", r\"^## Migrate Model Traffic$\"),",
       "replace": "    (\"migration heading\", r\"\"),"
     },
     {
-      "name": "the status marker matches anything",
-      "breaks": "The page can omit current status and limitations.",
+      "name": "the status heading matches anything",
+      "breaks": "The limitations section may disappear.",
       "find": "    (\"Status heading\", r\"^## Status$\"),",
       "replace": "    (\"Status heading\", r\"\"),"
     },
     {
-      "name": "the documentation marker matches anything",
-      "breaks": "The page can lose its documentation navigation.",
-      "find": "    (\"documentation heading\", r\"^## Documentation$\"),",
-      "replace": "    (\"documentation heading\", r\"\"),"
-    },
-    {
-      "name": "the experimental notice marker matches anything",
-      "breaks": "The pre-1.0 production warning can disappear unnoticed.",
+      "name": "the experimental notice matches anything",
+      "breaks": "The pre-1.0 notice may disappear.",
       "find": "    (\"experimental notice\", r\"^> \\[!IMPORTANT\\]\\n> \\*\\*Kaimahi is experimental and under active development\\.\\*\\*\"),",
       "replace": "    (\"experimental notice\", r\"\"),"
     },
     {
-      "name": "the runtime ownership note marker matches anything",
-      "breaks": "The front door can again imply that KMX owns runtime execution or generic enforcement.",
+      "name": "the runtime ownership note matches anything",
+      "breaks": "The front door could imply that KMX owns execution.",
       "find": "    (\"runtime ownership note\", r\"^> \\[!NOTE\\]\\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic$\"),",
       "replace": "    (\"runtime ownership note\", r\"\"),"
     },
     {
-      "name": "the Homebrew formula check accepts any tap",
-      "breaks": "The front door can install an unowned formula and still pass.",
-      "find": "^brew install kaimahi-agents/tap/kmx && \"\\$\\(brew --prefix kaimahi-agents/tap/kmx\\)/bin/kmx\" quickstart$",
-      "replace": "^brew install .* && .* quickstart$"
+      "name": "the Homebrew source accepts any tap",
+      "breaks": "The README may direct readers to an unowned formula.",
+      "find": "^brew install kaimahi-agents/tap/kmx$",
+      "replace": "^brew install .*kmx$"
     },
     {
-      "name": "the Homebrew command list is emptied",
-      "breaks": "Any first Quickstart block can satisfy setup without installing the owned formula.",
-      "find": "HOMEBREW_COMMANDS = [\n",
-      "replace": "HOMEBREW_COMMANDS = []\nUNUSED_HOMEBREW_COMMANDS = [\n"
+      "name": "the Homebrew install is optional",
+      "breaks": "An empty list validates any installation block.",
+      "find": "INSTALL_COMMANDS = [\n",
+      "replace": "INSTALL_COMMANDS = []\nUNUSED_INSTALL_COMMANDS = [\n"
     },
     {
-      "name": "the quickstart subshell boundary is ignored",
-      "breaks": "A failed download can exit the reader's shell rather than only the setup snippet.",
-      "find": "    (\"quickstart subshell\", r\"^\\($\"),",
-      "replace": "    (\"quickstart subshell\", r\"\"),"
+      "name": "the installer source accepts any URL",
+      "breaks": "An untrusted script can satisfy the front door.",
+      "find": "^curl -fsSL https://raw\\.githubusercontent\\.com/kaimahi-agents/kaimahi/main/install\\.sh \\| sh$",
+      "replace": "^curl.*$"
     },
     {
-      "name": "the verified installer check is dropped",
-      "breaks": "A direct or wrong-repository download can satisfy the quickstart prerequisite.",
-      "find": "^  curl -fsSL https://raw\\.githubusercontent\\.com/kaimahi-agents/kaimahi/main/install\\.sh -o \\\"\\$installer\\\" \\|\\| exit$",
-      "replace": "^  curl.*$"
+      "name": "the Go install accepts any version",
+      "breaks": "The release-pin can change silently.",
+      "find": "^go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0$",
+      "replace": "^go install.*$"
     },
     {
-      "name": "the journey create marker matches anything",
-      "breaks": "The simple journey can omit Agent creation.",
-      "find": "    (\"kmx agent create\", r\"^kmx agent create(?:[ \\t]+.*)?$\"),",
+      "name": "the first answer accepts a suffixed command",
+      "breaks": "An obsolete non-command can look like the first answer.",
+      "find": "FIRST_ANSWER_COMMANDS = [(\"kmx quickstart\", r\"^kmx quickstart$\")]",
+      "replace": "FIRST_ANSWER_COMMANDS = [(\"kmx quickstart\", r\"^kmx quickstart\\b\")]"
+    },
+    {
+      "name": "the create marker matches anything",
+      "breaks": "Bundle creation can disappear from the story.",
+      "find": "    (\"kmx agent create\", r\"^`kmx agent create`\"),",
       "replace": "    (\"kmx agent create\", r\"\"),"
     },
     {
-      "name": "the journey lift marker matches anything",
-      "breaks": "The simple journey can omit lifting the Agent.",
-      "find": "    (\"kmx agent lift\", r\"^kmx agent lift(?:[ \\t]+.*)?$\"),",
-      "replace": "    (\"kmx agent lift\", r\"\"),"
-    },
-    {
-      "name": "a word boundary accepts obsolete quickstart command names",
-      "breaks": "A hyphenated non-command can satisfy the runnable quickstart step.",
-      "find": "^  sh \\\"\\$installer\\\" --quickstart$",
-      "replace": "^  sh \\\"\\$installer\\\" --quickstart\\b"
-    },
-    {
-      "name": "the pinned Go install check accepts any version",
-      "breaks": "A secondary Go-install example can silently switch back to v0.1.0 or a moving branch.",
-      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
-      "replace": "^GOBIN=.*go install.*$"
-    },
-    {
-      "name": "the Go install check accepts a stale kmx on PATH",
-      "breaks": "A failed Go build or earlier PATH entry can run an older kmx.",
-      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
-      "replace": "^.*go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0.*$"
+      "name": "the evaluate marker matches anything",
+      "breaks": "Revision evaluation can disappear from the story.",
+      "find": "    (\"kmx agent evaluate\", r\"^`kmx agent evaluate`\"),",
+      "replace": "    (\"kmx agent evaluate\", r\"\"),"
     },
     {
       "name": "the journey command list is emptied",
-      "breaks": "Any fenced block can satisfy the journey without create or lift.",
+      "breaks": "Any prose validates the bundle journey.",
       "find": "JOURNEY_COMMANDS = [\n",
       "replace": "JOURNEY_COMMANDS = []\nUNUSED_JOURNEY_COMMANDS = [\n"
     },
     {
-      "name": "the quickstart command list is emptied",
-      "breaks": "Any fenced block can satisfy setup without containing its commands.",
-      "find": "QUICKSTART_COMMANDS = [\n",
-      "replace": "QUICKSTART_COMMANDS = []\nUNUSED_QUICKSTART_COMMANDS = [\n"
-    },
-    {
-      "name": "the badge list is emptied",
-      "breaks": "The README can lose all status and project metadata badges.",
-      "find": "BADGE_PATTERNS = [\n",
-      "replace": "BADGE_PATTERNS = []\nUNUSED_BADGE_PATTERNS = [\n"
-    },
-    {
-      "name": "command order is searched from the top of the block",
-      "breaks": "Commands can appear before their prerequisites and still satisfy the sequence.",
+      "name": "the install order is ignored",
+      "breaks": "A route may be placed before the prerequisite route.",
       "find": "        found = re.compile(pattern, re.M).search(block, position)",
       "replace": "        found = re.compile(pattern, re.M).search(block, 0)"
     },
     {
-      "name": "marker order is searched from the top of the file",
-      "breaks": "The hierarchy becomes a set of headings rather than ordered navigation.",
+      "name": "the heading order is ignored",
+      "breaks": "A set of headings replaces ordered navigation.",
       "find": "        match = re.compile(pattern, re.M).search(text, position)",
       "replace": "        match = re.compile(pattern, re.M).search(text, 0)"
     },
     {
-      "name": "the script entry point is neutered",
-      "breaks": "The verdict never reaches CI as an exit code.",
+      "name": "the entry point is neutered",
+      "breaks": "The verdict never reaches CI.",
       "find": "    raise SystemExit(main(target))",
       "replace": "    raise SystemExit(0)"
     }

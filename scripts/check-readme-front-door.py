@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Check the README's KMX-first narrative and runnable setup sequence.
+"""Check that the README leads with an installable, runnable KMX first answer.
 
-This checks structure, not platform capability claims. The latter need review
-against the installed version. Self-tests use synthetic documents so removing
-obsolete tutorials never requires preserving them as test fixtures in public docs.
+The synthetic self-test covers the structure; platform claims require review
+against the installed version and the detailed bundle guide.
 """
 from __future__ import annotations
 
@@ -29,46 +28,25 @@ BADGE_PATTERNS = [
     ("release badge", r"img\.shields\.io/github/v/release/kaimahi-agents/kaimahi"),
     ("license badge", r"img\.shields\.io/github/license/kaimahi-agents/kaimahi"),
 ]
-# Require the runnable bundle lifecycle in order; arguments depend on the target.
+# Install options are deliberately independent lines, not a chain that could
+# run a stale kmx after a failed install. The guide handles lifecycle flags.
+INSTALL_COMMANDS = [
+    ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
+    ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.3\.0$"),
+]
+FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [
-    ("kmx agent create", r"^kmx agent create(?:[ \t]+.*)?$"),
-    ("kmx agent lift", r"^kmx agent lift(?:[ \t]+.*)?$"),
-    ("kmx agent status", r"^kmx agent status(?:[ \t]+.*)?$"),
-    ("kmx agent evaluate", r"^kmx agent evaluate(?:[ \t]+.*)?$"),
-]
-# Homebrew is the first route. The installer block downloads to a temporary
-# file because a pipeline can hide curl's failure and launch a stale installed
-# kmx; the third block pins the source-build route.
-HOMEBREW_COMMANDS = [
-    ("Homebrew quickstart", r'^brew install kaimahi-agents/tap/kmx && "\$\(brew --prefix kaimahi-agents/tap/kmx\)/bin/kmx" quickstart$'),
-]
-QUICKSTART_COMMANDS = [
-    ("quickstart subshell", r"^\($"),
-    ("temporary installer", r"^  installer=\$\(mktemp\) \|\| exit$"),
-    ("installer cleanup", r"^  trap 'rm -f \"\$installer\"' EXIT$"),
-    ("release installer", r"^  curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh -o \"\$installer\" \|\| exit$"),
-    ("installed kmx quickstart", r"^  sh \"\$installer\" --quickstart$"),
-    ("quickstart subshell closure", r"^\)$"),
-]
-GO_INSTALL_COMMANDS = [
-    ("conditional Go quickstart", r"^GOBIN=\"\$HOME/\.local/bin\" go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.3\.0 && \"\$HOME/\.local/bin/kmx\" quickstart$"),
+    ("kmx up", r"^`kmx up`"),
+    ("kmx quickstart-wizard", r"^`kmx quickstart-wizard`"),
+    ("kmx agent create", r"^`kmx agent create`"),
+    ("kmx agent lift", r"^`kmx agent lift`"),
+    ("kmx agent status", r"^`kmx agent status`"),
+    ("kmx agent evaluate", r"^`kmx agent evaluate`"),
+    ("bundle lift guide", r"\[bundle lift guide\]\(docs/agent-lift\.md\)"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
-
-
-def quickstart_blocks(text: str, quickstart_end: int) -> list[str]:
-    """Return fenced blocks inside Quickstart, not subsequent sections."""
-    section_end = NEXT_SECTION.search(text, quickstart_end)
-    section = text[quickstart_end : section_end.start() if section_end else len(text)]
-    return [block.group(1) for block in FENCE.finditer(section)]
-
-
-def journey_blocks(text: str, journey_end: int) -> list[str]:
-    """Return fenced blocks inside the create/prove/lift section."""
-    section_end = NEXT_SECTION.search(text, journey_end)
-    section = text[journey_end : section_end.start() if section_end else len(text)]
-    return [block.group(1) for block in FENCE.finditer(section)]
 
 
 def ordered_in(block: str, commands: list[tuple[str, str]]) -> str | None:
@@ -91,29 +69,22 @@ def check(text: str) -> str | None:
             return f"README front door: {label} is missing or out of order"
         position = match.end()
         if label == "journey heading":
-            blocks = journey_blocks(text, position)
+            end = NEXT_SECTION.search(text, position)
+            section = text[position:end.start() if end else len(text)]
+            blocks = list(FENCE.finditer(section))
             if not blocks:
-                return "README front door: create/prove/lift has no fenced command block"
-            missing = ordered_in(blocks[0], JOURNEY_COMMANDS)
+                return "README front door: install routes are missing from the journey command block"
+            missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS)
+            if missing is not None:
+                return f"README front door: {missing} is missing from the install routes"
+            if len(blocks) < 2:
+                return "README front door: kmx quickstart is missing from the journey command block"
+            missing = ordered_in(blocks[1].group(1), FIRST_ANSWER_COMMANDS)
             if missing is not None:
                 return f"README front door: {missing} is missing from the journey command block"
-        elif label == "Quickstart heading":
-            blocks = quickstart_blocks(text, position)
-            if not blocks:
-                return "README front door: Quickstart has no fenced command block"
-            missing = ordered_in(blocks[0], HOMEBREW_COMMANDS)
+            missing = ordered_in(section[blocks[1].end():], JOURNEY_COMMANDS)
             if missing is not None:
-                return f"README front door: {missing} is missing from the Quickstart command block"
-            if len(blocks) < 2:
-                return "README front door: release installer is missing from the Quickstart command block"
-            missing = ordered_in(blocks[1], QUICKSTART_COMMANDS)
-            if missing is not None:
-                return f"README front door: {missing} is missing from the Quickstart command block"
-            if len(blocks) < 3:
-                return "README front door: pinned Go install is missing from the Quickstart command block"
-            missing = ordered_in(blocks[2], GO_INSTALL_COMMANDS)
-            if missing is not None:
-                return f"README front door: {missing} is missing from the Quickstart command block"
+                return f"README front door: {missing} is missing from the journey prose"
     for label, pattern in BADGE_PATTERNS:
         if re.search(pattern, text) is None:
             return f"README front door: {label} is missing"
@@ -125,7 +96,7 @@ def main(path: Path) -> int:
     if problem:
         print(problem, file=sys.stderr)
         return 1
-    print("README front door: Agent Builder journey, runtime contract, and status order valid")
+    print("README front door: runnable install, first answer, bundle journey and runtime boundary valid")
     return 0
 
 

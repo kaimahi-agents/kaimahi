@@ -18,6 +18,30 @@ bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering.
 
+## From create to evaluation
+
+For a local Ollama creation target that already has Orka, the namespace and a
+Provider Secret, create a bundle like this (replace the source context and
+Secret name with your own):
+
+```bash
+kmx agent create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+```
+
+The `--base-url` must be reachable from the creation cluster; it is not inferred
+from the model name. Create writes `agents/my-agent/` and scaffolds
+`eval/example.yaml`. Edit that case's input and expected answer before testing
+it. The destination must separately have Orka, its namespace, a Ready Provider,
+the Provider's Secret and any referenced Tools; lift installs none of them.
+Use `kmx agent lift agents/my-agent --to-context my-target --inference provider:local`
+after replacing `my-target` and `local` with the destination
+context and Ready Provider. `--plan` inspects intended changes without writing.
+Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
+what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
+to run the cases against that deployed digest. Each evaluation creates a Task
+that can have external effects and is never retried; a passing receipt is
+evidence for that revision and case set, not a general safety proof.
+
 ## Destination and inference
 
 On first use for a bundle, name a destination with `--to-context` and inference
