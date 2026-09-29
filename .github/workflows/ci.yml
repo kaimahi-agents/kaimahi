@@ -3085,18 +3085,26 @@ jobs:
             kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai local -o yaml || true
             exit 1
           }
-      # Names only, created here on purpose: `kmx agent create` provisions
-      # no account and no permissions, and a shard that created them inside
-      # the command under test would be proving its own fixture.
-      - name: Orka — separately provision the Task result account
+      # `kmx orka install` now provisions the Task result account. Prove the
+      # installed grant is Task-get only; do not hand-create its resources.
+      - name: Orka — verify the installed Task result account
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          kubectl --context kind-kmx-orka -n orka-system create serviceaccount orka-result-reader
-          kubectl --context kind-kmx-orka -n orka-system create role orka-result-reader \
-            --verb=get --resource=tasks.core.orka.ai
-          kubectl --context kind-kmx-orka -n orka-system create rolebinding orka-result-reader \
-            --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
+          kubectl --context kind-kmx-orka -n orka-system get serviceaccount orka-result-reader >/dev/null
+          role=$(kubectl --context kind-kmx-orka -n orka-system get role orka-result-reader -o json)
+          python3 - "$role" <<'PY'
+          import json, sys
+          rules = json.loads(sys.argv[1])["rules"]
+          assert rules == [{"apiGroups": ["core.orka.ai"], "resources": ["tasks"], "verbs": ["get"]}], "unexpected result-reader grant"
+          PY
+          binding=$(kubectl --context kind-kmx-orka -n orka-system get rolebinding orka-result-reader -o json)
+          python3 - "$binding" <<'PY'
+          import json, sys
+          binding = json.loads(sys.argv[1])
+          assert binding["roleRef"]["kind"] == "Role" and binding["roleRef"]["name"] == "orka-result-reader", "unexpected bound role"
+          assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "orka-result-reader", "namespace": "orka-system"}], "unexpected result-reader subject"
+          PY
       # The committed manifest and the committed server, applied the same
       # way kmx applies them: the code goes in a ConfigMap and the
       # Deployment carries that code's sha256, so a server edit rolls the
