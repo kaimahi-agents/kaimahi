@@ -56,8 +56,9 @@ silently change platform. Both names use the same run records and teardown.
 **This is a fresh-install path, not a version upgrade.** An existing v0.1.3
 manifest installation or foreign Helm release is refused. On an existing AKS
 cluster, do not simply remove the old release and rerun lift: first back up
-the existing snapshot encryption key Secret **without printing its value**,
-controller PVC and other data volumes, resources and Secrets; verify your
+the existing controller PVC and other data volumes, resources and Secrets,
+including a snapshot key if this installation has one, **without printing key
+values**; verify your
 recovery plan, then arrange a clean new target per [Orka's v0.2.0 upgrade
 limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md)
 and [installation guide](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md).

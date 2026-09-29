@@ -102,6 +102,12 @@ case "$*" in
   *"get deployment"*|*"get deploy"*)
     if [ -n "$KMX_TEST_EXISTING_DEPLOY" ]; then printf '%s' "$KMX_TEST_EXISTING_DEPLOY"; exit 0; fi
     printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
+  *"get crd tasks.core.orka.ai"*)
+    [ "$KMX_TEST_EXISTING_CRD" = tasks.core.orka.ai ] && printf '%s' "$KMX_TEST_EXISTING_CRD"
+    exit 0 ;;
+  *"get crd agents.core.orka.ai"*)
+    [ "$KMX_TEST_EXISTING_CRD" = agents.core.orka.ai ] && printf '%s' "$KMX_TEST_EXISTING_CRD"
+    exit 0 ;;
   *"get crd"*) printf '%s' "$KMX_TEST_EXISTING_CRD"; exit 0 ;;
   *"get providers.core.orka.ai"*) printf '%s' "$KMX_TEST_PROVIDERS"; exit 0 ;;
 esac
@@ -120,6 +126,7 @@ case "$*" in
         exit 0 ;;
     esac
     printf 'helm install\n' >> "$KMX_TEST_WRITES"
+    if [ "$KMX_TEST_HELM_INSTALL" = failed ]; then printf 'error: fixture-sensitive-token\n' >&2; exit 1; fi
     # Simulate sensitive chart NOTES: installer output must never copy a key.
     printf 'harness-v2-key=fixture-sensitive-token\n'
     exit 0 ;;
@@ -260,7 +267,8 @@ func TestOrkaInstallRefusesAnInstallerThatIsNotThePinnedOne(t *testing.T) {
 func TestOrkaInstallRefusesExistingV013BeforeAnyWrites(t *testing.T) {
 	for _, tc := range []struct{ name, deployment, crd string }{
 		{"deployment", "deployment.apps/orka-controller-manager", ""},
-		{"orphaned CRDs", "", "tasks.core.orka.ai"},
+		{"orphaned Task CRD", "", "tasks.core.orka.ai"},
+		{"orphaned Provider CRD", "", "providers.core.orka.ai"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chart := orkaChart(t)
@@ -370,6 +378,25 @@ func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
 		if strings.Contains(output, "fixture-sensitive-token") {
 			t.Fatalf("harness-v2 key was exposed: %s", output)
 		}
+	}
+}
+
+func TestOrkaInstallFailedChartNamesSafeDiagnosticsWithoutLeakingOutput(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_HELM_INSTALL", "failed")
+	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
+	if err == nil {
+		t.Fatal("failed Helm install passed")
+	}
+	for _, want := range []string{"helm --kube-context kind-kaimahi-p1", "kubectl --context kind-kaimahi-p1", "failed release"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing diagnostic %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error()+f.errOut.String()+f.out.String(), "fixture-sensitive-token") {
+		t.Fatal("Helm stderr exposed possible credential")
 	}
 }
 
@@ -756,6 +783,12 @@ func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
 		deployments []map[string]any
 	}{
 		{"zero", "no Orka controller Deployment", []map[string]any{orkaDeploy(orkaWrapper, nil)}},
+		{"unrelated controller", "no Orka controller Deployment", []map[string]any{func() map[string]any {
+			d := orkaDeploy("other-controller", nil)
+			d["metadata"].(map[string]any)["labels"].(map[string]any)["app.kubernetes.io/name"] = "unrelated"
+			return d
+		}()}},
+
 		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

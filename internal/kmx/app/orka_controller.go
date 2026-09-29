@@ -60,7 +60,7 @@ func selectOrkaController(deployments []orkaDeployment) (orkaDeployment, bool, e
 	for _, d := range deployments {
 		labels := d.Metadata.Labels
 		old := labels["control-plane"] == "controller-manager" && labels["app.kubernetes.io/name"] == "orka"
-		chart := labels["app.kubernetes.io/component"] == "controller"
+		chart := labels["app.kubernetes.io/component"] == "controller" && labels["app.kubernetes.io/name"] == "orka"
 		if !old && !chart {
 			continue
 		}
@@ -69,7 +69,7 @@ func selectOrkaController(deployments []orkaDeployment) (orkaDeployment, bool, e
 	}
 	switch matches {
 	case 0:
-		return orkaDeployment{}, false, fmt.Errorf("no Orka controller Deployment in %s (expected chart component=controller or legacy control-plane=controller-manager labels)", OrkaNamespace)
+		return orkaDeployment{}, false, fmt.Errorf("no Orka controller Deployment in %s (expected Orka identity plus chart component=controller or legacy control-plane=controller-manager labels)", OrkaNamespace)
 	case 1:
 		if selected.Metadata.Name == "" {
 			return orkaDeployment{}, false, fmt.Errorf("Orka controller Deployment in %s has no name", OrkaNamespace)

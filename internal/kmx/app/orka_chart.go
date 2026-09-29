@@ -121,13 +121,14 @@ func (a *App) orkaInstallState() (bool, error) {
 	if err := refuse("namespace", ns, err); err != nil {
 		return false, err
 	}
-	task, err := a.kubectlCapture("get", "crd", "tasks.core.orka.ai", "--ignore-not-found=true", "-o", "name")
-	if err := refuse("Task CRD", task, err); err != nil {
-		return false, err
+	crds, err := a.kubectlCapture("get", "crd", "-o", "jsonpath={range .items[*]}{.metadata.name}{\" \"}{end}")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect existing cluster CRDs: %w", err)
 	}
-	agent, err := a.kubectlCapture("get", "crd", "agents.core.orka.ai", "--ignore-not-found=true", "-o", "name")
-	if err := refuse("Agent CRD", agent, err); err != nil {
-		return false, err
+	for _, name := range strings.Fields(crds) {
+		if strings.HasSuffix(name, ".orka.ai") {
+			return false, fmt.Errorf("existing Orka CRDs (%s) without a kmx-owned Helm release; refusing to overwrite v0.1.3 or a foreign installation. Back up and retire the old installation before a fresh %s install (docs/orka.md)", name, OrkaVersion)
+		}
 	}
 	return false, nil
 }
@@ -186,7 +187,7 @@ func (a *App) applyOrkaChart(chart []byte) error {
 		"--set-string", "controller.acpRuntime.claudeImage=ghcr.io/orka-agents/orka/acp-claude-runtime@sha256:ec8b51083626c14d1dd206fc6a57ecd6f5aeabf10522fc665903fdb205543e92",
 		"--set-string", "controller.acpRuntime.copilotImage=ghcr.io/orka-agents/orka/acp-copilot-runtime@sha256:32983da321bb03ef57eb80508454117a0142485782e28e935297dcd9234133ab",
 		"--set-string", "controller.acpRuntime.opencodeImage=ghcr.io/orka-agents/orka/acp-opencode-runtime@sha256:3d8e84b811834d768785055fef63ea1f1179eb7cb0b0bc1856bbf81023c48f9a"); err != nil {
-		return fmt.Errorf("installing pinned Orka chart: %w", err)
+		return fmt.Errorf("installing pinned Orka chart: %w\n  A failed release and CRDs may remain; kmx refuses to silently reinstall over them. Inspect without exposing Secrets:\n  helm --kube-context %s -n %s status %s\n  kubectl --context %s -n %s get pods,events", err, a.Cfg.KubeContext, OrkaNamespace, orkaRelease, a.Cfg.KubeContext, OrkaNamespace)
 	}
 	return nil
 }

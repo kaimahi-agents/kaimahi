@@ -252,6 +252,12 @@ Agent conversion.
   `orka-system`, fullname `orka-api`. A recognized matching kmx installation
   keeps its chart, key and data on rerun. kmx refuses an existing v0.1.3
   manifest installation or foreign Helm release; it does not convert them.
+- **Partial installs require operator review.** Applying CRDs or creating a
+  failed Helm release can leave cluster state even if installation times out.
+  kmx refuses the next install rather than silently adopting, retrying or
+  deleting it. Inspect the context-pinned Helm release, Pods and events; on a
+  disposable local kind cluster you created, `kmx down` then `kmx up` replaces
+  it, losing its data. On AKS, stop and use the verified backup/recovery plan.
 - **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new
   installations](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
   Its conditional CRD/Helm upgrade instructions are for a *future target
