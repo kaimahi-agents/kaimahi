@@ -11,16 +11,17 @@ kmx quickstart-wizard
 
 1. Describe your agent, choose **Chat with agent**, and send a message. Wait for
    a local answer.
-2. In that chat, enter `/lift`. Select an existing AKS target with Orka and
-   inference ready; review the destination and inference choice at the final
-   deployment review before confirming. The lift does not create the cluster.
+2. In that chat, enter `/lift`. Select an existing Kubernetes context or AKS
+   cluster. Review the destination and inference choice at the final deployment
+   review before confirming. `/lift` offers to prepare Orka and the referenced
+   Kubernetes tool if they are missing; it does not create a cluster.
 3. After chat connects to the lifted agent, send a **new message** and check its
-   answer. Lift, readiness and connection alone do not prove a remote answer.
+   answer. Lift, readiness and connection do not prove an answer; the answer
+   to that new message does.
 
 See the [interactive lift guide](interactive-lift.md) for target discovery,
-confirmation and connection behavior. For a separate on-disk bundle lifecycle,
-use [`kmx agent lift`](agent-lift.md) and run `kmx agent evaluate` for deployed
-revision execution evidence; it is not the next step in this chat journey.
+confirmation and connection behavior. See the [bundle lift guide](agent-lift.md)
+for `kmx agent lift` and `kmx agent evaluate`.
 
 **Orka is the platform.** Kaimahi provides tooling to install it, author native
 Agents and get an existing application's model traffic onto it. Start with the

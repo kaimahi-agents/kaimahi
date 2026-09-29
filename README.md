@@ -49,32 +49,23 @@ kmx quickstart
 kmx quickstart-wizard
 ```
 
-Describe your agent, choose **Chat with agent**, and send a message to get a
-local answer. In that chat, enter `/lift`; select an existing AKS target with
-Orka and inference ready, review the destination and inference at the final
-deployment review, then confirm. Once chat connects to the lifted agent, **send
-a new message** and check its answer to verify remote execution. Lift, readiness
-and connection alone do not prove a remote answer. See [getting started](docs/getting-started.md)
-and the [interactive lift guide](docs/interactive-lift.md) for prerequisites and
-lift behavior; the lift does not create the AKS cluster.
-
-The standalone disk-bundle lifecycle is separate from chat:
+Create an agent, choose **Chat with agent**, get a local answer, then enter
+`/lift`. After connecting, send a new message to confirm the lifted agent
+answers; follow [getting started](docs/getting-started.md) for the steps.
 
 `kmx agent create` writes an editable bundle on a prepared target.
 `kmx agent lift` deploys that bundle to a prepared Orka target.
 `kmx agent status` reads its revision, readiness, drift and evaluation result.
 `kmx agent evaluate` runs the bundle's cases against that deployed revision.
 See the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts
-and evaluation; it is not the continuation of the interactive journey.
+and evaluation.
 
 ## Quickstart
 
 The fixed first-answer path uses local kind, Ollama, Provider and Agent.
 The wizard prepares a local Kubernetes target while you describe your own agent.
-Interactive `/lift` reads the live source agent, deploys to an existing target,
-and does not replay a task or delete the source. Choosing new cloud inference
-can create billable resources. Read the [interactive lift guide](docs/interactive-lift.md)
-for the complete behavior and recovery boundaries.
+Choosing new cloud inference can create billable resources. Read the
+[interactive lift guide](docs/interactive-lift.md) for behavior and recovery.
 
 Both paths create local cluster resources and result-reader RBAC. The wizard
 also installs a read-only Kubernetes inventory Tool. Orka v0.1.3 reaches its
@@ -112,7 +103,7 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 | Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Reconciles on an existing Orka target; `--plan` writes nothing |
 | Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Read-only per-target revision, readiness, drift and evaluation |
 | Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Runs `eval/*.yaml` cases as Tasks against the deployed revision; exits non-zero unless all pass |
-| Lift a live agent interactively | `/lift` in interactive chat | Uses a live agent and an existing destination |
+| Lift an agent interactively | `/lift` in interactive chat | Choose and review a destination in chat |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
