@@ -185,31 +185,40 @@ jobs:
           fi
           echo "working tree clean at $(git rev-parse HEAD)"
 
-      - name: Build the binaries
+      # Pinned through the Go module proxy and its checksum database — the
+      # same provenance argument docs/releases.md makes for `go install`,
+      # applied to the tool that builds this release rather than a
+      # marketplace action.
+      - name: Install GoReleaser
+        run: go install github.com/goreleaser/goreleaser/v2@v2.18.2
+
+      # dist/ is gitignored, so it stays out of `git status --porcelain`
+      # while still living inside the checkout — GoReleaser must run from a
+      # directory that is a git repo and a Go module, so it cannot be
+      # relocated to $RUNNER_TEMP the way the old go-build loop was.
+      #
+      # Run once with publishing skipped, whether this is a dry run or the
+      # real thing: every check below runs against this build, and nothing
+      # is published (no GitHub release, no tap commit — the tap PR stays a
+      # human's job either way, see .goreleaser.yaml) until they all pass.
+      - name: Build the release with GoReleaser
         env:
-          VERSION: ${{ steps.what.outputs.version }}
+          GORELEASER_CURRENT_TAG: ${{ steps.what.outputs.version }}
+        run: goreleaser release --clean --skip=publish,validate
+
+      # Platforms, and why exactly these: kmx drives a Linux container
+      # runtime (kind), so the machine running it is a Linux host or a Mac
+      # running one in a VM — amd64 and arm64 cover both, and are the same
+      # four platforms the pinned cluster tools publish, which kmx downloads
+      # for the SAME machine. Windows is served through WSL, which is
+      # linux/amd64; a native windows/amd64 build would be an untested
+      # claim, not a platform. .goreleaser.yaml's `builds` pins this set.
+      - name: The four release binaries exist
         run: |
           set -euo pipefail
-          # Built OUTSIDE the checkout, for the same reason the notes are:
-          # nothing this job writes may end up in the tree it is stamping.
-          mkdir -p "$RUNNER_TEMP/dist"
-          # Platforms, and why exactly these: kmx drives a Linux container
-          # runtime (kind), so the machine running it is a Linux host or a
-          # Mac running one in a VM — amd64 and arm64 cover both, and are
-          # the same four platforms the pinned cluster tools publish, which
-          # kmx downloads for the SAME machine. Windows is served through
-          # WSL, which is linux/amd64; a native windows/amd64 build would
-          # be an untested claim, not a platform.
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
-            goos="${target%/*}"; goarch="${target#*/}"
-            out="$RUNNER_TEMP/dist/kmx-$goos-$goarch"
-            echo "building $out"
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath \
-                -ldflags "-s -w -X github.com/kaimahi-agents/kaimahi/internal/kmx/version.Tag=$VERSION" \
-                -o "$out" ./cmd/kmx
+          for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+            ls dist/kmx_"$target"*/kmx >/dev/null
           done
-          ls -l "$RUNNER_TEMP/dist"
 
       # The binary must say what it is. That is what version stamping is
       # for, and this runs on the actual artifact — the runner is
@@ -219,7 +228,8 @@ jobs:
           VERSION: ${{ steps.what.outputs.version }}
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/dist/kmx-linux-amd64" version | tee "$RUNNER_TEMP/reported.txt"
+          bin=$(echo dist/kmx_linux_amd64_*/kmx)
+          "$bin" version | tee "$RUNNER_TEMP/reported.txt"
           test "$(head -1 "$RUNNER_TEMP/reported.txt")" = "kmx $VERSION (release build)"
           # And the plane it would deploy is this same version. rc.1 shipped
           # a binary that reported its tag and then could not name a plane
@@ -227,53 +237,70 @@ jobs:
           # caught it.
           grep -q "built from $VERSION\$" "$RUNNER_TEMP/reported.txt"
           # Provenance, from the artifact itself.
-          go version -m "$RUNNER_TEMP/dist/kmx-linux-amd64" | tee "$RUNNER_TEMP/buildinfo.txt"
+          go version -m "$bin" | tee "$RUNNER_TEMP/buildinfo.txt"
           grep -q "vcs.revision=$GITHUB_SHA" "$RUNNER_TEMP/buildinfo.txt"
           if grep -q 'vcs.modified=true' "$RUNNER_TEMP/buildinfo.txt"; then
             echo "the released binary is stamped as built from a modified tree" >&2
             exit 1
           fi
 
-      - name: Checksums
+      # dist/checksums.txt names assets the way they will be uploaded
+      # (kmx-$os-$arch, no directory component) — .goreleaser.yaml's
+      # `archives.name_template` sets that, matching what install.sh and
+      # docs/releases.md's "by hand" section already expect.
+      - name: Checksums match the built binaries
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/dist"
-          # Names only, no directory component: the file is meant to be
-          # downloaded next to the binary and checked with
-          # `sha256sum --ignore-missing -c checksums.txt`, which is what
-          # docs/releases.md tells an adopter to run. (Some upstream .sha256
-          # files carry the BUILDER's path, and internal/kmx/toolchain has to
-          # parse around it. Do not repeat that here.)
-          sha256sum kmx-* > checksums.txt
-          cat checksums.txt
-          # Prove the instruction in the docs actually works, here, before
-          # anyone downloads anything.
-          sha256sum --ignore-missing -c checksums.txt
+          cat dist/checksums.txt
+          while read -r want name; do
+            suffix=$(printf '%s' "${name#kmx-}" | tr - _)
+            bin=$(echo dist/kmx_"$suffix"*/kmx)
+            got=$(sha256sum "$bin" | cut -d' ' -f1)
+            test "$want" = "$got" || { echo "checksum mismatch for $name" >&2; exit 1; }
+          done < dist/checksums.txt
 
-      - name: Homebrew formula
-        env:
-          VERSION: ${{ steps.what.outputs.version }}
+      # GoReleaser always emits an explicit `version "X.Y.Z"` line, but
+      # Homebrew can parse the same version out of the release URL, so
+      # `brew audit --strict` (which homebrew-tap's CI runs) fails with
+      # "version is redundant with version scanned from URL" if it stays.
+      # Verified locally against a real release: stripping this line is
+      # the only change needed for the rendered formula to pass
+      # `brew style` and `brew audit --strict --online`.
+      - name: Homebrew formula renders
         run: |
           set -euo pipefail
-          python3 scripts/homebrew-formula.py "$VERSION" \
-            "$RUNNER_TEMP/dist/checksums.txt" \
-            --output "$RUNNER_TEMP/dist/kmx.rb"
-          ruby -c "$RUNNER_TEMP/dist/kmx.rb"
-          test -s "$RUNNER_TEMP/dist/kmx.rb"
+          sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb
+          ruby -c dist/homebrew/Formula/kmx.rb
+          test -s dist/homebrew/Formula/kmx.rb
+          ! grep -q '^  version "' dist/homebrew/Formula/kmx.rb
 
+      # Only now, with every check above green, does anything get published
+      # — a second, identical invocation, this time without --skip=publish.
+      # The build is trimpath/CGO_ENABLED=0 and deterministic, so this is
+      # the same bytes just verified, not new code taking its place.
       - name: Publish the release
+        if: steps.what.outputs.dry_run == 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_CURRENT_TAG: ${{ steps.what.outputs.version }}
+        run: goreleaser release --clean --release-notes="$RUNNER_TEMP/release-notes.md"
+
+      # The formula is a deliberate exception to skip_upload's "nothing
+      # pushed anywhere": it rides along as a release asset so a maintainer
+      # can fetch the reviewed one, not re-render it — see
+      # docs/releases.md#cutting-a-release, step 5. "Publish the release"
+      # above re-ran goreleaser and so re-rendered the formula from
+      # scratch, undoing the strip above; do it again before it is
+      # uploaded.
+      - name: Attach the Homebrew formula to the release
         if: steps.what.outputs.dry_run == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.what.outputs.version }}
-          PRERELEASE: ${{ steps.what.outputs.prerelease }}
         run: |
           set -euo pipefail
-          flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag)
-          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
-          gh release create "$VERSION" "${flags[@]}" \
-            "$RUNNER_TEMP"/dist/kmx-* "$RUNNER_TEMP/dist/checksums.txt" \
-            "$RUNNER_TEMP/dist/kmx.rb"
+          sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb
+          gh release upload "$VERSION" dist/homebrew/Formula/kmx.rb
 
       # A dry run publishes nothing; the artifacts are how its output is
       # inspected (and how a clean machine can be handed the exact bytes a
@@ -283,5 +310,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kmx-${{ steps.what.outputs.version }}
-          path: ${{ runner.temp }}/dist/
+          path: dist/
           if-no-files-found: error

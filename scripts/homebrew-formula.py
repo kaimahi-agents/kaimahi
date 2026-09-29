@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Render the Homebrew formula for one kmx release.
+"""Validate a release version, and self-test that validation.
 
-The release workflow already builds four bare binaries and writes their
-checksums. This script turns that exact manifest into Formula/kmx.rb; it does
-not rebuild, rehash, or publish anything.
+GoReleaser (.goreleaser.yaml) renders the actual Homebrew formula now; this
+script's release-time job is narrower: `--check-version` is what
+release.yml's version-format gate calls before anything is built. The
+formula-rendering functions below are retained only because `--selftest`
+still exercises their semver, checksum and asset-base validation — the same
+logic GoReleaser's own inputs (a version tag, a checksums.txt) must satisfy.
 
-Run:  python3 scripts/homebrew-formula.py v0.3.0 checksums.txt
-      python3 scripts/homebrew-formula.py v0.3.0 checksums.txt --output kmx.rb
+Run:  python3 scripts/homebrew-formula.py --check-version v0.3.0
       python3 scripts/homebrew-formula.py --selftest
 """
+
 from __future__ import annotations
 
 import argparse

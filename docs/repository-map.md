@@ -277,6 +277,7 @@ and the separately located historical architecture SVG.
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Build/check targets plus plane-image, AKS-credential, network-policy and egress helpers. |
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. |
+| `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the `release` workflow builds and publishes with; renders the Homebrew formula without pushing it (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
 | `staticcheck.conf` | **Scaffolding** | Lint configuration for both modules. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |

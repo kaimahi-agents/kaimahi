@@ -204,8 +204,31 @@ jobs:
               print(f"release.yml must default to contents: read, got {wf.get('permissions')}")
               sys.exit(1)
           release_text = open(".github/workflows/release.yml").read()
-          if "scripts/homebrew-formula.py" not in release_text or '"$RUNNER_TEMP/dist/kmx.rb"' not in release_text:
-              print("release.yml must generate and publish the Homebrew formula from release checksums")
+          if "goreleaser release" not in release_text:
+              print("release.yml must build and publish the release through GoReleaser")
+              sys.exit(1)
+          if "dist/homebrew/Formula/kmx.rb" not in release_text:
+              print("release.yml must attach the rendered Homebrew formula as a release asset")
+              sys.exit(1)
+          # GoReleaser always writes an explicit `version "X.Y.Z"` line,
+          # but Homebrew infers the same version from the release URL, so
+          # `brew audit --strict` — which homebrew-tap's CI runs on every
+          # PR — fails with "version is redundant with version scanned
+          # from URL" if it stays. Verified against a real release.
+          if release_text.count('''sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb''') < 2:
+              print("release.yml must strip the redundant `version` line before every place it uses the rendered formula (both goreleaser passes re-render it)")
+              sys.exit(1)
+          goreleaser_text = open(".goreleaser.yaml").read()
+          goreleaser_cfg = yaml.safe_load(goreleaser_text)
+          brew = goreleaser_cfg.get("brews", [{}])[0]
+          if brew.get("skip_upload") is not True:
+              print(".goreleaser.yaml must set brews[0].skip_upload: true — this job never pushes to the tap")
+              sys.exit(1)
+          if brew.get("repository", {}).get("name") != "homebrew-tap":
+              print(".goreleaser.yaml must render the formula for kaimahi-agents/homebrew-tap")
+              sys.exit(1)
+          if "token" in brew.get("repository", {}):
+              print(".goreleaser.yaml's brews.repository must not name a token — that would be a credential to push with")
               sys.exit(1)
           if 'if [ "$EVENT_NAME" = push ] && [ "$REF_TYPE" = tag ]; then' not in release_text:
               print("release.yml must publish only for tag pushes; manual dispatch is always a dry run")

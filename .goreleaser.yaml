@@ -1,0 +1,79 @@
+# GoReleaser config for the kmx CLI. Run from `.github/workflows/release.yml`,
+# never by hand against a real tag — see docs/releases.md#cutting-a-release.
+#
+# Keyless, like the rest of this project's CI (docs/releases.md,
+# .github/workflows/ci.yml's "release job stays keyless" check): this file
+# authorizes no secret beyond the GITHUB_TOKEN the run already has, and
+# `brews.skip_upload` below is load-bearing, not a stray default — flipping it
+# would make this job push to kaimahi-agents/homebrew-tap on its own, which is
+# a decision this project has deliberately kept a reviewed human PR.
+version: 2
+
+project_name: kmx
+
+# The tag is supplied by the workflow (GORELEASER_CURRENT_TAG), including for
+# dry runs that do not correspond to a real git tag — see the "Decide what is
+# being built" step in release.yml. Nothing here re-derives a version from git.
+builds:
+  - id: kmx
+    main: ./cmd/kmx
+    binary: kmx
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # kmx drives a Linux container runtime, so the machine running it is a
+    # Linux host or a Mac running one in a VM (docs/releases.md#install) —
+    # the same four platforms as before, no windows/amd64.
+    #
+    # -trimpath matches the build this replaced: without it the binary
+    # embeds this checkout's absolute path, breaking the reproducibility
+    # release.yml's "Publish the release" comment claims (rebuild == same
+    # bytes) and the vcs.modified check below it.
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/kaimahi-agents/kaimahi/internal/kmx/version.Tag={{ .Tag }}
+
+archives:
+  # No archive: the release ships bare binaries, matching install.sh,
+  # docs/releases.md's "by hand" instructions and the sha256sum-based
+  # checksum verification they document.
+  - formats: ["binary"]
+    name_template: "kmx-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  name_template: "{{ .Tag }}"
+  prerelease: auto
+
+# Rendered locally into dist/homebrew/Formula/kmx.rb and never pushed from
+# here (skip_upload: true). A maintainer downloads that exact asset and opens
+# a reviewed pull request against kaimahi-agents/homebrew-tap — see
+# docs/releases.md#cutting-a-release, step 5.
+brews:
+  - name: kmx
+    repository:
+      owner: kaimahi-agents
+      name: homebrew-tap
+    skip_upload: true
+    directory: Formula
+    homepage: "https://github.com/kaimahi-agents/kaimahi"
+    description: "Agent Builder CLI for Kubernetes"
+    license: "MIT"
+    commit_msg_template: "Brew formula update for kmx version {{ .Tag }}"
+    # Matches the coverage of the formula already in homebrew-tap: not just
+    # that the binary runs, but that it reports the version it claims to be
+    # and that a real subcommand's help text renders — kmx version and
+    # docs/releases.md's "by hand" checks assert the same two things.
+    test: |
+      assert_equal "kmx v#{version} (release build)",
+                   shell_output("#{bin}/kmx version").lines.first.chomp
+      assert_match "Create, inspect, and chat with Orka agents",
+                   shell_output("#{bin}/kmx agent --help")

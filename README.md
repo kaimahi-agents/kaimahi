@@ -159,6 +159,7 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | [Interactive lift](docs/interactive-lift.md) | Live agent-to-target behavior |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
 | [Migration](docs/migrate.md) | Existing-application model-traffic bridge |
+| [Releases](docs/releases.md) | Versioning, install/upgrade paths, and cutting a release |
 | [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |
 | [Documentation index](docs/README.md) | All current guides and maintainer references |
 

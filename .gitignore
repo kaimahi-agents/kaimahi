@@ -1,6 +1,10 @@
 .env
 bin/
 .worktrees/
+
+# GoReleaser's working directory (.github/workflows/release.yml, .goreleaser.yaml):
+# built binaries, checksums and the rendered Homebrew formula. Run output, not source.
+dist/
 # Local-only credential scratch (Slack bot token, channel id). Never committed.
 .env
 

@@ -126,22 +126,24 @@ func TestReleaseBuildNeverReportsUnknownOrABareSha(t *testing.T) {
 	}
 }
 
-// The link between the release job and this package is a STRING in a
-// workflow file. Renaming the variable, moving the package, or dropping the
-// -X flag would produce releases that silently report a dev version — the
-// exact failure the stamp exists to end. Pin the two together.
+// The link between the release job and this package is a STRING, now in
+// .goreleaser.yaml's build ldflags (release.yml itself no longer builds —
+// it runs GoReleaser). Renaming the variable, moving the package, or
+// dropping the -X flag would produce releases that silently report a dev
+// version — the exact failure the stamp exists to end. Pin the two
+// together.
 func TestReleaseWorkflowStampsThisVariable(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "release.yml"))
+	body, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
 	if err != nil {
-		t.Skipf("no release workflow to check (%v)", err)
+		t.Skipf("no goreleaser config to check (%v)", err)
 	}
 	want := "github.com/kaimahi-agents/kaimahi/internal/kmx/version.Tag="
 	if !strings.Contains(string(body), "-X "+want) {
-		t.Fatalf("release.yml does not stamp %s — released binaries would report a development version", want)
+		t.Fatalf(".goreleaser.yaml does not stamp %s — released binaries would report a development version", want)
 	}
 }
 
