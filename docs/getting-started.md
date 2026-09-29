@@ -1,5 +1,27 @@
 # Getting started
 
+## Create your own agent, then lift it from chat
+
+With `kmx` installed and Docker or Podman available, follow this path for your
+own agent (not the fixed `kmx quickstart` demonstration):
+
+```bash
+kmx quickstart-wizard
+```
+
+1. Describe your agent, choose **Chat with agent**, and send a message. Wait for
+   a local answer.
+2. In that chat, enter `/lift`. Select an existing AKS target with Orka and
+   inference ready; review the destination and inference choice at the final
+   deployment review before confirming. The lift does not create the cluster.
+3. After chat connects to the lifted agent, send a **new message** and check its
+   answer. Lift, readiness and connection alone do not prove a remote answer.
+
+See the [interactive lift guide](interactive-lift.md) for target discovery,
+confirmation and connection behavior. For a separate on-disk bundle lifecycle,
+use [`kmx agent lift`](agent-lift.md) and run `kmx agent evaluate` for deployed
+revision execution evidence; it is not the next step in this chat journey.
+
 **Orka is the platform.** Kaimahi provides tooling to install it, author native
 Agents and get an existing application's model traffic onto it. Start with the
 [Orka guide](orka.md), including [native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer),

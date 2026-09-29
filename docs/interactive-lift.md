@@ -1,6 +1,18 @@
 # Interactive Orka lift
 
-In quickstart's Orka chat, enter `/lift` to open the target picker:
+For the custom first journey, run `kmx quickstart-wizard`, create your own agent,
+and get a local answer in **Chat with agent**. In that chat, enter `/lift` to
+move the live agent to an existing AKS target with Orka and inference ready.
+Review the destination and inference choice at the final deployment review;
+there is no separate target-review screen. After chat connects to the lifted
+agent, send a **new message** and check its answer for remote execution proof.
+Lift, readiness and connection alone do not run or prove a remote Agent Task.
+See [getting started](getting-started.md) for the concise journey. The fixed
+`kmx quickstart` demo is not custom authoring, and the separate disk-bundle
+[`kmx agent lift`](agent-lift.md) workflow uses `kmx agent evaluate` for
+revision-specific execution evidence.
+
+From a live Orka chat, `/lift` opens the target picker:
 
 - **Kubeconfig context:** search the contexts already configured locally.
 - **Azure AKS:** select a subscription, then search all its AKS clusters. Results

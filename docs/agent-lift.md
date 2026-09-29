@@ -4,7 +4,11 @@
 cluster. It does not read or capture a live source Agent. Unlike interactive
 [`/lift`](interactive-lift.md), it takes a named destination and inference
 Provider rather than discovering either through a chat session. `/lift` remains
-an independent interactive path; this command does not change it.
+an independent interactive path; this command does not change it. For the
+create-your-own-agent → local answer → `/lift` → new remote message journey,
+follow [getting started](getting-started.md) instead. Bundle lift and readiness
+are deployment evidence, not execution proof; run `kmx agent evaluate` against
+the deployed revision and its cases to test an answer.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--plan]

@@ -34,7 +34,8 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0
 ```
 
-With `kmx` on your PATH, run the first-answer path:
+To create your own agent and hear it answer locally, follow the interactive
+journey below. For a fixed, non-interactive hello-world demonstration instead:
 
 ```bash
 kmx quickstart
@@ -42,29 +43,37 @@ kmx quickstart
 
 `kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
 `kmx up` provisions the local runtime without creating an Agent.
-`kmx quickstart-wizard` helps you create your own Agent interactively.
+`kmx quickstart-wizard` is the custom interactive path:
+
+```bash
+kmx quickstart-wizard
+```
+
+Describe your agent, choose **Chat with agent**, and send a message to get a
+local answer. In that chat, enter `/lift`; select an existing AKS target with
+Orka and inference ready, review the destination and inference at the final
+deployment review, then confirm. Once chat connects to the lifted agent, **send
+a new message** and check its answer to verify remote execution. Lift, readiness
+and connection alone do not prove a remote answer. See [getting started](docs/getting-started.md)
+and the [interactive lift guide](docs/interactive-lift.md) for prerequisites and
+lift behavior; the lift does not create the AKS cluster.
+
+The standalone disk-bundle lifecycle is separate from chat:
+
 `kmx agent create` writes an editable bundle on a prepared target.
 `kmx agent lift` deploys that bundle to a prepared Orka target.
 `kmx agent status` reads its revision, readiness, drift and evaluation result.
 `kmx agent evaluate` runs the bundle's cases against that deployed revision.
-See the [bundle lift guide](docs/agent-lift.md) for the create example, target
-preparation, receipts and evaluation boundaries; `/lift` remains the separate
-interactive path from a live Agent.
+See the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts
+and evaluation; it is not the continuation of the interactive journey.
 
 ## Quickstart
 
 The fixed first-answer path uses local kind, Ollama, Provider and Agent.
 The wizard prepares a local Kubernetes target while you describe your own agent.
-To complete the wizard journey:
-
-1. Choose **Chat with agent** when setup is ready.
-2. Send a prompt and wait for an answer to prove the selected execution path.
-3. Enter `/lift`, choose an existing Kubernetes or AKS target, review the
-   destination and inference choice, then confirm.
-
-The current lift reads the live source agent, deploys to an existing target, and
-does not replay a task or delete the source. Choosing new cloud inference can
-create billable resources. Read the [interactive lift guide](docs/interactive-lift.md)
+Interactive `/lift` reads the live source agent, deploys to an existing target,
+and does not replay a task or delete the source. Choosing new cloud inference
+can create billable resources. Read the [interactive lift guide](docs/interactive-lift.md)
 for the complete behavior and recovery boundaries.
 
 Both paths create local cluster resources and result-reader RBAC. The wizard
