@@ -47,9 +47,9 @@ import (
 // name.
 const PlaneImage = "kaimahi-proxy:p15"
 
-// PlaneSteps are the stages of `kmx plane`, addressable individually so the
-// On kind, `make plane-image` delegates to the same image step rather
-// than keeping a second copy of the build path.
+// PlaneSteps are the individually addressable stages of `kmx plane`.
+// On kind, `make plane-image` delegates to the image step rather than
+// keeping a second copy of the build path.
 var PlaneSteps = []string{"image", "secrets", "certificate", "deploy"}
 
 // planeManifests are applied in the order `kubectl apply -f k8s/plane/`
