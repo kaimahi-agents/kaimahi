@@ -14,6 +14,8 @@ spec.loader.exec_module(front_door)
 
 JOURNEY = """kmx agent create
 kmx agent lift
+kmx agent status
+kmx agent evaluate
 """
 HOMEBREW = """brew install kaimahi-agents/tap/kmx && "$(brew --prefix kaimahi-agents/tap/kmx)/bin/kmx" quickstart
 """
@@ -24,7 +26,7 @@ QUICKSTART = """(
   sh "$installer" --quickstart
 )
 """
-GO_INSTALL = """GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && "$HOME/.local/bin/kmx" quickstart
+GO_INSTALL = """GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0 && "$HOME/.local/bin/kmx" quickstart
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 # Kaimahi
@@ -85,17 +87,21 @@ for label, literal in [
 for label, literal in [
     ("kmx agent create", "kmx agent create\n"),
     ("kmx agent lift", "kmx agent lift\n"),
+    ("kmx agent status", "kmx agent status\n"),
+    ("kmx agent evaluate", "kmx agent evaluate\n"),
     ("Homebrew quickstart", 'brew install kaimahi-agents/tap/kmx && "$(brew --prefix kaimahi-agents/tap/kmx)/bin/kmx" quickstart\n'),
     ("temporary installer", "  installer=$(mktemp) || exit\n"),
     ("installer cleanup", "  trap 'rm -f \"$installer\"' EXIT\n"),
     ("release installer", "  curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh -o \"$installer\" || exit\n"),
     ("installed kmx quickstart", "  sh \"$installer\" --quickstart\n"),
-    ("conditional Go quickstart", "GOBIN=\"$HOME/.local/bin\" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && \"$HOME/.local/bin/kmx\" quickstart\n"),
+    ("conditional Go quickstart", "GOBIN=\"$HOME/.local/bin\" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0 && \"$HOME/.local/bin/kmx\" quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
 for command, label in (("kmx agent create", "kmx agent create"),
                        ("kmx agent lift", "kmx agent lift"),
+                       ("kmx agent status", "kmx agent status"),
+                       ("kmx agent evaluate", "kmx agent evaluate"),
                        ('  sh "$installer" --quickstart', "installed kmx quickstart")):
     CASES.append((f"hyphen-suffixed {command}", GOOD.replace(command + "\n", command + "-old\n"),
                   f"{label} is missing"))
@@ -121,17 +127,17 @@ CASES += [
     ("old two-command pipeline can run a stale binary", GOOD.replace(QUICKSTART,
      "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n$HOME/.local/bin/kmx quickstart\n"),
      "quickstart subshell is missing"),
-    ("old Go release", GOOD.replace("cmd/kmx@v0.2.0", "cmd/kmx@v0.1.0"),
+    ("old Go release", GOOD.replace("cmd/kmx@v0.3.0", "cmd/kmx@v0.2.0"),
      "conditional Go quickstart is missing"),
-    ("moving Go source", GOOD.replace("cmd/kmx@v0.2.0", "cmd/kmx@main"),
+    ("moving Go source", GOOD.replace("cmd/kmx@v0.3.0", "cmd/kmx@main"),
      "conditional Go quickstart is missing"),
     ("missing Go alternative", GOOD.replace("```bash\n" + GO_INSTALL + "```\n", ""),
      "pinned Go install is missing"),
     ("Go install failure can run a stale kmx", GOOD.replace(GO_INSTALL,
-     "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0\nkmx quickstart\n"),
+     "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0\nkmx quickstart\n"),
      "conditional Go quickstart is missing"),
     ("successful Go install can run an older kmx on PATH", GOOD.replace(GO_INSTALL,
-     "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && kmx quickstart\n"),
+     "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0 && kmx quickstart\n"),
      "conditional Go quickstart is missing"),
     ("empty document", "", "ketu icon is missing"),
     ("journey commands only in prose", GOOD.replace("```bash\n" + JOURNEY + "```", JOURNEY),
@@ -147,6 +153,8 @@ CASES += [
      "Homebrew quickstart is missing"),
     ("journey commands out of order", GOOD.replace("kmx agent create\nkmx agent lift", "kmx agent lift\nkmx agent create"),
      "kmx agent lift is missing"),
+    ("evaluation before status", GOOD.replace("kmx agent status\nkmx agent evaluate", "kmx agent evaluate\nkmx agent status"),
+     "kmx agent evaluate is missing"),
     ("quickstart commands out of order", GOOD.replace(QUICKSTART,
      '  sh "$installer" --quickstart\n' + QUICKSTART.replace('  sh "$installer" --quickstart\n', '')),
      "installed kmx quickstart is missing"),

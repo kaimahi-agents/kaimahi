@@ -102,8 +102,8 @@ if KMX_VERSION=v0.1.0 KMX_BIN_DIR="$workdir/legacy-bin" \
 else
   check "v0.1.0 quickstart explains the release gap" \
     "$(grep -q 'does not include Orka quickstart' "$workdir/out" && echo ok || echo no)"
-  check "v0.1.0 quickstart offers the Orka-capable release" \
-    "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0' "$workdir/out" && echo ok || echo no)"
+  check "v0.1.0 quickstart offers the latest Orka-capable release" \
+    "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest' "$workdir/out" && echo ok || echo no)"
   check "v0.1.0 quickstart installs no binary" \
     "$([ ! -e "$workdir/legacy-bin/kmx" ] && echo ok || echo no)"
 fi
@@ -136,8 +136,8 @@ fi
 if install_run "plain v0.1.0 install" --version=v0.1.0; then
   check "plain v0.1.0 does not offer legacy quickstart as Orka" \
     "$(grep -q 'Next:.*kmx quickstart' "$workdir/out" && echo no || echo ok)"
-  check "plain v0.1.0 offers the Orka-capable release" \
-    "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0' "$workdir/out" && echo ok || echo no)"
+  check "plain v0.1.0 offers the latest Orka-capable release" \
+    "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest' "$workdir/out" && echo ok || echo no)"
 fi
 
 if [ "$fails" -ne 0 ]; then

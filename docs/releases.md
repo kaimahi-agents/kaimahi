@@ -4,8 +4,9 @@ Kaimahi is **pre-1.0 and incubating**. This page is the whole contract: how a
 version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
-From v0.2.0, `@latest` and the installer's default select the Orka-capable
-release. Pin `@v0.2.0` for a repeatable build; `@main` is the moving development
+`@latest` and the installer's default select the newest stable tagged release;
+v0.3.0 includes the working Orka Kubernetes Tool and bundle lifecycle commands.
+Pin `@v0.3.0` for a repeatable build; `@main` is the moving development
 option. Orka's own installation and upgrade limits are separate: see
 [orka.md](orka.md).
 The plane-upgrade sections below apply only to the retained legacy plane.
@@ -34,8 +35,8 @@ to publish a binary that does not report its own tag.
 Two tags are pushed for each version, at the same commit:
 
 ```
-v0.2.0          the repository, and the kmx binary
-plane/v0.2.0    the plane, which is a separate Go module under plane/
+v0.3.0          the repository, and the kmx binary
+plane/v0.3.0    the plane, which is a separate Go module under plane/
 ```
 
 Both are needed. `kmx plane` installs the plane through the Go module proxy at
@@ -74,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.2.0` pins this release; `KMX_BIN_DIR=DIR`
+without sudo. `KMX_VERSION=v0.3.0` pins this release; `KMX_BIN_DIR=DIR`
 installs elsewhere. `install.sh --quickstart` installs the latest release and
 then launches the non-interactive Orka quickstart. An explicit v0.1.0
 `--quickstart` is still refused because that release predates Orka.
@@ -86,7 +87,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.2.0`. Both go through the public Go module proxy and the Go
+can name: `@v0.3.0`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -97,7 +98,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.2.0
+version=v0.3.0
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -139,11 +140,11 @@ do it — see [below](#why-no-published-image-yet).
 
 ```console
 $ kmx version
-kmx v0.2.0 (release build)
+kmx v0.3.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.1.3
   model    qwen2.5:3b
-  plane    kaimahi-proxy:p15, built from v0.2.0
+  plane    kaimahi-proxy:p15, built from v0.3.0
 ```
 
 The first line is the binary's own identity and it names its source, because
@@ -152,8 +153,8 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.2.0 (release build)` | a binary from the release for `v0.2.0` |
-| `v0.2.0 (installed with go install)` | `go install …@v0.2.0` — the same code, built on your machine |
+| `v0.3.0 (release build)` | a binary from the release for `v0.3.0` |
+| `v0.3.0 (installed with go install)` | `go install …@v0.3.0` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
@@ -162,13 +163,15 @@ from:
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0
 kmx version
 ```
 
-kmx itself holds no state: it reads your kubeconfig and writes agent YAML you
-own. Re-installing is the whole upgrade. Read the changelog for the versions
-you skipped — below 1.0 a minor bump may change behaviour.
+Re-installing upgrades the CLI without changing a running cluster. Bundle
+workflows also keep local target selections and deployment/evaluation receipts;
+keep those files alongside the agent YAML you own when moving machines. Read
+the changelog for the versions you skipped — below 1.0 a minor bump may change
+behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
 cluster until you ask it to; `kmx up` is idempotent and re-applies the model
@@ -354,8 +357,8 @@ than the first.
 3. Tag both modules at the same commit and push:
 
    ```bash
-   git tag v0.2.0 && git tag plane/v0.2.0
-   git push origin v0.2.0 plane/v0.2.0
+   git tag v0.3.0 && git tag plane/v0.3.0
+   git push --atomic origin v0.3.0 plane/v0.3.0
    ```
 
 4. Watch the `release` workflow. It refuses to publish if: the version is not

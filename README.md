@@ -23,19 +23,32 @@ move it into a real environment without learning each runtime's manifests first.
 
 ## Create, Prove, Lift
 
+With Orka, the creation namespace and its Secret already prepared, and a Ready
+Provider on the destination, the bundle is the path from creation to deployment
+evidence:
+
 ```bash
-kmx agent create
-kmx agent lift
+kmx agent create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+kmx agent lift agents/my-agent --to-context my-target --inference provider:local
+kmx agent status agents/my-agent --to-context my-target
+kmx agent evaluate agents/my-agent --to-context my-target
 ```
 
-`create` is the path from an idea to an editable local agent. `lift` is the path
-from "it works here" to a selected Kubernetes or AKS environment. KMX keeps the
-target and changes explicit while the runtime handles execution.
-
-`kmx agent create` authors a bundle on a prepared target. `kmx agent lift`
-deploys that bundle to a prepared Orka target; `/lift` remains the
-interactive path from a live Agent. See the [bundle lift guide](docs/agent-lift.md)
-and [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194).
+Replace `source-context`, `my-target`, `local` and `my-provider-secret` with
+your source and destination contexts, Ready destination Provider and existing
+creation-target Secret. The example URL must also be reachable from the source
+cluster; it is the local Ollama Service endpoint, not an inferred model URL.
+`create` writes an editable `agents/my-agent/` bundle and scaffolds
+`eval/example.yaml`; edit its input and expected answer before evaluating.
+`lift` reconciles the bundle without installing prerequisites or running a Task;
+use `--plan` to inspect its intended changes first. `status` reads deployment
+revision, readiness, drift and evaluation result without writing. `evaluate`
+runs each case as a new Task against the deployed digest, prints answers and
+exits non-zero unless all cases pass. It can have external effects; a passing
+receipt is evidence for that revision and case set, not a general safety proof.
+See the [bundle lift guide](docs/agent-lift.md) for preparation, remembered
+targets, receipts and failure boundaries. `/lift` remains the separate
+interactive path from a live Agent.
 
 ## Quickstart
 
@@ -66,7 +79,7 @@ last `sh "$installer" --quickstart` with
 Or, with Go 1.26+, build the same release and run that exact binary:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0 && "$HOME/.local/bin/kmx" quickstart
+GOBIN="$HOME/.local/bin" go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0 && "$HOME/.local/bin/kmx" quickstart
 ```
 
 `kmx quickstart` is a non-interactive Orka path through local kind, Ollama,
@@ -100,7 +113,7 @@ Use Podman explicitly with:
 kmx --container-engine podman quickstart-wizard
 ```
 
-`@main` remains the moving development option; use `@v0.2.0` for this release.
+`@main` remains the moving development option; use `@v0.3.0` for this release.
 From a checkout, `make` builds `bin/kmx` without provisioning anything.
 
 ## Runtime Contract
@@ -135,15 +148,11 @@ admission without cluster writes. Read the complete
 
 ## Lifecycle
 
-The simple front door does not remove deeper lifecycle needs. The direction in
-[#194](https://github.com/kaimahi-agents/kaimahi/issues/194) includes Git-tracked
-agent definitions, immutable revision digests, deployment receipts, evaluation,
-target-aware status, diff, and rollback.
-
-Those operations do not have full standalone command parity on `main`. The
-initial state model should use Git and the selected runtime rather than introduce
-a second KMX server or controller. Rollback means deploying and verifying an
-earlier revision; it cannot undo external actions already completed by an agent.
+Bundles, lift receipts, revision-aware status and evaluation are available as
+standalone commands. The [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
+also discusses rollback, which does not have a standalone command. Deploying
+and verifying an earlier revision cannot undo an agent's completed external
+actions. KMX uses Git and the selected runtime rather than a separate server.
 
 ## Migrate Model Traffic
 
@@ -165,7 +174,7 @@ limits.
 Kaimahi is pre-1.0 and incubating. Interactive local creation, creation on the
 first-class runtime, inspection, chat, bundle lift and interactive lift to an
 existing target, AKS platform provisioning, and model-traffic migration are
-implemented. The complete lifecycle remains directional. The legacy runtime's
+implemented. Rollback remains directional. The legacy runtime's
 commands are retired; the model-traffic bridge (`kmx plane`, `kmx migrate`) remains.
 AKS paths use billable resources and are not continuously re-proved in CI.
 

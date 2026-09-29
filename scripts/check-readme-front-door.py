@@ -29,11 +29,12 @@ BADGE_PATTERNS = [
     ("release badge", r"img\.shields\.io/github/v/release/kaimahi-agents/kaimahi"),
     ("license badge", r"img\.shields\.io/github/license/kaimahi-agents/kaimahi"),
 ]
-# Keep the simple journey visible without treating the snippet as evidence that
-# every standalone command is implemented.
+# Require the runnable bundle lifecycle in order; arguments depend on the target.
 JOURNEY_COMMANDS = [
-    ("kmx agent create", r"^kmx agent create(?=[ \t]*(?:#.*)?$)"),
-    ("kmx agent lift", r"^kmx agent lift(?=[ \t]*(?:#.*)?$)"),
+    ("kmx agent create", r"^kmx agent create(?:[ \t]+.*)?$"),
+    ("kmx agent lift", r"^kmx agent lift(?:[ \t]+.*)?$"),
+    ("kmx agent status", r"^kmx agent status(?:[ \t]+.*)?$"),
+    ("kmx agent evaluate", r"^kmx agent evaluate(?:[ \t]+.*)?$"),
 ]
 # Homebrew is the first route. The installer block downloads to a temporary
 # file because a pipeline can hide curl's failure and launch a stale installed
@@ -50,7 +51,7 @@ QUICKSTART_COMMANDS = [
     ("quickstart subshell closure", r"^\)$"),
 ]
 GO_INSTALL_COMMANDS = [
-    ("conditional Go quickstart", r"^GOBIN=\"\$HOME/\.local/bin\" go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.2\.0 && \"\$HOME/\.local/bin/kmx\" quickstart$"),
+    ("conditional Go quickstart", r"^GOBIN=\"\$HOME/\.local/bin\" go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.3\.0 && \"\$HOME/\.local/bin/kmx\" quickstart$"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)

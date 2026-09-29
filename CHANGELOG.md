@@ -22,6 +22,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.3.0 — 2026-09-29
+
 ### Added
 
 - Homebrew installation through the official `kaimahi-agents/tap` tap: `brew install kaimahi-agents/tap/kmx`. The formula installs the existing checksummed release binaries on macOS and Linux, on Intel and ARM; no second binary build or bottle is introduced. Stable releases publish a generated `kmx.rb` asset for a reviewed tap PR, while dry runs and prereleases do not update the stable formula.
@@ -39,6 +41,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent create` (and the wizards built on it) can be rerun after a failed deploy. It keeps an existing artifact that is byte-identical to what it renders and refuses, naming the file, one that differs; it reconciles the Provider and Agent like `kmx agent lift`, reusing or updating resources carrying the bundle's markers, adopting identical unmarked ones and refusing anything else. The optional Task stays create-only after both are Ready, so a `--task` rerun still needs a new `--out`. A failed create's error says that rerunning is safe; a clean first create prints what it did before. `--dry-run` and offline creates keep create-only semantics.
 - Bundle reconcile refreshes stale digest markers on identically rendered owned resources with a resourceVersion precondition, reporting reused while making comment-only revision lifts observable. Lift's uncommitted warning now names the failing Git condition.
 - `kmx agent create` and the quickstart wizard now write `agents/<name>/agent.yaml` and `bindings.yaml` as the portable bundle and creation-target bindings (#227).
+
+### Fixed
+
+- The v0.2.0 known issue in [#217](https://github.com/kaimahi-agents/kaimahi/issues/217) is resolved: Orka can now reach the quickstart Kubernetes Tool through a same-namespace gateway route. KMX installs and waits for the exact `OutboundAccessPolicy` that permits the Tool's private Service; a missing or invalid policy fails closed. Re-run `kmx quickstart-wizard` to install the working Tool. The non-interactive `kmx quickstart` answer does not depend on it.
+- Bundle status and lift find the deployed commit when the local bundle directory is reached through a symlink (#239).
+- App-owned state respects `KMX_HOME` (#230).
 
 ## v0.2.0 — 2026-09-27
 

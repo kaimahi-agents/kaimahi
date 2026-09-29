@@ -79,13 +79,13 @@
     {
       "name": "the journey create marker matches anything",
       "breaks": "The simple journey can omit Agent creation.",
-      "find": "    (\"kmx agent create\", r\"^kmx agent create(?=[ \\t]*(?:#.*)?$)\"),",
+      "find": "    (\"kmx agent create\", r\"^kmx agent create(?:[ \\t]+.*)?$\"),",
       "replace": "    (\"kmx agent create\", r\"\"),"
     },
     {
       "name": "the journey lift marker matches anything",
       "breaks": "The simple journey can omit lifting the Agent.",
-      "find": "    (\"kmx agent lift\", r\"^kmx agent lift(?=[ \\t]*(?:#.*)?$)\"),",
+      "find": "    (\"kmx agent lift\", r\"^kmx agent lift(?:[ \\t]+.*)?$\"),",
       "replace": "    (\"kmx agent lift\", r\"\"),"
     },
     {
@@ -97,14 +97,14 @@
     {
       "name": "the pinned Go install check accepts any version",
       "breaks": "A secondary Go-install example can silently switch back to v0.1.0 or a moving branch.",
-      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
+      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
       "replace": "^GOBIN=.*go install.*$"
     },
     {
       "name": "the Go install check accepts a stale kmx on PATH",
       "breaks": "A failed Go build or earlier PATH entry can run an older kmx.",
-      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
-      "replace": "^.*go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.2\\.0.*$"
+      "find": "^GOBIN=\\\"\\$HOME/\\.local/bin\\\" go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0 && \\\"\\$HOME/\\.local/bin/kmx\\\" quickstart$",
+      "replace": "^.*go install github\\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\\.3\\.0.*$"
     },
     {
       "name": "the journey command list is emptied",
