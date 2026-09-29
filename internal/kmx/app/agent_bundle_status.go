@@ -98,16 +98,18 @@ type bundleResourceStatus struct {
 // summarizes the whole target; ChangedFields and Behind are populated only
 // for their matching State.
 type bundleTargetStatus struct {
-	Context            string   `json:"context"`
-	Namespace          string   `json:"namespace"`
-	Recorded           bool     `json:"recorded"`
-	NoReceipt          bool     `json:"noReceipt,omitempty"`
-	ReceiptID          string   `json:"receiptID,omitempty"`
-	ObservedClusterUID string   `json:"observedClusterUID,omitempty"`
-	State              string   `json:"state"`
-	Detail             string   `json:"detail,omitempty"`
-	Behind             int      `json:"behind,omitempty"`
-	DeployedCommit     string   `json:"deployedCommit,omitempty"`
+	Context            string `json:"context"`
+	Namespace          string `json:"namespace"`
+	Recorded           bool   `json:"recorded"`
+	NoReceipt          bool   `json:"noReceipt,omitempty"`
+	ReceiptID          string `json:"receiptID,omitempty"`
+	ObservedClusterUID string `json:"observedClusterUID,omitempty"`
+	State              string `json:"state"`
+	Detail             string `json:"detail,omitempty"`
+	Behind             int    `json:"behind,omitempty"`
+	DeployedCommit     string `json:"deployedCommit,omitempty"`
+	// Internal identity for the console diff; never part of status JSON.
+	deployedCommitFull string
 	GitNote            string   `json:"gitNote,omitempty"`
 	LiveDigest         string   `json:"liveDigest,omitempty"`
 	ChangedFields      []string `json:"changedFields,omitempty"`
@@ -447,6 +449,7 @@ func (a *App) observeBundleTarget(ctx context.Context, bundle, name, portableDig
 	// happen to agree.
 	if commit, found := bundleFindDeployedCommit(ctx, bundle, liveDigest); found {
 		result.DeployedCommit = shortSHA(commit)
+		result.deployedCommitFull = commit
 		if behind, err := commitsBehindCommit(ctx, bundle, commit); err == nil {
 			result.Behind = behind
 		}

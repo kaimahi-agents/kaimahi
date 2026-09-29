@@ -109,6 +109,36 @@ func TestConsoleBundleShowsWhatALiftWouldChangeFromGit(t *testing.T) {
 	}
 }
 
+// Status searches history once. A behind pane must reuse that revision
+// instead of searching the same commits again before drawing the diff.
+func TestConsoleBundleBehindSearchesHistoryOnlyOnce(t *testing.T) {
+	a, root, _, _, name, git := consoleBundleBehind(t, true, "# later\n")
+	log := filepath.Join(t.TempDir(), "git-calls")
+	shim := filepath.Join(t.TempDir(), "git")
+	content := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shellArg(log) + "\nexec " + shellArg(git) + " \"$@\"\n"
+	if err := os.WriteFile(shim, []byte(content), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Dir(shim)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	snapshot := a.consoleBundleStatus(t.Context(), consoleBundleEnv(), consoleBundleRow(name), root)
+	if snapshot.Target == nil || snapshot.Target.State != bundleStateBehind || !bundleDiffHas(snapshot.Diff, "+# later") {
+		t.Fatalf("behind pane: %+v", snapshot)
+	}
+	calls, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shows := 0
+	for _, call := range strings.Split(string(calls), "\n") {
+		if strings.Contains(" "+call+" ", " show ") && !strings.Contains(call, " show HEAD:") {
+			shows++
+		}
+	}
+	if shows != 2 { // HEAD and the deployed revision, once each
+		t.Fatalf("searched Git history %d show calls, want 2: %s", shows, calls)
+	}
+}
+
 // The working copy is what `kmx agent lift` reads, so the pane diffs against
 // it, including edits not yet committed.
 func TestConsoleBundleDiffIncludesUncommittedEdits(t *testing.T) {
@@ -166,6 +196,47 @@ func TestConsoleBundleRefusesABundleThatDefinesADifferentAgent(t *testing.T) {
 	}
 	if !strings.Contains(snapshot.Err, "refusing to compare different agents") {
 		t.Fatalf("Err = %q", snapshot.Err)
+	}
+	if calls := orkaCalls(t, filepath.Dir(root)); len(calls) != 0 {
+		t.Fatalf("mismatched bundle read the cluster %d times: %+v", len(calls), calls)
+	}
+}
+
+// An unreachable row cannot be called in sync, nor can it trigger a diff.
+func TestConsoleBundleUnreachableClusterHasNoVerdictOrGitDiff(t *testing.T) {
+	a, root, _, _, name, git, _ := consoleBundleFixture(t)
+	if git == "" {
+		t.Skip("git unavailable")
+	}
+	log := filepath.Join(t.TempDir(), "git-calls")
+	shim := filepath.Join(t.TempDir(), "git")
+	content := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shellArg(log) + "\nexec " + shellArg(git) + " \"$@\"\n"
+	if err := os.WriteFile(shim, []byte(content), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Dir(shim)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env := consoleBundleEnv()
+	env.Name = "unreachable-context"
+	snapshot := a.consoleBundleStatus(t.Context(), env, consoleBundleRow(name), root)
+	if snapshot.Err != "" || snapshot.Target == nil || snapshot.Target.State != bundleStateUnknown || snapshot.Target.Detail == "" {
+		t.Fatalf("unreachable row: %+v", snapshot)
+	}
+	pane := &consoleBundlePane{env: env, agent: consoleBundleRow(name), snapshot: snapshot}
+	view := ansi.Strip(strings.Join(pane.lines(200), "\n"))
+	if !strings.Contains(view, "State: unknown") || !strings.Contains(view, snapshot.Target.Detail) || strings.Contains(view, "State: in sync") {
+		t.Fatalf("unreachable pane: %s", view)
+	}
+	if len(snapshot.Diff) != 0 || snapshot.DiffNote != "" {
+		t.Fatalf("unreachable row produced a diff: %+v", snapshot)
+	}
+	calls, err := os.ReadFile(log)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, call := range strings.Split(string(calls), "\n") {
+		if strings.Contains(" "+call+" ", " diff ") {
+			t.Fatalf("unreachable row ran git diff: %s", call)
+		}
 	}
 }
 
@@ -583,22 +654,28 @@ func TestConsoleBundleDiffDoesNotWriteTheGitIndex(t *testing.T) {
 // A long diff is cut short, and the command the note offers must actually
 // show the rest from where the console runs, not an empty diff.
 func TestConsoleBundleCutShortNoteNamesACommandThatWorks(t *testing.T) {
-	a, root, _, _, name, git := consoleBundleBehind(t, true, strings.Repeat("# filler line\n", consoleBundleDiffMaxLines+50))
+	a, root, _, _, name, _ := consoleBundleBehind(t, true, strings.Repeat("# filler line\n", consoleBundleDiffMaxLines+50))
+	// Make the displayed bundle path require shell quoting.
+	quotedRoot := filepath.Join(filepath.Dir(root), "bundles with 'quotes'")
+	if err := os.Rename(root, quotedRoot); err != nil {
+		t.Fatal(err)
+	}
+	root = quotedRoot
 	snapshot := a.consoleBundleStatus(t.Context(), consoleBundleEnv(), consoleBundleRow(name), root)
 	if len(snapshot.Diff) != consoleBundleDiffMaxLines {
 		t.Fatalf("diff has %d lines, want it cut at %d", len(snapshot.Diff), consoleBundleDiffMaxLines)
 	}
 	dir := filepath.Join(root, name)
-	prefix := "Run git -C " + dir + " diff "
+	prefix := "Run git -C " + shellArg(dir) + " diff "
 	start := strings.Index(snapshot.DiffNote, prefix)
 	if start < 0 {
 		t.Fatalf("note = %q", snapshot.DiffNote)
 	}
 	fields := strings.Fields(snapshot.DiffNote[start+len(prefix):])
-	if len(fields) < 3 || fields[1] != "--" || fields[2] != "agent.yaml" {
-		t.Fatalf("note = %q", snapshot.DiffNote)
+	if len(fields) < 3 || fields[1] != "--" || fields[2] != "agent.yaml" || !consoleBundleCommitRE.MatchString(fields[0]) {
+		t.Fatalf("note does not use a full SHA: %q", snapshot.DiffNote)
 	}
-	out, err := exec.Command(git, "-C", dir, "diff", fields[0], "--", "agent.yaml").Output()
+	out, err := exec.Command("sh", "-c", strings.TrimSuffix(strings.TrimPrefix(snapshot.DiffNote, "The diff was cut short. Run "), " to see all of it.")).Output()
 	if err != nil || !strings.Contains(string(out), "+# filler line") {
 		t.Fatalf("the suggested command did not show the diff: %v %q", err, out)
 	}

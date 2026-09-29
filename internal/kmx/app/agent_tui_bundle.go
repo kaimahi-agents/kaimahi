@@ -122,6 +122,22 @@ func (a *App) consoleBundleStatus(ctx context.Context, env agentTUIEnvironment, 
 		return snapshot
 	}
 
+	// Refuse a different agent before status can inspect any cluster objects.
+	resolved, err := resolveOrkaPath(dir)
+	if err != nil {
+		snapshot.Err = fmt.Sprintf("resolve bundle: %v", err)
+		return snapshot
+	}
+	name, _, _, err := readBundlePortableAgent(resolved)
+	if err != nil {
+		snapshot.Err = err.Error()
+		return snapshot
+	}
+	if name != agent.Name {
+		snapshot.Err = fmt.Sprintf("%s defines agent %q, not %q; refusing to compare different agents", filepath.Join(dir, "agent.yaml"), name, agent.Name)
+		return snapshot
+	}
+
 	// Aim at this row's environment, including its own kubeconfig, and bind
 	// to the console's context so closing the console stops these reads.
 	worker := env.app(a).withRunContext(ctx)
@@ -130,9 +146,7 @@ func (a *App) consoleBundleStatus(ctx context.Context, env agentTUIEnvironment, 
 		snapshot.Err = err.Error()
 		return snapshot
 	}
-	// A bundle directory named after this agent that defines another one is
-	// a different agent. Comparing it would report on objects this row does
-	// not show.
+	// The local file may have changed while status assembled its report.
 	if report.Bundle != agent.Name {
 		snapshot.Err = fmt.Sprintf("%s defines agent %q, not %q; refusing to compare different agents", filepath.Join(dir, "agent.yaml"), report.Bundle, agent.Name)
 		return snapshot
@@ -149,25 +163,16 @@ func (a *App) consoleBundleStatus(ctx context.Context, env agentTUIEnvironment, 
 	return snapshot
 }
 
-// consoleBundleBehindDiff recovers the full id of the deployed commit and
-// diffs against it. Status carries only the abbreviation, so the full id is
-// found again with status's own search (the same live digest matched
-// against the same bounded history) rather than by a second rule that could
-// pick a different commit. The result must extend the abbreviation status
-// reported, or the two disagree about which revision is deployed.
+// consoleBundleBehindDiff uses the full id status already found. It must
+// extend the reported abbreviation, or the two disagree about the revision.
 func consoleBundleBehindDiff(ctx context.Context, dir string, target bundleTargetStatus) ([]string, string) {
 	if target.DeployedCommit == "" {
 		return nil, "The deployed revision is not in this repository's recent history of agent.yaml, so there is nothing to diff against."
 	}
-	resolved, err := resolveOrkaPath(dir)
-	if err != nil {
-		return nil, "Cannot resolve the bundle directory, so no diff is shown."
+	if !strings.HasPrefix(target.deployedCommitFull, target.DeployedCommit) {
+		return nil, "The deployed commit does not match the reported revision, so no diff is shown."
 	}
-	full, found := bundleFindDeployedCommit(ctx, resolved, target.LiveDigest)
-	if !found || !strings.HasPrefix(full, target.DeployedCommit) {
-		return nil, "The deployed commit could not be located again in Git, so no diff is shown."
-	}
-	return consoleBundleDiff(ctx, dir, full)
+	return consoleBundleDiff(ctx, dir, target.deployedCommitFull)
 }
 
 // consoleBundleTarget picks this row's target from the report. An explicit
@@ -252,7 +257,7 @@ func consoleBundleDiff(ctx context.Context, dir, commit string) ([]string, strin
 	if truncated {
 		// -C names the bundle, so the path is right from wherever the
 		// console was started.
-		return lines, fmt.Sprintf("The diff was cut short. Run git -C %s diff %s -- agent.yaml to see all of it.", dir, shortSHA(commit))
+		return lines, fmt.Sprintf("The diff was cut short. Run git -C %s diff %s -- agent.yaml to see all of it.", shellArg(dir), commit)
 	}
 	return lines, ""
 }

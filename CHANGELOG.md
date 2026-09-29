@@ -144,6 +144,7 @@ sections, not the intermediate instruction.
 
 ### Fixed
 
+- `kmx console` refuses a mismatched local bundle before contacting the cluster, reuses the status report's full deployed commit for diffs, and gives a shell-safe command when a diff is truncated. Unreachable targets remain unknown without attempting a diff.
 - **`kmx plane` no longer closes by telling you to run a command that does not
   exist.** Its "Next" actions and its upgrade note both named `kmx govern`,
   which was retired with the legacy runtime — worse than an unknown command,

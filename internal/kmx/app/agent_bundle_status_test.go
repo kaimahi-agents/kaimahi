@@ -419,6 +419,7 @@ func TestBundleStatusReportsBehindFromLiveDigestAloneNoReceiptNeeded(t *testing.
 	runBundleStatusGit(t, git, opt.BundleDir, "init", "--quiet")
 	runBundleStatusGit(t, git, opt.BundleDir, "add", "agent.yaml")
 	runBundleStatusGit(t, git, opt.BundleDir, "commit", "--quiet", "-m", "deployed revision")
+	fullCommit := runBundleStatusGit(t, git, opt.BundleDir, "rev-parse", "HEAD")
 
 	// Seed the live objects as they were rendered from this exact commit — no
 	// field drift, only the digest is now behind. No receipt is written at
@@ -449,6 +450,16 @@ func TestBundleStatusReportsBehindFromLiveDigestAloneNoReceiptNeeded(t *testing.
 	}
 	if target.Behind != 1 {
 		t.Fatalf("expected 1 commit behind, got %d: %+v", target.Behind, target)
+	}
+	if target.deployedCommitFull != fullCommit || target.DeployedCommit != fullCommit[:7] {
+		t.Fatalf("status lost the full deployed revision: %+v", target)
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), fullCommit) {
+		t.Fatal("internal full SHA leaked into status JSON")
 	}
 }
 

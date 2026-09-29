@@ -837,24 +837,19 @@ jobs:
       - name: kmx — build
         run: go build ./...
       - name: kmx — test (guard port, scaffolder, toolchain digests)
+        id: kmx_tests
         run: |
-          # This job does not set `shell: bash`, so it runs under `bash -e`
-          # with NO pipefail: without this line `go test | tee` reports tee's
-          # status, and a failure in a package the greps below do not name
-          # would pass silently. The go-plane job sets the shell for the same
-          # reason; say it explicitly here.
-          set -o pipefail
-          go test ./... 2>&1 | tee kmx-test.out
-          # `ok  <package>` is printed for a package whose every test
-          # SKIPPED, so grepping for it proves the package compiled and
-          # nothing more. These packages are the reason this job is
-          # required, and a silently skipped one would be a green no-op, so
-          # the assertion is that each ran at least one test and that none
-          # of its tests failed. The second run is served from the test
-          # cache; it re-reports the same results in a form that can be
-          # counted.
-          go test ./... -json > kmx-test.json 2>&1 || true
-          python3 - <<'EOF'
+          # Run once: -json changes the test flags, so a preceding plain
+          # `go test ./...` would not warm this run's cache. Preserve its exit
+          # status, including build failures outside the required packages.
+          go_status=0
+          go test ./... -json > kmx-test.json 2>&1 || go_status=$?
+          # `ok  <package>` can mean every test SKIPPED. Each required
+          # package must pass at least one test and have no failures.
+          # Replay package/build Output events and non-JSON lines: build
+          # errors may arrive outside test Output events and must be visible.
+          # Individual test names are printed below only on failure.
+          python3 - "$go_status" <<'EOF'
           import collections, json, sys
 
           # Why each of these is required, rather than just being a package
@@ -891,19 +886,25 @@ jobs:
 
           passed = collections.Counter()
           failed_tests = collections.Counter()
+          failed_names = []
           result = {}
-          for line in open("kmx-test.json"):
-              try:
-                  event = json.loads(line)
-              except ValueError:
-                  continue  # a compile error prints plain text; the run above already failed on it
-              package, action, test = event.get("Package", ""), event.get("Action"), event.get("Test")
-              if test and action == "pass":
-                  passed[package] += 1
-              if test and action == "fail":
-                  failed_tests[package] += 1
-              if not test and action in ("pass", "fail", "skip"):
-                  result[package] = action
+          with open("kmx-test.json") as output:
+              for line in output:
+                  try:
+                      event = json.loads(line)
+                  except ValueError:
+                      sys.stdout.write(line)  # build stderr can be plain text
+                      continue
+                  package, action, test = event.get("Package", ""), event.get("Action"), event.get("Test")
+                  if not test:
+                      sys.stdout.write(event.get("Output", ""))  # includes build-output events
+                  if test and action == "pass":
+                      passed[package] += 1
+                  if test and action == "fail":
+                      failed_tests[package] += 1
+                      failed_names.append(f"{package}: {test}")
+                  if not test and action in ("pass", "fail", "skip"):
+                      result[package] = action
 
           problems = []
           for suffix, why in REQUIRED.items():
@@ -921,7 +922,13 @@ jobs:
                                       f"{why} was not exercised")
           for line in problems:
               print(line)
-          if problems:
+          if failed_names:
+              print("failing tests:")
+              for name in failed_names:
+                  print("  " + name)
+          if int(sys.argv[1]) != 0:
+              print(f"go test exited with status {sys.argv[1]}")
+          if problems or failed_names or int(sys.argv[1]) != 0:
               sys.exit(1)
           print(f"every required package ran its own tests: {sum(passed.values())} passed "
                 f"across {len(REQUIRED)} required packages")
@@ -941,6 +948,12 @@ jobs:
           go test ./internal/kmx/app/ -v \
             -run TestPlaneImageMatchesTheCommittedManifest 2>&1 | tee planeimg.out
           grep -q -- '--- PASS: TestPlaneImageMatchesTheCommittedManifest' planeimg.out
+      - name: kmx — failed test output
+        if: failure() && steps.kmx_tests.outcome == 'failure' && hashFiles('kmx-test.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmx-test-json
+          path: kmx-test.json
       - name: agent-create wizard — terminal lifecycle
         run: |
           set -euo pipefail
