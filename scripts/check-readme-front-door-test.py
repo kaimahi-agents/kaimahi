@@ -102,6 +102,7 @@ CASES += [
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),
     ("journey commands in prose only", GOOD.replace("```bash\nkmx quickstart\n```\n", "kmx quickstart\n"), "kmx quickstart is missing"),
     ("bundle commands out of order", GOOD.replace("`kmx agent create` writes a bundle.\n`kmx agent lift` deploys it.", "`kmx agent lift` deploys it.\n`kmx agent create` writes a bundle."), "kmx agent lift is missing"),
+    ("headings out of order", GOOD.replace("## Status\nLimitations.\n## Documentation\nLinks.", "## Documentation\nLinks.\n## Status\nLimitations."), "documentation heading is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("empty document", "", "ketu icon is missing"),
 ]
