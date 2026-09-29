@@ -14,7 +14,7 @@ import (
 const (
 	quickstartK8sTool          = "k8s-get-resources"
 	quickstartK8sToolPolicy    = "kmx-k8s-tool-gateway"
-	quickstartK8sToolAuthority = "https://example.com/resources"
+	quickstartK8sToolAuthority = "https://1.1.1.1/resources"
 )
 
 const quickstartK8sInstructions = "For questions about live Kubernetes resources, call k8s-get-resources and answer only from its output. Never invent resource names. Copy resource names exactly. This tool lists resources read-only; it cannot change the cluster."

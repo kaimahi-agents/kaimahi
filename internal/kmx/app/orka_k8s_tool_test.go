@@ -62,7 +62,7 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 	}
 
 	decoder := yaml.NewDecoder(bytes.NewReader(body))
-	var policyOK, toolOK bool
+	var policyOK, toolOK, readerRoleOK, readerBindingOK bool
 	for {
 		var document map[string]any
 		if err := decoder.Decode(&document); err == io.EOF {
@@ -83,8 +83,29 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 			http, _ := spec["http"].(map[string]any)
 			policyRef, _ := http["outboundAccessPolicyRef"].(map[string]any)
 			toolOK = http["url"] == quickstartK8sToolAuthority &&
+				quickstartK8sToolAuthority == "https://1.1.1.1/resources" &&
 				http["method"] == "POST" &&
 				policyRef["name"] == quickstartK8sToolPolicy
+		case document["kind"] == "Role" && metadata["name"] == "kmx-k8s-tool-policy-reader":
+			rules, _ := document["rules"].([]any)
+			if len(rules) != 1 {
+				break
+			}
+			rule, _ := rules[0].(map[string]any)
+			readerRoleOK = fmt.Sprint(rule["apiGroups"]) == "[core.orka.ai]" &&
+				fmt.Sprint(rule["resources"]) == "[outboundaccesspolicies]" &&
+				fmt.Sprint(rule["resourceNames"]) == "["+quickstartK8sToolPolicy+"]" &&
+				fmt.Sprint(rule["verbs"]) == "[get]"
+		case document["kind"] == "RoleBinding" && metadata["name"] == "kmx-k8s-tool-policy-reader":
+			ref, _ := document["roleRef"].(map[string]any)
+			subjects, _ := document["subjects"].([]any)
+			if len(subjects) != 1 {
+				break
+			}
+			subject, _ := subjects[0].(map[string]any)
+			readerBindingOK = ref["kind"] == "Role" && ref["name"] == "kmx-k8s-tool-policy-reader" &&
+				subject["kind"] == "ServiceAccount" && subject["name"] == "orka-api-ai-worker" &&
+				subject["namespace"] == OrkaNamespace
 		}
 	}
 	if !policyOK {
@@ -92,6 +113,9 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 	}
 	if !toolOK {
 		t.Fatal("Tool does not reference the exact managed gateway policy and authority")
+	}
+	if !readerRoleOK || !readerBindingOK {
+		t.Fatalf("v0.2.0 AI worker cannot read only the managed gateway policy (role=%t binding=%t)", readerRoleOK, readerBindingOK)
 	}
 }
 

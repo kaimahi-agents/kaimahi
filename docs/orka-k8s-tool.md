@@ -10,9 +10,13 @@ questions to the tool; custom instruction files remain user-owned.
 
 The earlier Orka v0.1.3 run refused private Service IPs as direct Tool
 authorities. The current pinned installer is v0.2.0; KMX gives
-the Tool the credential-free logical authority `https://example.com/resources`
+the Tool the credential-free logical authority `https://1.1.1.1/resources`
 and binds it to an exact same-namespace `OutboundAccessPolicy`; Orka sends the
-request only to the `kmx-k8s-tool` Service on port 8080. Installation waits for
+request only to the `kmx-k8s-tool` Service on port 8080. The public IP avoids
+v0.2.0's bounded DNS-answer check on the logical authority; no Tool data is
+sent to that public IP. The v0.2.0 chart worker lacks read access to the
+policy by default, so kmx grants its ServiceAccount `get` on this one named
+policy in `orka-system` only. Installation waits for
 the current policy generation to be Accepted and the current Tool generation
 to be Available. A missing or invalid policy leaves the Tool unavailable rather
 than falling back to the public logical URL.
@@ -48,7 +52,8 @@ Tool updates take effect on the next Task and preserve other Agent configuration
   `OutboundAccessPolicy` gateway, Service, Deployment and read-only RBAC. Orka
   rejects private Service IPs as direct Tool authorities; the Tool therefore
   uses a credential-free public logical authority while Orka routes execution
-  only to the named `kmx-k8s-tool` Service.
+  only to the named `kmx-k8s-tool` Service. The scoped Role/RoleBinding grants
+  the chart AI worker access to only the referenced policy.
 - `scripts/orka-k8s-tool.py`: standard-library HTTP server, embedded into KMX and
   installed in the `kmx-k8s-tool` ConfigMap.
 - `internal/kmx/app/orka_k8s_tool.go`: installation and existing-agent attachment.

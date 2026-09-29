@@ -112,6 +112,34 @@ spec:
       port: 8080
     scheme: http
 ---
+# The v0.2.0 chart worker must read the policy to bind gateway approval.
+# Only this namespace's kmx-owned worker can get this one policy; the chart's
+# broader worker ClusterRole does not grant OutboundAccessPolicy reads.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kmx-k8s-tool-policy-reader
+  namespace: orka-system
+rules:
+  - apiGroups: [core.orka.ai]
+    resources: [outboundaccesspolicies]
+    resourceNames: [kmx-k8s-tool-gateway]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kmx-k8s-tool-policy-reader
+  namespace: orka-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kmx-k8s-tool-policy-reader
+subjects:
+  - kind: ServiceAccount
+    name: orka-api-ai-worker
+    namespace: orka-system
+---
 apiVersion: core.orka.ai/v1alpha1
 kind: Tool
 metadata:
@@ -135,10 +163,11 @@ spec:
         description: Optional pod phase filter. Use Running when asked which pods are running.
     required: [resource]
   http:
-    # Orka rejects private Service IPs as direct Tool authorities. This public,
-    # credential-free logical authority passes SSRF validation; the policy
-    # routes execution only to the exact same-namespace Service above.
-    url: https://example.com/resources
+    # v0.2.0 requires a public original authority at execution time, with
+    # bounded DNS answers. This public IP avoids DNS drift; it is logical,
+    # not the transport destination. The policy routes to the exact
+    # same-namespace Service above or refuses the Tool before execution.
+    url: https://1.1.1.1/resources
     method: POST
     timeout: 15s
     outboundAccessPolicyRef:
