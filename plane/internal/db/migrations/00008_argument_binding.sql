@@ -54,8 +54,8 @@ ALTER TABLE tool_audit ADD COLUMN arg_summary text NOT NULL DEFAULT '';
 
 -- +goose Down
 -- The Up direction allows several pending requests that differ only by
--- arg_digest — the point of the lane. Recreating the verb-level index
--- over them fails on a unique violation, which reads as a broken
+-- arg_digest. Recreating the verb-level index over them fails on a
+-- unique violation, which reads as a broken
 -- migration rather than as what it is, so say it plainly first.
 -- +goose StatementBegin
 DO $$

@@ -24,7 +24,7 @@ import (
 // replica is named on stderr and the exposition goes to stdout, so
 // `kmx metrics | grep ...` sees metrics and only metrics — CI greps this.
 //
-// A read: unguarded, like `make plane-metrics`.
+// A read: unguarded, unlike commands that change the cluster.
 func (a *App) Metrics(pod string) error {
 	if pod == "" {
 		pods, err := a.proxyPods()

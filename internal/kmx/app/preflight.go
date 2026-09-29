@@ -140,8 +140,8 @@ func (a *App) provision(dependencies []dependency) error {
 	if err != nil {
 		return fmt.Errorf("%w\n  kmx could not fetch a tool it needs. Install it yourself and put it on PATH, or set KMX_TOOLCHAIN=off to be told rather than helped", err)
 	}
-	// A command can preflight more than once (a step, then a lane). Record
-	// each tool once, or the structured output lists it twice.
+	// A command can preflight more than once across its steps. Record each
+	// tool once, or the structured output lists it twice.
 	for _, tool := range tools {
 		known := false
 		for _, seen := range a.provisioned {

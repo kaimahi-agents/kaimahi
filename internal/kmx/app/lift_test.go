@@ -304,8 +304,7 @@ func TestTheWorkbookCarriesNoIdentifiersAndReadsBothDataPaths(t *testing.T) {
 
 // Every metric the workbook plots must be one the plane actually exposes. A
 // panel naming a series that does not exist renders empty, and an empty panel
-// is indistinguishable from a scrape that is not landing — which is the exact
-// confusion this lane exists to remove.
+// is indistinguishable from a scrape that is not landing.
 func TestEveryMetricTheWorkbookPlotsIsOneThePlaneExposes(t *testing.T) {
 	body, err := kaimahi.Managed.ReadFile("k8s/observability/workbook.json")
 	if err != nil {

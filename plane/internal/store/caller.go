@@ -15,9 +15,8 @@ package store
 // anything, and a seam's fail-closed rules are untouched by it.
 //
 // The two facts are kept in separate columns because they are worth
-// different amounts, and merging them would repeat the mistake that made
-// this lane necessary — a field that looks authoritative and is not is
-// worse than no field.
+// different amounts: merging them would make a caller's unverified claim
+// look like an address the plane observed.
 
 import (
 	"net"
@@ -33,9 +32,8 @@ const (
 	// is stored, not stripped: a bare user agent in the column would read
 	// as a fact the plane established.
 	CallerClaimPrefix = "ua:"
-	// CallerNone: the caller offered no identification at all — no User-Agent
-	// header on the request. A complete answer about what was offered, and
-	// still not a claim about who the caller is.
+	// CallerNone: no User-Agent value was read (the header may be absent or
+	// empty). This says nothing about who the caller is.
 	CallerNone = "none"
 	// CallerAddrUnknown: the plane could not read the peer address of the
 	// connection. It cannot say where the call came from.
@@ -80,12 +78,12 @@ func CallerOf(r *http.Request) Caller {
 // prefix is applied after the bound so a hostile value can never push it
 // off the end.
 //
-// Only an ABSENT header is 'none'. A header that was sent and survives
-// sanitising as nothing — a lone non-breaking or zero-width space, both
-// of which Go's HTTP server accepts — keeps the prefix and an empty
-// name. Folding it into 'none' would record "the caller offered no
-// identification" about a caller that offered some, which is the exact
-// shape of overclaim this lane exists to remove.
+// An empty value read from the header is 'none', whether the header was
+// absent or present but empty. A nonempty value that sanitises to nothing
+// — a lone non-breaking or zero-width space, both of which Go's HTTP
+// server accepts — keeps the prefix and an empty name. Folding that into
+// 'none' would erase the distinction between an empty value and one
+// whose contents were removed by sanitisation.
 func callerClaim(ua string) string {
 	if ua == "" {
 		return CallerNone

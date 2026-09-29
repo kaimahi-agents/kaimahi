@@ -86,20 +86,10 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
-      # docs/COORDINATION.md is the board every worker session is handed,
-      # and its lane table said a lane was unassigned when it had already
-      # shipped five times in six days. That is not a discipline problem:
-      # it holds sixty-one rows and thirty-eight ready-to-paste prompts and
-      # takes edits daily, and a document changing that fast whose claims
-      # are checked only by whoever remembers to look drifts by
-      # construction. A stale row invites a worker to rebuild something
-      # that exists, which nearly happened once already.
-      #
-      # What is checked is whether the board contradicts ITSELF: two rows
-      # for one lane, a row that says both unassigned and merged, a
-      # ready-to-paste prompt for a lane the table says shipped, a
-      # finished lane's delta sheet above a row that says nobody started.
-      # Whether a lane is done is a judgement and nothing here asks it.
+      # docs/COORDINATION.md records shipped and outstanding work. Check
+      # that its lane rows do not contradict one another; if retired worker
+      # prompts or delta sheets are present, check those against the rows
+      # too. Whether the work itself is done remains a human judgement.
       #
       # One claim reaches outside the document, to `git log`: a row saying
       # nothing has shipped, for work a merge already describes in the
@@ -869,9 +859,9 @@ jobs:
               "internal/kmx/planebuild": "the revision the plane is built at",
               "internal/kmx/admin": "credential custody on the admin path",
               # The managed path's rules about what may be deleted on
-              # somebody else's subscription. They run perhaps twice a lane
-              # against live infrastructure, so this is the only place they
-              # are exercised often enough to catch a regression.
+              # somebody else's subscription. Live infrastructure teardown
+              # is exercised infrequently, so these tests catch regressions
+              # without requiring a managed cluster.
               "internal/kmx/lift": "what may be deleted on a managed cluster",
               # The argument ORDER of every operator verb — Go's flag
               # parsing stops at the first positional, so a dropped budget
@@ -977,8 +967,8 @@ jobs:
 
   # Linux uses its XDG user-config location while macOS uses
   # ~/Library/Application Support. Cross-compiling a Darwin binary does not
-  # execute that distinction, so this small native lane protects the
-  # KMX_HOME isolation contract without duplicating the cluster or full Go
+  # execute that distinction, so this native job protects the KMX_HOME
+  # isolation contract without duplicating the cluster or full Go
   # suites already run by the Linux jobs.
   state-paths-macos:
     runs-on: macos-latest
@@ -1076,14 +1066,11 @@ jobs:
           grep -q -- '--- PASS: TestMigrateTwiceConcurrentlyIsSerialAndIdempotent' test.out
           grep -q -- '--- PASS: TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape' test.out
 
-  # The upgrade nobody had tested. Eight migrations have shipped since the
-  # plane's first version and every e2e shard applies them to an EMPTY
-  # database — the one case
-  # where a migration cannot lose anything. This job runs the plane's own
-  # upgrade: an older released plane, fetched from the module proxy at a
-  # revision several migrations behind, seeded through its own admin API with a
-  # credential, a budget, historical approval/grant rows and a priced ledger
-  # row, then replaced by the plane this PR builds — against the same
+  # E2e shards apply migrations to EMPTY databases and cannot expose data
+  # loss during an upgrade. This job starts an older released plane from the
+  # module proxy, seeds it through its own admin API with a credential, a
+  # budget, historical approval/grant rows and a priced ledger row, then
+  # replaces it with the plane built by this checkout — against the same
   # database. History survives but cannot override caps or expose retired
   # APIs; ordinary headroom admits and settles a priced call. On a second
   # database, a failing migration refuses startup and leaves data untouched.
@@ -1498,8 +1485,8 @@ jobs:
       # generation and log "nothing to apply" — but `bin/kmx plane` restarts
       # the deployment the moment Postgres is Ready, and a first-generation
       # pod still in its connect retry can be replaced before it migrated,
-      # so a post-restart pod may be the one that logs "applied" (seen on
-      # PR #51). Either line is a clean boot under the lock; what must hold
+      # so a post-restart pod may be the one that logs "applied". Either
+      # line is a clean boot under the lock; what must hold
       # is the consistent version table below. The lock race itself is
       # also proven by the store test in go-plane.
       - name: Both replicas serve, schema consistent under the migration lock
@@ -2247,8 +2234,8 @@ jobs:
       - name: "Models: an answer the plane cannot meter is REFUSED, not relayed"
         if: steps.changes.outputs.docs_only != 'true'
         run: |
-          # The decision this lane had to make, on a real cluster. The
-          # fixture's /v1/silent answers 200 with a real answer in it and
+          # A successful answer without readable usage must be refused.
+          # The fixture's /v1/silent answers 200 with a real answer in it and
           # no usage envelope; the plane must not hand that over with a
           # zero beside it. `--protocol` is required here because the
           # path names none — which is itself the rule that a protocol is
@@ -2312,8 +2299,7 @@ jobs:
         run: |
           # The whole reason the overlay exists. `bin/kmx plane` re-applies
           # the committed table, which is a different ConfigMap — so an
-          # entry added here is not discarded by the next deploy, and the
-          # measured failure that started this lane cannot recur.
+          # entry added here is not discarded by the next deploy.
           bin/kmx plane --source .
           kubectl --context kind-kaimahi-p1 -n kaimahi get configmap kaimahi-upstreams-extra \
             -o jsonpath='{.data}' | tee overlay-after-plane.out
@@ -3608,9 +3594,8 @@ jobs:
           # `--result-service-account` names the account `kmx up --step orka`
           # provisioned: create itself provisions no account and no RBAC, so
           # naming one the bring-up made is the whole point of this step.
-          # There is no legacy lane left in this job to contrast it with:
-          # govern/chat/use went with the retirement, and the step above
-          # forbids reinstating any of them.
+          # This step exercises agent creation through the supported
+          # Orka path, not through retired governance commands.
           kmx --context kind-kmx-clone-free agent create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \

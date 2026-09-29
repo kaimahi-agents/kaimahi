@@ -5,9 +5,8 @@
 //
 // The split matters. Everything here is pure: it names resources, records
 // them, and decides removal from an answer someone else obtained. Nothing in
-// this package talks to Azure, so all of it is tested without a subscription,
-// which is the only way the teardown rules get exercised at all — the real
-// ones run perhaps twice a lane, by hand, against live infrastructure.
+// this package talks to Azure, so its teardown rules are tested without a
+// subscription instead of relying on infrequent live-cluster exercises.
 package lift
 
 import (

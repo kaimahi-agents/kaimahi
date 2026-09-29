@@ -96,8 +96,8 @@ class Handler(BaseHTTPRequestHandler):
                 "role": "assistant",
                 "content": [{"type": "output_text", "text": ANSWER}],
             }],
-            # The shape the whole lane is about: input_tokens and
-            # output_tokens, NOT prompt_tokens and completion_tokens.
+            # Responses usage uses input_tokens and output_tokens, not
+            # the chat-completions prompt_tokens and completion_tokens.
             "usage": {
                 "input_tokens": len(prompt.split()),
                 "output_tokens": len(ANSWER.split()),

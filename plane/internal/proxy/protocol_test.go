@@ -99,9 +99,8 @@ func TestAnIncompleteResponsesStreamIsStillMetered(t *testing.T) {
 	require.Equal(t, int64(2), f.ledger[0].OutputTokens)
 }
 
-// The decision this lane had to make, asserted: a success the plane
-// cannot meter is REFUSED, not relayed. The caller gets nothing, and the
-// row says `unmetered` rather than a plausible zero.
+// A successful response the plane cannot meter is REFUSED, not relayed.
+// The caller gets nothing, and the row says `unmetered` rather than zero.
 func TestASuccessWithNoReadableUsageIsRefusedAndLedgeredUnmetered(t *testing.T) {
 	f := newFakeStore()
 	f.addToken("tok", store.Credential{Name: "hello"})

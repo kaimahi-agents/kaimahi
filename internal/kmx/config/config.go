@@ -204,7 +204,7 @@ func (c *Config) SetContainerEngine(engine string) error {
 // talks to podman only when KIND_EXPERIMENTAL_PROVIDER says so, so the two
 // are set together and can never disagree — a cluster created under one
 // engine is invisible to the other, which otherwise reads as "kind is
-// broken" (the rule PR #42 introduced).
+// broken".
 func (c *Config) KindEnv() []string {
 	if c.ContainerEngine == "podman" {
 		return []string{"KIND_EXPERIMENTAL_PROVIDER=podman"}

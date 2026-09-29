@@ -15,14 +15,10 @@
 #          the image reference and the pull policy must change. `Never`
 #          there means ErrImageNeverPull, forever.
 #
-# `make plane` on kind no longer comes through here: kmx owns that path and
-# applies k8s/plane/ UNRENDERED — no rendering, no transform — which is what
-# makes "kind is unchanged" a fact rather than a claim. What calls this
-# script is the registry path: the Makefile's non-kind `plane` target, the
-# lift to a managed cluster, and CI's render assertions. The kind branch
-# below is kept so the two paths can still be compared, and it is still
-# what a human running this script bare lands on. Only a non-kind target
-# renders proxy.yaml, and only its image/pullPolicy.
+# `kmx plane` applies k8s/plane/ on kind without rendering it. Managed-cluster
+# lift and CI's render assertions call this script for registry targets.
+# The kind branch remains for direct script invocation. Only a non-kind
+# target renders proxy.yaml, and only its image/pullPolicy.
 #
 # Fail closed: the render must produce exactly the intended change, and
 # the script verifies that before anything is applied.
@@ -51,10 +47,10 @@ if [ -z "$PLANE_IMAGE" ]; then
   echo "plane-deploy: PLANE_IMAGE is required for a $PLANE_TARGET target" >&2
   exit 1
 fi
-# Non-empty is not the same as well-formed. An unset ACR_NAME makes the
-# Makefile expand PLANE_IMAGE to ".azurecr.io/kaimahi-proxy:p10" — which
-# sails past a `-z` check and would be rendered into the manifest and
-# applied. Require a registry host before the first slash.
+# Non-empty is not the same as well-formed. A reference like
+# ".azurecr.io/kaimahi-proxy:tag" (from an unset registry name) passes
+# a `-z` check but must not be rendered into the manifest. Reject that
+# malformed leading component before applying anything.
 case "$PLANE_IMAGE" in
   /* | .* | *' '* | '')
     echo "plane-deploy: malformed PLANE_IMAGE '$PLANE_IMAGE'" >&2

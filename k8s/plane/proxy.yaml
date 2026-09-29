@@ -23,7 +23,7 @@ metadata:
 spec:
   replicas: 2
   # Never below the replica count during a rollout: the new pod must be
-  # Ready (Postgres reachable) before an old one goes, so `make plane`
+  # Ready (Postgres reachable) before an old one goes, so `kmx plane`
   # and a rebuilt image never leave the seams unanswered.
   strategy:
     type: RollingUpdate
@@ -59,11 +59,10 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: proxy
-          # Built from plane/Dockerfile and side-loaded into kind by
-          # `make plane-image` (never pulled). The tag moves with the
-          # phase so a stale side-loaded image can never satisfy a newer
-          # manifest silently (imagePullPolicy: Never reuses same-tag
-          # images without complaint).
+          # On kind, `kmx plane` builds and side-loads the image (or
+          # `make plane-image` runs its image step); it is never pulled.
+          # The tag is fixed; `kmx plane` rebuilds, side-loads and restarts
+          # the deployment so a prior image under that tag is not reused.
           #
           # `Never` is deliberate and stays the committed default: a
           # side-loaded LOCAL tag must never quietly fall back to PULLING

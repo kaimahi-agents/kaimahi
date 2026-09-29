@@ -48,8 +48,8 @@ import (
 const PlaneImage = "kaimahi-proxy:p15"
 
 // PlaneSteps are the stages of `kmx plane`, addressable individually so the
-// Makefile's `plane-image` and `plane-secrets` targets delegate to the same
-// code rather than keeping a second copy of it.
+// On kind, `make plane-image` delegates to the same image step rather
+// than keeping a second copy of the build path.
 var PlaneSteps = []string{"image", "secrets", "certificate", "deploy"}
 
 // planeManifests are applied in the order `kubectl apply -f k8s/plane/`
@@ -75,9 +75,10 @@ type PlaneOptions struct {
 // Plane stands the governance plane up on the active context: build the
 // proxy image, bootstrap the plane's own secrets, apply the manifests.
 //
-// This is `make plane` (which is `guard plane-image plane-secrets` and then
-// scripts/plane-deploy.sh), with one difference that is the point of the
-// milestone: the image does not need a clone. See planebuild.
+// On kind, the image can be built from a checkout or fetched at kmx's own
+// revision without a clone (see planebuild). The deploy step applies the
+// committed manifests directly; managed-cluster lift renders them through
+// scripts/plane-deploy.sh.
 func (a *App) Plane(opt PlaneOptions) error {
 	started := a.timeNow()
 	steps := PlaneSteps

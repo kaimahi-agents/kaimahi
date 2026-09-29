@@ -69,7 +69,7 @@ prepare() {
     command -v "$tool" >/dev/null || fail "missing prerequisite: $tool"
   done
   python3 -c 'import yaml'
-  # Do not adopt or delete a cluster another invocation/lane already owns.
+  # Do not adopt or delete a cluster another invocation already owns.
   local clusters
   clusters=$(kind get clusters)
   ! grep -Fxq "$KIND_CLUSTER" <<<"$clusters" || fail "cluster already exists: $KIND_CLUSTER"

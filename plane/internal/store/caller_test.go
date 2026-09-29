@@ -38,11 +38,9 @@ func TestACallerThatNamesItselfNothingSaysSo(t *testing.T) {
 }
 
 func TestAHeaderThatWasSentIsNeverRecordedAsNoHeader(t *testing.T) {
-	// Only an ABSENT header is 'none'. A header whose content survives
-	// sanitising as nothing — a lone non-breaking or zero-width space,
-	// both of which Go's HTTP server accepts — was still SENT, and
-	// recording "the caller offered no identification" about it would be
-	// the same shape of overclaim this lane exists to remove.
+	// A nonempty header that sanitises to nothing — a lone non-breaking
+	// or zero-width space, both of which Go's HTTP server accepts — must
+	// retain its claim prefix rather than be treated as an empty value.
 	for _, ua := range []string{" ", "\t", "\u00a0", "\u200b"} {
 		got := CallerOf(requestWith(ua, "10.0.0.1:1")).Claim
 		assert.NotEqual(t, CallerNone, got, "user agent %q was sent, so 'none' is false", ua)

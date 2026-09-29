@@ -148,11 +148,8 @@ func (a *App) runUpStep(step string) error {
 //
 // Ollama is deployed and its model pulled before Orka is installed, so a
 // cluster that cannot pull at all still fails on the smaller download first.
-// Nothing here overlaps: the earlier two-agent lane existed for the legacy
-// runtime's demonstration agents, which are gone, and the measurements that
-// lane rested on said the remaining steps gain nothing from running together
-// — they pull ~2GB of images between them, so starting them at once splits
-// the bandwidth instead of saving time.
+// These steps run in order rather than competing for download bandwidth:
+// Ollama, its model and Orka all need images before setup can finish.
 func (a *App) upDefault() error {
 	if err := a.runPhase(phase{current: 1, total: 4, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
