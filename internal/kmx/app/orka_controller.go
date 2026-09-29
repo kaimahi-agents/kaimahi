@@ -112,7 +112,8 @@ func (a *App) orkaRunningVersion() (string, error) {
 	if strings.Contains(image, "@sha256:") {
 		return "unknown (unrecognized controller image digest)", nil
 	}
-	_, tag, found := strings.Cut(image, ":")
+	// A registry port is not an image tag; inspect only the last path component.
+	_, tag, found := strings.Cut(image[strings.LastIndex(image, "/")+1:], ":")
 	if !found || tag == "" {
 		return "unknown (controller image has no tag)", nil
 	}

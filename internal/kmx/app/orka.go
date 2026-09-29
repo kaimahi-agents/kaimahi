@@ -163,7 +163,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 			return err
 		}
 		a.notef("--no-apply: nothing was written. %d chart CRDs would precede harness-v2 in %s.", count, OrkaNamespace)
-		a.notef("  See them:  curl -fsSL %s", a.installerSource())
+		a.notef("  Inspect after saving and SHA-256-verifying the chart: tar -tzf <verified-orka-0.2.0.tgz> | grep '^orka/crds/'")
 		return nil
 	}
 
@@ -213,6 +213,10 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	if err := a.runPhase(phase{current: 2, total: total, name: "Apply chart CRDs and install Orka"}, func() error {
 		return a.applyOrkaInstaller(installer)
 	}); err != nil {
+		return err
+	}
+
+	if err := a.runPhase(phase{current: 3, total: total, name: "Provision Task result reader"}, a.orkaResultReader); err != nil {
 		return err
 	}
 
@@ -635,8 +639,14 @@ func (a *App) OrkaStatus() error {
 	deployments, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy",
 		"-o", "jsonpath={range .items[*]}{.metadata.name}={.status.readyReplicas}/{.spec.replicas} {end}")
 	if unreachable(err) {
-		return fmt.Errorf("cannot read Orka: the cluster did not answer.\n"+
-			"  This is not the same as Orka being absent — kmx does not know either way.\n  %w", err)
+		return fmt.Errorf("cannot read Orka: the cluster did not answer.\n" +
+			"  This is not the same as Orka being absent — kmx does not know either way. Check the selected context and API server")
+	}
+	if err != nil && !isNotFound(err) {
+		if strings.Contains(strings.ToLower(err.Error()), "forbidden") || strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
+			return fmt.Errorf("cannot read Orka Deployments in %s: access forbidden; check the selected context and permissions", OrkaNamespace)
+		}
+		return fmt.Errorf("cannot read Orka Deployments in %s: kubectl request failed; check the selected context and permissions", OrkaNamespace)
 	}
 	if isNotFound(err) || strings.TrimSpace(deployments) == "" {
 		fmt.Fprintf(a.Out, "%-22s %s\n", "orka", "not installed (`kmx orka install`)")

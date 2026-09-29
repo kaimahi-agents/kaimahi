@@ -157,6 +157,17 @@ func (a *App) upDefault() error {
 	if err := a.runPhase(phase{current: 1, total: 4, name: upPhaseName("cluster")}, a.stepCluster); err != nil {
 		return err
 	}
+	// Refuse unsupported Orka state before an expensive model pull. A fresh
+	// cluster is safe to inspect here; the check never installs or repairs it.
+	known, err := a.orkaInstallState()
+	if err != nil {
+		return fmt.Errorf("Orka preflight: %w", err)
+	}
+	if known {
+		if err := a.OrkaReady(); err != nil {
+			return fmt.Errorf("Orka preflight: %w", err)
+		}
+	}
 	a.verifySelectedLocalModel()
 	if a.selectedLocalModel == nil {
 		if err := a.runPhase(phase{current: 2, total: 4, name: upPhaseName("ollama")}, a.stepOllama); err != nil {

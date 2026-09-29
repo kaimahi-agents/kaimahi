@@ -13,6 +13,14 @@ SCRIPT = Path(__file__).with_name("demo-hello-to-governed.sh")
 
 
 class DemoSafetyTest(unittest.TestCase):
+    def test_prepare_does_not_seed_an_orka_installation(self):
+        prepare = SCRIPT.read_text().split("prepare() {", 1)[1].split("\nprepare_app()", 1)[0]
+        for obsolete in ("kube create namespace orka-system", "harness-wrapper-auth",
+                         "local-provider-key", "create serviceaccount orka-result-reader",
+                         "create rolebinding orka-result-reader"):
+            with self.subTest(obsolete=obsolete):
+                self.assertNotIn(obsolete, prepare)
+
     def run_demo(self, *args, **env):
         # No cluster tools are needed for argument/precondition failures.
         host_env = os.environ.copy()

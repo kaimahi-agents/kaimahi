@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -55,6 +56,9 @@ func TestEvalKubectlHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	if slices.Contains(args, "port-forward") {
+		if os.Getenv("KMX_EVAL_STOCK_RELEASE") == "1" && !slices.Contains(args, "svc/orka") {
+			fail()
+		}
 		_ = os.WriteFile(filepath.Join(dir, "forward-pid"), []byte(fmt.Sprint(os.Getpid())), 0600)
 		port, _, _ := strings.Cut(args[len(args)-1], ":")
 		fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
@@ -71,7 +75,16 @@ func TestEvalKubectlHelper(t *testing.T) {
 			fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_EVAL_CLUSTER_UID", "cluster-uid"))
 		case "serviceaccount":
 			fmt.Print("serviceaccount/" + name)
+		case "services":
+			if raw := os.Getenv("KMX_EVAL_SERVICES"); raw != "" {
+				fmt.Print(raw)
+				break
+			}
+			fmt.Print(`{"items":[{"metadata":{"name":"orka","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080}]}}]}`)
 		case "service":
+			if os.Getenv("KMX_EVAL_STOCK_RELEASE") == "1" && name != "orka" {
+				fail()
+			}
 			fmt.Print(`{"spec":{"ports":[{"port":8080}]}}`)
 		case "agents.core.orka.ai":
 			raw, err := os.ReadFile(filepath.Join(dir, "agent.json"))
@@ -224,6 +237,79 @@ const (
 	evalSignCase  = "id: sign-off\ninput: Say hello and sign off.\nexpectContains:\n  - hello\n  - Signed, Sample\n"
 	evalHelloCase = "id: greet\ninput: Say hello.\nexpectContains: [hello]\n"
 )
+
+func TestOrkaAPIServiceDiscoveryRefusesAbsentAndAmbiguousMatches(t *testing.T) {
+	const chart = `{"metadata":{"name":"orka","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080}]}}`
+	const metrics = `{"metadata":{"name":"orka-metrics","labels":{"app.kubernetes.io/name":"orka","control-plane":"controller-manager"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","control-plane":"controller-manager"},"ports":[{"name":"https","port":8443}]}}`
+	const legacy = `{"metadata":{"name":"orka-api","labels":{"app.kubernetes.io/name":"orka","control-plane":"controller-manager"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","control-plane":"controller-manager"},"ports":[{"name":"http","port":8080}]}}`
+	for _, tc := range []struct{ name, services, want string }{
+		{"legacy with metrics", `{"items":[` + metrics + `,` + legacy + `]}`, "orka-api"},
+		{"chart", `{"items":[` + chart + `]}`, "orka"},
+		{"absent", `{"items":[` + metrics + `]}`, "no Orka API Service"},
+		{"ambiguous", `{"items":[` + chart + `,` + legacy + `]}`, "multiple Orka API Services"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newEvalFixture(t, nil)
+			t.Setenv("KMX_EVAL_SERVICES", tc.services)
+			got, err := f.app.orkaAPIService(t.Context(), "orka-system")
+			if tc.name == "absent" || tc.name == "ambiguous" {
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("got service=%q error=%v; want %s", got, err, tc.want)
+				}
+			} else if err != nil || got != tc.want {
+				t.Fatalf("got service=%q error=%v; want %s", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvaluateFindsStockHelmReleaseAPIService(t *testing.T) {
+	f := newEvalFixture(t, map[string]string{"case.yaml": evalHelloCase})
+	f.answers["Say hello."] = "hello from Orka"
+	t.Setenv("KMX_EVAL_STOCK_RELEASE", "1")
+	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
+		t.Fatalf("evaluate stock release: %v", err)
+	}
+	var list, selected, forwarded bool
+	for _, c := range orkaCalls(t, f.dir) {
+		line := strings.Join(c.Args, " ")
+		list = list || strings.Contains(line, "get services -o json")
+		selected = selected || strings.Contains(line, "get service orka -o json")
+		forwarded = forwarded || slices.Contains(c.Args, "port-forward") && slices.Contains(c.Args, "svc/orka")
+	}
+	if !list || !selected || !forwarded {
+		t.Fatalf("stock chart Service was not selected (list=%t get=%t forward=%t)", list, selected, forwarded)
+	}
+}
+
+func TestWizardTaskFindsStockHelmReleaseAPIService(t *testing.T) {
+	f := newEvalFixture(t, nil)
+	f.answers["Say hello."] = "hello from Orka"
+	t.Setenv("KMX_EVAL_STOCK_RELEASE", "1")
+	opt := quickstartResultOptions("orka-system", "Say hello.")
+	if opt.OrkaAPIService != "" {
+		t.Fatal("wizard pinned a release-specific Service")
+	}
+	opt.ResultPort = f.opt.ResultPort // the fixture's HTTP server uses a free port
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+	session, err := f.app.openOrkaResultSession(ctx, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.close()
+	answer, err := f.app.runQuickstartOrkaTaskProfile(ctx, f.name, "orka-system", opt.Task, nil, nil, session)
+	if err != nil || answer != "hello from Orka" {
+		t.Fatalf("wizard task on stock release: answer=%q err=%v", answer, err)
+	}
+	var forwarded bool
+	for _, c := range orkaCalls(t, f.dir) {
+		forwarded = forwarded || slices.Contains(c.Args, "port-forward") && slices.Contains(c.Args, "svc/orka")
+	}
+	if !forwarded {
+		t.Fatal("wizard result did not forward through stock chart API Service")
+	}
+}
 
 func TestEvaluatePassRecordsDigestsAndNoAnswerText(t *testing.T) {
 	f := newEvalFixture(t, map[string]string{"a.yaml": evalSignCase, "b.yaml": evalHelloCase})

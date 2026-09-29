@@ -1322,6 +1322,10 @@ type orkaChatBackend struct {
 
 func (b *orkaChatBackend) Agent() string { return b.agent }
 
+func quickstartResultOptions(namespace, task string) CreateOptions {
+	return CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: "19180", Task: task}
+}
+
 func (b *orkaChatBackend) Connect(ctx context.Context, renderer *chatRenderer) ([]cliui.Field, error) {
 	b.chatContext = ctx
 	location, err := b.app.chatLocation(ctx)
@@ -1389,7 +1393,7 @@ func (b *orkaChatBackend) Send(ctx context.Context, message string, renderer *ch
 		sessionCtx, cancel := context.WithTimeout(parent, 8*time.Minute)
 		quiet := *b.app
 		quiet.Err = io.Discard
-		session, err := quiet.openOrkaResultSession(sessionCtx, CreateOptions{Namespace: b.namespace, ResultServiceAccount: "orka-result-reader", OrkaAPIService: "orka-api", ResultPort: "19180"})
+		session, err := quiet.openOrkaResultSession(sessionCtx, quickstartResultOptions(b.namespace, ""))
 		if err != nil {
 			cancel()
 			return err
@@ -1436,7 +1440,7 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 	}
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
-	opt := CreateOptions{Namespace: namespace, ResultServiceAccount: "orka-result-reader", OrkaAPIService: "orka-api", ResultPort: "19180", Task: prompt}
+	opt := quickstartResultOptions(namespace, prompt)
 	quiet := *a
 	var diagnostics bytes.Buffer
 	quiet.Err = &diagnostics

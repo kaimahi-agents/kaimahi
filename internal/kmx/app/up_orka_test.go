@@ -53,6 +53,7 @@ case "$*" in
   *"get secret local-provider-key"*)
     [ -f "$KMX_TEST_ARGS.secret" ] && printf 'secret\npresent'
     exit 0 ;;
+  *"get deploy -o json"*) printf '%s' "$KMX_TEST_UP_DEPLOY_JSON"; exit 0 ;;
   *"get secret harness-wrapper-auth"*)
     printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2
     exit 1 ;;
@@ -75,7 +76,7 @@ func upFixture(t *testing.T) (*App, *bytes.Buffer, string) {
 	}
 	fakeTool(t, dir, "kind", `printf 'kind %s\n' "$*" >> "$KMX_TEST_ARGS"; exit 0`)
 	fakeTool(t, dir, "docker", `printf 'docker %s\n' "$*" >> "$KMX_TEST_ARGS"; exit 0`)
-	fakeTool(t, dir, "helm", `printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"; case "$*" in *"list "*) printf '[]';; esac; exit 0`)
+	fakeTool(t, dir, "helm", `printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"; case "$*" in *"list "*) printf '%s' "${KMX_TEST_UP_HELM_LIST:-[]}";; *"get values "*) printf '%s' "$KMX_TEST_UP_HELM_VALUES";; esac; exit 0`)
 	// The real PATH stays behind the fakes: the fake kubectl is a shell
 	// script and needs the shell's own utilities, while the fakes still win
 	// the lookup for every tool this command runs.
@@ -113,6 +114,37 @@ func upCalls(t *testing.T, args string) string {
 // cluster about the legacy runtime. The fake answers that read the way a
 // cluster with no kagent CRD answers — the command completing at all is the
 // proof that it was not asked.
+func TestOrkaUpRefusesForeignReleaseBeforeModelPull(t *testing.T) {
+	a, _, args := upFixture(t)
+	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"foreign-0.2.0","app_version":"0.2.0","status":"deployed"}]`)
+	err := a.Up("")
+	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("foreign Orka release did not stop up: %v", err)
+	}
+	calls := upCalls(t, args)
+	if !strings.Contains(calls, "helm list") {
+		t.Fatal("Orka ownership was not inspected")
+	}
+	if strings.Contains(calls, "apply -f -") || strings.Contains(calls, "ollama") {
+		t.Fatalf("model setup began before Orka refusal: %s", calls)
+	}
+}
+
+func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
+	a, _, args := upFixture(t)
+	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_UP_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
+	t.Setenv("KMX_TEST_UP_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", func(_, _, status map[string]any) { status["availableReplicas"] = 0 })))
+	err := a.Up("")
+	if err == nil || !strings.Contains(err.Error(), "not finished rolling out") {
+		t.Fatalf("unready release did not stop up: %v", err)
+	}
+	calls := upCalls(t, args)
+	if strings.Contains(calls, "ollama pull") || strings.Contains(calls, "apply -f -") {
+		t.Fatalf("model setup began before readiness refusal: %s", calls)
+	}
+}
+
 func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	a, errOut, args := upFixture(t)
 	if err := a.Up(""); err != nil {

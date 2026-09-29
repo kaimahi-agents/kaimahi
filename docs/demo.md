@@ -69,8 +69,9 @@ Preparation also builds the unchanged application's Dockerfile and installs its
 unchanged chart with local configuration. Its archive is SHA-256 checked.
 
 **Timing boundary:** preparation includes cluster creation, the roughly 1.9 GB
-model download, plane deployment, application build/install and prerequisite
-Secrets. Its elapsed time is printed at the beginning of the recording and
+model download, plane deployment and application build/install. Beat 1
+creates Orka's keyless Provider Secret and result-reader account, not preparation.
+Preparation's elapsed time is printed at the beginning of the recording and
 saved separately; it is not part of the four-beat demo duration. No Orka install
 or model answer is pre-run. Host image/build caches may already exist, but each
 kind node and its model storage are fresh. The under-five-minute target is for

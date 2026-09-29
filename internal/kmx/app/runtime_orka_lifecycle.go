@@ -389,7 +389,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	// per case.
 	quiet := *app
 	quiet.Err = io.Discard
-	session, err := quiet.openOrkaResultSession(ctx, CreateOptions{Namespace: ref.Namespace, ResultServiceAccount: orkaResultAccount, OrkaAPIService: "orka-api", ResultPort: port})
+	session, err := quiet.openOrkaResultSession(ctx, CreateOptions{Namespace: ref.Namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}

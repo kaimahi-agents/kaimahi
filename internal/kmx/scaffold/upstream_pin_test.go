@@ -26,6 +26,7 @@ func TestPlaneEgressAllowsBothOrkaControllerLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	var chart, legacy bool
+	orkaPeers := 0
 	decoder := yaml.NewDecoder(strings.NewReader(string(raw)))
 	for {
 		var policy struct {
@@ -60,24 +61,28 @@ func TestPlaneEgressAllowsBothOrkaControllerLabels(t *testing.T) {
 			continue
 		}
 		for _, rule := range policy.Spec.Egress {
-			port8080 := false
-			for _, port := range rule.Ports {
-				port8080 = port8080 || port.Protocol == "TCP" && port.Port == 8080
-			}
-			if !port8080 {
-				continue
-			}
 			for _, peer := range rule.To {
-				if peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "orka-system" || peer.PodSelector.MatchLabels["app.kubernetes.io/name"] != "orka" {
+				if peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "orka-system" {
 					continue
 				}
-				chart = chart || peer.PodSelector.MatchLabels["app.kubernetes.io/component"] == "controller"
-				legacy = legacy || peer.PodSelector.MatchLabels["control-plane"] == "controller-manager"
+				orkaPeers++
+				if len(rule.To) != 2 || len(rule.Ports) != 1 || rule.Ports[0].Protocol != "TCP" || rule.Ports[0].Port != 8080 ||
+					len(peer.NamespaceSelector.MatchLabels) != 1 || len(peer.PodSelector.MatchLabels) != 2 || peer.PodSelector.MatchLabels["app.kubernetes.io/name"] != "orka" {
+					t.Fatal("Orka egress must have exactly the two named controller peers on TCP 8080")
+				}
+				switch {
+				case peer.PodSelector.MatchLabels["app.kubernetes.io/component"] == "controller" && peer.PodSelector.MatchLabels["control-plane"] == "":
+					chart = true
+				case peer.PodSelector.MatchLabels["control-plane"] == "controller-manager" && peer.PodSelector.MatchLabels["app.kubernetes.io/component"] == "":
+					legacy = true
+				default:
+					t.Fatal("Orka egress selected an unrelated pod")
+				}
 			}
 		}
 	}
-	if !chart || !legacy {
-		t.Fatalf("plane egress missing v0.2.0 chart or v0.1.3 controller selector (chart=%t legacy=%t)", chart, legacy)
+	if orkaPeers != 2 || !chart || !legacy {
+		t.Fatalf("plane egress must select exactly the two Orka controller roles (peers=%d chart=%t legacy=%t)", orkaPeers, chart, legacy)
 	}
 }
 

@@ -28,9 +28,9 @@ The install checks each boundary before proceeding:
 | phase | what it does |
 |---|---|
 | Fetch the pinned chart | downloads `orka-0.2.0.tgz` from the v0.2.0 release and refuses bytes that do not hash to kmx's pinned SHA-256 |
-| Check for an existing installation | refuses a foreign Helm release or a legacy v0.1.3 manifest/CRDs rather than attempting an upgrade |
+| Check for an existing installation | refuses an existing controller Deployment, Orka CRDs or a foreign/partial Helm release rather than attempting an upgrade; a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts is allowed |
 | Apply CRDs and install | applies CRDs extracted from the verified chart before `helm install orka` with `--kube-context`, `controller.mode=harness-v2`, `fullnameOverride=orka-api` and `--wait`; no `helm upgrade --force` |
-| Wire a keyless Provider | a `Provider` pointing at the in-cluster model server, so no model key is needed on the local path |
+| Provision result reader and keyless Provider | installs the namespace-scoped Task-get result account, then a `Provider` pointing at the in-cluster model server, so no model key is needed on the local path |
 
 Check the selected cluster with `kmx orka status` and
 `kubectl --context <ctx> -n orka-system get deployments,pvc`. The chart's
@@ -239,8 +239,10 @@ Agent conversion.
   `control-plane=controller-manager`, chart
   `app.kubernetes.io/component=controller`), not by a release-specific name.
   No or multiple matching controllers is an explicit refusal; this does not
-  authorize an installation or an in-place upgrade. Result reads retain their
-  own API and RBAC checks against the installed release.
+  authorize an installation or an in-place upgrade. Evaluate and console result
+  sessions discover the controller's API Service by role selector and port, so
+  they also work with a stock v0.2.0 chart release named `orka` instead of
+  kmx's `orka-api`. Result reads retain their own API and RBAC checks.
 - **Rate limits are not supported by v0.2.0 CRDs.** Orka removed
   `Provider.spec.rateLimit` and `Agent.spec.rateLimit`; kmx does not silently
   drop requested limits. Offline `--schema-target v0.2.0` and online create/lift
@@ -250,12 +252,21 @@ Agent conversion.
   target; there is no equivalent rate-limit mapping in kmx yet.
 - **One pinned install.** `v0.2.0` chart, harness-v2, release `orka`, namespace
   `orka-system`, fullname `orka-api`. A recognized matching kmx installation
-  keeps its chart, key and data on rerun. kmx refuses an existing v0.1.3
-  manifest installation or foreign Helm release; it does not convert them.
+  keeps its chart, key and data on rerun only when its image overrides match
+  the pin and its controller is Ready. `kmx orka install` also ensures the
+  read-only Task result account. An existing namespace alone is not an Orka
+  installation; kmx refuses a legacy controller/CRD or foreign Helm release,
+  not a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts.
+  On an existing kind cluster, `kmx up` performs this refusal and checks a
+  recognized controller's readiness before starting the long model pull.
 - **Partial installs require operator review.** Applying CRDs or creating a
   failed Helm release can leave cluster state even if installation times out.
   kmx refuses the next install rather than silently adopting, retrying or
-  deleting it. Inspect the context-pinned Helm release, Pods and events; on a
+  deleting it. Inspect the context-pinned Helm release, Pods and events. After
+  resolving a transient failure, an operator can explicitly retry the same
+  SHA-256-verified chart with
+  `helm --kube-context <ctx> -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`
+  (never `--force`), or clean the failed target before retrying kmx. On a
   disposable local kind cluster you created, `kmx down` then `kmx up` replaces
   it, losing its data. On AKS, stop and use the verified backup/recovery plan.
 - **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new

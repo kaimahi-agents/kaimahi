@@ -82,27 +82,11 @@ prepare() {
   kmx up --step ollama
   kmx up --step model
   kmx plane --source "$ROOT"
-  kube create namespace orka-system
-  # Provision prerequisite Secrets before the camera starts. Values only use stdin.
-  python3 - <<'PY' | kubectl --context "$CTX" create -f -
-import json, secrets
-for name, data in [
-    ("harness-wrapper-auth", {"token": secrets.token_hex(32)}),
-    ("local-provider-key", {"api-key": "not-used-by-this-endpoint"}),
-]:
-    print(json.dumps({"apiVersion": "v1", "kind": "Secret", "metadata": {
-        "name": name, "namespace": "orka-system"}, "stringData": data}))
-    print("---")
-PY
-  kube -n orka-system create serviceaccount orka-result-reader
-  # A Role can precede its CRD; kubectl's --resource shortcut requires discovery.
-  printf '%s\n' '{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"orka-result-reader","namespace":"orka-system"},"rules":[{"apiGroups":["core.orka.ai"],"resources":["tasks"],"verbs":["get"]}]}' \
-    | kubectl --context "$CTX" create -f -
-  kube -n orka-system create rolebinding orka-result-reader --role=orka-result-reader \
-    --serviceaccount=orka-system:orka-result-reader
+  # Beat 1 installs Orka, its keyless Provider Secret and the result-reader
+  # account. Do not pre-create an Orka namespace or legacy wrapper credential.
   prepare_app
   gh pr view 564 --repo orka-agents/orka --json state > "$RUN_DIR/a2a-pr.json"
-  printf 'Preparation: %ss (kind, model download, plane, existing app, prerequisite Secrets)\n' \
+  printf 'Preparation: %ss (kind, model download, plane, existing app)\n' \
     "$(( $(now) - started ))" | tee "$RUN_DIR/setup-time.txt"
   git -C "$ROOT" rev-parse HEAD > "$RUN_DIR/revision.txt"
   sha256sum "$SCRIPT" > "$RUN_DIR/script.sha256"
@@ -290,7 +274,7 @@ beats() {
   local started
   started=$(now)
   printf 'Hello world to governed model traffic: one kmx journey, local Ollama qwen2.5:3b, no paid model endpoint.\n'
-  printf 'Kind, Ollama, the plane and the existing app were prepared before recording; prerequisite Secrets were piped in off-screen.\n'
+  printf 'Kind, Ollama, the plane and the existing app were prepared before recording; Orka and its resources are installed in beat 1.\n'
   printf '%s\n' "$(<"$RUN_DIR/setup-time.txt")"
   printf 'No Orka installation or model answer was pre-run; all waits below are real time.\n'
   beat 1 'This command installs the pinned Orka platform on the dedicated kind cluster.' run kmx orka install

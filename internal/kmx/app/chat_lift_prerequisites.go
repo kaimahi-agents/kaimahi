@@ -83,6 +83,9 @@ func (b *orkaChatBackend) prepareLiftOrka(ctx context.Context, target *App, r *c
 		if err := b.installLiftOrkaPane(ctx, target); err != nil {
 			return fmt.Errorf("target %s: Orka repair failed: %w", target.Cfg.KubeContext, err)
 		}
+		if _, err := target.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+controller, "--timeout=10s"); err != nil {
+			return fmt.Errorf("target %s: Orka controller still unavailable after attempted repair: %w", target.Cfg.KubeContext, err)
+		}
 	}
 	if _, err := target.orkaCapture(ctx, nil, "get", "namespace", b.namespace, "-o", "name"); err != nil {
 		return fmt.Errorf("target %s: namespace %s is unavailable: %w", target.Cfg.KubeContext, b.namespace, err)
@@ -184,5 +187,5 @@ func (b *orkaChatBackend) prepareLiftTools(ctx context.Context, target *App, bun
 }
 
 func (b *orkaChatBackend) installLiftOrkaPane(ctx context.Context, target *App) error {
-	return b.runLiftDeployment(ctx, target, "Install Orka", []string{"Fetch the pinned installer", "Reconcile the wrapper credential", "Apply the installer and wait"}, func(worker *App) error { return worker.OrkaInstall(OrkaOptions{Provider: "-"}) })
+	return b.runLiftDeployment(ctx, target, "Install Orka", []string{"Fetch the pinned chart", "Apply chart CRDs and wait", "Install harness-v2 and result reader"}, func(worker *App) error { return worker.OrkaInstall(OrkaOptions{Provider: "-"}) })
 }

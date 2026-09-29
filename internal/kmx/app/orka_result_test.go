@@ -23,6 +23,7 @@ func orkaResultServer(t *testing.T, opt *CreateOptions, handler http.HandlerFunc
 	_, opt.ResultPort, _ = net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
 	opt.Task = "Say hello"
 	opt.ResultServiceAccount = "reader"
+	opt.OrkaAPIService = "orka-api" // transport tests select a known service; discovery is tested separately
 	return server
 }
 
@@ -190,6 +191,7 @@ func TestOrkaResultSessionEstablishesAndReusesOneConnection(t *testing.T) {
 	defer server.Close()
 	_, opt.ResultPort, _ = net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
 	opt.ResultServiceAccount = "reader"
+	opt.OrkaAPIService = "orka-api"
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	session, err := a.openOrkaResultSession(ctx, opt)
