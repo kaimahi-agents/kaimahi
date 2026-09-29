@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,24 @@ func TestPinnedSpecsAreWellFormed(t *testing.T) {
 	}
 	if _, ok := Pinned("docker", "linux", "amd64"); ok {
 		t.Error("a container engine must NOT be fetchable — it is a daemon, not a cached binary")
+	}
+}
+
+// Helm is published as a tarball; its sha256sum covers the whole archive,
+// not the executable extracted from it. The paths have to match the publisher.
+func TestPinnedHelmUsesThePublishedArchiveAndChecksum(t *testing.T) {
+	for _, platform := range []struct{ goos, goarch string }{{"linux", "amd64"}, {"darwin", "arm64"}} {
+		spec, ok := Pinned("helm", platform.goos, platform.goarch)
+		if !ok {
+			t.Fatalf("helm has no pinned download for %s/%s", platform.goos, platform.goarch)
+		}
+		asset := "https://get.helm.sh/helm-v3.20.0-" + platform.goos + "-" + platform.goarch + ".tar.gz"
+		if spec.Name != "helm" || spec.Version != "3.20.0" || spec.URL != asset || spec.ChecksumURL != asset+".sha256sum" || spec.ArchiveMember != platform.goos+"-"+platform.goarch+"/helm" {
+			t.Errorf("%s/%s: incorrect upstream Helm archive spec: %+v", platform.goos, platform.goarch, spec)
+		}
+	}
+	if !slices.Contains(Fetchable, "helm") {
+		t.Fatal("helm cannot be fetched by the toolchain")
 	}
 }
 
@@ -201,18 +220,13 @@ func TestEnsureWritesNothingWhenTheChecksumFails(t *testing.T) {
 // what the publisher's digest covers. The archive is verified before anything
 // is extracted from it, and the extracted member is what gets installed.
 //
-// The spec is built here rather than taken from Pinned: no pinned tool is
-// archived today (Helm was, and it was fetched for the retired chart
-// alone). The rule outlives the tool that needed it, so it keeps its test.
+// Use Helm's actual spec, so an archive member or checksum URL regression
+// cannot silently turn a publisher-verified download into a missing tool.
 func TestAnArchivedToolIsVerifiedBeforeItIsExtracted(t *testing.T) {
 	binary := []byte("#!/bin/sh\necho archived\n")
-	spec := Spec{
-		Name:          "archived",
-		Version:       "1.2.3",
-		URL:           "https://example.invalid/archived-1.2.3.tar.gz",
-		ChecksumURL:   "https://example.invalid/archived-1.2.3.tar.gz.sha256sum",
-		ArchiveMember: "archived-1.2.3/archived",
-		Why:           "to prove the archive is verified before it is opened",
+	spec, ok := Pinned("helm", "linux", "amd64")
+	if !ok {
+		t.Fatal("helm has no pinned archive")
 	}
 	archive := tarGz(t, spec.ArchiveMember, binary)
 	tampered := false
@@ -267,17 +281,21 @@ func TestPrependPathIsIdempotent(t *testing.T) {
 
 // What the operator already has wins, and only the rest is fetched.
 func TestProvisionPrefersWhatIsAlreadyOnPath(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-	tools, err := Provision([]string{"kubectl"}, t.TempDir(), Options{CacheDir: t.TempDir(), BaseOverride: "http://127.0.0.1:1"})
-	if err != nil {
-		t.Fatalf("provision failed: %v", err)
-	}
-	if len(tools) != 1 || tools[0].Source != FromPath {
-		t.Fatalf("did not use the operator's own kubectl: %+v", tools)
+	for _, name := range []string{"kubectl", "helm"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir)
+			tools, err := Provision([]string{name}, t.TempDir(), Options{CacheDir: t.TempDir(), BaseOverride: "http://127.0.0.1:1"})
+			if err != nil {
+				t.Fatalf("provision failed: %v", err)
+			}
+			if len(tools) != 1 || tools[0].Source != FromPath {
+				t.Fatalf("did not use the operator's own %s: %+v", name, tools)
+			}
+		})
 	}
 }
 

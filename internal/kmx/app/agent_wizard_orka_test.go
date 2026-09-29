@@ -21,6 +21,10 @@ func TestCreateWizardNativeOfflinePreservesOptionsWithoutDiscovery(t *testing.T)
 			opt.BaseURL, opt.SecretKey = "http://model.example/v1", "custom-key"
 			opt.InstructionText = "Retain my instructions"
 			opt.AgentRequestsPerMinute, opt.ProviderTokensPerMinute = "12", "1234"
+			// Rate limits exist in v0.1.3 but were removed from v0.2.0.
+			if mode != "dry-run" {
+				opt.SchemaTarget = "v0.1.3"
+			}
 			switch mode {
 			case "stdout":
 				opt.Out = "-"

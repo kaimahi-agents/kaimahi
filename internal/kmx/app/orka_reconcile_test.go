@@ -57,6 +57,10 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	if os.Getenv("KMX_LIFT_TEST") == "1" && slices.Contains(args, "rollout") {
+		expected := getenvLiftTest("KMX_LIFT_CONTROLLER_NAME", "orka-controller-manager")
+		if !slices.Contains(args, "deploy/"+expected) {
+			fail()
+		}
 		if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "controller") {
 			fail()
 		}
@@ -70,6 +74,19 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		}
 		if os.Getenv("KMX_LIFT_TEST") == "1" {
 			switch kind {
+			case "deploy":
+				if name != "-o" {
+					fail()
+				}
+				selected := getenvLiftTest("KMX_LIFT_CONTROLLER_NAME", "orka-controller-manager")
+				labels := map[string]string{"app.kubernetes.io/name": "orka"}
+				if selected == "orka-controller-manager" {
+					labels["control-plane"] = "controller-manager"
+				} else {
+					labels["app.kubernetes.io/component"] = "controller"
+				}
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"items": []any{map[string]any{"metadata": map[string]any{"name": selected, "labels": labels}}}})
+				os.Exit(0)
 			case "namespace", "namespaces":
 				if name == "kube-system" {
 					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid"))

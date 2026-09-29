@@ -138,8 +138,9 @@ round trip to return an exact, non-empty local-model answer. It then applies the
 committed native Orka [Kubernetes Tool](orka-k8s-tool.md) and proves its boundary
 directly over HTTP: an allowed ConfigMap listing that contains a ConfigMap created
 seconds earlier, and refusal of Secret reads and pod mutation at both the tool's
-own validation and the cluster's RBAC. It installs no legacy runtime and creates no Helm
-release, and fails closed if it ever does.
+own validation and the cluster's RBAC. It installs no legacy runtime; Orka now uses the pinned
+v0.2.0 Helm chart. This describes the intended shard, not a claim that the
+new chart path was already exercised in CI.
 
 What that shard does **not** prove: that the local model chose to call the tool
 (small-model tool selection is a known CI flake class, so model-driven invocation

@@ -19,7 +19,8 @@ it has no Azure credential and does not re-prove live cloud behavior.
   requires permission to create the pull-role assignment.
 - Phase-specific tools: kubectl; Bash for cluster/boundary/plane; Python 3 for
   boundary and PyYAML for plane rendering; Go for the plane; curl for Azure
-  telemetry verification. Helm is no longer required by any phase. Script phases
+  telemetry verification. The Orka phase uses Helm from PATH or the pinned,
+  checksum-verified kmx toolchain. Script phases
   require Linux, macOS or WSL, not native Windows. `--plan` requires only the
   authenticated Azure CLI.
 - An independently provisioned model/Provider is the operator's responsibility:
@@ -40,7 +41,7 @@ kmx aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
 
 | payload | what lands | phases |
 |---|---|---|
-| `orka` | Orka at the pinned version — the same one `kmx orka install` puts on a local cluster | cluster, boundary, credential, plane, **orka**, observability, verify |
+| `orka` | Orka v0.2.0 chart — the same verified chart `kmx orka install` puts on a local cluster | cluster, boundary, credential, plane, **orka**, observability, verify |
 
 The legacy payload is **refused as retired**, by name rather than as an unknown
 value: a script that still names it asked for a platform this command installed
@@ -51,6 +52,19 @@ creating or resuming one.
 
 The deprecated `kmx lift` still requires `--payload` so existing scripts cannot
 silently change platform. Both names use the same run records and teardown.
+
+**This is a fresh-install path, not a version upgrade.** An existing v0.1.3
+manifest installation or foreign Helm release is refused. On an existing AKS
+cluster, do not simply remove the old release and rerun lift: first back up
+the existing snapshot encryption key Secret **without printing its value**,
+controller PVC and other data volumes, resources and Secrets; verify your
+recovery plan, then arrange a clean new target per [Orka's v0.2.0 upgrade
+limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md)
+and [installation guide](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md).
+The new kmx installation generates `orka-api-agent-execution-snapshot` under
+`fullnameOverride=orka-api`; retain that key with its new volume. Neither
+`kmx aks up` nor `kmx aks down` migrates Orka's SQLite data, Tasks or key.
+Avoid `helm upgrade --force`; Orka does not support version upgrades here.
 
 **The lift creates no Provider.** A managed cluster has no
 in-cluster model server — this path deploys no Ollama — and kmx holds no
@@ -101,9 +115,9 @@ refuses to take over pre-existing Azure monitoring. Those are owner decisions.
 | `boundary` | check policy engine, deploy plane boundary/ledger bootstrap, run negative network proof |
 | `credential` | keep an existing Copilot Secret; otherwise run native device login and capture |
 | `plane` | build in ACR, create/renew data certificate, render registry image/pull policy, deploy |
-| `orka` | install the pinned Orka; creates **no** Provider — that stays yours |
+| `orka` | install the pinned v0.2.0 Helm chart in harness-v2 mode on the selected context; creates **no** Provider — that stays yours |
 | `observability` | Azure monitoring, scrape allowance/PodMonitor, workbook |
-| `verify` | Orka is installed and both controllers are ready, strictly — no model call is made. Azure metrics/logs when enabled |
+| `verify` | Orka's controller is installed and ready, strictly — no model call is made. Azure metrics/logs when enabled |
 
 `--step <phase>` runs **one phase only**, not that phase and all following ones.
 Failures leave earlier work in place and print a target-preserving retry. Fix

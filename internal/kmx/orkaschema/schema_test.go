@@ -68,6 +68,7 @@ func specProperties(crd map[string]any) map[string]any {
 func TestOfflineAndInstalledValidateOrdinaryWholeBundles(t *testing.T) {
 	for target, pin := range map[string]string{
 		"v0.1.3": "b07d42c0b9e52fe511b434827a342b4720f5d422",
+		"v0.2.0": "5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1",
 		"main":   "7c4753c2c68a510112ea2bb25b60a406d9c45686",
 	} {
 		t.Run(target, func(t *testing.T) {
@@ -99,7 +100,7 @@ func TestOfflineAndInstalledValidateOrdinaryWholeBundles(t *testing.T) {
 		})
 	}
 	v, err := orkaschema.Offline("")
-	if err != nil || !strings.Contains(v.Provenance(), "v0.1.3") {
+	if err != nil || !strings.Contains(v.Provenance(), "v0.2.0") {
 		t.Fatalf("default target: %v", err)
 	}
 	for _, target := range []string{"latest", "v0.1.2", "../main"} {
@@ -114,26 +115,28 @@ func TestRateLimitDriftRefusesEachResourceByExactPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	main, err := orkaschema.Offline("main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, resource := range []string{"Agent", "Provider"} {
-		for _, field := range []string{"requestsPerMinute", "tokensPerMinute"} {
-			t.Run(resource+"/"+field, func(t *testing.T) {
-				b := testBundle(t)
-				doc := b.Agent
-				if resource == "Provider" {
-					doc = b.Provider
-				}
-				doc["spec"].(map[string]any)["rateLimit"] = map[string]any{field: 12}
-				if err := release.Validate(doc); err != nil {
-					t.Fatal(err)
-				}
-				if err := main.Validate(doc); err == nil || !strings.Contains(err.Error(), resource) || !strings.Contains(err.Error(), "spec.rateLimit") {
-					t.Fatalf("drift must name resource and path, got %v", err)
-				}
-			})
+	for _, target := range []string{"v0.2.0", "main"} {
+		validator, err := orkaschema.Offline(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, resource := range []string{"Agent", "Provider"} {
+			for _, field := range []string{"requestsPerMinute", "tokensPerMinute"} {
+				t.Run(target+"/"+resource+"/"+field, func(t *testing.T) {
+					b := testBundle(t)
+					doc := b.Agent
+					if resource == "Provider" {
+						doc = b.Provider
+					}
+					doc["spec"].(map[string]any)["rateLimit"] = map[string]any{field: 12}
+					if err := release.Validate(doc); err != nil {
+						t.Fatal(err)
+					}
+					if err := validator.Validate(doc); err == nil || !strings.Contains(err.Error(), resource) || !strings.Contains(err.Error(), "spec.rateLimit") {
+						t.Fatalf("drift must name resource and path, got %v", err)
+					}
+				})
+			}
 		}
 	}
 }
@@ -158,7 +161,7 @@ func TestWholeResourceValidationNotJustRateLimits(t *testing.T) {
 		{"Task enum", "Task", "spec.type", func(d map[string]any) { d["spec"].(map[string]any)["type"] = "unsupported" }},
 		{"Task prompt type", "Task", "spec.prompt", func(d map[string]any) { d["spec"].(map[string]any)["prompt"] = false }},
 	}
-	for _, target := range []string{"v0.1.3", "main"} {
+	for _, target := range []string{"v0.1.3", "v0.2.0", "main"} {
 		v, err := orkaschema.Offline(target)
 		if err != nil {
 			t.Fatal(err)
@@ -284,6 +287,9 @@ func TestFixtureBytesMatchImmutableSources(t *testing.T) {
 		"v0.1.3/agents.yaml":    "d6b9123ea29d904846777b63c59e8f5c054ac851e63d6c1bf8177a4accc44f4d",
 		"v0.1.3/providers.yaml": "2c9b4b25800a8d6a57494fc9e267d7ebd7b3cd52c9a2956ba87544a8c3388ff6",
 		"v0.1.3/tasks.yaml":     "8672cf42f1b2dc17020df1fc539ebdfa5ac67604ecfb8a272cd6eac2a51c1d6d",
+		"v0.2.0/agents.yaml":    "01005e7fc327b2b5b7d8dc32ffa27d80d3c1ccfe9a2a36bab6dda84dafcff912",
+		"v0.2.0/providers.yaml": "6185d760bd43d00a4594cfa8fd50ff86b269f952be6656884d000f67e64562f8",
+		"v0.2.0/tasks.yaml":     "045a954158061183150067a1615bf037df337eaaa1f6b3c4e408b25c54a3e39c",
 		"main/agents.yaml":      "9e7bc6252cdf45cdc9fc127a558b3b2f77eb4ff1a1388386996acbf1d58da43c",
 		"main/providers.yaml":   "6185d760bd43d00a4594cfa8fd50ff86b269f952be6656884d000f67e64562f8",
 		"main/tasks.yaml":       "e0c657f3a9c0878665e36ae18a3cfe62ecb563efb8b5141576b57024e8b52279",

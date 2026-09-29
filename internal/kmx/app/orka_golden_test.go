@@ -29,6 +29,32 @@ func goldenNoTaskCreate(out string) CreateOptions {
 	}
 }
 
+func TestOrkaV020NoTaskArtifactMatchesGolden(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sample.yaml")
+	opt := goldenNoTaskCreate(path)
+	opt.SchemaTarget = "" // the default is the current v0.2.0 release
+	opt.AgentRequestsPerMinute, opt.AgentTokensPerMinute = "", ""
+	opt.ProviderRequestsPerMinute, opt.ProviderTokensPerMinute = "", ""
+	opt.BundlePath = filepath.Join(dir, "agents", "sample")
+	var out, errOut bytes.Buffer
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{Stdout: &out, Stderr: &errOut}, Out: &out, Err: &errOut}
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "orka-v020-no-task.golden.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("v0.2.0 artifact changed:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 // TestOrkaNoTaskArtifactMatchesGolden pins the exact bytes `kmx agent create
 // --no-apply` writes today, before any lifecycle routing exists to change
 // them. The committed golden is the characterization: routing creation

@@ -387,7 +387,7 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 		{"boundary", []string{"az", "kubectl", "bash", "python3"}, []string{"helm", "go", "curl"}},
 		{"credential", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
 		{"plane", []string{"az", "kubectl", "bash", "go"}, []string{"helm", "curl"}},
-		{"orka", []string{"az", "kubectl"}, []string{"helm", "bash", "go", "python3", "curl"}},
+		{"orka", []string{"az", "kubectl", "helm"}, []string{"bash", "go", "python3", "curl"}},
 		{"verify", []string{"az", "kubectl", "curl"}, []string{"bash", "helm", "go", "python3"}},
 	} {
 		t.Run(tc.step, func(t *testing.T) {
@@ -408,15 +408,13 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 	}
 
 	// A full lift preflights everything it will EVENTUALLY need, before it
-	// creates anything. Helm went with the retired payload — nothing this
-	// path runs needs it — so demanding it would make an operator install a
-	// tool for a phase that no longer exists.
+	// creates anything. The Orka phase installs its Helm chart.
 	for _, tc := range []struct {
 		payload string
 		want    []string
 		not     []string
 	}{
-		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "python3", "go", "curl"}, []string{"helm"}},
+		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "python3", "go", "curl", "helm"}, nil},
 	} {
 		payloadBase := base
 		payloadBase.Payload = tc.payload

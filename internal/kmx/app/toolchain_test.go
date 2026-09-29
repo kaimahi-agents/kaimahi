@@ -1,6 +1,9 @@
 package app
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -65,6 +68,59 @@ func TestPreflightFetchesAMissingClusterTool(t *testing.T) {
 	}
 }
 
+// Helm's published checksum covers the archive. Preflight must install the
+// executable from that verified archive and make it runnable on PATH.
+func TestPreflightFetchesMissingHelmFromVerifiedArchive(t *testing.T) {
+	body := []byte("#!/bin/sh\necho helm-stub\n")
+	goos, goarch := toolchain.Platform()
+	member := goos + "-" + goarch + "/helm"
+	var archive bytes.Buffer
+	zip := gzip.NewWriter(&archive)
+	tarball := tar.NewWriter(zip)
+	if err := tarball.WriteHeader(&tar.Header{Name: member, Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tarball.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := tarball.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zip.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(archive.Bytes())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256sum") {
+			fmt.Fprintf(w, "%x  %s\n", sum, filepath.Base(strings.TrimSuffix(r.URL.Path, ".sha256sum")))
+			return
+		}
+		w.Write(archive.Bytes())
+	}))
+	defer srv.Close()
+	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_TOOLCHAIN", "")
+	t.Setenv("PATH", t.TempDir())
+	toolchainBase = srv.URL
+	defer func() { toolchainBase = "" }()
+
+	a := &App{Run: &run.Runner{}, Err: os.Stderr}
+	if err := a.preflight(depHelm); err != nil {
+		t.Fatalf("cannot preflight missing helm: %v", err)
+	}
+	if len(a.provisioned) != 1 || a.provisioned[0].Name != "helm" || a.provisioned[0].Source != toolchain.FromDownload {
+		t.Fatalf("helm was not downloaded: %+v", a.provisioned)
+	}
+	path, err := exec.LookPath("helm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := (&run.Runner{}).Capture(path, "version")
+	if err != nil || strings.TrimSpace(output) != "helm-stub" {
+		t.Fatalf("cached helm did not run: %q (%v)", output, err)
+	}
+}
+
 // The opt-out is a real opt-out: nothing is downloaded, and the operator is
 // told what to install.
 func TestKmxToolchainOffRestoresTheInstallInstructions(t *testing.T) {
@@ -114,7 +170,7 @@ func TestTheContainerEngineIsNeverFetched(t *testing.T) {
 // longer fetches, which is the other way the two drift apart.
 func TestTheFetchableDependenciesAreExactlyTheOnesTheToolchainVerifies(t *testing.T) {
 	declared := map[string]bool{}
-	for _, dep := range []dependency{depKubectl, depKind, depGo} {
+	for _, dep := range []dependency{depKubectl, depKind, depHelm, depGo} {
 		if dep.fetchable {
 			declared[dep.name] = true
 		}

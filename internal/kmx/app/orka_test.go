@@ -9,7 +9,9 @@ package app
 // pin is supposed to report rather than suffer.
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -27,9 +29,14 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The fake answers only the reads this command makes. KMX_TEST_SECRET and
-// KMX_TEST_OLLAMA switch the two branches that decide whether anything is
-// written.
+// These names are fixture identities, never production controller selectors.
+const (
+	orkaController      = "orka-controller-manager"
+	orkaChartController = "orka-api-controller"
+)
+
+// The fake answers only the reads this command makes. KMX_TEST_OLLAMA
+// selects whether a Provider can resolve a model endpoint.
 func TestUnreachableIsNotTheSameAsAbsent(t *testing.T) {
 	for _, msg := range []string{"connection refused", "Unable to connect to the server", "no such host", "TLS handshake timeout", "context does not exist", "no configuration has been provided", "server has asked for the client to provide credentials"} {
 		if !unreachable(errors.New(msg)) {
@@ -47,17 +54,13 @@ func TestUnreachableIsNotTheSameAsAbsent(t *testing.T) {
 }
 
 const fakeOrkaKubectl = `#!/bin/sh
-printf '%s\n' "$*" >> "$KMX_TEST_ARGS"
+printf 'kubectl %s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
   *"apply -f -"*)
     [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
     exit 0 ;;
   *"get secret harness-wrapper-auth"*)
-    case "$KMX_TEST_SECRET" in
-      present) printf 'secret/harness-wrapper-auth\n'; exit 0 ;;
-      unreachable) printf 'Unable to connect to the server: dial tcp: i/o timeout\n' >&2; exit 1 ;;
-      *) printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2; exit 1 ;;
-    esac ;;
+    printf 'Error from server (NotFound): secrets "harness-wrapper-auth" not found\n' >&2; exit 1 ;;
   *"get svc ollama"*)
     case "$KMX_TEST_OLLAMA" in
       absent) printf 'Error from server (NotFound): services "ollama" not found\n' >&2; exit 1 ;;
@@ -79,18 +82,79 @@ case "$*" in
       refused) printf 'error: admission webhook denied the request\n' >&2; exit 1 ;;
       *) cat >/dev/null; printf 'namespace/orka-system created (server dry run)\n'; exit 0 ;;
     esac ;;
-  *"rollout status"*) printf 'deployment "x" successfully rolled out\n'; exit 0 ;;
-  *"get deploy orka-controller-manager"*) printf '%s' "$KMX_TEST_IMAGE"; exit 0 ;;
+  *"rollout status"*)
+    if [ -n "$KMX_TEST_ROLLOUT_TARGET" ]; then
+      case "$*" in
+        *"rollout status deploy/$KMX_TEST_ROLLOUT_TARGET "*) ;;
+        *) printf 'Error from server (NotFound): deployment target not found\n' >&2; exit 1 ;;
+      esac
+    fi
+    printf 'deployment "x" successfully rolled out\n'; exit 0 ;;
   # Anchored at the END deliberately. OrkaStatus asks for "-o jsonpath={...}",
   # and an unanchored *"-o json"* pattern matches that too — which silently
   # answers the view with OrkaReady's fixture and reports Orka as absent.
-  *"get deploy -o json") printf '%s' "$KMX_TEST_DEPLOY_JSON"; exit 0 ;;
-  *"get deploy"*) printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
-  *"get crd"*) printf 'tasks.core.orka.ai agents.core.orka.ai '; exit 0 ;;
+  *"get deploy -o json")
+    if [ "$KMX_TEST_DEPLOY_READ" = notfound ]; then
+      printf 'Error from server (NotFound): namespaces "orka-system" not found (credential-shaped=fixture-sensitive-token)\n' >&2
+      exit 1
+    fi
+    printf '%s' "$KMX_TEST_DEPLOY_JSON"; exit 0 ;;
+  *"get deployment"*|*"get deploy"*)
+    if [ -n "$KMX_TEST_EXISTING_DEPLOY" ]; then printf '%s' "$KMX_TEST_EXISTING_DEPLOY"; exit 0; fi
+    printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
+  *"get crd"*) printf '%s' "$KMX_TEST_EXISTING_CRD"; exit 0 ;;
   *"get providers.core.orka.ai"*) printf '%s' "$KMX_TEST_PROVIDERS"; exit 0 ;;
 esac
 exit 0
 `
+
+const fakeOrkaHelm = `#!/bin/sh
+printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"
+case "$*" in
+  *"list "*) printf '%s' "${KMX_TEST_HELM_LIST:-[]}"; exit 0 ;;
+  *"get values "*) printf '%s' "$KMX_TEST_HELM_VALUES"; exit 0 ;;
+  *"install "*)
+    case "$*" in
+      *"--dry-run"*)
+        if [ "$KMX_TEST_DRYRUN" = refused ]; then printf 'error: admission webhook denied the request\n' >&2; exit 1; fi
+        exit 0 ;;
+    esac
+    printf 'helm install\n' >> "$KMX_TEST_WRITES"
+    # Simulate sensitive chart NOTES: installer output must never copy a key.
+    printf 'harness-v2-key=fixture-sensitive-token\n'
+    exit 0 ;;
+esac
+exit 0
+`
+
+// This is a real gzip'd Helm chart, not a YAML manifest with a .tgz suffix.
+// The version and CRD are deliberately inside the archive so install tests
+// detect code that validates only the download digest then skips chart data.
+func orkaChart(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tarball := tar.NewWriter(gz)
+	for _, file := range []struct{ name, body string }{
+		{"orka/Chart.yaml", "apiVersion: v2\nname: orka\nversion: 0.2.0\nappVersion: 0.2.0\n"},
+		{"orka/crds/tasks.core.orka.ai.yaml", "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: tasks.core.orka.ai\n"},
+		{"orka/templates/controller.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: orka-controller-manager\n"},
+	} {
+		if err := tarball.WriteHeader(&tar.Header{Name: file.name, Mode: 0o644, Size: int64(len(file.body))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tarball.Write([]byte(file.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tarball.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
 
 type orkaFixture struct {
 	app     *App
@@ -111,6 +175,9 @@ func newOrkaFixture(t *testing.T, body []byte) *orkaFixture {
 	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fakeOrkaKubectl), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "helm"), []byte(fakeOrkaHelm), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
 	}))
@@ -121,6 +188,7 @@ func newOrkaFixture(t *testing.T, body []byte) *orkaFixture {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("KMX_TEST_ARGS", f.argsLog)
 	t.Setenv("KMX_TEST_STDIN", f.stdin)
+	t.Setenv("KMX_TEST_WRITES", filepath.Join(dir, "writes"))
 	r := run.Default()
 	r.Stdout, r.Stderr = f.out, f.errOut
 	f.app = &App{Cfg: &config.Config{
@@ -155,10 +223,24 @@ func (f *orkaFixture) calls(t *testing.T) string {
 	return string(body)
 }
 
+func (f *orkaFixture) writes(t *testing.T) string {
+	t.Helper()
+	calls := f.calls(t)
+	var writes []string
+	for _, call := range strings.Split(calls, "\n") {
+		if (strings.HasPrefix(call, "helm install ") && !strings.Contains(call, "--dry-run")) || strings.Contains(call, " apply -f -") || strings.Contains(call, " create secret ") {
+			writes = append(writes, call)
+		}
+	}
+	return strings.Join(writes, "\n")
+}
+
 // The digest is of ONE version's bytes. Anything else must stop before a
 // single object is written — a moved tag is a fact to report, not to install.
 func TestOrkaInstallRefusesAnInstallerThatIsNotThePinnedOne(t *testing.T) {
-	f := newOrkaFixture(t, []byte("kind: Namespace\n# not the pinned installer\n"))
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, append(chart, []byte("tampered")...))
+	f.app.orkaInstallerDigest = digestOf(chart)
 	err := f.app.OrkaInstall(OrkaOptions{})
 	if err == nil {
 		t.Fatal("an unpinned installer was accepted")
@@ -168,70 +250,133 @@ func TestOrkaInstallRefusesAnInstallerThatIsNotThePinnedOne(t *testing.T) {
 			t.Errorf("the refusal does not say %q: %v", want, err)
 		}
 	}
-	if applied := f.applied(t); applied != "" {
-		t.Errorf("something was applied despite the refusal:\n%s", applied)
+	if writes := f.writes(t); writes != "" {
+		t.Errorf("the digest mismatch wrote to the cluster:\n%s", writes)
 	}
 }
 
-// The order is the one Orka's own documentation gives and the reason this
-// command exists: the Secret cannot be in the manifest, and the wrapper
-// mounts it at start, so it must exist first.
-func TestOrkaInstallCreatesTheWrapperSecretBeforeApplyingTheInstaller(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
-	f := newOrkaFixture(t, installer)
-	f.app.orkaInstallerDigest = digestOf(installer)
+// The old raw-manifest install cannot be adopted by a Helm install. Refuse
+// before writes even when no Helm release is registered in the namespace.
+func TestOrkaInstallRefusesExistingV013BeforeAnyWrites(t *testing.T) {
+	for _, tc := range []struct{ name, deployment, crd string }{
+		{"deployment", "deployment.apps/orka-controller-manager", ""},
+		{"orphaned CRDs", "", "tasks.core.orka.ai"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart := orkaChart(t)
+			f := newOrkaFixture(t, chart)
+			f.app.orkaInstallerDigest = digestOf(chart)
+			t.Setenv("KMX_TEST_EXISTING_DEPLOY", tc.deployment)
+			t.Setenv("KMX_TEST_EXISTING_CRD", tc.crd)
+
+			if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil {
+				t.Fatal("installed Helm on top of existing manifest resources")
+			}
+			if writes := f.writes(t); writes != "" {
+				t.Fatalf("existing v0.1.3 caused writes before refusal:\n%s", writes)
+			}
+			if !strings.Contains(f.calls(t), "helm list") {
+				t.Errorf("existing cluster was not checked for a Helm release:\n%s", f.calls(t))
+			}
+		})
+	}
+}
+
+func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name, releases string
+	}{
+		{"foreign release", `[{"name":"orka","namespace":"orka-system","chart":"another-chart-0.2.0","app_version":"0.2.0","status":"deployed"}]`},
+		{"mismatched version", `[{"name":"orka","namespace":"orka-system","chart":"orka-0.1.3","app_version":"0.1.3","status":"deployed"}]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart := orkaChart(t)
+			f := newOrkaFixture(t, chart)
+			f.app.orkaInstallerDigest = digestOf(chart)
+			t.Setenv("KMX_TEST_HELM_LIST", tc.releases)
+			if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil {
+				t.Fatal("adopted or replaced a different Helm release")
+			}
+			if writes := f.writes(t); writes != "" {
+				t.Fatalf("a foreign release caused writes:\n%s", writes)
+			}
+			if !strings.Contains(f.calls(t), "helm list -n orka-system --kube-context kind-kaimahi-p1 -o json -f ^orka$") {
+				t.Errorf("release ownership check was not scoped to the cluster/name:\n%s", f.calls(t))
+			}
+		})
+	}
+}
+
+func TestOrkaInstallKeepsIdentifiedChartWithoutWriting(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_VALUES", `{"labels":{"kmx.kaimahi.ai/installed":"true"},"controller":{"mode":"harness-v2"},"fullnameOverride":"orka-api"}`)
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
+		t.Fatalf("repeat install: %v", err)
+	}
+	if writes := f.writes(t); writes != "" {
+		t.Fatalf("repeat install mutated chart or CRDs: %s", writes)
+	}
+}
+
+func TestOrkaInstallRefusesUnmarkedChart(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_VALUES", `{"controller":{"mode":"harness-v2"},"fullnameOverride":"orka-api"}`)
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil {
+		t.Fatal("foreign chart adopted without kmx marker")
+	}
+	if writes := f.writes(t); writes != "" {
+		t.Fatalf("foreign chart mutated: %s", writes)
+	}
+}
+
+// Fresh install applies chart CRDs before Helm, pins the chosen cluster, and
+// selects the harness-v2 controller. Credentials must not appear in output.
+func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
 
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
-		t.Fatalf("install: %v", err)
+		t.Fatalf("fresh chart install: %v\n%s", err, f.errOut)
 	}
-	applied := f.applied(t)
-	secretAt := strings.Index(applied, "harness-wrapper-auth")
-	installerAt := strings.LastIndex(applied, "kind: Namespace")
-	if secretAt < 0 {
-		t.Fatalf("the wrapper Secret was never created:\n%s", applied)
+	calls := f.calls(t)
+	crd := strings.Index(calls, "kubectl --context kind-kaimahi-p1 apply -f -")
+	helm := strings.Index(calls, "helm install orka ")
+	if crd < 0 || helm < 0 || crd > helm {
+		t.Fatalf("chart CRDs must be applied before Helm install:\n%s", calls)
 	}
-	if secretAt > installerAt {
-		t.Error("the installer was applied before the Secret it needs at start")
+	wait := strings.Index(calls, "kubectl --context kind-kaimahi-p1 wait --for=condition=Established")
+	if wait < crd || wait > helm {
+		t.Fatalf("CRDs were not Established before Helm Gateway discovery:\n%s", calls)
 	}
-}
-
-// Regenerating it under a running wrapper would rotate a token its callers
-// still hold. An existing Secret is kept, and the run still succeeds.
-func TestOrkaInstallKeepsAWrapperSecretThatAlreadyExists(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
-	f := newOrkaFixture(t, installer)
-	f.app.orkaInstallerDigest = digestOf(installer)
-	t.Setenv("KMX_TEST_SECRET", "present")
-
-	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
-		t.Fatalf("install: %v", err)
+	if !strings.Contains(f.applied(t), "name: tasks.core.orka.ai") {
+		t.Errorf("chart CRDs were not submitted to kubectl:\n%s", f.applied(t))
 	}
-	if strings.Contains(f.applied(t), "harness-wrapper-auth") {
-		t.Error("an existing wrapper Secret was overwritten")
+	for _, want := range []string{"--kube-context kind-kaimahi-p1", "-n orka-system", "--create-namespace", "--wait", "--timeout 10m", "controller.mode=harness-v2", "--set-string labels.kmx\\.kaimahi\\.ai/installed=true"} {
+		if !strings.Contains(calls[helm:], want) {
+			t.Errorf("Helm install omitted %q:\n%s", want, calls[helm:])
+		}
 	}
-	if !strings.Contains(f.errOut.String(), "keeping it") {
-		t.Errorf("the run does not say the Secret was kept:\n%s", f.errOut.String())
+	if strings.Contains(calls, "get secret harness-wrapper-auth") || strings.Contains(f.applied(t), "harness-wrapper-auth") {
+		t.Errorf("legacy wrapper Secret was read or written:\n%s\n%s", calls, f.applied(t))
 	}
-}
-
-// A cluster that did not answer is not a cluster without the Secret. Reading
-// one as the other mints a second token under a running wrapper.
-func TestOrkaInstallRefusesToGuessWhenTheSecretCannotBeRead(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
-	f := newOrkaFixture(t, installer)
-	f.app.orkaInstallerDigest = digestOf(installer)
-	t.Setenv("KMX_TEST_SECRET", "unreachable")
-
-	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
-	if err == nil || !strings.Contains(err.Error(), "refusing to generate a second one") {
-		t.Fatalf("an unreadable Secret was treated as absent: %v", err)
+	for _, output := range []string{f.out.String(), f.errOut.String(), calls} {
+		if strings.Contains(output, "fixture-sensitive-token") {
+			t.Fatalf("harness-v2 key was exposed: %s", output)
+		}
 	}
 }
 
 // The Provider is the step that removes Orka's fourth prerequisite, and it
 // is only honest where there is something for it to resolve against.
 func TestOrkaInstallWiresAKeylessProviderAtTheModelServer(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 
@@ -253,7 +398,7 @@ func TestOrkaInstallWiresAKeylessProviderAtTheModelServer(t *testing.T) {
 // A Provider pointing at nothing would resolve nothing, and its refusal is
 // where an adopter learns that rather than at their first model call.
 func TestOrkaInstallRefusesAProviderWithNoModelServerBehindIt(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 	t.Setenv("KMX_TEST_OLLAMA", "absent")
@@ -269,7 +414,7 @@ func TestOrkaInstallRefusesAProviderWithNoModelServerBehindIt(t *testing.T) {
 
 // `--provider -` is the escape hatch, and it must reach the end.
 func TestOrkaInstallSkipsTheProviderWhenAskedTo(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 	t.Setenv("KMX_TEST_OLLAMA", "absent")
@@ -282,30 +427,29 @@ func TestOrkaInstallSkipsTheProviderWhenAskedTo(t *testing.T) {
 	}
 }
 
-// "Installed" means both Deployments are ready. Waiting for the controller
-// alone would report success while the wrapper — the half that needs the
-// Secret above — was still failing to start, which is the exact outcome this
-// command exists to make impossible.
-func TestOrkaInstallWaitsForBothDeployments(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
-	f := newOrkaFixture(t, installer)
-	f.app.orkaInstallerDigest = digestOf(installer)
+// Helm's --wait is the readiness boundary for the v0.2.0 chart; the
+// v0.1.3 wrapper must not be treated as part of the new install.
+func TestOrkaInstallWaitsForHelmChart(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
 
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	calls := f.calls(t)
-	for _, deployment := range []string{orkaController, orkaWrapper} {
-		if !strings.Contains(calls, "rollout status deploy/"+deployment) {
-			t.Errorf("the run never waited for %s:\n%s", deployment, calls)
-		}
+	if !strings.Contains(calls, "--wait") || !strings.Contains(calls, "--timeout 10m") {
+		t.Errorf("Helm install did not wait for readiness:\n%s", calls)
+	}
+	if strings.Contains(calls, "rollout status deploy/orka-agent-harness-wrapper") {
+		t.Errorf("new chart install waited for the retired wrapper:\n%s", calls)
 	}
 }
 
 // Installing is not governing, and the run has to say so: an adopter who
 // reads "Orka is running" as "its traffic is metered" has been misled by us.
 func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 
@@ -339,6 +483,7 @@ func TestOrkaStatusSeparatesAbsentFromUnreadable(t *testing.T) {
 func TestOrkaStatusNamesTheConsequenceOfNoProvider(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil)))
 	t.Setenv("KMX_TEST_PROVIDERS", "")
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatalf("status: %v", err)
@@ -354,7 +499,7 @@ func TestOrkaStatusNamesTheConsequenceOfNoProvider(t *testing.T) {
 func TestOrkaStatusReadsTheRunningVersionRatherThanThePin(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
-	t.Setenv("KMX_TEST_IMAGE", "ghcr.io/orka-agents/orka:0.1.2")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage(orkaController, "ghcr.io/orka-agents/orka:0.1.2")))
 
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatalf("status: %v", err)
@@ -368,12 +513,12 @@ func TestOrkaStatusReadsTheRunningVersionRatherThanThePin(t *testing.T) {
 	}
 }
 
-// Their manifest tags the image `0.1.3` and the repository tags the release
-// `v0.1.3`. A match must not be reported as a difference.
+// The pinned image tag omits the leading `v` in OrkaVersion. A match must
+// not be reported as a difference.
 func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-controller-manager=1/1 ")
-	t.Setenv("KMX_TEST_IMAGE", "ghcr.io/orka-agents/orka:"+strings.TrimPrefix(OrkaVersion, "v"))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage(orkaController, "ghcr.io/orka-agents/orka:"+strings.TrimPrefix(OrkaVersion, "v"))))
 
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatalf("status: %v", err)
@@ -383,49 +528,83 @@ func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
 	}
 }
 
+func TestOrkaStatusRefusesAmbiguousControllerLabels(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "two-controllers=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)))
+	if err := f.app.OrkaStatus(); err == nil || !strings.Contains(err.Error(), "multiple Orka controller Deployments") {
+		t.Fatalf("ambiguous Orka status: %v", err)
+	}
+}
+
+func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	if err := f.app.OrkaStatus(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.out.String(), "0.2.0") || strings.Contains(f.out.String(), "unknown") {
+		t.Fatalf("pinned digest not recognized: %s", f.out)
+	}
+}
+
+func TestOrkaStatusReadsChartControllerVersion(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka:0.2.0")))
+	if err := f.app.OrkaStatus(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.out.String(), "0.2.0") || strings.Contains(f.out.String(), "unknown") {
+		t.Fatalf("chart version not found: %s", f.out)
+	}
+}
+
 // --no-apply reaches the network and stops. Nothing is written, and the
 // guard is never asked, because there is nothing to guard.
 func TestOrkaInstallNoApplyWritesNothing(t *testing.T) {
-	installer := []byte("kind: Namespace\n---\nkind: Service\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 
 	if err := f.app.OrkaInstall(OrkaOptions{NoApply: true}); err != nil {
 		t.Fatalf("install --no-apply: %v", err)
 	}
-	if applied := f.applied(t); applied != "" {
-		t.Errorf("--no-apply wrote to the cluster:\n%s", applied)
+	if writes := f.writes(t); writes != "" {
+		t.Errorf("--no-apply wrote to the cluster:\n%s", writes)
 	}
 	if !strings.Contains(f.errOut.String(), "nothing was written") {
 		t.Errorf("--no-apply does not say it wrote nothing:\n%s", f.errOut.String())
 	}
 }
 
-// A server dry run is how a cluster that would REFUSE the installer says so
-// before it is half-applied. It writes nothing, so it skips the Secret.
+// Dry-run validates against the cluster without applying chart CRDs or
+// creating a Helm release.
 func TestOrkaInstallDryRunValidatesAndWritesNothing(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 
 	if err := f.app.OrkaInstall(OrkaOptions{DryRun: true}); err != nil {
 		t.Fatalf("install --dry-run: %v", err)
 	}
-	if strings.Contains(f.applied(t), "harness-wrapper-auth") {
-		t.Error("--dry-run created the wrapper Secret")
+	if writes := f.writes(t); writes != "" {
+		t.Errorf("--dry-run made cluster writes:\n%s", writes)
 	}
-	if !strings.Contains(f.calls(t), "apply --dry-run=server") {
-		t.Errorf("--dry-run never asked the API server:\n%s", f.calls(t))
+	calls := f.calls(t)
+	if !strings.Contains(calls, "--dry-run") {
+		t.Errorf("--dry-run never validated the chart or CRDs:\n%s", calls)
 	}
-	if !strings.Contains(f.errOut.String(), "cannot show") {
-		t.Error("--dry-run does not say what it could not prove")
+	if !strings.Contains(f.errOut.String(), "nothing was written") {
+		t.Errorf("--dry-run did not explain its no-write boundary:\n%s", f.errOut)
 	}
 }
 
 // A cluster that refuses the installer must fail here rather than halfway
 // through applying it.
 func TestOrkaInstallDryRunReportsAClusterThatWouldRefuse(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 	t.Setenv("KMX_TEST_DRYRUN", "refused")
@@ -433,6 +612,9 @@ func TestOrkaInstallDryRunReportsAClusterThatWouldRefuse(t *testing.T) {
 	err := f.app.OrkaInstall(OrkaOptions{DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), "would refuse") {
 		t.Fatalf("a refusing cluster was not reported: %v", err)
+	}
+	if writes := f.writes(t); writes != "" {
+		t.Fatalf("a refused dry run wrote to the cluster:\n%s", writes)
 	}
 }
 
@@ -463,14 +645,30 @@ func orkaDeployJSON(t *testing.T, deployments ...map[string]any) string {
 
 // orkaDeploy is one Deployment, healthy by default, so each test states only
 // the one field whose failure it is about.
+func orkaDeployWithImage(name, image string) map[string]any {
+	d := orkaDeploy(name, nil)
+	spec := d["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+	spec["containers"].([]any)[0].(map[string]any)["image"] = image
+	return d
+}
+
 func orkaDeploy(name string, edit func(meta, spec, status map[string]any)) map[string]any {
-	meta := map[string]any{"name": name, "generation": 2}
+	labels := map[string]any{"app.kubernetes.io/name": "orka"}
+	if name == orkaController {
+		labels["control-plane"] = "controller-manager"
+	}
+	if name != orkaController && name != orkaWrapper {
+		labels["app.kubernetes.io/component"] = "controller"
+	}
+	meta := map[string]any{"name": name, "generation": 2, "labels": labels}
 	spec := map[string]any{"replicas": 1}
 	status := map[string]any{"observedGeneration": 2, "updatedReplicas": 1,
 		"readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 0}
 	if edit != nil {
 		edit(meta, spec, status)
 	}
+	// Legacy readiness checks must keep recognizing the v0.1.3 manifest.
+	spec["template"] = map[string]any{"spec": map[string]any{"containers": []any{map[string]any{"name": "controller", "image": "ghcr.io/orka-agents/orka:0.1.3"}}}}
 	return map[string]any{"metadata": meta, "spec": spec, "status": status}
 }
 
@@ -498,9 +696,9 @@ func TestOrkaReadyRefusesAnAbsentOrka(t *testing.T) {
 	}
 }
 
-// Both Deployments, or it is not installed. The wrapper is the half that needs
-// the Secret created before the manifest, so a lift that checked only the
-// controller would miss exactly the failure this path guards.
+// Legacy v0.1.3 installs still require both Deployments. The new chart does
+// not create a wrapper, but existing consumer verification must not mistake
+// a half-installed manifest runtime for a healthy legacy installation.
 func TestOrkaReadyRequiresBothDeployments(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil)))
@@ -515,6 +713,70 @@ func TestOrkaReadyRequiresBothDeployments(t *testing.T) {
 		orkaDeploy(orkaController, nil), orkaDeploy(orkaWrapper, nil)))
 	if err := g.app.OrkaReady(); err != nil {
 		t.Fatalf("a healthy Orka was refused: %v", err)
+	}
+}
+
+func TestOrkaControllerForLiftSelectsLabelsNotNames(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		controller string
+	}{
+		{"legacy v0.1.3", orkaController}, {"chart other release name", "w112-controller"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOrkaFixture(t, nil)
+			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(tc.controller, nil)))
+			t.Setenv("KMX_TEST_ROLLOUT_TARGET", tc.controller)
+			got, err := f.app.orkaControllerForLift(t.Context())
+			if err != nil || got != tc.controller {
+				t.Fatalf("controller = %s, %v; want %s", got, err, tc.controller)
+			}
+			if _, err := f.app.orkaCapture(t.Context(), nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+got, "--timeout=10s"); err != nil {
+				t.Fatalf("wrong rollout target: %v", err)
+			}
+			if calls := f.calls(t); !strings.Contains(calls, "rollout status deploy/"+tc.controller+" ") {
+				t.Fatalf("did not query selected controller: %s", calls)
+			}
+		})
+	}
+}
+
+func TestOrkaControllerDiscoveryNamesMissingNamespaceWithoutLeakingStderr(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOY_READ", "notfound")
+	_, err := f.app.orkaControllerForLift(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "namespace orka-system not found") || strings.Contains(err.Error(), "fixture-sensitive-token") {
+		t.Fatalf("unsanitized or unhelpful discovery error: %v", err)
+	}
+}
+
+func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
+	for _, tc := range []struct {
+		name, want  string
+		deployments []map[string]any
+	}{
+		{"zero", "no Orka controller Deployment", []map[string]any{orkaDeploy(orkaWrapper, nil)}},
+		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOrkaFixture(t, nil)
+			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, tc.deployments...))
+			_, err := f.app.orkaControllerForLift(t.Context())
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("controller discovery = %v; want %s", err, tc.want)
+			}
+			if strings.Contains(f.calls(t), "rollout status") {
+				t.Fatal("rolled out an ambiguous or absent controller")
+			}
+		})
+	}
+}
+
+func TestOrkaReadyAcceptsHarnessV2ControllerWithoutLegacyWrapper(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", nil)))
+	if err := f.app.OrkaReady(); err != nil {
+		t.Fatalf("chart controller was refused without a v1 wrapper: %v", err)
 	}
 }
 
@@ -689,7 +951,7 @@ func TestTheNoTelemetryPhaseLabelPromisesNoAnswer(t *testing.T) {
 // existing account: minting an identity as a side effect of authoring an
 // agent would hide a grant inside a command nobody reads as a grant.
 func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
 	f.app.Cfg.Model = "qwen2.5:3b"
@@ -722,7 +984,7 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 	// The whole step, not just its last object: a run that skipped the
 	// installer or the Provider would still have written the account.
 	calls := f.calls(t)
-	for _, want := range []string{"get secret harness-wrapper-auth", "rollout status deploy/orka-controller-manager", "get svc ollama"} {
+	for _, want := range []string{"helm install orka", "controller.mode=harness-v2", "get svc ollama"} {
 		if !strings.Contains(calls, want) {
 			t.Errorf("the orka step did not %q:\n%s", want, calls)
 		}
@@ -741,7 +1003,7 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 // halves are asserted here because the next path is one paste away from a
 // second spelling.
 func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
-	installer := []byte("kind: Namespace\n")
+	installer := orkaChart(t)
 
 	// The grant itself, applied by nothing else, so the comparison below is
 	// byte-for-byte rather than "mentions the same words somewhere".

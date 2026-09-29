@@ -110,10 +110,9 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	}
 
 	// Equip the machine first. Everything after this point assumes kind and
-	// kubectl are runnable, and the whole point of the command is that a
-	// machine which had neither still gets there. Helm is not on this path:
-	// the Orka runtime is a pinned manifest, not a chart.
-	if err := a.preflight(depKind, depKubectl, a.engineDependency()); err != nil {
+	// kubectl and Helm are runnable, and the whole point of the command is
+	// that a machine missing them still gets there.
+	if err := a.preflight(depKind, depKubectl, depHelm, a.engineDependency()); err != nil {
 		return err
 	}
 	if len(a.provisioned) > 0 && !asJSON {

@@ -47,7 +47,7 @@ func TestPortableDigestIndependentOfBindingsAndRenderedDigestDependsOnThem(t *te
 		t.Fatal(err)
 	}
 	bindings := orkaBindingsFromCreate(opt)
-	adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true}, bindings: &bindings}
+	adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true, SchemaTarget: "v0.1.3"}, bindings: &bindings}
 	first, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestRenderedDigestChangesForEachTargetBinding(t *testing.T) {
 		{"key", func(b *agentruntime.OrkaBindings) { b.Provider.SecretRef.Key = "token" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true}, bindings: &base}
+			adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true, SchemaTarget: "v0.1.3"}, bindings: &base}
 			first, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
 			if err != nil {
 				t.Fatal(err)

@@ -67,8 +67,13 @@ func (b *orkaChatBackend) prepareLiftOrka(ctx context.Context, target *App, r *c
 			return fmt.Errorf("target %s: Orka installation is incomplete", target.Cfg.KubeContext)
 		}
 	}
-	// Confirm a running controller as well as schema presence.
-	if _, err := target.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/orka-controller-manager", "--timeout=10s"); err != nil {
+	// Confirm a running controller as well as schema presence. Existing v0.1.3
+	// targets remain usable; only the install path refuses to upgrade them.
+	controller, err := target.orkaControllerForLift(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := target.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+controller, "--timeout=10s"); err != nil {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

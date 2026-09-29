@@ -177,8 +177,7 @@ func (a *App) preflightUp(steps []string) error {
 
 // upDependencies is what this selection of steps shells out to. It is
 // separate from preflightUp so the list is readable — and assertable —
-// without provisioning anything: Helm was fetched onto operators' machines
-// for the legacy chart alone, and nothing here may quietly ask for it again.
+// without provisioning anything.
 func (a *App) upDependencies(steps []string) []dependency {
 	wanted := map[string]bool{}
 	for _, step := range steps {
@@ -190,6 +189,9 @@ func (a *App) upDependencies(steps []string) []dependency {
 	}
 	if wanted["ollama"] || wanted["model"] || wanted["orka"] {
 		dependencies = append(dependencies, depKubectl)
+	}
+	if wanted["orka"] {
+		dependencies = append(dependencies, depHelm)
 	}
 	return dependencies
 }

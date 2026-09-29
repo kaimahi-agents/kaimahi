@@ -8,7 +8,8 @@ New quickstart agents reference this tool by default. `--tools` replaces that
 default with an explicit list. Default system instructions direct cluster
 questions to the tool; custom instruction files remain user-owned.
 
-Orka v0.1.3 refuses private Service IPs as direct Tool authorities. KMX gives
+The earlier Orka v0.1.3 run refused private Service IPs as direct Tool
+authorities. The current pinned installer is v0.2.0; KMX gives
 the Tool the credential-free logical authority `https://example.com/resources`
 and binds it to an exact same-namespace `OutboundAccessPolicy`; Orka sends the
 request only to the `kmx-k8s-tool` Service on port 8080. Installation waits for
@@ -33,8 +34,9 @@ In Orka interactive chat, `/tools` opens a searchable list of registered tools
 and existing references. The screen clears before loading. Use arrows or j/k to
 select, press `/` to search, Space to toggle,
 and Enter to save. Escape returns without changes; Ctrl-C exits chat. The four
-automatic v0.1.3 memory tools are shown as locked on because the worker injects
-them independently of the Agent references.
+automatic memory tools observed on v0.1.3 were shown as locked on because that
+worker injected them independently of the Agent references; do not assume
+this historical observation describes every v0.2.0 task mode.
 
 `/agent` opens a searchable list of AI agents in the current namespace. Enter
 connects to the selection, clears the visible conversation and resets `/retry`.
@@ -97,8 +99,9 @@ python3 -B scripts/test_orka_k8s_tool.py
 go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
-CI creates an unpredictable ConfigMap, executes an Orka Task against the pinned
-v0.1.3 worker, and requires the Task's answer to contain that exact live name.
+The earlier v0.1.3 CI run created an unpredictable ConfigMap, executed an
+Orka Task against that worker, and required the Task's answer to contain that
+exact live name. That run is not a v0.2.0 chart execution claim.
 It also changes the Tool to reference a missing gateway and requires a
 current-generation `Available=False` result before restoring the managed
 policy. The direct server checks remain as separate evidence for the HTTP

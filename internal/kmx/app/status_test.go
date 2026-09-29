@@ -35,6 +35,7 @@ func statusFixture(t *testing.T, script string) (*App, *bytes.Buffer, string) {
 
 const orkaStatusScript = `case "$*" in
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
+*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"get crd"*) printf '%s' 'agents.core.orka.ai providers.core.orka.ai ';;
 *"get providers"*) printf '%s' 'local=true ';;
@@ -167,6 +168,7 @@ func TestStatusReportsProxyPodsAndExpiringSeamCertificate(t *testing.T) {
 *"get deploy kaimahi-proxy"*) printf '%s' '{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":2},"status":{"readyReplicas":1}}';;
 *"get pods -l app=kaimahi-proxy"*) printf '%s' '{"items":[{"metadata":{"name":"proxy-a"},"status":{"conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"restartCount":2}]}},{"metadata":{"name":"proxy-b"},"status":{"conditions":[{"type":"Ready","status":"False"}],"containerStatuses":[{"restartCount":1}]}}]}';;
 *"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_CERT";;
+*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
 esac`
@@ -203,6 +205,7 @@ func TestStatusDistinguishesAbsentPlaneFromUnreadablePlane(t *testing.T) {
 			script := `case "$*" in
 *"get deploy kaimahi-proxy"*) ` + tc.response + `;;
 *"get secret kaimahi-plane-seam-tls"*) echo 'Error from server (NotFound): secrets "kaimahi-plane-seam-tls" not found' >&2; exit 1;;
+*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
 esac`
@@ -231,6 +234,7 @@ func TestStatusReportsScaledZeroPlaneAsNotServing(t *testing.T) {
 	script := `case "$*" in
 *"get deploy kaimahi-proxy"*) printf '%s' '{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":0},"status":{"readyReplicas":0}}';;
 *"get pods -l app=kaimahi-proxy"*) printf '%s' '{"items":[]}';;
+*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
 esac`

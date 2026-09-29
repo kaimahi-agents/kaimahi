@@ -215,8 +215,7 @@ func (a *App) liftDependencies(opt lift.Options) []dependency {
 		case "boundary":
 			deps = append(deps, depBash, depPython3)
 		case "orka":
-			// Orka's installer is applied with kubectl, which every phase
-			// already depends on, and fetched over HTTPS by kmx itself.
+			deps = append(deps, depHelm)
 		case "plane":
 			deps = append(deps, depBash, depGo)
 		case "verify":

@@ -52,9 +52,9 @@ a checksum from the **same** GitHub release over TLS: corruption detection, not
 an independent signature. See [releases](releases.md) for platforms and upgrades.
 
 Local kind commands need Docker or Podman. kmx uses kind and kubectl from
-PATH first, otherwise fetches pinned, checksum-verified tools. Helm is no
-longer fetched or needed: the only thing that used it was the retired
-chart install. No runtime CLI is fetched or cached either. Cached digests are
+PATH first, otherwise fetches pinned, checksum-verified tools, including
+Helm 3 for Orka's v0.2.0 chart. Helm calls pin the selected Kubernetes context
+with `--kube-context`. No Orka runtime CLI is fetched or cached. Cached digests are
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
@@ -82,7 +82,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
 | Command | Contract / reference |
 |---|---|
-| `kmx orka install` | verify pinned Orka installer bytes; create wrapper-auth Secret before apply; wait for both Deployments; optionally create a keyless Provider. Uses upstream manifests unmodified. [Orka](orka.md) |
+| `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | author native Provider + Agent and optional Task; retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
 | `kmx agent lift <bundle-dir>` | reconcile an existing portable bundle on a prepared destination; `--plan` checks without writing. [Bundle lift](agent-lift.md) |
@@ -125,7 +125,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 
 | Command | Current behavior |
 |---|---|
-| `kmx quickstart` | kind + keyless Ollama + pinned Orka + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Helm, no legacy runtime, no plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no legacy runtime or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
 | `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
 | `kmx aks up` / `kmx aks down` | Provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
@@ -272,9 +272,13 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   both are kept when identical, and the cluster side reconciles as below.
   With `--task` the rendered Task name is random, so the old artifact can never
   match: a `--task` rerun refuses it and needs a new `--out` path.
-- Offline `--schema-target v0.1.3|main` selects [pinned CRD fixtures](../internal/kmx/orkaschema/README.md),
-  not a network fetch. Unknown fields refuse; the pinned main snapshot lacks
-  Agent/Provider rate limits and refuses those flags rather than dropping fields.
+- Offline defaults to `--schema-target v0.2.0`. Explicit
+  `--schema-target v0.1.3|main` retains [pinned CRD fixtures](../internal/kmx/orkaschema/README.md)
+  for legacy reads/authoring and the immutable old main snapshot, **not**
+  install targets or a network fetch. Unknown fields refuse; v0.2.0 and the
+  pinned old main snapshot lack Agent/Provider rate limits and refuse those
+  flags rather than dropping fields. Select `v0.1.3` explicitly to inspect
+  old manifests; that does not make a v0.1.3 runtime installable by kmx.
   Offline schema validation is not CEL/admission, readiness or execution proof.
 - Online uses installed CRDs with **no fixture fallback**, checks Secret/key
   presence and ownership, and strictly server-dry-runs each custom resource.
@@ -301,8 +305,10 @@ MCP wiring. Use `kmx agent create --help` for all flags and defaults.
   answer. **Without `--task`, no model response was tested.**
 - kmx requests a ten-minute token; **the API server determines its actual TTL**.
   It carries the account's full effective authority, not result-only scope;
-  discarding it is not revocation. Release `v0.1.3` does not enforce Task-read RBAC;
-  pinned main requires namespaced Task-get. Result bytes are not bound to a UID.
+  discarding it is not revocation. The historical v0.1.3 release did not
+  enforce Task-read RBAC; the pinned old main snapshot requires namespaced
+  Task-get. Do not use that history to infer v0.2.0 enforcement; keep the
+  namespaced grant. Result bytes are not bound to a UID.
   The context-pinned loopback HTTP forward uses one TCP connection and stops on
   connection/forward loss, never redialing or resubmitting. This trades reconnect
   availability for protection against later local-port reuse; initial connection

@@ -88,6 +88,28 @@ func TestLiftBundlePlanIsReadOnlyAndMapsTargetProvider(t *testing.T) {
 	}
 }
 
+func TestLiftBundlePlanQueriesLabelSelectedChartController(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "w112-controller")
+	opt.Plan = true
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	var discovered, rolled bool
+	for _, call := range orkaCalls(t, dir) {
+		joined := strings.Join(call.Args, " ")
+		if strings.Contains(joined, "get deploy -o json") {
+			discovered = true
+		}
+		if strings.Contains(joined, "rollout status deploy/w112-controller --timeout=10s") {
+			rolled = true
+		}
+	}
+	if !discovered || !rolled {
+		t.Fatalf("did not query and roll out the label-selected chart controller: discovered=%t rolled=%t", discovered, rolled)
+	}
+}
+
 // A comment-only portable change leaves rendered fields unchanged, but lift
 // still refreshes both ownership digests. Plan must say that it will write.
 func TestLiftBundlePlanReportsMarkerRefresh(t *testing.T) {

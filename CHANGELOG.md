@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Changed
+
+- **Orka installation now pins v0.2.0's Helm chart** (`orka-0.2.0.tgz`, SHA-256 checked before use) instead of applying the v0.1.3 manifest. kmx resolves Helm on PATH or fetches its pinned, checksum-verified toolchain binary, applies CRDs extracted from the verified chart before `helm install`, pins `--kube-context`, and installs release `orka` with `controller.mode=harness-v2` and `fullnameOverride=orka-api`. Orka generates the snapshot encryption Secret `orka-api-agent-execution-snapshot`; kmx never prints its value. There is no `helm upgrade --force` path. A rerun preserves an existing matching kmx release and key; a v0.1.3 manifest install or foreign release is refused, **not upgraded**. Offline create now defaults to the v0.2.0 CRDs; `--schema-target v0.1.3|main` remains available explicitly for old fixtures and does not install an old runtime. See [Orka setup and replacement](docs/orka.md#limits-stated) and upstream [v0.2.0 installation](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md) / [unsupported version upgrades](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+
+### Breaking
+
+- Orka v0.1.3 installations are not upgraded in place. Local kind replacement requires `kmx down` followed by `kmx up` and **deletes the cluster's Tasks, Secrets, PVC-backed data, model data and plane ledger**; export anything needed before deletion. On AKS, back up existing volumes/PVCs and Orka resources/Secrets, including any existing snapshot key; after a fresh v0.2.0 installation, back up its new chart-managed snapshot key with its controller volume **without printing the key**. Neither an untested Helm upgrade nor restoring an old SQLite volume into v0.2.0 is a supported migration. Do not delete a production cluster until the recovery plan is verified.
+
 ## v0.3.0 — 2026-09-29
 
 ### Added

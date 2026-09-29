@@ -1454,9 +1454,7 @@ jobs:
           set -euo pipefail
           bin/kmx orka install 2>&1 | tee orka-install.out
           grep -q 'Installer verified:' orka-install.out
-          for d in orka-controller-manager orka-agent-harness-wrapper; do
-            kubectl --context kind-kaimahi-p1 -n orka-system rollout status "deploy/$d" --timeout=300s
-          done
+          kubectl --context kind-kaimahi-p1 -n orka-system rollout status deploy/orka-api-controller --timeout=300s
           # A Provider that is not Ready resolves no model, and `kmx migrate`
           # refuses before writing anything when it can see that — so
           # waiting here turns a later refusal into a legible wait.
@@ -1779,7 +1777,7 @@ jobs:
         run: |
           kubectl --context kind-kaimahi-p1 get pods -A || true
           kubectl --context kind-kaimahi-p1 -n orka-system get providers.core.orka.ai -o wide || true
-          kubectl --context kind-kaimahi-p1 -n orka-system logs deploy/orka-controller-manager --tail=100 || true
+          kubectl --context kind-kaimahi-p1 -n orka-system logs deploy/orka-api-controller --tail=100 || true
           kubectl --context kind-kaimahi-p1 -n owner-app get deploy,pods,secret -o wide || true
           kubectl --context kind-kaimahi-p1 -n owner-app logs deploy/owner-ci --tail=100 || true
           kubectl --context kind-kaimahi-p1 -n kaimahi get pods -o wide || true
@@ -2478,9 +2476,7 @@ jobs:
           set -euo pipefail
           bin/kmx orka install 2>&1 | tee orka-install.out
           grep -q 'Installer verified:' orka-install.out
-          for d in orka-controller-manager orka-agent-harness-wrapper; do
-            kubectl --context kind-kaimahi-p1 -n orka-system rollout status "deploy/$d" --timeout=300s
-          done
+          kubectl --context kind-kaimahi-p1 -n orka-system rollout status deploy/orka-api-controller --timeout=300s
           # A Provider that is not Ready resolves no model, and `kmx migrate`
           # refuses before writing anything when it can see that — so
           # waiting here turns a later refusal into a legible wait.
@@ -2714,7 +2710,7 @@ jobs:
         run: |
           kubectl --context kind-kaimahi-p1 get pods -A || true
           kubectl --context kind-kaimahi-p1 -n orka-system get providers.core.orka.ai -o wide || true
-          kubectl --context kind-kaimahi-p1 -n orka-system logs deploy/orka-controller-manager --tail=100 || true
+          kubectl --context kind-kaimahi-p1 -n orka-system logs deploy/orka-api-controller --tail=100 || true
           kubectl --context kind-kaimahi-p1 -n owner-app get deploy,pods,secret -o wide || true
           kubectl --context kind-kaimahi-p1 -n owner-app logs deploy/owner-ci --tail=100 || true
           kubectl --context kind-kaimahi-p1 -n kaimahi get pods -o wide || true
@@ -2799,16 +2795,11 @@ jobs:
           # The ungoverned state must be stated, not left to be inferred
           # from an empty ledger.
           grep -q 'This command does not enable governance' quickstart.out
-          # The tools were fetched by kmx, not installed by the job. Helm is
-          # NOT among them: the Orka runtime is a pinned manifest, not a
-          # chart, so a quickstart that fetched Helm would be doing work the
-          # first answer does not need.
-          for t in kind kubectl; do
+          # The tools were fetched by kmx, not installed by the job. Orka's
+          # pinned harness-v2 chart needs Helm for the first answer.
+          for t in kind kubectl helm; do
             grep -q "fetching $t v" quickstart.out
           done
-          if grep -q 'fetching helm v' quickstart.out; then
-            echo "quickstart fetched Helm; nothing on the Orka path uses it"; exit 1
-          fi
           # Nothing on this path installs, reads or waits on the legacy runtime.
           if grep -qi 'kagent' quickstart.out; then
             echo "the supported first-answer path still names the legacy runtime:"
@@ -2871,9 +2862,10 @@ jobs:
           # The runtime, read from the cluster rather than from the command's
           # own stdout.
           "$k" --context kind-kmx-quickstart -n orka-system rollout status \
-            deploy/orka-controller-manager --timeout=120s
-          "$k" --context kind-kmx-quickstart -n orka-system rollout status \
-            deploy/orka-agent-harness-wrapper --timeout=120s
+            deploy/orka-api-controller --timeout=120s
+          if "$k" --context kind-kmx-quickstart -n orka-system get deploy orka-agent-harness-wrapper --ignore-not-found -o name | grep -q .; then
+            echo "the harness wrapper was installed instead of harness-v2"; exit 1
+          fi
           "$k" --context kind-kmx-quickstart -n orka-system get \
             providers.core.orka.ai local >/dev/null
           # The grant `up --step orka` owns, and its exact extent.
@@ -2892,11 +2884,16 @@ jobs:
           if "$k" --context kind-kmx-quickstart get ns kagent >/dev/null 2>&1; then
             echo "namespace exists on the supported path: the legacy runtime is installed"; exit 1
           fi
-          # No Helm release anywhere: the runtime is a pinned manifest.
-          if "$k" --context kind-kmx-quickstart get secret -A \
-            -l owner=helm -o name | grep -q .; then
-            echo "a Helm release exists on the supported path"; exit 1
-          fi
+          # Exactly the kmx-owned Orka chart, in harness-v2 mode.
+          h="$HOME/.config/kmx/path/helm"
+          test "$("$h" --kube-context kind-kmx-quickstart list --all-namespaces --short)" = orka
+          "$h" --kube-context kind-kmx-quickstart -n orka-system get values orka -o json | python3 -c '
+          import json, sys
+          v = json.load(sys.stdin)
+          assert v["controller"]["mode"] == "harness-v2", v
+          assert v["fullnameOverride"] == "orka-api", v
+          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          '
       # Rerunning is how an agent in a harness uses this command. The third
       # run must REUSE the exact bundle it already wrote — not recreate it,
       # and not refuse it — and must still produce a fresh Task and answer.
@@ -2957,7 +2954,7 @@ jobs:
           # THAT BASELINE IS NOW STALE and deliberately not replaced by a
           # guess. It measured the legacy runtime's journey (a Helm chart, a
           # reduced release, an A2A invoke); this job now measures the Orka
-          # journey (a pinned manifest, a Provider, an Agent and a Task). The
+          # journey (a Helm chart, a Provider, an Agent and a Task). The
           # two are not comparable, and a number nobody measured is worse than
           # an honest stale one. The ceiling below is UNCHANGED until a green
           # run on this runner class reports a real figure — whoever sees that
@@ -3051,8 +3048,8 @@ jobs:
       # Provider's readiness asserted — a bare `kmx up` would have installed
       # Orka already, and that step would then be asserting about somebody
       # else's work. The other half of this shard's point is what the Orka
-      # path does NOT need: no Helm release, no legacy namespace, no chart.
-      - name: Cluster, Ollama and the model — no legacy runtime, no Helm release
+      # path does NOT install: no legacy namespace or harness wrapper.
+      - name: Cluster, Ollama and the model — no legacy runtime
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
@@ -3074,9 +3071,7 @@ jobs:
           # The digest pin is the point of the command, so require that it
           # was actually verified rather than that the command exited 0.
           grep -q 'Installer verified:' orka-install.out
-          for d in orka-controller-manager orka-agent-harness-wrapper; do
-            kubectl --context kind-kmx-orka -n orka-system rollout status "deploy/$d" --timeout=300s
-          done
+          kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-api-controller --timeout=300s
           # A Provider that is not Ready resolves no model, and an Agent
           # bound to it would fail later with a much less legible message.
           for _ in $(seq 1 60); do
@@ -3205,11 +3200,19 @@ jobs:
             echo "the Orka shard created the legacy runtime's namespace"
             exit 1
           fi
+          # The installed chart is the only release, with the harness-v2
+          # controller and kmx ownership settings (not the old wrapper).
           releases=$(helm --kube-context kind-kmx-orka list --all-namespaces --short)
-          if [ -n "$releases" ]; then
-            echo "the Orka shard left Helm releases:"
-            printf '%s\n' "$releases"
-            exit 1
+          test "$releases" = orka || { echo "unexpected Helm releases: $releases"; exit 1; }
+          helm --kube-context kind-kmx-orka -n orka-system get values orka -o json | python3 -c '
+          import json, sys
+          v = json.load(sys.stdin)
+          assert v["controller"]["mode"] == "harness-v2", v
+          assert v["fullnameOverride"] == "orka-api", v
+          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          '
+          if kubectl --context kind-kmx-orka -n orka-system get deploy orka-agent-harness-wrapper --ignore-not-found -o name | grep -q .; then
+            echo "the harness wrapper was installed instead of harness-v2"; exit 1
           fi
       # The allowed half. An unguessable name is created first, so a listing
       # that contains it can only have come from a live read through the
@@ -3468,7 +3471,7 @@ jobs:
         run: |
           kubectl --context kind-kmx-orka get pods -A || true
           kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai,agents.core.orka.ai,tasks.core.orka.ai,tools.core.orka.ai -o wide || true
-          kubectl --context kind-kmx-orka -n orka-system logs deploy/orka-controller-manager --tail=100 || true
+          kubectl --context kind-kmx-orka -n orka-system logs deploy/orka-api-controller --tail=100 || true
           kubectl --context kind-kmx-orka -n orka-system logs deploy/kmx-k8s-tool --tail=100 || true
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'

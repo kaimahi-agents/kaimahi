@@ -56,17 +56,18 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 83 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status and evaluation, interactive agent console and its bundle comparison pane, shared chat UI, host inference and native platform operations. |
-| `kmx/app/testdata` | 1 | Scaffolding | The committed golden bytes that pin the no-Task Orka artifact. |
+| `kmx/app` | 85 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status and evaluation, interactive agent console and its bundle comparison pane, shared chat UI, host inference and native platform operations. |
+| `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/runtime` | 8 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable authoring document, target bindings and evaluation cases. The only registered identity is Orka. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
-| `kmx/orkaschema/fixtures/v0.1.3` | 3 | Installed | Embedded release Agent/Provider/Task CRDs for offline validation, not installation. |
-| `kmx/orkaschema/fixtures/main` | 3 | Installed | Immutable main-snapshot CRDs, not a runtime support claim. |
+| `kmx/orkaschema/fixtures/v0.1.3` | 3 | Installed | Historical release Agent/Provider/Task CRDs for explicit offline validation, not installation. |
+| `kmx/orkaschema/fixtures/v0.2.0` | 3 | Installed | Default offline validation CRDs; the verified chart, not these fixtures, installs Orka. |
+| `kmx/orkaschema/fixtures/main` | 3 | Installed | Immutable old main-snapshot CRDs for explicit offline validation, not a runtime support claim. |
 | `kmx/guard` | 2 | Installed | Context-safety checks and read-only target resolution. |
 | `kmx/seamcert` | 1 | Installed | Model-seam authority and serving certificates. |
-| `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind and kubectl downloads. |
+| `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
 | `kmx/planebuild` | 1 | Installed | Separate plane-module image build/fetch. |
 | `kmx/lift` | 2 | Installed | Cloud-independent lift rules. |
 | `kmx/config` | 1 | Installed | Settings resolution. |

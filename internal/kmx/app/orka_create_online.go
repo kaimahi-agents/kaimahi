@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,7 +16,8 @@ import (
 )
 
 // All Orka API subprocesses have both Kubernetes and process deadlines. Raw
-// stderr is never propagated: it may contain a TokenRequest or admission echo.
+// stderr is classified, never propagated: it may contain a TokenRequest or
+// admission echo.
 func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -30,12 +30,27 @@ func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]
 	cmd.WaitDelay = time.Second
 	cmd.Stdin = bytes.NewReader(stdin)
 	out := &orkaBoundedBuffer{remaining: 4 << 20}
-	cmd.Stdout, cmd.Stderr = out, io.Discard
+	// Classify stderr without returning its contents: API errors can echo
+	// admission payloads, tokens or Secret data. Only fixed, safe reasons
+	// leave this boundary.
+	stderr := &orkaBoundedBuffer{remaining: 4 << 10}
+	cmd.Stdout, cmd.Stderr = out, stderr
 	if err := cmd.Run(); err != nil {
 		if callCtx.Err() != nil {
 			return nil, fmt.Errorf("kubectl request cancelled or timed out")
 		}
-		return nil, fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+		reason := strings.ToLower(stderr.buffer.String())
+		switch {
+		case strings.Contains(reason, "notfound") || strings.Contains(reason, "not found"):
+			if strings.Contains(reason, "namespaces") && strings.Contains(reason, OrkaNamespace) {
+				return nil, fmt.Errorf("kubectl request failed: namespace %s not found", OrkaNamespace)
+			}
+			return nil, fmt.Errorf("kubectl request failed: requested Kubernetes resource not found")
+		case strings.Contains(reason, "forbidden"), strings.Contains(reason, "unauthorized"):
+			return nil, fmt.Errorf("kubectl request failed: access forbidden")
+		default:
+			return nil, fmt.Errorf("kubectl request failed; check permissions, prerequisites and the selected context")
+		}
 	}
 	return out.buffer.Bytes(), nil
 }

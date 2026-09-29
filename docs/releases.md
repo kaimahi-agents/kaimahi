@@ -8,7 +8,8 @@ upgrade, and what happens when an upgrade goes wrong.
 v0.3.0 includes the working Orka Kubernetes Tool and bundle lifecycle commands.
 Pin `@v0.3.0` for a repeatable build; `@main` is the moving development
 option. Orka's own installation and upgrade limits are separate: see
-[orka.md](orka.md).
+[orka.md](orka.md). The current development installer pins the **Orka v0.2.0**
+chart; the historical Kaimahi v0.2.0 release reported Orka v0.1.3.
 The plane-upgrade sections below apply only to the retained legacy plane.
 
 The official Homebrew namespace is limited to the public
@@ -27,6 +28,13 @@ binary reports it, the release is named after it, and the notes come from
 | **patch** `v0.1.0` → `v0.1.1` | fixes only: no schema change, no removed flag, no behaviour change an operator was relying on |
 | **minor** `v0.1.0` → `v0.2.0` | everything else, breaking changes included — below 1.0 this is where they live, and the changelog says so under **Breaking** |
 | **pre-release** `v0.2.0-rc.1` | a candidate for the version it names. `go install …@latest` ignores pre-releases, so a candidate never becomes somebody's default by accident |
+
+Orka runtime pins are independent of kmx tags:
+
+| kmx build | Orka install | Offline schema target |
+|---|---|---|
+| Current development checkout | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
+| Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
 There is no 1.0 promise and no support window yet. What there is: CI refuses
 to publish a tag whose version has no section in the changelog, and refuses
@@ -174,11 +182,16 @@ the changelog for the versions you skipped — below 1.0 a minor bump may change
 behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to; `kmx up` is idempotent and re-applies the model
-server and the pinned Orka runtime. kmx no longer installs the legacy
-chart or its agents by any route: those steps, their manifests and the Helm
-dependency they needed are removed. A cluster that already carries that
-runtime is left exactly as it is, for kubectl to operate.
+cluster until you ask it to. The development checkout installs the pinned
+Orka v0.2.0 Helm chart using Helm on PATH or a pinned/checksum-verified toolchain
+binary. `kmx up` reuses a matching kmx-owned Orka release, but refuses an
+existing v0.1.3 manifest installation or foreign release rather than upgrading
+it. The chart's generated `orka-api-agent-execution-snapshot` key must be
+backed up with its PVC and Orka resources without printing its value. Do not
+use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+See [safe kind and AKS replacement boundaries](orka.md#limits-stated).
+The retired legacy runtime remains untouched; its old chart is not installed
+by kmx.
 
 ## Upgrading the plane
 

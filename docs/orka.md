@@ -5,9 +5,10 @@
 the cluster kmx is pointed at, in one command, with no API key.
 
 It exists because Orka assumes a cluster and this project starts without one.
-Their documented path is four prerequisites, a `kubectl apply` from a
-checkout, and a Secret an operator is told to create by hand. There is no
-published CLI binary and no GitHub Release to fetch.
+At [Orka v0.2.0](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md),
+upstream installs a Helm chart and generates its own encryption key and webhook
+certificate. kmx fetches the pinned release chart rather than requiring an
+Orka checkout or a manually created wrapper credential.
 
 **Installing Orka governs nothing.** That sentence is printed by the command
 itself. Authoring a native Orka Agent is now [`kmx agent create`](kmx.md#kmx-agent-create);
@@ -22,105 +23,72 @@ are deliberately separate commands.
 $ kmx orka install
 ```
 
-Four phases, refusing at each rather than continuing past it:
+The install checks each boundary before proceeding:
 
 | phase | what it does |
 |---|---|
-| Fetch the pinned installer | downloads `deploy/orka.yaml` at their tag and refuses bytes that do not hash to the digest kmx pins |
-| Reconcile the wrapper credential | creates `orka-system` and the `harness-wrapper-auth` Secret, and never replaces one that exists |
-| Apply the installer and wait | applies their manifest unmodified, then waits for both Deployments |
-| Wire a keyless Provider | a `Provider` pointing at the in-cluster model server, so no key is needed anywhere |
+| Fetch the pinned chart | downloads `orka-0.2.0.tgz` from the v0.2.0 release and refuses bytes that do not hash to kmx's pinned SHA-256 |
+| Check for an existing installation | refuses a foreign Helm release or a legacy v0.1.3 manifest/CRDs rather than attempting an upgrade |
+| Apply CRDs and install | applies CRDs extracted from the verified chart before `helm install orka` with `--kube-context`, `controller.mode=harness-v2`, `fullnameOverride=orka-api` and `--wait`; no `helm upgrade --force` |
+| Wire a keyless Provider | a `Provider` pointing at the in-cluster model server, so no model key is needed on the local path |
 
-Then:
-
-```console
-$ kmx orka status
-version running        0.1.3
-version pinned by kmx  v0.1.3
-deployments            orka-agent-harness-wrapper=1/1 orka-controller-manager=1/1
-crds                   10 in core.orka.ai
-providers              local=true
-```
-
-**`version running` is read off the controller's image, not restated from the
-pin.** The pin is what kmx *would* install; an Orka put there by their Helm
-chart, by `kubectl apply` from a checkout, or by an older kmx is a different
-version, and status says so:
-
-```text
-version running        0.1.2 (kmx pins v0.1.3 — this cluster was installed another way)
-```
+Check the selected cluster with `kmx orka status` and
+`kubectl --context <ctx> -n orka-system get deployments,pvc`. The chart's
+controller Deployment is `orka-api-controller`; status lists the running
+Deployments, CRDs and Provider readiness separately from kmx's v0.2.0 pin.
+Do not mistake a pinned version for proof of a running version, or a
+ready Deployment for a completed Task. Status is read-only and does not
+authorize reinstallation over an older release.
 
 ## Seeing it before doing it
 
 Both flags the other writing commands carry, for the same reasons:
 
 ```console
-$ kmx orka install --no-apply     # fetch, verify the digest, write nothing
---no-apply: nothing was written. 78 documents would be applied to namespace orka-system,
-  after the harness-wrapper-auth Secret, which is created first because the wrapper mounts it at start.
-
-$ kmx orka install --dry-run      # ask the API server whether it would take it
-COMPLETE  Validated; nothing was written (2.1s total)
+$ kmx orka install --no-apply     # fetch, verify chart and count its CRDs; write nothing
+$ kmx orka install --dry-run      # verify chart, check existing install, server-dry-run its CRDs
+COMPLETE  Validated; nothing was written
 ```
 
-`--dry-run` is the only way to learn that *this* cluster would refuse the
-installer — a Pod Security policy on the namespace, an API server without
-`ValidatingAdmissionPolicy` — without finding out halfway through applying it.
-It writes nothing, so it does not create the wrapper Secret, and it says so:
-a dry run cannot show whether the wrapper would become **ready**, only whether
-the objects would be **accepted**.
+`--dry-run` validates the chart CRDs at the API server, not the entire Helm
+render or chart hooks. It writes nothing and cannot prove chart-generated Secrets,
+controller readiness or Task execution. `--no-apply` does not check cluster
+compatibility.
 
 ## The three things worth knowing
 
 ### The bytes are theirs, and the pin is ours
 
-Orka publishes no GitHub Releases and no checksum file, so there is nothing
-upstream to verify a download against. kmx therefore carries the sha256 of
-`deploy/orka.yaml` at `v0.1.3` — the bytes that were read, installed and
-tested here — and refuses anything else:
-
-```text
-Orka's installer at v0.1.3 does not hash to the digest kmx pins.
-  expected 33bdd38bc4aff5d9ef0c32cd5a6c2810a186d2c3ab482b5fdc0f0673a5d734cd
-  got      1f2e…
-  Nothing was applied. Either the tag moved or the bytes were changed in transit;
-  neither is something to install past.
-```
-
-That is a weaker claim than a publisher's signature and a stronger one than
-trusting whatever the URL serves today. It is written down rather than
-skipped so that the weakness is visible.
-
-The installer manifest is **fetched, not vendored**. Offline agent creation
-separately embeds three CRD schemas per pinned target; those fixtures do not
-install anything. 525 kB of somebody else's
-installer committed here would be a copy that silently ages, and the
-repository map would have to classify it. Fetching keeps the bytes theirs
-and keeps "install exactly these bytes" ours. The cost is that this one
-command needs the internet.
+kmx fetches the [v0.2.0 release chart](https://github.com/orka-agents/orka/releases/tag/v0.2.0)
+(`orka-0.2.0.tgz`) and verifies its SHA-256 against the digest pinned in kmx
+(`b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`)
+before extracting CRDs or passing it to Helm. A changed or corrupted chart is
+refused, not installed. This kmx-maintained digest is not an independent
+publisher signature. Offline agent creation separately embeds CRD schemas;
+those fixtures do not install Orka. Installing the chart requires a download.
 
 There is no `--version` flag. A version flag would either carry no
 verification or need a digest per version; moving the pin is an edit to this
 repository that somebody reviews.
 
-### The Secret must exist before the manifest
+### Preserve the chart's generated snapshot key
 
-Orka's own getting-started says it plainly: raw manifests cannot safely
-contain a shared bearer token, so the operator is asked to run
-`openssl rand -hex 32` into a Secret **before** applying. Skip it and the
-apply still succeeds — the wrapper Deployment simply never becomes ready.
+The [v0.2.0 installation guide](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md#2-check-the-installation)
+explains that the controller generates the snapshot encryption key and writes
+it to a Secret. With kmx's `fullnameOverride=orka-api`, the Secret is
+`orka-api-agent-execution-snapshot` (not the upstream default
+`orka-agent-execution-snapshot`). Back up the Secret **with the controller's
+persistent volumes and Orka resources** before any retirement, restoration or
+cluster replacement. Never print or paste its value into a ticket, terminal
+transcript or documentation. This key is needed to read saved execution
+records after restoring the volumes. Orka also creates its webhook TLS Secret;
+never run `helm upgrade --force`, which upstream warns can replace generated
+Secrets with empty chart versions. kmx neither prints nor rotates the key.
 
-That is the failure this command removes, and it is why the order is fixed
-rather than convenient. An existing Secret is kept, never regenerated:
-rotating it under a running wrapper would invalidate a token its callers
-still hold. A cluster that cannot be read is refused rather than treated as
-a cluster without the Secret, because the second reading mints a second
-token under a running wrapper.
+### The Provider connects the local model without a key
 
-### The Provider is what removes the fourth prerequisite
-
-Orka's prerequisites end with "an LLM API key". Its `Provider` type accepts
+Orka v0.2.0 does not require an LLM API key to install; model calls need a
+Provider and an endpoint the cluster can reach. Its `Provider` type accepts
 `baseURL` — "an optional custom API endpoint (for proxies or self-hosted)" —
 so kmx creates one of `type: openai` pointing at the keyless in-cluster model
 server `kmx up` already deployed:
@@ -186,10 +154,10 @@ kmx --context kind-kaimahi-p1 agent create orka-hello \
 
 This creates Provider → waits for current-generation Ready → creates Agent →
 waits → creates a fresh Task → retrieves its actual answer. A local kind run
-against pinned `v0.1.3` returned stdout `Orka says hello.` with exit 0, using
+in an earlier v0.1.3 run returned stdout `Orka says hello.` with exit 0, using
 Ollama and no paid endpoint (US$0). That is a demonstrated release run, **not**
-a live main-snapshot or AKS proof. CI's clone-free journey also asserts the
-actual answer, rather than calling Ready an execution result.
+a v0.2.0 chart or AKS proof. The historical clone-free CI journey also
+asserted the actual answer, rather than calling Ready an execution result.
 
 The generated `agents/orka-hello.yaml` includes a **value-free Secret skeleton
 that must never be written**. The command does not write it or provision RBAC.
@@ -200,10 +168,11 @@ covers explicit inputs, pinned schemas, ordered manual creation and collisions.
 **Authority is broader than the name "result reader" suggests.** kmx requests a
 ten-minute token; the API server determines the actual granted lifetime. The
 token has this account's full effective authority, and discarding it is not
-revocation. Pinned main requires the namespaced Task-get permission
-above, but release `v0.1.3` authenticates result reads without enforcing that
-Task-read RBAC. Results travel via a loopback HTTP port-forward; UID checks do
-not bind the returned bytes to a UID. kmx pins one TCP connection and stops if it
+revocation. An earlier v0.1.3 release authenticated result reads without enforcing
+Task-read RBAC; the pinned old main snapshot requires namespaced Task-get. Do
+not infer v0.2.0 authorization from the older result: retain the namespaced
+grant. Results travel via a loopback HTTP port-forward; UID checks do not bind
+the returned bytes to a UID. kmx pins one TCP connection and stops if it
 or the forward is lost, rather than reconnecting or resubmitting the Task. This
 trades reconnect availability for protection against later local-port reuse;
 the initial bind and connection are still local trust, not cryptographic process
@@ -265,17 +234,49 @@ Agent conversion.
 
 ## Limits, stated
 
-- **One pinned version.** `v0.1.3`. A newer Orka means editing the constant
-  and its digest together, and re-running the install against it.
-- **The namespace is not configurable**, because it is not configurable in
-  their installer: `orka-system` is hard-coded across its 77 documents.
-- **This installs; it does not upgrade.** Orka's own docs are explicit that
-  Helm does not update CRDs on upgrade and that they must be applied from the
-  exact target chart first. Re-running this command applies the same pinned
-  version again, which is idempotent and is not an upgrade path.
-- **Uninstall is not implemented.** Their installer retains CRDs and custom
-  resources by design, so removing it is a decision with data attached rather
-  than a command this project should offer casually.
+- **Existing v0.1.3 reads remain supported.** Lift, status and the console
+  discover the controller by its Deployment role labels (legacy
+  `control-plane=controller-manager`, chart
+  `app.kubernetes.io/component=controller`), not by a release-specific name.
+  No or multiple matching controllers is an explicit refusal; this does not
+  authorize an installation or an in-place upgrade. Result reads retain their
+  own API and RBAC checks against the installed release.
+- **Rate limits are not supported by v0.2.0 CRDs.** Orka removed
+  `Provider.spec.rateLimit` and `Agent.spec.rateLimit`; kmx does not silently
+  drop requested limits. Offline `--schema-target v0.2.0` and online create/lift
+  against that release refuse those fields. Explicit v0.1.3 schema selection
+  and existing v0.1.3 installations still accept legacy limit-bearing bundles.
+  Remove the limits deliberately before moving a bundle to a fresh v0.2.0
+  target; there is no equivalent rate-limit mapping in kmx yet.
+- **One pinned install.** `v0.2.0` chart, harness-v2, release `orka`, namespace
+  `orka-system`, fullname `orka-api`. A recognized matching kmx installation
+  keeps its chart, key and data on rerun. kmx refuses an existing v0.1.3
+  manifest installation or foreign Helm release; it does not convert them.
+- **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new
+  installations](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+  Its conditional CRD/Helm upgrade instructions are for a *future target
+  release that publishes a tested procedure*, not instructions to upgrade
+  v0.1.3 to v0.2.0. Do not use `helm upgrade --force`.
+- **Local kind replacement loses data.** If replacing an old local install,
+  first export anything you need; `kmx down` deletes the named kind cluster,
+  including Orka Tasks, custom resources, Secrets, SQLite volumes, snapshots,
+  model data and the plane ledger. Only then run `kmx up` for a new v0.2.0
+  installation. This is not a migration and does not restore the deleted data.
+- **AKS replacement is operator-managed.** Before retiring v0.1.3, make and
+  verify backups of the existing controller data volumes, Orka resources/Secrets
+  and any owner workloads. Preserve a snapshot-key Secret if the existing
+  installation has one; v0.1.3's wrapper path did not create the new v0.2.0
+  snapshot key. Back up the new chart-managed snapshot key with its controller
+  volume after a fresh v0.2.0 install; do not print key values. Follow the [v0.2.0 installation](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md)
+  and [upgrade limits](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md)
+  for a fresh new install on a clean target, not an in-place upgrade or an
+  assumption that old SQLite data or running Tasks can be restored into v0.2.0.
+  `kmx aks up` is not a backup/restore tool; never delete cloud resources
+  without an independently verified recovery plan. Orka warns Helm uninstall
+  can delete PVCs (and, with a Delete reclaim policy, their underlying data),
+  while deleting CRDs deletes their custom resources.
+- **Uninstall is not implemented in kmx.** Orka's chart manages persistent
+  state; removal is an explicit data-retention decision.
 - **The model seam has no per-credential allowlist**, so every credential the
   plane has issued can reach the `orka` upstream — a property of the seam,
   described in [migrate.md](migrate.md#8-limits-stated).

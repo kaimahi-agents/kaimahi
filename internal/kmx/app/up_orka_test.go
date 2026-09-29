@@ -75,6 +75,7 @@ func upFixture(t *testing.T) (*App, *bytes.Buffer, string) {
 	}
 	fakeTool(t, dir, "kind", `printf 'kind %s\n' "$*" >> "$KMX_TEST_ARGS"; exit 0`)
 	fakeTool(t, dir, "docker", `printf 'docker %s\n' "$*" >> "$KMX_TEST_ARGS"; exit 0`)
+	fakeTool(t, dir, "helm", `printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"; case "$*" in *"list "*) printf '[]';; esac; exit 0`)
 	// The real PATH stays behind the fakes: the fake kubectl is a shell
 	// script and needs the shell's own utilities, while the fakes still win
 	// the lookup for every tool this command runs.
@@ -82,7 +83,7 @@ func upFixture(t *testing.T) (*App, *bytes.Buffer, string) {
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	t.Setenv("KMX_TEST_ARGS", args)
 
-	installer := []byte("kind: Namespace\n---\nkind: Deployment\n")
+	installer := orkaChart(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(installer)
 	}))
@@ -267,20 +268,22 @@ func TestRetiredInstallerStepsAreRefusedWithoutReachingACluster(t *testing.T) {
 	}
 }
 
-// Helm was fetched and preflighted for one reason: installing the legacy
-// chart. With that gone, no step may ask for it — a prerequisite nobody needs
-// is a download on somebody's machine for nothing.
-func TestNoUpStepRequiresHelm(t *testing.T) {
+// Helm is needed for Orka's chart, not for the earlier cluster/model phases.
+func TestUpRequiresHelmOnlyWhenInstallingOrka(t *testing.T) {
 	for _, step := range append([]string{""}, UpSteps...) {
 		steps := UpDefaultSteps
 		if step != "" {
 			steps = []string{step}
 		}
 		a := &App{Cfg: &config.Config{ContainerEngine: "docker"}}
+		hasHelm := false
 		for _, dep := range a.upDependencies(steps) {
 			if dep.name == "helm" {
-				t.Fatalf("step %q still asks for helm", step)
+				hasHelm = true
 			}
+		}
+		if want := step == "" || step == "orka"; hasHelm != want {
+			t.Errorf("step %q: helm dependency = %t, want %t", step, hasHelm, want)
 		}
 	}
 }

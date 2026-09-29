@@ -2,16 +2,13 @@ package app
 
 // `kmx orka` — the front door for a platform this project did not write.
 //
-// Orka assumes a cluster. It publishes no installer and no CLI binary: its
-// documented path is `kubectl apply -f deploy/orka.yaml` from a checkout,
-// preceded by a Secret the operator is told to create by hand because "raw
-// manifests cannot safely contain a shared bearer token". Skip that step and
-// the install still succeeds — the wrapper Deployment simply never becomes
-// ready, which is the shape of failure this command exists to remove.
+// kmx verifies Orka's release chart before using its CRDs and installing the
+// harness-v2 controller. The chart owns its generated snapshot encryption key;
+// kmx never reads or prints that key.
 //
 // What this is NOT: a fork, a vendored copy, or a re-implementation. The
-// bytes applied are Orka's own, fetched from their tag and refused unless
-// they hash to the digest this command was tested against. Kaimahi builds
+// chart bytes are Orka's own release asset, refused unless they hash to
+// the pinned digest. Kaimahi builds
 // nothing here and owns none of it.
 //
 // The governance seam is a separate decision and stays one: `kmx migrate`
@@ -37,20 +34,13 @@ const (
 	// OrkaVersion is the tag whose installer this command was tested
 	// against. It is a pin, not a floor: the digest below is of THESE
 	// bytes, so a moved tag is refused rather than installed.
-	OrkaVersion = "v0.1.3"
+	OrkaVersion = "v0.2.0"
 
-	// OrkaInstallerDigest is the sha256 of deploy/orka.yaml at OrkaVersion.
-	// Orka publishes no GitHub Releases and no checksum file, so there is
-	// nothing upstream to verify against — this digest is ours, recorded
-	// from the bytes that were read and installed here. That makes it a
-	// weaker claim than a publisher's signature and a stronger one than
-	// trusting whatever the URL serves today, which is the honest middle
-	// and the reason it is written down rather than skipped.
-	OrkaInstallerDigest = "33bdd38bc4aff5d9ef0c32cd5a6c2810a186d2c3ab482b5fdc0f0673a5d734cd"
+	// OrkaInstallerDigest is the published release chart asset's SHA-256.
+	// v0.2.0 dereferences to 5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1.
+	OrkaInstallerDigest = "b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79"
 
-	// OrkaNamespace is the namespace their installer creates and pins its
-	// own objects to. It is not configurable here because it is not
-	// configurable there: the manifest hard-codes it in 77 documents.
+	// OrkaNamespace is kmx's Orka release and watched namespace.
 	OrkaNamespace = "orka-system"
 
 	// OrkaPathNamespaces is the guard banner's namespace list for the
@@ -62,14 +52,8 @@ const (
 	// else's command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
-	// orkaWrapperSecret is the Secret their getting-started tells an
-	// operator to create with `openssl rand -hex 32` before applying.
-	orkaWrapperSecret = "harness-wrapper-auth"
-
-	// The two Deployments the installer creates. Readiness of both is what
-	// "installed" means; anything less is "submitted".
-	orkaController = "orka-controller-manager"
-	orkaWrapper    = "orka-agent-harness-wrapper"
+	// Legacy v0.1.3 readiness also requires its separate wrapper Deployment.
+	orkaWrapper = "orka-agent-harness-wrapper"
 
 	// orkaProviderKind is Orka's own LLM-backend object. A Provider named
 	// <p> is what makes a model called `<p>/<model>` resolvable, which is
@@ -99,7 +83,7 @@ const (
 
 // OrkaInstallerURL is the pinned source of the installer.
 func OrkaInstallerURL() string {
-	return "https://raw.githubusercontent.com/orka-agents/orka/" + OrkaVersion + "/deploy/orka.yaml"
+	return "https://github.com/orka-agents/orka/releases/download/" + OrkaVersion + "/orka-0.2.0.tgz"
 }
 
 // installerSource and installerDigest resolve the shipped pin unless a test
@@ -116,35 +100,6 @@ func (a *App) installerDigest() string {
 		return a.orkaInstallerDigest
 	}
 	return OrkaInstallerDigest
-}
-
-// orkaRunningVersion reads the tag off the controller's own image.
-//
-// The pin is what kmx WOULD install; it is not evidence about what is
-// running. An Orka installed by their Helm chart, by `kubectl apply` from a
-// checkout, or by an older kmx is a different version, and a status command
-// that restated the pin would report a version nobody had installed — which
-// is the precise failure this command exists to avoid making.
-//
-// An image kmx cannot parse is reported as unread rather than guessed at.
-func (a *App) orkaRunningVersion() string {
-	image, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy", orkaController,
-		"-o", "jsonpath={.spec.template.spec.containers[0].image}")
-	if err != nil {
-		return "unknown (the controller's image could not be read)"
-	}
-	image = strings.TrimSpace(image)
-	_, tag, found := strings.Cut(image, ":")
-	if !found || tag == "" {
-		return "unknown (" + image + " names no tag)"
-	}
-	// Their manifest tags the image `0.1.3`; the repository tags the release
-	// `v0.1.3`. Compare the numbers rather than the spelling, so a match is
-	// not reported as a difference.
-	if strings.TrimPrefix(tag, "v") == strings.TrimPrefix(OrkaVersion, "v") {
-		return tag
-	}
-	return tag + " (kmx pins " + OrkaVersion + " — this cluster was installed another way)"
 }
 
 // OrkaOptions are `kmx orka install`'s knobs.
@@ -187,16 +142,15 @@ func orkaDefaults(opt OrkaOptions) OrkaOptions {
 
 // OrkaInstall puts Orka on the cluster kmx is pointed at.
 //
-// The order is the one their own documentation gives, and the middle step is
-// the reason this command exists: the Secret must exist BEFORE the manifest,
-// because the manifest cannot carry it and the wrapper mounts it at start.
+// CRDs from the verified chart are applied before Helm discovers Gateway
+// schema; the chart/controller own their generated snapshot encryption key.
 func (a *App) OrkaInstall(opt OrkaOptions) error {
 	started := a.timeNow()
 	opt = orkaDefaults(opt)
 	if opt.NoApply && opt.DryRun {
 		return fmt.Errorf("--no-apply and --dry-run cannot be used together")
 	}
-	if err := a.preflight(depKubectl); err != nil {
+	if err := a.preflight(depKubectl, depHelm); err != nil {
 		return err
 	}
 	if opt.NoApply {
@@ -204,14 +158,16 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		if err != nil {
 			return err
 		}
-		a.notef("--no-apply: nothing was written. %d documents would be applied to namespace %s,\n"+
-			"  after the %s Secret, which is created first because the wrapper mounts it at start.",
-			orkaDocuments(installer), OrkaNamespace, orkaWrapperSecret)
+		_, count, err := orkaChartCRDs(installer)
+		if err != nil {
+			return err
+		}
+		a.notef("--no-apply: nothing was written. %d chart CRDs would precede harness-v2 in %s.", count, OrkaNamespace)
 		a.notef("  See them:  curl -fsSL %s", a.installerSource())
 		return nil
 	}
 
-	if err := a.Guard(fmt.Sprintf("install Orka %s (17 CRDs, 2 Deployments) into namespace %s",
+	if err := a.Guard(fmt.Sprintf("install Orka %s (chart CRDs, harness-v2 controller) into namespace %s",
 		OrkaVersion, OrkaNamespace), "kmx orka install"); err != nil {
 		return err
 	}
@@ -233,35 +189,28 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 		return err
 	}
 
-	// A server-side dry run is the only way to learn that this cluster would
-	// refuse the installer — a Pod Security policy on the namespace, an API
-	// server without ValidatingAdmissionPolicy — without finding out halfway
-	// through applying it. It writes nothing, so it skips the Secret too.
 	if opt.DryRun {
-		if err := a.runPhase(phase{current: 2, total: total, name: "Validate against the API server"}, func() error {
+		if err := a.runPhase(phase{current: 2, total: total, name: "Validate chart CRDs"}, func() error {
+			if _, err := a.orkaInstallState(); err != nil {
+				return err
+			}
+			crds, _, err := orkaChartCRDs(installer)
+			if err != nil {
+				return err
+			}
 			quiet := *a.Run
 			quiet.Echo = false
-			fmt.Fprintf(a.Err, "kubectl --context %s apply --dry-run=server -f - # (Orka %s)\n",
-				a.Cfg.KubeContext, OrkaVersion)
-			return quiet.RunStdin(installer, "kubectl",
-				a.kubectl("apply", "--dry-run=server", "-f", "-")...)
+			quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
+			return quiet.RunStdin(crds, "kubectl", a.kubectl("apply", "--dry-run=server", "-f", "-")...)
 		}); err != nil {
 			return fmt.Errorf("this cluster would refuse Orka's installer: %w", err)
 		}
 		a.complete("Validated; nothing was written", started)
-		a.notef("\nNOTE  A server dry run does not create the %s Secret, so it cannot show\n"+
-			"      whether the wrapper would become ready. Only a real install does that.",
-			orkaWrapperSecret)
+		a.notef("A server dry run cannot show whether chart Secrets or the controller become ready; only a real install can.")
 		return nil
 	}
 
-	if err := a.runPhase(phase{current: 2, total: total, name: "Reconcile the wrapper credential"}, func() error {
-		return a.orkaWrapperCredential()
-	}); err != nil {
-		return err
-	}
-
-	if err := a.runPhase(phase{current: 3, total: total, name: "Apply the installer and wait"}, func() error {
+	if err := a.runPhase(phase{current: 2, total: total, name: "Apply chart CRDs and install Orka"}, func() error {
 		return a.applyOrkaInstaller(installer)
 	}); err != nil {
 		return err
@@ -291,7 +240,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 // and the account a Task result is read with.
 //
 // It is `kmx orka install`'s work without `kmx orka install`'s framing — the
-// same fetch, the same digest refusal, the same Secret-before-manifest order
+// same fetch, digest refusal, and chart-CRDs-before-Helm order
 // — because `up` supplies its own phase, guard and completion lines. Calling
 // OrkaInstall here would nest a four-phase command inside one phase of
 // another and end it with a second "COMPLETE".
@@ -335,7 +284,7 @@ func (a *App) stepOrka() error {
 	return a.orkaResultReader()
 }
 
-// Quickstart needs the pinned runtime and placeholder Secret, not the local
+// Quickstart needs the pinned runtime and placeholder Provider Secret, not the local
 // Provider: its fixed agent bundle creates a separate Provider of its own.
 func (a *App) stepQuickstartOrka() error {
 	if err := a.prepareOrkaRuntime(); err != nil {
@@ -350,9 +299,6 @@ func (a *App) stepQuickstartOrka() error {
 func (a *App) prepareOrkaRuntime() error {
 	installer, err := a.fetchOrkaInstaller()
 	if err != nil {
-		return err
-	}
-	if err := a.orkaWrapperCredential(); err != nil {
 		return err
 	}
 	return a.applyOrkaInstaller(installer)
@@ -449,13 +395,8 @@ subjects:
 	return nil
 }
 
-// fetchOrkaInstaller downloads the pinned manifest and refuses anything
-// whose bytes are not the ones this command was tested against.
-//
-// Fetched rather than vendored: 525 kB of somebody else's manifest committed
-// here would be a copy that silently ages, and the repository map would have
-// to call it Product. Fetched-and-pinned keeps the bytes theirs and the
-// decision to install exactly these bytes ours.
+// fetchOrkaInstaller downloads the published release chart and refuses any
+// bytes other than the release asset's pinned digest.
 func (a *App) fetchOrkaInstaller() ([]byte, error) {
 	url := a.installerSource()
 	fmt.Fprintf(a.Err, "curl -fsSL %s # (sha256-pinned)\n", url)
@@ -493,79 +434,11 @@ func (a *App) fetchOrkaInstaller() ([]byte, error) {
 	return body, nil
 }
 
-// orkaWrapperCredential creates the namespace and the shared bearer token
-// the harness wrapper reads, and never replaces one that is already there.
-//
-// Regenerating it under a running wrapper would rotate a secret its own
-// callers still hold, so an existing value is kept — the same rule the
-// plane's own secrets follow.
-func (a *App) orkaWrapperCredential() error {
-	if err := a.kubectlRun("create", "namespace", OrkaNamespace,
-		"--dry-run=client", "-o", "yaml"); err != nil {
-		return err
-	}
-	namespace := []byte("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: " + OrkaNamespace + "\n")
-	quiet := *a.Run
-	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (namespace %s)\n", a.Cfg.KubeContext, OrkaNamespace)
-	if err := quiet.RunStdin(namespace, "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return err
-	}
+// applyOrkaInstaller installs the verified chart without exposing its
+// controller-generated key. Keeping this shared entry point means standalone
+// install, up, quickstart, the wizard and AKS take the same guarded path.
 
-	_, err := a.kubectlCapture("-n", OrkaNamespace, "get", "secret", orkaWrapperSecret, "-o", "name")
-	switch {
-	case err == nil:
-		a.notef("Secret %s exists; keeping it.", orkaWrapperSecret)
-		return nil
-	case !isNotFound(err):
-		// An unreachable API server answered as "absent" would mint a
-		// second token under a running wrapper, which is the one outcome
-		// worse than stopping.
-		return fmt.Errorf("cannot tell whether Secret %s exists in %s (refusing to generate a second one): %w",
-			orkaWrapperSecret, OrkaNamespace, err)
-	}
-
-	token, err := randomHex(32)
-	if err != nil {
-		return err
-	}
-	body := secretManifest(orkaWrapperSecret, OrkaNamespace, map[string]string{"token": token},
-		map[string]string{"app.kubernetes.io/managed-by": "kmx"})
-	if err := a.applySecretIn(OrkaNamespace, body, orkaWrapperSecret); err != nil {
-		return err
-	}
-	a.notef("Secret %s created. Orka's own instructions ask an operator to do this by hand\n"+
-		"  with `openssl rand -hex 32`; an install that skips it comes up and never becomes ready.",
-		orkaWrapperSecret)
-	return nil
-}
-
-// applyOrkaInstaller applies their manifest unmodified and then waits for
-// both Deployments, because "applied" is not "running".
-// orkaDocuments counts the YAML documents in their installer, so a note can
-// say how much is about to arrive.
-func orkaDocuments(installer []byte) int {
-	return strings.Count(string(installer), "\n---\n") + 1
-}
-
-func (a *App) applyOrkaInstaller(installer []byte) error {
-	quiet := *a.Run
-	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Orka %s, %d documents)\n",
-		a.Cfg.KubeContext, OrkaVersion, orkaDocuments(installer))
-	if err := quiet.RunStdin(installer, "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return fmt.Errorf("applying Orka's installer: %w", err)
-	}
-	for _, deployment := range []string{orkaController, orkaWrapper} {
-		if err := a.kubectlRun("-n", OrkaNamespace, "rollout", "status",
-			"deploy/"+deployment, "--timeout=300s"); err != nil {
-			return fmt.Errorf("Orka's %s did not become ready: %w\n"+
-				"  Its logs say why:  kubectl -n %s logs deploy/%s",
-				deployment, err, OrkaNamespace, deployment)
-		}
-	}
-	return nil
-}
+func (a *App) applyOrkaInstaller(installer []byte) error { return a.applyOrkaChart(installer) }
 
 // orkaProvider creates a Provider pointing at an in-cluster, keyless model
 // server, which is the step that removes Orka's fourth prerequisite.
@@ -676,8 +549,8 @@ func unreachable(err error) bool {
 	return false
 }
 
-// OrkaReady answers, strictly, whether Orka is installed AND both of its
-// Deployments have every replica ready.
+// OrkaReady verifies the selected controller's current rollout; legacy
+// installations additionally require their wrapper to be ready.
 //
 // It exists because `OrkaStatus` is a VIEW: it prints "not installed" and
 // returns nil, which is right for a human asking a question and wrong for a
@@ -688,48 +561,30 @@ func unreachable(err error) bool {
 // Unreadable is its own answer, and not a pass: a cluster that did not respond
 // has not been shown to be ready.
 func (a *App) OrkaReady() error {
-	raw, err := a.kubectlCapture("-n", OrkaNamespace, "get", "deploy", "-o", "json")
-	if err != nil && !isNotFound(err) {
-		return fmt.Errorf("cannot read Orka in namespace %s, so it has NOT been shown to be ready: %w",
-			OrkaNamespace, err)
+	deployments, err := a.orkaDeployments(a.operationContext())
+	if err != nil {
+		return fmt.Errorf("cannot read Orka in namespace %s, so it has NOT been shown to be ready: %w", OrkaNamespace, err)
 	}
-	var list struct {
-		Items []struct {
-			Metadata struct {
-				Name       string `json:"name"`
-				Generation int64  `json:"generation"`
-			} `json:"metadata"`
-			Spec struct {
-				Replicas int32 `json:"replicas"`
-			} `json:"spec"`
-			Status struct {
-				ObservedGeneration  int64 `json:"observedGeneration"`
-				UpdatedReplicas     int32 `json:"updatedReplicas"`
-				ReadyReplicas       int32 `json:"readyReplicas"`
-				AvailableReplicas   int32 `json:"availableReplicas"`
-				UnavailableReplicas int32 `json:"unavailableReplicas"`
-			} `json:"status"`
-		} `json:"items"`
+	controller, legacy, err := selectOrkaController(deployments)
+	if err != nil {
+		return fmt.Errorf("nothing was verified: %w", err)
 	}
-	if trimmed := strings.TrimSpace(raw); trimmed != "" {
-		if err := json.Unmarshal([]byte(trimmed), &list); err != nil {
-			return fmt.Errorf("cannot read Orka's deployments in namespace %s, so it has NOT been shown to be ready: %w",
-				OrkaNamespace, err)
+	required := []orkaDeployment{controller}
+	if legacy {
+		found := false
+		for _, d := range deployments {
+			if d.Metadata.Name == orkaWrapper {
+				required = append(required, d)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("Orka's %s is not on this cluster in namespace %s: nothing was verified", orkaWrapper, OrkaNamespace)
 		}
 	}
-	found := map[string]int{}
-	for i, item := range list.Items {
-		found[item.Metadata.Name] = i
-	}
-	for _, name := range []string{orkaController, orkaWrapper} {
-		i, present := found[name]
-		if !present {
-			return fmt.Errorf("Orka's %s is not on this cluster in namespace %s: "+
-				"nothing was verified, because there is nothing there.\n"+
-				"  Install it with `kmx orka install`, or resume this lift at its orka phase",
-				name, OrkaNamespace)
-		}
-		d := list.Items[i]
+	for _, d := range required {
+		name := d.Metadata.Name
 		// Ready replicas alone are not a finished rollout. A Deployment whose
 		// new pod is in ImagePullBackOff still reports the OLD pod as ready,
 		// so `1/1` would pass a rollout that never landed. The generation and
@@ -788,7 +643,11 @@ func (a *App) OrkaStatus() error {
 		return nil
 	}
 
-	fmt.Fprintf(a.Out, "%-22s %s\n", "version running", a.orkaRunningVersion())
+	version, err := a.orkaRunningVersion()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Out, "%-22s %s\n", "version running", version)
 	fmt.Fprintf(a.Out, "%-22s %s\n", "version pinned by kmx", OrkaVersion)
 	fmt.Fprintf(a.Out, "%-22s %s\n", "deployments", strings.TrimSpace(deployments))
 

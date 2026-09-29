@@ -260,7 +260,10 @@ func (a *App) liftPrerequisites(ctx context.Context, namespace string) error {
 	if len(missing) > 0 {
 		gaps = append(gaps, fmt.Errorf("missing Orka CRDs (%s); prepare destination with kmx orka install (or kmx aks up for a new cluster)", strings.Join(missing, ", ")))
 	}
-	if _, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/orka-controller-manager", "--timeout=10s"); err != nil {
+	controller, err := a.orkaControllerForLift(ctx)
+	if err != nil {
+		gaps = append(gaps, err)
+	} else if _, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+controller, "--timeout=10s"); err != nil {
 		gaps = append(gaps, fmt.Errorf("Orka controller is not Ready; prepare destination with kmx orka install: %w", err))
 	}
 	raw, err := a.orkaCapture(ctx, nil, "get", "namespace", namespace, "--ignore-not-found=true", "-o", "json")

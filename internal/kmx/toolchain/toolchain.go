@@ -51,6 +51,7 @@ import (
 const (
 	KubectlVersion = "1.37.0"
 	KindVersion    = "0.33.0"
+	HelmVersion    = "3.20.0"
 )
 
 // Spec is one fetchable binary.
@@ -70,10 +71,7 @@ type Spec struct {
 	// the binary. The published digest covers the ARCHIVE, so the archive is
 	// what gets verified, before anything is extracted from it.
 	//
-	// No pin below sets it today — Helm was the archived tool, and it was
-	// fetched for the retired runtime's chart alone. The mechanism stays because
-	// it is the rule ("verify what was published, then extract") rather than
-	// one tool's packaging, and its own test still proves it.
+	// Helm uses this: verify what the publisher checksummed before extraction.
 	ArchiveMember string
 	// Why is the one-line reason this tool is needed, for the fetch line.
 	Why string
@@ -105,12 +103,21 @@ func Pinned(name, goos, goarch string) (Spec, bool) {
 			ChecksumURL: fmt.Sprintf("https://github.com/kubernetes-sigs/kind/releases/download/v%s/kind-%s-%s.sha256sum", KindVersion, goos, goarch),
 			Why:         "to manage the local Kubernetes cluster",
 		}, true
+	case "helm":
+		return Spec{
+			Name:          "helm",
+			Version:       HelmVersion,
+			URL:           fmt.Sprintf("https://get.helm.sh/helm-v%s-%s-%s.tar.gz", HelmVersion, goos, goarch),
+			ChecksumURL:   fmt.Sprintf("https://get.helm.sh/helm-v%s-%s-%s.tar.gz.sha256sum", HelmVersion, goos, goarch),
+			ArchiveMember: fmt.Sprintf("%s-%s/helm", goos, goarch),
+			Why:           "to install Orka from its Helm chart",
+		}, true
 	}
 	return Spec{}, false
 }
 
 // Fetchable lists the tools Pinned knows, in the order an operator meets them.
-var Fetchable = []string{"kind", "kubectl"}
+var Fetchable = []string{"kind", "kubectl", "helm"}
 
 // ExpectedDigest extracts the digest from a published checksum file.
 //

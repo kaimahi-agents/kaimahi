@@ -19,6 +19,22 @@ import (
 // An unrecognised --output is refused BEFORE a cluster is created. Being told
 // "unknown output" four minutes into a bring-up would be the worst possible
 // moment to find out.
+// A quickstart installs Orka's chart; missing Helm must be caught before
+// cluster creation when automatic toolchain provisioning is disabled.
+func TestQuickstartRequiresHelmBeforeCreatingCluster(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"kind", "kubectl", "docker"} {
+		fakeTool(t, dir, name, "exit 0")
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("KMX_TOOLCHAIN", "off")
+	a := &App{Cfg: &config.Config{ContainerEngine: "docker", KindCluster: "test", KubeContext: "kind-test"}, Run: &run.Runner{}, Err: &bytes.Buffer{}, Out: &bytes.Buffer{}}
+	err := a.Quickstart(QuickstartOptions{})
+	if err == nil || !strings.Contains(err.Error(), "helm is not on PATH") {
+		t.Fatalf("missing Helm was not reported by quickstart preflight: %v", err)
+	}
+}
+
 func TestQuickstartRejectsAnUnknownOutputBeforeDoingAnything(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("KMX_TOOLCHAIN", "off")
