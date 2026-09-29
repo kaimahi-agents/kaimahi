@@ -58,9 +58,17 @@ spec:
       ports:
         - protocol: TCP
           port: 11434
-    # Orka's model endpoint, using the same selectors as its Service.
-    # With no Orka installed this selects no pod and permits nothing.
+    # Orka's model endpoint: chart v0.2.0 and legacy v0.1.3 use
+    # different controller role labels. Both require Orka identity in
+    # orka-system; with no Orka installed neither selector matches.
     - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: orka-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: orka
+              app.kubernetes.io/component: controller
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: orka-system

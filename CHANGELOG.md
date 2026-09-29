@@ -24,6 +24,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- The plane's Orka egress policy now selects both v0.1.3's legacy controller and the v0.2.0 chart controller in `orka-system`. Without the chart selector, a migrated owner's model call received `502 upstream unreachable` even while the v0.2.0 controller was Ready.
 - **Orka installation now pins v0.2.0's Helm chart** (`orka-0.2.0.tgz`, SHA-256 checked before use) instead of applying the v0.1.3 manifest. kmx resolves Helm on PATH or fetches its pinned, checksum-verified toolchain binary, applies CRDs extracted from the verified chart before `helm install`, pins `--kube-context`, and installs release `orka` with `controller.mode=harness-v2` and `fullnameOverride=orka-api`. Orka generates the snapshot encryption Secret `orka-api-agent-execution-snapshot`; kmx never prints its value. There is no `helm upgrade --force` path. A rerun preserves an existing matching kmx release and key; a v0.1.3 manifest install or foreign release is refused, **not upgraded**. Offline create now defaults to the v0.2.0 CRDs; `--schema-target v0.1.3|main` remains available explicitly for old fixtures and does not install an old runtime. See [Orka setup and replacement](docs/orka.md#limits-stated) and upstream [v0.2.0 installation](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md) / [unsupported version upgrades](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
 
 ### Breaking
