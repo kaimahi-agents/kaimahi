@@ -42,6 +42,22 @@ func TestCompletionScriptsUseCobraProtocol(t *testing.T) {
 	}
 }
 
+func TestSchemaTargetCompletionIncludesPinnedDefault(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	if err := execute([]string{"__complete", "agent", "create", "--schema-target", ""}, deps); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"v0.2.0", "v0.1.3", "main", ":4"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("schema completion missing %q: %s", want, out.String())
+		}
+	}
+	if *loads != 0 {
+		t.Fatal("schema completion loaded configuration")
+	}
+}
+
 func TestStaticCompletionIsSortedAndFiltered(t *testing.T) {
 	got, directive := staticCompletion([]string{"zeta", "alpha", "beta"})(nil, nil, "b")
 	if len(got) != 1 || got[0] != "beta" || directive != cobra.ShellCompDirectiveNoFileComp {

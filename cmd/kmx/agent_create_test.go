@@ -77,10 +77,13 @@ func TestAgentCreateHelpExplainsOrkaBoundary(t *testing.T) {
 	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"Orka", "Provider", "watches", "ServiceAccount", "v0.1.3", "full", "--schema-target", "--skills"} {
+	for _, text := range []string{"Orka", "Provider", "watches", "ServiceAccount", "v0.2.0 (default)", "v0.1.3", "full", "--schema-target", "--skills"} {
 		if !strings.Contains(out.String(), text) {
 			t.Errorf("help lacks %q", text)
 		}
+	}
+	if strings.Contains(out.String(), "v0.1.3 (default)") || strings.Contains(out.String(), "Offline output uses pinned v0.1.3 CRDs") {
+		t.Fatal("offline help still advertises the retired default")
 	}
 	if *loads != 0 {
 		t.Fatal("help loaded config")

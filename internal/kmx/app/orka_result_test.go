@@ -172,7 +172,7 @@ func TestOrkaForwardLossCancelsActiveResult(t *testing.T) {
 }
 
 func TestOrkaResultSessionEstablishesAndReusesOneConnection(t *testing.T) {
-	a, opt, _, _, _ := orkaCreateFixture(t, "")
+	a, opt, _, diagnostics, _ := orkaCreateFixture(t, "")
 	connected := make(chan struct{}, 3)
 	var connections, requests atomic.Int32
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +199,9 @@ func TestOrkaResultSessionEstablishesAndReusesOneConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.close()
+	if notice := diagnostics.String(); !strings.Contains(notice, "v0.2.0 Task-read enforcement is unverified") || strings.Contains(notice, "v0.2.0 enforces Task-get RBAC") {
+		t.Fatalf("result authority notice overstates enforcement: %s", notice)
+	}
 	select {
 	case <-connected:
 	case <-time.After(time.Second):

@@ -444,7 +444,7 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", nil)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("repeat install: %v", err)
 	}
@@ -453,6 +453,35 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	}
 	if !strings.Contains(f.applied(t), "kind: RoleBinding") {
 		t.Fatal("repeat did not reconcile the read-only result account")
+	}
+}
+
+func TestOrkaInstallRepeatRejectsLiveControllerImageDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		images []any
+	}{
+		{"patched controller", []any{map[string]any{"name": "controller", "image": "ghcr.io/foreign/orka@sha256:other"}}},
+		{"missing controller", []any{map[string]any{"name": "sidecar", "image": "ghcr.io/orka-agents/orka@" + orkaControllerDigest}}},
+		{"no containers", []any{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart := orkaChart(t)
+			f := newOrkaFixture(t, chart)
+			f.app.orkaInstallerDigest = digestOf(chart)
+			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
+			controller := orkaDeploy("w112-controller", nil)
+			controller["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"] = tc.images
+			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, controller))
+			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
+			if err == nil || !strings.Contains(err.Error(), "live Orka controller image") {
+				t.Fatalf("unpinned live controller accepted: %v", err)
+			}
+			if writes := f.writes(t); writes != "" {
+				t.Fatalf("live image drift caused writes: %s", writes)
+			}
+		})
 	}
 }
 
@@ -500,7 +529,10 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", func(_, _, status map[string]any) { status["availableReplicas"] = 0 })))
+	// Keep the image pinned so this test isolates rollout readiness.
+	d := orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	d["status"].(map[string]any)["availableReplicas"] = 0
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, d))
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 	if err == nil || !strings.Contains(err.Error(), "not finished rolling out") {
 		t.Fatalf("unready release reported running: %v", err)

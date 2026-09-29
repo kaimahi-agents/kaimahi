@@ -171,7 +171,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if request.Status.Expiration.Before(deadline.Add(30 * time.Second)) {
 		return nil, fmt.Errorf("granted token lifetime does not cover the total execution deadline plus 30 seconds; refusing execution")
 	}
-	a.notef("Task execution uses the selected ServiceAccount's full effective authority. v0.2.0 enforces Task-get RBAC on result reads; v0.1.3 only authenticates them. Discarding the token is not revocation.")
+	a.notef("Task execution uses the selected ServiceAccount's full effective authority. v0.2.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation.")
 	forwardCtx, cancel := context.WithCancel(ctx)
 	// The adapter's context is used only to prepare this forward process. Once
 	// started, exec.CommandContext retains it; later kubectl calls use their own

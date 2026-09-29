@@ -141,6 +141,27 @@ func (a *App) orkaInstallState() (bool, error) {
 				}
 			}
 			if releases[0].Status == "deployed" {
+				deployments, err := a.orkaDeployments(a.operationContext())
+				if err != nil {
+					return false, fmt.Errorf("cannot verify the live Orka controller image: %w", err)
+				}
+				controller, _, err := selectOrkaController(deployments)
+				if err != nil {
+					return false, fmt.Errorf("cannot verify the live Orka controller image: %w", err)
+				}
+				matches := 0
+				for _, container := range controller.Spec.Template.Spec.Containers {
+					if container.Name != "controller" {
+						continue
+					}
+					matches++
+					if container.Image != "ghcr.io/orka-agents/orka@"+orkaControllerDigest {
+						return false, fmt.Errorf("live Orka controller image differs from kmx's pinned digest; refusing to adopt the release. %s", a.orkaInstallRecovery())
+					}
+				}
+				if matches != 1 {
+					return false, fmt.Errorf("live Orka controller image cannot be identified; refusing to adopt the release. %s", a.orkaInstallRecovery())
+				}
 				return true, nil
 			}
 			status := releases[0].Status

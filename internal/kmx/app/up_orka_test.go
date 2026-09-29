@@ -134,7 +134,9 @@ func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 	a, _, args := upFixture(t)
 	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_UP_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	t.Setenv("KMX_TEST_UP_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", func(_, _, status map[string]any) { status["availableReplicas"] = 0 })))
+	controller := orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	controller["status"].(map[string]any)["availableReplicas"] = 0
+	t.Setenv("KMX_TEST_UP_DEPLOY_JSON", orkaDeployJSON(t, controller))
 	err := a.Up("")
 	if err == nil || !strings.Contains(err.Error(), "not finished rolling out") {
 		t.Fatalf("unready release did not stop up: %v", err)

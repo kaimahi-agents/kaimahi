@@ -67,7 +67,7 @@ This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
 
-Offline output uses pinned v0.1.3 CRDs (main selects an immutable snapshot), not
+Offline output uses pinned v0.2.0 CRDs by default (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret
 skeleton: create Provider and wait for current-generation Ready, then Agent and
 wait, then optionally Task. No Task means no model response was tested.
@@ -95,7 +95,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
 	cmd.Flags().StringVar(&opt.ProviderRequestsPerMinute, "provider-requests-per-minute", "", "explicit positive Provider request limit (int32)")
 	cmd.Flags().StringVar(&opt.ProviderTokensPerMinute, "provider-tokens-per-minute", "", "explicit positive Provider token limit (int64)")
-	cmd.Flags().StringVar(&opt.SchemaTarget, "schema-target", "", "offline only: v0.1.3 (default) or pinned main")
+	cmd.Flags().StringVar(&opt.SchemaTarget, "schema-target", "", "offline only: v0.2.0 (default), v0.1.3, or pinned main")
 	cmd.Flags().StringVar(&opt.ResultServiceAccount, "result-service-account", "", "existing ServiceAccount in the selected namespace for Task result access")
 	cmd.Flags().StringVar(&opt.OrkaAPIService, "orka-api-service", "orka-api", "Orka API Service name exposing port 8080")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
@@ -105,7 +105,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
-	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.1.3", "main"}))
+	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		if len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)
