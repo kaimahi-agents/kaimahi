@@ -3115,7 +3115,11 @@ jobs:
           # this cluster's Orka would reject is not a native Orka Tool.
           url=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
             -o jsonpath='{.spec.http.url}')
-          test "$url" = https://example.com/resources
+          test "$url" = https://1.1.1.1/resources
+          # The v0.2.0 chart worker needs this one named policy for gateway
+          # approval binding; it must not acquire general policy reads.
+          test "$(kubectl --context kind-kmx-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-api-ai-worker)" = yes
+          test "$(kubectl --context kind-kmx-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/unrelated --as=system:serviceaccount:orka-system:orka-api-ai-worker)" = no
           policy=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
             -o jsonpath='{.spec.http.outboundAccessPolicyRef.name}')
           test "$policy" = kmx-k8s-tool-gateway
