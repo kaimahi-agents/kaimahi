@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,18 @@ func TestBundleLiftKubectlHelper(t *testing.T) {
 			os.Exit(1)
 		}
 		fmt.Print("result-reader applied")
+		os.Exit(0)
+	}
+	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && (args[i+1] == "role" || args[i+1] == "rolebinding") && args[i+2] == orkaResultAccount {
+		if os.Getenv("KMX_BUNDLE_NO_RESULT_ROLE") != "1" {
+			fmt.Print(args[i+1] + ".rbac.authorization.k8s.io/" + orkaResultAccount)
+		}
+		os.Exit(0)
+	}
+	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && args[i+1] == "serviceaccount" && args[i+2] == orkaResultAccount {
+		if os.Getenv("KMX_BUNDLE_NO_RESULT_READER") != "1" {
+			fmt.Print("serviceaccount/" + orkaResultAccount)
+		}
 		os.Exit(0)
 	}
 	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && args[i+1] == "providers.core.orka.ai" && args[i+2] == "-o" {
@@ -139,6 +152,28 @@ func TestConsoleBundleLiftUsesDefaultTargetKubeconfigNotSourceSnapshot(t *testin
 	used, err := os.ReadFile(log)
 	if err != nil || string(used) == "/tmp/source-snapshot-only" {
 		t.Fatalf("target reads used source-only kubeconfig: %q %v", used, err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestBundleLiftCustomNamespaceNeedsResultAccessBeforeDeploy(t *testing.T) {
+	b, r, opt, dir, _ := interactiveBundleFixture(t, "\r")
+	b.namespace = "custom"
+	t.Setenv("KMX_BUNDLE_NO_RESULT_READER", "1")
+	err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+	if err == nil || !strings.Contains(err.Error(), "result ServiceAccount") || !strings.Contains(err.Error(), "custom") {
+		t.Fatalf("missing result access was accepted: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestBundleLiftRefusesMissingResultGrant(t *testing.T) {
+	b, r, opt, dir, _ := interactiveBundleFixture(t, "\r")
+	b.namespace = "custom"
+	t.Setenv("KMX_BUNDLE_NO_RESULT_ROLE", "1")
+	err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+	if err == nil || !strings.Contains(err.Error(), "Task-get Role/RoleBinding") {
+		t.Fatalf("missing result grant was accepted: %v", err)
 	}
 	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
@@ -276,6 +311,22 @@ func TestBundlePreparationGuardUsesPinnedRemoteContext(t *testing.T) {
 	if !a.guarded {
 		t.Fatal("preparation did not pass the existing guard")
 	}
+}
+
+func TestCancelledBundleDeployWarnsAboutPartialWrites(t *testing.T) {
+	err := bundleDeployError(context.Canceled)
+	if err == nil || !strings.Contains(err.Error(), "may have changed") || !strings.Contains(err.Error(), "inspect") {
+		t.Fatalf("cancel hid partial deployment risk: %v", err)
+	}
+}
+
+func TestBundlePlanMustStillMatchBeforeDeployment(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	opt.Plan = true
+	if err := confirmBundlePlan(t.Context(), a, opt, "Provider/sample: reused"); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("stale plan was accepted: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
 
 func TestBundleRevisionChangeRequiresAnotherPlan(t *testing.T) {

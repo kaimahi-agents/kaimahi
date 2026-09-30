@@ -29,8 +29,12 @@ confirmed **Prepare target** step and then rechecks the shared plan. The
 built-in Tool installer works only in `orka-system`; for another namespace,
 prepare the Tool and its dependencies there yourself. Prepare the destination
 namespace, an existing Ready inference Provider and its Secret before lift.
-If there is no Ready Provider, prepare or create one on the destination and
-run `/lift` again. Azure Foundry creation is not offered on the bundle-backed
+To keep chat usable after Connect, the console also checks for the destination
+Task-result ServiceAccount. In `orka-system`, a separately confirmed Prepare
+target action can install its read-only Task result grant. In another namespace,
+prepare that ServiceAccount and Task-get grant there before retrying; lift does
+not silently install it. If there is no Ready Provider, prepare or create one
+on the destination and run `/lift` again. Azure Foundry creation is not offered on the bundle-backed
 route; it must first yield a Ready destination Provider through a separate
 provisioning step. The console never silently switches to copying the live
 Agent to provision Foundry.

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -59,7 +60,7 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 	}
 	// Do not rely on the CLI's remembered target: this review authorizes exactly
 	// the context, namespace, and Ready inference Provider selected here.
-	preparedOrka := false
+	preparedOrka, preparedResultAccess := false, false
 	for {
 		missing, err := worker.missingLiftOrkaCRDs(ctx)
 		if err != nil {
@@ -87,6 +88,31 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 				return liftPreparationError(err)
 			}
 			preparedOrka = true
+			continue
+		}
+		resultReader, err := bundleResultReaderPresent(ctx, &worker, namespace)
+		if err != nil {
+			return err
+		}
+		if !resultReader {
+			if namespace != OrkaNamespace {
+				return fmt.Errorf("target %s needs result ServiceAccount/%s and Task-get Role/RoleBinding in namespace %s before lift; prepare them and retry /lift", target.Context, orkaResultAccount, namespace)
+			}
+			if preparedResultAccess {
+				return fmt.Errorf("target %s still lacks result ServiceAccount/%s after preparation", target.Context, orkaResultAccount)
+			}
+			if err := b.confirmLiftAction(ctx, "Prepare target "+target.Context+": chat needs a result ServiceAccount and Task-get grant before connecting.", "Prepare target: install Task result reader RBAC"); err != nil {
+				return liftPreparationError(err)
+			}
+			if err := b.guardBundlePreparation(ctx, &worker); err != nil {
+				return err
+			}
+			if err := b.runLiftDeployment(ctx, &worker, "Prepare result access", []string{"Install result reader RBAC"}, func(w *App) error {
+				return w.runPhase(phase{current: 1, total: 1, name: "Install result reader RBAC"}, w.orkaResultReader)
+			}); err != nil {
+				return err
+			}
+			preparedResultAccess = true
 			continue
 		}
 		providers, err := b.bundleLiftProviders(ctx, &worker, namespace)
@@ -153,14 +179,24 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			if err := checkBundlePlanRevision(dir, plannedDigest); err != nil {
 				return err
 			}
+			if err := confirmBundlePlan(deploy.operationContext(), deploy, opt, review); err != nil {
+				return err
+			}
 			return deploy.runPhase(phase{current: 1, total: 1, name: "Reconcile bundle"}, func() error {
 				return deploy.LiftAgentBundle(opt)
 			})
 		}); err != nil {
-			return err
+			return bundleDeployError(err)
 		}
 		return b.finishBundleLift(ctx, renderer, &worker, target, opt)
 	}
+}
+
+func bundleDeployError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("bundle deployment cancelled; Provider or Agent may have changed on the destination; inspect resources and receipt before retrying")
+	}
+	return err
 }
 
 type bundlePlanNotes struct {
@@ -177,6 +213,25 @@ func (n *bundlePlanNotes) Write(p []byte) (int, error) {
 }
 
 func (n *bundlePlanNotes) complete() bool { return !n.overflow }
+
+// The destination can change while a review picker is open. A fresh read-only
+// plan must still describe the same decisions before any mutation is attempted.
+func confirmBundlePlan(ctx context.Context, worker *App, opt LiftAgentBundleOptions, reviewed string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	notes := &bundlePlanNotes{buffer: orkaBoundedBuffer{remaining: 64 << 10}}
+	check := *worker
+	check.Err = notes
+	opt.Plan = true
+	if err := check.LiftAgentBundle(opt); err != nil {
+		return fmt.Errorf("destination changed since bundle review; rerun /lift for a new plan: %w", err)
+	}
+	if !notes.complete() || strings.TrimSpace(notes.buffer.buffer.String()) != reviewed {
+		return fmt.Errorf("destination changed since bundle review; rerun /lift for a new plan")
+	}
+	return nil
+}
 
 func checkBundlePlanRevision(dir, digest string) error {
 	_, _, current, err := readBundlePortableAgent(dir)
@@ -195,6 +250,23 @@ func bundlePlanFitsTerminal(out io.Writer, title string) bool {
 		width, height, _ = term.GetSize(int(file.Fd()))
 	}
 	return chatPickerTitleFits(title, width, height, true)
+}
+
+func bundleResultReaderPresent(ctx context.Context, worker *App, namespace string) (bool, error) {
+	for _, resource := range []struct{ kind, identity string }{
+		{"serviceaccount", "serviceaccount/" + orkaResultAccount},
+		{"role", "role.rbac.authorization.k8s.io/" + orkaResultAccount},
+		{"rolebinding", "rolebinding.rbac.authorization.k8s.io/" + orkaResultAccount},
+	} {
+		raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", resource.kind, orkaResultAccount, "--ignore-not-found=true", "-o", "name")
+		if err != nil {
+			return false, fmt.Errorf("cannot inspect result %s in %s: %w", resource.kind, namespace, err)
+		}
+		if strings.TrimSpace(string(raw)) != resource.identity {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (b *orkaChatBackend) bundleLiftProviders(ctx context.Context, worker *App, namespace string) ([]string, error) {
