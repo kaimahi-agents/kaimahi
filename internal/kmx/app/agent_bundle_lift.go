@@ -403,11 +403,16 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 
 func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *scaffold.OrkaBundle) error {
 	tools, _ := bundle.Agent["spec"].(map[string]any)["tools"].([]any)
+	worker := ""
+	checked := map[string]bool{}
 	for _, entry := range tools {
 		tool, _ := entry.(map[string]any)
 		name, _ := tool["name"].(string)
 		if name == "" {
 			return fmt.Errorf("rendered Agent has invalid Tool reference")
+		}
+		if tool["enabled"] == false {
+			continue
 		}
 		raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "tools.core.orka.ai", name, "--ignore-not-found=true", "-o", "json")
 		if err != nil {
@@ -421,6 +426,9 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 				Generation        int64   `json:"generation"`
 				DeletionTimestamp *string `json:"deletionTimestamp"`
 			} `json:"metadata"`
+			Spec struct {
+				HTTP json.RawMessage `json:"http"`
+			} `json:"spec"`
 			Status struct {
 				Conditions []serverCondition `json:"conditions"`
 			} `json:"status"`
@@ -437,6 +445,38 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 		if !available {
 			return fmt.Errorf("Tool/%s in namespace %s is not Available; repair it before lifting (the quickstart Kubernetes tool is not Available on Orka v0.1.3)", name, namespace)
 		}
+		if len(existing.Spec.HTTP) == 0 {
+			continue // Non-HTTP Tools have no outbound HTTP policy.
+		}
+		var http struct {
+			PolicyRef json.RawMessage `json:"outboundAccessPolicyRef"`
+		}
+		if json.Unmarshal(existing.Spec.HTTP, &http) != nil {
+			return fmt.Errorf("Tool/%s in namespace %s has invalid HTTP policy reference", name, namespace)
+		}
+		if len(http.PolicyRef) == 0 {
+			continue
+		}
+		var ref struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(http.PolicyRef, &ref) != nil || scaffold.ValidateObjectName(ref.Name) != nil {
+			return fmt.Errorf("Tool/%s in namespace %s has invalid outbound policy reference", name, namespace)
+		}
+		key := namespace + "/" + ref.Name
+		if checked[key] {
+			continue
+		}
+		if worker == "" {
+			worker, err = a.orkaAIWorkerAccount(ctx)
+			if err != nil {
+				return fmt.Errorf("Tool/%s in namespace %s: cannot discover Orka AI worker for policy %s: %w", name, namespace, ref.Name, err)
+			}
+		}
+		if err := a.orkaWorkerCanGetPolicy(ctx, worker, namespace, ref.Name); err != nil {
+			return fmt.Errorf("Tool/%s in namespace %s: %w", name, namespace, err)
+		}
+		checked[key] = true
 	}
 	return nil
 }

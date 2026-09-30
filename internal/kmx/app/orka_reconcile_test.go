@@ -48,6 +48,13 @@ func TestReconcileKubectlHelper(t *testing.T) {
 	log, _ := os.OpenFile(filepath.Join(dir, "calls"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	_ = json.NewEncoder(log).Encode(call)
 	_ = log.Close()
+	if os.Getenv("KMX_LIFT_POLICY_TEST") == "1" && slices.Contains(args, "--raw") {
+		if os.Getenv("KMX_LIFT_POLICY_API_FAIL") == "1" {
+			fail()
+		}
+		fmt.Print(getenvLiftTest("KMX_LIFT_POLICY_REVIEW", `{"status":{"allowed":false,"denied":true}}`))
+		os.Exit(0)
+	}
 	if slices.Contains(args, "config") {
 		server := "https://127.0.0.1:6443"
 		if os.Getenv("KMX_RECONCILE_REMOTE") == "1" {
@@ -72,6 +79,10 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		if os.Getenv("KMX_STATUS_FORBIDDEN") == "1" && kind == "agents.core.orka.ai" {
 			fail()
 		}
+		if os.Getenv("KMX_LIFT_POLICY_TEST") == "1" && kind == "serviceaccounts" {
+			fmt.Printf(`{"items":[%s]}`, workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"))
+			os.Exit(0)
+		}
 		if os.Getenv("KMX_LIFT_TEST") == "1" {
 			switch kind {
 			case "deploy":
@@ -84,6 +95,10 @@ func TestReconcileKubectlHelper(t *testing.T) {
 					labels["control-plane"] = "controller-manager"
 				} else {
 					labels["app.kubernetes.io/component"] = "controller"
+				}
+				if os.Getenv("KMX_LIFT_POLICY_TEST") == "1" {
+					fmt.Printf(`{"items":[%s]}`, workerController("orka-controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`))
+					os.Exit(0)
 				}
 				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"items": []any{map[string]any{"metadata": map[string]any{"name": selected, "labels": labels}}}})
 				os.Exit(0)
@@ -133,6 +148,14 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			case "tools.core.orka.ai":
 				if os.Getenv("KMX_LIFT_REPOINT_AFTER_PREFLIGHT") == "1" {
 					_ = os.WriteFile(filepath.Join(dir, "repointed-after-preflight"), nil, 0600)
+				}
+				if name == "read" && os.Getenv("KMX_LIFT_TOOL_SPEC_READ") != "" {
+					fmt.Printf(`{"kind":"Tool","metadata":{"name":%q,"namespace":"orka-system","generation":1},"spec":%s,"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}`, name, os.Getenv("KMX_LIFT_TOOL_SPEC_READ"))
+					os.Exit(0)
+				}
+				if spec := os.Getenv("KMX_LIFT_TOOL_SPEC"); spec != "" {
+					fmt.Printf(`{"kind":"Tool","metadata":{"name":%q,"namespace":"orka-system","generation":1},"spec":%s,"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}`, name, spec)
+					os.Exit(0)
 				}
 				if os.Getenv("KMX_LIFT_MISSING") == "tool" || os.Getenv("KMX_LIFT_MISSING") == "tool-available" && name == "search" {
 					if os.Getenv("KMX_LIFT_MISSING") == "tool" {

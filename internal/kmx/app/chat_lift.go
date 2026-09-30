@@ -272,6 +272,9 @@ func (b *orkaChatBackend) liftLiveAgentTo(ctx context.Context, renderer *chatRen
 	if err := b.prepareLiftTools(ctx, &worker, bundle, renderer); err != nil {
 		return liftPreparationError(err)
 	}
+	if err := worker.liftToolsAvailable(ctx, b.namespace, bundle); err != nil {
+		return err
+	}
 	b.liftStage(4, "")
 	providerSpec := bundle.Provider["spec"].(map[string]any)
 	index, ok, err := b.liftAction(ctx, "Live Agent copy (not tracked by kmx agent status/evaluate)\n"+detail+fmt.Sprintf("\nModel: %v\nEndpoint: %v\nProvider/Agent: create missing, reuse matching; conflicts stop deployment", providerSpec["defaultModel"], providerSpec["baseURL"]), []chatPickerItem{{name: "Cancel"}, {name: "Deploy Provider and Agent"}})

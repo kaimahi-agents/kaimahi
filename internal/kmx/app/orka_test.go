@@ -56,6 +56,11 @@ func TestUnreachableIsNotTheSameAsAbsent(t *testing.T) {
 const fakeOrkaKubectl = `#!/bin/sh
 printf 'kubectl %s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
+  *"create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f -"*)
+    [ "$KMX_TEST_SAR_ALLOW" = 1 ] || exit 1
+    cat >/dev/null
+    printf '{"status":{"allowed":true}}'
+    exit 0 ;;
   *"apply -f -"*)
     [ -n "$KMX_TEST_STDIN" ] && cat >> "$KMX_TEST_STDIN"
     exit 0 ;;
@@ -1319,6 +1324,7 @@ func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
 	// chart controller's verified AI worker rather than an inferred name.
 	t.Setenv("KMX_TEST_DEPLOY_JSON", `{"items":[`+workerController(orkaChartController, "orka-0.2.0", "orka-api", "Helm", `["--ai-worker-service-account-name=orka-api-ai-worker"]`)+`]}`)
 	t.Setenv("KMX_TEST_WORKER_ACCOUNTS", `{"items":[`+workerAccount("orka-api-ai-worker", OrkaNamespace, "orka-0.2.0", "orka-api", "ai")+`]}`)
+	t.Setenv("KMX_TEST_SAR_ALLOW", "1")
 	wizard.app.orkaInstallerDigest = digestOf(installer)
 	wizard.app.Cfg.Model = "qwen2.5:3b"
 	if err := wizard.app.quickstartWizardOrka(func(quickstartSetupEvent) {}); err != nil {

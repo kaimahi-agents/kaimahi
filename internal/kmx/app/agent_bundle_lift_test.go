@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *bytes.Buffer) {
@@ -37,7 +38,8 @@ func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *byt
 func assertNoLiftWrites(t *testing.T, dir, bundle string) {
 	t.Helper()
 	for _, call := range orkaCalls(t, dir) {
-		if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") {
+		if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") &&
+			!(call.Document["kind"] == "SubjectAccessReview" && slices.Contains(call.Args, "--raw")) {
 			t.Fatalf("lift wrote resource: %+v", call)
 		}
 	}
@@ -249,6 +251,120 @@ func TestLiftPlanRefusesMissingAllowedAgentsAndUnsupportedCRD(t *testing.T) {
 			}
 			assertNoLiftWrites(t, dir, opt.BundleDir)
 		})
+	}
+}
+
+// The Tool is Available, but its effective worker policy permission is absent.
+// This must refuse before Provider/Agent mutation for both plan and deploy.
+func TestLiftBundlePolicyPermissionPreflight(t *testing.T) {
+	for _, plan := range []bool{false, true} {
+		t.Run(map[bool]string{true: "plan", false: "deploy"}[plan], func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			opt.Plan = plan
+			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+			t.Setenv("KMX_LIFT_TOOL_SPEC", `{"type":"http","http":{"url":"https://example.invalid","outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
+			err := a.LiftAgentBundle(opt)
+			if err == nil {
+				t.Fatal("Available Tool with denied worker policy was accepted")
+			}
+			for _, want := range []string{"Tool/search", "orka-ai-worker", "get", "kmx-k8s-tool-gateway", OrkaNamespace} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("missing %q in refusal: %v", want, err)
+				}
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+			for _, call := range orkaCalls(t, dir) {
+				if slices.Contains(call.Args, "--raw") && (call.Document == nil || call.Document["kind"] != "SubjectAccessReview") {
+					t.Fatal("expected a named SAR before lift")
+				}
+			}
+		})
+	}
+}
+
+func TestLiftBundlePolicyReferenceCases(t *testing.T) {
+	for _, tc := range []struct {
+		name, toolSpec, policyReview, want string
+		disabled                           bool
+	}{
+		{"unrestricted Tool", `{"type":"http","http":{"url":"https://example.invalid"}}`, "", "", false},
+		{"non-quickstart policy", `{"type":"http","http":{"outboundAccessPolicyRef":{"name":"other-policy"}}}`, "", "other-policy", false},
+		{"denied explicit false", `{"type":"http","http":{"outboundAccessPolicyRef":{"name":"other-policy"}}}`, `{"status":{"allowed":false}}`, "other-policy", false},
+		{"SAR API error", `{"type":"http","http":{"outboundAccessPolicyRef":{"name":"other-policy"}}}`, "api-error", "cannot evaluate", false},
+		{"malformed empty reference", `{"type":"http","http":{"outboundAccessPolicyRef":{}}}`, "", "invalid", false},
+		{"malformed name", `{"type":"http","http":{"outboundAccessPolicyRef":{"name":"Invalid Policy"}}}`, "", "invalid", false},
+		{"malformed type", `{"type":"http","http":{"outboundAccessPolicyRef":"not-an-object"}}`, "", "invalid", false},
+		{"disabled reference", `{"type":"http","http":{"outboundAccessPolicyRef":{"name":"other-policy"}}}`, "", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+			t.Setenv("KMX_LIFT_TOOL_SPEC", tc.toolSpec)
+			if tc.policyReview == "api-error" {
+				t.Setenv("KMX_LIFT_POLICY_API_FAIL", "1")
+			} else if tc.policyReview != "" {
+				t.Setenv("KMX_LIFT_POLICY_REVIEW", tc.policyReview)
+			}
+			opt.Plan = true
+			var err error
+			if tc.disabled {
+				// The portable bundle parser has no disabled field. The live-copy
+				// Agent does, so exercise the shared preflight with that shape.
+				bundle := &scaffold.OrkaBundle{Agent: map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"name": "search", "enabled": false}}}}}
+				err = a.liftToolsAvailable(t.Context(), OrkaNamespace, bundle)
+			} else {
+				err = a.LiftAgentBundle(opt)
+			}
+			if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("error=%v, want %q", err, tc.want)
+			}
+			if tc.want == "" && err != nil {
+				t.Fatalf("policy-free/disabled Tool refused: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+			if tc.disabled || tc.want == "" || strings.Contains(tc.want, "invalid") {
+				for _, call := range orkaCalls(t, dir) {
+					if slices.Contains(call.Args, "--raw") || tc.disabled && slices.Contains(call.Args, "tools.core.orka.ai") {
+						t.Fatal("unexpected Tool read or worker SAR for disabled, policy-free or malformed Tool")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestLiftToolsChecksEachDistinctPolicyWithOneWorkerDiscovery(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+	t.Setenv("KMX_LIFT_POLICY_REVIEW", `{"status":{"allowed":true}}`)
+	t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"first-policy"}}}`)
+	t.Setenv("KMX_LIFT_TOOL_SPEC_READ", `{"http":{"outboundAccessPolicyRef":{"name":"second-policy"}}}`)
+	bundle := &scaffold.OrkaBundle{Agent: map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"name": "search"}, map[string]any{"name": "search"}, map[string]any{"name": "read"}}}}}
+	if err := a.liftToolsAvailable(t.Context(), OrkaNamespace, bundle); err != nil {
+		t.Fatal(err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+	policies := map[string]int{}
+	workerReads := 0
+	for _, call := range orkaCalls(t, dir) {
+		if slices.Contains(call.Args, "serviceaccounts") {
+			workerReads++
+		}
+		if call.Document == nil || call.Document["kind"] != "SubjectAccessReview" {
+			continue
+		}
+		spec := call.Document["spec"].(map[string]any)
+		attributes := spec["resourceAttributes"].(map[string]any)
+		if spec["user"] != "system:serviceaccount:orka-system:orka-ai-worker" || attributes["namespace"] != OrkaNamespace || attributes["verb"] != "get" {
+			t.Fatalf("SAR scoped incorrectly: %+v", attributes)
+		}
+		policies[attributes["name"].(string)]++
+	}
+	if workerReads != 1 || policies["first-policy"] != 1 || policies["second-policy"] != 1 || len(policies) != 2 {
+		t.Fatalf("worker reads=%d policy reviews=%v, want one discovery and one per distinct policy", workerReads, policies)
 	}
 }
 

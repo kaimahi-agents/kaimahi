@@ -23,6 +23,16 @@ func TestBundleLiftKubectlHelper(t *testing.T) {
 		return
 	}
 	args := os.Args[slices.Index(os.Args, "--")+1:]
+	if os.Getenv("KMX_CHAT_LIVE_POLICY_TEST") == "1" && len(args) > 2 && args[0] == "--context" && args[1] == "kind-source" {
+		if slices.Contains(args, "agents.core.orka.ai") {
+			fmt.Print(os.Getenv("KMX_CHAT_SOURCE_AGENT"))
+			os.Exit(0)
+		}
+		if slices.Contains(args, "providers.core.orka.ai") {
+			fmt.Print(os.Getenv("KMX_CHAT_SOURCE_PROVIDER"))
+			os.Exit(0)
+		}
+	}
 	if path := os.Getenv("KMX_BUNDLE_ENV_LOG"); path != "" {
 		_ = os.WriteFile(path, []byte(os.Getenv("KUBECONFIG")), 0600)
 	}
@@ -85,6 +95,10 @@ func TestBundleLiftKubectlHelper(t *testing.T) {
 		os.Exit(0)
 	}
 	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && args[i+1] == "providers.core.orka.ai" && args[i+2] == "-o" {
+		if os.Getenv("KMX_CHAT_LIVE_POLICY_TEST") == "1" {
+			fmt.Print(`{"items":[{"metadata":{"name":"inference"},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"test","secretRef":{"name":"target-secret","key":"api-key"}},"status":{"ready":true}}]}`)
+			os.Exit(0)
+		}
 		if os.Getenv("KMX_LIFT_MISSING") == "controller" {
 			os.Exit(1)
 		}
@@ -311,6 +325,56 @@ func TestInteractiveBundleLiftMissingBundleLabelsUntrackedLegacyRoute(t *testing
 	_ = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
 	if !strings.Contains(out.String(), "legacy live-copy") || !strings.Contains(out.String(), "untracked by kmx agent status/evaluate") {
 		t.Fatalf("missing explicit fallback warning: %s", out.String())
+	}
+}
+
+// No local bundle means the console copies a live Agent. It must inspect the
+// target Tool and refuse before showing the final deploy action or writing it.
+func TestLiveCopyLiftRefusesDeniedToolPolicyBeforeDeployment(t *testing.T) {
+	b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
+	if err := os.RemoveAll(opt.BundleDir); err != nil {
+		t.Fatal(err)
+	}
+	source, err := createOrkaBundle(CreateOptions{Name: "sample", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", BaseURL: "https://source.example.invalid/v1", Secret: "source-secret", Tools: quickstartK8sTool})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentJSON, err := json.Marshal(source.Agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerJSON, err := json.Marshal(source.Provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_CHAT_LIVE_POLICY_TEST", "1")
+	t.Setenv("KMX_CHAT_SOURCE_AGENT", string(agentJSON))
+	t.Setenv("KMX_CHAT_SOURCE_PROVIDER", string(providerJSON))
+	t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+	t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
+	err = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+	if err == nil {
+		t.Fatal("live-copy lift accepted Tool with denied policy")
+	}
+	for _, want := range []string{"Tool/k8s-get-resources", "orka-ai-worker", "get", OrkaNamespace, quickstartK8sToolPolicy} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in refusal: %v", want, err)
+		}
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+	reviewedTarget := false
+	for _, call := range orkaCalls(t, dir) {
+		if !slices.Contains(call.Args, "--raw") {
+			continue
+		}
+		if !slices.Equal(call.Args[:2], []string{"--context", "kind-test"}) {
+			t.Fatalf("policy review used source or ambient cluster: %v", call.Args)
+		}
+		reviewedTarget = true
+	}
+	if !reviewedTarget {
+		t.Fatal("live-copy lift refused without target authorization review")
 	}
 }
 

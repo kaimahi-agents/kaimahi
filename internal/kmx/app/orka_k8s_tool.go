@@ -42,6 +42,7 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("Orka controller Deployment must have chart=orka-0.2.0, nonempty instance, app name=orka and managed-by=Helm labels")
 	}
 	const flag = "--ai-worker-service-account-name="
+	const flagName = "ai-worker-service-account-name"
 	worker := ""
 	controllers := 0
 	flags := 0
@@ -51,9 +52,15 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		}
 		controllers++
 		for _, arg := range container.Args {
-			if strings.HasPrefix(arg, flag) {
+			switch {
+			case strings.HasPrefix(arg, flag):
 				flags++
 				worker = strings.TrimPrefix(arg, flag)
+			case arg == "--"+flagName, arg == "-"+flagName,
+				strings.HasPrefix(arg, "-"+flagName+"="):
+				// Go flag parsing accepts split and single-dash forms too. Never
+				// select a name that might differ from the controller's effective one.
+				flags++
 			}
 		}
 	}
@@ -164,6 +171,50 @@ func renderQuickstartK8sTool(resources []byte, worker string) ([]byte, error) {
 	return bytes.Replace(resources, placeholder, []byte(worker), 1), nil
 }
 
+// Check effective access for the one named policy, not a broader list grant.
+// SAR responses and kubectl stderr can contain sensitive admission details;
+// only the requested identity and permission are included in errors.
+func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, policy string) error {
+	permission := fmt.Sprintf("ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", OrkaNamespace, worker, policy, namespace)
+	if scaffold.ValidateObjectName(worker) != nil || scaffold.ValidateNamespace(namespace) != nil || scaffold.ValidateObjectName(policy) != nil {
+		return fmt.Errorf("invalid worker or named policy permission: %s", permission)
+	}
+	request, err := json.Marshal(map[string]any{
+		"apiVersion": "authorization.k8s.io/v1", "kind": "SubjectAccessReview",
+		"spec": map[string]any{
+			"user": "system:serviceaccount:" + OrkaNamespace + ":" + worker,
+			"resourceAttributes": map[string]string{
+				"namespace": namespace, "group": "core.orka.ai", "resource": "outboundaccesspolicies",
+				"name": policy, "verb": "get",
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("cannot prepare named policy permission: %s", permission)
+	}
+	response, err := a.orkaCapture(ctx, request, "create", "--raw", "/apis/authorization.k8s.io/v1/subjectaccessreviews", "-f", "-")
+	if err != nil {
+		return fmt.Errorf("cannot evaluate %s: %w", permission, err)
+	}
+	var review struct {
+		Status *struct {
+			Allowed         bool   `json:"allowed"`
+			Denied          bool   `json:"denied"`
+			EvaluationError string `json:"evaluationError"`
+		} `json:"status"`
+	}
+	if json.Unmarshal(response, &review) != nil || review.Status == nil {
+		return fmt.Errorf("invalid authorization review for %s", permission)
+	}
+	if review.Status.EvaluationError != "" {
+		return fmt.Errorf("indeterminate authorization review for %s", permission)
+	}
+	if review.Status.Denied || !review.Status.Allowed {
+		return fmt.Errorf("denied %s", permission)
+	}
+	return nil
+}
+
 func quickstartAgentTools(opt *CreateOptions) {
 	if strings.TrimSpace(opt.Tools) == "" {
 		opt.Tools = quickstartK8sTool
@@ -208,6 +259,9 @@ func (a *App) installQuickstartK8sTool() error {
 	if err := a.waitOrkaResourceCondition("outboundaccesspolicies.core.orka.ai",
 		quickstartK8sToolPolicy, "Accepted"); err != nil {
 		return err
+	}
+	if err := a.orkaWorkerCanGetPolicy(a.operationContext(), worker, OrkaNamespace, quickstartK8sToolPolicy); err != nil {
+		return fmt.Errorf("Orka Kubernetes Tool policy reader is not authorized: %w", err)
 	}
 	return a.waitOrkaResourceCondition("tools.core.orka.ai", quickstartK8sTool, "Available")
 }

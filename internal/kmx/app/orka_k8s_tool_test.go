@@ -43,6 +43,8 @@ func TestOrkaAIWorkerAccount(t *testing.T) {
 		{"empty flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name="]`) + ` ]`, `[]`, "", "--ai-worker-service-account-name"},
 		{"invalid account name", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=INVALID NAME"]`) + ` ]`, `[]`, "", "invalid"},
 		{"duplicate flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","--ai-worker-service-account-name=other"]`) + ` ]`, `[]`, "", "multiple"},
+		{"duplicate split flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","--ai-worker-service-account-name","other"]`) + ` ]`, `[]`, "", "multiple"},
+		{"duplicate single-dash flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","-ai-worker-service-account-name=other"]`) + ` ]`, `[]`, "", "multiple"},
 		{"absent account", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "ServiceAccount"},
 		{"wrong trust", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "controller") + ` ]`, "", "worker-trust"},
 		{"wrong account instance", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "other", "ai") + ` ]`, "", "instance"},
@@ -80,6 +82,63 @@ esac`, tt.deployments, func() string {
 			}
 			if err != nil || got != tt.want {
 				t.Fatalf("account=%q error=%v, want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+// The fake boundary checks the exact SAR permission without touching a cluster.
+func TestOrkaWorkerCanGetPolicy(t *testing.T) {
+	for _, tt := range []struct{ name, response, failure, want string }{
+		{"allowed", `{"status":{"allowed":true}}`, "", ""},
+		{"denied", `{"status":{"allowed":false,"denied":true}}`, "", "denied"},
+		{"not allowed", `{"status":{"allowed":false}}`, "", "denied"},
+		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, "", "denied"},
+		{"evaluation error", `{"status":{"allowed":true,"evaluationError":"sensitive-evaluation"}}`, "", "indeterminate"},
+		{"malformed", `{"status":"sensitive-response"}`, "", "invalid"},
+		{"missing status", `{}`, "", "invalid"},
+		{"kubectl failure", ``, "sensitive-admission", "cannot evaluate"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			stdin := filepath.Join(dir, "stdin")
+			args := filepath.Join(dir, "args")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" > %[1]q
+/bin/cat > %[2]q
+if [ -n %[4]q ]; then printf '%%s' %[4]q >&2; exit 1; fi
+printf '%%s' %[3]q`, args, stdin, tt.response, tt.failure))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
+			err := a.orkaWorkerCanGetPolicy(context.Background(), "orka-ai-worker", OrkaNamespace, quickstartK8sToolPolicy)
+			if tt.want == "" && err != nil || tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Fatalf("error=%v, want %q", err, tt.want)
+			}
+			if err != nil {
+				for _, forbidden := range []string{"sensitive-admission", "sensitive-evaluation", "sensitive-response"} {
+					if strings.Contains(err.Error(), forbidden) {
+						t.Fatalf("leaked raw response: %v", err)
+					}
+				}
+				for _, want := range []string{"orka-ai-worker", "get", OrkaNamespace, quickstartK8sToolPolicy} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("refusal lacks %s: %v", want, err)
+					}
+				}
+			}
+			gotArgs, _ := os.ReadFile(args)
+			if string(gotArgs) != "--context kind-demo --request-timeout=10s create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f -\n" {
+				t.Fatalf("unscoped SAR args: %q", gotArgs)
+			}
+			var sent struct {
+				APIVersion, Kind string
+				Spec             struct {
+					User               string
+					ResourceAttributes struct{ Namespace, Group, Resource, Name, Verb string }
+				}
+			}
+			body, _ := os.ReadFile(stdin)
+			if json.Unmarshal(body, &sent) != nil || sent.APIVersion != "authorization.k8s.io/v1" || sent.Kind != "SubjectAccessReview" || sent.Spec.User != "system:serviceaccount:orka-system:orka-ai-worker" || sent.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{OrkaNamespace, "core.orka.ai", "outboundaccesspolicies", quickstartK8sToolPolicy, "get"}) {
+				t.Fatal("SAR did not target the exact worker and named get permission")
 			}
 		})
 	}
@@ -294,8 +353,9 @@ case " $* " in
   *" get serviceaccounts -o json "*) printf 'accounts\n' >> %[1]q; printf '%%s' '{"items":[%[4]s]}' ;;
   *" apply -f - "*) printf 'apply\n' >> %[1]q; /bin/cat > %[2]q ;;
   *" rollout status "*) printf 'rollout\n' >> %[1]q ;;
-  *" get outboundaccesspolicies.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
-  *" get tools.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}' ;;
+  *" get outboundaccesspolicies.core.orka.ai "*) printf 'policy\n' >> %[1]q; printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
+  *" get tools.core.orka.ai "*) printf 'tool\n' >> %[1]q; printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}' ;;
+  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[1]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":true}}' ;;
   *) exit 1 ;;
 esac`, steps, applied, tt.deployments, tt.account))
 			t.Setenv("PATH", dir)
@@ -315,7 +375,7 @@ esac`, steps, applied, tt.deployments, tt.account))
 				t.Fatal(err)
 			}
 			stepsBody, err := os.ReadFile(steps)
-			if err != nil || !strings.HasPrefix(string(stepsBody), "deploy\naccounts\napply\napply\nrollout\n") {
+			if err != nil || string(stepsBody) != "deploy\naccounts\napply\napply\nrollout\npolicy\nsar\ntool\n" {
 				t.Fatalf("wrong install order: steps=%q error=%v", stepsBody, err)
 			}
 			body, err := os.ReadFile(applied)
@@ -333,6 +393,31 @@ esac`, steps, applied, tt.deployments, tt.account))
 				t.Fatal("applied binding omitted discovered worker or code checksum was not rendered")
 			}
 		})
+	}
+}
+
+func TestQuickstartK8sToolInstallDenialAfterGrantRefusesSuccess(t *testing.T) {
+	dir := t.TempDir()
+	steps := filepath.Join(dir, "steps")
+	fakeTool(t, dir, "kubectl", fmt.Sprintf(`case " $* " in
+  *" get deploy -o json "*) printf '%%s' '{"items":[%s]}' ;;
+  *" get serviceaccounts -o json "*) printf '%%s' '{"items":[%s]}' ;;
+  *" apply -f - "*) printf 'apply\n' >> %[3]q; /bin/cat >/dev/null ;;
+  *" rollout status "*) exit 0 ;;
+  *" get outboundaccesspolicies.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
+  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false}}' ;;
+  *" get tools.core.orka.ai "*) printf 'tool\n' >> %[3]q; exit 1 ;;
+  *) exit 1 ;;
+esac`, workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), steps))
+	t.Setenv("PATH", dir)
+	a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}, Err: io.Discard}
+	err := a.installQuickstartK8sTool()
+	if err == nil || !strings.Contains(err.Error(), "orka-ai-worker") || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("denied Tool install was accepted: %v", err)
+	}
+	sequence, _ := os.ReadFile(steps)
+	if string(sequence) != "apply\napply\nsar\n" {
+		t.Fatalf("grant/SAR order or unauthorized success: %q", sequence)
 	}
 }
 
