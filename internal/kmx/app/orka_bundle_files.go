@@ -118,6 +118,12 @@ func preflightOrkaBundle(path string, agent, bindings []byte) error {
 			}
 			continue
 		}
+		if entry.Name() == "lift-policy.yaml" {
+			if _, err := loadBundleLiftPolicy(path); err != nil {
+				return err
+			}
+			continue
+		}
 		content, expected := files[entry.Name()]
 		if !expected {
 			if err := scaffold.RefuseKeyShapes(entry.Name()); err != nil {

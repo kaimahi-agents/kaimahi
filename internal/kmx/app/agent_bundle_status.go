@@ -117,6 +117,7 @@ type bundleTargetStatus struct {
 	// when it is the bundle's current digest and case set: pass, fail or
 	// unknown; otherwise none.
 	Evaluation string               `json:"evaluation"`
+	Gate       string               `json:"gate"`
 	Provider   bundleResourceStatus `json:"provider"`
 	Agent      bundleResourceStatus `json:"agent"`
 }
@@ -188,6 +189,19 @@ func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, e
 	for _, target := range targets {
 		observed := a.observeBundleTarget(ctx, bundle, name, portableDigest, target)
 		observed.Evaluation = bundleEvaluationStatus(bundle, observed, portableDigest, casesDigest)
+		if observed.ObservedClusterUID == "" {
+			observed.Gate = "unknown: destination cluster UID unavailable"
+		} else {
+			required, failed := evaluateBundleLiftGate(bundle, name, portableDigest, bundleGateTarget{ClusterUID: observed.ObservedClusterUID, Namespace: target.Namespace}, "")
+			switch {
+			case failed != "":
+				observed.Gate = "refused: " + failed
+			case required:
+				observed.Gate = "pass"
+			default:
+				observed.Gate = "not required"
+			}
+		}
 		report.Targets = append(report.Targets, observed)
 	}
 	return report, nil
@@ -720,12 +734,12 @@ func (a *App) printBundleStatusTable(report bundleStatusReport) {
 		}
 		rows = append(rows, []string{
 			target.Context, target.Namespace, target.State, readyWord(target.Provider.Ready), readyWord(target.Agent.Ready),
-			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), target.Evaluation, detail,
+			bundleBehindCell(target), bundleDeployedCell(target), bundleReceiptCell(target), target.Evaluation, target.Gate, detail,
 		})
 	}
 	fmt.Fprintf(a.Out, "\n%s\n", ui.Report("Targets",
-		[]string{"CONTEXT", "NAMESPACE", "STATE", "PROVIDER READY", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "EVAL", "DETAIL"}, rows,
-		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnText))
+		[]string{"CONTEXT", "NAMESPACE", "STATE", "PROVIDER READY", "AGENT READY", "BEHIND", "DEPLOYED", "RECEIPT", "EVAL", "GATE", "DETAIL"}, rows,
+		cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnState, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText, cliui.ColumnText, cliui.ColumnState, cliui.ColumnText, cliui.ColumnText))
 	for _, target := range report.Targets {
 		if len(target.ChangedFields) == 0 {
 			continue
