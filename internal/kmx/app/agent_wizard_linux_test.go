@@ -210,6 +210,28 @@ func TestCreateWizardPTYBlockedInstructionsStayCookedAndInterruptible(t *testing
 				}
 			}
 			defer fifoWriter.Close()
+			// A successful writer open proves only that the child opened the read
+			// side. Write one byte and wait for it to leave the FIFO buffer: that
+			// proves os.ReadFile consumed data. Keeping the writer open prevents
+			// EOF, so the child remains inside the instruction read when signaled.
+			if _, err := fifoWriter.Write([]byte{1}); err != nil {
+				t.Fatalf("write FIFO marker: %v", err)
+			}
+			deadline = time.Now().Add(5 * time.Second)
+			for {
+				unread, readErr := unix.IoctlGetInt(int(fifoWriter.Fd()), unix.TIOCINQ)
+				switch {
+				case readErr != nil:
+					t.Fatalf("inspect FIFO buffer: %v", readErr)
+				case unread == 0:
+					goto instructionsRead
+				case time.Now().After(deadline):
+					t.Fatal("child did not consume the instructions FIFO marker")
+				default:
+					time.Sleep(5 * time.Millisecond)
+				}
+			}
+		instructionsRead:
 			during, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 			if err != nil || *before != *during {
 				t.Error("instruction FIFO read entered raw mode before it could complete")

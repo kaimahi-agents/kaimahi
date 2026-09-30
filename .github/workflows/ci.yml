@@ -222,6 +222,10 @@ jobs:
           if "gh release create" not in release_text:
               print("release.yml must publish the already-checked artifact set in one draft-to-public release operation")
               sys.exit(1)
+          dry_run_artifact_path = "path: $" + "{{ runner.temp }}/release-assets/"
+          if "Stage the checked release artifacts" not in release_text or dry_run_artifact_path not in release_text:
+              print("release.yml must give dry runs the same flat checked assets used for publication")
+              sys.exit(1)
           if 'scripts/homebrew-formula.py "$VERSION" dist/checksums.txt' not in release_text:
               print("release.yml must reject an incomplete or unexpected checksum manifest before publication")
               sys.exit(1)

@@ -288,6 +288,27 @@ jobs:
           ruby -c dist/homebrew/Formula/kmx.rb
           test -s dist/homebrew/Formula/kmx.rb
 
+      # Stage one flat directory with the exact names in checksums.txt. Both
+      # dry runs and real releases consume this directory, so rehearsal
+      # artifacts have the same usable layout as public release assets.
+      - name: Stage the checked release artifacts
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+          for name in kmx-linux-amd64 kmx-linux-arm64 kmx-darwin-amd64 kmx-darwin-arm64; do
+            suffix=$(printf '%s' "${name#kmx-}" | tr - _)
+            matches=(dist/kmx_"$suffix"*/kmx)
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "$artifact_dir/$name"
+            cmp "${matches[0]}" "$artifact_dir/$name"
+          done
+          cp dist/checksums.txt "$artifact_dir/checksums.txt"
+          cp dist/homebrew/Formula/kmx.rb "$artifact_dir/kmx.rb"
+          cmp dist/checksums.txt "$artifact_dir/checksums.txt"
+          cmp dist/homebrew/Formula/kmx.rb "$artifact_dir/kmx.rb"
+
       # Only now, with every check above green, does anything get published.
       # Create the GitHub release with the exact files just checked rather
       # than asking GoReleaser to rebuild them. `gh release create` keeps the
@@ -301,22 +322,16 @@ jobs:
           PRERELEASE: ${{ steps.what.outputs.prerelease }}
         run: |
           set -euo pipefail
-          publish_dir="$RUNNER_TEMP/release-assets"
-          mkdir -p "$publish_dir"
-          assets=()
-          for name in kmx-linux-amd64 kmx-linux-arm64 kmx-darwin-amd64 kmx-darwin-arm64; do
-            suffix=$(printf '%s' "${name#kmx-}" | tr - _)
-            matches=(dist/kmx_"$suffix"*/kmx)
-            test "${#matches[@]}" -eq 1
-            cp "${matches[0]}" "$publish_dir/$name"
-            cmp "${matches[0]}" "$publish_dir/$name"
-            assets+=("$publish_dir/$name")
-          done
-          cp dist/checksums.txt "$publish_dir/checksums.txt"
-          cp dist/homebrew/Formula/kmx.rb "$publish_dir/kmx.rb"
-          cmp dist/checksums.txt "$publish_dir/checksums.txt"
-          cmp dist/homebrew/Formula/kmx.rb "$publish_dir/kmx.rb"
-          assets+=("$publish_dir/checksums.txt" "$publish_dir/kmx.rb")
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          assets=(
+            "$artifact_dir/kmx-linux-amd64"
+            "$artifact_dir/kmx-linux-arm64"
+            "$artifact_dir/kmx-darwin-amd64"
+            "$artifact_dir/kmx-darwin-arm64"
+            "$artifact_dir/checksums.txt"
+            "$artifact_dir/kmx.rb"
+          )
+          for asset in "${assets[@]}"; do test -f "$asset"; done
           flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag)
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
           gh release create "$VERSION" "${flags[@]}" "${assets[@]}"
@@ -329,5 +344,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kmx-${{ steps.what.outputs.version }}
-          path: dist/
+          path: ${{ runner.temp }}/release-assets/
           if-no-files-found: error
