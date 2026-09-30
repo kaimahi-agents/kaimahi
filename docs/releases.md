@@ -410,7 +410,8 @@ than the first.
        echo "refusing to replace installed kmx; use a clean Homebrew installation" >&2
        exit 1
      fi
-     backup_root=$(mktemp -d)
+    mkdir -p "$tap_parent"
+    backup_root=$(mktemp -d "$tap_parent/.kmx-tap-backup.XXXXXX")
      saved_tap="$backup_root/homebrew-tap"
      trust_home=$(mktemp -d)
      had_tap=false
