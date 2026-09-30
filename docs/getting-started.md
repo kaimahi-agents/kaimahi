@@ -61,11 +61,11 @@ The stable release includes these Orka commands. Install it with Homebrew:
 brew install kaimahi-agents/tap/kmx
 ```
 
-To pin v0.2.0 exactly, use Go or the checksum-verified
+To pin Kaimahi v0.4.0 exactly, use Go or the checksum-verified
 [release installer](releases.md#install):
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
 kmx version
 kmx ctx <context>
 kmx orka --help

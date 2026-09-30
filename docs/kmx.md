@@ -30,7 +30,7 @@ Docker, Podman or Go; local kind still needs a container engine, and `kmx plane`
 still needs Go. To build the same release with Go 1.26+ instead:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.2.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
 kmx version
 kmx orka --help
 ```
@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.2.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--version=v0.4.0` pins it, `--bin-dir=DIR` changes the destination, and
 `--quickstart` continues into `kmx quickstart`. A new shell may need
 `~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
