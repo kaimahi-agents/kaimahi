@@ -21,8 +21,9 @@ type orkaDeployment struct {
 		Template struct {
 			Spec struct {
 				Containers []struct {
-					Name  string `json:"name"`
-					Image string `json:"image"`
+					Name  string   `json:"name"`
+					Image string   `json:"image"`
+					Args  []string `json:"args"`
 				} `json:"containers"`
 			} `json:"spec"`
 		} `json:"template"`

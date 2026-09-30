@@ -99,6 +99,8 @@ case "$*" in
       unexpected) printf 'unexpected kubectl failure (fixture-sensitive-token)\n' >&2; exit 1 ;;
     esac
     printf '%s' "$KMX_TEST_DEPLOYMENTS"; exit 0 ;;
+  *"get serviceaccounts -o json")
+    printf '%s' "$KMX_TEST_WORKER_ACCOUNTS"; exit 0 ;;
   *"get deploy -o json")
     if [ "$KMX_TEST_DEPLOY_READ" = notfound ]; then
       printf 'Error from server (NotFound): namespaces "orka-system" not found (credential-shaped=fixture-sensitive-token)\n' >&2
@@ -1313,6 +1315,10 @@ func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
 	}
 
 	wizard := newOrkaFixture(t, installer)
+	// The wizard installs the quickstart Tool, whose grant must target the
+	// chart controller's verified AI worker rather than an inferred name.
+	t.Setenv("KMX_TEST_DEPLOY_JSON", `{"items":[`+workerController(orkaChartController, "orka-0.2.0", "orka-api", "Helm", `["--ai-worker-service-account-name=orka-api-ai-worker"]`)+`]}`)
+	t.Setenv("KMX_TEST_WORKER_ACCOUNTS", `{"items":[`+workerAccount("orka-api-ai-worker", OrkaNamespace, "orka-0.2.0", "orka-api", "ai")+`]}`)
 	wizard.app.orkaInstallerDigest = digestOf(installer)
 	wizard.app.Cfg.Model = "qwen2.5:3b"
 	if err := wizard.app.quickstartWizardOrka(func(quickstartSetupEvent) {}); err != nil {

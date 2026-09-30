@@ -1,14 +1,18 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -19,6 +23,147 @@ const (
 
 const quickstartK8sInstructions = "For questions about live Kubernetes resources, call k8s-get-resources and answer only from its output. Never invent resource names. Copy resource names exactly. This tool lists resources read-only; it cannot change the cluster."
 
+// The controller's configured worker account is authoritative; matching chart
+// identity and AI trust labels keep an unrelated account from gaining access.
+func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
+	deployments, err := a.orkaDeployments(ctx)
+	if err != nil {
+		return "", err
+	}
+	controller, legacy, err := selectOrkaController(deployments)
+	if err != nil {
+		return "", err
+	}
+	labels := controller.Metadata.Labels
+	if legacy || labels["helm.sh/chart"] != "orka-0.2.0" ||
+		labels["app.kubernetes.io/name"] != "orka" ||
+		labels["app.kubernetes.io/instance"] == "" ||
+		labels["app.kubernetes.io/managed-by"] != "Helm" {
+		return "", fmt.Errorf("Orka controller Deployment must have chart=orka-0.2.0, nonempty instance, app name=orka and managed-by=Helm labels")
+	}
+	const flag = "--ai-worker-service-account-name="
+	worker := ""
+	controllers := 0
+	flags := 0
+	for _, container := range controller.Spec.Template.Spec.Containers {
+		if container.Name != "controller" {
+			continue
+		}
+		controllers++
+		for _, arg := range container.Args {
+			if strings.HasPrefix(arg, flag) {
+				flags++
+				worker = strings.TrimPrefix(arg, flag)
+			}
+		}
+	}
+	if controllers != 1 {
+		return "", fmt.Errorf("Orka controller must have exactly one controller container")
+	}
+	if flags > 1 {
+		return "", fmt.Errorf("Orka controller has multiple %s flags", flag)
+	}
+	if flags != 1 || worker == "" {
+		return "", fmt.Errorf("Orka controller must have one nonempty %s flag", flag)
+	}
+	if err := scaffold.ValidateObjectName(worker); err != nil {
+		return "", fmt.Errorf("Orka controller has invalid %s account name", flag)
+	}
+
+	data, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "serviceaccounts", "-o", "json")
+	if err != nil {
+		return "", fmt.Errorf("cannot list Orka ServiceAccounts in %s: %w", OrkaNamespace, err)
+	}
+	var list struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil || list.Items == nil {
+		return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed list", OrkaNamespace)
+	}
+	type workerMetadata struct {
+		Name      string            `json:"name"`
+		Namespace string            `json:"namespace"`
+		Labels    map[string]string `json:"labels"`
+	}
+	matches := 0
+	var identity workerMetadata
+	for _, raw := range list.Items {
+		var account struct {
+			Metadata workerMetadata `json:"metadata"`
+		}
+		if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &account) != nil || account.Metadata.Name == "" {
+			return "", fmt.Errorf("cannot read Orka ServiceAccounts in %s: malformed item", OrkaNamespace)
+		}
+		if account.Metadata.Name != worker {
+			continue
+		}
+		matches++
+		identity = account.Metadata
+	}
+	if matches > 1 {
+		return "", fmt.Errorf("multiple Orka ServiceAccounts named %s in %s; refusing ambiguous worker identity", worker, OrkaNamespace)
+	}
+	if matches == 0 {
+		return "", fmt.Errorf("Orka worker ServiceAccount %s not found in %s", worker, OrkaNamespace)
+	}
+	switch {
+	case identity.Namespace != OrkaNamespace:
+		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong namespace", worker)
+	case identity.Labels["orka.ai/worker"] != "true":
+		return "", fmt.Errorf("Orka worker ServiceAccount %s lacks worker=true label", worker)
+	case identity.Labels["orka.ai/worker-trust"] != "ai":
+		return "", fmt.Errorf("Orka worker ServiceAccount %s lacks worker-trust=ai label", worker)
+	case identity.Labels["helm.sh/chart"] != labels["helm.sh/chart"]:
+		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong chart label", worker)
+	case identity.Labels["app.kubernetes.io/instance"] != labels["app.kubernetes.io/instance"]:
+		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong instance label", worker)
+	case identity.Labels["app.kubernetes.io/name"] != labels["app.kubernetes.io/name"]:
+		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong app name label", worker)
+	case identity.Labels["app.kubernetes.io/managed-by"] != labels["app.kubernetes.io/managed-by"]:
+		return "", fmt.Errorf("Orka worker ServiceAccount %s has wrong managed-by label", worker)
+	}
+	return worker, nil
+}
+
+const quickstartWorkerPlaceholder = "kmx-ai-worker-service-account-placeholder"
+
+func renderQuickstartK8sTool(resources []byte, worker string) ([]byte, error) {
+	if err := scaffold.ValidateObjectName(worker); err != nil || worker == quickstartWorkerPlaceholder {
+		return nil, fmt.Errorf("invalid Orka AI worker ServiceAccount name")
+	}
+	placeholder := []byte(quickstartWorkerPlaceholder)
+	if bytes.Count(resources, placeholder) != 1 {
+		return nil, fmt.Errorf("Orka Kubernetes Tool manifest must have exactly one worker ServiceAccount placeholder")
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(resources))
+	bindings := 0
+	for {
+		var document map[string]any
+		if err := decoder.Decode(&document); err == io.EOF {
+			break
+		} else if err != nil || document == nil {
+			return nil, fmt.Errorf("Orka Kubernetes Tool manifest has invalid YAML")
+		}
+		metadata, _ := document["metadata"].(map[string]any)
+		if document["kind"] != "RoleBinding" || metadata["name"] != "kmx-k8s-tool-policy-reader" {
+			continue
+		}
+		bindings++
+		subjects, _ := document["subjects"].([]any)
+		if len(subjects) != 1 {
+			return nil, fmt.Errorf("Orka Kubernetes Tool RoleBinding must have one worker subject")
+		}
+		subject, _ := subjects[0].(map[string]any)
+		if subject["kind"] != "ServiceAccount" || subject["name"] != quickstartWorkerPlaceholder || subject["namespace"] != OrkaNamespace {
+			return nil, fmt.Errorf("Orka Kubernetes Tool RoleBinding has no valid worker placeholder subject")
+		}
+	}
+	if bindings != 1 {
+		return nil, fmt.Errorf("Orka Kubernetes Tool manifest must have exactly one policy reader RoleBinding")
+	}
+	return bytes.Replace(resources, placeholder, []byte(worker), 1), nil
+}
+
 func quickstartAgentTools(opt *CreateOptions) {
 	if strings.TrimSpace(opt.Tools) == "" {
 		opt.Tools = quickstartK8sTool
@@ -26,6 +171,10 @@ func quickstartAgentTools(opt *CreateOptions) {
 }
 
 func (a *App) installQuickstartK8sTool() error {
+	worker, err := a.orkaAIWorkerAccount(a.operationContext())
+	if err != nil {
+		return fmt.Errorf("cannot install Orka Kubernetes Tool without a verified AI worker: %w", err)
+	}
 	script, err := kaimahi.Manifests.ReadFile("scripts/orka-k8s-tool.py")
 	if err != nil {
 		return err
@@ -38,11 +187,15 @@ func (a *App) installQuickstartK8sTool() error {
 	if err != nil {
 		return err
 	}
-	if err := a.applyBytes("Orka Kubernetes tool server", body); err != nil {
-		return err
-	}
 	resources, err := manifest("orka-k8s-tool.yaml")
 	if err != nil {
+		return err
+	}
+	resources, err = renderQuickstartK8sTool(resources, worker)
+	if err != nil {
+		return err
+	}
+	if err := a.applyBytes("Orka Kubernetes tool server", body); err != nil {
 		return err
 	}
 	resources = []byte(strings.Replace(string(resources), "kmx-tool-code-checksum", fmt.Sprintf("%x", sha256.Sum256(script)), 1))

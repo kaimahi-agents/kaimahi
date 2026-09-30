@@ -2,11 +2,13 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +16,74 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"go.yaml.in/yaml/v3"
 )
+
+// These fixtures model the chart controller's configured account and the
+// corresponding Kubernetes identity; no release-name inference is involved.
+func workerController(name, chart, instance, managedBy, args string) string {
+	return fmt.Sprintf(`{"metadata":{"name":%q,"labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller","helm.sh/chart":%q,"app.kubernetes.io/instance":%q,"app.kubernetes.io/managed-by":%q}},"spec":{"template":{"spec":{"containers":[{"name":"controller","args":%s},{"name":"sidecar","args":["--ai-worker-service-account-name=wrong-sidecar"]}]}}}}`, name, chart, instance, managedBy, args)
+}
+
+func workerAccount(name, namespace, chart, instance, trust string) string {
+	return fmt.Sprintf(`{"metadata":{"name":%q,"namespace":%q,"labels":{"orka.ai/worker":"true","orka.ai/worker-trust":%q,"helm.sh/chart":%q,"app.kubernetes.io/instance":%q,"app.kubernetes.io/name":"orka","app.kubernetes.io/managed-by":"Helm"}}}`, name, namespace, trust, chart, instance)
+}
+
+func TestOrkaAIWorkerAccount(t *testing.T) {
+	const chart = "orka-0.2.0"
+	for _, tt := range []struct {
+		name, deployments, accounts, want, refusal string
+	}{
+		{"kmx override", `[ ` + workerController("orka-api-controller", chart, "orka-api", "Helm", `["--ai-worker-service-account-name=orka-api-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-api-ai-worker", OrkaNamespace, chart, "orka-api", "ai") + ` ]`, "orka-api-ai-worker", ""},
+		{"stock Helm", `[ ` + workerController("orka-controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + ` ]`, "orka-ai-worker", ""},
+		{"no controller", `[]`, `[]`, "", "no Orka controller"},
+		{"ambiguous controllers", `[ ` + workerController("one", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + `,` + workerController("two", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "multiple Orka controller"},
+		{"wrong controller chart", `[ ` + workerController("controller", "orka-0.1.3", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "chart"},
+		{"missing instance", `[ ` + workerController("controller", chart, "", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "instance"},
+		{"wrong manager", `[ ` + workerController("controller", chart, "orka", "unknown", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "managed-by"},
+		{"no flag", `[ ` + workerController("controller", chart, "orka", "Helm", `[]`) + ` ]`, `[]`, "", "--ai-worker-service-account-name"},
+		{"empty flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name="]`) + ` ]`, `[]`, "", "--ai-worker-service-account-name"},
+		{"invalid account name", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=INVALID NAME"]`) + ` ]`, `[]`, "", "invalid"},
+		{"duplicate flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","--ai-worker-service-account-name=other"]`) + ` ]`, `[]`, "", "multiple"},
+		{"absent account", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "ServiceAccount"},
+		{"wrong trust", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "controller") + ` ]`, "", "worker-trust"},
+		{"wrong account instance", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "other", "ai") + ` ]`, "", "instance"},
+		{"wrong account chart", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.1.3", "orka", "ai") + ` ]`, "", "chart"},
+		{"wrong account namespace", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", "other", chart, "orka", "ai") + ` ]`, "", "namespace"},
+		{"duplicate account", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + `,` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + ` ]`, "", "multiple"},
+		{"duplicate account with wrong trust first", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "controller") + `,` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + ` ]`, "", "multiple"},
+		{"wrong worker label", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + strings.Replace(workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai"), `"orka.ai/worker":"true"`, `"orka.ai/worker":"false"`, 1) + ` ]`, "", "worker=true"},
+		{"wrong account app", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + strings.Replace(workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai"), `"app.kubernetes.io/name":"orka"`, `"app.kubernetes.io/name":"other"`, 1) + ` ]`, "", "app name"},
+		{"wrong account manager", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + strings.Replace(workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai"), `"app.kubernetes.io/managed-by":"Helm"`, `"app.kubernetes.io/managed-by":"other"`, 1) + ` ]`, "", "managed-by"},
+		{"malformed account list", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `{"items":{}}`, "", "malformed"},
+		{"missing account items", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `{}`, "", "malformed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`
+case " $* " in
+  *" get deploy -o json "*) printf '%%s' '{"items":%s}' ;;
+  *" get serviceaccounts -o json "*) printf '%%s' '%s' ;;
+  *) exit 1 ;;
+esac`, tt.deployments, func() string {
+				if strings.HasPrefix(tt.accounts, "[") {
+					return `{"items":` + tt.accounts + `}`
+				}
+				return tt.accounts
+			}()))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
+			got, err := a.orkaAIWorkerAccount(context.Background())
+			if tt.refusal != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.refusal) || got != "" {
+					t.Fatalf("account=%q error=%v, want refusal mentioning %q", got, err, tt.refusal)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("account=%q error=%v, want %q", got, err, tt.want)
+			}
+		})
+	}
+}
 
 func TestQuickstartExistingAgentToolAttachmentDoesNotCreateBundle(t *testing.T) {
 	a, _, _, _, dir := orkaCreateFixture(t, "")
@@ -57,6 +127,10 @@ func TestQuickstartK8sToolPatchPreservesExistingTools(t *testing.T) {
 
 func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = renderQuickstartK8sTool(body, "orka-ai-worker")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +178,7 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 			}
 			subject, _ := subjects[0].(map[string]any)
 			readerBindingOK = ref["kind"] == "Role" && ref["name"] == "kmx-k8s-tool-policy-reader" &&
-				subject["kind"] == "ServiceAccount" && subject["name"] == "orka-api-ai-worker" &&
+				subject["kind"] == "ServiceAccount" && subject["name"] == "orka-ai-worker" &&
 				subject["namespace"] == OrkaNamespace
 		}
 	}
@@ -116,6 +190,149 @@ func TestQuickstartK8sToolUsesExactGatewayPolicy(t *testing.T) {
 	}
 	if !readerRoleOK || !readerBindingOK {
 		t.Fatalf("v0.2.0 AI worker cannot read only the managed gateway policy (role=%t binding=%t)", readerRoleOK, readerBindingOK)
+	}
+}
+
+func quickstartDocuments(t *testing.T, body []byte) []map[string]any {
+	t.Helper()
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	var documents []map[string]any
+	for {
+		var document map[string]any
+		if err := decoder.Decode(&document); err == io.EOF {
+			return documents
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if document == nil {
+			t.Fatal("empty YAML document")
+		}
+		documents = append(documents, document)
+	}
+}
+
+func TestRenderQuickstartK8sToolChangesOnlyOneBindingSubject(t *testing.T) {
+	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, worker := range []string{"orka-ai-worker", "orka-api-ai-worker"} {
+		t.Run(worker, func(t *testing.T) {
+			output, err := renderQuickstartK8sTool(body, worker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original := quickstartDocuments(t, body)
+			rendered := quickstartDocuments(t, output)
+			if len(original) != len(rendered) || len(rendered) != 9 {
+				t.Fatalf("document count before=%d after=%d, want 9", len(original), len(rendered))
+			}
+			bindings := 0
+			for i, document := range original {
+				metadata := document["metadata"].(map[string]any)
+				if document["kind"] == "RoleBinding" && metadata["name"] == "kmx-k8s-tool-policy-reader" {
+					bindings++
+					subjects := rendered[i]["subjects"].([]any)
+					if len(subjects) != 1 {
+						t.Fatalf("RoleBinding subjects=%v, want one", subjects)
+					}
+					subject := subjects[0].(map[string]any)
+					if subject["name"] != worker || subject["kind"] != "ServiceAccount" || subject["namespace"] != OrkaNamespace {
+						t.Fatalf("unexpected RoleBinding subject: %v", subject)
+					}
+					// Compare decoded values, not bytes: only this subject may change.
+					document["subjects"].([]any)[0].(map[string]any)["name"] = worker
+				}
+				if !reflect.DeepEqual(document, rendered[i]) {
+					t.Fatalf("document %d changed outside the worker subject", i)
+				}
+			}
+			if bindings != 1 || strings.Contains(string(output), "kmx-ai-worker-service-account-placeholder") {
+				t.Fatalf("rendered %d RoleBindings or retained worker placeholder", bindings)
+			}
+		})
+	}
+}
+
+func TestRenderQuickstartK8sToolRejectsUnsafeInputs(t *testing.T) {
+	body, err := manifest("orka-k8s-tool.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, worker string
+		resources    []byte
+	}{
+		{"empty name", "", body},
+		{"invalid name", "INVALID", body},
+		{"yaml injection", "worker\nkind: Secret", body},
+		{"missing placeholder", "orka-ai-worker", bytes.ReplaceAll(body, []byte("kmx-ai-worker-service-account-placeholder"), []byte("other-worker"))},
+		{"duplicate placeholder", "orka-ai-worker", append(append([]byte{}, body...), []byte("\n# kmx-ai-worker-service-account-placeholder\n")...)},
+		{"placeholder outside binding", "orka-ai-worker", bytes.Replace(bytes.Replace(body, []byte("name: kmx-ai-worker-service-account-placeholder"), []byte("name: orka-api-ai-worker"), 1), []byte("name: kmx-k8s-reader"), []byte("name: kmx-ai-worker-service-account-placeholder"), 1)},
+		{"malformed YAML", "orka-ai-worker", []byte("name: kmx-ai-worker-service-account-placeholder\n: broken")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if result, err := renderQuickstartK8sTool(tt.resources, tt.worker); err == nil {
+				t.Fatalf("accepted unsafe input; rendered %d bytes", len(result))
+			}
+		})
+	}
+}
+
+func TestQuickstartK8sToolInstallDiscoversWorkerBeforeWrites(t *testing.T) {
+	for _, tt := range []struct{ name, deployments, account, want string }{
+		{"stock Helm worker", workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), "orka-ai-worker"},
+		{"absent controller", "", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			steps := filepath.Join(dir, "steps")
+			applied := filepath.Join(dir, "applied")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`
+case " $* " in
+  *" get deploy -o json "*) printf 'deploy\n' >> %[1]q; printf '%%s' '{"items":[%[3]s]}' ;;
+  *" get serviceaccounts -o json "*) printf 'accounts\n' >> %[1]q; printf '%%s' '{"items":[%[4]s]}' ;;
+  *" apply -f - "*) printf 'apply\n' >> %[1]q; /bin/cat > %[2]q ;;
+  *" rollout status "*) printf 'rollout\n' >> %[1]q ;;
+  *" get outboundaccesspolicies.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
+  *" get tools.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}' ;;
+  *) exit 1 ;;
+esac`, steps, applied, tt.deployments, tt.account))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}, Err: io.Discard}
+			err := a.installQuickstartK8sTool()
+			if tt.want == "" {
+				if err == nil {
+					t.Fatal("missing controller allowed Tool install")
+				}
+				stepsBody, readErr := os.ReadFile(steps)
+				if readErr != nil || string(stepsBody) != "deploy\n" {
+					t.Fatalf("Tool resources applied before discovery: steps=%q error=%v", stepsBody, readErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			stepsBody, err := os.ReadFile(steps)
+			if err != nil || !strings.HasPrefix(string(stepsBody), "deploy\naccounts\napply\napply\nrollout\n") {
+				t.Fatalf("wrong install order: steps=%q error=%v", stepsBody, err)
+			}
+			body, err := os.ReadFile(applied)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, doc := range quickstartDocuments(t, body) {
+				if doc["kind"] == "RoleBinding" && doc["metadata"].(map[string]any)["name"] == "kmx-k8s-tool-policy-reader" {
+					subjects := doc["subjects"].([]any)
+					found = len(subjects) == 1 && subjects[0].(map[string]any)["name"] == tt.want
+				}
+			}
+			if !found || strings.Contains(string(body), "kmx-tool-code-checksum") {
+				t.Fatal("applied binding omitted discovered worker or code checksum was not rendered")
+			}
+		})
 	}
 }
 
