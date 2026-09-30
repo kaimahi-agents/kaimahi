@@ -350,6 +350,9 @@ func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
 		t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
 	}
+	if !strings.Contains(err.Error(), "--prompt-file -") || strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("guard retry is not a safe runnable command: %v", err)
+	}
 	if f.taskCreates(t) != 0 {
 		t.Fatal("created")
 	}

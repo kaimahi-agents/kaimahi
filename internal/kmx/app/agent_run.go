@@ -121,9 +121,8 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	ctx := a.operationContext()
 	worker := *a
 	worker.guarded = false
-	// InvocationCommand may contain the literal --prompt text. Never give it
-	// to the context guard (or to its retry advice), even when the guard refuses.
-	worker.InvocationCommand = "kmx agent run <agent> --prompt <redacted>"
+	// InvocationCommand may contain the literal --prompt text. Replace it
+	// with a context-pinned retry that reads the prompt anew from stdin.
 	namespace := opt.Namespace
 	if namespace == "" {
 		namespace = OrkaNamespace
@@ -213,6 +212,7 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		}
 		worker.notef("Bundle state: %s; deployed commit: %s", observed.State, commit)
 	}
+	worker.InvocationCommand = worker.operationCommand("agent", "run", "--agent", name, "--namespace", namespace, "--prompt-file", "-")
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
 		return err
 	}
