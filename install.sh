@@ -37,7 +37,11 @@ for arg in "$@"; do
     --version=*) VERSION="${arg#--version=}" ;;
     --bin-dir=*) BIN_DIR="${arg#--bin-dir=}" ;;
     -h|--help)
-      sed -n '2,25p' "$0" 2>/dev/null || echo "usage: install.sh [--quickstart] [--version=vX.Y.Z] [--bin-dir=DIR]"
+      # Print the header comment in full, up to the first line that is not
+      # one. A fixed line range silently truncates this help the next time
+      # the comment grows, and leaks the script body if it shrinks.
+      awk 'NR > 1 && !/^#/ { exit } NR > 1 { print }' "$0" 2>/dev/null \
+        || echo "usage: install.sh [--quickstart] [--version=vX.Y.Z] [--bin-dir=DIR]"
       exit 0 ;;
     *) echo "install.sh: unknown option $arg" >&2; exit 2 ;;
   esac
