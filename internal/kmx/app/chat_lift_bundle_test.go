@@ -85,12 +85,23 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 	}
 	first, rest, _ := strings.Cut(keys, "\r")
 	go func() {
+		defer writer.Close()
 		_, _ = writer.WriteString(first + "\r")
 		if rest != "" {
 			time.Sleep(3 * time.Second) // next picker opens only after the CLI plan finishes
-			_, _ = writer.WriteString(rest)
+			if strings.HasSuffix(rest, "\r\r") {
+				_, _ = writer.WriteString(strings.TrimSuffix(rest, "\r"))
+				for start := time.Now(); time.Since(start) < 15*time.Second; time.Sleep(50 * time.Millisecond) {
+					if entries, err := os.ReadDir(filepath.Join(opt.BundleDir, "receipts")); err == nil && len(entries) > 0 {
+						time.Sleep(500 * time.Millisecond) // allow the deployment completion event to render
+						_, _ = writer.WriteString("\r")
+						break
+					}
+				}
+			} else {
+				_, _ = writer.WriteString(rest)
+			}
 		}
-		_ = writer.Close()
 	}()
 	t.Cleanup(func() { _ = input.Close(); _ = writer.Close() })
 	a.Stdin = input
@@ -143,7 +154,7 @@ func TestInteractiveBundleLiftExcludesOwnAndStaleProviders(t *testing.T) {
 }
 
 func TestInteractiveBundleLiftDeployWritesReceiptAndConnects(t *testing.T) {
-	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\rj\r")
+	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\rj\r\r")
 	t.Setenv("KMX_RECONCILE_REMOTE", "1")
 	t.Setenv("KMX_BUNDLE_NO_APPLY", "1")
 	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
@@ -283,6 +294,14 @@ func TestBundleRevisionChangeRequiresAnotherPlan(t *testing.T) {
 	}
 	if err := checkBundlePlanRevision(opt.BundleDir, digest); err == nil || !strings.Contains(err.Error(), "plan") {
 		t.Fatalf("changed bundle was deployed without a fresh plan: %v", err)
+	}
+}
+
+func TestBundlePlanCannotBeConfirmedAfterOutputOverflow(t *testing.T) {
+	notes := &bundlePlanNotes{buffer: orkaBoundedBuffer{remaining: 4}}
+	_, _ = fmt.Fprint(notes, "long resource decision")
+	if notes.complete() {
+		t.Fatal("truncated plan was offered for confirmation")
 	}
 }
 

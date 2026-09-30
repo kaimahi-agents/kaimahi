@@ -109,22 +109,25 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			return err
 		}
 		opt := LiftAgentBundleOptions{BundleDir: dir, ToContext: target.Context, ToNamespace: namespace, Inference: "provider:" + providers[index], Plan: true}
-		notes := &orkaBoundedBuffer{remaining: 64 << 10}
+		notes := &bundlePlanNotes{buffer: orkaBoundedBuffer{remaining: 64 << 10}}
 		worker.Err = notes // LiftAgentBundle sends its safe decisions through notef (Err), not Out.
 		err = worker.LiftAgentBundle(opt)
 		if err != nil {
 			renderer.operation("LIFT", "", colorBlue, "Bundle plan could not proceed: "+err.Error())
 			if b.bundleLiftPreparable(namespace, err) {
-				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, renderer, namespace, err); prepErr != nil {
+				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, namespace, err); prepErr != nil {
 					return liftPreparationError(prepErr)
 				}
 				continue // target state may have changed; re-discover and re-plan.
 			}
 			return fmt.Errorf("bundle lift plan failed (no deployment): %w", err)
 		}
+		if !notes.complete() {
+			return fmt.Errorf("bundle plan output exceeded review limit; nothing deployed (use %s --plan to inspect it)", bundleLiftCommand(dir, target.Context, namespace, providers[index]))
+		}
 		// Notes are safe, bounded CLI output: resource outcomes and field paths,
 		// never rendered values or the selected Provider's Secret contents.
-		review := strings.TrimSpace(notes.buffer.String())
+		review := strings.TrimSpace(notes.buffer.buffer.String())
 		title := "Review bundle lift to " + target.Context + " / " + namespace + "\n" + review
 		if !bundlePlanFitsTerminal(b.app.Out, title) {
 			return fmt.Errorf("bundle plan is too long for this terminal; enlarge it and retry /lift, or review with %s --plan", bundleLiftCommand(dir, target.Context, namespace, providers[index]))
@@ -146,12 +149,34 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 		opt.Plan = false
 		worker.Err = io.Discard
 		renderer.operation("LIFT", "", colorBlue, "Deploying bundle to "+target.Context+"…")
-		if err := worker.LiftAgentBundle(opt); err != nil {
+		if err := b.runLiftDeployment(ctx, &worker, "Deploy bundle", []string{"Reconcile bundle"}, func(deploy *App) error {
+			if err := checkBundlePlanRevision(dir, plannedDigest); err != nil {
+				return err
+			}
+			return deploy.runPhase(phase{current: 1, total: 1, name: "Reconcile bundle"}, func() error {
+				return deploy.LiftAgentBundle(opt)
+			})
+		}); err != nil {
 			return err
 		}
 		return b.finishBundleLift(ctx, renderer, &worker, target, opt)
 	}
 }
+
+type bundlePlanNotes struct {
+	buffer   orkaBoundedBuffer
+	overflow bool
+}
+
+func (n *bundlePlanNotes) Write(p []byte) (int, error) {
+	written, err := n.buffer.Write(p)
+	if err != nil {
+		n.overflow = true
+	}
+	return written, err
+}
+
+func (n *bundlePlanNotes) complete() bool { return !n.overflow }
 
 func checkBundlePlanRevision(dir, digest string) error {
 	_, _, current, err := readBundlePortableAgent(dir)
@@ -251,7 +276,7 @@ func (b *orkaChatBackend) prepareBundleLiftOrka(ctx context.Context, worker *App
 	return b.installLiftOrkaPane(ctx, worker)
 }
 
-func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *App, renderer *chatRenderer, namespace string, planErr error) error {
+func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *App, namespace string, planErr error) error {
 	if strings.Contains(planErr.Error(), "Orka controller") || strings.Contains(planErr.Error(), "Orka CRDs") {
 		return b.prepareBundleLiftOrka(ctx, worker, planErr.Error())
 	}
