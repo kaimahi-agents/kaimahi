@@ -22,19 +22,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.4.0 — 2026-09-30
+
+### Added
+
+- The getting-started journey now leads through creating a custom agent with `kmx quickstart-wizard`, proving a local chat answer, lifting it with `/lift`, and sending a new message to verify the destination. It also describes existing Kubernetes and AKS targets and optional Orka/tool preparation (#251).
+
 ### Fixed
 
-- `kmx console` refuses a mismatched local bundle before contacting the cluster, reuses the status report's full deployed commit for diffs, and gives a shell-safe command when a diff is truncated. Unreachable targets remain unknown without attempting a diff (#243).
+- `kmx console` refuses a mismatched local bundle before contacting the cluster, reuses the status report's full deployed commit for diffs, and gives a shell-safe command when a diff is truncated. Unreachable targets remain unknown without attempting a diff; the CI Go test step was streamlined (#243).
+- On reruns, kmx checks the live Orka controller's image digest as well as the Helm release's pinned values. A patched, missing, unreadable or ambiguous controller is refused without changing the cluster; offline schema help now names v0.2.0 as the default (#252).
+- Homebrew installation instructions now fail closed if the formula prefix cannot be resolved, and explain which release asset and checksum the formula uses (#241). Stale implementation and CI comments were corrected to describe current behavior without changing the CLI (#250).
 
 ### Changed
 
 - Orka v0.2.0's chart AI worker does not grant itself read access to the quickstart Tool's `OutboundAccessPolicy`. kmx now grants only `get` on its named gateway policy in `orka-system` to the chart worker ServiceAccount; the Tool's logical public IP avoids DNS-answer drift during v0.2.0 SSRF validation. A live Tool Task returned the cluster's ConfigMap marker after both changes.
 - The plane's Orka egress policy now selects both v0.1.3's legacy controller and the v0.2.0 chart controller in `orka-system`. Without the chart selector, a migrated owner's model call received `502 upstream unreachable` even while the v0.2.0 controller was Ready.
-- **Orka installation now pins v0.2.0's Helm chart** (`orka-0.2.0.tgz`, SHA-256 checked before use) instead of applying the v0.1.3 manifest. kmx resolves Helm on PATH or fetches its pinned, checksum-verified toolchain binary, applies CRDs extracted from the verified chart before `helm install`, pins `--kube-context`, and installs release `orka` with `controller.mode=harness-v2` and `fullnameOverride=orka-api`. Orka generates the snapshot encryption Secret `orka-api-agent-execution-snapshot`; kmx never prints its value. There is no `helm upgrade --force` path. A rerun preserves a Ready kmx release and key only when all pinned image overrides match; an existing controller/CRDs from v0.1.3 or a foreign/partial release is refused, **not upgraded**. A pre-created namespace alone is allowed; standalone install also provisions the Task result reader. Offline create now defaults to the v0.2.0 CRDs; `--schema-target v0.1.3|main` remains available explicitly for old fixtures and does not install an old runtime. See [Orka setup and replacement](docs/orka.md#limits-stated) and upstream [v0.2.0 installation](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md) / [unsupported version upgrades](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+- **Orka installation now pins v0.2.0's Helm chart** (`orka-0.2.0.tgz`, SHA-256 checked before use) instead of applying the v0.1.3 manifest. kmx resolves Helm on PATH or fetches its pinned, checksum-verified toolchain binary, applies CRDs extracted from the verified chart before `helm install`, pins `--kube-context`, and installs release `orka` with `controller.mode=harness-v2` and `fullnameOverride=orka-api`. Orka generates the snapshot encryption Secret `orka-api-agent-execution-snapshot`; kmx never prints its value. There is no `helm upgrade --force` path. A rerun preserves a Ready kmx release and key only when all pinned image overrides match; an existing controller/CRDs from v0.1.3 or a foreign/partial release is refused, **not upgraded**. A pre-created namespace alone is allowed; standalone install also provisions the Task result reader. Offline create now defaults to the v0.2.0 CRDs; `--schema-target v0.1.3|main` remains available explicitly for old fixtures and does not install an old runtime. See [Orka setup and replacement](docs/orka.md#limits-stated) and upstream [v0.2.0 installation](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/installation.md) / [unsupported version upgrades](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md) (#244).
 
 ### Breaking
 
 - Orka v0.1.3 installations are not upgraded in place. Local kind replacement requires `kmx down` followed by `kmx up` and **deletes the cluster's Tasks, Secrets, PVC-backed data, model data and plane ledger**; export anything needed before deletion. On AKS, back up existing volumes/PVCs and Orka resources/Secrets, including any existing snapshot key; after a fresh v0.2.0 installation, back up its new chart-managed snapshot key with its controller volume **without printing the key**. Neither an untested Helm upgrade nor restoring an old SQLite volume into v0.2.0 is a supported migration. Do not delete a production cluster until the recovery plan is verified.
+
+### Upgrading
+
+- Install the v0.4.0 CLI, then replace any existing Orka v0.1.3 cluster rather than rerunning `kmx up` against it. For a local kind cluster, export what you need first: `kmx down` deletes the entire cluster, including Tasks, Secrets, PVC-backed data, model data and the plane ledger; `kmx up` creates a fresh Orka v0.2.0 installation.
+- On AKS, plan a fresh Orka v0.2.0 installation, not a Helm upgrade. Back up existing Orka resources and volumes/PVCs together with their Secrets, including the agent-execution snapshot key if one exists. Back up the new chart-managed `orka-api-agent-execution-snapshot` Secret with its controller volume and resources after installation. Never print or log the key; verify recovery before deleting production resources.
 
 ## v0.3.0 — 2026-09-29
 

@@ -33,7 +33,7 @@ BADGE_PATTERNS = [
 INSTALL_COMMANDS = [
     ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
     ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
-    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.3\.0$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.4\.0$"),
 ]
 FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [

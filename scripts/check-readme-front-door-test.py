@@ -15,7 +15,7 @@ INSTALL = """brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
 """
 JOURNEY = """`kmx quickstart` proves an answer.
 `kmx up` provisions the runtime.
@@ -77,7 +77,7 @@ for label, literal in [
 for label, literal in [
     ("Homebrew install", "brew install kaimahi-agents/tap/kmx\n"),
     ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
-    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0\n"),
+    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0\n"),
     ("kmx quickstart", "kmx quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
@@ -92,11 +92,11 @@ for label, literal in [
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 CASES += [
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
-    ("moving Go source", GOOD.replace("cmd/kmx@v0.3.0", "cmd/kmx@main"), "pinned Go install is missing"),
-    ("old Go release", GOOD.replace("cmd/kmx@v0.3.0", "cmd/kmx@v0.2.0"), "pinned Go install is missing"),
+    ("moving Go source", GOOD.replace("cmd/kmx@v0.4.0", "cmd/kmx@main"), "pinned Go install is missing"),
+    ("old Go release", GOOD.replace("cmd/kmx@v0.4.0", "cmd/kmx@v0.3.0"), "pinned Go install is missing"),
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("quickstart after suffix", GOOD.replace("kmx quickstart\n", "kmx quickstart-old\n"), "kmx quickstart is missing"),
-    ("legacy Go quickstart chaining", GOOD.replace("cmd/kmx@v0.3.0\n", "cmd/kmx@v0.3.0 && kmx quickstart\n"), "pinned Go install is missing"),
+    ("legacy Go quickstart chaining", GOOD.replace("cmd/kmx@v0.4.0\n", "cmd/kmx@v0.4.0 && kmx quickstart\n"), "pinned Go install is missing"),
     ("missing lift guide", GOOD.replace("See the [bundle lift guide](docs/agent-lift.md).\n", ""), "bundle lift guide is missing"),
     ("journey missing first block", GOOD.replace("```bash\n" + INSTALL + "```\n", ""), "Homebrew install is missing"),
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),

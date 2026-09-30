@@ -5,11 +5,11 @@ version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
 `@latest` and the installer's default select the newest stable tagged release;
-v0.3.0 includes the working Orka Kubernetes Tool and bundle lifecycle commands.
-Pin `@v0.3.0` for a repeatable build; `@main` is the moving development
-option. Orka's own installation and upgrade limits are separate: see
-[orka.md](orka.md). The current development installer pins the **Orka v0.2.0**
-chart; the historical Kaimahi v0.2.0 release reported Orka v0.1.3.
+v0.4.0 includes the Orka v0.2.0 Helm installer, Kubernetes Tool and bundle
+lifecycle commands. Pin `@v0.4.0` for a repeatable build; `@main` is the moving
+development option. Orka's own installation and upgrade limits are separate:
+see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
+historical Kaimahi v0.2.0 release reported Orka v0.1.3.
 The plane-upgrade sections below apply only to the retained legacy plane.
 
 The official Homebrew namespace is limited to the public
@@ -33,7 +33,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
-| Current development checkout | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
+| Kaimahi v0.4.0 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
 There is no 1.0 promise and no support window yet. What there is: CI refuses
@@ -43,8 +43,8 @@ to publish a binary that does not report its own tag.
 Two tags are pushed for each version, at the same commit:
 
 ```
-v0.3.0          the repository, and the kmx binary
-plane/v0.3.0    the plane, which is a separate Go module under plane/
+v0.4.0          the repository, and the kmx binary
+plane/v0.4.0    the plane, which is a separate Go module under plane/
 ```
 
 Both are needed. `kmx plane` installs the plane through the Go module proxy at
@@ -84,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.3.0` pins this release; `KMX_BIN_DIR=DIR`
+without sudo. `KMX_VERSION=v0.4.0` pins this release; `KMX_BIN_DIR=DIR`
 installs elsewhere. `install.sh --quickstart` installs the latest release and
 then launches the non-interactive Orka quickstart. An explicit v0.1.0
 `--quickstart` is still refused because that release predates Orka.
@@ -96,7 +96,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.3.0`. Both go through the public Go module proxy and the Go
+can name: `@v0.4.0`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -107,7 +107,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.3.0
+version=v0.4.0
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -149,11 +149,11 @@ do it — see [below](#why-no-published-image-yet).
 
 ```console
 $ kmx version
-kmx v0.3.0 (release build)
+kmx v0.4.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
-  orka     v0.1.3
+  orka     v0.2.0
   model    qwen2.5:3b
-  plane    kaimahi-proxy:p15, built from v0.3.0
+  plane    kaimahi-proxy:p15, built from v0.4.0
 ```
 
 The first line is the binary's own identity and it names its source, because
@@ -162,8 +162,8 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.3.0 (release build)` | a binary from the release for `v0.3.0` |
-| `v0.3.0 (installed with go install)` | `go install …@v0.3.0` — the same code, built on your machine |
+| `v0.4.0 (release build)` | a binary from the release for `v0.4.0` |
+| `v0.4.0 (installed with go install)` | `go install …@v0.4.0` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
@@ -172,7 +172,7 @@ from:
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.3.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
 kmx version
 ```
 
@@ -183,13 +183,17 @@ the changelog for the versions you skipped — below 1.0 a minor bump may change
 behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to. The development checkout installs the pinned
+cluster until you ask it to. The v0.4.0 release installs the pinned
 Orka v0.2.0 Helm chart using Helm on PATH or a pinned/checksum-verified toolchain
 binary. `kmx up` reuses a matching kmx-owned Orka release, but refuses an
 existing v0.1.3 manifest installation or foreign release rather than upgrading
-it. The chart's generated `orka-api-agent-execution-snapshot` key must be
-backed up with its PVC and Orka resources without printing its value. Do not
-use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+it. For local kind replacement, export needed data before `kmx down` (which
+deletes the whole cluster: Tasks, Secrets, PVC-backed data, model data and the
+plane ledger), then run `kmx up` for a fresh installation. On AKS, plan a
+fresh installation after backing up Orka resources, volumes/PVCs and Secrets,
+including any existing agent-execution snapshot key. Back up the new chart's
+`orka-api-agent-execution-snapshot` key with its controller volume and Orka
+resources without printing its value. Do not use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
 See [safe kind and AKS replacement boundaries](orka.md#limits-stated).
 The retired legacy runtime remains untouched; its old chart is not installed
 by kmx.
@@ -371,8 +375,8 @@ than the first.
 3. Tag both modules at the same commit and push:
 
    ```bash
-   git tag v0.3.0 && git tag plane/v0.3.0
-   git push --atomic origin v0.3.0 plane/v0.3.0
+   git tag v0.4.0 && git tag plane/v0.4.0
+   git push --atomic origin v0.4.0 plane/v0.4.0
    ```
 
 4. Watch the `release` workflow. It refuses to publish if: the version is not

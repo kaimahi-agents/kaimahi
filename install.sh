@@ -23,7 +23,7 @@
 # compromised release would publish a matching digest. If you would rather
 # verify by a different route, `go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest`
 # builds the newest tagged release from source via the Go module proxy and
-# checksum database. Pin @v0.3.0 for a repeatable build; @main is moving.
+# checksum database. Pin @v0.4.0 for a repeatable build; @main is moving.
 set -eu
 
 REPO="kaimahi-agents/kaimahi"
