@@ -545,9 +545,29 @@ func (a *App) bundleFieldDrift(ctx context.Context, bundle, namespace string, pr
 	}
 	bindings := agentruntime.OrkaBindings{Namespace: namespace, Provider: agentruntime.OrkaProviderBindings{
 		Type: provider.Spec.Type, BaseURL: provider.Spec.BaseURL,
+		Azure:     agentruntime.OrkaAzureBindings{DeploymentName: provider.Spec.Azure.DeploymentName, APIVersion: provider.Spec.Azure.APIVersion},
 		SecretRef: agentruntime.OrkaSecretRefBindings{Name: provider.Spec.SecretRef.Name, Key: provider.Spec.SecretRef.Key},
 	}}
 	rendered, err := RenderOrkaBundleFile(bundle, bindings)
+	if err == nil && provider.Spec.Type == "azure-openai" && provider.Spec.Azure.APIVersion != "" {
+		// CRD defaulting fills an omitted apiVersion on the live Provider. The
+		// ownership digest identifies whether the authored binding stated it.
+		var live struct {
+			Metadata struct {
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		}
+		if err := json.Unmarshal(providerRaw, &live); err != nil {
+			return false, nil, fmt.Errorf("destination returned invalid Provider metadata")
+		}
+		if live.Metadata.Annotations[orkaRenderedMarker] != rendered.RenderedDigest() {
+			bindings.Provider.Azure.APIVersion = ""
+			withoutVersion, candidateErr := RenderOrkaBundleFile(bundle, bindings)
+			if candidateErr == nil && live.Metadata.Annotations[orkaRenderedMarker] == withoutVersion.RenderedDigest() {
+				rendered = withoutVersion
+			}
+		}
+	}
 	if err != nil {
 		return false, nil, fmt.Errorf("cannot render portable agent against destination bindings")
 	}

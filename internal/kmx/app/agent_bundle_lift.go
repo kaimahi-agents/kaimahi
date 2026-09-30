@@ -299,15 +299,18 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 			DeletionTimestamp *string `json:"deletionTimestamp"`
 		} `json:"metadata"`
 		Spec struct {
-			Type      string `json:"type"`
-			BaseURL   string `json:"baseURL"`
+			Type    string `json:"type"`
+			BaseURL string `json:"baseURL"`
+			Azure   struct {
+				DeploymentName string `json:"deploymentName"`
+				APIVersion     string `json:"apiVersion"`
+			} `json:"azure"`
 			SecretRef struct {
 				Name string `json:"name"`
 				Key  string `json:"key"`
 			} `json:"secretRef"`
 		} `json:"spec"`
 		Status struct {
-			Ready      bool              `json:"ready"`
 			Conditions []serverCondition `json:"conditions"`
 		} `json:"status"`
 	}
@@ -320,7 +323,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 			ready = true
 		}
 	}
-	if !selected.Status.Ready || !ready {
+	if !ready {
 		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s is not Ready for its current generation", provider)
 	}
 	// Render defaults an absent key to api-key for shorthand create. A lift
@@ -328,7 +331,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 	if selected.Spec.SecretRef.Key == "" {
 		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s has no explicit Secret reference key", provider)
 	}
-	bindings := agentruntime.OrkaBindings{Namespace: namespace, Provider: agentruntime.OrkaProviderBindings{Type: selected.Spec.Type, BaseURL: selected.Spec.BaseURL, SecretRef: agentruntime.OrkaSecretRefBindings{Name: selected.Spec.SecretRef.Name, Key: selected.Spec.SecretRef.Key}}}
+	bindings := agentruntime.OrkaBindings{Namespace: namespace, Provider: agentruntime.OrkaProviderBindings{Type: selected.Spec.Type, BaseURL: selected.Spec.BaseURL, Azure: agentruntime.OrkaAzureBindings{DeploymentName: selected.Spec.Azure.DeploymentName, APIVersion: selected.Spec.Azure.APIVersion}, SecretRef: agentruntime.OrkaSecretRefBindings{Name: selected.Spec.SecretRef.Name, Key: selected.Spec.SecretRef.Key}}}
 	if err := agentruntime.ValidateOrkaBindings(bindings); err != nil {
 		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s has invalid bindings (type, endpoint or Secret reference): %w", provider, err)
 	}

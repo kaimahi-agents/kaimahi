@@ -60,7 +60,15 @@ uses them as the render bindings. The bundle renders its own Provider named
 after the Agent; the selected destination Provider is never modified. No
 Foundry provisioning or "keep the source configuration" mode is available.
 The referenced Secret must already exist in the destination namespace; its
-value is neither copied into the bundle nor printed.
+value is neither copied into the bundle nor printed. For an `azure-openai`
+destination, its `azure.deploymentName` must match the bundle's portable
+`model.name`. Orka uses the model name to address the Azure deployment; kmx
+refuses a mismatch (including `--plan`) and names both values instead of
+silently changing the model. A different deployment is a different model: the
+revision that passed evaluation must be the one that runs. Author and evaluate
+a new revision if you intend to change deployments. If the destination
+Provider omits `azure.apiVersion`, Orka's CRD can supply a default on apply;
+set the version explicitly when you need a predictable choice.
 
 ## Preparation and refusal
 

@@ -19,18 +19,20 @@ import (
 
 // Host sources store routing metadata only; Azure/Copilot retain their own login.
 type consoleInferenceSource struct {
-	Kind          string `json:"kind"`
-	Name          string `json:"name"`
-	Model         string `json:"model"`
-	Endpoint      string `json:"endpoint,omitempty"`
-	Tenant        string `json:"tenant,omitempty"`
-	Provider      string `json:"provider,omitempty"`
-	Secret        string `json:"secret,omitempty"`
-	SecretKey     string `json:"secretKey,omitempty"`
-	Subscription  string `json:"subscription,omitempty"`
-	ResourceGroup string `json:"resourceGroup,omitempty"`
-	Account       string `json:"account,omitempty"`
-	Namespace     string `json:"namespace,omitempty"`
+	Kind            string `json:"kind"`
+	Name            string `json:"name"`
+	Model           string `json:"model"`
+	Endpoint        string `json:"endpoint,omitempty"`
+	Tenant          string `json:"tenant,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	Secret          string `json:"secret,omitempty"`
+	SecretKey       string `json:"secretKey,omitempty"`
+	AzureDeployment string `json:"azureDeployment,omitempty"`
+	AzureAPIVersion string `json:"azureAPIVersion,omitempty"`
+	Subscription    string `json:"subscription,omitempty"`
+	ResourceGroup   string `json:"resourceGroup,omitempty"`
+	Account         string `json:"account,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
 }
 
 type consoleInferenceSnapshot struct {
@@ -110,7 +112,7 @@ func saveConsoleInference(env agentTUIEnvironment, agent agentTUIAgent, source *
 // validated against Orka's requirements; there is no second runtime to branch
 // on and no retired connector shape to accept.
 func (s consoleInferenceSource) validate() error {
-	if err := refuseWizardCredentials(s.Name, s.Model, s.Endpoint, s.Tenant, s.Provider, s.Secret, s.SecretKey); err != nil {
+	if err := refuseWizardCredentials(s.Name, s.Model, s.Endpoint, s.Tenant, s.Provider, s.Secret, s.SecretKey, s.AzureDeployment, s.AzureAPIVersion); err != nil {
 		return err
 	}
 	if strings.TrimSpace(s.Model) == "" {
@@ -159,8 +161,8 @@ func (s consoleInferenceSource) validate() error {
 			if s.SecretKey == "" || strings.ContainsAny(s.SecretKey, " /\r\n") {
 				return fmt.Errorf("Secret key name is required")
 			}
-			if s.Provider != "openai" && s.Provider != "anthropic" {
-				return fmt.Errorf("provider must be openai or anthropic")
+			if err := scaffold.ValidateOrkaProvider(s.Provider, s.Model, s.Endpoint, s.AzureDeployment, s.AzureAPIVersion); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -506,7 +508,7 @@ func (a *App) consoleCreateConnector(ctx context.Context, agent agentTUIAgent, s
 		provider = "openai"
 		endpoint = consoleOllamaEndpoint(endpoint, true)
 	}
-	bundle, err := createOrkaBundle(CreateOptions{Name: s.Name, Namespace: agent.Namespace, ProviderType: provider, Model: s.Model, BaseURL: endpoint, Secret: secret, SecretKey: key})
+	bundle, err := createOrkaBundle(CreateOptions{Name: s.Name, Namespace: agent.Namespace, ProviderType: provider, Model: s.Model, BaseURL: endpoint, Secret: secret, SecretKey: key, AzureDeployment: s.AzureDeployment, AzureAPIVersion: s.AzureAPIVersion})
 	if err != nil {
 		return err
 	}

@@ -22,6 +22,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- `kmx agent create` and its create wizards accept native Orka `azure-openai` Providers with a required Azure deployment and optional API version. Use the resource root URL, an existing Secret created from a key file, and a model name matching the deployment. The OpenAI-compatible `/openai/v1` route remains `openai`. Lift accepts an existing Ready Azure Provider only when its deployment matches the bundle's evaluated model; `--plan` refuses the same mismatch rather than changing the revision. An omitted API version stays absent in the generated bundle, though the Orka CRD may default it on apply.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

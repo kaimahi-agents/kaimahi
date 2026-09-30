@@ -88,7 +88,7 @@ func TestCreateWizardNativeRejectsInvalidOptionsBeforeCompletion(t *testing.T) {
 		change func(*CreateOptions)
 	}{
 		{"legacy tools", func(o *CreateOptions) { o.Tools = "server:read" }},
-		{"provider", func(o *CreateOptions) { o.ProviderType = "azure-openai" }},
+		{"provider", func(o *CreateOptions) { o.ProviderType = "llama" }},
 		{"namespace", func(o *CreateOptions) { o.Namespace = "Not Valid" }},
 		{"secret", func(o *CreateOptions) { o.Secret = "Not Valid" }},
 		{"url", func(o *CreateOptions) { o.BaseURL = "https://user:password@model.example" }},

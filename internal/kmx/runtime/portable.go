@@ -456,10 +456,10 @@ func refusePortableSecretShape(value string) error {
 // It is distinct from scaffold.OrkaSpec so adding scaffold fields cannot
 // silently change the document's shape.
 type OrkaShorthand struct {
-	Name, Namespace, Instructions, Description          string
-	ProviderType, Model, BaseURL, SecretName, SecretKey string
-	Tools, Skills                                       []string
-	ProviderRateLimit, AgentRateLimit                   *OrkaRateLimit
+	Name, Namespace, Instructions, Description                                            string
+	ProviderType, Model, BaseURL, AzureDeployment, AzureAPIVersion, SecretName, SecretKey string
+	Tools, Skills                                                                         []string
+	ProviderRateLimit, AgentRateLimit                                                     *OrkaRateLimit
 }
 
 // cloneOrkaRateLimit returns a deep copy of limit — a new struct with its
@@ -523,9 +523,15 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	// into agent.yaml or its exact-source digest.
 	if err := (OrkaBindings{Namespace: s.Namespace, Provider: OrkaProviderBindings{
 		Type: s.ProviderType, BaseURL: s.BaseURL,
+		Azure:     OrkaAzureBindings{DeploymentName: s.AzureDeployment, APIVersion: s.AzureAPIVersion},
 		SecretRef: OrkaSecretRefBindings{Name: s.SecretName, Key: s.SecretKey},
 	}}).validate(); err != nil {
 		return nil, fmt.Errorf("Orka creation bindings: %w", err)
+	}
+	if s.ProviderType == "azure-openai" {
+		if err := scaffold.ValidateOrkaProvider(s.ProviderType, s.Model, s.BaseURL, s.AzureDeployment, s.AzureAPIVersion); err != nil {
+			return nil, fmt.Errorf("Orka creation bindings: %w", err)
+		}
 	}
 	if err := agent.validate(); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)

@@ -669,7 +669,7 @@ func TestEncodeOrkaShorthandRefusesWhatAnAuthoredDocumentWouldFail(t *testing.T)
 	}{
 		{"name", func(s OrkaShorthand) OrkaShorthand { s.Name = "Hello"; return s }, "metadata.name"},
 		{"namespace", func(s OrkaShorthand) OrkaShorthand { s.Namespace = "Orka_System"; return s }, "namespace"},
-		{"provider type", func(s OrkaShorthand) OrkaShorthand { s.ProviderType = "llama"; return s }, "openai or anthropic"},
+		{"provider type", func(s OrkaShorthand) OrkaShorthand { s.ProviderType = "llama"; return s }, "openai, anthropic or azure-openai"},
 		{"model", func(s OrkaShorthand) OrkaShorthand { s.Model = ""; return s }, "spec.model.name is required"},
 		{"instructions", func(s OrkaShorthand) OrkaShorthand { s.Instructions = " "; return s }, "spec.instructions is required"},
 		{"secret name", func(s OrkaShorthand) OrkaShorthand { s.SecretName = "Hello_Key"; return s }, "secretRef.name"},

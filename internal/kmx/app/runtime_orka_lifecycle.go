@@ -490,6 +490,8 @@ func orkaSpecFromPortable(portable *agentruntime.PortableAgent, bindings agentru
 		ProviderType:      bindings.Provider.Type,
 		Model:             portable.Spec.Model.Name,
 		BaseURL:           bindings.Provider.BaseURL,
+		AzureDeployment:   bindings.Provider.Azure.DeploymentName,
+		AzureAPIVersion:   bindings.Provider.Azure.APIVersion,
 		SecretName:        bindings.Provider.SecretRef.Name,
 		SecretKey:         bindings.Provider.SecretRef.Key,
 		Instructions:      portable.Spec.Instructions,
@@ -661,6 +663,7 @@ func orkaBindingsFromCreate(opt CreateOptions) agentruntime.OrkaBindings {
 	}
 	return agentruntime.OrkaBindings{Namespace: opt.Namespace, Provider: agentruntime.OrkaProviderBindings{
 		Type: opt.ProviderType, BaseURL: opt.BaseURL,
+		Azure:     agentruntime.OrkaAzureBindings{DeploymentName: opt.AzureDeployment, APIVersion: opt.AzureAPIVersion},
 		SecretRef: agentruntime.OrkaSecretRefBindings{Name: opt.Secret, Key: secretKey},
 	}}
 }
@@ -693,6 +696,8 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 		ProviderType:      opt.ProviderType,
 		Model:             opt.Model,
 		BaseURL:           opt.BaseURL,
+		AzureDeployment:   opt.AzureDeployment,
+		AzureAPIVersion:   opt.AzureAPIVersion,
 		SecretName:        opt.Secret,
 		SecretKey:         opt.SecretKey,
 		Tools:             orkaNameList(opt.Tools),

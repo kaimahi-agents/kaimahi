@@ -91,7 +91,11 @@ type orkaProviderSpec struct {
 		Type         string `json:"type"`
 		BaseURL      string `json:"baseURL"`
 		DefaultModel string `json:"defaultModel"`
-		SecretRef    struct {
+		Azure        struct {
+			DeploymentName string `json:"deploymentName"`
+			APIVersion     string `json:"apiVersion"`
+		} `json:"azure"`
+		SecretRef struct {
 			Name string `json:"name"`
 			Key  string `json:"key"`
 		} `json:"secretRef"`

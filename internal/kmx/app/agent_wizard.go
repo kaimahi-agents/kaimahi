@@ -102,7 +102,7 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 	if opt.NoApply && opt.DryRun {
 		return opt, fmt.Errorf("--no-apply (including --out -) and --dry-run cannot be used together")
 	}
-	if opt.BaseURL == "" {
+	if opt.BaseURL == "" && opt.ProviderType != "azure-openai" {
 		fmt.Fprintln(out, createBaseURLHint)
 	}
 	var err error
@@ -140,12 +140,35 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		value *string
 	}{
 		{"Namespace the Orka controller watches", &opt.Namespace},
-		{"Provider type (openai or anthropic)", &opt.ProviderType},
+		{"Provider type (openai, anthropic or azure-openai)", &opt.ProviderType},
 		{"Provider model identifier", &opt.Model},
 		{"Existing Provider Secret name (not its value)", &opt.Secret},
 	} {
 		if *field.value == "" {
 			*field.value, err = promptValue(scanner, out, field.label, "", true)
+			if err != nil {
+				return opt, err
+			}
+		}
+	}
+	if opt.ProviderType == "azure-openai" {
+		for _, field := range []struct {
+			label    string
+			value    *string
+			required bool
+		}{
+			{"Azure deployment name (must match model)", &opt.AzureDeployment, true},
+			{"Azure resource base URL (not /openai/v1)", &opt.BaseURL, true},
+		} {
+			if *field.value == "" {
+				*field.value, err = promptValue(scanner, out, field.label, "", field.required)
+				if err != nil {
+					return opt, err
+				}
+			}
+		}
+		if opt.AzureAPIVersion == "" {
+			opt.AzureAPIVersion, err = promptValue(scanner, out, "Azure API version (optional; blank omits it)", "", false)
 			if err != nil {
 				return opt, err
 			}

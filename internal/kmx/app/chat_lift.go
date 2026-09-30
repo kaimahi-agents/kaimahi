@@ -392,5 +392,9 @@ func portableLiftBundle(agent, provider map[string]any, name, namespace string) 
 	if err := bundle.Validate(); err != nil {
 		return nil, err
 	}
+	sourceModel, _ := bundle.Provider["spec"].(map[string]any)["defaultModel"].(string)
+	if err := validateAzureLiftModel(bundle.Agent, bundle.Provider["spec"].(map[string]any), sourceModel); err != nil {
+		return nil, err
+	}
 	return bundle, nil
 }
