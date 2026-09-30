@@ -5,12 +5,10 @@ package app
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -148,23 +146,6 @@ func TestCreateWizardFIFOHelper(t *testing.T) {
 	if path == "" {
 		return
 	}
-	// Observe an actual blocked os.ReadFile rather than inferring one from a
-	// prompt and a sleep. The observer is bounded by the child test context.
-	go func() {
-		for {
-			stack := make([]byte, 1<<20)
-			stack = stack[:runtime.Stack(stack, true)]
-			if bytes.Contains(stack, []byte("os.ReadFile(")) {
-				fmt.Fprintln(os.Stderr, "instructions-reading")
-				return
-			}
-			select {
-			case <-t.Context().Done():
-				return
-			case <-time.After(5 * time.Millisecond):
-			}
-		}
-	}()
 	opt := nativeWizardOptions()
 	opt.Name, opt.Instructions = "", path
 	opt.Out = filepath.Join(filepath.Dir(path), "never.yaml")
@@ -182,7 +163,7 @@ func TestCreateWizardPTYBlockedInstructionsStayCookedAndInterruptible(t *testing
 			if err := unix.Mkfifo(path, 0600); err != nil {
 				t.Fatal(err)
 			}
-			master, slave := chatPTY(t, 120)
+			_, slave := chatPTY(t, 120)
 			before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 			if err != nil {
 				t.Fatal(err)
@@ -210,16 +191,25 @@ func TestCreateWizardPTYBlockedInstructionsStayCookedAndInterruptible(t *testing
 					<-done
 				}
 			}()
-			var captured strings.Builder
-			chatPTYReadUntil(t, master, &captured, func(s string) bool {
-				return strings.Contains(s, "instructions-reading") || strings.Contains(s, "Agent name")
-			})
-			if !strings.Contains(captured.String(), "instructions-reading") {
-				if _, err := io.WriteString(master, "\r"); err != nil {
-					t.Fatal(err)
+			// Opening the write side non-blocking succeeds only after the child
+			// has opened the FIFO for reading. Keep it open without writing so
+			// os.ReadFile is blocked waiting for content when the signal arrives.
+			var fifoWriter *os.File
+			deadline := time.Now().Add(5 * time.Second)
+			for fifoWriter == nil {
+				fd, openErr := unix.Open(path, unix.O_WRONLY|unix.O_NONBLOCK, 0)
+				switch {
+				case openErr == nil:
+					fifoWriter = os.NewFile(uintptr(fd), path)
+				case openErr != unix.ENXIO:
+					t.Fatalf("open FIFO writer: %v", openErr)
+				case time.Now().After(deadline):
+					t.Fatal("child did not open the instructions FIFO")
+				default:
+					time.Sleep(5 * time.Millisecond)
 				}
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "instructions-reading") })
 			}
+			defer fifoWriter.Close()
 			during, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 			if err != nil || *before != *during {
 				t.Error("instruction FIFO read entered raw mode before it could complete")
