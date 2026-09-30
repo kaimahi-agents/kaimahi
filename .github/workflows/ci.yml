@@ -20,22 +20,11 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
-      # Full history, because one check in this job reads it. The board
-      # checker asks whether a lane the coordination board says nobody has
-      # started has already merged under its own title, and the only
-      # keyless ledger of what merged is `git log`. A default checkout is
-      # shallow and has none of it; the checker then says out loud which
-      # claims it skipped rather than passing them, which is a visible
-      # skip and not a silent one — but a skip all the same, and this is
-      # what stops it happening.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Required files present
         run: |
           test -f LICENSE
           test -f README.md
-          test -f docs/COORDINATION.md
       - name: Brand assets validate
         run: python3 scripts/check-brand-assets.py
       - name: All YAML parses
@@ -53,18 +42,9 @@ jobs:
                   failed = True
           sys.exit(1 if failed else 0)
           EOF
-      # This grep used to match two vendor key prefixes and a quoted
-      # api_key assignment, and nothing else — while the manifest
-      # scaffolder knew eight shapes and the manifest scaffolder seven. The
-      # shortest of the three lists guarded the largest surface: a GitHub
-      # token, a Slack token, an Azure DevOps PAT or this plane's own
-      # credential could sit in a documentation file and pass. There is now
-      # one list, internal/kmx/secretshapes/shapes.json, and all three read
-      # it.
-      #
-      # The scanner is itself a gate that can fail open, so it proves it
-      # still catches every shape before its verdict on the tree is
-      # trusted — the same order the Azure scanner runs in.
+      # The scanner and manifest scaffolder share the credential shapes in
+      # internal/kmx/secretshapes/shapes.json. Prove the scanner still catches
+      # each shape before trusting its verdict on the tree.
       - name: Credential-shape scanner still catches every shape
         run: python3 scripts/check-secret-shapes.py --selftest
       - name: No credential shapes in tree
@@ -86,24 +66,6 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
-      # docs/COORDINATION.md records shipped and outstanding work. Check
-      # that its lane rows do not contradict one another; if retired worker
-      # prompts or delta sheets are present, check those against the rows
-      # too. Whether the work itself is done remains a human judgement.
-      #
-      # One claim reaches outside the document, to `git log`: a row saying
-      # nothing has shipped, for work a merge already describes in the
-      # row's own words. It needs the full history above, and says so when
-      # it does not have one.
-      #
-      # The board has one writer. What it gets wrong today is recorded in
-      # scripts/board-open-drift.json with what is owed, rather than fixed
-      # here — and an entry there that the board no longer earns fails
-      # too, so the record cannot outlive the debt.
-      - name: Board checker self-test
-        run: python3 scripts/check-board.py --selftest
-      - name: The coordination board still agrees with itself
-        run: python3 scripts/check-board.py
       # A runtime this repository removed stays removed. What survives a
       # removal is not code but CLAIMS: a comment explaining a namespace
       # nothing writes to, a probe defaulting to one nothing creates, a
@@ -324,7 +286,7 @@ jobs:
           # The committed manifest itself must still be the kind one.
           # Parsed, not grepped: the string "imagePullPolicy: Never" also
           # appears in that file's own comments, so a grep would keep
-          # passing after the real field was deleted.
+          # passing if the real field is removed.
           python3 - <<'EOF'
           import sys, yaml
           policies = [
@@ -612,11 +574,9 @@ jobs:
       # common is the premise this step guards, not the shape of their
       # caller.
       #
-      # A shard joins this list the moment it stops installing the legacy
-      # runtime, and this step is what keeps it there: a reinstated legacy
-      # bring-up, a legacy governance command or a legacy API resource would
-      # make every claim in it a claim about that runtime again, and nothing else
-      # in this file would notice — the shard would go on passing.
+      # Keep this list in sync with shards that do not install the legacy
+      # runtime. A legacy bring-up, governance command or API resource would
+      # invalidate their runtime-isolation claims.
       #
       # The namespace tripwire is required rather than assumed for the same
       # reason: absence of the legacy runtime is the premise these shards
@@ -626,16 +586,14 @@ jobs:
         run: |
           python3 - <<'EOF'
           import re, sys, yaml
-          # Named, not derived: a shard is on this list because its
-          # conversion was reviewed. Deriving the list from the file would
-          # let a shard leave it by being rewritten.
+          # Keep this list explicit so rewriting a shard cannot silently
+          # remove it from the guard.
           converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models",
                        "e2e-quickstart"]
           # A bare `kmx up` installs the Orka runtime, which is why
           # `e2e-quickstart` can run one and still belong here. The legacy
-          # install is reachable only by naming the retired runtime, so that
-          # is what this forbids: the three explicit steps, which the
-          # previous bare-run rule let through.
+          # install requires explicitly naming that runtime, so forbid its
+          # component steps.
           # `kmx agent chat` is NOT on this list. It survived the retirement
           # as an Orka-only session against agents.core.orka.ai, so forbidding
           # it by name would refuse a supported command and say nothing about
@@ -714,10 +672,8 @@ jobs:
       # it would make that proof a statement about the job's own fixture
       # instead of about the command.
       #
-      # The legacy journey this job used to run — three explicit install
-      # steps, governance and preset switching — went with those commands.
-      # The job must not grow them back: there is
-      # nothing left to run them against.
+      # Reject explicit legacy install steps and retired commands: the
+      # clone-free journey must remain an Orka-only setup.
       - name: The clone-free journey sets up with a bare `kmx up`, and runs no retired command
         run: |
           python3 - <<'EOF'
@@ -734,8 +690,7 @@ jobs:
           problems = []
           if not any(re.search(r"^\s*kmx up\s*$", b, re.M) for b in bodies):
               problems.append("no bare `kmx up`: the job must set the runtime up the way the docs say to")
-          # `kmx --context <ctx> orka install` is the spelling this job used
-          # when a bare run installed the legacy runtime instead of Orka.
+          # A separate Orka install would bypass the bare `kmx up` proof.
           if re.search(r"kmx (?:--\S+[ =]\S+ )*orka install\b", joined):
               problems.append("a standalone `orka install`: the bare `kmx up` already installs Orka")
           if "create serviceaccount orka-result-reader" in joined:
@@ -770,8 +725,7 @@ jobs:
       # docs-only summary steps are exempt; every other step must skip when
       # docs_only is 'true'.
       #
-      # Sharding the proof added the second half: the required check is an
-      # aggregator over the shards, so a shard that nothing needs would run,
+      # The required check aggregates the shards, so a shard that nothing needs would run,
       # fail, and still leave `e2e-hello-world` green. The aggregator must
       # name every shard, must run with always() (a skipped required check
       # never reports and blocks every merge), and must own no cluster steps
@@ -835,6 +789,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Comment-history tripwire self-test
+        run: python3 scripts/check-comment-history.py --selftest
+      - name: No effort IDs or lane references in source comments
+        run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
         run: test -z "$(gofmt -l cmd internal embed.go embed_test.go)"
       - name: kmx — vet
@@ -961,7 +919,7 @@ jobs:
                 f"across {len(REQUIRED)} required packages")
           EOF
           # Generated Orka YAML must parse without letting instructions
-          # escape their scalar. This named test now uses the Go YAML parser
+          # escape their scalar. This named test uses the Go YAML parser
           # with no Python dependency or skip path. Keep asserting it ran:
           # a renamed test must not turn go test -run into a green no-op.
           go test ./internal/kmx/scaffold/ -v \
@@ -1157,25 +1115,9 @@ jobs:
   # step has a docs guard. `e2e-orka-runtime` and `e2e-resilience` are
   # separate, legacy-free boundaries.
   #
-  # This shard was `e2e-runtime`. A bare `kmx up` installed the legacy
-  # runtime there, and the hosted-model evidence below was appended to a
-  # job whose first half was a legacy-runtime conversation, a model-preset
-  # switch and an MCP tool call. None of that is a supported path any more,
-  # so what is left is the half that was never about that runtime at all —
-  # the plane dialing a PUBLIC-looking model upstream — and the job is named
-  # for it. Nothing here needs an agent runtime: every governed call is a
-  # direct authenticated TLS call to the plane's own model seam, and the
-  # absence of the legacy namespace is asserted after bring-up and again
-  # at the end rather than left to the commands the job happens to run.
-  #
-  # Deleted rather than translated, and the loss is recorded in
-  # docs/development.md: the `kmx agent chat` turns and their
-  # retired chat-verifier checks, the old preset dry-run and preset switch,
-  # the legacy tool-server lockdown posture and the MCP
-  # tool round-trip, and the two `kmx status` probes (the ungoverned count
-  # and the no-plane branch). Each of those asserted something about
-  # legacy objects; rewriting them against surviving ones would have
-  # asserted less while looking the same.
+  # Hosted upstream evidence uses direct authenticated TLS calls to the
+  # plane's model seam; no agent runtime is required. Assert the legacy
+  # namespace is absent both after bring-up and at the end.
   e2e-hosted-models:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1183,10 +1125,7 @@ jobs:
       KIND_CLUSTER: kaimahi-p1
       KUBE_CTX: kind-kaimahi-p1
       CRED: hosted-model
-      # The caller's own namespace. The credential this shard issues used
-      # to land in the legacy runtime's namespace because that was the
-      # command's default; here the destination is named at the call site
-      # and nothing inherits one.
+      # Name the caller's namespace explicitly at each credential call site.
       CLIENT_NS: hosted-model-client
     defaults:
       run:
@@ -1202,8 +1141,7 @@ jobs:
           # locally: that parent IS the base this PR was merged onto, and it
           # is what the classifier diffs against.
           fetch-depth: 2
-      # One definition, in .github/actions/classify-change. It used to be
-      # this block, copied into five jobs.
+      # Shared change classification lives in .github/actions/classify-change.
       - name: Classify the change (docs-only short-circuit, fail closed)
         id: changes
         uses: ./.github/actions/classify-change
@@ -1433,8 +1371,7 @@ jobs:
           # locally: that parent IS the base this PR was merged onto, and it
           # is what the classifier diffs against.
           fetch-depth: 2
-      # One definition, in .github/actions/classify-change. It used to be
-      # this block, copied into five jobs.
+      # Shared change classification lives in .github/actions/classify-change.
       - name: Classify the change (docs-only short-circuit, fail closed)
         id: changes
         uses: ./.github/actions/classify-change
@@ -1540,10 +1477,8 @@ jobs:
           done
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -tAc 'SELECT count(*), count(DISTINCT version_id) FROM goose_db_version WHERE version_id > 0' | tee versions.out
-          # The floor comes from the committed migrations, not from a number
-          # typed here: it said 7 while there were ten, so a plane that
-          # stopped applying after the seventh would have passed. An empty
-          # migration directory is a broken derivation, not a clean run.
+          # Derive the migration count from committed files; an empty
+          # migration directory must fail rather than pass vacuously.
           expected=$(ls plane/internal/db/migrations/*.sql | wc -l)
           python3 -c 'import sys; n,d=open("versions.out").read().strip().split("|"); e=int(sys.argv[1]); assert e>0, "no migration files found"; assert n==d, (n,d); assert int(n)==e, ("applied", n, "committed", e)' "$expected"
       # The migration, and the two objects it is allowed to write here.
@@ -1832,22 +1767,10 @@ jobs:
   # the job stops proving the thing it exists to prove.
   # Model protocols, overlay safety, ordinary budget recovery, races and metrics.
   #
-  # This shard used to drive the plane through the legacy runtime: `kmx up`
-  # installed the chart, the retired govern command repointed a legacy Agent at the seam,
-  # and `kmx agent chat` was what produced a ledger row. None of that is a
-  # supported path any more. Nothing here needs an agent runtime: the
-  # governed caller is a direct, authenticated, TLS call to the plane's
-  # own model seam under a credential issued into an explicitly named
-  # namespace — which is also the only way to prove a protocol the
-  # committed upstreams do not speak, since an agent's OpenAI client
-  # speaks one shape and retries on its own.
-  #
-  # What went with the legacy runtime rather than being translated: the
-  # combined `kmx status` assertions and the raw MCP inventory (both were
-  # counts of legacy objects), and the cannot-tell status probe, which
-  # minted a reader for the legacy CRDs. Status is rebuilt on surviving
-  # evidence in its own change; a rewritten probe here would have asserted
-  # less while looking the same.
+  # Governed calls use direct authenticated TLS to the plane's model seam,
+  # with credentials issued into an explicitly named namespace. Direct calls
+  # also exercise protocol shapes and retry behavior independently of an
+  # agent's OpenAI client.
   e2e-models:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1855,10 +1778,7 @@ jobs:
       KIND_CLUSTER: kaimahi-p1
       KUBE_CTX: kind-kaimahi-p1
       CRED: model-ci
-      # The caller's own namespace. Every credential this shard issues is
-      # written here by name: the destination is stated at each call site
-      # rather than inherited from a default that used to be the legacy
-      # runtime's own namespace.
+      # Each credential names this caller-owned namespace explicitly.
       CLIENT_NS: model-client
     defaults:
       run:
@@ -1874,8 +1794,7 @@ jobs:
           # locally: that parent IS the base this PR was merged onto, and it
           # is what the classifier diffs against.
           fetch-depth: 2
-      # One definition, in .github/actions/classify-change. It used to be
-      # this block, copied into five jobs.
+      # Shared change classification lives in .github/actions/classify-change.
       - name: Classify the change (docs-only short-circuit, fail closed)
         id: changes
         uses: ./.github/actions/classify-change
@@ -2001,9 +1920,8 @@ jobs:
           fi
       # Keyless: run it for real. Every step below drives the plane's
       # two replicas directly (a port-forward per POD, so both are in
-      # every race by construction). That was already the only honest way
-      # to count them: an agent client retries a 429 on its own, which
-      # would make the counts a property of the client. No new pods: the
+      # every race by construction). Direct calls avoid an agent client's
+      # automatic 429 retries from determining the counts. No new pods: the
       # second proxy replica (10m) is the whole added cost of these steps.
       - name: "Exact budgets: 8 concurrent governed calls against a cap with room for one admit exactly one, across both replicas"
         if: steps.changes.outputs.docs_only != 'true'
@@ -2403,23 +2321,17 @@ jobs:
   # There is NO checkout step, deliberately, and nothing in this job may add
   # one: the moment a checkout exists, kmx auto-detects it as a source and
   # the job stops proving the thing it exists to prove.
-  # SHARD 4 of 6 — governance evidence, produced against an OWNER-MANAGED
+  # Governance evidence, produced against an OWNER-MANAGED
   # workload: a real migrated turn, a budget denial, a replica killed
   # mid-cycle, a Postgres outage, both replicas restarted, backup and
   # restore.
   #
-  # This shard used to drive the plane through the legacy runtime: `kmx up`
-  # installed the chart, the retired govern command repointed a legacy Agent at the seam,
-  # and `kmx agent chat` was the thing that produced a ledger row. None of
-  # that is a supported path any more, and translating those assertions
-  # onto Orka would have claimed something this repository cannot claim:
-  # the pinned Orka Provider schema has no field naming a private
-  # certificate authority, so an Orka Agent cannot be told to trust the
-  # plane's seam. There is no native Orka Agent governance here and none
-  # is asserted.
+  # This job does not assert native Orka Agent governance: the pinned Orka
+  # Provider schema cannot name the private CA needed to trust the plane's
+  # seam.
   #
-  # What IS supported is the path docs/migrate.md describes and the one
-  # every recorded migration used: an application its own owner runs,
+  # Exercise the owner-managed migration path described in docs/migrate.md:
+  # an application its own owner runs,
   # repointed at the seam by a patch `kmx migrate` writes and the OWNER
   # applies. So the workload is `owner-ci` — created before the plane
   # knows about it, in its own namespace, never mutated by kmx — and the
@@ -2454,8 +2366,7 @@ jobs:
           # locally: that parent IS the base this PR was merged onto, and it
           # is what the classifier diffs against.
           fetch-depth: 2
-      # One definition, in .github/actions/classify-change. It used to be
-      # this block, copied into five jobs.
+      # Shared change classification lives in .github/actions/classify-change.
       - name: Classify the change (docs-only short-circuit, fail closed)
         id: changes
         uses: ./.github/actions/classify-change
@@ -2970,28 +2881,11 @@ jobs:
           SECONDS_TAKEN: ${{ steps.quickstart.outputs.seconds }}
         run: |
           set -euo pipefail
-          # BASELINE: 157s, measured on this runner class (2 CPU, ubuntu-latest)
-          # the first time the job went green, of which the great majority is
-          # image and model bytes coming down the wire.
-          #
-          # THAT BASELINE IS NOW STALE and deliberately not replaced by a
-          # guess. It measured the legacy runtime's journey (a Helm chart, a
-          # reduced release, an A2A invoke); this job now measures the Orka
-          # journey (a Helm chart, a Provider, an Agent and a Task). The
-          # two are not comparable, and a number nobody measured is worse than
-          # an honest stale one. The ceiling below is UNCHANGED until a green
-          # run on this runner class reports a real figure — whoever sees that
-          # run first should record it here, with the run named, and move the
-          # ceiling with it in the same commit.
-          #
-          # The ceiling is the old baseline doubled. Time from one command to a
-          # working agent is the number the front door exists to move, and a
-          # number nothing watches goes back up — so the check is deliberately
-          # a doubling detector rather than a generous "is it broken" bound.
-          #
-          # If this goes red: find what got slower FIRST. Raising the ceiling
-          # is the last resort and the baseline above must move with it, in
-          # the same commit, with the run that measured it named.
+          # This 315s ceiling guards time from one command to an Orka answer.
+          # It has no measured Orka baseline yet; do not infer one from this
+          # ceiling. If the check fails, investigate the regression before
+          # raising the ceiling. Record a green run on this runner class when
+          # calibrating the bound.
           ceiling=315
           echo "time to first answer: ${SECONDS_TAKEN}s (ceiling ${ceiling}s)"
           if [ "$SECONDS_TAKEN" -gt "$ceiling" ]; then
@@ -3108,7 +3002,7 @@ jobs:
             kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai local -o yaml || true
             exit 1
           }
-      # `kmx orka install` now provisions the Task result account. Prove the
+      # `kmx orka install` provisions the Task result account. Prove the
       # installed grant is Task-get only; do not hand-create its resources.
       - name: Orka — verify the installed Task result account
         if: steps.changes.outputs.docs_only != 'true'
@@ -3147,8 +3041,8 @@ jobs:
           url=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
             -o jsonpath='{.spec.http.url}')
           test "$url" = https://1.1.1.1/resources
-          # The v0.2.0 chart worker needs this one named policy for gateway
-          # approval binding; it must not acquire general policy reads.
+          # The chart worker needs this named policy for gateway approval
+          # binding; it must not acquire general policy reads.
           test "$(kubectl --context kind-kmx-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-api-ai-worker)" = yes
           test "$(kubectl --context kind-kmx-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/unrelated --as=system:serviceaccount:orka-system:orka-api-ai-worker)" = no
           policy=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
@@ -3675,21 +3569,15 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           # kaimahi_build_info's revision comes from Main.Version on a
-          # module-proxy build (plane/internal/metrics). Before that fix it
-          # was "unknown" on exactly this path — the one path with no
-          # checkout to compare against.
-          #
-          # The label is `version`, and the ops port serves /readyz — NOT
-          # /healthz, which lives on the data and admin listeners.
-          # Both were wrong in the first version of this step, which is how
-          # a green-looking assertion turns out to assert nothing; the
-          # pseudo-version's revision is the sha's first 12 characters.
+          # module-proxy build (plane/internal/metrics). This path has no
+          # checkout to compare against. The label is `version`, and the ops
+          # port serves /readyz, not /healthz. Compare the pseudo-version's
+          # first 12 revision characters with the installed SHA.
           # The pod must be Ready and NOT terminating. `kmx plane` restarts
           # the deployment, and a draining pod stays Running — keeping its
           # IP — until its grace period ends, so `.items[0]` can name one a
           # port-forward cannot reach. That rule is scripts/plane-pods.sh;
-          # this job has no checkout, so it carries the same three lines
-          # rather than a fourth guess at them.
+          # this job has no checkout, so it reproduces the readiness filter.
           pod=$(kubectl --context kind-kmx-clone-free -n kaimahi get pods -l app=kaimahi-proxy -o json | python3 -c '
           import json, sys
           for p in json.load(sys.stdin)["items"]:
@@ -3706,20 +3594,13 @@ jobs:
           # (`bin/kmx metrics` uses exactly this rule against exactly this
           # port).
           #
-          # The forward's own output is KEPT and printed on failure. Hiding
-          # it in /dev/null is why the first two failures of this step could
-          # not be diagnosed from the log at all.
+          # Keep the forward's output and print it on failure for diagnosis.
           kubectl --context kind-kmx-clone-free -n kaimahi port-forward --address 127.0.0.1 \
             "pod/$pod" 19092:9092 >port-forward.log 2>&1 &
           pf=$!
           # The forward must not outlive this step. A background process is
-          # NOT reaped when a step ends, so this kubectl went on holding
-          # 127.0.0.1:19092 for the rest of the job — and `kmx metrics`, three
-          # steps later, forwards that same port. From #81 (which added the
-          # metrics step) every non-docs push to main failed here with
-          # "bind: address already in use", visible to nobody: this job runs
-          # on main only, and that step sent kmx's stderr to a file it never
-          # printed. Both of those are fixed too; this line is the bug.
+          # NOT reaped when a step ends; `kmx metrics` also forwards
+          # 127.0.0.1:19092 later in this job.
           trap 'kill "$pf" 2>/dev/null || true' EXIT
           ready=
           for _ in $(seq 1 150); do
@@ -3745,9 +3626,8 @@ jobs:
 
           # ONE assertion, asked twice: once about the revision this job
           # installed, once about a revision it certainly is not. Two
-          # separately-written greps would drift, and then the negative would
-          # stop proving that the positive can fail — which is precisely the
-          # defect this step is fixing.
+          # separately-written greps could drift, making the negative
+          # control ineffective.
           built_at() { grep -q "^kaimahi_build_info{.*version=\"$1\"" build-info.out; }
           built_at "${SHA:0:12}" || {
             echo "the plane does not report the revision this job installed (${SHA:0:12})"; exit 1
@@ -3764,9 +3644,7 @@ jobs:
           # stdout is the exposition and only the exposition: the replica's
           # name goes to stderr, so a pipeline sees metrics.
           #
-          # stderr is redirected to a FILE, which means a failure here used to
-          # leave nothing in the log but "exit code 1" — in a job that runs on
-          # main only, so nobody could reproduce it either. Print it.
+          # Print captured stderr on failure so the main-only job is diagnosable.
           set +e
           kmx metrics 2>metrics.err | tee metrics.out
           rc=${PIPESTATUS[0]}

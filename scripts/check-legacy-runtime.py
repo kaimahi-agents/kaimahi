@@ -32,13 +32,9 @@ are the whole policy, and each one is bound to the paths where its claim
 could be true — a category is an argument for why a line may stay, and the
 same argument is not available everywhere:
 
-  historical    the record of what used to be. Two shapes: the files that
-                ARE the record — the changelog and the dated reviews —
-                named as whole files, and the coordination board, whose
-                past-tense rows are named one line at a time because the
-                board also carries live policy. No current documentation
-                directory may be listed as a whole file, and a floor below
-                fails if one is.
+  historical    the changelog and dated reviews are the historical record,
+                named as whole files. No current documentation may be
+                listed as historical, and a floor below enforces this.
   retirement    the exact production lines that refuse the retired runtime
                 BY NAME, plus the historical teardown sentinel. A refusal
                 has to spell what it refuses, or it refuses nothing. Only
@@ -130,11 +126,6 @@ RETIREMENT_FILES = (
     "internal/kmx/lift/plan.go", "internal/kmx/lift/record.go",
 )
 
-# The one current document whose past-tense rows are recorded line by line.
-# The board carries live policy beside its history, so it cannot be a whole
-# historical file — the dated rows are named, the live text is not exempt.
-HISTORICAL_LINE_FILES = ("docs/COORDINATION.md",)
-
 # A `future` entry has to SAY the future is unsupported. Without this the
 # category is a free-form note, and a free-form note beside a mention is
 # indistinguishable from documentation of a supported path.
@@ -180,10 +171,8 @@ def category_problem(entry) -> str | None:
             return ("a retirement refusal is production code that refuses the runtime BY NAME, "
                     f"and only these do so: {', '.join(RETIREMENT_FILES)}")
     elif category == "historical":
-        if path not in HISTORICAL_LINE_FILES:
-            return ("a past-tense line may only be recorded in "
-                    f"{', '.join(HISTORICAL_LINE_FILES)} — the whole-file record is "
-                    f"{', '.join(HISTORICAL_FILES)}, and everything else is current")
+        return ("historical exemptions are whole files only: "
+                f"{', '.join(HISTORICAL_FILES)}; current documents are not history")
     elif category == "retired-notice":
         if not current_doc(path):
             return "a retired command notice belongs in current documentation, not executable code"
@@ -463,17 +452,13 @@ def floors(paths, read, historical) -> list[str]:
     if set(SELF) != {"scripts/check-legacy-runtime.py",
                      "scripts/legacy-runtime-allowlist.json"}:
         bad.append(f"the self-exemption set is no longer this checker and its allowlist: {sorted(SELF)}")
-    # The one that stops a whole current directory — or a whole current
-    # file, which is the same edit one name smaller — being declared
-    # history. A whitelist rather than a list of files to protect: the
-    # record is three known places, and everything else in the tree is
-    # current until somebody argues otherwise line by line.
+    # Only the changelog and dated reviews may be declared historical;
+    # a current document cannot exempt itself as a whole file.
     for entry in historical:
         if entry not in HISTORICAL_FILES:
             bad.append(f"{entry!r} is declared historical as a WHOLE FILE. Only "
                        f"{', '.join(HISTORICAL_FILES)} are the record itself; anything else "
-                       "that still carries past-tense evidence is named line by line, "
-                       "with a category and a reason.")
+                       "belongs in the current tree.")
     return bad
 
 
@@ -699,7 +684,7 @@ def selftest():
         case(not floors(["a"] * MIN_TRACKED, MIN_READ, historical),
              "a full enumeration over a sound allowlist clears the floors",
              "the floors refuse a sound scan, so they cannot distinguish anything")
-        for widened in ("docs/", "internal/", "Makefile", "docs/COORDINATION.md",
+        for widened in ("docs/", "internal/", "Makefile",
                         "docs/kmx.md", "docs/README.md", "internal/kmx/app/up.go"):
             case(floors(["a"] * MIN_TRACKED, MIN_READ, [widened]),
                  f"declaring {widened!r} historical is refused",
@@ -790,9 +775,7 @@ def selftest():
                   "why": "a tripwire"}, "a `negative` line in the CI tripwires"),
                 ({"path": "internal/kmx/lift/plan.go", "text": "y", "category": "retirement",
                   "why": "the payload refusal"}, "a `retirement` line in a refusing file"),
-                ({"path": "docs/COORDINATION.md", "text": "y", "category": "historical",
-                  "why": "a merged row"}, "a `historical` line on the board"),
-                ({"path": "docs/COORDINATION.md", "text": "remains OPEN", "category": "future",
+                ({"path": "docs/orka.md", "text": "remains OPEN", "category": "future",
                   "why": "an open question"}, "a `future` note that says it is open")):
             f = d / "allowlist.json"
             f.write_text(json.dumps(allowlist_with(entry)))

@@ -8,14 +8,7 @@ package proxy
 //	chat_completions  {"usage": {"prompt_tokens": 11, "completion_tokens": 16}}
 //	responses         {"usage": {"input_tokens": 13, "output_tokens": 16}}
 //
-// The proxy used to read the first shape unconditionally. Pointed at a
-// Responses-API upstream — which is what one current agent framework
-// speaks BY DEFAULT, not as an option — it found no `prompt_tokens`,
-// found no `completion_tokens`, and ledgered `0 in / 0 out` for a call
-// the upstream had reported thirteen and sixteen for. Nothing said so. A
-// token budget over that upstream could never be exhausted.
-//
-// So `found` is a field here and not an inference from zero. A response
+// `found` is a field here and not an inference from zero. A response
 // that reports zero tokens and a response the plane cannot read are
 // different facts, and the second one is not allowed to look like the
 // first: see forward() in handler.go, which refuses a success it could

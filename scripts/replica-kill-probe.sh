@@ -7,7 +7,7 @@
 # A — and the ledger to gain exactly two rows (no lost record). Then
 # wait for the Deployment to be back at full strength.
 #
-# Custody rules (docs/COORDINATION.md): the token travels only through
+# The token travels only through
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: replica-kill-probe.sh   (env: GOVERNED_SECRET=kaimahi-governed-token

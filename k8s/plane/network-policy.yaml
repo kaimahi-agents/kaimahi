@@ -20,11 +20,7 @@ spec:
 ---
 # Egress only, and nothing on admin/ops.
 #
-# There is NO committed ingress allowance. There used to be one, admitting
-# the retired runtime's namespace, and it outlived the runtime: nothing in
-# this repository creates that namespace any more, so the rule admitted a
-# namespace that does not exist while reading as the plane's model door.
-# The door is opened one adopter at a time instead — `kmx migrate` applies
+# There is NO committed ingress allowance. `kmx migrate` applies
 # `kaimahi-proxy-ingress-<namespace>` for the namespace it is pointed at,
 # so revoking one adopter revokes nothing else, and a namespace nobody
 # migrated has no path here at all.

@@ -14,7 +14,7 @@
 # protocol is being spoken lives in those two arguments, which is why one
 # probe covers the model protocols without guessing their envelopes.
 #
-# Custody rules (docs/COORDINATION.md): the token travels only through
+# The token travels only through
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: model-seam-probe.sh '<json body>'

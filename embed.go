@@ -6,13 +6,8 @@ import "embed"
 
 // Manifests holds the runtime kmx installs and the model plane it deploys.
 // Explicit paths keep the packaging boundary independent of unrelated
-// checkout additions.
-//
-// What is NOT here any more: the legacy runtime's Helm values, its two demo
-// agents, and the k8s/models model presets. All five belonged to a
-// runtime kmx no longer installs, and nothing applied
-// them — `kmx plane` applies k8s/plane/, and `kmx migrate` writes a Secret
-// into the operator's own namespace.
+// checkout additions. `kmx plane` applies k8s/plane/, and `kmx migrate`
+// writes a Secret into the operator's own namespace.
 //
 //go:embed k8s/ollama.yaml
 //go:embed k8s/orka-k8s-tool.yaml scripts/orka-k8s-tool.py

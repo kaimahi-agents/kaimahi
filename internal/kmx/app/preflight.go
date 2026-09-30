@@ -46,14 +46,8 @@ func (a *App) engineDependency() dependency {
 // remaining problem in one response. No command should use a dependency
 // before this returns nil.
 //
-// "Makes usable" is the part that matters once the front door is `curl |
-// sh` and one command. A missing kind or kubectl used to be the end of the
-// run: several install pages, and a first agent that was several downloads
-// away from someone who just wanted to see one answer. kmx already knew how
-// to fetch ONE of the tools it shells out to — a pinned CLI,
-// checksum-verified into a cache directory — so the rest are fetched the same
-// way, by the same rules, and what the operator already has on PATH still
-// wins.
+// Dependencies available on PATH take precedence; otherwise pinned binaries
+// are downloaded and checksum-verified into the cache directory.
 //
 // The container engine stays a genuine prerequisite: it is a daemon and a
 // privileged system package, not a binary that can be dropped into a cache.

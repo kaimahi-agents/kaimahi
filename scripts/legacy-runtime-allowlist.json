@@ -258,36 +258,6 @@
       "why": "Bounded refusal test: the retired lift payload is refused with a message naming it."
     },
     {
-      "path": "docs/COORDINATION.md",
-      "text": "- **Native-Orka-only versus kagent YAML authoring remains OPEN.**",
-      "category": "future",
-      "why": "An explicitly unsupported future: YAML authoring for the retired runtime versus native Orka is an open question, and docs/orka.md is a recommendation rather than a ruling. A note that nothing is settled is not support."
-    },
-    {
-      "path": "docs/COORDINATION.md",
-      "text": "| P1: kagent hello world on kind | W1 worker | PR #2 MERGED | — |",
-      "category": "historical",
-      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
-    },
-    {
-      "path": "docs/COORDINATION.md",
-      "text": "| P2: LLM-enhanced via ModelConfig | W2 worker | PR #3 MERGED | — |",
-      "category": "historical",
-      "why": "The board's record of work that was done: a merged PR naming the legacy API kind it was built on. The row is past tense and names nothing a reader could install."
-    },
-    {
-      "path": "docs/COORDINATION.md",
-      "text": "| Orka authoring and migration research | branch `spike/kagent-orka-compat` | PR #174 MERGED | Research, 2026-09-10 |",
-      "category": "historical",
-      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
-    },
-    {
-      "path": "docs/COORDINATION.md",
-      "text": "| Native Orka recommendation | branch `docs/kagent-on-orka-boundary` | PR #177 MERGED | Recommendation, not a ruling |",
-      "category": "historical",
-      "why": "The board's record of work that was done: a merged PR and the branch it came from. The row is past tense and names nothing a reader could install."
-    },
-    {
       "path": "internal/kmx/app/agent_tui_inference_test.go",
       "text": "if strings.Contains(body, \"ModelConfig\") || strings.Contains(body, \"kagent.dev\") {",
       "category": "negative",
@@ -628,18 +598,6 @@
       "text": "if strings.Contains(string(calls), \"kagent.dev\") {",
       "category": "negative",
       "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
-    },
-    {
-      "path": "internal/kmx/app/status_test.go",
-      "text": "// `kmx status` reports the runtime this repository installs. The kagent",
-      "category": "negative",
-      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
-    },
-    {
-      "path": "internal/kmx/app/status_test.go",
-      "text": "// published a governance shape assembled from kagent objects, and no",
-      "category": "negative",
-      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
     },
     {
       "path": "internal/kmx/app/status_test.go",

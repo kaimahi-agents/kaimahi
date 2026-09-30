@@ -75,6 +75,5 @@ less code of our own—not command count or adoption of this repository.
 The distribution and name constraints remain in [NAMING.md](NAMING.md).
 Do not claim a package-manager namespace as a convenience change.
 
-[COORDINATION.md](COORDINATION.md) records current rulings and lanes;
 [kmx.md](kmx.md) describes the implementation that exists;
 [cli-ux-plan.md](cli-ux-plan.md) records terminal and automation contracts.

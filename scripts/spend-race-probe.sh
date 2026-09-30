@@ -12,7 +12,7 @@
 # an agent's OpenAI client retries a 429 on its own, which would make the
 # denied count a property of the client, not of the plane.
 #
-# Custody rules (docs/COORDINATION.md): the token travels only through
+# The token travels only through
 # pipes and 0600 files (curl -H @file) — never argv, env listings, logs.
 #
 # Usage: spend-race-probe.sh [N]   (env: EXPECT_ADMITTED=1

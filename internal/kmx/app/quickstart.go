@@ -221,8 +221,7 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 // Reuse is EXACT-MATCH ONLY. A live Provider or Agent whose spec differs
 // from the one quickstart would write is somebody's deliberate change — an
 // edited endpoint, a different model, a hand-applied bundle — so this stops
-// rather than overwrite it, exactly as a rerun over a full legacy release
-// used to preserve that release. A half-finished run resumes: whichever of
+// rather than overwrite it. A half-finished run resumes: whichever of
 // the two already matches is kept, and the other is created.
 func (a *App) stepQuickstartAgent() error {
 	ctx, cancel := context.WithTimeout(a.operationContext(), 10*time.Minute)

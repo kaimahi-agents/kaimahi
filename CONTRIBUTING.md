@@ -27,7 +27,7 @@ Run the checks relevant to your change:
 python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
-python3 scripts/check-board.py --selftest && python3 scripts/check-board.py
+python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
@@ -56,9 +56,15 @@ approval/grant runtime are retired; ordinary model caps/accounting remain.
 Historical SQL migrations and stored data are not cleanup targets.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
-name when another lane owns the shared cluster. See
-[`docs/COORDINATION.md`](docs/COORDINATION.md) for the process and
+name to avoid changing another developer's cluster. See
 [`docs/getting-started.md`](docs/getting-started.md) for prerequisites.
+
+## Comments
+
+Comments describe what the code does and why, as it works now. Keep them tied
+to behavior or constraints that remain true. Put what changed, which effort
+made the change, and what it replaced in the commit message, pull request
+description or CHANGELOG instead.
 
 ## Pull requests
 

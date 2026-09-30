@@ -345,9 +345,8 @@ func (a *App) validateKindTarget() error {
 // waitClusterServing refuses to leave the cluster step until the API server
 // answers and CoreDNS is actually serving.
 //
-// This used to run on the Podman path only, where a restarted machine made
-// the need obvious. It is not engine-specific: on a nested-runtime
-// machine where kube-proxy crash-looped, the cluster came up "successfully"
+// This is not engine-specific: on a nested-runtime machine where
+// kube-proxy crash-looped, the cluster came up "successfully"
 // and the run died two minutes later on
 //
 //	Error: pull model manifest: ... dial tcp: lookup registry.ollama.ai: i/o timeout

@@ -41,10 +41,8 @@ const orkaStatusScript = `case "$*" in
 *"get providers"*) printf '%s' 'local=true ';;
 esac`
 
-// `kmx status` reports the runtime this repository installs. The kagent
-// listing it used to print described objects nothing here deploys, reads or
-// drives — a report that is confidently about somebody else's cluster state
-// is worse than no report, because it reads as coverage.
+// `kmx status` reports the runtime this repository installs, not unrelated
+// cluster objects that would give a false impression of coverage.
 func TestStatusReportsTheOrkaRuntimeAndNotTheLegacyOne(t *testing.T) {
 	a, out, calls := statusFixture(t, orkaStatusScript)
 	if err := a.Status(); err != nil {
@@ -106,12 +104,10 @@ esac`
 	}
 }
 
-// The structured output is REFUSED rather than emptied. The old JSON document
-// published a governance shape assembled from kagent objects, and no
-// owner-managed equivalent exists: migrate targets are the owner's own
-// workloads with no discovery index, so any replacement document would be a
-// count of what kmx happened to be told about rather than of what is there.
-// A consumer that pipes this into `jq` has to be told, not handed `{}`.
+// Structured status output is refused rather than emptied: migrate targets
+// are owner-managed workloads without a discovery index. A document built from
+// only the targets kmx has seen would imply a complete inventory; consumers
+// must receive a refusal instead of an empty JSON object.
 func TestStatusRefusesStructuredOutputRatherThanInventingIt(t *testing.T) {
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {

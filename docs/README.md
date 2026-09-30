@@ -68,7 +68,6 @@ listener inventory, Orka architecture or the project's future shape.
 
 - [Development](development.md): source boundaries, verification and operational traps.
 - [Repository map](repository-map.md): where the retained files belong.
-- [Coordination](COORDINATION.md): mission, binding rulings, lane status and upstream filings.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.

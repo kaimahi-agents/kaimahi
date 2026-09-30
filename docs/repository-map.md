@@ -36,8 +36,8 @@ checks.
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
-| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 44 (checkers, release packaging, probes, CI fixtures, mutation specs) |
-| `docs/` | 46 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 43 (checkers, release packaging, probes, CI fixtures, mutation specs) |
+| `docs/` | 45 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -186,9 +186,9 @@ manifests, and the nine model presets. All were objects of the legacy runtime
 applied by the retired installer; nothing left in kmx reads or applies one. Plane and
 observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 52 tracked files, three different jobs
+## `scripts/` — 51 tracked files, three different jobs
 
-**Reference coverage:** 42 of the 52 are named by something outside themselves,
+**Reference coverage:** 41 of the 51 are named by something outside themselves,
 and the ten `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -198,12 +198,11 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 1 | `plane-pods.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers, self-tests and release packaging | 20 | the eleven `check-*` files, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_check_board.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 20 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures | 5 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — legacy-runtime scanner's approved exemptions | 1 | `legacy-runtime-allowlist.json` |
-| **Scaffolding** — board checker's recorded findings | 1 | `board-open-drift.json` |
 
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 `kube-guard.sh` is counted once as embedded, and is one of the ten checkers
@@ -230,7 +229,7 @@ throwaway CA and a documentation-range address routed over kind's network,
 so a public-looking hosted upstream can be dialed without a hosted account.
 CI holds no hosted credential.
 
-## `docs/` — 46 tracked files, guides and retirement records
+## `docs/` — 45 tracked files, guides and retirement records
 
 **Guides and index (21):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `spend.md`,
@@ -245,8 +244,8 @@ operating instructions for deleted code.
 
 **Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
-**Maintainer and process (17):** `development.md`, `repository-map.md`,
-`COORDINATION.md`, `reviews/2026-09-09-orka-composition.md`,
+**Maintainer and process (16):** `development.md`, `repository-map.md`,
+`reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
 `cli-ux-plan.md`, `charm-ux-followup-plan.md`, `interactive-agent-tui-plan.md`, `NAMING.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,

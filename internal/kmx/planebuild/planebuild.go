@@ -94,10 +94,6 @@ func Revision(info *debug.BuildInfo, ok bool) (string, error) {
 	// build info: the tag is the source of truth, it is what a `go install
 	// …/cmd/kmx@vX.Y.Z` binary resolves to anyway (Main.Version IS the
 	// tag), and it does not depend on VCS stamping surviving the build.
-	// The release job found out why that last clause matters: it wrote one
-	// file into its own checkout before building, the toolchain recorded
-	// vcs.modified=true, and every released binary refused to name a
-	// revision at all.
 	if tag := strings.TrimSpace(version.Tag); tag != "" {
 		return tag, nil
 	}
