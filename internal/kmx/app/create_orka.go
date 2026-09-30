@@ -196,12 +196,17 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	var coordination *scaffold.OrkaCoordination
+	if opt.Coordination {
+		enabled := true
+		coordination = &scaffold.OrkaCoordination{Enabled: &enabled}
+	}
 	return scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: opt.Name, Namespace: opt.Namespace, Description: opt.Description,
 		ProviderType: opt.ProviderType, Model: opt.Model, BaseURL: opt.BaseURL,
 		SecretName: opt.Secret, SecretKey: opt.SecretKey, Instructions: instructions,
 		Tools: orkaNameList(opt.Tools), Skills: orkaNameList(opt.Skills), TaskPrompt: opt.Task,
-		AgentRateLimit: agentLimits, ProviderRateLimit: providerLimits,
+		AgentRateLimit: agentLimits, ProviderRateLimit: providerLimits, Coordination: coordination,
 	})
 }
 

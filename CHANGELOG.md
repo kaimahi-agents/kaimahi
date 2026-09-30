@@ -22,6 +22,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Portable Orka bundles can specify Agent coordination (enabled, same-namespace allowed Agents, concurrency and depth limits). `kmx agent create --coordination` authors `enabled: true`; edit `agent.yaml` to name helpers and limits. Lift refuses missing helpers and targets without an installed coordination schema at `--plan`, and reconciliation/status include coordination changes and drift. Autonomous Job loops are not supported.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

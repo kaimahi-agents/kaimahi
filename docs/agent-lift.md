@@ -19,6 +19,48 @@ bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering.
 
+## Coordination in `agent.yaml`
+
+A coordinator's delegation policy is portable behavior, not a destination
+binding. For example, after creating a helper bundle and a coordinator bundle,
+edit the coordinator's `agent.yaml` to include:
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: coordinator
+spec:
+  instructions: Delegate the calculation to helper, then summarize its answer.
+  model:
+    name: qwen2.5:3b
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+    agent:
+      coordination:
+        enabled: true
+        allowedAgents:
+          - name: helper
+        maxConcurrentChildren: 2
+        maxDepth: 2
+```
+
+`enabled` is required when the block is present; the limits are optional
+positive integers. Omitting the block renders no `spec.coordination`, and kmx
+never inserts default limits. `allowedAgents` entries contain names only: lift
+looks for each Agent in the **destination Agent's namespace** and refuses a
+plan if any is absent. A `namespace` in an entry is refused because the
+namespace belongs to the destination, not the portable definition. Lift also
+refuses a target whose installed Agent CRD does not support coordination.
+The upstream `autonomous` field is not supported yet: it starts a repeated
+Job loop and needs a separate design. `kmx agent create --coordination`
+authors only `enabled: true`; add allowed Agents and limits by editing the
+bundle. Lift the helper before the coordinator. Editing coordination changes
+the exact-source portable digest; a lift updates the owned Agent and status
+reports cluster-side edits as drift when the live portable digest still
+matches the bundle.
+
 ## From create to evaluation
 
 For a local Ollama creation target that already has Orka, the namespace and a

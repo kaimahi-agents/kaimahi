@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -151,6 +152,9 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		return fmt.Errorf("selected Provider/%s is the Agent's target Provider; lift would modify the selected Provider", provider)
 	}
 	if err := worker.liftToolsAvailable(ctx, namespace, renderedBundle); err != nil {
+		return err
+	}
+	if err := worker.liftAllowedAgentsPresent(ctx, namespace, renderedBundle); err != nil {
 		return err
 	}
 	adapter := orkaRuntimeAdapter{app: &worker, create: &CreateOptions{Namespace: namespace, Name: orkaObjectName(renderedBundle.Agent), Secret: bindings.Provider.SecretRef.Name}}
@@ -371,6 +375,48 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 		if !available {
 			return fmt.Errorf("Tool/%s in namespace %s is not Available; repair it before lifting (the quickstart Kubernetes tool is not Available on Orka v0.1.3)", name, namespace)
 		}
+	}
+	return nil
+}
+
+// liftAllowedAgentsPresent checks the destination namespace, not the bundle's
+// creation target. A missing helper must be provisioned before the coordinator.
+func (a *App) liftAllowedAgentsPresent(ctx context.Context, namespace string, bundle *scaffold.OrkaBundle) error {
+	spec, _ := bundle.Agent["spec"].(map[string]any)
+	coordination, _ := spec["coordination"].(map[string]any)
+	refs, _ := coordination["allowedAgents"].([]any)
+	var missing []string
+	seen := make(map[string]bool)
+	for _, entry := range refs {
+		ref, _ := entry.(map[string]any)
+		name, _ := ref["name"].(string)
+		if name == "" {
+			return fmt.Errorf("rendered Agent has invalid allowed Agent reference")
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "agents.core.orka.ai", name, "--ignore-not-found=true", "-o", "json")
+		if err != nil {
+			return fmt.Errorf("cannot inspect Agent/%s in namespace %s: %w", name, namespace, err)
+		}
+		var existing struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name              string  `json:"name"`
+				Namespace         string  `json:"namespace"`
+				Generation        int64   `json:"generation"`
+				DeletionTimestamp *string `json:"deletionTimestamp"`
+			} `json:"metadata"`
+		}
+		if json.Unmarshal(raw, &existing) != nil || existing.Kind != "Agent" || existing.Metadata.Name != name || existing.Metadata.Namespace != namespace || existing.Metadata.Generation < 1 || existing.Metadata.DeletionTimestamp != nil {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return fmt.Errorf("allowed Agents missing in namespace %s: %s; provision them before lifting", namespace, strings.Join(missing, ", "))
 	}
 	return nil
 }

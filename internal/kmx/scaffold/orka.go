@@ -21,11 +21,20 @@ type OrkaRateLimit struct {
 	TokensPerMinute   *int64
 }
 
+// OrkaCoordination contains only explicitly authored delegation behavior.
+type OrkaCoordination struct {
+	Enabled               *bool
+	AllowedAgents         []string
+	MaxConcurrentChildren *int32
+	MaxDepth              *int32
+}
+
 // OrkaSpec describes a native Orka agent, never a credential or application image.
 type OrkaSpec struct {
 	Name, Namespace, Description, ProviderType, Model, BaseURL, SecretName, SecretKey, Instructions string
 	Tools, Skills                                                                                   []string
 	AgentRateLimit, ProviderRateLimit                                                               *OrkaRateLimit
+	Coordination                                                                                    *OrkaCoordination
 	TaskPrompt                                                                                      string
 }
 
@@ -59,6 +68,9 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		spec.BaseURL, spec.SecretName, spec.SecretKey, spec.Instructions, spec.TaskPrompt}
 	inputs = append(inputs, spec.Tools...)
 	inputs = append(inputs, spec.Skills...)
+	if spec.Coordination != nil {
+		inputs = append(inputs, spec.Coordination.AllowedAgents...)
+	}
 	for _, input := range inputs {
 		if err := refuseOrkaKeyShapes(input); err != nil {
 			return nil, err
@@ -125,6 +137,34 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 			items = append(items, map[string]any{"name": ref})
 		}
 		agentSpec[field] = items
+	}
+	if c := spec.Coordination; c != nil {
+		if c.Enabled == nil {
+			return nil, fmt.Errorf("Agent.spec.coordination.enabled is required")
+		}
+		coordination := map[string]any{"enabled": *c.Enabled}
+		if len(c.AllowedAgents) > 0 {
+			refs := make([]any, 0, len(c.AllowedAgents))
+			for _, name := range c.AllowedAgents {
+				if err := ValidateName(name); err != nil {
+					return nil, fmt.Errorf("Agent.spec.coordination.allowedAgents: %w", err)
+				}
+				refs = append(refs, map[string]any{"name": name})
+			}
+			coordination["allowedAgents"] = refs
+		}
+		for _, limit := range []struct {
+			name  string
+			value *int32
+		}{{"maxConcurrentChildren", c.MaxConcurrentChildren}, {"maxDepth", c.MaxDepth}} {
+			if limit.value != nil {
+				if *limit.value <= 0 {
+					return nil, fmt.Errorf("Agent.spec.coordination.%s must be positive", limit.name)
+				}
+				coordination[limit.name] = *limit.value
+			}
+		}
+		agentSpec["coordination"] = coordination
 	}
 	for _, entry := range []struct {
 		kind   string

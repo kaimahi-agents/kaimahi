@@ -54,6 +54,51 @@ extensions:
         requestsPerMinute: 30
 `
 
+func portableWithCoordination(block string) string {
+	return minimalPortableYAML + "    agent:\n      coordination:\n" + block
+}
+
+func TestParsePortableCoordination(t *testing.T) {
+	doc := portableWithCoordination("        enabled: true\n        allowedAgents:\n          - name: helper\n        maxConcurrentChildren: 2\n        maxDepth: 3\n")
+	agent, err := ParsePortableAgent([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := agent.Extensions.Orka.Agent.Coordination
+	if c == nil || c.Enabled == nil || !*c.Enabled || len(c.AllowedAgents) != 1 || c.AllowedAgents[0].Name != "helper" || c.MaxConcurrentChildren == nil || *c.MaxConcurrentChildren != 2 || c.MaxDepth == nil || *c.MaxDepth != 3 {
+		t.Fatalf("coordination not preserved: %+v", c)
+	}
+	if agent.Source()[len(agent.Source())-1] != '\n' {
+		t.Fatal("source bytes not retained")
+	}
+	if bare, err := ParsePortableAgent([]byte(minimalPortableYAML)); err != nil || bare.Extensions.Orka.Agent != nil {
+		t.Fatalf("absent coordination changed document: %+v, %v", bare, err)
+	}
+}
+
+func TestParsePortableCoordinationRefusals(t *testing.T) {
+	for _, tc := range []struct{ name, block, want string }{
+		{"unknown", "        enabled: true\n        mystery: true\n", "mystery"},
+		{"namespace", "        enabled: true\n        allowedAgents:\n          - name: helper\n            namespace: elsewhere\n", "namespace"},
+		{"autonomous false", "        enabled: true\n        autonomous: false\n", "autonomous is not supported yet"},
+		{"autonomous true", "        enabled: true\n        autonomous: true\n", "autonomous is not supported yet"},
+		{"no enabled", "        maxDepth: 3\n", "enabled"},
+		{"null enabled", "        enabled: null\n", "enabled"},
+		{"zero concurrency", "        enabled: true\n        maxConcurrentChildren: 0\n", "maxConcurrentChildren must be positive"},
+		{"negative depth", "        enabled: true\n        maxDepth: -1\n", "maxDepth must be positive"},
+		{"invalid agent name", "        enabled: true\n        allowedAgents:\n          - name: Helper_1\n", "allowedAgents"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { mustNotParse(t, portableWithCoordination(tc.block), tc.want) })
+	}
+}
+
+func TestParsePortableRefusesNullCoordinationBlock(t *testing.T) {
+	for _, value := range []string{"null", ""} {
+		doc := minimalPortableYAML + "    agent:\n      coordination: " + value + "\n"
+		mustNotParse(t, doc, "coordination must be a mapping")
+	}
+}
+
 func mustReplace(t *testing.T, doc, old, replacement string) string {
 	t.Helper()
 	if strings.Count(doc, old) != 1 {

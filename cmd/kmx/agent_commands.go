@@ -90,6 +90,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
 	cmd.Flags().StringVar(&opt.Tools, "tools", "", "comma-separated explicit Orka tool names (not server:tool)")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
+	cmd.Flags().BoolVar(&opt.Coordination, "coordination", false, "enable agent-to-agent delegation in the portable bundle (author allowedAgents separately)")
 	cmd.Flags().StringVar(&opt.Task, "task", "", "first AI Task prompt; applying authorizes execution")
 	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")

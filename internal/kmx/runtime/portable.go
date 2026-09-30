@@ -93,9 +93,19 @@ type OrkaProviderExtension struct {
 // OrkaAgentExtension is optional, and so is each of its fields: omitting one
 // means no corresponding field on the rendered Agent, never a default.
 type OrkaAgentExtension struct {
-	Tools     []OrkaNamedRef `yaml:"tools,omitempty"`
-	Skills    []OrkaNamedRef `yaml:"skills,omitempty"`
-	RateLimit *OrkaRateLimit `yaml:"rateLimit,omitempty"`
+	Tools        []OrkaNamedRef    `yaml:"tools,omitempty"`
+	Skills       []OrkaNamedRef    `yaml:"skills,omitempty"`
+	RateLimit    *OrkaRateLimit    `yaml:"rateLimit,omitempty"`
+	Coordination *OrkaCoordination `yaml:"coordination,omitempty"`
+}
+
+// OrkaCoordination contains only explicitly authored delegation behavior.
+// Allowed agents are resolved in the Agent's target namespace.
+type OrkaCoordination struct {
+	Enabled               *bool          `yaml:"enabled,omitempty"`
+	AllowedAgents         []OrkaNamedRef `yaml:"allowedAgents,omitempty"`
+	MaxConcurrentChildren *int32         `yaml:"maxConcurrentChildren,omitempty"`
+	MaxDepth              *int32         `yaml:"maxDepth,omitempty"`
 }
 
 // OrkaNamedRef is one Orka tool or skill reference: an explicit name, never
@@ -157,6 +167,12 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	}
 	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)
+	}
+	if block := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination"); block != nil && block.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination must be a mapping")
+	}
+	if portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination", "autonomous") != nil {
+		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination.autonomous is not supported yet")
 	}
 
 	strict := yaml.NewDecoder(bytes.NewReader(data))
@@ -234,6 +250,21 @@ func rejectPortableKeyHazards(node *yaml.Node, path string) error {
 			if err := rejectPortableKeyHazards(child, fmt.Sprintf("%s[%d]", path, i)); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func portableValueAt(node *yaml.Node, path ...string) *yaml.Node {
+	if node.Kind != yaml.MappingNode || len(path) == 0 {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == path[0] {
+			if len(path) == 1 {
+				return node.Content[i+1]
+			}
+			return portableValueAt(node.Content[i+1], path[1:]...)
 		}
 	}
 	return nil
@@ -330,6 +361,22 @@ func (e *OrkaExtension) validate() error {
 	if err := e.Agent.RateLimit.validate(); err != nil {
 		return fmt.Errorf("agent.rateLimit.%w", err)
 	}
+	if c := e.Agent.Coordination; c != nil {
+		if c.Enabled == nil {
+			return fmt.Errorf("agent.coordination.enabled is required when coordination is stated")
+		}
+		for i, ref := range c.AllowedAgents {
+			if err := scaffold.ValidateName(ref.Name); err != nil {
+				return fmt.Errorf("agent.coordination.allowedAgents[%d].name: %w", i, err)
+			}
+		}
+		if c.MaxConcurrentChildren != nil && *c.MaxConcurrentChildren <= 0 {
+			return fmt.Errorf("agent.coordination.maxConcurrentChildren must be positive")
+		}
+		if c.MaxDepth != nil && *c.MaxDepth <= 0 {
+			return fmt.Errorf("agent.coordination.maxDepth must be positive")
+		}
+	}
 	return nil
 }
 
@@ -372,6 +419,11 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 			for i, ref := range orka.Agent.Skills {
 				fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.orka.agent.skills[%d].name", i), ref.Name})
 			}
+			if orka.Agent.Coordination != nil {
+				for i, ref := range orka.Agent.Coordination.AllowedAgents {
+					fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.orka.agent.coordination.allowedAgents[%d].name", i), ref.Name})
+				}
+			}
 		}
 	}
 	for _, field := range fields {
@@ -395,6 +447,11 @@ func refusePortableSecretShapes(p *PortableAgent) error {
 		if orka.Agent != nil {
 			for _, ref := range append(append([]OrkaNamedRef(nil), orka.Agent.Tools...), orka.Agent.Skills...) {
 				values = append(values, ref.Name)
+			}
+			if orka.Agent.Coordination != nil {
+				for _, ref := range orka.Agent.Coordination.AllowedAgents {
+					values = append(values, ref.Name)
+				}
 			}
 		}
 	}
@@ -459,6 +516,7 @@ type OrkaShorthand struct {
 	Name, Namespace, Instructions, Description          string
 	ProviderType, Model, BaseURL, SecretName, SecretKey string
 	Tools, Skills                                       []string
+	Coordination                                        bool
 	ProviderRateLimit, AgentRateLimit                   *OrkaRateLimit
 }
 
@@ -509,8 +567,12 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	}
 	// Only state an agent block the caller actually asked for: an empty one
 	// would be a field a renderer then has to decide what to do with.
-	if len(s.Tools) > 0 || len(s.Skills) > 0 || s.AgentRateLimit != nil {
+	if len(s.Tools) > 0 || len(s.Skills) > 0 || s.AgentRateLimit != nil || s.Coordination {
 		block := &OrkaAgentExtension{RateLimit: cloneOrkaRateLimit(s.AgentRateLimit)}
+		if s.Coordination {
+			enabled := true
+			block.Coordination = &OrkaCoordination{Enabled: &enabled}
+		}
 		for _, name := range s.Tools {
 			block.Tools = append(block.Tools, OrkaNamedRef{Name: name})
 		}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -49,6 +50,94 @@ func renderForTest(t *testing.T, opt CreateOptions) (orkaRuntimeAdapter, agentru
 		t.Fatal(err)
 	}
 	return adapter, rendered
+}
+
+func TestCreateWizardValidatesCoordinationFlag(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	opt.Coordination = true
+	bundle, err := createOrkaBundle(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := bundle.Agent["spec"].(map[string]any)["coordination"]
+	if !reflect.DeepEqual(got, map[string]any{"enabled": true}) {
+		t.Fatalf("wizard did not validate requested coordination: %#v", got)
+	}
+}
+
+func TestCreateCoordinationFlagAuthorsEnabledOnly(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	opt.Coordination = true
+	source, err := portableOrkaSource(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable, err := agentruntime.ParsePortableAgent(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := portable.Extensions.Orka.Agent.Coordination
+	if c == nil || c.Enabled == nil || !*c.Enabled || len(c.AllowedAgents) != 0 || c.MaxDepth != nil || c.MaxConcurrentChildren != nil {
+		t.Fatalf("flag authored unexpected coordination: %+v", c)
+	}
+	_, rendered := renderForTest(t, opt)
+	objects, err := orkaBundleFromRendered(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := objects.Agent["spec"].(map[string]any)["coordination"]
+	if !reflect.DeepEqual(got, map[string]any{"enabled": true}) {
+		t.Fatalf("rendered flag: %#v", got)
+	}
+}
+
+func TestPortableCoordinationRendersAndChangesDigest(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	opt.NoApply = false
+	base := `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: sample
+spec:
+  instructions: Delegate work.
+  model:
+    name: gpt-4o-mini
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+`
+	adapter := lifecycleAdapter(t, opt)
+	render := func(source string) (agentruntime.RenderedBundle, map[string]any) {
+		t.Helper()
+		bundle, err := adapter.Render(context.Background(), []byte(source), agentruntime.RenderOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		objects, err := orkaBundleFromRendered(bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bundle, objects.Agent["spec"].(map[string]any)
+	}
+	bare, bareSpec := render(base)
+	if _, ok := bareSpec["coordination"]; ok {
+		t.Fatal("missing block acquired a default")
+	}
+	with, spec := render(base + "    agent:\n      coordination:\n        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 2\n")
+	coord, ok := spec["coordination"].(map[string]any)
+	if !ok || coord["maxDepth"] != 2 || coord["enabled"] != true {
+		t.Fatalf("rendered coordination = %#v", coord)
+	}
+	if _, ok := coord["maxConcurrentChildren"]; ok {
+		t.Fatal("unstated limit was rendered")
+	}
+	if bare.PortableDigest() == with.PortableDigest() || bare.RenderedDigest() == with.RenderedDigest() {
+		t.Fatal("coordination failed to change digests")
+	}
+	changed, _ := render(base + "    agent:\n      coordination:\n        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 3\n")
+	if with.PortableDigest() == changed.PortableDigest() || with.RenderedDigest() == changed.RenderedDigest() {
+		t.Fatal("maxDepth failed to change digests")
+	}
 }
 
 // TestOrkaAdapterSatisfiesLifecycleAdapter is the whole point of the seam:
