@@ -31,7 +31,7 @@ brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
 ```
 
 To create your own agent and hear it answer locally, follow the interactive
@@ -89,7 +89,7 @@ Use Podman explicitly with:
 kmx --container-engine podman quickstart-wizard
 ```
 
-`@main` remains the moving development option; use `@v0.4.0` for this release.
+`@main` remains the moving development option; use `@v0.4.1` for this release.
 From a checkout, `make` builds `bin/kmx` without provisioning anything.
 
 ## Runtime Contract
