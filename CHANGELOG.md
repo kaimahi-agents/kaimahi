@@ -22,6 +22,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- `kmx agent run` submits one Task to an already-deployed bundle or live Orka Agent without rewriting its definition or the bundle. It prints only the answer on stdout, reports the Task name and deployed state on stderr, and leaves timed-out Tasks available for later retrieval with `kmx task result`. The latter reads an existing AI Task's phase and answer, optionally waiting for completion. Pending results exit 2; failed or cancelled Tasks exit 1.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

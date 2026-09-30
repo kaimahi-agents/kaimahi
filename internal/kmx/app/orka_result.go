@@ -329,6 +329,12 @@ func (a *App) waitOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 }
 
 func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, id orkaIdentity, session *orkaResultSession, ready func()) (answer string, err error) {
+	return a.readOrkaTaskResult(ctx, namespace, id, session, ready, true)
+}
+
+// readOrkaTaskResult uses the same identity and credential-echo checks for
+// blocking execution and a nonblocking read of an already-successful Task.
+func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaIdentity, session *orkaResultSession, ready func(), follow bool) (answer string, err error) {
 	succeeded := false
 	var before *orkaObject
 	defer func() {
@@ -351,6 +357,9 @@ func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, 
 				ready()
 			}
 			break
+		}
+		if !follow {
+			return "", ErrTaskPending
 		}
 		if err := orkaPause(ctx); err != nil {
 			return "", err
@@ -413,6 +422,9 @@ func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, 
 				return "", fmt.Errorf("Orka result contains no printable answer")
 			}
 			return answer, nil
+		}
+		if !follow {
+			return "", ErrTaskPending
 		}
 		before = nil
 		if err := orkaPause(ctx); err != nil {
