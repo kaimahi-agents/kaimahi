@@ -22,6 +22,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Changed
+
+- Interactive `/lift` in chat and the console now deploys an agent's local bundle through `kmx agent lift` after showing its shared plan. It writes the same ownership markers, receipt and remembered target, then connects chat to the destination. Orka and the quickstart Tool can be prepared only through a separate confirmed action; bundle lift itself installs nothing. Select an existing Ready destination Provider; Foundry creation is not part of this route. With no bundle, the clearly labelled live-copy fallback remains available but status/evaluate cannot track it. An invalid bundle refuses instead of copying.
+
 ## v0.4.0 — 2026-09-30
 
 ### Added

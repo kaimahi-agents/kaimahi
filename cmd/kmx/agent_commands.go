@@ -118,13 +118,14 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 
 func newAgentChatCommand(state *commandState) *cobra.Command {
 	var interactive, verbose bool
-	var runtime, namespace, azureDiscovery string
+	var runtime, namespace, azureDiscovery, bundles string
 	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Args: usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")}
 	cmd.Flags().BoolVar(&interactive, "interactive", false, "open the Orka chat TUI (required: Orka chat is a session)")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().StringVar(&azureDiscovery, "azure-discovery", "cli", "AKS listing for /lift: cli or sdk")
+	cmd.Flags().StringVar(&bundles, "bundles", "", "directory holding one agent bundle per agent for /lift (default: agents)")
 	cmd.Flags().String("session", "", "retired server-side session flag")
 	cmd.Flags().Bool("json", false, "retired raw A2A task flag")
 	_ = cmd.Flags().MarkHidden("session")
@@ -143,7 +144,7 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()
-		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery})
+		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery, Bundles: bundles})
 	})
 	return cmd
 }

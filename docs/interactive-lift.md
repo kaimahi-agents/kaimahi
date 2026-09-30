@@ -1,7 +1,48 @@
 # Interactive Orka lift
 
 For the custom first journey, see [getting started](getting-started.md).
-From a live Orka chat, `/lift` opens the target picker:
+From a live Orka chat, `/lift` opens the target picker. The lift action in
+`kmx console` uses the same interactive flow. For an Agent with a local bundle,
+both are interactive front ends to [`kmx agent lift`](agent-lift.md), not a
+copy of the live Agent. They look for `agents/<name>/agent.yaml` under the
+working directory, or `<root>/<name>/agent.yaml` with `--bundles <root>` on
+`kmx console` or `kmx agent chat --interactive`. The bundle must name the
+selected Agent. An invalid or incomplete bundle stops the operation instead
+of falling back to a live copy.
+
+The bundle-backed flow selects a destination and an **existing Ready Provider**
+in its namespace, excluding the Provider that lift would render for the Agent.
+The selected Provider supplies the destination endpoint and Secret reference;
+its credential is never copied from the source. The shared read-only bundle
+plan shows the target identity and per-resource create/reuse/update/adopt or
+refusal decisions before the final confirmation. Confirming runs the same
+bundle reconciliation as the CLI, stamps ownership markers, writes the local
+receipt and remembers the destination. After success the console prints the
+equivalent `kmx agent lift agents/<name> --to-context <ctx> --inference
+provider:<name>` command (with `--to-namespace` when needed), saves the Agent
+locations and connects chat to the destination. Send a new message to verify
+it answers; a successful lift alone does not prove an answer.
+
+Bundle lift checks prerequisites without installing. When Orka or the
+quickstart Kubernetes Tool needs preparation, the console offers a separately
+confirmed **Prepare target** step and then rechecks the shared plan. The
+built-in Tool installer works only in `orka-system`; for another namespace,
+prepare the Tool and its dependencies there yourself. Prepare the destination
+namespace, an existing Ready inference Provider and its Secret before lift.
+If there is no Ready Provider, prepare or create one on the destination and
+run `/lift` again. Azure Foundry creation is not offered on the bundle-backed
+route; it must first yield a Ready destination Provider through a separate
+provisioning step. The console never silently switches to copying the live
+Agent to provision Foundry.
+
+If no local bundle directory exists, `/lift` explicitly labels the fallback
+as a **live Agent copy**. This copies the source Agent's configuration and can
+prepare inference, but writes no bundle ownership markers or lift receipt:
+`kmx agent status` and `kmx agent evaluate` will not track that destination.
+Capture a bundle separately before using those commands. An existing but
+invalid bundle never selects this route.
+
+The target picker offers:
 
 - **Kubeconfig context:** search the contexts already configured locally.
 - **Azure AKS:** select a subscription, then search all its AKS clusters. Results
@@ -40,8 +81,8 @@ subscription and resource group. Missing old selections are not added to results
 Interactive Azure discovery and provisioning waits use a centered loading box
 below the lift header. Escape/Ctrl-C cancels the fetch and joins it before returning.
 
-Selecting a target starts read-only prerequisite discovery immediately; there is
-no separate Target review. Installations and resource creation retain their own
+For the bundle-less live-copy route, selecting a target starts read-only
+prerequisite discovery immediately; there is no separate Target review. Installations and resource creation retain their own
 explicit confirmations. One final deployment review defaults to Cancel and shows
 the Agent, destination, model, endpoint and create/reuse behavior.
 Deploy creates the selected Agent and its Provider on that target, using the
@@ -49,14 +90,14 @@ existing installed-schema, collision, server-admission and readiness checks.
 Server-managed metadata/status are dropped; Agent specification (tools, skills,
 instructions and other settings) and Provider specification are preserved.
 
-The prerequisite stage checks required Orka CRDs and controller readiness and
-offers the pinned Orka install/repair on the destination. Permission/connectivity
+The live-copy prerequisite stage checks required Orka CRDs and controller
+readiness and offers the pinned Orka install/repair on the destination. Permission/connectivity
 failures are reported with the target context, not treated as a missing install.
 It also offers installation of the KMX read-only Kubernetes tool when referenced
 and absent. Other Tool/Skill resources must be provisioned separately.
 
-Inference selection lists ready Providers in the destination namespace, plus
-Azure Foundry and an explicit keep-source-configuration option. Choosing a remote
+Live-copy inference selection lists ready Providers in the destination namespace,
+plus Azure Foundry and an explicit keep-source-configuration option. Choosing a remote
 Provider copies its configuration into the new Agent's Provider and uses its
 existing target Secret reference.
 
@@ -143,8 +184,8 @@ and restored between Azure fetches. It shows the source Agent/context, destinati
 and the six-step timeline **Target → Orka → Inference → Tools → Deploy → Connect**.
 The active step is highlighted; narrow windows use a compact numbered bar.
 
-Approved Orka installs/repairs, Kubernetes tool installation and final deployment
-open a bordered **LIFT deployment pane** showing the Agent, destination, elapsed
+Approved Orka installs/repairs, Kubernetes tool installation and live-copy
+deployment open a bordered **LIFT deployment pane** showing the Agent, destination, elapsed
 time and real stage states. Only the active stage animates; no percentages are
 estimated. Orka installation reports installer fetch, wrapper credential
 reconciliation, and installer application/readiness. Final deployment reports

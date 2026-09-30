@@ -11,6 +11,7 @@ type ChatOptions struct {
 	Runtime        string
 	Namespace      string
 	AzureDiscovery string
+	Bundles        string
 }
 
 // ChatWithOptions opens the interactive Orka session.
@@ -24,6 +25,7 @@ type ChatOptions struct {
 // teach people to type past confirmations.
 func (a *App) ChatWithOptions(opt ChatOptions) error {
 	a.chatVerbose = opt.Verbose
+	a.bundleRoot = opt.Bundles
 	if opt.AzureDiscovery != "" {
 		a.azureDiscoveryMode = opt.AzureDiscovery
 	}

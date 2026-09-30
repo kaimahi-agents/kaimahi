@@ -10,6 +10,7 @@ import (
 func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, error) {
 	source := action.source.app(a)
 	source.InvocationCommand = ""
+	source.bundleRoot = action.bundles
 	if action.kind == "chat" {
 		if !action.source.Local {
 			source.chatInference = "local"
@@ -37,7 +38,7 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 		}
 		// Console agents are native Orka Agents; naming the runtime explicitly
 		// keeps chat off the discovery path rather than re-resolving the agent.
-		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Interactive: true})
+		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Interactive: true, Bundles: action.bundles})
 	}
 	if action.kind == "tools" {
 		if action.agent.External {
@@ -53,6 +54,10 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 	if action.kind != "lift" || !action.agent.canLift() || !action.source.Local {
 		return agentTUIEnvironment{}, fmt.Errorf("unsupported agent action")
 	}
+	// Validate local bundle identity before a new cloud target can be provisioned.
+	if _, _, err := consoleAgentBundle(action.bundles, action.agent.Name); err != nil {
+		return action.target, fmt.Errorf("local bundle is invalid; refusing lift: %w", err)
+	}
 	target := action.target
 	if action.create != nil {
 		// The existing cluster phase owns cloud account review, confirmation,
@@ -67,13 +72,13 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 	if target.Name == "" || target.Local || target.Name == action.source.Name {
 		return target, fmt.Errorf("lift requires a different remote environment")
 	}
-	b := &orkaChatBackend{app: source, agent: action.agent.Name, namespace: action.agent.Namespace}
+	b := &orkaChatBackend{app: source, agent: action.agent.Name, namespace: action.agent.Namespace, bundleRoot: action.bundles}
 	defer b.Close()
 	renderer := newChatRenderer(a.Out)
 	renderer.enterFullScreen()
 	defer renderer.leaveFullScreen()
 	ctx := a.operationContext()
-	chosen := chatLiftTarget{Context: target.Name, Kubeconfig: target.Kubeconfig}
+	chosen := chatLiftTarget{Context: target.Name, Kubeconfig: target.Kubeconfig, DefaultKubeconfig: target.Kubeconfig == ""}
 	if action.create != nil {
 		var err error
 		chosen, err = source.agentTUICreatedTarget(ctx, *action.create)

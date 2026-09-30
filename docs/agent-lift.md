@@ -1,7 +1,11 @@
 # `kmx agent lift`
 
 `kmx agent lift` deploys an existing on-disk agent bundle to a prepared Orka
-cluster. It takes a named destination and inference Provider.
+cluster. It takes a named destination and inference Provider. Interactive
+`/lift` in chat or `kmx console` selects those inputs and shows the same
+read-only plan before invoking this operation. A separately confirmed
+**Prepare target** action can install Orka or the quickstart Kubernetes Tool
+before retrying the checks; bundle lift itself never installs them.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--plan]

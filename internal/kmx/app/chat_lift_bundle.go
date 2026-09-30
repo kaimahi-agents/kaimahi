@@ -1,0 +1,297 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
+	"golang.org/x/term"
+)
+
+// A bundle lift intentionally does not use the live-source Provider, Foundry
+// provisioning or createOrkaOnline. The shared CLI operation owns rendering,
+// admission, versioned reconciliation, receipts and remembered selections.
+func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chatRenderer, target chatLiftTarget, dir string) error {
+	worker := *b.app
+	cfg := *b.app.Cfg
+	runner := *b.app.Run
+	worker.Cfg, worker.Run = &cfg, &runner
+	runner.Context = ctx
+	worker.guarded = false
+	cfg.KubeContext, cfg.ContextSource = target.Context, config.SourceFlag
+	worker.Out, worker.Err, worker.Stdin = io.Discard, io.Discard, nil
+	if target.DefaultKubeconfig {
+		clean := make([]string, 0, len(runner.Env))
+		for _, value := range runner.Env {
+			if !strings.HasPrefix(value, "KUBECONFIG=") {
+				clean = append(clean, value)
+			}
+		}
+		runner.Env = clean
+	}
+	if target.Kubeconfig != "" {
+		located := appAtAgentLocation(&worker, agentLocation{Context: target.Context, Kubeconfig: target.Kubeconfig})
+		runner.Env = located.Run.Env
+	}
+	if target.Subscription != "" {
+		temp, err := os.MkdirTemp("", "kmx-bundle-lift-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(temp)
+		path := filepath.Join(temp, "kubeconfig")
+		if _, err := b.liftAzureFetch(ctx, aksCredentialsArgs(target, path)...); err != nil {
+			return err
+		}
+		located := appAtAgentLocation(&worker, agentLocation{Context: target.Context, Kubeconfig: path})
+		runner.Env = located.Run.Env
+	}
+	namespace := b.namespace
+	if namespace == "" {
+		namespace = OrkaNamespace
+	}
+	// Do not rely on the CLI's remembered target: this review authorizes exactly
+	// the context, namespace, and Ready inference Provider selected here.
+	preparedOrka := false
+	for {
+		missing, err := worker.missingLiftOrkaCRDs(ctx)
+		if err != nil {
+			return err
+		}
+		if len(missing) != 0 {
+			if preparedOrka {
+				return fmt.Errorf("target %s still lacks Orka CRDs after preparation: %s", target.Context, strings.Join(missing, ", "))
+			}
+			if err := b.prepareBundleLiftOrka(ctx, &worker, strings.Join(missing, ", ")); err != nil {
+				return liftPreparationError(err)
+			}
+			preparedOrka = true
+			continue
+		}
+		controller, err := worker.orkaControllerForLift(ctx)
+		if err == nil {
+			_, err = worker.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+controller, "--timeout=10s")
+		}
+		if err != nil {
+			if preparedOrka || (!strings.Contains(err.Error(), "no Orka controller Deployment") && !strings.Contains(err.Error(), "requested Kubernetes resource not found")) {
+				return fmt.Errorf("target %s: Orka controller unavailable: %w", target.Context, err)
+			}
+			if err := b.prepareBundleLiftOrka(ctx, &worker, "Orka controller unavailable: "+err.Error()); err != nil {
+				return liftPreparationError(err)
+			}
+			preparedOrka = true
+			continue
+		}
+		providers, err := b.bundleLiftProviders(ctx, &worker, namespace)
+		if err != nil {
+			return err
+		}
+		if len(providers) == 0 {
+			return fmt.Errorf("no eligible Ready Provider in target %s namespace %s (excluding the Agent's own Provider/%s); provision and wait for a separate Provider to be Ready at its current generation, then retry /lift; Foundry is not available for bundle lift", target.Context, namespace, b.agent)
+		}
+		items := make([]chatPickerItem, len(providers))
+		for i, name := range providers {
+			items[i] = chatPickerItem{name: name}
+		}
+		index, ok, err := b.liftPick(ctx, "Ready inference Provider on "+target.Context, items)
+		if err != nil || !ok {
+			return err
+		}
+		_, _, plannedDigest, err := readBundlePortableAgent(dir)
+		if err != nil {
+			return err
+		}
+		opt := LiftAgentBundleOptions{BundleDir: dir, ToContext: target.Context, ToNamespace: namespace, Inference: "provider:" + providers[index], Plan: true}
+		notes := &orkaBoundedBuffer{remaining: 64 << 10}
+		worker.Err = notes // LiftAgentBundle sends its safe decisions through notef (Err), not Out.
+		err = worker.LiftAgentBundle(opt)
+		if err != nil {
+			renderer.operation("LIFT", "", colorBlue, "Bundle plan could not proceed: "+err.Error())
+			if b.bundleLiftPreparable(namespace, err) {
+				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, renderer, namespace, err); prepErr != nil {
+					return liftPreparationError(prepErr)
+				}
+				continue // target state may have changed; re-discover and re-plan.
+			}
+			return fmt.Errorf("bundle lift plan failed (no deployment): %w", err)
+		}
+		// Notes are safe, bounded CLI output: resource outcomes and field paths,
+		// never rendered values or the selected Provider's Secret contents.
+		review := strings.TrimSpace(notes.buffer.String())
+		title := "Review bundle lift to " + target.Context + " / " + namespace + "\n" + review
+		if !bundlePlanFitsTerminal(b.app.Out, title) {
+			return fmt.Errorf("bundle plan is too long for this terminal; enlarge it and retry /lift, or review with %s --plan", bundleLiftCommand(dir, target.Context, namespace, providers[index]))
+		}
+		renderer.operation("LIFT PLAN", "", colorBlue, review)
+		index, ok, err = b.liftAction(ctx, title, []chatPickerItem{{name: "Cancel"}, {name: "Deploy bundle to " + target.Context}})
+		if err != nil || !ok || index == 0 {
+			return err
+		}
+		if !bundlePlanFitsTerminal(b.app.Out, title) {
+			return fmt.Errorf("terminal no longer fits the full bundle plan; nothing deployed")
+		}
+		if err := checkBundlePlanRevision(dir, plannedDigest); err != nil {
+			return err
+		}
+		// The guard's context-bound confirmation is set only after this exact review
+		// was accepted. Deployment itself cannot install Orka, Tools or inference.
+		cfg.Confirm = target.Context
+		opt.Plan = false
+		worker.Err = io.Discard
+		renderer.operation("LIFT", "", colorBlue, "Deploying bundle to "+target.Context+"…")
+		if err := worker.LiftAgentBundle(opt); err != nil {
+			return err
+		}
+		return b.finishBundleLift(ctx, renderer, &worker, target, opt)
+	}
+}
+
+func checkBundlePlanRevision(dir, digest string) error {
+	_, _, current, err := readBundlePortableAgent(dir)
+	if err != nil {
+		return fmt.Errorf("bundle changed during review; rerun /lift for a new plan: %w", err)
+	}
+	if current != digest {
+		return fmt.Errorf("bundle changed during review; rerun /lift for a new plan")
+	}
+	return nil
+}
+
+func bundlePlanFitsTerminal(out io.Writer, title string) bool {
+	width, height := 0, 0
+	if file, ok := out.(*os.File); ok && isInteractiveTerminal(file) {
+		width, height, _ = term.GetSize(int(file.Fd()))
+	}
+	return chatPickerTitleFits(title, width, height, true)
+}
+
+func (b *orkaChatBackend) bundleLiftProviders(ctx context.Context, worker *App, namespace string) ([]string, error) {
+	raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", "providers.core.orka.ai", "-o", "json")
+	if err != nil {
+		return nil, fmt.Errorf("target %s: cannot list Ready Providers in namespace %s: %w", worker.Cfg.KubeContext, namespace, err)
+	}
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name              string  `json:"name"`
+				Generation        int64   `json:"generation"`
+				DeletionTimestamp *string `json:"deletionTimestamp"`
+			} `json:"metadata"`
+			Status struct {
+				Ready      bool              `json:"ready"`
+				Conditions []serverCondition `json:"conditions"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("invalid target Provider list: %w", err)
+	}
+	var names []string
+	for _, item := range list.Items {
+		if item.Metadata.Name == b.agent || item.Metadata.Name == "" || item.Metadata.Generation < 1 || item.Metadata.DeletionTimestamp != nil || !item.Status.Ready {
+			continue
+		}
+		for _, condition := range item.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" && condition.ObservedGeneration == item.Metadata.Generation {
+				names = append(names, item.Metadata.Name)
+				break
+			}
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// Only preparation has a separate confirmation. An arbitrary missing Tool or
+// a custom namespace cannot be repaired by the fixed-namespace quickstart.
+func (b *orkaChatBackend) bundleLiftPreparable(namespace string, planErr error) bool {
+	if strings.Contains(planErr.Error(), "missing Orka CRDs") {
+		return true
+	}
+	prefix := "Tool/" + quickstartK8sTool + " in namespace " + namespace
+	return namespace == OrkaNamespace && (strings.HasPrefix(planErr.Error(), prefix+" is not Available") || strings.HasPrefix(planErr.Error(), "Tool/"+quickstartK8sTool+" is missing in namespace "+namespace))
+}
+
+// A preparation confirmation authorizes one pinned destination, not ambient
+// kubeconfig or the following bundle deployment's separate confirmation.
+func (b *orkaChatBackend) guardBundlePreparation(ctx context.Context, worker *App) error {
+	raw, err := worker.orkaCapture(ctx, nil, "config", "view", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot inspect preparation target: %w", err)
+	}
+	kube, err := guard.ParseKubeconfig(raw)
+	if err != nil {
+		return fmt.Errorf("cannot decode preparation target context")
+	}
+	if err := guard.CheckContext(ctx, kube, guard.Request{
+		Action: "prepare Orka and tools on the selected destination", Context: worker.Cfg.KubeContext,
+		Source: worker.Cfg.ContextSource, Namespaces: OrkaNamespace, Confirm: worker.Cfg.KubeContext,
+		Command: "kmx orka install",
+	}, worker.Err, nil); err != nil {
+		return err
+	}
+	worker.guarded = true
+	return nil
+}
+
+func (b *orkaChatBackend) prepareBundleLiftOrka(ctx context.Context, worker *App, missing string) error {
+	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": missing Orka CRDs ("+missing+"). Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install Orka "+OrkaVersion); err != nil {
+		return err
+	}
+	if err := b.guardBundlePreparation(ctx, worker); err != nil {
+		return err
+	}
+	return b.installLiftOrkaPane(ctx, worker)
+}
+
+func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *App, renderer *chatRenderer, namespace string, planErr error) error {
+	if strings.Contains(planErr.Error(), "Orka controller") || strings.Contains(planErr.Error(), "Orka CRDs") {
+		return b.prepareBundleLiftOrka(ctx, worker, planErr.Error())
+	}
+	if namespace != OrkaNamespace {
+		return fmt.Errorf("Tool/%s must be prepared in destination namespace %s before retrying /lift", quickstartK8sTool, namespace)
+	}
+	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": Kubernetes inventory Tool unavailable. Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install read-only Kubernetes Tool and RBAC"); err != nil {
+		return err
+	}
+	if err := b.guardBundlePreparation(ctx, worker); err != nil {
+		return err
+	}
+	return b.runLiftDeployment(ctx, worker, "Prepare Kubernetes Tool", []string{"Install tool server and wait Ready"}, func(w *App) error {
+		return w.runPhase(phase{current: 1, total: 1, name: "Install tool server and wait Ready"}, w.installQuickstartK8sTool)
+	})
+}
+
+func (b *orkaChatBackend) finishBundleLift(ctx context.Context, renderer *chatRenderer, worker *App, target chatLiftTarget, opt LiftAgentBundleOptions) error {
+	if _, err := rememberAgentLocation(ctx, b.app, agentLocation{Agent: b.agent, Namespace: b.namespace, Context: b.app.Cfg.KubeContext}); err != nil {
+		return fmt.Errorf("Agent deployed, but source location could not be saved: %w", err)
+	}
+	location, err := rememberAgentLocation(ctx, worker, agentLocation{Agent: b.agent, Namespace: opt.ToNamespace, Context: target.Context, Cluster: target.Cluster, Subscription: target.Subscription, ResourceGroup: target.ResourceGroup})
+	if err != nil {
+		return fmt.Errorf("Agent deployed, but target location could not be saved: %w", err)
+	}
+	if err := b.connectAgentLocation(ctx, location); err != nil {
+		return fmt.Errorf("Agent deployed and saved; connecting failed: %w", err)
+	}
+	renderer.operation("LIFT", "", colorGreen, "Connected to lifted Agent on "+target.Context+". Send a new message. Equivalent command: "+bundleLiftCommand(opt.BundleDir, target.Context, opt.ToNamespace, strings.TrimPrefix(opt.Inference, "provider:")))
+	return nil
+}
+
+func bundleLiftCommand(dir, contextName, namespace, provider string) string {
+	args := []string{"kmx", "agent", "lift", dir, "--to-context", contextName}
+	if namespace != "" && namespace != OrkaNamespace {
+		args = append(args, "--to-namespace", namespace)
+	}
+	args = append(args, "--inference", "provider:"+provider)
+	for i := range args {
+		args[i] = shellArg(args[i])
+	}
+	return strings.Join(args, " ")
+}

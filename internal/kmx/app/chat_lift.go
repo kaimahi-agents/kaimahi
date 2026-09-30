@@ -17,7 +17,12 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-type chatLiftTarget struct{ Context, Subscription, ResourceGroup, Cluster, Location, Tenant, Kubeconfig string }
+type chatLiftTarget struct {
+	Context, Subscription, ResourceGroup, Cluster, Location, Tenant, Kubeconfig string
+	// DefaultKubeconfig selects the caller's kubeconfig rather than a saved
+	// source Agent's private snapshot when the console picked a target row.
+	DefaultKubeconfig bool
+}
 
 // Azure subprocesses are prepared by the Runner and then given their own
 // deadline, the same shape orkaCapture uses for kubectl. Preparing through the
@@ -182,6 +187,18 @@ func (b *orkaChatBackend) liftAgentTo(ctx context.Context, renderer *chatRendere
 	if target.Subscription == "" && target.Context == b.app.Cfg.KubeContext {
 		return fmt.Errorf("select a different target cluster; this Agent already runs in %s", target.Context)
 	}
+	bundleDir, found, err := consoleAgentBundle(b.bundleRoot, b.agent)
+	if err != nil {
+		return fmt.Errorf("local bundle is invalid; refusing live-copy fallback: %w", err)
+	}
+	if found {
+		return b.liftBundledAgentTo(ctx, renderer, target, bundleDir)
+	}
+	renderer.operation("LIFT", "", colorBlue, "No local bundle at "+bundleDir+"; using legacy live-copy lift. This deployment is untracked by kmx agent status/evaluate.")
+	return b.liftLiveAgentTo(ctx, renderer, target)
+}
+
+func (b *orkaChatBackend) liftLiveAgentTo(ctx context.Context, renderer *chatRenderer, target chatLiftTarget) error {
 	targetLabel := target.Context
 	if target.Cluster != "" {
 		targetLabel = target.Cluster + " · rg:" + target.ResourceGroup
@@ -257,7 +274,7 @@ func (b *orkaChatBackend) liftAgentTo(ctx context.Context, renderer *chatRendere
 	}
 	b.liftStage(4, "")
 	providerSpec := bundle.Provider["spec"].(map[string]any)
-	index, ok, err := b.liftAction(ctx, "Deploy\n"+detail+fmt.Sprintf("\nModel: %v\nEndpoint: %v\nProvider/Agent: create missing, reuse matching; conflicts stop deployment", providerSpec["defaultModel"], providerSpec["baseURL"]), []chatPickerItem{{name: "Cancel"}, {name: "Deploy Provider and Agent"}})
+	index, ok, err := b.liftAction(ctx, "Live Agent copy (not tracked by kmx agent status/evaluate)\n"+detail+fmt.Sprintf("\nModel: %v\nEndpoint: %v\nProvider/Agent: create missing, reuse matching; conflicts stop deployment", providerSpec["defaultModel"], providerSpec["baseURL"]), []chatPickerItem{{name: "Cancel"}, {name: "Deploy Provider and Agent"}})
 	if err != nil || !ok || index == 0 {
 		return err
 	}

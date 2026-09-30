@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -40,6 +41,37 @@ func consoleBundleFixture(t *testing.T) (a *App, root, bundle, dir, name string,
 	}
 	seed := func() error { seedBundleLiveResources(t, fixtureDir, r, agentName, nil); return nil }
 	return app, root, opt.BundleDir, fixtureDir, agentName, gitPath, seed
+}
+
+// A missing bundle is the only condition that permits an explicit live-copy lift.
+// An existing directory with a missing or foreign portable definition must stop.
+func TestConsoleLiftBundleResolutionDistinguishesMissingFromInvalid(t *testing.T) {
+	root := t.TempDir()
+	if dir, found, err := consoleAgentBundle(root, "demo"); err != nil || found || dir != filepath.Join(root, "demo") {
+		t.Fatalf("missing bundle: dir=%q found=%t err=%v", dir, found, err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "demo"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := consoleAgentBundle(root, "demo"); err == nil || found {
+		t.Fatalf("incomplete bundle treated as live-copy candidate: found=%t err=%v", found, err)
+	}
+	if _, found, err := consoleAgentBundle(root, "../demo"); err == nil || found {
+		t.Fatalf("unsafe live name accepted: found=%t err=%v", found, err)
+	}
+}
+
+func TestConsoleLiftRejectsInvalidBundleBeforeCreatingTarget(t *testing.T) {
+	a, root, bundle, _, name, _, _ := consoleBundleFixture(t)
+	if err := os.Remove(filepath.Join(bundle, "bindings.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	action := agentTUIAction{kind: "lift", agent: consoleBundleRow(name), source: consoleBundleEnv(),
+		bundles: root, create: &lift.Options{Cluster: "not-created", ResourceGroup: "not-created"}}
+	_, err := a.runAgentTUIAction(action)
+	if err == nil || !strings.Contains(err.Error(), "bindings.yaml") {
+		t.Fatalf("invalid bundle did not stop target creation first: %v", err)
+	}
 }
 
 func consoleBundleEnv() agentTUIEnvironment {

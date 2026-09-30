@@ -39,6 +39,7 @@ type progressPresenter interface {
 // writes to.
 type App struct {
 	chatClusterName string
+	bundleRoot      string
 	liftReuse       bool
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)

@@ -54,17 +54,22 @@ Create an agent, choose **Chat with agent**, get a local answer, then enter
 answers; follow [getting started](docs/getting-started.md) for the steps.
 
 `kmx agent create` writes an editable bundle on a prepared target.
-`kmx agent lift` deploys that bundle to a prepared Orka target.
+`kmx agent lift` and interactive `/lift` deploy that same bundle to a prepared
+Orka target; the console offers a separately confirmed preparation step when
+Orka or the quickstart Tool is missing.
 `kmx agent status` reads its revision, readiness, drift and evaluation result.
 `kmx agent evaluate` runs the bundle's cases against that deployed revision.
 See the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts
-and evaluation.
+and evaluation. If no local bundle exists, `/lift` labels its live-copy fallback;
+that result is not tracked by status or evaluate.
 
 ## Quickstart
 
 The fixed first-answer path uses local kind, Ollama, Provider and Agent.
 The wizard prepares a local Kubernetes target while you describe your own agent.
-Choosing new cloud inference can create billable resources. Read the
+Bundle-backed `/lift` selects an existing Ready destination Provider; create
+one first if none is available. Only the labelled bundle-less live-copy route
+can create new cloud inference, which can incur charges. Read the
 [interactive lift guide](docs/interactive-lift.md) for behavior and recovery.
 
 Both paths create local cluster resources and result-reader RBAC. They install
@@ -105,7 +110,7 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 | Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Reconciles on an existing Orka target; `--plan` writes nothing |
 | Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Read-only per-target revision, readiness, drift and evaluation |
 | Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Runs `eval/*.yaml` cases as Tasks against the deployed revision; exits non-zero unless all pass |
-| Lift an agent interactively | `/lift` in interactive chat | Choose and review a destination in chat |
+| Lift an agent interactively | `/lift` in chat or console | Deploy the local bundle through the same lift as the CLI; a labelled live-copy fallback without a bundle is not tracked |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
@@ -158,7 +163,7 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
 | [Runtime setup](docs/orka.md) | First-class implementation setup, native creation, and first task |
 | [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
-| [Interactive lift](docs/interactive-lift.md) | Live agent-to-target behavior |
+| [Interactive lift](docs/interactive-lift.md) | Bundle lift with guided preparation and the labelled live-copy fallback |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
 | [Migration](docs/migrate.md) | Existing-application model-traffic bridge |
 | [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |

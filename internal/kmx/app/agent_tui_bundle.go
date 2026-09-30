@@ -99,42 +99,50 @@ type consoleBundleLoaded struct {
 	snapshot consoleBundleSnapshot
 }
 
-// consoleBundleStatus resolves the selected row's local bundle and asks the
-// shared status report about exactly this row's context and namespace.
-func (a *App) consoleBundleStatus(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, root string) consoleBundleSnapshot {
+// consoleAgentBundle resolves the same local bundle for comparison and lift.
+// Only an absent agent directory means there is no bundle to lift.
+func consoleAgentBundle(root, name string) (string, bool, error) {
 	if strings.TrimSpace(root) == "" {
 		root = consoleBundleRootDefault
 	}
-	// The name came from a live cluster. Kubernetes names cannot traverse a
-	// path, but this is untrusted input about to become one, so it is
-	// checked here rather than assumed.
-	if err := scaffold.ValidateName(agent.Name); err != nil {
-		return consoleBundleSnapshot{Err: fmt.Sprintf("agent name %q cannot name a bundle directory", agent.Name)}
+	if err := scaffold.ValidateName(name); err != nil {
+		return "", false, fmt.Errorf("agent name %q cannot name a bundle directory", name)
 	}
-	dir := filepath.Join(root, agent.Name)
-	snapshot := consoleBundleSnapshot{Dir: dir}
-	if _, err := os.Lstat(filepath.Join(dir, "agent.yaml")); err != nil {
+	dir := filepath.Join(root, name)
+	if _, err := os.Lstat(dir); err != nil {
 		if os.IsNotExist(err) {
-			snapshot.Err = fmt.Sprintf("No local bundle at %s. Open the console from the repository that holds it, or pass --bundles <dir>.", filepath.Join(dir, "agent.yaml"))
-		} else {
-			snapshot.Err = "cannot read the local bundle: " + err.Error()
+			return dir, false, nil
 		}
-		return snapshot
+		return dir, false, fmt.Errorf("cannot read local bundle: %w", err)
 	}
-
-	// Refuse a different agent before status can inspect any cluster objects.
 	resolved, err := resolveOrkaPath(dir)
 	if err != nil {
-		snapshot.Err = fmt.Sprintf("resolve bundle: %v", err)
-		return snapshot
+		return dir, false, fmt.Errorf("resolve bundle: %w", err)
 	}
-	name, _, _, err := readBundlePortableAgent(resolved)
+	if err := checkLiftBundle(resolved); err != nil {
+		return dir, false, err
+	}
+	actual, _, _, err := readBundlePortableAgent(resolved)
+	if err != nil {
+		return dir, false, err
+	}
+	if actual != name {
+		return dir, false, fmt.Errorf("%s defines agent %q, not %q; refusing to compare different agents", filepath.Join(dir, "agent.yaml"), actual, name)
+	}
+	return dir, true, nil
+}
+
+// consoleBundleStatus resolves the selected row's local bundle and asks the
+// shared status report about exactly this row's context and namespace.
+func (a *App) consoleBundleStatus(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, root string) consoleBundleSnapshot {
+	dir, found, err := consoleAgentBundle(root, agent.Name)
+	snapshot := consoleBundleSnapshot{Dir: dir}
 	if err != nil {
 		snapshot.Err = err.Error()
 		return snapshot
 	}
-	if name != agent.Name {
-		snapshot.Err = fmt.Sprintf("%s defines agent %q, not %q; refusing to compare different agents", filepath.Join(dir, "agent.yaml"), name, agent.Name)
+	if !found {
+		snapshot.Err = fmt.Sprintf("No local bundle at %s. Open the console from the repository that holds it, or pass --bundles <dir>.", filepath.Join(dir, "agent.yaml"))
 		return snapshot
 	}
 

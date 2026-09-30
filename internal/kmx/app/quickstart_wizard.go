@@ -1312,6 +1312,7 @@ func (a *App) quickstartOrkaChat(agent, namespace string) error {
 
 type orkaChatBackend struct {
 	liftHeader       *liftHeader
+	bundleRoot       string
 	azureDiscovery   *azureSDKDiscovery
 	app              *App
 	agent, namespace string

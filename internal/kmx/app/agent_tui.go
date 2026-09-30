@@ -29,6 +29,7 @@ type agentTUIInventoryMsg struct {
 }
 type agentTUIAction struct {
 	kind           string
+	bundles        string
 	agent          agentTUIAgent
 	source, target agentTUIEnvironment
 	create         *lift.Options
@@ -160,6 +161,7 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 			return nil
 		}
 		action := *m.action
+		action.bundles = opt.Bundles
 		m.action = nil
 		m.status = "Returned from " + action.kind
 		target, err := a.runAgentTUIAction(action)

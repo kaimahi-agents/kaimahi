@@ -203,14 +203,7 @@ func (m chatPicker) View() tea.View {
 	// All rows have fixed cell widths and the list has a fixed row budget.
 	// Neither query wrapping nor match count can change the renderer's footprint.
 	fit := func(text string) string { return ansi.Truncate(text, contentWidth, "…") }
-	var titles []string
-	for i, raw := range strings.Split(safeTerminal(m.title), "\n") {
-		styled := tuiDetailLine(raw)
-		if i == 0 {
-			styled = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Blue).Render(raw)
-		}
-		titles = append(titles, strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")...)
-	}
+	titles := chatPickerTitleLines(m.title, contentWidth)
 	maxTitles := max(1, height-8)
 	if len(titles) > maxTitles {
 		titles = titles[:maxTitles]
@@ -286,6 +279,34 @@ func (m chatPicker) View() tea.View {
 	}
 	body.WriteString("\n" + border.Render("╰"+strings.Repeat("─", panelWidth-2)+"╯"))
 	return tea.NewView(header + body.String())
+}
+
+// A plan must not be confirmable when this picker would silently drop any
+// of its decisions. Use the same wrapping and title budget as View.
+func chatPickerTitleFits(title string, width, height int, header bool) bool {
+	if width <= 0 {
+		width = 88
+	}
+	available := 24
+	if height > 0 {
+		available = max(8, min(24, height-1))
+	}
+	if header {
+		available = max(8, available-3)
+	}
+	return len(chatPickerTitleLines(title, max(6, min(96, width))-4)) <= max(1, available-8)
+}
+
+func chatPickerTitleLines(title string, width int) []string {
+	var lines []string
+	for i, raw := range strings.Split(safeTerminal(title), "\n") {
+		styled := tuiDetailLine(raw)
+		if i == 0 {
+			styled = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Blue).Render(raw)
+		}
+		lines = append(lines, strings.Split(ansi.Hardwrap(styled, width, true), "\n")...)
+	}
+	return lines
 }
 
 func pickerSelectedStyle() lipgloss.Style {

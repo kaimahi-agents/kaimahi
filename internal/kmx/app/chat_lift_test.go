@@ -9,10 +9,22 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+func TestChatRuntimeCarriesBundleRootToLift(t *testing.T) {
+	a := &App{bundleRoot: "/tmp/agent-bundles"}
+	session, err := (orkaRuntimeAdapter{app: a}).Open(t.Context(), agentruntime.Target{Name: "demo", Namespace: OrkaNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := session.(*orkaRuntimeSession).backend.bundleRoot; got != "/tmp/agent-bundles" {
+		t.Fatalf("lift bundle root = %q", got)
+	}
+}
 
 func TestLiftAzureCommandsPinSubscriptionAndIsolateCredentials(t *testing.T) {
 	target := chatLiftTarget{Subscription: "sub-id", ResourceGroup: "my-rg", Cluster: "aks", Context: "kmx-lift-target"}
