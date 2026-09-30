@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -134,7 +134,7 @@ func bundleGateCondition(evidence []bundleGateEvidence, target bundleGateTarget,
 				for _, match := range matching {
 					labels = append(labels, fmt.Sprintf("%s (%s)", match.Receipt.Target.Context, match.File))
 				}
-				sort.Strings(labels)
+				slices.Sort(labels)
 				return "evaluation receipts disagree on portable digest, case-set digest or Agent UID: " + strings.Join(labels, ", ")
 			}
 		}
