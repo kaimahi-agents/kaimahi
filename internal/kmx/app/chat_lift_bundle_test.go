@@ -320,6 +320,33 @@ func TestCancelledBundleDeployWarnsAboutPartialWrites(t *testing.T) {
 	}
 }
 
+func TestBundleReviewRejectsRemovedResultAccess(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestBundleLiftKubectlHelper$ -- \"$@\"")
+	t.Setenv("KMX_BUNDLE_INTERACTIVE_TEST", "1")
+	t.Setenv("KMX_BUNDLE_NO_RESULT_ROLE", "1")
+	if err := confirmBundleResultAccess(t.Context(), a, OrkaNamespace); err == nil || !strings.Contains(err.Error(), "result access") {
+		t.Fatalf("missing grant was accepted after review: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestBundleReviewRejectsRepointedContext(t *testing.T) {
+	a, _, _, _ := liftBundleFixture(t)
+	uid, err := a.liftClusterUID(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_LIFT_CLUSTER_UID", "another-cluster")
+	if err := confirmBundleTargetUID(t.Context(), a, uid); err == nil || !strings.Contains(err.Error(), "different cluster") {
+		t.Fatalf("context repointing was accepted: %v", err)
+	}
+}
+
 func TestBundlePlanMustStillMatchBeforeDeployment(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
 	opt.Plan = true

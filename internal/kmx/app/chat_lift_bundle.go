@@ -135,6 +135,10 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			return err
 		}
 		opt := LiftAgentBundleOptions{BundleDir: dir, ToContext: target.Context, ToNamespace: namespace, Inference: "provider:" + providers[index], Plan: true}
+		reviewUID, err := worker.liftClusterUID(ctx)
+		if err != nil {
+			return err
+		}
 		notes := &bundlePlanNotes{buffer: orkaBoundedBuffer{remaining: 64 << 10}}
 		worker.Err = notes // LiftAgentBundle sends its safe decisions through notef (Err), not Out.
 		err = worker.LiftAgentBundle(opt)
@@ -147,6 +151,9 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 				continue // target state may have changed; re-discover and re-plan.
 			}
 			return fmt.Errorf("bundle lift plan failed (no deployment): %w", err)
+		}
+		if err := confirmBundleTargetUID(ctx, &worker, reviewUID); err != nil {
+			return err
 		}
 		if !notes.complete() {
 			return fmt.Errorf("bundle plan output exceeded review limit; nothing deployed (use %s --plan to inspect it)", bundleLiftCommand(dir, target.Context, namespace, providers[index]))
@@ -179,10 +186,19 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			if err := checkBundlePlanRevision(dir, plannedDigest); err != nil {
 				return err
 			}
+			if err := confirmBundleTargetUID(deploy.operationContext(), deploy, reviewUID); err != nil {
+				return err
+			}
 			if err := confirmBundlePlan(deploy.operationContext(), deploy, opt, review); err != nil {
 				return err
 			}
 			return deploy.runPhase(phase{current: 1, total: 1, name: "Reconcile bundle"}, func() error {
+				if err := confirmBundleTargetUID(deploy.operationContext(), deploy, reviewUID); err != nil {
+					return err
+				}
+				if err := confirmBundleResultAccess(deploy.operationContext(), deploy, namespace); err != nil {
+					return err
+				}
 				return deploy.LiftAgentBundle(opt)
 			})
 		}); err != nil {
@@ -216,6 +232,28 @@ func (n *bundlePlanNotes) complete() bool { return !n.overflow }
 
 // The destination can change while a review picker is open. A fresh read-only
 // plan must still describe the same decisions before any mutation is attempted.
+func confirmBundleResultAccess(ctx context.Context, worker *App, namespace string) error {
+	ready, err := bundleResultReaderPresent(ctx, worker, namespace)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return fmt.Errorf("destination result access changed since review; prepare the Task result reader and rerun /lift")
+	}
+	return nil
+}
+
+func confirmBundleTargetUID(ctx context.Context, worker *App, reviewed string) error {
+	uid, err := worker.liftClusterUID(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot verify reviewed destination identity: %w", err)
+	}
+	if uid != reviewed {
+		return fmt.Errorf("selected context now identifies a different cluster; rerun /lift for a new plan")
+	}
+	return nil
+}
+
 func confirmBundlePlan(ctx context.Context, worker *App, opt LiftAgentBundleOptions, reviewed string) error {
 	if err := ctx.Err(); err != nil {
 		return err
