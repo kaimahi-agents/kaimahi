@@ -417,21 +417,21 @@ than the first.
      had_tap=false
      candidate_linked=false
      install_started=false
-    cleanup() {
-      local status=$?
-      if [ "$install_started" = true ]; then
-        if ! brew uninstall --force "$formula" >/dev/null 2>&1; then
-          echo "failed to uninstall candidate $formula; remove it manually" >&2
-          status=1
-        fi
-      fi
-      if [ "$candidate_linked" = true ] && [ -L "$tap_dir" ]; then rm "$tap_dir"; fi
-      if [ "$had_tap" = true ] && { [ -e "$saved_tap" ] || [ -L "$saved_tap" ]; }; then
-        mv "$saved_tap" "$tap_dir"
-      fi
-      rm -rf "$backup_root" "$trust_home"
-      exit "$status"
-    }
+     cleanup() {
+       local status=$?
+       if [ "$install_started" = true ]; then
+         if ! brew uninstall --force "$formula" >/dev/null 2>&1; then
+           echo "failed to uninstall candidate $formula; remove it manually" >&2
+           status=1
+         fi
+       fi
+       if [ "$candidate_linked" = true ] && [ -L "$tap_dir" ]; then rm "$tap_dir"; fi
+       if [ "$had_tap" = true ] && { [ -e "$saved_tap" ] || [ -L "$saved_tap" ]; }; then
+         mv "$saved_tap" "$tap_dir"
+       fi
+       rm -rf "$backup_root" "$trust_home"
+       exit "$status"
+     }
      trap cleanup EXIT
      if [ -e "$tap_dir" ] || [ -L "$tap_dir" ]; then
        mv "$tap_dir" "$saved_tap"
