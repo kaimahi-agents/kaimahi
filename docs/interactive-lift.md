@@ -82,8 +82,8 @@ Interactive Azure discovery and provisioning waits use a centered loading box
 below the lift header. Escape/Ctrl-C cancels the fetch and joins it before returning.
 
 For the bundle-less live-copy route, selecting a target starts read-only
-prerequisite discovery immediately; there is no separate Target review. Installations and resource creation retain their own
-explicit confirmations. One final deployment review defaults to Cancel and shows
+prerequisite discovery immediately; there is no separate Target review.
+Installations and resource creation retain their own explicit confirmations. One final deployment review defaults to Cancel and shows
 the Agent, destination, model, endpoint and create/reuse behavior.
 Deploy creates the selected Agent and its Provider on that target, using the
 existing installed-schema, collision, server-admission and readiness checks.
@@ -91,14 +91,14 @@ Server-managed metadata/status are dropped; Agent specification (tools, skills,
 instructions and other settings) and Provider specification are preserved.
 
 The live-copy prerequisite stage checks required Orka CRDs and controller
-readiness and offers the pinned Orka install/repair on the destination. Permission/connectivity
-failures are reported with the target context, not treated as a missing install.
+readiness and offers the pinned Orka install/repair on the destination.
+Permission/connectivity failures are reported with the target context, not treated as a missing install.
 It also offers installation of the KMX read-only Kubernetes tool when referenced
 and absent. Other Tool/Skill resources must be provisioned separately.
 
-Live-copy inference selection lists ready Providers in the destination namespace,
-plus Azure Foundry and an explicit keep-source-configuration option. Choosing a remote
-Provider copies its configuration into the new Agent's Provider and uses its
+Live-copy inference selection lists ready Providers in the destination
+namespace, plus Azure Foundry and an explicit keep-source-configuration option.
+Choosing a remote Provider copies its configuration into the new Agent's Provider and uses its
 existing target Secret reference.
 
 Foundry selection browses AIServices/OpenAI accounts and existing model
@@ -184,18 +184,18 @@ and restored between Azure fetches. It shows the source Agent/context, destinati
 and the six-step timeline **Target → Orka → Inference → Tools → Deploy → Connect**.
 The active step is highlighted; narrow windows use a compact numbered bar.
 
-Approved Orka installs/repairs, Kubernetes tool installation and live-copy
-deployment open a bordered **LIFT deployment pane** showing the Agent, destination, elapsed
-time and real stage states. Only the active stage animates; no percentages are
+Approved Orka installs/repairs, Kubernetes tool installation, bundle
+reconciliation and live-copy deployment open a bordered **LIFT deployment
+pane** showing the Agent, destination, elapsed time and real stage states. Only the active stage animates; no percentages are
 estimated. Orka installation reports installer fetch, wrapper credential
-reconciliation, and installer application/readiness. Final deployment reports
-schema/prerequisite checks, server admission, Provider creation and Ready wait,
-then Agent creation and Ready wait.
+reconciliation, and installer application/readiness. The bundle pane reports reconciliation through the shared lift operation;
+live-copy deployment reports schema/prerequisite checks, server admission,
+Provider creation and Ready wait, then Agent creation and Ready wait.
 
 Completion or failure stays visible until Enter returns to the lift/chat flow.
 On failure, **r** retries the current operation without repeating target selection.
-Final deployment rechecks existing components on each attempt, so a completed
-Provider is reused while an absent Agent is created. No Task is replayed by this
+Deployment rechecks existing components on each attempt, so a completed
+Provider can be reused while an absent Agent is created. No Task is replayed by this
 declarative retry path. Reused creation stages are marked `↪ (reused)` and still
 followed by current-generation readiness waits.
 Ctrl-C or Escape during work cancels the operation, waits for its worker to stop,
