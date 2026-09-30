@@ -494,7 +494,7 @@ func TestOrkaOnlineDeploysExactlyTheRenderedBytes(t *testing.T) {
 			// into them: a digest cannot be part of what it hashes.
 			metadata := c.Document["metadata"].(map[string]any)
 			annotations, _ := metadata["annotations"].(map[string]any)
-			for _, marker := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+			for _, marker := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, orkaOriginMarker} {
 				if annotations[marker] == nil {
 					t.Fatalf("%s written without %s", c.Document["kind"], marker)
 				}

@@ -17,6 +17,7 @@ const (
 	orkaBundleMarker   = "kaimahi.dev/bundle"
 	orkaPortableMarker = "kaimahi.dev/portable-digest"
 	orkaRenderedMarker = "kaimahi.dev/rendered-digest"
+	orkaOriginMarker   = "kaimahi.dev/origin"
 )
 
 type orkaReconcileCheck struct {
@@ -179,6 +180,7 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 			return check, fmt.Errorf("prepare %s/%s create: %w", kind, name, err)
 		}
 		addOrkaMarker(doc, marker)
+		addOrkaMarker(doc, map[string]any{orkaOriginMarker: "created"})
 		body, err := json.Marshal(doc)
 		if err != nil {
 			return check, fmt.Errorf("encode %s/%s create: %w", kind, name, err)
@@ -270,7 +272,9 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 	}
 	wantedAnnotations, _ := desired["metadata"].(map[string]any)["annotations"].(map[string]any)
 	for k, v := range wantedAnnotations {
-		currentAnnotations[k] = v
+		if k != orkaOriginMarker {
+			currentAnnotations[k] = v
+		}
 	}
 	if _, rendered := wantedAnnotations["kaimahi.dev/description"]; !rendered {
 		delete(currentAnnotations, "kaimahi.dev/description")
@@ -288,6 +292,9 @@ func (a *App) inspectOrkaReconcile(ctx context.Context, namespace string, desire
 		replacementMeta["labels"] = currentLabels
 	}
 	addOrkaMarker(replacement, marker)
+	if check.outcome == agentruntime.ResourceAdopted {
+		addOrkaMarker(replacement, map[string]any{orkaOriginMarker: "adopted"})
+	}
 	check.existing = live
 	check.candidate = replacement
 	return check, nil
@@ -314,6 +321,9 @@ func orkaRenderedMetadataEqual(existing, desired map[string]any) bool {
 		wanted, _ := desired[key].(map[string]any)
 		actual, _ := existing[key].(map[string]any)
 		for k, v := range wanted {
+			if key == "annotations" && k == orkaOriginMarker {
+				continue
+			}
 			if !reflect.DeepEqual(actual[k], v) {
 				return false
 			}
@@ -382,7 +392,7 @@ func orkaChangedFields(live, candidate map[string]any) []string {
 		oldFields, _ := oldMeta[field].(map[string]any)
 		newFields, _ := newMeta[field].(map[string]any)
 		for k, v := range newFields {
-			if k == orkaBundleMarker || k == orkaPortableMarker || k == orkaRenderedMarker {
+			if k == orkaBundleMarker || k == orkaPortableMarker || k == orkaRenderedMarker || k == orkaOriginMarker {
 				continue
 			}
 			if !reflect.DeepEqual(oldFields[k], v) {
