@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Validate a release version, and self-test that validation.
+"""Validate release versions and checksum manifests.
 
 GoReleaser (.goreleaser.yaml) renders the actual Homebrew formula now; this
-script's release-time job is narrower: `--check-version` is what
-release.yml's version-format gate calls before anything is built. The
-formula-rendering functions below are retained only because `--selftest`
-still exercises their semver, checksum and asset-base validation — the same
-logic GoReleaser's own inputs (a version tag, a checksums.txt) must satisfy.
+script checks the version before anything is built, then verifies GoReleaser's
+checksum manifest contains exactly the four expected assets. The rendering
+functions remain available for that validation and their focused self-test;
+their output is not the formula published by the release workflow.
 
 Run:  python3 scripts/homebrew-formula.py --check-version v0.3.0
+      python3 scripts/homebrew-formula.py v0.3.0 checksums.txt >/dev/null
       python3 scripts/homebrew-formula.py --selftest
 """
 

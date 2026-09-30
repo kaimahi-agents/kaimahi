@@ -2,11 +2,11 @@
 # never by hand against a real tag — see docs/releases.md#cutting-a-release.
 #
 # Keyless, like the rest of this project's CI (docs/releases.md,
-# .github/workflows/ci.yml's "release job stays keyless" check): this file
-# authorizes no secret beyond the GITHUB_TOKEN the run already has, and
-# `brews.skip_upload` below is load-bearing, not a stray default — flipping it
-# would make this job push to kaimahi-agents/homebrew-tap on its own, which is
-# a decision this project has deliberately kept a reviewed human PR.
+# .github/workflows/ci.yml's "release job stays keyless" check): the workflow
+# invokes GoReleaser with publishing disabled, validates its output, then gives
+# those exact files to `gh release create`. `brews.skip_upload` below is
+# defense in depth: even another invocation that enables publishing must not
+# push to kaimahi-agents/homebrew-tap, which remains a reviewed human PR.
 version: 2
 
 project_name: kmx

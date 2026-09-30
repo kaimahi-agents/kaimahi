@@ -204,19 +204,29 @@ jobs:
               print(f"release.yml must default to contents: read, got {wf.get('permissions')}")
               sys.exit(1)
           release_text = open(".github/workflows/release.yml").read()
-          if "goreleaser release" not in release_text:
-              print("release.yml must build and publish the release through GoReleaser")
+          if "goreleaser release --clean --skip=publish,validate" not in release_text:
+              print("release.yml must build the release through GoReleaser without publishing")
               sys.exit(1)
           if "dist/homebrew/Formula/kmx.rb" not in release_text:
               print("release.yml must attach the rendered Homebrew formula as a release asset")
               sys.exit(1)
-          # GoReleaser always writes an explicit `version "X.Y.Z"` line,
-          # but Homebrew infers the same version from the release URL, so
-          # `brew audit --strict` — which homebrew-tap's CI runs on every
-          # PR — fails with "version is redundant with version scanned
-          # from URL" if it stays. Verified against a real release.
-          if release_text.count('''sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb''') < 2:
-              print("release.yml must strip the redundant `version` line before every place it uses the rendered formula (both goreleaser passes re-render it)")
+          # Stable production URLs let Homebrew infer the version and strict
+          # audit rejects restating it. Prerelease formulas retain an explicit
+          # version because their URL inference is not reliable.
+          if release_text.count('''perl -i -ne 'print unless /^  version "/' dist/homebrew/Formula/kmx.rb''') != 1:
+              print("release.yml must strip the redundant `version` line from the one checked GoReleaser build")
+              sys.exit(1)
+          if 'grep -qx "  version \\"${VERSION#v}\\"" dist/homebrew/Formula/kmx.rb' not in release_text:
+              print("release.yml must retain and verify GoReleaser's explicit version for prerelease formulas")
+              sys.exit(1)
+          if "gh release create" not in release_text:
+              print("release.yml must publish the already-checked artifact set in one draft-to-public release operation")
+              sys.exit(1)
+          if 'scripts/homebrew-formula.py "$VERSION" dist/checksums.txt' not in release_text:
+              print("release.yml must reject an incomplete or unexpected checksum manifest before publication")
+              sys.exit(1)
+          if re.search(r"goreleaser release(?! --clean --skip=publish,validate)", release_text):
+              print("release.yml must not rebuild artifacts during publication")
               sys.exit(1)
           goreleaser_text = open(".goreleaser.yaml").read()
           goreleaser_cfg = yaml.safe_load(goreleaser_text)

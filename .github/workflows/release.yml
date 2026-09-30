@@ -217,7 +217,9 @@ jobs:
         run: |
           set -euo pipefail
           for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
-            ls dist/kmx_"$target"*/kmx >/dev/null
+            matches=(dist/kmx_"$target"*/kmx)
+            test "${#matches[@]}" -eq 1
+            test -f "${matches[0]}"
           done
 
       # The binary must say what it is. That is what version stamping is
@@ -249,58 +251,75 @@ jobs:
       # `archives.name_template` sets that, matching what install.sh and
       # docs/releases.md's "by hand" section already expect.
       - name: Checksums match the built binaries
+        env:
+          VERSION: ${{ steps.what.outputs.version }}
         run: |
           set -euo pipefail
           cat dist/checksums.txt
+          # The renderer's parser enforces exactly one entry for each of the
+          # four expected assets, with no unknown names. Without this, the
+          # loop below would vacuously accept an empty or incomplete manifest.
+          python3 scripts/homebrew-formula.py "$VERSION" dist/checksums.txt >/dev/null
           while read -r want name; do
             suffix=$(printf '%s' "${name#kmx-}" | tr - _)
-            bin=$(echo dist/kmx_"$suffix"*/kmx)
-            got=$(sha256sum "$bin" | cut -d' ' -f1)
+            matches=(dist/kmx_"$suffix"*/kmx)
+            test "${#matches[@]}" -eq 1
+            test -f "${matches[0]}"
+            got=$(sha256sum "${matches[0]}" | cut -d' ' -f1)
             test "$want" = "$got" || { echo "checksum mismatch for $name" >&2; exit 1; }
           done < dist/checksums.txt
 
-      # GoReleaser always emits an explicit `version "X.Y.Z"` line, but
-      # Homebrew can parse the same version out of the release URL, so
-      # `brew audit --strict` (which homebrew-tap's CI runs) fails with
-      # "version is redundant with version scanned from URL" if it stays.
-      # Verified locally against a real release: stripping this line is
-      # the only change needed for the rendered formula to pass
-      # `brew style` and `brew audit --strict --online`.
+      # GoReleaser always emits an explicit `version "X.Y.Z"` line. Homebrew
+      # infers stable versions from their release URLs and strict audit rejects
+      # the redundant line, but prerelease URL inference is not reliable and
+      # those formulas need the explicit version retained.
       - name: Homebrew formula renders
+        env:
+          VERSION: ${{ steps.what.outputs.version }}
+          PRERELEASE: ${{ steps.what.outputs.prerelease }}
         run: |
           set -euo pipefail
-          sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb
+          if [ "$PRERELEASE" = true ]; then
+            grep -qx "  version \"${VERSION#v}\"" dist/homebrew/Formula/kmx.rb
+          else
+            perl -i -ne 'print unless /^  version "/' dist/homebrew/Formula/kmx.rb
+            ! grep -q '^  version "' dist/homebrew/Formula/kmx.rb
+          fi
           ruby -c dist/homebrew/Formula/kmx.rb
           test -s dist/homebrew/Formula/kmx.rb
-          ! grep -q '^  version "' dist/homebrew/Formula/kmx.rb
 
-      # Only now, with every check above green, does anything get published
-      # — a second, identical invocation, this time without --skip=publish.
-      # The build is trimpath/CGO_ENABLED=0 and deterministic, so this is
-      # the same bytes just verified, not new code taking its place.
-      - name: Publish the release
-        if: steps.what.outputs.dry_run == 'false'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GORELEASER_CURRENT_TAG: ${{ steps.what.outputs.version }}
-        run: goreleaser release --clean --release-notes="$RUNNER_TEMP/release-notes.md"
-
-      # The formula is a deliberate exception to skip_upload's "nothing
-      # pushed anywhere": it rides along as a release asset so a maintainer
-      # can fetch the reviewed one, not re-render it — see
-      # docs/releases.md#cutting-a-release, step 5. "Publish the release"
-      # above re-ran goreleaser and so re-rendered the formula from
-      # scratch, undoing the strip above; do it again before it is
-      # uploaded.
-      - name: Attach the Homebrew formula to the release
+      # Only now, with every check above green, does anything get published.
+      # Create the GitHub release with the exact files just checked rather
+      # than asking GoReleaser to rebuild them. `gh release create` keeps the
+      # release as a draft while it uploads every named asset, then publishes
+      # it, so a failed formula upload cannot expose a partial public release.
+      - name: Publish the checked release artifacts
         if: steps.what.outputs.dry_run == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.what.outputs.version }}
+          PRERELEASE: ${{ steps.what.outputs.prerelease }}
         run: |
           set -euo pipefail
-          sed -i '/^  version "/d' dist/homebrew/Formula/kmx.rb
-          gh release upload "$VERSION" dist/homebrew/Formula/kmx.rb
+          publish_dir="$RUNNER_TEMP/release-assets"
+          mkdir -p "$publish_dir"
+          assets=()
+          for name in kmx-linux-amd64 kmx-linux-arm64 kmx-darwin-amd64 kmx-darwin-arm64; do
+            suffix=$(printf '%s' "${name#kmx-}" | tr - _)
+            matches=(dist/kmx_"$suffix"*/kmx)
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "$publish_dir/$name"
+            cmp "${matches[0]}" "$publish_dir/$name"
+            assets+=("$publish_dir/$name")
+          done
+          cp dist/checksums.txt "$publish_dir/checksums.txt"
+          cp dist/homebrew/Formula/kmx.rb "$publish_dir/kmx.rb"
+          cmp dist/checksums.txt "$publish_dir/checksums.txt"
+          cmp dist/homebrew/Formula/kmx.rb "$publish_dir/kmx.rb"
+          assets+=("$publish_dir/checksums.txt" "$publish_dir/kmx.rb")
+          flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag)
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$VERSION" "${flags[@]}" "${assets[@]}"
 
       # A dry run publishes nothing; the artifacts are how its output is
       # inspected (and how a clean machine can be handed the exact bytes a
