@@ -50,7 +50,31 @@ func TestBundleLiftKubectlHelper(t *testing.T) {
 	}
 	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && (args[i+1] == "role" || args[i+1] == "rolebinding") && args[i+2] == orkaResultAccount {
 		if os.Getenv("KMX_BUNDLE_NO_RESULT_ROLE") != "1" {
-			fmt.Print(args[i+1] + ".rbac.authorization.k8s.io/" + orkaResultAccount)
+			if slices.Contains(args, "json") {
+				if args[i+1] == "role" {
+					verbs := `["get"]`
+					if os.Getenv("KMX_BUNDLE_BAD_RESULT_ROLE") == "1" {
+						verbs = `["list"]`
+					}
+					resourceNames := ""
+					if os.Getenv("KMX_BUNDLE_LIMITED_RESULT_ROLE") == "1" {
+						resourceNames = `,"resourceNames":["an-old-task"]`
+					}
+					fmt.Printf(`{"kind":"Role","metadata":{"name":%q,"namespace":"orka-system"},"rules":[{"apiGroups":["core.orka.ai"],"resources":["tasks"],"verbs":%s%s}]}`, orkaResultAccount, verbs, resourceNames)
+				} else {
+					subject := orkaResultAccount
+					if os.Getenv("KMX_BUNDLE_BAD_RESULT_BINDING") == "1" {
+						subject = "some-other-account"
+					}
+					role := orkaResultAccount
+					if os.Getenv("KMX_BUNDLE_BAD_RESULT_REF") == "1" {
+						role = "some-other-role"
+					}
+					fmt.Printf(`{"kind":"RoleBinding","metadata":{"name":%q,"namespace":"orka-system"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":%q},"subjects":[{"kind":"ServiceAccount","name":%q,"namespace":"orka-system"}]}`, orkaResultAccount, role, subject)
+				}
+			} else {
+				fmt.Print(args[i+1] + ".rbac.authorization.k8s.io/" + orkaResultAccount)
+			}
 		}
 		os.Exit(0)
 	}
@@ -178,6 +202,22 @@ func TestBundleLiftRefusesMissingResultGrant(t *testing.T) {
 	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
 
+func TestBundleResultReaderRefusesWrongGrantOrSubject(t *testing.T) {
+	for _, flag := range []string{"KMX_BUNDLE_BAD_RESULT_ROLE", "KMX_BUNDLE_LIMITED_RESULT_ROLE", "KMX_BUNDLE_BAD_RESULT_BINDING", "KMX_BUNDLE_BAD_RESULT_REF"} {
+		t.Run(flag, func(t *testing.T) {
+			b, _, _, _, _ := interactiveBundleFixture(t, "")
+			t.Setenv(flag, "1")
+			ready, err := bundleResultReaderPresent(t.Context(), b.app, OrkaNamespace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ready {
+				t.Fatalf("%s was accepted as Task-get access", flag)
+			}
+		})
+	}
+}
+
 func TestInteractiveBundleLiftExcludesOwnAndStaleProviders(t *testing.T) {
 	b, r, opt, dir, _ := interactiveBundleFixture(t, "\r")
 	t.Setenv("KMX_BUNDLE_NO_READY", "1")
@@ -300,12 +340,33 @@ func TestInteractiveBundleLiftDoesNotOfferInstallForUnreachableController(t *tes
 	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
 
+func TestBundlePreparationRefusesRepointedContext(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	uid, err := a.liftClusterUID(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_LIFT_CLUSTER_UID", "another-cluster")
+	b := &orkaChatBackend{agent: "sample", namespace: OrkaNamespace}
+	if err := b.guardBundlePreparation(t.Context(), a, uid); err == nil || !strings.Contains(err.Error(), "different cluster") {
+		t.Fatalf("preparation reached a repointed context: %v", err)
+	}
+	if a.guarded {
+		t.Fatal("repointed target marked as authorized")
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
 func TestBundlePreparationGuardUsesPinnedRemoteContext(t *testing.T) {
 	a, _, _, _ := liftBundleFixture(t)
 	t.Setenv("KMX_RECONCILE_REMOTE", "1")
 	a.Stdin = nil
 	b := &orkaChatBackend{agent: "sample", namespace: OrkaNamespace}
-	if err := b.guardBundlePreparation(t.Context(), a); err != nil {
+	uid, err := a.liftClusterUID(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.guardBundlePreparation(t.Context(), a, uid); err != nil {
 		t.Fatalf("confirmed preparation on remote target refused: %v", err)
 	}
 	if !a.guarded {
@@ -380,6 +441,16 @@ func TestBundlePlanCannotBeConfirmedAfterOutputOverflow(t *testing.T) {
 	_, _ = fmt.Fprint(notes, "long resource decision")
 	if notes.complete() {
 		t.Fatal("truncated plan was offered for confirmation")
+	}
+}
+
+func TestBundlePlanFitMeasuresActualPickerTitle(t *testing.T) {
+	title := strings.Repeat("x", 83) + strings.Repeat("\nitem", 11)
+	if !chatPickerTitleFits(title, 88, 24, true) {
+		t.Fatal("test title does not fit without picker prefix")
+	}
+	if bundlePlanTitleFits(title, 88, 24) {
+		t.Fatal("prefix wrapped and hid the last plan decision")
 	}
 }
 

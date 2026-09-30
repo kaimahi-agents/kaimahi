@@ -58,10 +58,17 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 	if namespace == "" {
 		namespace = OrkaNamespace
 	}
+	selectedUID, err := worker.liftClusterUID(ctx)
+	if err != nil {
+		return err
+	}
 	// Do not rely on the CLI's remembered target: this review authorizes exactly
 	// the context, namespace, and Ready inference Provider selected here.
 	preparedOrka, preparedResultAccess := false, false
 	for {
+		if err := confirmBundleTargetUID(ctx, &worker, selectedUID); err != nil {
+			return err
+		}
 		missing, err := worker.missingLiftOrkaCRDs(ctx)
 		if err != nil {
 			return err
@@ -70,7 +77,7 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			if preparedOrka {
 				return fmt.Errorf("target %s still lacks Orka CRDs after preparation: %s", target.Context, strings.Join(missing, ", "))
 			}
-			if err := b.prepareBundleLiftOrka(ctx, &worker, strings.Join(missing, ", ")); err != nil {
+			if err := b.prepareBundleLiftOrka(ctx, &worker, selectedUID, strings.Join(missing, ", ")); err != nil {
 				return liftPreparationError(err)
 			}
 			preparedOrka = true
@@ -84,7 +91,7 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			if preparedOrka || (!strings.Contains(err.Error(), "no Orka controller Deployment") && !strings.Contains(err.Error(), "requested Kubernetes resource not found")) {
 				return fmt.Errorf("target %s: Orka controller unavailable: %w", target.Context, err)
 			}
-			if err := b.prepareBundleLiftOrka(ctx, &worker, "Orka controller unavailable: "+err.Error()); err != nil {
+			if err := b.prepareBundleLiftOrka(ctx, &worker, selectedUID, "Orka controller unavailable: "+err.Error()); err != nil {
 				return liftPreparationError(err)
 			}
 			preparedOrka = true
@@ -104,10 +111,13 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			if err := b.confirmLiftAction(ctx, "Prepare target "+target.Context+": chat needs a result ServiceAccount and Task-get grant before connecting.", "Prepare target: install Task result reader RBAC"); err != nil {
 				return liftPreparationError(err)
 			}
-			if err := b.guardBundlePreparation(ctx, &worker); err != nil {
+			if err := b.guardBundlePreparation(ctx, &worker, selectedUID); err != nil {
 				return err
 			}
 			if err := b.runLiftDeployment(ctx, &worker, "Prepare result access", []string{"Install result reader RBAC"}, func(w *App) error {
+				if err := confirmBundleTargetUID(w.operationContext(), w, selectedUID); err != nil {
+					return err
+				}
 				return w.runPhase(phase{current: 1, total: 1, name: "Install result reader RBAC"}, w.orkaResultReader)
 			}); err != nil {
 				return err
@@ -135,17 +145,17 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 			return err
 		}
 		opt := LiftAgentBundleOptions{BundleDir: dir, ToContext: target.Context, ToNamespace: namespace, Inference: "provider:" + providers[index], Plan: true}
-		reviewUID, err := worker.liftClusterUID(ctx)
-		if err != nil {
+		if err := confirmBundleTargetUID(ctx, &worker, selectedUID); err != nil {
 			return err
 		}
+		reviewUID := selectedUID
 		notes := &bundlePlanNotes{buffer: orkaBoundedBuffer{remaining: 64 << 10}}
 		worker.Err = notes // LiftAgentBundle sends its safe decisions through notef (Err), not Out.
 		err = worker.LiftAgentBundle(opt)
 		if err != nil {
 			renderer.operation("LIFT", "", colorBlue, "Bundle plan could not proceed: "+err.Error())
 			if b.bundleLiftPreparable(namespace, err) {
-				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, namespace, err); prepErr != nil {
+				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, selectedUID, namespace, err); prepErr != nil {
 					return liftPreparationError(prepErr)
 				}
 				continue // target state may have changed; re-discover and re-plan.
@@ -287,24 +297,64 @@ func bundlePlanFitsTerminal(out io.Writer, title string) bool {
 	if file, ok := out.(*os.File); ok && isInteractiveTerminal(file) {
 		width, height, _ = term.GetSize(int(file.Fd()))
 	}
-	return chatPickerTitleFits(title, width, height, true)
+	return bundlePlanTitleFits(title, width, height)
+}
+
+func bundlePlanTitleFits(title string, width, height int) bool {
+	return chatPickerTitleFits("LIFT · "+title, width, height, true)
 }
 
 func bundleResultReaderPresent(ctx context.Context, worker *App, namespace string) (bool, error) {
-	for _, resource := range []struct{ kind, identity string }{
-		{"serviceaccount", "serviceaccount/" + orkaResultAccount},
-		{"role", "role.rbac.authorization.k8s.io/" + orkaResultAccount},
-		{"rolebinding", "rolebinding.rbac.authorization.k8s.io/" + orkaResultAccount},
-	} {
-		raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", resource.kind, orkaResultAccount, "--ignore-not-found=true", "-o", "name")
-		if err != nil {
-			return false, fmt.Errorf("cannot inspect result %s in %s: %w", resource.kind, namespace, err)
-		}
-		if strings.TrimSpace(string(raw)) != resource.identity {
-			return false, nil
+	raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", "serviceaccount", orkaResultAccount, "--ignore-not-found=true", "-o", "name")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect result ServiceAccount in %s: %w", namespace, err)
+	}
+	if strings.TrimSpace(string(raw)) != "serviceaccount/"+orkaResultAccount {
+		return false, nil
+	}
+	raw, err = worker.orkaCapture(ctx, nil, "-n", namespace, "get", "role", orkaResultAccount, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect result Role in %s: %w", namespace, err)
+	}
+	if len(raw) == 0 {
+		return false, nil
+	}
+	var role struct {
+		Kind     string
+		Metadata struct{ Name, Namespace string }
+		Rules    []struct {
+			APIGroups, Resources, Verbs, ResourceNames []string
 		}
 	}
-	return true, nil
+	if err := json.Unmarshal(raw, &role); err != nil {
+		return false, fmt.Errorf("invalid result Role in %s: %w", namespace, err)
+	}
+	if role.Kind != "Role" || role.Metadata.Name != orkaResultAccount || role.Metadata.Namespace != namespace || len(role.Rules) != 1 {
+		return false, nil
+	}
+	rule := role.Rules[0]
+	if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "core.orka.ai" || len(rule.Resources) != 1 || rule.Resources[0] != "tasks" || len(rule.Verbs) != 1 || rule.Verbs[0] != "get" || len(rule.ResourceNames) != 0 {
+		return false, nil
+	}
+	raw, err = worker.orkaCapture(ctx, nil, "-n", namespace, "get", "rolebinding", orkaResultAccount, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect result RoleBinding in %s: %w", namespace, err)
+	}
+	if len(raw) == 0 {
+		return false, nil
+	}
+	var binding struct {
+		Kind     string
+		Metadata struct{ Name, Namespace string }
+		RoleRef  struct{ APIGroup, Kind, Name string }
+		Subjects []struct{ Kind, Name, Namespace string }
+	}
+	if err := json.Unmarshal(raw, &binding); err != nil {
+		return false, fmt.Errorf("invalid result RoleBinding in %s: %w", namespace, err)
+	}
+	return binding.Kind == "RoleBinding" && binding.Metadata.Name == orkaResultAccount && binding.Metadata.Namespace == namespace &&
+		binding.RoleRef.APIGroup == "rbac.authorization.k8s.io" && binding.RoleRef.Kind == "Role" && binding.RoleRef.Name == orkaResultAccount &&
+		len(binding.Subjects) == 1 && binding.Subjects[0].Kind == "ServiceAccount" && binding.Subjects[0].Name == orkaResultAccount && binding.Subjects[0].Namespace == namespace, nil
 }
 
 func (b *orkaChatBackend) bundleLiftProviders(ctx context.Context, worker *App, namespace string) ([]string, error) {
@@ -356,7 +406,10 @@ func (b *orkaChatBackend) bundleLiftPreparable(namespace string, planErr error) 
 
 // A preparation confirmation authorizes one pinned destination, not ambient
 // kubeconfig or the following bundle deployment's separate confirmation.
-func (b *orkaChatBackend) guardBundlePreparation(ctx context.Context, worker *App) error {
+func (b *orkaChatBackend) guardBundlePreparation(ctx context.Context, worker *App, selectedUID string) error {
+	if err := confirmBundleTargetUID(ctx, worker, selectedUID); err != nil {
+		return err
+	}
 	raw, err := worker.orkaCapture(ctx, nil, "config", "view", "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot inspect preparation target: %w", err)
@@ -372,23 +425,31 @@ func (b *orkaChatBackend) guardBundlePreparation(ctx context.Context, worker *Ap
 	}, worker.Err, nil); err != nil {
 		return err
 	}
+	if err := confirmBundleTargetUID(ctx, worker, selectedUID); err != nil {
+		return err
+	}
 	worker.guarded = true
 	return nil
 }
 
-func (b *orkaChatBackend) prepareBundleLiftOrka(ctx context.Context, worker *App, missing string) error {
+func (b *orkaChatBackend) prepareBundleLiftOrka(ctx context.Context, worker *App, selectedUID, missing string) error {
 	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": missing Orka CRDs ("+missing+"). Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install Orka "+OrkaVersion); err != nil {
 		return err
 	}
-	if err := b.guardBundlePreparation(ctx, worker); err != nil {
+	if err := b.guardBundlePreparation(ctx, worker, selectedUID); err != nil {
 		return err
 	}
-	return b.installLiftOrkaPane(ctx, worker)
+	return b.runLiftDeployment(ctx, worker, "Install Orka", []string{"Fetch the pinned chart", "Apply chart CRDs and wait", "Install harness-v2 and result reader"}, func(w *App) error {
+		if err := confirmBundleTargetUID(w.operationContext(), w, selectedUID); err != nil {
+			return err
+		}
+		return w.OrkaInstall(OrkaOptions{Provider: "-"})
+	})
 }
 
-func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *App, namespace string, planErr error) error {
+func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *App, selectedUID, namespace string, planErr error) error {
 	if strings.Contains(planErr.Error(), "Orka controller") || strings.Contains(planErr.Error(), "Orka CRDs") {
-		return b.prepareBundleLiftOrka(ctx, worker, planErr.Error())
+		return b.prepareBundleLiftOrka(ctx, worker, selectedUID, planErr.Error())
 	}
 	if namespace != OrkaNamespace {
 		return fmt.Errorf("Tool/%s must be prepared in destination namespace %s before retrying /lift", quickstartK8sTool, namespace)
@@ -396,10 +457,13 @@ func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *A
 	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": Kubernetes inventory Tool unavailable. Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install read-only Kubernetes Tool and RBAC"); err != nil {
 		return err
 	}
-	if err := b.guardBundlePreparation(ctx, worker); err != nil {
+	if err := b.guardBundlePreparation(ctx, worker, selectedUID); err != nil {
 		return err
 	}
 	return b.runLiftDeployment(ctx, worker, "Prepare Kubernetes Tool", []string{"Install tool server and wait Ready"}, func(w *App) error {
+		if err := confirmBundleTargetUID(w.operationContext(), w, selectedUID); err != nil {
+			return err
+		}
 		return w.runPhase(phase{current: 1, total: 1, name: "Install tool server and wait Ready"}, w.installQuickstartK8sTool)
 	})
 }
