@@ -99,8 +99,8 @@ type consoleBundleLoaded struct {
 	snapshot consoleBundleSnapshot
 }
 
-// consoleAgentBundle resolves the same local bundle for comparison and lift.
-// Only an absent agent directory means there is no bundle to lift.
+// consoleAgentBundle resolves the same local Orka bundle for comparison and
+// lift. Only an absent agent directory means there is no bundle to lift.
 func consoleAgentBundle(root, name string) (string, bool, error) {
 	if strings.TrimSpace(root) == "" {
 		root = consoleBundleRootDefault

@@ -22,6 +22,45 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- `kmx agent create --runtime kagent <name>` adds an explicit, create-only
+  integration for an already-installed exact Kagent v0.10.2. Orka remains the
+  default and all no-flag behavior is unchanged. Offline create needs no cluster
+  or tool and writes a review artifact plus portable bundle; online create
+  requires a separately provisioned Secret, proves the exact controller
+  version and its release-reported pinned commit prefix, CRD schemas,
+  controller/runtime image configuration and identities, then creates
+  ModelConfig and Agent in order and waits for their
+  current-generation conditions and the Agent-owned workload. It never installs
+  or upgrades Kagent, adopts or updates existing objects, or rolls back partial
+  writes. A successful create writes a private prompt/answer-free receipt.
+- Kagent create supports namespace, description, `openai|anthropic` model
+  provider, model, Secret name/key, optional base URL and instructions, one
+  `server:tool1,tool2` binding, `go|python` declarative runtime, optional
+  applying task, and output/bundle/no-apply/dry-run controls. Orka skills, rate
+  limits, schema target, result ServiceAccount, and Orka result Service/port
+  flags are refused. An optional task sends once, never retries ambiguity, and
+  validates and sanitizes a completed answer. Trusted-proxy task submission is
+  refused because KMX accepts no Kagent bearer credential; Kagent database
+  prompt/history/answer retention and possible Kubernetes Service-proxy audit
+  capture are disclosed before the write.
+- A seventh required e2e shard now exercises that create-only contract against
+  a disposable kind cluster. CI pulls the official exact-v0.10.2 charts by OCI
+  digest, verifies their archive hashes and chart versions, and installs them
+  externally as test preconditions, then proves KMX uses neither Helm nor the
+  Kagent CLI, gets an exact answer from a keyless in-cluster fixture, and leaves
+  live ownership/readiness and a private prompt/answer-free receipt. This is
+  evidence for create against a preinstalled runtime, not a KMX installer claim.
+
+### Changed
+
+- Kagent bundles are explicitly refused by the currently Orka-only lift,
+  status, evaluate, console bundle, and interactive `/lift` paths. No Kagent
+  chat, list, show, status, lift, evaluate, console, quickstart, `up`, installer,
+  or AKS payload was restored; historical lift records remain teardown-only.
+  Runtime selection and model-provider selection remain distinct concepts.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

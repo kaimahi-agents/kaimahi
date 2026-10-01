@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -9,7 +10,7 @@ import (
 )
 
 func newAgentCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "agent", Short: "Create, inspect, and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group := &cobra.Command{Use: "agent", Short: "Create agents; inspect and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentChatCommand(state),
 		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx agent show <name> --namespace <namespace>"))
 	return group
@@ -60,12 +61,20 @@ chat resolves against.`,
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
-	cmd := &cobra.Command{Use: "create [name]", Short: "Create an Orka Agent and Provider, optionally run a Task", Args: usageArgs(0, 1, "kmx agent create [<name>] [flags]"), Long: `Create a declarative Orka Agent and its Provider as reviewable Kubernetes YAML.
+	cmd := &cobra.Command{Use: "create [name]", Short: "Create an Orka or Kagent declarative Agent", Long: `Create a declarative Orka Agent and its Provider as reviewable Kubernetes YAML.
 Select explicitly the namespace the Orka controller watches. Provider type, model
 identifier such as local/qwen2.5:3b, and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
+
+With --runtime kagent, create targets a preinstalled exact Kagent v0.10.2 and
+requires a name and --description. --kagent-runtime selects go or python. Kagent tools use exactly
+one server:tool1,tool2 binding; its Secret skeleton is review-only, and online
+deployment creates ModelConfig then Agent without adoption or rollback. With
+--task, Kagent stores the full task prompt, history, and answer in its database;
+default upstream session retention is unlimited. Kubernetes audit policy may
+also capture Service-proxy request and response bodies.
 
 Offline output uses pinned v0.2.0 CRDs by default (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret
@@ -80,7 +89,9 @@ revocation. v0.1.3 authenticates result reads but does not enforce Task
 read RBAC; pinned main requires namespaced get on tasks.core.orka.ai. Results use
 loopback HTTP through a context-pinned port-forward. Fresh names and UID checks
 do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.`}
-	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit namespace the Orka controller watches (required)")
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
+	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "Kagent declarative runtime: go or python")
+	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai or anthropic (required)")
 	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier (required)")
@@ -88,9 +99,9 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "api-key", "key name within the existing Secret; never a value")
 	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "optional HTTP(S) Provider endpoint, no credentials/query/fragment")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
-	cmd.Flags().StringVar(&opt.Tools, "tools", "", "comma-separated explicit Orka tool names (not server:tool)")
+	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; Kagent: exactly one server:tool1,tool2 binding")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
-	cmd.Flags().StringVar(&opt.Task, "task", "", "first AI Task prompt; applying authorizes execution")
+	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one Kagent A2A message; applying authorizes execution")
 	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
 	cmd.Flags().StringVar(&opt.ProviderRequestsPerMinute, "provider-requests-per-minute", "", "explicit positive Provider request limit (int32)")
@@ -104,10 +115,44 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
+	_ = cmd.RegisterFlagCompletionFunc("kagent-runtime", staticCompletion([]string{"go", "python"}))
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(opt.Runtime) != opt.Runtime {
+			return fmt.Errorf("--runtime must be exactly orka or kagent")
+		}
+		if opt.Runtime != "orka" && opt.Runtime != "kagent" {
+			return fmt.Errorf("unsupported agent runtime; use orka or kagent")
+		}
+		if opt.Runtime == "kagent" && len(args) != 1 {
+			return fmt.Errorf("usage: kmx agent create <name> --runtime kagent [flags]")
+		}
+		if len(args) > 1 {
+			return fmt.Errorf("usage: kmx agent create [<name>] [flags]")
+		}
+		if opt.Runtime != "kagent" && cmd.Flags().Changed("kagent-runtime") {
+			return fmt.Errorf("--kagent-runtime requires --runtime kagent")
+		}
+		if opt.Runtime == "kagent" {
+			if opt.KagentRuntime != "go" && opt.KagentRuntime != "python" {
+				return fmt.Errorf("--kagent-runtime must be go or python")
+			}
+			for _, name := range []string{
+				"skills", "orka-api-service", "result-port", "agent-requests-per-minute",
+				"agent-tokens-per-minute", "provider-requests-per-minute",
+				"provider-tokens-per-minute", "schema-target", "result-service-account",
+			} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("--%s is unsupported or Orka-only with --runtime kagent", name)
+				}
+			}
+		}
+		return nil
+	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
-		if len(cmd.Flags().Args()) == 0 {
+		if opt.Runtime == "orka" && len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)
 		}
 		opt.Name = cmd.Flags().Arg(0)

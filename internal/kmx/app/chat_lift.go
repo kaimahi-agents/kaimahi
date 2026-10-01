@@ -172,6 +172,11 @@ func (b *orkaChatBackend) liftAgent(ctx context.Context, renderer *chatRenderer)
 	b.liftHeader = &liftHeader{agent: b.agent, source: b.app.Cfg.KubeContext}
 	defer func() { b.liftHeader = nil }()
 	b.paintLiftHeader()
+	// Refuse an existing unsupported or invalid local bundle before target
+	// discovery reads kubeconfig contexts or Azure subscriptions.
+	if _, _, err := consoleAgentBundle(b.bundleRoot, b.agent); err != nil {
+		return fmt.Errorf("local bundle is invalid; refusing live-copy fallback: %w", err)
+	}
 	target, ok, err := b.chooseLiftTarget(ctx)
 	if err != nil || !ok {
 		return err

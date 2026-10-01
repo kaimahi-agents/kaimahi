@@ -39,8 +39,8 @@ type bundleLiftReceipt struct {
 	GitCommit string                     `json:"gitCommit"`
 }
 
-// LiftAgentBundle deploys only the portable agent.yaml. In particular it does
-// not copy a source Provider, credentials or Tasks from another cluster.
+// LiftAgentBundle deploys only an Orka portable agent.yaml. In particular it
+// does not copy a source Provider, credentials or Tasks from another cluster.
 func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	ctx := a.operationContext()
 	if a.Cfg == nil || a.Run == nil {
@@ -54,6 +54,9 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		return fmt.Errorf("refusing credential-shaped bundle path")
 	}
 	if err := checkLiftBundle(bundle); err != nil {
+		return err
+	}
+	if _, _, _, err := readBundlePortableAgent(bundle); err != nil {
 		return err
 	}
 	if err := checkLiftReceiptsDir(bundle); err != nil {

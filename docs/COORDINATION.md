@@ -45,9 +45,12 @@ entry-point contract. Historical numbered decisions are not a second process.
 - **The seam is a bridge, not a destination.** The seam shrinking to nothing
   is success. Do not grow a second platform around it. `orka.harness.v2` was
   rejected; it is not a target.
-- **Native-Orka-only versus kagent YAML authoring remains OPEN.**
-  `docs/orka.md` is a recommendation, not a user ruling. Research PRs merging
-  do not turn that recommendation into settled policy.
+- **Orka remains the default; broader cross-runtime lifecycle remains OPEN.**
+  The exact Kagent v0.10.2 create-only adapter is a bounded direct target, not a
+  general YAML translation or restored runtime surface. `docs/orka.md` remains
+  the recommendation. Research PRs or this narrow adapter do not settle whether
+  wider authoring, installation, chat, inspection, or lifecycle support should
+  exist.
 - **OTLP upstream candidate CLOSED.** Orka already ships OTLP with GenAI
   conventions; do not reopen the candidate as missing upstream functionality.
 - **No inferred assignments.** A branch name proves a lane exists, not that
