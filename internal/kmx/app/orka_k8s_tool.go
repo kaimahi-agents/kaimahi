@@ -171,6 +171,16 @@ func renderQuickstartK8sTool(resources []byte, worker string) ([]byte, error) {
 	return bytes.Replace(resources, placeholder, []byte(worker), 1), nil
 }
 
+// policyPermissionDenied is emitted only for a conclusive SAR refusal.
+// Tool is set by the lift preflight, which knows the referring Tool identity.
+type policyPermissionDenied struct {
+	Tool, Worker, Namespace, Policy string
+}
+
+func (e *policyPermissionDenied) Error() string {
+	return fmt.Sprintf("denied ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", OrkaNamespace, e.Worker, e.Policy, e.Namespace)
+}
+
 // Check effective access for the one named policy, not a broader list grant.
 // SAR responses and kubectl stderr can contain sensitive admission details;
 // only the requested identity and permission are included in errors.
@@ -182,7 +192,8 @@ func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, pol
 	request, err := json.Marshal(map[string]any{
 		"apiVersion": "authorization.k8s.io/v1", "kind": "SubjectAccessReview",
 		"spec": map[string]any{
-			"user": "system:serviceaccount:" + OrkaNamespace + ":" + worker,
+			"user":   "system:serviceaccount:" + OrkaNamespace + ":" + worker,
+			"groups": []string{"system:serviceaccounts", "system:serviceaccounts:" + OrkaNamespace, "system:authenticated"},
 			"resourceAttributes": map[string]string{
 				"namespace": namespace, "group": "core.orka.ai", "resource": "outboundaccesspolicies",
 				"name": policy, "verb": "get",
@@ -209,8 +220,11 @@ func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, pol
 	if review.Status.EvaluationError != "" {
 		return fmt.Errorf("indeterminate authorization review for %s", permission)
 	}
-	if review.Status.Denied || !review.Status.Allowed {
-		return fmt.Errorf("denied %s", permission)
+	if review.Status.Denied && !review.Status.Allowed {
+		return &policyPermissionDenied{Worker: worker, Namespace: namespace, Policy: policy}
+	}
+	if !review.Status.Allowed || review.Status.Denied {
+		return fmt.Errorf("indeterminate authorization review for %s", permission)
 	}
 	return nil
 }

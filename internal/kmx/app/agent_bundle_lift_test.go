@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -267,6 +268,10 @@ func TestLiftBundlePolicyPermissionPreflight(t *testing.T) {
 			err := a.LiftAgentBundle(opt)
 			if err == nil {
 				t.Fatal("Available Tool with denied worker policy was accepted")
+			}
+			var denied *policyPermissionDenied
+			if !errors.As(err, &denied) || denied.Tool != "search" || denied.Worker != "orka-ai-worker" || denied.Namespace != OrkaNamespace || denied.Policy != quickstartK8sToolPolicy {
+				t.Fatalf("lift lost typed Tool and policy identity: %v", err)
 			}
 			for _, want := range []string{"Tool/search", "orka-ai-worker", "get", "kmx-k8s-tool-gateway", OrkaNamespace} {
 				if !strings.Contains(err.Error(), want) {

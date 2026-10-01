@@ -109,13 +109,15 @@ Tool admission is not an authorization check on the AI worker. Before lifting
 an Agent that references an HTTP Tool with an `outboundAccessPolicyRef`, both
 bundle `--plan` / deploy and bundle-less live-copy `/lift` check the worker's
 **effective** `get` on that specific policy in the Tool's namespace. A refusal
-names the Tool, worker account, namespace, policy and verb. Treat denied or
-indeterminate authorization as a missing prerequisite, not as permission to
-broaden the Role or bypass the check. For the quickstart Tool, use the
-separately confirmed console **Prepare target** action to reapply the Tool
-through kmx; it rediscovers the current chart account and reconciles the
-single named-policy RoleBinding. On an unknown/foreign Orka chart or an
-unreadable controller/account, verify the installation and chart version first;
+names the Tool, worker account, namespace, policy and verb. Neither denied nor
+indeterminate authorization permits broadening the Role or bypassing the check.
+For an **explicit denial** on the quickstart Tool and its built-in policy in
+`orka-system`, the console offers a separately confirmed **Prepare target**
+action to reapply the Tool through kmx, rediscover the current chart account,
+and reconcile the single named-policy RoleBinding. API failures, indeterminate
+reviews and custom policies do not offer this repair; investigate them first.
+On an unknown/foreign Orka chart or an unreadable controller/account, verify
+the installation and chart version first;
 kmx will not infer a worker name. Then retry `kmx agent lift --plan` before
 deploying. Do not grant general policy-list access.
 
@@ -127,10 +129,12 @@ go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
 CI checks both kmx-owned and stock Helm v0.2.0 releases. Its opt-in kind-only
-Go entrypoint invokes the same installer as console Prepare, asserts the exact
-RoleBinding subject and named-policy authorization, and runs a deterministic
-health question through the Tool. A scoped Task-result session checks that the
-Task succeeded and projects **only** `ToolCallStarted` and `ToolCallCompleted`
-metadata with top-level `toolName=k8s-get-resources`; CI does not print the
-Task answer, event bodies, model output or worker logs. The kmx-owned shard
-also checks the HTTP allowlist, reader RBAC and missing-gateway refusal.
+Go entrypoint invokes the same installer as console Prepare after confirming
+that its context exists and points to a local loopback kind API server. CI
+asserts the exact RoleBinding subject and named-policy authorization, then runs
+a deterministic health question through the Tool. CI checks the Task phase;
+the scoped Task-result session projects **only** `ToolCallStarted` and
+`ToolCallCompleted` metadata with top-level `toolName=k8s-get-resources`;
+CI does not print the Task answer, event bodies, model output or worker logs.
+The kmx-owned shard also checks the HTTP allowlist, reader RBAC and
+missing-gateway refusal.

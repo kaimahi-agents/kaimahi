@@ -474,6 +474,10 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 			}
 		}
 		if err := a.orkaWorkerCanGetPolicy(ctx, worker, namespace, ref.Name); err != nil {
+			var denied *policyPermissionDenied
+			if errors.As(err, &denied) {
+				return fmt.Errorf("Tool/%s in namespace %s: %w", name, namespace, &policyPermissionDenied{Tool: name, Worker: denied.Worker, Namespace: denied.Namespace, Policy: denied.Policy})
+			}
 			return fmt.Errorf("Tool/%s in namespace %s: %w", name, namespace, err)
 		}
 		checked[key] = true

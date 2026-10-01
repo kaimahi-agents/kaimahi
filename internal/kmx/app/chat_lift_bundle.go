@@ -75,7 +75,7 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 	}
 	// Do not rely on the CLI's remembered target: this review authorizes exactly
 	// the context, namespace, and Ready inference Provider selected here.
-	preparedOrka, preparedResultAccess := false, false
+	preparedOrka, preparedResultAccess, preparedTool := false, false, false
 	for {
 		if err := confirmBundleTargetUID(ctx, &worker, selectedUID); err != nil {
 			return err
@@ -165,10 +165,11 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 		err = worker.LiftAgentBundle(opt)
 		if err != nil {
 			renderer.operation("LIFT", "", colorBlue, "Bundle plan could not proceed: "+err.Error())
-			if b.bundleLiftPreparable(namespace, err) {
+			if !preparedTool && b.bundleLiftPreparable(namespace, err) {
 				if prepErr := b.prepareBundleLiftTarget(ctx, &worker, selectedUID, namespace, err); prepErr != nil {
 					return liftPreparationError(prepErr)
 				}
+				preparedTool = true
 				continue // target state may have changed; re-discover and re-plan.
 			}
 			return fmt.Errorf("bundle lift plan failed (no deployment): %w", err)
@@ -405,9 +406,20 @@ func (b *orkaChatBackend) bundleLiftProviders(ctx context.Context, worker *App, 
 	return names, nil
 }
 
+// Only an explicit denial for the fixed quickstart identity can be repaired
+// by reapplying its named grant. API errors and other policy failures cannot.
+func quickstartPolicyRepairable(namespace string, err error) bool {
+	var denied *policyPermissionDenied
+	return errors.As(err, &denied) && denied.Tool == quickstartK8sTool &&
+		denied.Namespace == OrkaNamespace && namespace == OrkaNamespace && denied.Policy == quickstartK8sToolPolicy
+}
+
 // Only preparation has a separate confirmation. An arbitrary missing Tool or
 // a custom namespace cannot be repaired by the fixed-namespace quickstart.
 func (b *orkaChatBackend) bundleLiftPreparable(namespace string, planErr error) bool {
+	if quickstartPolicyRepairable(namespace, planErr) {
+		return true
+	}
 	if strings.Contains(planErr.Error(), "missing Orka CRDs") {
 		return true
 	}
@@ -465,7 +477,7 @@ func (b *orkaChatBackend) prepareBundleLiftTarget(ctx context.Context, worker *A
 	if namespace != OrkaNamespace {
 		return fmt.Errorf("Tool/%s must be prepared in destination namespace %s before retrying /lift", quickstartK8sTool, namespace)
 	}
-	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": Kubernetes inventory Tool unavailable. Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install read-only Kubernetes Tool and RBAC"); err != nil {
+	if err := b.confirmLiftAction(ctx, "Prepare target "+worker.Cfg.KubeContext+": Kubernetes inventory Tool or its worker policy grant needs repair. Preparation may leave resources installed even if lift is cancelled.", "Prepare target: install read-only Kubernetes Tool and RBAC"); err != nil {
 		return err
 	}
 	if err := b.guardBundlePreparation(ctx, worker, selectedUID); err != nil {

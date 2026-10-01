@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -92,8 +93,8 @@ func TestOrkaWorkerCanGetPolicy(t *testing.T) {
 	for _, tt := range []struct{ name, response, failure, want string }{
 		{"allowed", `{"status":{"allowed":true}}`, "", ""},
 		{"denied", `{"status":{"allowed":false,"denied":true}}`, "", "denied"},
-		{"not allowed", `{"status":{"allowed":false}}`, "", "denied"},
-		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, "", "denied"},
+		{"not allowed", `{"status":{"allowed":false}}`, "", "indeterminate"},
+		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, "", "indeterminate"},
 		{"evaluation error", `{"status":{"allowed":true,"evaluationError":"sensitive-evaluation"}}`, "", "indeterminate"},
 		{"malformed", `{"status":"sensitive-response"}`, "", "invalid"},
 		{"missing status", `{}`, "", "invalid"},
@@ -112,6 +113,10 @@ printf '%%s' %[3]q`, args, stdin, tt.response, tt.failure))
 			err := a.orkaWorkerCanGetPolicy(context.Background(), "orka-ai-worker", OrkaNamespace, quickstartK8sToolPolicy)
 			if tt.want == "" && err != nil || tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
 				t.Fatalf("error=%v, want %q", err, tt.want)
+			}
+			var denial *policyPermissionDenied
+			if errors.As(err, &denial) != (tt.name == "denied") {
+				t.Fatalf("unexpected typed denial for %s: %v", tt.name, err)
 			}
 			if err != nil {
 				for _, forbidden := range []string{"sensitive-admission", "sensitive-evaluation", "sensitive-response"} {
@@ -133,11 +138,12 @@ printf '%%s' %[3]q`, args, stdin, tt.response, tt.failure))
 				APIVersion, Kind string
 				Spec             struct {
 					User               string
+					Groups             []string
 					ResourceAttributes struct{ Namespace, Group, Resource, Name, Verb string }
 				}
 			}
 			body, _ := os.ReadFile(stdin)
-			if json.Unmarshal(body, &sent) != nil || sent.APIVersion != "authorization.k8s.io/v1" || sent.Kind != "SubjectAccessReview" || sent.Spec.User != "system:serviceaccount:orka-system:orka-ai-worker" || sent.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{OrkaNamespace, "core.orka.ai", "outboundaccesspolicies", quickstartK8sToolPolicy, "get"}) {
+			if json.Unmarshal(body, &sent) != nil || sent.APIVersion != "authorization.k8s.io/v1" || sent.Kind != "SubjectAccessReview" || sent.Spec.User != "system:serviceaccount:orka-system:orka-ai-worker" || !reflect.DeepEqual(sent.Spec.Groups, []string{"system:serviceaccounts", "system:serviceaccounts:orka-system", "system:authenticated"}) || sent.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{OrkaNamespace, "core.orka.ai", "outboundaccesspolicies", quickstartK8sToolPolicy, "get"}) {
 				t.Fatal("SAR did not target the exact worker and named get permission")
 			}
 		})
@@ -405,7 +411,7 @@ func TestQuickstartK8sToolInstallDenialAfterGrantRefusesSuccess(t *testing.T) {
   *" apply -f - "*) printf 'apply\n' >> %[3]q; /bin/cat >/dev/null ;;
   *" rollout status "*) exit 0 ;;
   *" get outboundaccesspolicies.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
-  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false}}' ;;
+  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false,"denied":true}}' ;;
   *" get tools.core.orka.ai "*) printf 'tool\n' >> %[3]q; exit 1 ;;
   *) exit 1 ;;
 esac`, workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), steps))

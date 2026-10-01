@@ -330,51 +330,68 @@ func TestInteractiveBundleLiftMissingBundleLabelsUntrackedLegacyRoute(t *testing
 
 // No local bundle means the console copies a live Agent. It must inspect the
 // target Tool and refuse before showing the final deploy action or writing it.
-func TestLiveCopyLiftRefusesDeniedToolPolicyBeforeDeployment(t *testing.T) {
-	b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
-	if err := os.RemoveAll(opt.BundleDir); err != nil {
-		t.Fatal(err)
-	}
-	source, err := createOrkaBundle(CreateOptions{Name: "sample", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", BaseURL: "https://source.example.invalid/v1", Secret: "source-secret", Tools: quickstartK8sTool})
-	if err != nil {
-		t.Fatal(err)
-	}
-	agentJSON, err := json.Marshal(source.Agent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	providerJSON, err := json.Marshal(source.Provider)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("KMX_CHAT_LIVE_POLICY_TEST", "1")
-	t.Setenv("KMX_CHAT_SOURCE_AGENT", string(agentJSON))
-	t.Setenv("KMX_CHAT_SOURCE_PROVIDER", string(providerJSON))
-	t.Setenv("KMX_LIFT_POLICY_TEST", "1")
-	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
-	t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
-	err = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
-	if err == nil {
-		t.Fatal("live-copy lift accepted Tool with denied policy")
-	}
-	for _, want := range []string{"Tool/k8s-get-resources", "orka-ai-worker", "get", OrkaNamespace, quickstartK8sToolPolicy} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("missing %q in refusal: %v", want, err)
-		}
-	}
-	assertNoLiftWrites(t, dir, opt.BundleDir)
-	reviewedTarget := false
-	for _, call := range orkaCalls(t, dir) {
-		if !slices.Contains(call.Args, "--raw") {
-			continue
-		}
-		if !slices.Equal(call.Args[:2], []string{"--context", "kind-test"}) {
-			t.Fatalf("policy review used source or ambient cluster: %v", call.Args)
-		}
-		reviewedTarget = true
-	}
-	if !reviewedTarget {
-		t.Fatal("live-copy lift refused without target authorization review")
+func TestLiveCopyLiftOffersRepairOnlyForQuickstartPolicyDenial(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, policy string
+		apiFailure, repair     bool
+	}{
+		{"denied", `{"status":{"allowed":false,"denied":true}}`, quickstartK8sToolPolicy, false, true},
+		{"api failure", "", quickstartK8sToolPolicy, true, false},
+		{"indeterminate", `{"status":{"evaluationError":"cannot decide"}}`, quickstartK8sToolPolicy, false, false},
+		{"no opinion", `{"status":{"allowed":false}}`, quickstartK8sToolPolicy, false, false},
+		{"malformed", `{"status":"invalid"}`, quickstartK8sToolPolicy, false, false},
+		{"custom policy", `{"status":{"allowed":false,"denied":true}}`, "another-policy", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
+			if err := os.RemoveAll(opt.BundleDir); err != nil {
+				t.Fatal(err)
+			}
+			source, err := createOrkaBundle(CreateOptions{Name: "sample", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", BaseURL: "https://source.example.invalid/v1", Secret: "source-secret", Tools: quickstartK8sTool})
+			if err != nil {
+				t.Fatal(err)
+			}
+			agentJSON, err := json.Marshal(source.Agent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			providerJSON, err := json.Marshal(source.Provider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KMX_CHAT_LIVE_POLICY_TEST", "1")
+			t.Setenv("KMX_CHAT_SOURCE_AGENT", string(agentJSON))
+			t.Setenv("KMX_CHAT_SOURCE_PROVIDER", string(providerJSON))
+			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+			t.Setenv("KMX_LIFT_TOOL_SPEC", fmt.Sprintf(`{"http":{"outboundAccessPolicyRef":{"name":%q}}}`, tc.policy))
+			t.Setenv("KMX_LIFT_POLICY_REVIEW", tc.response)
+			if tc.apiFailure {
+				t.Setenv("KMX_LIFT_POLICY_API_FAIL", "1")
+			}
+			err = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+			if tc.repair {
+				if err != nil {
+					t.Fatalf("cancelled repair failed: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("lift accepted an unrepairable policy review")
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+			reviewedTarget := false
+			for _, call := range orkaCalls(t, dir) {
+				if !slices.Contains(call.Args, "--raw") {
+					continue
+				}
+				if !slices.Equal(call.Args[:2], []string{"--context", "kind-test"}) {
+					t.Fatalf("policy review used source or ambient cluster: %v", call.Args)
+				}
+				reviewedTarget = true
+			}
+			if !reviewedTarget {
+				t.Fatal("live-copy lift refused without target authorization review")
+			}
+		})
 	}
 }
 
@@ -552,6 +569,63 @@ func TestBundlePlanCannotBeConfirmedWhenTitleWouldBeTruncated(t *testing.T) {
 	}
 }
 
+func bundleWithQuickstartReference(t *testing.T, path string) {
+	t.Helper()
+	file := filepath.Join(path, "agent.yaml")
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := bytes.Replace(body, []byte("name: search"), []byte("name: "+quickstartK8sTool), 1)
+	if bytes.Equal(body, updated) {
+		t.Fatal("fixture has no search Tool reference")
+	}
+	if err := os.WriteFile(file, updated, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInteractiveBundleLiftOffersRepairForDeniedPolicy(t *testing.T) {
+	b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
+	bundleWithQuickstartReference(t, opt.BundleDir)
+	t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+	t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
+	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
+		t.Fatalf("cancelled repair failed: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestInteractiveBundleLiftDoesNotRepairUncertainOrCustomPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name, policy, review, want string
+		apiFailure                 bool
+	}{
+		{"API failure", quickstartK8sToolPolicy, "", "cannot evaluate", true},
+		{"indeterminate", quickstartK8sToolPolicy, `{"status":{"evaluationError":"cannot decide"}}`, "indeterminate", false},
+		{"no opinion", quickstartK8sToolPolicy, `{"status":{"allowed":false}}`, "indeterminate", false},
+		{"custom policy denied", "other-policy", `{"status":{"allowed":false,"denied":true}}`, "other-policy", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
+			bundleWithQuickstartReference(t, opt.BundleDir)
+			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+			t.Setenv("KMX_LIFT_TOOL_SPEC", fmt.Sprintf(`{"http":{"outboundAccessPolicyRef":{"name":%q}}}`, tc.policy))
+			t.Setenv("KMX_LIFT_POLICY_REVIEW", tc.review)
+			if tc.apiFailure {
+				t.Setenv("KMX_LIFT_POLICY_API_FAIL", "1")
+			}
+			err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("unrepairable policy offered repair or lost diagnostic: %v; %s", err, out.String())
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
+}
+
 func TestBundlePreparationRefusesUnknownToolState(t *testing.T) {
 	b := &orkaChatBackend{}
 	if b.bundleLiftPreparable(OrkaNamespace, fmt.Errorf("cannot inspect Tool/k8s-get-resources in namespace orka-system: kubectl request failed: access forbidden")) {
@@ -562,6 +636,20 @@ func TestBundlePreparationRefusesUnknownToolState(t *testing.T) {
 	}
 	if b.bundleLiftPreparable("custom", fmt.Errorf("Tool/k8s-get-resources in namespace custom is not Available")) {
 		t.Fatal("fixed-namespace installer was offered in custom namespace")
+	}
+	for _, tc := range []struct {
+		namespace, tool, policy string
+		want                    bool
+	}{
+		{OrkaNamespace, quickstartK8sTool, quickstartK8sToolPolicy, true},
+		{OrkaNamespace, "custom-tool", quickstartK8sToolPolicy, false},
+		{OrkaNamespace, quickstartK8sTool, "custom-policy", false},
+		{"custom", quickstartK8sTool, quickstartK8sToolPolicy, false},
+	} {
+		err := fmt.Errorf("preflight failed: %w", &policyPermissionDenied{Tool: tc.tool, Worker: "orka-ai-worker", Namespace: tc.namespace, Policy: tc.policy})
+		if b.bundleLiftPreparable(tc.namespace, err) != tc.want {
+			t.Fatalf("wrong repair classification for %s/%s %s (want %t)", tc.namespace, tc.tool, tc.policy, tc.want)
+		}
 	}
 }
 

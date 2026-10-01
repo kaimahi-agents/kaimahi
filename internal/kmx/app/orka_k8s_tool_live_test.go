@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -31,6 +33,31 @@ func w133KindContext(value string) (string, error) {
 	return value, nil
 }
 
+// The opt-in test is not a cluster creator: kind naming alone does not
+// authorize it to touch a destination. Inspect only pinned kubeconfig metadata.
+func requireW133LocalKind(ctx context.Context, a *App) error {
+	raw, err := a.orkaCapture(ctx, nil, "config", "view", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot inspect opt-in live test context: %w", err)
+	}
+	kube, err := guard.ParseKubeconfig(raw)
+	if err != nil {
+		return fmt.Errorf("cannot parse opt-in live test context: %w", err)
+	}
+	if _, err := liftContextCluster(kube, a.Cfg.KubeContext); err != nil {
+		return fmt.Errorf("opt-in live test requires an existing context: %w", err)
+	}
+	posture, err := guard.Classify(kube, a.Cfg.KubeContext)
+	if err != nil {
+		return fmt.Errorf("cannot classify opt-in live test context: %w", err)
+	}
+	ip := net.ParseIP(posture.Host)
+	if !posture.Local || !(posture.Host == "localhost" || ip != nil && ip.IsLoopback()) {
+		return fmt.Errorf("opt-in live test requires an existing local kind context with loopback API server")
+	}
+	return nil
+}
+
 func liveInstallQuickstartK8sTool(output io.Writer) error {
 	contextName, err := w133KindContext(os.Getenv("KMX_W133_KIND_CONTEXT"))
 	if err != nil {
@@ -41,6 +68,9 @@ func liveInstallQuickstartK8sTool(output io.Writer) error {
 	}
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: output, Err: io.Discard}
+	if err := requireW133LocalKind(context.Background(), app); err != nil {
+		return err
+	}
 	return app.installQuickstartK8sTool()
 }
 
@@ -121,6 +151,62 @@ func TestW133LiveInstallGuard(t *testing.T) {
 	}
 }
 
+func TestW133LiveTargetRequiresExistingLoopbackContext(t *testing.T) {
+	for _, tc := range []struct {
+		name, config string
+		allowed      bool
+	}{
+		{"local", `{"contexts":[{"name":"kind-ci","context":{"cluster":"local"}}],"clusters":[{"name":"local","cluster":{"server":"https://127.0.0.1:6443"}}]}`, true},
+		{"remote kind name", `{"contexts":[{"name":"kind-ci","context":{"cluster":"aks"}}],"clusters":[{"name":"aks","cluster":{"server":"https://aks.example.invalid"}}]}`, false},
+		{"missing context", `{"contexts":[],"clusters":[]}`, false},
+		{"unspecified address", `{"contexts":[{"name":"kind-ci","context":{"cluster":"local"}}],"clusters":[{"name":"local","cluster":{"server":"https://0.0.0.0:6443"}}]}`, false},
+		{"invalid config", `{`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "other-kubectl")
+			args := filepath.Join(dir, "args")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" > %[1]q
+if [ "$*" != '--context kind-ci --request-timeout=10s config view -o json' ]; then touch %[2]q; exit 1; fi
+printf '%%s' %[3]q`, args, marker, tc.config))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-ci"}, Run: &run.Runner{}}
+			err := requireW133LocalKind(t.Context(), a)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("allowed=%t, error=%v", tc.allowed, err)
+			}
+			if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+				t.Fatal("cluster command reached before validation")
+			}
+			got, readErr := os.ReadFile(args)
+			if readErr != nil || strings.TrimSpace(string(got)) != "--context kind-ci --request-timeout=10s config view -o json" {
+				t.Fatalf("config view not pinned: %q %v", got, readErr)
+			}
+		})
+	}
+}
+
+func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
+	for _, tc := range []struct{ name, config string }{
+		{"remote", `{"contexts":[{"name":"kind-ci","context":{"cluster":"aks"}}],"clusters":[{"name":"aks","cluster":{"server":"https://aks.example.invalid"}}]}`},
+		{"missing", `{"contexts":[],"clusters":[]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "cluster-command")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`if [ "$*" = '--context kind-ci --request-timeout=10s config view -o json' ]; then printf '%%s' %[1]q; else touch %[2]q; exit 1; fi`, tc.config, marker))
+			t.Setenv("PATH", dir)
+			t.Setenv("KMX_W133_KIND_CONTEXT", "kind-ci")
+			if err := liveInstallQuickstartK8sTool(io.Discard); err == nil {
+				t.Fatal("unverified target accepted")
+			}
+			if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+				t.Fatal("installer reached cluster before refusal")
+			}
+		})
+	}
+}
+
 func TestW133LiveInstallRefusesBeforeKubectl(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "kubectl-invoked")
@@ -155,6 +241,9 @@ func TestLiveInspectQuickstartToolEvents(t *testing.T) {
 	defer cancel()
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: io.Discard, Err: io.Discard}
+	if err := requireW133LocalKind(ctx, app); err != nil {
+		t.Fatal(err)
+	}
 	session, err := app.openOrkaResultSession(ctx, CreateOptions{Namespace: OrkaNamespace,
 		ResultServiceAccount: orkaResultAccount, ResultPort: "19187"})
 	if err != nil {
@@ -184,6 +273,9 @@ func TestLiveProvisionOrkaResultReader(t *testing.T) {
 	}
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: io.Discard, Err: io.Discard}
+	if err := requireW133LocalKind(t.Context(), app); err != nil {
+		t.Fatal(err)
+	}
 	if err := app.orkaResultReader(); err != nil {
 		t.Fatal(err)
 	}

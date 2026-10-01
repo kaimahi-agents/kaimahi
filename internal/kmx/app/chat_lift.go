@@ -273,7 +273,21 @@ func (b *orkaChatBackend) liftLiveAgentTo(ctx context.Context, renderer *chatRen
 		return liftPreparationError(err)
 	}
 	if err := worker.liftToolsAvailable(ctx, b.namespace, bundle); err != nil {
-		return err
+		if !quickstartPolicyRepairable(b.namespace, err) {
+			return err
+		}
+		if err := b.confirmLiftAction(ctx, "Prepare target "+target.Context+": Kubernetes inventory Tool worker policy grant denied. Reapply the quickstart installer before lift?", "Prepare target: install read-only Kubernetes Tool and RBAC"); err != nil {
+			return liftPreparationError(err)
+		}
+		renderer.operation("LIFT", "", colorBlue, "Repairing Kubernetes tool on "+target.Context+"…")
+		if err := b.runLiftDeployment(ctx, &worker, "Prepare Kubernetes Tool", []string{"Install tool server and wait Ready"}, func(w *App) error {
+			return w.runPhase(phase{current: 1, total: 1, name: "Install tool server and wait Ready"}, w.installQuickstartK8sTool)
+		}); err != nil {
+			return err
+		}
+		if err := worker.liftToolsAvailable(ctx, b.namespace, bundle); err != nil {
+			return err
+		}
 	}
 	b.liftStage(4, "")
 	providerSpec := bundle.Provider["spec"].(map[string]any)
