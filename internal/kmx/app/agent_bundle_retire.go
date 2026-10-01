@@ -25,6 +25,7 @@ type retireDecision struct {
 	kind, name, uid, version, action, reason string
 	portableDigest, renderedDigest           string
 	hasOrigin                                bool
+	forceReleaseForAgent                     bool
 }
 
 type bundleRetireReceipt struct {
@@ -171,8 +172,10 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 		return err
 	}
 	if retired {
-		if err := clearRetiredSelection(selectionPath, selection, contextName, namespace, uid); err != nil {
-			return err
+		if !opt.Plan {
+			if err := clearRetiredSelection(selectionPath, selection, contextName, namespace, uid); err != nil {
+				return err
+			}
 		}
 		worker.notef("Agent/%s and Provider/%s already retired; no changes", name, name)
 		return nil
@@ -205,24 +208,36 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 		}
 		decisions = append(decisions, decision)
 	}
+	if inspectionErr == nil && (decisions[0].action == "release" || decisions[0].action == "previously released") {
+		if decisions[1].action == "delete" {
+			decisions[1].action = "release"
+			decisions[1].forceReleaseForAgent = true
+			decisions[1].reason = "Agent survives; Provider must remain available"
+		} else if decisions[1].action == "absent" {
+			inspectionErr = fmt.Errorf("Agent/%s would survive but Provider/%s is absent; refusing retirement", name, name)
+		}
+	}
 	if inspectionErr == nil {
 		record, ok := readBundleReceiptAt(bundleReceiptPath(bundle, contextName, namespace, uid))
 		for _, d := range decisions {
 			if d.action == "absent" {
 				continue
 			}
-			matched := false
+			matchedUID := false
 			if ok && record.Receipt.Bundle == name && record.Receipt.Target.Context == contextName && record.Receipt.Target.Namespace == namespace {
 				for _, r := range record.Receipt.Resources {
-					if r.Kind == d.kind && r.Name == name && r.Namespace == namespace && r.UID == d.uid &&
-						(d.action == "previously released" || d.portableDigest == record.Receipt.PortableDigest && d.renderedDigest == record.Receipt.RenderedDigest) {
-						matched = true
+					if r.Kind == d.kind && r.Name == name && r.Namespace == namespace && r.UID == d.uid {
+						matchedUID = true
 						break
 					}
 				}
 			}
-			if !matched {
+			if !matchedUID {
 				inspectionErr = fmt.Errorf("%s/%s has no matching lift receipt for its UID; cannot prove this local bundle owns it", d.kind, name)
+			} else if d.action != "previously released" && (d.portableDigest != record.Receipt.PortableDigest || d.renderedDigest != record.Receipt.RenderedDigest) {
+				inspectionErr = fmt.Errorf("%s/%s markers differ from the last successful lift; rerun lift, then retire", d.kind, name)
+			}
+			if inspectionErr != nil {
 				break
 			}
 		}
@@ -267,13 +282,13 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 	for _, d := range decisions {
 		if d.action == "delete" || d.action == "release" {
 			if err := worker.applyRetireDecision(ctx, namespace, d); err != nil {
-				return fmt.Errorf("retirement partially applied; inspect target before retrying: %w", err)
+				return fmt.Errorf("retirement partially applied; inspect the target, resolve the blocker, then rerun retire: %w", err)
 			}
 		}
 	}
 	receipt.Complete = true
 	if err := writeBundleRetireReceipt(bundle, receipt); err != nil {
-		return fmt.Errorf("resources retired but receipt was not saved: %w", err)
+		return fmt.Errorf("resources retired but receipt was not saved; inspect the target, then rerun retire: %w", err)
 	}
 	return clearRetiredSelection(selectionPath, selection, contextName, namespace, uid)
 }
@@ -281,7 +296,7 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 func clearRetiredSelection(path string, selection bundleLiftSelection, contextName, namespace, uid string) error {
 	if selection.Context == contextName && selection.Namespace == namespace && selection.ClusterUID == uid {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("resources retired and receipt saved but remembered target was not cleared: %w", err)
+			return fmt.Errorf("resources retired and receipt saved but remembered target was not cleared; rerun retire after repairing local state: %w", err)
 		}
 	}
 	return nil
@@ -453,7 +468,8 @@ func (a *App) applyRetireDecision(ctx context.Context, namespace string, d retir
 	if err != nil {
 		return err
 	}
-	if again.uid != d.uid || again.version != d.version || again.action != d.action {
+	if again.uid != d.uid || again.version != d.version || again.portableDigest != d.portableDigest || again.renderedDigest != d.renderedDigest || again.hasOrigin != d.hasOrigin ||
+		(again.action != d.action && !(d.forceReleaseForAgent && d.action == "release" && again.action == "delete")) {
 		return fmt.Errorf("%s/%s changed after retirement inspection", d.kind, d.name)
 	}
 	if d.action == "delete" {

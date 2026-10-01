@@ -432,6 +432,7 @@ receipts, and applies the remote-context confirmation guard before writing.
 After the remembered target is cleared, it recovers a uniquely recorded
 namespace from lift receipts; if several were used under one context, supply
 `--to-namespace`.
+
 `--plan` runs the same ownership and dependent inspection as execution and
 reports each proposed deletion or release without changing resources, receipts
 or remembered selection. The selected destination Provider, its Secret, Tools,
@@ -441,12 +442,20 @@ Only an Agent and its bundle-rendered Provider with this bundle's complete
 ownership markers **and a matching local lift receipt for each live UID**
 qualify. A same-named bundle without that receipt, or a foreign, unmarked,
 incomplete or terminating object, is refused. A partial lift with no receipt
-requires operator inspection; retire cannot prove those objects' provenance. An owned object with `kaimahi.dev/origin: created` is
-deleted; one with `origin: adopted` is **released** by removing only kmx's four
-ownership annotations, leaving its spec and other metadata intact. Objects
-lifted before the origin annotation existed are also released, never assumed
-to have been created. `--delete-adopted` explicitly opts into deleting adopted
-and legacy owned objects. The plan identifies each object's origin case.
+requires operator inspection; retire cannot prove those objects' provenance.
+An owned object with `kaimahi.dev/origin: created` is deleted; one with
+`origin: adopted` is **released** by removing kmx's ownership annotations,
+leaving its spec and other metadata intact. That means four annotations on a
+newly lifted object, or three on a legacy object without an origin annotation.
+Objects lifted before origin was recorded are released, never assumed to have
+been created. If the Agent survives a release, its rendered Provider is also
+released even if marked `created`, so the Agent's dependency remains available.
+`--delete-adopted` explicitly opts into deleting adopted and legacy owned
+objects. The plan identifies each object's origin case. Origin is a live
+Kubernetes annotation, not a tamper-proof provenance record: an operator with
+permission to hand-edit it to `created` can cause retire to delete an object
+that would otherwise have been released. Treat that as the same trust level as
+kubectl write access to the object.
 
 Before either action, kmx lists Tasks, GatewayBindings, RepositoryScans,
 RepositoryMonitors and other Agents across namespaces. Pending, Scheduled,
@@ -456,8 +465,9 @@ Agent's `coordination.allowedAgents` block retirement. When the Provider would
 be deleted, other Agents using it as their primary or fallback Provider, and
 active Tasks referring directly to it, also block. Execution repeats the
 inventory after remote-context confirmation, before mutation. If an inventory
-cannot be completed, retire names the resource
-and required cluster-wide `list` permission and makes no changes. Orka v0.2.0's
+cannot be completed, retire names the resource and makes no changes. It names
+the required cluster-wide `list` permission only on an actual authorization
+refusal; size and timeout failures are reported separately. Orka v0.2.0's
 Agent deletion handler deletes the Agent only; Task deletion and its associated
 result/event cleanup occur on the Task deletion path, not on Agent deletion.
 Task records and history therefore remain, although an in-flight Task may fail
@@ -470,9 +480,9 @@ mutation, marks it complete only after both resources have been retired, retains
 the lift receipt as history, and forgets the remembered target once complete.
 Status shows `not deployed`; after a release it also notes that an unmanaged
 Agent of the same name remains and a later lift would adopt it if its rendered
-fields still match. A repeat retire
-of the same objects is a no-op. A failure after the first mutation can leave a
-partial retirement: inspect and rerun after fixing its cause. The console has
+fields still match. A repeat retire of the same objects is a no-op. A failure
+after the first mutation can leave a partial retirement: inspect the target,
+resolve the blocker, then rerun retire to complete it. The console has
 no retire action; adding one is a separate follow-up.
 ## Checking deployed status
 

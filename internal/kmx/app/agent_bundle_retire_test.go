@@ -42,6 +42,37 @@ func TestRetireDeletesOwnedCreatedObjectsAndRemembersHistory(t *testing.T) {
 	}
 }
 
+func TestRetirePlanNeverClearsRememberedSelection(t *testing.T) {
+	a, lift, _, _ := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(lift); err != nil {
+		t.Fatal(err)
+	}
+	opt := RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext}
+	if err := a.RetireAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := bundleLiftSelectionPath(lift.BundleDir)
+	selection := bundleLiftSelection{Context: "kind-test", Namespace: OrkaNamespace, ClusterUID: "cluster-uid", Inference: "provider:inference"}
+	if err := saveBundleLiftSelection(path, selection); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt.Plan = true
+	if err := a.RetireAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("plan changed remembered selection")
+	}
+}
+
 func TestRetireRetryClearsSelectionAfterRemovalFailure(t *testing.T) {
 	a, lift, _, _ := liftBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
@@ -198,8 +229,8 @@ func TestRetireRefusesMarkersChangedSinceLastReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = a.RetireAgentBundle(RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext})
-	if err == nil || !strings.Contains(err.Error(), "receipt") {
-		t.Fatalf("changed marker accepted: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "rerun lift, then retire") {
+		t.Fatalf("changed marker accepted without recovery advice: %v", err)
 	}
 }
 
@@ -306,8 +337,8 @@ func TestRetireRetriesPartialReleaseWithoutTakingUnownedObject(t *testing.T) {
 	}
 	t.Setenv("KMX_RETIRE_FAIL_PATCH_ONCE", "providers.core.orka.ai")
 	opt := RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext}
-	if err := a.RetireAgentBundle(opt); err == nil {
-		t.Fatal("partial release accepted")
+	if err := a.RetireAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "rerun retire") {
+		t.Fatalf("partial release lacked retry advice: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
 	if err != nil {
@@ -383,6 +414,52 @@ func TestRetireBlocksScheduledTaskWithoutWrites(t *testing.T) {
 	for _, kind := range []string{"agents", "providers"} {
 		if _, err := os.Stat(filepath.Join(dir, kind+".core.orka.ai.json")); err != nil {
 			t.Errorf("%s removed: %v", kind, err)
+		}
+	}
+}
+
+func TestRetireReleasesCreatedProviderWhenAgentSurvives(t *testing.T) {
+	a, lift, dir, _ := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(lift); err != nil {
+		t.Fatal(err)
+	}
+	agentPath := filepath.Join(dir, "agents.core.orka.ai.json")
+	raw, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agent map[string]any
+	if err := json.Unmarshal(raw, &agent); err != nil {
+		t.Fatal(err)
+	}
+	delete(agent["metadata"].(map[string]any)["annotations"].(map[string]any), orkaOriginMarker)
+	body, _ := json.Marshal(agent)
+	if err := os.WriteFile(agentPath, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var notes bytes.Buffer
+	a.Err = &notes
+	opt := RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext, Plan: true}
+	if err := a.RetireAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(notes.String(), "Provider/sample: release") {
+		t.Fatalf("plan deletes surviving Agent's Provider: %s", notes.String())
+	}
+	notes.Reset()
+	opt.Plan = false
+	if err := a.RetireAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"agents", "providers"} {
+		raw, err := os.ReadFile(filepath.Join(dir, kind+".core.orka.ai.json"))
+		if err != nil {
+			t.Fatalf("%s removed: %v", kind, err)
+		}
+		var doc map[string]any
+		_ = json.Unmarshal(raw, &doc)
+		if _, ok := doc["metadata"].(map[string]any)["annotations"].(map[string]any)[orkaBundleMarker]; ok {
+			t.Errorf("%s marker remains", kind)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -19,18 +21,29 @@ func TestRetireDependentsKubectl(t *testing.T) {
 		return
 	}
 	args := os.Args[slices.Index(os.Args, "--")+1:]
-	if len(args) != 8 || args[0] != "--context" || args[1] != "kind-test" || args[2] != "--request-timeout=10s" || args[3] != "get" || args[5] != "--all-namespaces" || args[6] != "-o" || args[7] != "json" {
+	if len(args) != 7 || args[0] != "--context" || args[1] != "kind-test" || args[2] != "--request-timeout=10s" || args[3] != "get" || args[5] != "--all-namespaces" || !strings.HasPrefix(args[6], "-o=go-template=") {
 		os.Exit(2)
 	}
 	if args[4] == os.Getenv("KMX_DEPENDENTS_DENIED") {
-		fmt.Fprint(os.Stderr, "forbidden private-token-must-not-escape")
+		fmt.Fprint(os.Stderr, os.Getenv("KMX_DEPENDENTS_ERROR"))
 		os.Exit(1)
+	}
+	if args[4] == os.Getenv("KMX_DEPENDENTS_OVERSIZE") {
+		_, _ = os.Stdout.Write([]byte(strings.Repeat("X", 5<<20)))
+		os.Exit(0)
 	}
 	raw, err := os.ReadFile(filepath.Join(os.Getenv("KMX_DEPENDENTS_DIR"), args[4]+".json"))
 	if err != nil {
 		os.Exit(2)
 	}
-	_, _ = os.Stdout.Write(raw)
+	var data map[string]any
+	if json.Unmarshal(raw, &data) != nil {
+		os.Exit(2)
+	}
+	project, err := template.New("projection").Parse(strings.TrimPrefix(args[6], "-o=go-template="))
+	if err != nil || project.Execute(os.Stdout, data) != nil {
+		os.Exit(2)
+	}
 	os.Exit(0)
 }
 
@@ -103,18 +116,71 @@ func TestRetireAgentDependentsListFailureFailsClosed(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			a := dependentsFixture(t, nil)
 			t.Setenv("KMX_DEPENDENTS_DENIED", kind)
+			t.Setenv("KMX_DEPENDENTS_ERROR", `Error from server (Forbidden): tasks is forbidden: User "private-token-must-not-escape" cannot list resource`)
 			got, err := a.retireAgentDependents(context.Background(), "home", "target")
-			if err == nil || !strings.Contains(err.Error(), kind) || !strings.Contains(err.Error(), "list") || strings.Contains(err.Error(), "private-token") || len(got) > 0 {
+			if err == nil || !strings.Contains(err.Error(), kind) || !strings.Contains(err.Error(), "cluster-wide list permission") || strings.Contains(err.Error(), "private-token") || len(got) > 0 {
 				t.Fatalf("got %v, %v", got, err)
 			}
 		})
 	}
 }
 
-func TestRetireAgentDependentsMalformedListFailsClosed(t *testing.T) {
-	a := dependentsFixture(t, map[string]string{"agents.core.orka.ai": `{"items":null}`})
+func TestRetireDependentsProjectionOmitsSensitiveFields(t *testing.T) {
+	projection := retireDependentsProjection()
+	for _, forbidden := range []string{"{@}", ".spec.prompt", ".spec.systemPrompt", ".spec.credentials", "-o=json"} {
+		if strings.Contains(projection, forbidden) {
+			t.Fatalf("projection includes sensitive field %s", forbidden)
+		}
+	}
+	a := dependentsFixture(t, map[string]string{"tasks.core.orka.ai": `{"items":[{"metadata":{"name":"task","namespace":"home"},"spec":{"agentRef":{"name":"target"},"prompt":"private-token-must-not-escape"},"status":{"phase":"Running"}}]}`})
 	got, err := a.retireAgentDependents(context.Background(), "home", "target")
-	if err == nil || len(got) > 0 {
+	if err != nil || !slices.Equal(got, []string{"Task home/task (Running)"}) {
+		t.Fatalf("projected inventory: %v, %v", got, err)
+	}
+}
+
+func TestRetireDependentsNonRBACFailureAndOversize(t *testing.T) {
+	for _, tc := range []struct{ name, stderr string }{{"timeout", "Unable to connect to server: context deadline exceeded private-token-must-not-escape"}, {"other", "transport private-token-must-not-escape"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := dependentsFixture(t, nil)
+			t.Setenv("KMX_DEPENDENTS_DENIED", "tasks.core.orka.ai")
+			t.Setenv("KMX_DEPENDENTS_ERROR", tc.stderr)
+			_, err := a.retireProviderDependents(context.Background(), "home", "target")
+			if err == nil || strings.Contains(err.Error(), "cluster-wide list permission") || strings.Contains(err.Error(), "private-token") || !strings.Contains(err.Error(), "tasks.core.orka.ai") || tc.name == "timeout" && !strings.Contains(err.Error(), "timed out") {
+				t.Fatalf("unsafe/misclassified failure: %v", err)
+			}
+		})
+	}
+	a := dependentsFixture(t, nil)
+	t.Setenv("KMX_DEPENDENTS_OVERSIZE", "tasks.core.orka.ai")
+	_, err := a.retireAgentDependents(context.Background(), "home", "target")
+	if err == nil || !strings.Contains(err.Error(), "size limit") || strings.Contains(err.Error(), "cluster-wide list permission") {
+		t.Fatalf("oversize response: %v", err)
+	}
+}
+
+func TestRetireAgentDependentsMalformedListFailsClosed(t *testing.T) {
+	for name, list := range map[string]string{
+		"null list":        `{"items":null}`,
+		"missing identity": `{"items":[{"metadata":{"name":"dependent"},"spec":{"agentRef":{"name":"target"}}}]}`,
+		"incomplete ref":   `{"items":[{"metadata":{"name":"dependent","namespace":"home"},"spec":{"agentRef":{"namespace":"home"}}}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := dependentsFixture(t, map[string]string{"agents.core.orka.ai": list})
+			got, err := a.retireAgentDependents(context.Background(), "home", "target")
+			if err == nil || len(got) > 0 || strings.Contains(err.Error(), "cluster-wide list permission") {
+				t.Fatalf("got %v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestRetireDependentsCancelledFailsClosed(t *testing.T) {
+	a := dependentsFixture(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got, err := a.retireProviderDependents(ctx, "home", "target")
+	if err == nil || len(got) > 0 || !strings.Contains(err.Error(), "tasks.core.orka.ai") || strings.Contains(err.Error(), "cluster-wide list permission") {
 		t.Fatalf("got %v, %v", got, err)
 	}
 }

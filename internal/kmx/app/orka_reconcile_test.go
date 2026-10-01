@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -50,64 +49,6 @@ func TestReconcileKubectlHelper(t *testing.T) {
 	log, _ := os.OpenFile(filepath.Join(dir, "calls"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	_ = json.NewEncoder(log).Encode(call)
 	_ = log.Close()
-	if slices.Contains(args, "proxy") {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			fail()
-		}
-		fmt.Printf("Starting to serve on %s\n", listener.Addr())
-		_ = http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodDelete {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			var kind string
-			switch {
-			case strings.HasPrefix(r.URL.Path, "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/agents/"):
-				kind = "agents.core.orka.ai"
-			case strings.HasPrefix(r.URL.Path, "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/providers/"):
-				kind = "providers.core.orka.ai"
-			default:
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			raw, err := os.ReadFile(filepath.Join(dir, kind+".json"))
-			if err != nil {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			var live map[string]any
-			if json.Unmarshal(raw, &live) != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			var body struct {
-				Preconditions struct {
-					UID     string `json:"uid"`
-					Version string `json:"resourceVersion"`
-				} `json:"preconditions"`
-			}
-			if json.NewDecoder(r.Body).Decode(&body) != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			meta := live["metadata"].(map[string]any)
-			if !strings.HasSuffix(r.URL.Path, "/"+fmt.Sprint(meta["name"])) || body.Preconditions.UID != meta["uid"] || body.Preconditions.Version != meta["resourceVersion"] {
-				w.WriteHeader(http.StatusConflict)
-				return
-			}
-			if os.Getenv("KMX_RETIRE_PERSIST_DELETE_KIND") == kind {
-				w.WriteHeader(http.StatusAccepted)
-				return
-			}
-			if os.Remove(filepath.Join(dir, kind+".json")) != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-		}))
-		os.Exit(0)
-	}
 	if slices.Contains(args, "config") {
 		server := "https://127.0.0.1:6443"
 		if os.Getenv("KMX_RECONCILE_REMOTE") == "1" {
@@ -132,13 +73,18 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		if name == "--all-namespaces" {
 			raw, err := os.ReadFile(filepath.Join(dir, "list-"+kind+".json"))
 			if os.IsNotExist(err) {
-				fmt.Print(`{"items":[]}`)
-				os.Exit(0)
-			}
-			if err != nil {
+				raw = []byte(`{"items":[]}`)
+			} else if err != nil {
 				fail()
 			}
-			_, _ = os.Stdout.Write(raw)
+			var list map[string]any
+			if json.Unmarshal(raw, &list) != nil {
+				fail()
+			}
+			projection, err := template.New("dependents").Parse(retireDependentsProjection())
+			if err != nil || projection.Execute(os.Stdout, list) != nil {
+				fail()
+			}
 			os.Exit(0)
 		}
 		if os.Getenv("KMX_STATUS_FORBIDDEN") == "1" && kind == "agents.core.orka.ai" {

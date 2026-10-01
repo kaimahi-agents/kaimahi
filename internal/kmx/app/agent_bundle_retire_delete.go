@@ -1,97 +1,60 @@
 package app
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os/exec"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-// deleteRetireObject sends a Kubernetes DeleteOptions with both UID and
-// resourceVersion preconditions. kubectl delete by name does not check either
-// version, so a context-pinned loopback proxy carries this one API request.
+// deleteRetireObject issues an atomic UID- and resourceVersion-conditional DELETE
+// against the explicitly selected context, without a local proxy or listener.
 func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retireDecision) error {
-	proxyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	prepared := a.Command("proxy", "--address=127.0.0.1", "--port=0", "--accept-hosts=^127\\.0\\.0\\.1$")
-	cmd := exec.CommandContext(proxyCtx, prepared.Path, prepared.Args[1:]...)
-	cmd.Env = prepared.Env
-	cmd.WaitDelay = time.Second
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("cannot start pinned Kubernetes proxy")
+	if d.uid == "" || d.version == "" {
+		return fmt.Errorf("conditional deletion requires both UID and resourceVersion")
 	}
-	// stderr is never propagated: it can contain request or credential material.
-	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("cannot start pinned Kubernetes proxy")
-	}
-	defer func() { cancel(); _ = cmd.Wait() }()
-	type started struct {
-		port int
-		err  error
-	}
-	ready := make(chan started, 1)
-	go func() {
-		line, err := bufio.NewReader(io.LimitReader(stdout, 512)).ReadString('\n')
-		if err != nil {
-			ready <- started{err: err}
-			return
-		}
-		const prefix = "Starting to serve on 127.0.0.1:"
-		if !strings.HasPrefix(line, prefix) {
-			ready <- started{err: fmt.Errorf("unexpected Kubernetes proxy announcement")}
-			return
-		}
-		port, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, prefix)))
-		if err != nil || port < 1 || port > 65535 {
-			ready <- started{err: fmt.Errorf("invalid Kubernetes proxy port")}
-			return
-		}
-		ready <- started{port: port}
-	}()
-	var port int
-	select {
-	case start := <-ready:
-		if start.err != nil {
-			return fmt.Errorf("Kubernetes proxy did not start")
-		}
-		port = start.port
-	case <-proxyCtx.Done():
-		return fmt.Errorf("Kubernetes proxy startup timed out")
-	}
-	body, err := json.Marshal(map[string]any{"apiVersion": "meta.k8s.io/v1", "kind": "DeleteOptions", "preconditions": map[string]string{"uid": d.uid, "resourceVersion": d.version}})
+	config, err := a.retireClientConfig()
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/apis/core.orka.ai/v1alpha1/namespaces/%s/%s/%s", port, namespace, strings.ToLower(d.kind)+"s", d.name)
-	request, err := http.NewRequestWithContext(proxyCtx, http.MethodDelete, url, bytes.NewReader(body))
+	client, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("cannot prepare conditional deletion")
+		return fmt.Errorf("cannot prepare conditional Kubernetes deletion")
 	}
-	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
-	response, err := client.Do(request)
+	uid := types.UID(d.uid)
+	deleteCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	err = client.Resource(schema.GroupVersionResource{Group: "core.orka.ai", Version: "v1alpha1", Resource: strings.ToLower(d.kind) + "s"}).Namespace(namespace).Delete(deleteCtx, d.name, metav1.DeleteOptions{
+		Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &d.version},
+	})
 	if err != nil {
-		return fmt.Errorf("conditional deletion failed; inspect target before retrying")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("conditional deletion refused (HTTP %d); inspect object version and permissions", response.StatusCode)
+		// API status messages and transport errors may include server-controlled
+		// text or credentials; never return or log the raw error.
+		switch {
+		case apierrors.IsConflict(err):
+			return fmt.Errorf("conditional deletion conflicted; inspect object version before retrying")
+		case apierrors.IsNotFound(err):
+			return fmt.Errorf("conditional deletion refused: object not found; inspect target before retrying")
+		default:
+			return fmt.Errorf("conditional deletion failed; inspect target and permissions before retrying")
+		}
 	}
 	waitCtx, stop := context.WithTimeout(ctx, 8*time.Second)
 	defer stop()
 	for {
 		raw, err := a.orkaCapture(waitCtx, nil, "-n", namespace, "get", orkaPlural(d.kind), d.name, "--ignore-not-found=true", "-o", "json")
 		if err != nil {
-			return fmt.Errorf("cannot confirm %s/%s was deleted: %w", d.kind, d.name, err)
+			return fmt.Errorf("cannot confirm %s/%s was deleted; inspect target before retrying", d.kind, d.name)
 		}
 		if len(raw) == 0 {
 			return nil
@@ -110,4 +73,37 @@ func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retire
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+// retireClientConfig mirrors the runner's effective KUBECONFIG, including an
+// override used for saved Agent locations, while overriding current-context.
+func (a *App) retireClientConfig() (*rest.Config, error) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if a.Run != nil {
+		unset := false
+		for _, key := range a.Run.Unset {
+			if key == "KUBECONFIG" {
+				unset = true
+			}
+		}
+		if unset {
+			rules.Precedence = []string{clientcmd.RecommendedHomeFile}
+		}
+		for _, entry := range a.Run.Env {
+			if value, ok := strings.CutPrefix(entry, "KUBECONFIG="); ok {
+				if value == "" {
+					rules.Precedence = []string{clientcmd.RecommendedHomeFile}
+				} else {
+					rules.Precedence = filepath.SplitList(value)
+				}
+			}
+		}
+	}
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{
+		CurrentContext: a.Cfg.KubeContext,
+	}).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("cannot load selected Kubernetes context for conditional deletion")
+	}
+	return config, nil
 }
