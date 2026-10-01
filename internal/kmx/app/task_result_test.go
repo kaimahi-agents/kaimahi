@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -114,6 +115,104 @@ func TestTaskResultRejectsNonAITaskAndMissingTask(t *testing.T) {
 	}
 }
 
+func TestTaskResultWaitDeadlineDuringTaskGetIsPending(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_TASK_GET_DELAY", "3s")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	opt.Wait = 5 * time.Minute
+	err := f.app.TaskResult(opt)
+	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+		t.Fatalf("deadline during Task GET: err=%v stdout=%q", err, f.out)
+	}
+}
+
+func TestTaskResultNoWaitReadTimeoutIsNotPending(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_TASK_GET_DELAY", "3s")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	err := f.app.TaskResult(opt)
+	if err == nil || errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+		t.Fatalf("no-wait Task GET failure: err=%v stdout=%q", err, f.out)
+	}
+}
+
+func TestTaskResultWaitDeadlineDuringSessionStartupIsPending(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_FORWARD_DELAY", "3s")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	opt.Wait = 5 * time.Minute
+	err := f.app.TaskResult(opt)
+	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+		t.Fatalf("session startup deadline: err=%v stdout=%q", err, f.out)
+	}
+}
+
+func TestTaskResultWaitReportsPhaseChangesAndChecksUID(t *testing.T) {
+	for _, tc := range []struct {
+		name, swap string
+		wantAnswer bool
+	}{
+		{"completion", "", true},
+		{"replaced Task", "3", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, opt := taskResultFixture(t)
+			t.Setenv("KMX_EVAL_PHASE_SEQUENCE", "Running,Running,Succeeded")
+			if tc.swap != "" {
+				t.Setenv("KMX_EVAL_TASK_SWAP_ON_READ", tc.swap)
+			}
+			opt.Wait = 10 * time.Second
+			err := f.app.TaskResult(opt)
+			if tc.wantAnswer {
+				if err != nil || f.out.String() != "retrieved answer\n" {
+					t.Fatalf("err=%v answer=%q", err, f.out)
+				}
+				output := f.app.Err.(*bytes.Buffer).String()
+				if strings.Count(output, "phase: Running") != 1 || strings.Count(output, "phase: Succeeded") != 1 {
+					t.Fatalf("repeated or missing phases: %q", output)
+				}
+			} else if err == nil || errors.Is(err, ErrTaskPending) || !strings.Contains(err.Error(), "replaced") || f.out.Len() != 0 {
+				t.Fatalf("replaced Task: err=%v stdout=%q", err, f.out)
+			}
+		})
+	}
+}
+
+func TestTaskResultWaitTimeoutIsPending(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_PHASE", "Running")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	opt.Wait = 5 * time.Minute
+	err := f.app.TaskResult(opt)
+	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+		t.Fatalf("timeout: err=%v stdout=%q", err, f.out)
+	}
+}
+
+func TestTaskResultWaitSucceededWithoutReadableResultTimesOut(t *testing.T) {
+	f, opt := taskResultFixture(t)
+	t.Setenv("KMX_EVAL_RESULT_AVAILABLE", "false")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	opt.Wait = 5 * time.Minute
+	err := f.app.TaskResult(opt)
+	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+		t.Fatalf("unavailable answer: err=%v stdout=%q", err, f.out)
+	}
+	if !strings.Contains(f.app.Err.(*bytes.Buffer).String(), "phase: Succeeded") {
+		t.Fatal("successful phase not reported")
+	}
+}
+
 func TestTaskResultFailedAndCancelledDoNotReadAnswer(t *testing.T) {
 	for _, phase := range []string{"Failed", "Cancelled"} {
 		t.Run(phase, func(t *testing.T) {
@@ -133,7 +232,7 @@ func TestTaskResultFailedAndCancelledDoNotReadAnswer(t *testing.T) {
 func TestTaskResultNoWaitUsesOnlyOnePhaseRead(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_PHASE", "Running")
-	opt.Wait = 30 * time.Second // no --wait: Follow is the activation flag.
+	// No wait duration requests a single phase observation.
 	err := f.app.TaskResult(opt)
 	if !errors.Is(err, ErrTaskPending) {
 		t.Fatalf("err=%v", err)

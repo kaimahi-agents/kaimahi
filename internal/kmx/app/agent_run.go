@@ -28,7 +28,6 @@ type RunAgentOptions struct {
 type TaskResultOptions struct {
 	Task, Namespace, ResultPort string
 	Wait                        time.Duration
-	Follow                      bool
 }
 
 func orkaResultDeadline(wait time.Duration) (time.Duration, error) {
@@ -53,11 +52,18 @@ func orkaResultPort(port string) (string, error) {
 }
 
 func taskRecovery(name, contextName, namespace string) string {
-	return fmt.Sprintf("kmx task result %s --context %s --namespace %s --wait", shellArg(name), shellArg(contextName), shellArg(namespace))
+	return fmt.Sprintf("kmx task result %s --context %s --namespace %s --wait 5m", shellArg(name), shellArg(contextName), shellArg(namespace))
 }
 
 func pendingTask(name, contextName, namespace string) error {
 	return fmt.Errorf("%w: Task %s may still be running or its result is not yet available; recover with: %s", ErrTaskPending, name, taskRecovery(name, contextName, namespace))
+}
+
+func runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
+	if err != nil && ctx.Err() == context.DeadlineExceeded && errors.Is(err, context.DeadlineExceeded) {
+		return pendingTask(name, contextName, namespace)
+	}
+	return err
 }
 
 // readRunPromptFile opens a regular file without following a substituted link.
@@ -121,8 +127,6 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	ctx := a.operationContext()
 	worker := *a
 	worker.guarded = false
-	// InvocationCommand may contain the literal --prompt text. Replace it
-	// with a context-pinned retry that reads the prompt anew from stdin.
 	namespace := opt.Namespace
 	if namespace == "" {
 		namespace = OrkaNamespace
@@ -212,7 +216,15 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		}
 		worker.notef("Bundle state: %s; deployed commit: %s", observed.State, commit)
 	}
-	worker.InvocationCommand = worker.operationCommand("agent", "run", "--agent", name, "--namespace", namespace, "--prompt-file", "-")
+	// The guard's retry preserves the destination and execution flags, but
+	// reads the prompt anew instead of repeating its potentially private text.
+	if bundle != "" {
+		worker.InvocationCommand = fmt.Sprintf("kmx agent run %s --to-context %s --wait %s --result-port %s --prompt-file -",
+			shellArg(opt.BundleDir), shellArg(worker.Cfg.KubeContext), shellArg(timeout.String()), shellArg(port))
+	} else {
+		worker.InvocationCommand = worker.operationCommand("agent", "run", "--agent", name, "--namespace", namespace,
+			"--wait", timeout.String(), "--result-port", port, "--prompt-file", "-")
+	}
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
 		return err
 	}
@@ -295,7 +307,14 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err != nil {
 		return fmt.Errorf("Task name could not be written; no Task created: %w", err)
 	}
-	worker.notef("Recovery: %s", taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+	recoveryLine := fmt.Sprintf("Recovery: %s\n", taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+	n, err = io.WriteString(worker.Err, recoveryLine)
+	if err == nil && n != len(recoveryLine) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return fmt.Errorf("Recovery command could not be written; no Task created: %w", err)
+	}
 	task := map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task", "metadata": map[string]any{"name": taskName, "namespace": namespace}, "spec": map[string]any{"type": "ai", "prompt": prompt, "agentRef": map[string]any{"name": name, "namespace": namespace}, "resources": map[string]any{}}}
 	id, err := worker.createOrkaObject(execCtx, namespace, task)
 	if err != nil {
@@ -303,12 +322,11 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	}
 	answer, err := worker.waitOrkaTaskResult(execCtx, namespace, id, session)
 	if err != nil {
-		// Once created, only exhaustion of the outer deadline is pending. A
-		// transient HTTP/kubectl timeout is not itself evidence that it expired.
-		if execCtx.Err() == context.DeadlineExceeded {
-			return pendingTask(taskName, worker.Cfg.KubeContext, namespace)
+		outcome := runTaskWaitError(execCtx, err, taskName, worker.Cfg.KubeContext, namespace)
+		if errors.Is(outcome, ErrTaskPending) {
+			return outcome
 		}
-		return err
+		return fmt.Errorf("%w; recover with: %s", outcome, taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
 	}
 	_, err = fmt.Fprintln(worker.Out, answer)
 	return err

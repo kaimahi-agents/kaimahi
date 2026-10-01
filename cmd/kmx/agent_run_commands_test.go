@@ -21,6 +21,8 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 		{[]string{"agent", "run", "agents/sample"}, "--prompt"},
 		{[]string{"agent", "run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "--to-context"},
 		{[]string{"agent", "run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
+		{[]string{"agent", "run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
+		{[]string{"task", "result", "sample", "--wait", "0s"}, "--wait"},
 		{[]string{"task", "result"}, "usage"},
 	} {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
@@ -67,6 +69,25 @@ func TestPendingTaskHasDistinctExitCode(t *testing.T) {
 	}
 	if got := exitCode(errors.New("task failed")); got != 1 {
 		t.Fatalf("failed exit code = %d", got)
+	}
+}
+
+func TestTaskResultWaitRequiresDuration(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	cmd, _, err := newRootCommand(&commandState{deps: deps}).Find([]string{"task", "result"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flag := cmd.Flags().Lookup("wait")
+	if flag == nil || flag.DefValue != "0s" {
+		t.Fatalf("result wait default = %v", flag)
+	}
+	if err := cmd.ParseFlags([]string{"--wait", "5m"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cmd.Flags().GetDuration("wait"); err != nil || got != 5*time.Minute {
+		t.Fatalf("result wait = %v, %v", got, err)
 	}
 }
 

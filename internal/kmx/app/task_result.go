@@ -30,9 +30,14 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	if err := scaffold.ValidateNamespace(namespace); err != nil {
 		return err
 	}
-	timeout, err := orkaResultDeadline(opt.Wait)
-	if err != nil {
-		return err
+	follow := opt.Wait != 0
+	timeout := 30 * time.Second
+	if follow {
+		var err error
+		timeout, err = orkaResultDeadline(opt.Wait)
+		if err != nil {
+			return err
+		}
 	}
 	port, err := orkaResultPort(opt.ResultPort)
 	if err != nil {
@@ -41,10 +46,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// The wait cap is below the session token's lifetime even when polling the
-	// Task consumes most of it. For a no-wait inspection, only bound kubectl.
-	if !opt.Follow {
-		timeout = 30 * time.Second
-	}
+	// Task consumes most of it. Without --wait, bound the single inspection.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	worker := a.withRunContext(ctx)
@@ -53,7 +55,11 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	}
 	raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", orkaPlural("Task"), opt.Task, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
-		return fmt.Errorf("cannot inspect Task %s/%s: %w", namespace, opt.Task, err)
+		inspected := fmt.Errorf("cannot inspect Task %s/%s: %w", namespace, opt.Task, err)
+		if follow {
+			return runTaskWaitError(ctx, inspected, opt.Task, a.Cfg.KubeContext, namespace)
+		}
+		return inspected
 	}
 	if len(raw) == 0 {
 		return fmt.Errorf("Task %s/%s not found", namespace, opt.Task)
@@ -78,21 +84,29 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	id := orkaIdentity{Kind: "Task", Name: opt.Task, UID: object.Metadata.UID, Generation: object.Metadata.Generation}
 	// Re-read with the pinned identity rather than trusting an old phase
 	// observation. A replaced Task cannot lend its result to this invocation.
+	var lastPhase string
+	reportedPhase := false
 	for {
 		task, err := worker.readOrkaObject(ctx, namespace, id)
 		if err != nil {
+			if follow {
+				return runTaskWaitError(ctx, err, opt.Task, a.Cfg.KubeContext, namespace)
+			}
 			return err
 		}
-		worker.notef("Task %s phase: %s", opt.Task, task.Status.Phase)
+		if !reportedPhase || task.Status.Phase != lastPhase {
+			worker.notef("Task %s phase: %s", opt.Task, task.Status.Phase)
+			lastPhase, reportedPhase = task.Status.Phase, true
+		}
 		switch task.Status.Phase {
 		case "Failed", "Cancelled":
 			return &orkaTaskEndedError{Phase: task.Status.Phase}
 		case "Succeeded":
 			if task.Status.ResultRef.Available {
-				return worker.taskResultRead(ctx, namespace, id, port, opt.Follow)
+				return worker.taskResultRead(ctx, namespace, id, port, follow)
 			}
 		}
-		if !opt.Follow {
+		if !follow {
 			return pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
 		}
 		if err := orkaPause(ctx); err != nil {
@@ -107,16 +121,19 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdentity, port string, follow bool) error {
 	session, err := a.openOrkaResultSession(ctx, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded && follow {
-			return pendingTask(id.Name, a.Cfg.KubeContext, namespace)
+		if follow {
+			return runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
 		}
 		return err
 	}
 	defer session.close()
 	answer, err := a.readOrkaTaskResult(session.ctx, namespace, id, session, nil, follow)
 	if err != nil {
-		if errors.Is(err, ErrTaskPending) || ctx.Err() == context.DeadlineExceeded && follow {
+		if errors.Is(err, ErrTaskPending) {
 			return pendingTask(id.Name, a.Cfg.KubeContext, namespace)
+		}
+		if follow {
+			return runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
 		}
 		return err
 	}

@@ -60,6 +60,13 @@ func TestEvalKubectlHelper(t *testing.T) {
 		if os.Getenv("KMX_EVAL_STOCK_RELEASE") == "1" && !slices.Contains(args, "svc/orka") {
 			fail()
 		}
+		if delay := os.Getenv("KMX_EVAL_FORWARD_DELAY"); delay != "" {
+			pause, err := time.ParseDuration(delay)
+			if err != nil {
+				fail()
+			}
+			time.Sleep(pause)
+		}
 		_ = os.WriteFile(filepath.Join(dir, "forward-pid"), []byte(fmt.Sprint(os.Getpid())), 0600)
 		port, _, _ := strings.Cut(args[len(args)-1], ":")
 		fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
@@ -118,6 +125,13 @@ func TestEvalKubectlHelper(t *testing.T) {
 			}
 			_, _ = os.Stdout.Write(raw)
 		case "tasks.core.orka.ai":
+			if delay := os.Getenv("KMX_EVAL_TASK_GET_DELAY"); delay != "" {
+				pause, err := time.ParseDuration(delay)
+				if err != nil {
+					fail()
+				}
+				time.Sleep(pause)
+			}
 			raw, err := os.ReadFile(filepath.Join(dir, "task-"+name+".json"))
 			if err != nil {
 				os.Exit(0)
@@ -125,6 +139,22 @@ func TestEvalKubectlHelper(t *testing.T) {
 			var task map[string]any
 			_ = json.Unmarshal(raw, &task)
 			phase := getenvLiftTest("KMX_EVAL_PHASE", "Succeeded")
+			if sequence := os.Getenv("KMX_EVAL_PHASE_SEQUENCE"); sequence != "" {
+				path := filepath.Join(dir, "task-phase-read-count")
+				countRaw, _ := os.ReadFile(path)
+				count, _ := strconv.Atoi(string(countRaw))
+				phases := strings.Split(sequence, ",")
+				phase = phases[min(count, len(phases)-1)]
+				_ = os.WriteFile(path, []byte(strconv.Itoa(count+1)), 0600)
+			}
+			if swap := os.Getenv("KMX_EVAL_TASK_SWAP_ON_READ"); swap != "" {
+				threshold, _ := strconv.Atoi(swap)
+				countRaw, _ := os.ReadFile(filepath.Join(dir, "task-phase-read-count"))
+				count, _ := strconv.Atoi(string(countRaw))
+				if count >= threshold {
+					task["metadata"].(map[string]any)["uid"] = "replacement-task-uid"
+				}
+			}
 			available := phase == "Succeeded" && os.Getenv("KMX_EVAL_RESULT_AVAILABLE") != "false"
 			task["status"] = map[string]any{"phase": phase, "resultRef": map[string]any{"available": available}}
 			_ = json.NewEncoder(os.Stdout).Encode(task)
@@ -153,13 +183,14 @@ func TestEvalKubectlHelper(t *testing.T) {
 }
 
 type evalFixture struct {
-	app          *App
-	opt          EvaluateAgentBundleOptions
-	dir, bundle  string
-	name, digest string
-	out          *bytes.Buffer
-	answers      map[string]string
-	resultStatus int
+	app                              *App
+	opt                              EvaluateAgentBundleOptions
+	dir, bundle                      string
+	name, digest                     string
+	out                              *bytes.Buffer
+	answers                          map[string]string
+	resultStatus                     int
+	resultDisconnect, resultHoldBody bool
 }
 
 // newEvalFixture writes a created bundle (with its scaffolded example case
@@ -211,6 +242,19 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+			return
+		}
+		if f.resultDisconnect {
+			connection, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = connection.Close()
+			}
+			return
+		}
+		if f.resultHoldBody {
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
 			return
 		}
 		if f.resultStatus != http.StatusOK {

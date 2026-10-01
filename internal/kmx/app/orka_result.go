@@ -181,6 +181,9 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	a.orkaForwardContext = nil
 	if err != nil {
 		cancel()
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Orka result port-forward timed out: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("Orka result port-forward did not prove a 127.0.0.1 bind; use a free result port and check Service access")
 	}
 	go func() {
@@ -198,6 +201,9 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if err != nil {
 		cancel()
 		fwd.Close()
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Orka result connection timed out: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("cannot establish the Orka result connection; no resources created")
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
@@ -210,6 +216,9 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if forwardCtx.Err() != nil {
 		_ = bound.Close()
 		fwd.Close()
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Orka result forward timed out before the session opened: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("Orka result forward ended before the session opened")
 	}
 	var take sync.Once
@@ -260,6 +269,9 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 	default:
 	}
 	if s.ctx.Err() != nil {
+		if s.ctx.Err() == context.DeadlineExceeded {
+			return 0, nil, fmt.Errorf("Orka result session timed out: %w", s.ctx.Err())
+		}
 		return 0, nil, fmt.Errorf("Orka result session ended; refusing request")
 	}
 	// Names were validated before generation; redirects and HTTP_PROXY are
@@ -277,6 +289,9 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 	req.Header.Set("Accept", "application/json")
 	response, err := s.client.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return 0, nil, fmt.Errorf("Orka result request failed or timed out: %w", ctx.Err())
+		}
 		return 0, nil, fmt.Errorf("Orka result request failed or timed out")
 	}
 	defer response.Body.Close()
@@ -286,7 +301,13 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 	}
 	const maxBody = 1 << 20
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody+1))
-	if err != nil || len(body) > maxBody {
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return response.StatusCode, nil, fmt.Errorf("Orka result response read timed out: %w", ctx.Err())
+		}
+		return response.StatusCode, nil, fmt.Errorf("Orka result response could not be read within the size limit")
+	}
+	if len(body) > maxBody {
 		return response.StatusCode, nil, fmt.Errorf("Orka result response could not be read within the size limit")
 	}
 	var envelope map[string]json.RawMessage

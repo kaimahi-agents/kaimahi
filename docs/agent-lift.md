@@ -190,7 +190,7 @@ any case is `unknown`.
 ```console
 kmx agent run agents/my-agent --prompt "Summarize the release" [--to-context <ctx>] [--wait 5m]
 kmx agent run --agent my-agent [--namespace orka-system] [--context <ctx>] --prompt-file prompt.txt
-kmx task result <task-name> [--namespace orka-system] [--context <ctx>] [--wait]
+kmx task result <task-name> [--context <ctx>] [--namespace orka-system] [--wait 5m]
 ```
 
 `agent run` executes one AI Task against a live Agent without creating or
@@ -204,21 +204,25 @@ commit first, so the answer is not mistaken for one from the current bundle.
 `--agent` selects a live Agent directly, whether or not it has a bundle;
 `--namespace` defaults to `orka-system`, and `--context` selects the cluster.
 
-State, commit, result authority notice, Task name, phase, and any recovery
-command go to **stderr**. Only the answer goes to **stdout**, so redirecting
+For `agent run`, bundle state and commit, result authority notice, Task name
+and any recovery command go to **stderr**. `task result` reports the phase
+there too. Only the answer goes to **stdout**, so redirecting
 `> answer.txt` will not mix it with status. The Task name is written before
 creation; creation is attempted once, never retried, and the Task is not
 deleted. A run waits by default up to 5m (`--wait` accepts 10s–9m, below
-the result token lifetime). On timeout it prints an exact, context-pinned
-`kmx task result <task-name> --namespace <ns> --context <ctx> --wait` command.
+the result token lifetime; `--wait 0s` is refused). On timeout it prints an
+exact, context-pinned
+`kmx task result <task-name> --context <ctx> --namespace <ns> --wait 5m` command.
 
 `task result` checks that the named Task exists and is an AI Task. Without
 `--wait` it reads the phase immediately through kubectl; it opens a fresh
-result session only when a terminal answer is available. `--wait` polls for
-up to 5m, using a fresh result session for the answer. A pending Task, or a
+result session only when a terminal answer is available. `--wait 5m` polls
+for up to 5m (accepted range: 10s–9m), using a fresh result session for the
+answer. The phase is printed only when it changes. A pending Task, or a
 Succeeded Task whose answer is not yet available, exits **2** (not finished).
 A Failed or Cancelled Task exits **1**; a readable successful answer exits
-**0**. A timed-out `agent run` also exits **2**. Other errors exit **1**.
+**0**. A timed-out `agent run` also exits **2**. Access or malformed-result
+errors exit **1**, not **2**.
 After a timeout, the Task may still be running: retrieve it by name rather
 than re-running the prompt, which would create another Task. Result sessions
 use the selected ServiceAccount's full effective authority and a temporary

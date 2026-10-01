@@ -16,8 +16,8 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		Use: "run [<bundle-dir>]", Short: "Run one Task against an existing Orka Agent",
 		Long: "Run a bundle's deployed Agent, or select a live Agent with --agent.\n" +
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
-			"A Task is never retried or deleted; exit code 2 means the Task may still be running;\n" +
-			"use kmx task result to retrieve it later. Other errors exit 1.",
+			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +
+			"the answer may not yet be readable. Use kmx task result to retrieve it later.",
 		Args: usageArgs(0, 1, "kmx agent run <bundle-dir> --prompt <text> | kmx agent run --agent <name> --prompt <text>"),
 	}
 	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent instead of a bundle")
@@ -30,6 +30,9 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if err := usageArgs(0, 1, "kmx agent run <bundle-dir> --prompt <text> | kmx agent run --agent <name> --prompt <text>")(cmd, args); err != nil {
 			return err
+		}
+		if cmd.Flags().Changed("wait") && opt.Wait == 0 {
+			return fmt.Errorf("--wait must be between 10s and 9m")
 		}
 		if cmd.Flags().Changed("prompt") == cmd.Flags().Changed("prompt-file") {
 			return fmt.Errorf("exactly one of --prompt or --prompt-file is required")
@@ -68,13 +71,22 @@ func newTaskResultCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "result <task>", Short: "Read an existing AI Task's phase and answer",
 		Long: "Read an AI Task's phase. If its answer is available, print only the answer on stdout.\n" +
-			"With --wait, wait for completion. State and recovery instructions go to stderr.\n" +
-			"exit code 2 means the Task is not finished; try this command later. Failed or Cancelled exits 1.",
-		Args: usageArgs(1, 1, "kmx task result <task> [--namespace <ns>] [--context <ctx>] [--wait]"),
+			"With --wait <duration> (10s to 9m), wait for completion. Phase changes and recovery instructions go to stderr.\n" +
+			"exit code 2 means the Task is pending or its successful answer is not yet readable; retry later. Failed or Cancelled exits 1.",
+		Args: usageArgs(1, 1, "kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]"),
 	}
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "Task namespace (default: "+app.OrkaNamespace+")")
-	cmd.Flags().BoolVar(&opt.Follow, "wait", false, "wait up to 5m for an answer")
+	cmd.Flags().DurationVar(&opt.Wait, "wait", 0, "wait up to this duration for an answer (10s to 9m; omitted: inspect once)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if err := usageArgs(1, 1, "kmx task result <task> [--namespace <ns>] [--context <ctx>] [--wait 5m]")(cmd, args); err != nil {
+			return err
+		}
+		if cmd.Flags().Changed("wait") && opt.Wait == 0 {
+			return fmt.Errorf("--wait must be between 10s and 9m")
+		}
+		return nil
+	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		opt.Task = cmd.Flags().Arg(0)
 		return a.TaskResult(opt)

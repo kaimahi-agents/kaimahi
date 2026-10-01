@@ -291,6 +291,32 @@ func TestRunAgentRefusesShortTaskNameWrite(t *testing.T) {
 	}
 }
 
+type recoveryFailWriter struct{ content bytes.Buffer }
+
+func (w *recoveryFailWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("Recovery:")) {
+		return 0, fmt.Errorf("terminal disconnected")
+	}
+	return w.content.Write(p)
+}
+
+func TestRunAgentRefusesCreateWhenRecoveryCannotBeWritten(t *testing.T) {
+	f := runFixture(t)
+	f.answers["private prompt"] = "answer"
+	writer := &recoveryFailWriter{}
+	f.app.Err = writer
+	err := f.app.RunAgent(runOption(f))
+	if err == nil || !strings.Contains(err.Error(), "Recovery") {
+		t.Fatalf("err=%v", err)
+	}
+	if f.taskCreates(t) != 0 {
+		t.Fatal("Task created without written recovery command")
+	}
+	if !strings.Contains(writer.content.String(), "Task name:") {
+		t.Fatal("Task name missing before recovery write")
+	}
+}
+
 func TestRunAgentTimeoutReturnsPendingRecoveryWithoutRetry(t *testing.T) {
 	f := runFixture(t)
 	t.Setenv("KMX_EVAL_PHASE", "Running")
@@ -309,6 +335,28 @@ func TestRunAgentTimeoutReturnsPendingRecoveryWithoutRetry(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "kmx task result ") || !strings.Contains(err.Error(), "--context kind-test --namespace orka-system --wait") {
 		t.Fatalf("recovery=%v", err)
+	}
+}
+
+func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"failed Task", fmt.Errorf("Task ended: %w", &orkaTaskEndedError{Phase: "Failed"})},
+		{"result refusal", errors.New("Orka result read refused (HTTP 403)")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runTaskWaitError(ctx, tc.err, "task", "kind-test", "orka-system")
+			if errors.Is(got, ErrTaskPending) || !errors.Is(got, tc.err) {
+				t.Fatalf("deadline masked %s: %v", tc.name, got)
+			}
+		})
+	}
+	if got := runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
+		t.Fatalf("expired wait not pending: %v", got)
 	}
 }
 
@@ -350,11 +398,33 @@ func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
 		t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
 	}
-	if !strings.Contains(err.Error(), "--prompt-file -") || strings.Contains(err.Error(), "<redacted>") {
-		t.Fatalf("guard retry is not a safe runnable command: %v", err)
+	want := "kmx agent run " + shellArg(f.bundle) + " --to-context kind-test --wait 30s --result-port " + f.opt.ResultPort + " --prompt-file -"
+	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), " --agent ") || strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("guard retry lost bundle selection or exposed prompt: %v", err)
 	}
 	if f.taskCreates(t) != 0 {
 		t.Fatal("created")
+	}
+}
+
+func TestRunAgentRemoteGuardPreservesRememberedBundleDestination(t *testing.T) {
+	f := runFixture(t)
+	selection, err := bundleLiftSelectionPath(f.bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBundleLiftSelection(selection, bundleLiftSelection{Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Inference: "provider:inference"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_EVAL_REMOTE", "1")
+	opt := runOption(f)
+	opt.ToContext = ""
+	err = f.app.RunAgent(opt)
+	if err == nil || !strings.Contains(err.Error(), "kmx agent run "+shellArg(f.bundle)+" --to-context kind-test --wait 30s --result-port "+f.opt.ResultPort+" --prompt-file -") {
+		t.Fatalf("remembered destination not restored in retry: %v", err)
+	}
+	if f.taskCreates(t) != 0 {
+		t.Fatal("created after guard refusal")
 	}
 }
 
@@ -431,7 +501,7 @@ func TestRunAgentPromptFileStdin(t *testing.T) {
 
 func TestTaskRecoveryQuotesContext(t *testing.T) {
 	got := taskRecovery("safe-task", "kind-prod;echo-danger", "orka-system")
-	want := "kmx task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait"
+	want := "kmx task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
 	if got != want {
 		t.Fatalf("recovery command = %q, want %q", got, want)
 	}
@@ -454,6 +524,48 @@ func TestRunAgentRefusesSymlinkPromptFile(t *testing.T) {
 	}
 	if f.taskCreates(t) != 0 {
 		t.Fatal("created Task from linked prompt")
+	}
+}
+
+func TestTaskRecoveryWaitHasExplicitDuration(t *testing.T) {
+	got := taskRecovery("safe-task", "kind-test", "orka-system")
+	if !strings.HasSuffix(got, "--wait 5m") {
+		t.Fatalf("recovery command = %q", got)
+	}
+}
+
+func TestRunAgentBodyReadDeadlineIsPending(t *testing.T) {
+	f := runFixture(t)
+	f.resultHoldBody = true
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
+	defer cancel()
+	f.app.Run.Context = ctx
+	opt := runOption(f)
+	opt.Wait = 10 * time.Second
+	err := f.app.RunAgent(opt)
+	if !errors.Is(err, ErrTaskPending) || f.taskCreates(t) != 1 || f.out.Len() != 0 {
+		t.Fatalf("body-read deadline: err=%v creates=%d stdout=%q", err, f.taskCreates(t), f.out)
+	}
+}
+
+func TestRunAgentSessionLossAfterCreateIncludesRecovery(t *testing.T) {
+	f := runFixture(t)
+	f.resultDisconnect = true
+	err := f.app.RunAgent(runOption(f))
+	if err == nil || errors.Is(err, ErrTaskPending) {
+		t.Fatalf("lost session = %v", err)
+	}
+	if f.taskCreates(t) != 1 {
+		t.Fatalf("create attempts = %d", f.taskCreates(t))
+	}
+	var taskName string
+	for _, call := range orkaCalls(t, f.dir) {
+		if call.Document != nil && call.Document["kind"] == "Task" {
+			taskName = call.Document["metadata"].(map[string]any)["name"].(string)
+		}
+	}
+	if taskName == "" || !strings.Contains(err.Error(), taskRecovery(taskName, "kind-test", "orka-system")) {
+		t.Fatalf("missing context-pinned recovery after lost session: %v", err)
 	}
 }
 
