@@ -37,6 +37,9 @@ func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]
 	cmd.Stdout, cmd.Stderr = out, stderr
 	if err := cmd.Run(); err != nil {
 		if callCtx.Err() != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, fmt.Errorf("kubectl request cancelled or timed out: %w", err)
+			}
 			return nil, fmt.Errorf("kubectl request cancelled or timed out")
 		}
 		reason := strings.ToLower(stderr.buffer.String())
