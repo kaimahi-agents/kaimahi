@@ -19,6 +19,8 @@ type LifecycleAdapter interface {
 	Capabilities() Capabilities
 	// ConsumedExtensions declares the runtime-specific behavior Render honors.
 	ConsumedExtensions() []ID
+	// SupportsCoordination declares whether Render honors core named delegation.
+	SupportsCoordination() bool
 	// Render takes only a document prepared for this adapter. Its source bytes
 	// remain the authoritative portable-identity input.
 	Render(context.Context, *PreparedPortableRender, RenderOptions) (RenderedBundle, error)

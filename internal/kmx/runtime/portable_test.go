@@ -112,6 +112,40 @@ extensions:
         requestsPerMinute: 30
 `
 
+func coreWithCoordination(block string) string {
+	return strings.Replace(portableCore, "  model:\n", "  coordination:\n"+block+"  model:\n", 1)
+}
+
+func TestParsePortableCoreCoordination(t *testing.T) {
+	doc := coreWithCoordination("    allowedAgents:\n      - name: helper\n      - name: reviewer\n")
+	agent, err := ParsePortableAgent([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Spec.Coordination == nil || len(agent.Spec.Coordination.AllowedAgents) != 2 || agent.Spec.Coordination.AllowedAgents[0].Name != "helper" || agent.Spec.Coordination.AllowedAgents[1].Name != "reviewer" {
+		t.Fatalf("lost core helper permission: %+v", agent.Spec.Coordination)
+	}
+	if string(agent.Source()) != doc {
+		t.Fatal("portable source bytes changed")
+	}
+}
+
+func TestParsePortableCoreCoordinationRefusals(t *testing.T) {
+	legacy := "extensions:\n  orka:\n    apiVersion: core.orka.ai/v1alpha1\n    agent:\n      coordination:\n        enabled: false\n"
+	for _, tc := range []struct{ name, doc, want string }{
+		{"empty", coreWithCoordination("    allowedAgents: []\n"), "spec.coordination.allowedAgents"},
+		{"null list", coreWithCoordination("    allowedAgents: null\n"), "spec.coordination.allowedAgents"},
+		{"missing list", coreWithCoordination("    {}\n"), "spec.coordination.allowedAgents"},
+		{"null block", strings.Replace(portableCore, "  model:\n", "  coordination: null\n  model:\n", 1), "spec.coordination must be a mapping"},
+		{"duplicate", coreWithCoordination("    allowedAgents:\n      - name: helper\n      - name: helper\n"), "duplicates"},
+		{"self", coreWithCoordination("    allowedAgents:\n      - name: hello\n"), "cannot name itself"},
+		{"cross namespace", coreWithCoordination("    allowedAgents:\n      - name: helper\n        namespace: foreign\n"), "namespace"},
+		{"both forms", coreWithCoordination("    allowedAgents:\n      - name: helper\n") + legacy, "both spec.coordination and extensions.orka.agent.coordination"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { mustNotParse(t, tc.doc, tc.want) })
+	}
+}
+
 func portableWithCoordination(block string) string {
 	return minimalPortableYAML + "    agent:\n      coordination:\n" + block
 }

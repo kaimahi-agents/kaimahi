@@ -109,8 +109,11 @@ The broader lifecycle direction is tracked in
 Built-in lifecycle adapters advertise capabilities and the extensions whose
 behavior they consume. Before rendering, `PreparePortableRender` validates the
 exact authored source and refuses every behavior field from an extension the
-target does not consume. `LifecycleAdapter.Render` accepts only that prepared,
-target-bound document; missing or wrong-target preparation is refused. An
+target does not consume. An adapter also declares whether it honors portable
+core `spec.coordination.allowedAgents`; preparation refuses it when unsupported
+and binds that choice to the prepared document. Orka supports it; Kagent does
+not. `LifecycleAdapter.Render` accepts only that prepared, target-bound
+document; missing or wrong-target preparation is refused. An
 extension's `apiVersion` alone does not add behavior. Unsupported lifecycle
 verbs return explicit errors. Git and the selected runtime are the initial state stores; this
 contract does not require a KMX server or controller.
@@ -126,7 +129,11 @@ digest; even a formatting-only edit creates a new revision. Unknown fields and
 multiple runtime extensions are errors, not ignored settings.
 
 For Orka, behavior-defining inputs remain name, optional description,
-instructions, model name, tools, skills, and Provider/Agent rate limits. For
+instructions, model name, portable named-helper coordination, tools, skills,
+and Provider/Agent rate limits. Legacy Orka coordination can additionally
+state Orka-specific enabled and limit settings, but cannot coexist with core
+coordination. A nonempty core helper list enables only those same-scope names;
+Kagent refuses core coordination instead of silently discarding it. For
 Kagent, they are name, required description, instructions, model name,
 declarative runtime (`go|python`), and at most one explicit same-namespace MCP
 server/tool allowlist. Runtime identity and the model provider are separate:

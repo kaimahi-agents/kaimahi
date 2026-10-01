@@ -104,6 +104,45 @@ func TestCreateCoordinationFlagAuthorsNamedTargetsOnly(t *testing.T) {
 	}
 }
 
+func TestCoreCoordinationRendersToOrkaWithoutDefaults(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	opt.NoApply = false
+	adapter := lifecycleAdapter(t, opt)
+	source := []byte(`apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: sample
+spec:
+  instructions: Delegate work.
+  model:
+    name: gpt-4o-mini
+  coordination:
+    allowedAgents:
+      - name: helper
+      - name: reviewer
+`)
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(t.Context(), prepared, agentruntime.RenderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered.PortableDigest() != agentruntime.PortableBundleDigest(source) {
+		t.Fatal("Orka changed the portable authored digest")
+	}
+	objects, err := orkaBundleFromRendered(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := objects.Agent["spec"].(map[string]any)["coordination"]
+	want := map[string]any{"enabled": true, "allowedAgents": []any{map[string]any{"name": "helper"}, map[string]any{"name": "reviewer"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rendered core coordination = %#v, want %#v", got, want)
+	}
+}
+
 func TestPortableCoordinationRendersAndChangesDigest(t *testing.T) {
 	opt := goldenNoTaskCreate("")
 	opt.NoApply = false

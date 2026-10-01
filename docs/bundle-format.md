@@ -32,6 +32,16 @@ rejects those fields even though the version string is unchanged. Persistent
 
 A core-only document with absent or empty `extensions` can be rendered to Orka;
 Kagent rendering still requires an explicit `extensions.kagent.runtime` choice.
+`spec.coordination.allowedAgents` is optional portable-core behavior: when present
+it must name at least one distinct, non-self helper in the destination scope.
+It never permits all Agents. Orka renders it as enabled coordination with exactly
+those names and no stated concurrency or depth limits. Kagent refuses it because
+it cannot render delegation. It cannot coexist with
+`extensions.orka.agent.coordination`, even if the latter says `enabled: false`.
+Legacy Orka-extension-only documents retain their source digests and rendered
+bytes; migrating a coordinator to the core field changes the authored revision.
+Older kmx readers reject `spec.coordination` as an unknown field; they must be
+upgraded before reading a migrated bundle. No AX adapter is shipped yet.
 A target refuses each behavior field in an extension it does not consume before
 rendering; `apiVersion` alone does not specify behavior. Older kmx readers
 refuse core-only documents instead of ignoring them. The Orka-only reader at

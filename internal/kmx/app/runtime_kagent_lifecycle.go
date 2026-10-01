@@ -40,6 +40,8 @@ func (kagentRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
 	return []agentruntime.ID{agentruntime.Kagent}
 }
 
+func (kagentRuntimeAdapter) SupportsCoordination() bool { return false }
+
 func (a kagentRuntimeAdapter) lifecycleVerbError(declared bool, verb string) error {
 	if declared {
 		return nil

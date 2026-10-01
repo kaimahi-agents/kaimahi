@@ -66,6 +66,8 @@ func (orkaRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
 	return []agentruntime.ID{agentruntime.Orka}
 }
 
+func (orkaRuntimeAdapter) SupportsCoordination() bool { return true }
+
 // lifecycleVerbError returns the one shared typed error for a verb this
 // adapter does not declare, and nil for one it does.
 func (a orkaRuntimeAdapter) lifecycleVerbError(declared bool, verb string) error {
@@ -497,6 +499,14 @@ func orkaSpecFromPortable(portable *agentruntime.PortableAgent, bindings agentru
 		Instructions:      portable.Spec.Instructions,
 		TaskPrompt:        opt.Task,
 		ProviderRateLimit: orkaRateLimitFromExtension(extension.Provider.RateLimit),
+	}
+	if portable.Spec.Coordination != nil {
+		enabled := true
+		mapped := &scaffold.OrkaCoordination{Enabled: &enabled}
+		for _, ref := range portable.Spec.Coordination.AllowedAgents {
+			mapped.AllowedAgents = append(mapped.AllowedAgents, ref.Name)
+		}
+		spec.Coordination = mapped
 	}
 	if extension.Agent != nil {
 		for _, tool := range extension.Agent.Tools {

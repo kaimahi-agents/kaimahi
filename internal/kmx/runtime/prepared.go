@@ -9,9 +9,10 @@ import (
 // PreparedPortableRender carries source bytes validated for one target. Its
 // private fields prevent callers from supplying unchecked behavior to Render.
 type PreparedPortableRender struct {
-	source   []byte
-	target   ID
-	consumed []ID
+	source       []byte
+	target       ID
+	consumed     []ID
+	coordination bool
 }
 
 // PreparePortableRender validates authored bytes and refuses behavior in any
@@ -30,6 +31,9 @@ func PreparePortableRender(source []byte, adapter LifecycleAdapter) (*PreparedPo
 		consumes[extension] = true
 	}
 	var paths []string
+	if agent.Spec.Coordination != nil && !adapter.SupportsCoordination() {
+		paths = append(paths, "spec.coordination.allowedAgents")
+	}
 	if extension := agent.Extensions.Orka; extension != nil && !consumes[Orka] {
 		if hasOrkaLimit(extension.Provider.RateLimit) {
 			paths = append(paths, "extensions.orka.provider.rateLimit")
@@ -58,7 +62,7 @@ func PreparePortableRender(source []byte, adapter LifecycleAdapter) (*PreparedPo
 	if len(paths) != 0 {
 		return nil, fmt.Errorf("runtime %s cannot honor behavior in %s", adapter.ID(), strings.Join(paths, ", "))
 	}
-	return &PreparedPortableRender{source: agent.Source(), target: adapter.ID(), consumed: declared}, nil
+	return &PreparedPortableRender{source: agent.Source(), target: adapter.ID(), consumed: declared, coordination: adapter.SupportsCoordination()}, nil
 }
 
 func sortedConsumedExtensions(extensions []ID) []ID {
@@ -77,7 +81,7 @@ func (p *PreparedPortableRender) ForAdapter(adapter LifecycleAdapter) (*Portable
 	if p == nil || p.target == "" || len(p.source) == 0 || adapter == nil {
 		return nil, nil, fmt.Errorf("render requires a prepared portable document")
 	}
-	if p.target != adapter.ID() || !slices.Equal(p.consumed, sortedConsumedExtensions(adapter.ConsumedExtensions())) {
+	if p.target != adapter.ID() || !slices.Equal(p.consumed, sortedConsumedExtensions(adapter.ConsumedExtensions())) || p.coordination != adapter.SupportsCoordination() {
 		return nil, nil, fmt.Errorf("portable document was not prepared for this runtime and its consumed extensions")
 	}
 	agent, err := ParsePortableAgent(p.source)

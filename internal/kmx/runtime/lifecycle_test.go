@@ -13,6 +13,7 @@ import (
 type exampleAdapter struct {
 	capabilities Capabilities
 	runtime      ID
+	coordination bool
 }
 
 func (a exampleAdapter) ID() ID {
@@ -25,6 +26,7 @@ func (exampleAdapter) Probe(context.Context, Target) (Probe, error)  { return Pr
 func (exampleAdapter) Open(context.Context, Target) (Session, error) { return nil, nil }
 func (a exampleAdapter) Capabilities() Capabilities                  { return a.capabilities }
 func (exampleAdapter) ConsumedExtensions() []ID                      { return nil }
+func (a exampleAdapter) SupportsCoordination() bool                  { return a.coordination }
 func (a exampleAdapter) Render(_ context.Context, prepared *PreparedPortableRender, _ RenderOptions) (RenderedBundle, error) {
 	agent, source, err := prepared.ForAdapter(a)
 	if err != nil {
@@ -134,6 +136,25 @@ func TestPreparePortableRenderRefusesUnconsumedBehavior(t *testing.T) {
 				last = at
 			}
 		})
+	}
+}
+
+func TestPreparePortableRenderGatesCoreCoordination(t *testing.T) {
+	source := []byte(coreWithCoordination("    allowedAgents:\n      - name: helper\n"))
+	without := exampleAdapter{capabilities: Capabilities{Render: true}}
+	if _, err := PreparePortableRender(source, without); err == nil || !strings.Contains(err.Error(), "spec.coordination.allowedAgents") {
+		t.Fatalf("unconsumed core delegation was accepted: %v", err)
+	}
+	with := exampleAdapter{capabilities: Capabilities{Render: true}, coordination: true}
+	prepared, err := PreparePortableRender(source, with)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := with.Render(t.Context(), prepared, RenderOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := prepared.ForAdapter(without); err == nil {
+		t.Fatal("preparation was reused by a runtime without coordination support")
 	}
 }
 

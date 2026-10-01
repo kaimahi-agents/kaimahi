@@ -61,9 +61,19 @@ type PortableMetadata struct {
 // PortableSpec is the runtime-neutral behavior: what the agent is told to do
 // and which model it uses. Anything platform-specific belongs in an extension.
 type PortableSpec struct {
-	Instructions string        `yaml:"instructions"`
-	Description  string        `yaml:"description,omitempty"`
-	Model        PortableModel `yaml:"model"`
+	Instructions string                `yaml:"instructions"`
+	Description  string                `yaml:"description,omitempty"`
+	Model        PortableModel         `yaml:"model"`
+	Coordination *PortableCoordination `yaml:"coordination,omitempty"`
+}
+
+// PortableCoordination grants delegation only to named agents in the target scope.
+type PortableCoordination struct {
+	AllowedAgents []PortableAgentRef `yaml:"allowedAgents"`
+}
+
+type PortableAgentRef struct {
+	Name string `yaml:"name"`
 }
 
 type PortableModel struct {
@@ -108,9 +118,7 @@ type OrkaCoordination struct {
 
 // OrkaNamedRef carries an explicit name for a tool, skill, or allowed Agent.
 // Its containing field determines which resource kind that name identifies.
-type OrkaNamedRef struct {
-	Name string `yaml:"name"`
-}
+type OrkaNamedRef = PortableAgentRef
 
 // OrkaRateLimit carries only the limits an author stated. A nil field is an
 // unstated limit; a stated one must be positive, because zero is not a limit.
@@ -199,6 +207,21 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	}
 	if hasBothPortableExtensions(root.Content[0]) {
 		return nil, fmt.Errorf("portable agent document: extensions must contain at most one of %q or %q", Orka, Kagent)
+	}
+	if block := portableValueAt(root.Content[0], "spec", "coordination"); block != nil {
+		if block.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("portable agent document: spec.coordination must be a mapping")
+		}
+		if refs := portableValueAt(block, "allowedAgents"); refs != nil {
+			if refs.Kind != yaml.SequenceNode {
+				return nil, fmt.Errorf("portable agent document: spec.coordination.allowedAgents must be a list")
+			}
+			for i, entry := range refs.Content {
+				if portableValueAt(entry, "namespace") != nil {
+					return nil, fmt.Errorf("portable agent document: spec.coordination.allowedAgents[%d].namespace is not portable", i)
+				}
+			}
+		}
 	}
 	if block := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination"); block != nil && block.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination must be a mapping")
@@ -392,6 +415,27 @@ func (p *PortableAgent) validate() error {
 	if err := scaffold.ValidateSingleLineText(p.Spec.Model.Name); err != nil {
 		return fmt.Errorf("spec.model.name %w", err)
 	}
+	if c := p.Spec.Coordination; c != nil {
+		if len(c.AllowedAgents) == 0 {
+			return fmt.Errorf("spec.coordination.allowedAgents must be nonempty")
+		}
+		seen := make(map[string]bool, len(c.AllowedAgents))
+		for i, ref := range c.AllowedAgents {
+			if err := scaffold.ValidateName(ref.Name); err != nil {
+				return fmt.Errorf("spec.coordination.allowedAgents[%d].name: %w", i, err)
+			}
+			if ref.Name == p.Metadata.Name {
+				return fmt.Errorf("spec.coordination.allowedAgents[%d] cannot name itself", i)
+			}
+			if seen[ref.Name] {
+				return fmt.Errorf("spec.coordination.allowedAgents[%d] duplicates a helper", i)
+			}
+			seen[ref.Name] = true
+		}
+		if p.Extensions.Orka != nil && p.Extensions.Orka.Agent != nil && p.Extensions.Orka.Agent.Coordination != nil {
+			return fmt.Errorf("cannot specify both spec.coordination and extensions.orka.agent.coordination")
+		}
+	}
 	extensions := 0
 	if p.Extensions.Orka != nil {
 		extensions++
@@ -538,6 +582,11 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 		{"spec.description", p.Spec.Description},
 		{"spec.model.name", p.Spec.Model.Name},
 	}
+	if p.Spec.Coordination != nil {
+		for i, ref := range p.Spec.Coordination.AllowedAgents {
+			fields = append(fields, struct{ path, value string }{fmt.Sprintf("spec.coordination.allowedAgents[%d].name", i), ref.Name})
+		}
+	}
 	if orka := p.Extensions.Orka; orka != nil {
 		fields = append(fields, struct{ path, value string }{"extensions.orka.apiVersion", orka.APIVersion})
 		if orka.Agent != nil {
@@ -585,6 +634,11 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 // shorthand field reaches one of these strings.
 func refusePortableSecretShapes(p *PortableAgent) error {
 	values := []string{p.APIVersion, p.Kind, p.Metadata.Name, p.Spec.Instructions, p.Spec.Description, p.Spec.Model.Name}
+	if p.Spec.Coordination != nil {
+		for _, ref := range p.Spec.Coordination.AllowedAgents {
+			values = append(values, ref.Name)
+		}
+	}
 	if orka := p.Extensions.Orka; orka != nil {
 		values = append(values, orka.APIVersion)
 		if orka.Agent != nil {

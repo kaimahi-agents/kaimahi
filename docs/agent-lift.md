@@ -18,9 +18,10 @@ The bundle contains `agent.yaml` (the portable definition) and
 `bindings.yaml` (its creation-target bindings). An `agent.yaml` with no
 `extensions` block or `extensions: {}` can be lifted to Orka: its name,
 description, instructions and model render exactly as they do with an
-apiVersion-only Orka extension. Orka-specific tools, skills, rate limits and
-coordination require the Orka extension; a target that does not consume them
-refuses the named fields rather than dropping them. `kmx agent create` still
+apiVersion-only Orka extension. Named helper delegation can also be authored
+in portable `spec.coordination.allowedAgents`. Orka-specific tools, skills,
+rate limits and optional delegation limits require the Orka extension; a target
+that does not consume them refuses the named fields rather than dropping them. `kmx agent create` still
 writes the Orka extension. Lift reads the definition from
 `agent.yaml`, resolves **new** target bindings, and renders with
 `RenderOrkaBundleFile`. It does not copy a Secret or take inference from the
@@ -32,8 +33,27 @@ for accepted versions, strict decoding and cross-version behavior.
 ## Coordination in `agent.yaml`
 
 A coordinator's delegation policy is portable behavior, not a destination
-binding. For example, after creating a helper bundle and a coordinator bundle,
-edit the coordinator's `agent.yaml` to include:
+binding. A core-only coordinator names its allowed helpers in the same target
+scope; no helper is implicitly permitted:
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: coordinator
+spec:
+  instructions: Delegate the calculation to helper, then summarize its answer.
+  model:
+    name: qwen2.5:3b
+  coordination:
+    allowedAgents:
+      - name: helper
+```
+
+The core list must be nonempty, unique, name-only and cannot include the
+coordinator itself. Orka renders it as `enabled: true` with exactly those
+helpers and no stated limits. The older Orka-extension form remains supported
+for bundles that need explicit `enabled` or Orka-specific limits:
 
 ```yaml
 apiVersion: kmx.kaimahi.dev/v1alpha1
@@ -56,9 +76,14 @@ extensions:
         maxDepth: 2
 ```
 
-`enabled` is required when the block is present. With `enabled: true`, list at
-least one allowed Agent: Orka's AI worker treats an empty list as permission to
-delegate to **any** Agent. `maxConcurrentChildren` must be positive and
+Do not specify both forms in one bundle, including an Orka block with
+`enabled: false`. Moving an existing Orka coordinator to the core form is a
+new portable revision; old authored bundles keep their digests and rendering.
+Kagent refuses a core coordinator, and AX lift is not available in this PR.
+
+In the Orka-extension form, `enabled` is required when the block is present.
+With `enabled: true`, list at least one allowed Agent: Orka's AI worker treats
+an empty list as permission to delegate to **any** Agent. `maxConcurrentChildren` must be positive and
 `maxDepth` must be 1–10. Omitting the block renders no `spec.coordination`;
 omitting the limits lets Orka supply its defaults of **5 concurrent children**
 and **depth 3**. kmx does not insert those defaults in the rendered Agent.

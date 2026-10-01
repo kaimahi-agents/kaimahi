@@ -103,6 +103,30 @@ func TestKagentBundleFormatFixture(t *testing.T) {
 	}
 }
 
+func TestKagentRefusesPortableCoreCoordination(t *testing.T) {
+	source := []byte(`apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: example
+spec:
+  instructions: Delegate work.
+  description: A helper coordinator
+  model:
+    name: fixture
+  coordination:
+    allowedAgents:
+      - name: helper
+extensions:
+  kagent:
+    apiVersion: kagent.dev/v1alpha2
+    runtime: go
+`)
+	_, err := agentruntime.PreparePortableRender(source, kagentRuntimeAdapter{})
+	if err == nil || !strings.Contains(err.Error(), "spec.coordination.allowedAgents") {
+		t.Fatalf("Kagent accepted core delegation without rendering it: %v", err)
+	}
+}
+
 func TestBuiltInAdaptersRefuseOtherRuntimeBehaviorBeforeRender(t *testing.T) {
 	kagent, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "kagent", "agent.yaml"))
 	if err != nil {

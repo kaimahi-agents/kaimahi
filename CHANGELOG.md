@@ -24,6 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Portable agents can declare `spec.coordination.allowedAgents` as a nonempty, explicit helper allowlist. Orka renders it as enabled named delegation; Kagent refuses unsupported core delegation. Legacy Orka coordination and existing bundle digests/rendering remain unchanged. Older kmx readers refuse the new field; upgrade before reading migrated bundles. This does not add an AX adapter.
+
 - Portable bundles may omit `extensions` or use `extensions: {}` for a core-only Agent. Orka renders that core like an apiVersion-only Orka extension; create still writes the extension. Lifecycle rendering refuses each behavior field a target cannot honor rather than silently dropping it. `extensions: null` is refused, and existing Orka and Kagent bundle digests remain tied to their exact authored bytes.
 
 - `kmx agent create --runtime kagent <name>` adds an explicit, create-only
