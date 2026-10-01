@@ -122,6 +122,15 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(rows[0]["parentTask"], "try-1")
         self.assertNotIn("call_bad", rows[0]["task"])
 
+    def test_errored_tool_without_child_and_wrong_parent_is_missing_evidence(self):
+        self.projector.project(tool("call_wrong", "purchasing", status="error",
+                                    parent="ses_other12345678"))
+        self.projector.finish()
+        rows = self.rows()
+        self.assertEqual([(r["agent"], r["status"], r.get("evidenceMissing")) for r in rows],
+                         [("coordinator", "running", "child-session")])
+        self.assertEqual(rows[0]["handoff"], None)
+
     def test_running_part_can_acquire_native_child_metadata_at_completion(self):
         self.record(created(FIRST))
         running = tool("call_first", "purchasing", status="running")

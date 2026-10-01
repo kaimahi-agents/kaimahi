@@ -23,8 +23,7 @@ _TOOL_TASK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/tool/[0-9a-f]{16}\Z", 
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z", re.ASCII)
 _COORDINATOR_SUMMARIES = {
     "running": frozenset(("Coordinator started", "Task child evidence missing")),
-    "failed": frozenset(("Task tool rejected; no child session observed",
-                          "Task child evidence missing")),
+    "failed": frozenset(("Task tool rejected; no child session observed",)),
 }
 _HELPER_SUMMARIES = {
     "running": frozenset(("Native child session observed",)),
@@ -265,7 +264,9 @@ class Projector:
             self._root = root
         child = metadata.get("sessionId")
         child = child if isinstance(child, str) and _SESSION.fullmatch(child) else None
-        valid = root is not None and metadata.get("parentSessionId") == root
+        parent_claim = metadata.get("parentSessionId")
+        valid = root is not None and parent_claim == root
+        parent_mismatch = parent_claim is not None and parent_claim != root
         agent = inputs.get("subagent_type")
         agent = agent if isinstance(agent, str) and agent in self.allowed_helpers else None
         previous = self._parts.get(call)
@@ -274,6 +275,7 @@ class Projector:
                          (previous[1] is not None and previous[1] != child) or
                          (previous[2] is not None and previous[2] != agent) or
                          (previous[3] and not valid) or
+                         previous[5] != parent_mismatch or
                          (previous[1] is not None and not previous[3] and valid)):
             raise ProjectionUnavailable("conflicting native tool identity")
         phase = state["status"]
@@ -281,22 +283,22 @@ class Projector:
             raise ProjectionUnavailable("conflicting native tool outcome")
         if previous and previous[4] in ("completed", "error"):
             return
-        self._parts[call] = (*identity, phase)
+        self._parts[call] = (*identity, phase, parent_mismatch)
 
     def finish(self, deadline=None):
         """Call after OpenCode exits and before ActivityLog.terminal()."""
         if self._finished:
             raise ProjectionUnavailable("projection already finalized")
         deadline = min(deadline if deadline is not None else float("inf"), time.monotonic() + 5)
-        pairs = {(child, root) for root, child, agent, valid, _ in self._parts.values()
+        pairs = {(child, root) for root, child, agent, valid, _, _ in self._parts.values()
                  if valid and child and agent}
         statuses = self.journal.children_status(pairs, deadline)
         observations = []
         children = set()
-        for call, (root, child, agent, valid, phase) in self._parts.items():
+        for call, (root, child, agent, valid, phase, parent_mismatch) in self._parts.items():
             tool_task = f"{self.log.attempt}/tool/{hashlib.sha256(call.encode('ascii')).hexdigest()[:16]}"
             if not valid or not child or not agent:
-                if phase == "error" and not child:
+                if phase == "error" and not child and root is not None and not parent_mismatch:
                     observations.append(("coordinator", tool_task, self.log.attempt, None,
                         "failed", "Task tool rejected; no child session observed"))
                 else:

@@ -22,9 +22,11 @@ may call `terminal(exit_code)`. Interrupted commands leave **no terminal**.
 
 Projection does not orchestrate children. A Task-tool call without native
 child creation is **not** a hand-off. A rejected tool call is distinct
-coordinator tool work; an unverified or still-running child is marked with
-`evidenceMissing: "child-session"`, not invented as a failed helper or
-successful hand-off. `JournalUnavailable` and `ProjectionUnavailable` fail
+coordinator tool work. A Task-tool call without verified child creation is
+marked `evidenceMissing: "child-session"`, not invented as a failed helper
+or successful hand-off. A verified child with a still-running tool part has
+a `running` hand-off; without a terminal child observation its outcome remains
+unknown. `JournalUnavailable` and `ProjectionUnavailable` fail
 closed without returning source payloads. The future wrapper must not turn
 these errors into a successful run or print their underlying SQLite data.
 
@@ -35,8 +37,9 @@ observation time `at` (Unix nanoseconds), `run` as `<revision>/<attempt>`,
 `revision`, `agent`, `task`, `parentTask`, `handoff`, `status`, a fixed allowlisted
 `summary`, and `bundleDigest`. Root `task` is the attempt; verified helper work
 uses a native OpenCode session ID and `handoff: "task"`. Tool work without
-verified child creation gets a hashed, non-reversible tool identity and no
-handoff. `evidenceMissing: "child-session"` is intended to project as
+verified child creation gets a truncated hash of its tool ID and no
+handoff. The hash avoids copying the raw ID but is **not** a secrecy boundary
+for guessable IDs. `evidenceMissing: "child-session"` is intended to project as
 `Missing(child-session, AX journal)` in the shared canvas model. Terminal
 root records have `terminal: true`, independent of child outcomes; root
 success does **not** imply application success. Projection order is observation
