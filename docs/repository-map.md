@@ -49,8 +49,9 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is sixteen packages. Cluster-independent decisions live in
-packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
+`internal/kmx/` is sixteen packages at the top level (seventeen Go packages
+including nested `runview/orka`). The short version counts top-level directories.
+Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data; versioned fixtures are not additional Go
 packages.

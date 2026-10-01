@@ -250,6 +250,23 @@ func (oversizeTraceSource) Trace(context.Context, string, string) (int, error) {
 	return 0, ErrPageTooLarge
 }
 
+func TestReadRunNamesMissingHTTPHistoryNotFound(t *testing.T) {
+	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Succeeded", "", "")}, traces: map[string]int{"root": 404}}
+	run, err := NewReader(notFoundEventsSource{f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.EventsMissing == nil || run.EventsMissing.Reason != "not found" || run.TraceMissing == nil || run.TraceMissing.Reason != "not found" || run.FreshnessMissing != nil {
+		t.Fatalf("missing history: %+v", run)
+	}
+}
+
+type notFoundEventsSource struct{ fixtureSource }
+
+func (notFoundEventsSource) Events(context.Context, string, string, int64, int) ([]byte, int, error) {
+	return nil, 404, nil
+}
+
 func TestReadRunReportsEventSequenceGap(t *testing.T) {
 	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Succeeded", "", "")}, events: map[string]func(int64) string{"root": func(after int64) string {
 		if after == 0 {
