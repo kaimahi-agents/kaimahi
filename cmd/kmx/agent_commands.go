@@ -111,6 +111,8 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
 	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; Kagent: exactly one server:tool1,tool2 binding")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
+	cmd.Flags().BoolVar(&opt.Coordination, "coordination", false, "enable agent-to-agent delegation (requires --allowed-agent)")
+	cmd.Flags().StringArrayVar(&opt.AllowedAgents, "allowed-agent", nil, "Agent permitted as a delegation target in this namespace (repeat for each Agent)")
 	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one Kagent A2A message; applying authorizes execution")
 	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
@@ -150,7 +152,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 				return fmt.Errorf("--kagent-runtime must be go or python")
 			}
 			for _, name := range []string{
-				"skills", "azure-deployment", "azure-api-version", "orka-api-service", "result-port", "agent-requests-per-minute",
+				"skills", "coordination", "allowed-agent", "azure-deployment", "azure-api-version", "orka-api-service", "result-port", "agent-requests-per-minute",
 				"agent-tokens-per-minute", "provider-requests-per-minute",
 				"provider-tokens-per-minute", "schema-target", "result-service-account",
 			} {

@@ -89,7 +89,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 				os.Exit(0)
 			case "namespace", "namespaces":
 				if name == "kube-system" {
-					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid"))
+					uid := getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid")
+					if _, err := os.Stat(filepath.Join(dir, "repointed-after-preflight")); err == nil {
+						uid = "repointed-uid"
+					}
+					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, uid)
 					os.Exit(0)
 				}
 				if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "namespace") {
@@ -115,7 +119,21 @@ func TestReconcileKubectlHelper(t *testing.T) {
 					fmt.Printf(`{"kind":"Provider","metadata":{"name":%q,"namespace":"orka-system","uid":"inference-uid","generation":1},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"target-default","secretRef":{"name":"target-secret","key":%q}},"status":{"ready":%t,"conditions":[{"type":"Ready","status":%q,"observedGeneration":1}]}}`, name, key, reportedReady, map[bool]string{true: "True", false: "False"}[ready])
 					os.Exit(0)
 				}
+			case "agents.core.orka.ai":
+				if name != "sample" {
+					switch os.Getenv("KMX_LIFT_MISSING") {
+					case "allowed-agent-read":
+						fail()
+					case "allowed-agent":
+						os.Exit(0)
+					}
+					fmt.Printf(`{"kind":"Agent","metadata":{"name":%q,"namespace":"orka-system","uid":"helper-uid","generation":1}}`, name)
+					os.Exit(0)
+				}
 			case "tools.core.orka.ai":
+				if os.Getenv("KMX_LIFT_REPOINT_AFTER_PREFLIGHT") == "1" {
+					_ = os.WriteFile(filepath.Join(dir, "repointed-after-preflight"), nil, 0600)
+				}
 				if os.Getenv("KMX_LIFT_MISSING") == "tool" || os.Getenv("KMX_LIFT_MISSING") == "tool-available" && name == "search" {
 					if os.Getenv("KMX_LIFT_MISSING") == "tool" {
 						os.Exit(0)
@@ -144,6 +162,20 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			raw, e := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
 			if e != nil {
 				fail()
+			}
+			if plural == "agents" && os.Getenv("KMX_LIFT_MISSING") == "coordination-crd" {
+				var crd map[string]any
+				if yaml.Unmarshal(raw, &crd) != nil {
+					fail()
+				}
+				versions := crd["spec"].(map[string]any)["versions"].([]any)
+				schema := versions[0].(map[string]any)["schema"].(map[string]any)["openAPIV3Schema"].(map[string]any)
+				agentSpec := schema["properties"].(map[string]any)["spec"].(map[string]any)["properties"].(map[string]any)
+				delete(agentSpec, "coordination")
+				if json.NewEncoder(os.Stdout).Encode(crd) != nil {
+					fail()
+				}
+				os.Exit(0)
 			}
 			_, _ = os.Stdout.Write(raw)
 			os.Exit(0)

@@ -115,6 +115,9 @@ func validateKagentCreateOptions(opt *CreateOptions) error {
 	if opt.Skills != "" {
 		return fmt.Errorf("--skills is not supported by Kagent create")
 	}
+	if opt.Coordination || len(opt.AllowedAgents) > 0 {
+		return fmt.Errorf("--coordination and --allowed-agent are Orka-only and are not supported by Kagent create")
+	}
 	for _, flag := range []struct{ name, value string }{
 		{"agent-requests-per-minute", opt.AgentRequestsPerMinute},
 		{"agent-tokens-per-minute", opt.AgentTokensPerMinute},

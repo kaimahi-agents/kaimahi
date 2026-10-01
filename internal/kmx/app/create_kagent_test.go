@@ -653,6 +653,8 @@ func TestKagentCreateRefusesUnsupportedFlagsBeforeOutput(t *testing.T) {
 		{"provider requests", func(o *CreateOptions) { o.ProviderRequestsPerMinute = "1" }},
 		{"provider tokens", func(o *CreateOptions) { o.ProviderTokensPerMinute = "1" }},
 		{"schema", func(o *CreateOptions) { o.SchemaTarget = "v0.2.0" }},
+		{"coordination", func(o *CreateOptions) { o.Coordination = true }},
+		{"allowed Agent", func(o *CreateOptions) { o.AllowedAgents = []string{"helper"} }},
 		{"Azure deployment", func(o *CreateOptions) { o.AzureDeployment = "chat-prod" }},
 		{"Azure API version", func(o *CreateOptions) { o.AzureAPIVersion = "2024-10-21" }},
 		{"result account", func(o *CreateOptions) { o.ResultServiceAccount = "reader" }},

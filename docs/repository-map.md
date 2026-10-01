@@ -45,7 +45,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (28 files) | **Installed** | CLI and tests: default Orka operations including native Azure OpenAI Providers, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (29 files) | **Installed** | CLI and tests: default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -57,7 +57,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 91 | Installed | Command orchestration, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
+| `kmx/app` | 92 | Installed | Command orchestration, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/runtime` | 9 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings and evaluation cases. `kagent_bindings.go` adds closed creation-target bindings; only Orka is registered for chat/discovery. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |

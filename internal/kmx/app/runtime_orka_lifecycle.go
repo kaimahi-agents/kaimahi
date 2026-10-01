@@ -506,6 +506,13 @@ func orkaSpecFromPortable(portable *agentruntime.PortableAgent, bindings agentru
 			spec.Skills = append(spec.Skills, skill.Name)
 		}
 		spec.AgentRateLimit = orkaRateLimitFromExtension(extension.Agent.RateLimit)
+		if c := extension.Agent.Coordination; c != nil {
+			mapped := &scaffold.OrkaCoordination{Enabled: c.Enabled, MaxConcurrentChildren: c.MaxConcurrentChildren, MaxDepth: c.MaxDepth}
+			for _, ref := range c.AllowedAgents {
+				mapped.AllowedAgents = append(mapped.AllowedAgents, ref.Name)
+			}
+			spec.Coordination = mapped
+		}
 	}
 	return spec, nil
 }
@@ -702,6 +709,8 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 		SecretKey:         opt.SecretKey,
 		Tools:             orkaNameList(opt.Tools),
 		Skills:            orkaNameList(opt.Skills),
+		Coordination:      opt.Coordination,
+		AllowedAgents:     append([]string(nil), opt.AllowedAgents...),
 		AgentRateLimit:    orkaRateLimitExtension(agentLimits),
 		ProviderRateLimit: orkaRateLimitExtension(providerLimits),
 	})

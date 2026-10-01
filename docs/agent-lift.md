@@ -11,7 +11,7 @@ Kagent create is refused before cluster reads. Kagent create receipts do not
 enable lift, status, evaluation, console bundle actions, or interactive `/lift`.
 
 ```console
-kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--plan]
+kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
 ```
 
 The bundle contains `agent.yaml` (the portable definition) and
@@ -21,6 +21,56 @@ The bundle contains `agent.yaml` (the portable definition) and
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering.
+
+## Coordination in `agent.yaml`
+
+A coordinator's delegation policy is portable behavior, not a destination
+binding. For example, after creating a helper bundle and a coordinator bundle,
+edit the coordinator's `agent.yaml` to include:
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: coordinator
+spec:
+  instructions: Delegate the calculation to helper, then summarize its answer.
+  model:
+    name: qwen2.5:3b
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+    agent:
+      coordination:
+        enabled: true
+        allowedAgents:
+          - name: helper
+        maxConcurrentChildren: 2
+        maxDepth: 2
+```
+
+`enabled` is required when the block is present. With `enabled: true`, list at
+least one allowed Agent: Orka's AI worker treats an empty list as permission to
+delegate to **any** Agent. `maxConcurrentChildren` must be positive and
+`maxDepth` must be 1–10. Omitting the block renders no `spec.coordination`;
+omitting the limits lets Orka supply its defaults of **5 concurrent children**
+and **depth 3**. kmx does not insert those defaults in the rendered Agent.
+`allowedAgents` entries contain names only: when coordination is enabled, lift
+looks for each Agent other than the coordinator itself in the **destination
+Agent's namespace** and refuses a plan if any is absent. A `namespace` in an
+entry is refused because the namespace belongs to the destination, not the
+portable definition. Lift also refuses a target whose installed Agent CRD does
+not support coordination. The upstream `autonomous` field is not supported yet:
+it starts a repeated Job loop and needs a separate design.
+
+`kmx agent create --coordination --allowed-agent helper` authors `enabled: true`
+and the named helper; repeat `--allowed-agent` for additional helpers. Edit the
+bundle for optional limits. Lift the helper before the coordinator. The pinned
+Orka installation binds delegation worker RBAC only in its release namespace
+(`orka-system`); kmx does not grant coordination worker permissions in another
+namespace. Editing coordination changes the exact-source portable digest; a
+lift updates the owned Agent and status reports cluster-side edits as drift
+when the live portable digest still matches the bundle.
 
 ## From create to evaluation
 
@@ -44,7 +94,9 @@ Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
 what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
 to run the cases against that deployed digest. Each evaluation creates a Task
 that can have external effects and is never retried; a passing receipt is
-evidence for that revision and case set, not a general safety proof.
+evidence for that revision and case set, not a general safety proof. To make
+this evidence a prerequisite for a later lift, use a committed
+`lift-policy.yaml` or `--require-evaluated` as described below.
 
 ## Destination and inference
 
@@ -56,6 +108,8 @@ remembered target requires both its context name and the UID of its
 or repointed context is refused rather than falling back to kubeconfig's
 current context. Confirm the resolved context, cluster and namespace displayed
 before a write. The existing remote-context guard still applies to writes.
+Context names are human-readable labels, **not** cluster identities for the
+evaluation gate.
 
 `provider:<name>` identifies an **existing Ready Provider** in the destination
 namespace. Lift reads that Provider's type, endpoint and Secret reference and
@@ -91,7 +145,119 @@ command where one exists. The quickstart Kubernetes inventory Tool requires its
 same-namespace `OutboundAccessPolicy` to be Accepted before the Tool becomes
 Available; a target missing or rejecting that policy is refused until repaired.
 Lift creates no AKS cluster, namespace, Orka installation, Tool, policy, Secret
-or Task. It does not change or delete the source Agent.
+or Task. It does not change or delete the source Agent. Evaluation-gate
+refusals and recovery are described below; a gate refusal occurs before any
+Provider or Agent deployment, not after a partial reconciliation.
+
+## Requiring evaluation before lift
+
+A bundle may have a `lift-policy.yaml` beside `agent.yaml`. Commit this policy
+with the bundle to express the staging-before-production requirement for the
+team: each rule pairs a **destination cluster UID** (the UID of its
+`kube-system` Namespace) and destination namespace with an **evaluation
+cluster UID** and evaluation namespace. For example, a rule for the production
+cluster UID and `orka-system` can require a passing evaluation from the staging
+cluster UID and `orka-system`:
+
+```yaml
+rules:
+  - destination:
+      clusterUID: <production-kube-system-uid>
+      namespace: orka-system
+    evaluated:
+      clusterUID: <staging-kube-system-uid>
+      namespace: orka-system
+```
+
+Replace the UID placeholders with the corresponding clusters' `kube-system`
+Namespace UIDs, not kubeconfig context names. The file must be a regular file
+with at least one rule; unknown fields, incomplete targets, duplicate
+destination identities and rules that gate a target on itself are refused.
+A destination with no matching rule is not gated by that policy. Names such as `staging` and `production` in
+kubeconfig are display labels only: renaming a context does not change a
+rule's identity, and repointing one must not turn another cluster's evaluation
+into evidence. Policy selects the required evaluation target; it does not run
+evaluation, copy credentials or create a deployment. Keep the mapping in Git;
+it is separate from the portable revision digest, which covers only
+`agent.yaml`.
+
+For an ad-hoc gate without changing the policy, pass
+`--require-evaluated <context>` to `kmx agent lift`. It adds a requirement for
+this invocation (it does not replace a policy rule). This names an evaluation
+receipt's context label to select the required evaluation target; its recorded
+cluster UID and namespace establish identity. No receipt or several identities
+sharing that label is refused, without contacting that cluster. A context label alone must never satisfy the gate. Run a full
+`kmx agent evaluate <bundle-dir> --to-context <staging-context>` first;
+`--case` produces a single-case receipt and does not satisfy a full-case gate,
+even when `eval/` has only one case.
+The evaluation destination must already have this same portable revision
+lifted, and its receipt must say `pass` for the current complete `eval/` case
+set and record a passing result for each current case. A changed `agent.yaml`
+or case file requires another evaluation. If the required evaluation identity
+or matching local evidence cannot be established,
+the lift is refused rather than silently ungated.
+
+The gate checks **local receipts only**. It does not contact the evaluation
+cluster, re-run Tasks, confirm the evaluation Agent is still present or Ready,
+or independently attest the receipt. Local receipts are forgeable and are
+**not intended to be committed**; protect them accordingly. The committed
+policy travels with teammates, but receipts do not: a teammate without their
+own matching passing receipt must lift to staging and evaluate there before
+lifting to production. Neither a lift receipt nor a `kmx agent status` display
+of `pass` substitutes for full matching evaluation evidence. An evaluation
+receipt's context is a label; cluster UID and namespace are the gate identity.
+Receipts written before the cluster UID and full-case-run marker were recorded
+cannot satisfy this gate; rerun the complete evaluation to generate new evidence.
+
+| Gate condition | Refusal and next step |
+|---|---|
+| Policy cannot be decoded, or the ad-hoc context has no recorded identity or matches several | Correct the policy or run a full evaluation for an unambiguous context; do not infer identity from a matching name. |
+| No local receipt for the required cluster UID and namespace, or only a different target's receipt | Lift the bundle to the required evaluation destination and run `kmx agent evaluate` there. |
+| Receipt is `fail` or `unknown`, covers only a `--case` selection, or lacks passing results for every current case | Fix the cases or target and run the **full** evaluation again; an individual passing case is insufficient. |
+| Receipt's portable digest or case-set digest differs from the current bundle | Lift and evaluate the changed revision or cases again. |
+
+Multiple receipts for the same UID and namespace under different context
+labels must agree on the portable digest, case-set digest and evaluated Agent
+UID; disagreements refuse and list the aliases rather than picking one.
+A gate refusal identifies the unsatisfied condition rather than accepting a
+receipt for the wrong UID or namespace. Correct policy parsing and identity
+errors rather than treating an override as validation of an ambiguous rule.
+
+A deliberate exception uses `--override-gate "reason"` on the lift. Give an
+explicit reason, not an empty flag; the CLI prints the reason and the gate
+condition it bypasses to stderr and records both in the destination lift
+receipt. This does not turn a failed or missing evaluation into a pass and
+is not a way to skip other lift prerequisites or reconciliation refusals.
+The override remains visible in that local receipt until the **next lift to
+that target** overwrites it; it is not a permanent policy waiver. Treat the
+reason as operator-visible local audit data, not a trusted authorization
+record. Never put credentials, tokens or Secret values in the reason.
+
+Interactive `/lift` and the console's bundle-backed lift use the same gate
+check while planning. A passing gate appears in the read-only review; an
+unsatisfied gate stops planning with the refusal condition, before the final
+deployment review. They do not silently deploy or offer an implicit waiver: run
+the required evaluation first, or use the CLI with an explicit
+`--override-gate "reason"` for a deliberate exception. The separate
+bundle-less live-copy fallback does not write bundle receipts and is **not**
+a gated bundle lift; an existing but invalid bundle is never silently copied.
+
+For CI, provision the target namespaces, Orka, Providers, Secrets and Tools
+before this sequence; use your actual kubeconfig contexts and Providers, and
+check in `lift-policy.yaml` with a rule mapping the production UID/namespace
+to the staging UID/namespace:
+
+```bash
+# Bootstrap staging first: evaluate requires a deployed matching revision.
+kmx agent lift agents/my-agent --to-context staging --to-namespace orka-system --inference provider:staging-provider
+kmx agent evaluate agents/my-agent --to-context staging
+# The committed policy requires the staging result before the production write.
+kmx agent lift agents/my-agent --to-context production --to-namespace orka-system --inference provider:production-provider
+```
+
+Keep the commands in the same CI workspace so the local evaluation receipt is
+available to the final lift; a fresh workspace needs to run staging and
+evaluation again. These commands do not bootstrap Orka or inference resources.
 
 ## Plan, reconciliation and outcomes
 
@@ -101,7 +267,12 @@ uses **the same read-only inspection and classification code as reconcile
 Deploy**, including server dry-run comparison, rather than separate lift rules.
 It writes no cluster resources, receipt or remembered target. If a comparison
 cannot be established without a write, its result is **unknown**, not a claim
-that the resource would be reused.
+that the resource would be reused. The plan also reports the gate condition
+and whether the available local evaluation receipt satisfies it (or why it
+would refuse), without writing a receipt or running an evaluation. A plan that
+reports an unsatisfied gate exits nonzero and is **not** permission to deploy: fix the evidence,
+or explicitly supply a reasoned override at execution. `--override-gate` does
+not make `--plan` record an override.
 
 Without `--plan`, lift renders with `RenderOrkaBundleFile` and calls
 `Deploy(ctx, rendered, DeployOptions{Reconcile: true})`. Reconciliation
@@ -132,9 +303,14 @@ committed and unchanged against `HEAD`. Otherwise provenance is
 `uncommitted`, with a warning once; unrelated untracked files do not affect
 this test. The receipt is local deployment evidence, not part of the portable
 revision: the portable digest covers **only** the bytes of `agent.yaml`, and
-`receipts/` does not affect Git cleanliness of `agent.yaml`. A later
-`kmx agent create` rerun can reuse the bundle even when `receipts/` is present.
-No receipt is written by `--plan` or by a failed deployment. If deployment and receipt writing succeed but saving the remembered target fails, the command returns an error and the receipt remains on disk.
+`receipts/` does not affect Git cleanliness of `agent.yaml`. Keep lift and
+evaluation receipts local, not in Git: neither is an attestation, and an
+override reason stored in a lift receipt may contain operational details.
+A later `kmx agent create` rerun can reuse the bundle even when `receipts/`
+is present.
+No receipt is written by `--plan` or by a failed deployment. If deployment
+and receipt writing succeed but saving the remembered target fails, the
+command returns an error and the receipt remains on disk.
 
 The receipt binds deployment outcomes and target identities to the portable
 and rendered digests; it is not proof that an Agent answered a Task. Use
@@ -187,11 +363,16 @@ cleaned up.
 Every answer is printed to the terminal. The receipt,
 `<bundle-dir>/receipts/eval-<target>.json` (the same per-context, namespace
 and cluster key as the lift receipt), records the portable digest, a digest of
-the case files that ran, the Git provenance, the target and live Agent UID,
+the case files that ran, the Git provenance, the target (including its
+cluster UID) and live Agent UID,
 and per case the id, verdict, matched and missing expectations, Task name and
-UID, and a SHA-256 of the answer. **It never contains answer text**, so it can
-be committed to a public repository. `--case` runs one case; its receipt covers
-only that case's file, so status does not count it as the bundle's case set.
+UID, and a SHA-256 of the answer. It also marks whether the whole case set ran
+without `--case`. **It never contains answer text**, but it is
+forgeable local evidence, **not intended to be committed**. Store it in the
+same local workspace used by a gated lift; a teammate or CI job without the
+receipt must evaluate independently. `--case` runs one case; its receipt
+covers only that case's file, so status does not count it as the bundle's
+case set.
 
 Evaluate is a gate: it exits non-zero unless every case passed, including when
 any case is `unknown`.
@@ -272,7 +453,10 @@ JSON): the recorded `pass`, `fail` or `unknown` result when an evaluation
 receipt exists for that cluster, the live Agent's UID, the bundle's current
 portable digest and the current `eval/` case set; otherwise `none`. A target
 that is behind, or whose cases changed since the last evaluation, shows
-`none`. Status never runs a case.
+`none`. Status also shows `GATE` (`gate` in JSON) for each target: `pass`,
+`not required`, `refused: <condition>`, or `unknown` when the destination
+cluster identity cannot be observed. Gate status checks the local policy and
+receipts; it does not contact the evaluation cluster. Status never runs a case.
 
 An identical render whose portable or rendered digest marker is older has its
 ownership markers refreshed by lift with a resourceVersion precondition; lift

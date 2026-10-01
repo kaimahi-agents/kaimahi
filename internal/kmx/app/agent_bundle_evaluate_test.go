@@ -579,7 +579,7 @@ func TestEvaluateSingleCase(t *testing.T) {
 		t.Fatal(err)
 	}
 	receipt, _ := f.receipt(t)
-	if len(receipt.Cases) != 1 || receipt.Cases[0].ID != "greet" || f.taskCreates(t) != 1 {
+	if receipt.FullCaseSet || len(receipt.Cases) != 1 || receipt.Cases[0].ID != "greet" || f.taskCreates(t) != 1 {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	// A subset of the cases is not the bundle's case set.
@@ -613,6 +613,8 @@ func TestBundleStatusShowsEvaluation(t *testing.T) {
 		write      bool
 	}{
 		{"pass", "pass", nil, true},
+		{"none for missing case results", "none", func(r *bundleEvaluationReceipt) { r.Cases = nil }, true},
+		{"pass from another context alias", "pass", func(r *bundleEvaluationReceipt) { r.Target.Context = "ci" }, true},
 		{"fail", "fail", func(r *bundleEvaluationReceipt) { r.Result = "fail" }, true},
 		{"none without receipt", "none", nil, false},
 		{"none for another case set", "none", func(r *bundleEvaluationReceipt) { r.CasesDigest = strings.Repeat("c", 64) }, true},
@@ -624,8 +626,9 @@ func TestBundleStatusShowsEvaluation(t *testing.T) {
 			seedBundleLiveResources(t, dir, rendered, name, nil)
 			if tc.write {
 				receipt := bundleEvaluationReceipt{
-					Bundle: name, PortableDigest: rendered.PortableDigest(), CasesDigest: currentBundleCasesDigest(opt.BundleDir), Result: "pass",
-					Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: "kind-test", Namespace: "orka-system", Agent: name, AgentUID: "agent-uid"},
+					Bundle: name, PortableDigest: rendered.PortableDigest(), CasesDigest: currentBundleCasesDigest(opt.BundleDir), FullCaseSet: true, Result: "pass",
+					Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Agent: name, AgentUID: "agent-uid"},
+					Cases:  []bundleEvaluationResult{{ID: "example", Verdict: "pass"}},
 				}
 				if tc.edit != nil {
 					tc.edit(&receipt)

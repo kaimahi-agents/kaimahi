@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,6 +183,34 @@ func TestBundleStatusReportsDriftedWithSharedChangedFieldPaths(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing expected changed field: %+v", target.ChangedFields)
+	}
+}
+
+// A cluster-side edit with unchanged ownership digest is reported as drift.
+func TestBundleStatusNamesCoordinationDepthDrift(t *testing.T) {
+	a, opt, dir, _, name := bundleStatusFixture(t)
+	liftBundleWithCoordination(t, opt.BundleDir, "helper")
+	source, err := os.ReadFile(filepath.Join(opt.BundleDir, "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := goldenNoTaskCreate("")
+	adapter := lifecycleAdapter(t, create)
+	rendered, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedBundleLiveResources(t, dir, rendered, name, func(agent map[string]any) {
+		agent["spec"].(map[string]any)["coordination"].(map[string]any)["maxDepth"] = 4
+	})
+	opt.Context, opt.Namespace = "kind-test", "orka-system"
+	report, err := a.bundleStatusReport(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := report.Targets[0]
+	if target.State != bundleStateDrifted || !slices.Contains(target.ChangedFields, "Agent.spec.coordination.maxDepth") {
+		t.Fatalf("coordination hand edit not reported: %+v", target)
 	}
 }
 

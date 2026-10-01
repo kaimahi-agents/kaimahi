@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -167,6 +169,87 @@ func TestLiftBundleRefusesInferenceProviderNameCollision(t *testing.T) {
 		t.Fatalf("selected Provider name collision not refused: %v", err)
 	}
 	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func liftBundleWithCoordination(t *testing.T, path string, names ...string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(path, "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	orka := doc["extensions"].(map[string]any)["orka"].(map[string]any)
+	agent := orka["agent"].(map[string]any)
+	refs := make([]any, 0, len(names))
+	for _, name := range names {
+		refs = append(refs, map[string]any{"name": name})
+	}
+	agent["coordination"] = map[string]any{"enabled": true, "allowedAgents": refs, "maxDepth": 2}
+	encoded, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "agent.yaml"), encoded, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLiftPlanSkipsDisabledAndSelfAllowedAgentPrerequisites(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent string
+		disabled    bool
+	}{
+		{"disabled coordination", "helper", true},
+		{"self delegation", "sample", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			liftBundleWithCoordination(t, opt.BundleDir, tc.agent)
+			if tc.disabled {
+				path := filepath.Join(opt.BundleDir, "agent.yaml")
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				updated := bytes.Replace(source, []byte("enabled: true"), []byte("enabled: false"), 1)
+				if bytes.Equal(source, updated) {
+					t.Fatal("fixture missing enabled flag")
+				}
+				if err := os.WriteFile(path, updated, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("KMX_LIFT_MISSING", "allowed-agent")
+			opt.Plan = true
+			if err := a.LiftAgentBundle(opt); err != nil {
+				t.Fatalf("irrelevant Agent prerequisite refused: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
+}
+
+func TestLiftPlanRefusesMissingAllowedAgentsAndUnsupportedCRD(t *testing.T) {
+	for _, tc := range []struct{ name, missing, want string }{
+		{"missing helpers", "allowed-agent", "helper, other"},
+		{"API failure", "allowed-agent-read", "cannot inspect Agent/helper"},
+		{"unsupported installed Agent schema", "coordination-crd", "spec.coordination"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			liftBundleWithCoordination(t, opt.BundleDir, "helper", "other")
+			t.Setenv("KMX_LIFT_MISSING", tc.missing)
+			opt.Plan = true
+			err := a.LiftAgentBundle(opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("plan accepted missing prerequisite: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
 }
 
 func TestLiftBundleEveryPrerequisiteRefusesWithoutWrites(t *testing.T) {
@@ -377,6 +460,56 @@ func TestLiftBundleNamesPartialWritesOnDeployFailure(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(opt.BundleDir, "receipts")); !os.IsNotExist(statErr) {
 		t.Fatalf("failed deployment wrote receipt: %v", statErr)
+	}
+}
+
+func TestLiftCoordinationDepthUpdateIsPlannedAndDeployed(t *testing.T) {
+	a, opt, dir, notes := liftBundleFixture(t)
+	liftBundleWithCoordination(t, opt.BundleDir, "helper")
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(opt.BundleDir, "agent.yaml")
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := bytes.Replace(source, []byte("maxDepth: 2"), []byte("maxDepth: 3"), 1)
+	if bytes.Equal(source, changed) {
+		t.Fatal("fixture missing maxDepth")
+	}
+	if err := os.WriteFile(path, changed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	notes.Reset()
+	before := len(orkaCalls(t, dir))
+	opt.Plan = true
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(notes.String(), "Agent/sample: updated") || !strings.Contains(notes.String(), "spec.coordination.maxDepth") {
+		t.Fatalf("missing depth update path: %s", notes.String())
+	}
+	for _, call := range orkaCalls(t, dir)[before:] {
+		if call.Document != nil && !slices.Contains(call.Args, "--dry-run=server") {
+			t.Fatalf("plan wrote update: %+v", call)
+		}
+	}
+	opt.Plan = false
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var live map[string]any
+	if err := json.Unmarshal(raw, &live); err != nil {
+		t.Fatal(err)
+	}
+	coord := live["spec"].(map[string]any)["coordination"].(map[string]any)
+	if coord["maxDepth"] != float64(3) {
+		t.Fatalf("deployed maxDepth = %v", coord["maxDepth"])
 	}
 }
 

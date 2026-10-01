@@ -90,10 +90,10 @@ const (
 )
 
 // EvaluationReceipt is one case's recorded outcome. It deliberately carries
-// no answer text: AnswerSHA256 is the only trace of what the agent said, so a
-// receipt can be committed beside a public bundle. Matched and Missing
-// partition ExpectContains only when an answer was read; TaskName and TaskUID
-// name the one execution this case caused, and TaskUID is empty when the
+// no answer text: AnswerSHA256 is the only trace of what the agent said.
+// Receipts remain local, not committed beside a public bundle. Matched and
+// Missing partition ExpectContains only when an answer was read; TaskName and
+// TaskUID name the one execution this case caused, and TaskUID is empty when the
 // create itself was ambiguous. Detail explains a fail or unknown verdict.
 type EvaluationReceipt struct {
 	CaseID           string
