@@ -79,14 +79,15 @@ extensions:
 Do not specify both forms in one bundle, including an Orka block with
 `enabled: false`. Moving an existing Orka coordinator to the core form is a
 new portable revision; old authored bundles keep their digests and rendering.
-Kagent refuses a core coordinator, and AX lift is not available in this PR.
+Kagent refuses a core coordinator; AX lift is not available.
 
 In the Orka-extension form, `enabled` is required when the block is present.
 With `enabled: true`, list at least one allowed Agent: Orka's AI worker treats
-an empty list as permission to delegate to **any** Agent. `maxConcurrentChildren` must be positive and
-`maxDepth` must be 1–10. Omitting the block renders no `spec.coordination`;
-omitting the limits lets Orka supply its defaults of **5 concurrent children**
-and **depth 3**. kmx does not insert those defaults in the rendered Agent.
+an empty list as permission to delegate to **any** Agent.
+`maxConcurrentChildren` must be positive and `maxDepth` must be 1–10. If
+neither the core nor legacy block is present, Orka renders no
+`spec.coordination`; omitting the limits lets Orka supply its defaults of
+**5 concurrent children** and **depth 3**. kmx does not insert those defaults in the rendered Agent.
 `allowedAgents` entries contain names only: when coordination is enabled, lift
 looks for each Agent other than the coordinator itself in the **destination
 Agent's namespace** and refuses a plan if any is absent. A `namespace` in an
