@@ -135,10 +135,16 @@ func (s orkaRunSource) Events(ctx context.Context, ns, name string, after int64,
 	}
 	status, body, err := s.session.getTaskResource(ctx, ns, name, "events", url.Values{"after": {fmt.Sprint(after)}, "limit": {fmt.Sprint(limit)}})
 	if err != nil {
+		if status != 0 && status != http.StatusOK {
+			return nil, status, nil
+		}
 		if strings.Contains(err.Error(), "size limit") {
 			return nil, status, runorka.ErrPageTooLarge
 		}
-		return nil, status, runorka.ErrConnectionLost
+		if status == 0 || strings.Contains(err.Error(), "timed out") {
+			return nil, status, runorka.ErrConnectionLost
+		}
+		return nil, status, runorka.ErrInvalidResponse
 	}
 	if status != http.StatusOK {
 		return nil, status, nil
@@ -152,10 +158,16 @@ func (s orkaRunSource) Trace(ctx context.Context, ns, name string) (int, error) 
 	}
 	code, _, err := s.session.getTaskResource(ctx, ns, name, "trace", nil)
 	if err != nil {
+		if code != 0 && code != http.StatusOK {
+			return code, nil
+		}
 		if strings.Contains(err.Error(), "size limit") {
 			return code, runorka.ErrPageTooLarge
 		}
-		return code, runorka.ErrConnectionLost
+		if code == 0 || strings.Contains(err.Error(), "timed out") {
+			return code, runorka.ErrConnectionLost
+		}
+		return code, runorka.ErrInvalidResponse
 	}
 	return code, nil
 }

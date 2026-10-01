@@ -25,6 +25,9 @@ var ErrConnectionLost = errors.New("connection lost")
 // ErrPageTooLarge permits bounded retry with a smaller event page.
 var ErrPageTooLarge = errors.New("event page too large")
 
+// ErrInvalidResponse marks an HTTP response whose content is not usable evidence.
+var ErrInvalidResponse = errors.New("invalid response")
+
 // ParentSelector reproduces Orka's Task-name label normalization for DNS names.
 func ParentSelector(name string) string {
 	if len(name) <= 63 {
@@ -96,6 +99,9 @@ func readReason(err error) string {
 	if errors.Is(err, ErrPageTooLarge) {
 		return "event too large"
 	}
+	if errors.Is(err, ErrInvalidResponse) {
+		return "invalid response"
+	}
 	return "read unavailable"
 }
 func httpMissing(code int) string {
@@ -104,6 +110,8 @@ func httpMissing(code int) string {
 		return "permission denied"
 	case http.StatusNotImplemented:
 		return "history unavailable"
+	case http.StatusNotFound:
+		return "not found"
 	case http.StatusRequestEntityTooLarge:
 		return "history too large"
 	default:
