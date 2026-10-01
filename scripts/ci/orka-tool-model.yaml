@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orka-tool-model
+  namespace: orka-system
+spec:
+  selector:
+    matchLabels:
+      app: orka-tool-model
+  template:
+    metadata:
+      labels:
+        app: orka-tool-model
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: model
+          image: python:3.13-alpine
+          command: [python3, -B, /app/server.py]
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: source
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: source
+          configMap:
+            name: orka-tool-model
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orka-tool-model
+  namespace: orka-system
+spec:
+  selector:
+    app: orka-tool-model
+  ports:
+    - port: 8080
+      targetPort: 8080

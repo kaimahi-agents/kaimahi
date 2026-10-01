@@ -2970,7 +2970,11 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
+          if kind get clusters | grep -qx kmx-orka; then
+            echo 'refusing to reuse or delete an existing kind cluster'; exit 1
+          fi
           bin/kmx up --step cluster
+          echo 'KMX_W133_KMX_CREATED=1' >> "$GITHUB_ENV"
           bin/kmx up --step ollama
           bin/kmx up --step model
           # Fail closed on the premise. If a later edit made any of the three
@@ -2999,7 +3003,6 @@ jobs:
           done
           test "${ready:-}" = true || {
             echo "Provider local never became Ready; a model call would be refused"
-            kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai local -o yaml || true
             exit 1
           }
       # `kmx orka install` provisions the Task result account. Prove the
@@ -3022,25 +3025,26 @@ jobs:
           assert binding["roleRef"]["kind"] == "Role" and binding["roleRef"]["name"] == "orka-result-reader", "unexpected bound role"
           assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "orka-result-reader", "namespace": "orka-system"}], "unexpected result-reader subject"
           PY
-      # The committed manifest and the committed server, applied the same
-      # way kmx applies them: the code goes in a ConfigMap and the
-      # Deployment carries that code's sha256, so a server edit rolls the
-      # pod instead of leaving the old bytes running under a new claim.
-      - name: Native Orka Tool — apply the committed Tool, RBAC and server
+      # Exercise the same installer called by console Prepare, not a raw
+      # manifest substitute. The opt-in test pins a dedicated kind context.
+      - name: Native Orka Tool — install through the shared Prepare method
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          kubectl --context kind-kmx-orka -n orka-system create configmap kmx-k8s-tool \
-            --from-file=server.py=scripts/orka-k8s-tool.py
+          KMX_W133_KIND_CONTEXT=kind-kmx-orka go test ./internal/kmx/app \
+            -run '^TestLiveInstallQuickstartK8sTool$' -count=1
           sum=$(sha256sum scripts/orka-k8s-tool.py | cut -d' ' -f1)
-          sed "s/kmx-tool-code-checksum/$sum/" k8s/orka-k8s-tool.yaml \
-            | kubectl --context kind-kmx-orka apply -f -
-          kubectl --context kind-kmx-orka -n orka-system rollout status deploy/kmx-k8s-tool --timeout=180s
           # Admitted by ORKA's own CRD, not merely by the API server: a Tool
           # this cluster's Orka would reject is not a native Orka Tool.
           url=$(kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources \
             -o jsonpath='{.spec.http.url}')
           test "$url" = https://1.1.1.1/resources
+          kubectl --context kind-kmx-orka -n orka-system get rolebinding kmx-k8s-tool-policy-reader -o json | python3 -c '
+          import json, sys
+          b = json.load(sys.stdin)
+          assert b["subjects"] == [{"kind":"ServiceAccount","name":"orka-api-ai-worker","namespace":"orka-system"}], "wrong policy reader subject"
+          assert b["roleRef"]["name"] == "kmx-k8s-tool-policy-reader", "wrong policy reader role"
+          '
           # The chart worker needs this named policy for gateway approval
           # binding; it must not acquire general policy reads.
           test "$(kubectl --context kind-kmx-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-api-ai-worker)" = yes
@@ -3072,7 +3076,7 @@ jobs:
               [ "$current" = True ] && break
               sleep 2
             done
-            test "$current" = True || { kubectl --context kind-kmx-orka -n orka-system get "$resource" -o yaml; exit 1; }
+            test "$current" = True || { echo "$resource never reached $condition for the current generation"; exit 1; }
           done
       # The public URL is only a logical authority. A missing policy must
       # make the current Tool generation unavailable; it must never turn
@@ -3100,10 +3104,7 @@ jobs:
             [ "$failed" = True ] && break
             sleep 2
           done
-          test "$failed" = True || {
-            kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o yaml
-            exit 1
-          }
+          test "$failed" = True || { echo 'Tool did not reject the missing gateway'; exit 1; }
           # Restore the only policy kmx manages and require the restored
           # generation before any Task is allowed to use the Tool.
           kubectl --context kind-kmx-orka -n orka-system patch tools.core.orka.ai k8s-get-resources \
@@ -3117,10 +3118,7 @@ jobs:
             [ "$status" = "True:$generation" ] && { restored=1; break; }
             sleep 2
           done
-          test -n "$restored" || {
-            kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o yaml
-            exit 1
-          }
+          test -n "$restored" || { echo 'Tool did not regain current-generation Available'; exit 1; }
       - name: Orka — fail closed on legacy runtime state
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3168,21 +3166,21 @@ jobs:
             if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:18080/healthz 2>/dev/null; then ready=1; break; fi
             sleep 0.2
           done
-          test -n "$ready" || { echo "the tool never answered on 127.0.0.1:18080; kubectl said:"; sed 's/^/  /' tool-forward.log; exit 1; }
+          test -n "$ready" || { echo 'the tool never answered on 127.0.0.1:18080'; exit 1; }
           curl -fsS --max-time 30 -X POST http://127.0.0.1:18080/resources \
             -H 'Content-Type: application/json' \
-            -d '{"resource":"configmaps","namespace":"orka-system"}' | tee tool-allowed.out
+            -d '{"resource":"configmaps","namespace":"orka-system"}' -o tool-allowed.out
           python3 - "$marker" <<'EOF'
           import json, sys
           marker = sys.argv[1]
           body = json.load(open("tool-allowed.out"))
           names = [i["name"] for i in body["items"]]
-          assert body["resource"] == "configmaps", body
-          assert marker in names, f"the live ConfigMap {marker} is not in {names}"
+          assert body["resource"] == "configmaps", "unexpected Tool resource"
+          assert marker in names, "live ConfigMap marker absent from the read-only listing"
           # A projection, never contents: a ConfigMap's data must not come
           # back through a tool a model can call.
           assert all(set(i) <= {"name", "namespace", "phase", "readyReplicas",
-                                "replicas", "succeeded", "failed"} for i in body["items"]), body
+                                "replicas", "succeeded", "failed"} for i in body["items"]), "Tool returned unexpected fields"
           print(f"live listing: {len(names)} ConfigMaps, including {marker}")
           EOF
       # The denied half, asserted at BOTH boundaries, because either one
@@ -3202,11 +3200,11 @@ jobs:
             if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:18080/healthz 2>/dev/null; then ready=1; break; fi
             sleep 0.2
           done
-          test -n "$ready" || { echo "the tool never answered; kubectl said:"; sed 's/^/  /' tool-forward-deny.log; exit 1; }
+          test -n "$ready" || { echo 'the tool never answered'; exit 1; }
           for body in '{"resource":"secrets"}' '{"resource":"secrets","namespace":"orka-system"}' '{"resource":"pods","verb":"delete"}'; do
             code=$(curl -s -o deny.out -w '%{http_code}' --max-time 30 -X POST \
               http://127.0.0.1:18080/resources -H 'Content-Type: application/json' -d "$body")
-            test "$code" = 400 || { echo "tool answered $code for $body:"; cat deny.out; exit 1; }
+            test "$code" = 400 || { echo "tool refused with unexpected HTTP $code"; exit 1; }
             grep -q 'Invalid resource request' deny.out
           done
           # And the authority the tool holds even if its validation were
@@ -3224,155 +3222,31 @@ jobs:
           # pass the seven checks above and prove nothing. Scoped to
           # orka-system to match the namespace the live request above hits.
           kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
-      # A deterministic model fixture makes one Tool call, then copies the
-      # unpredictable live ConfigMap name from the Tool result. The model is
-      # deliberately not responsible for deciding whether to call the Tool:
-      # this step proves Orka's worker routing rather than small-model skill.
-      - name: Native Orka Tool — Task returns actual cluster data through the gateway
+      # The deterministic model fixture calls the Tool for deployment health.
+      # Task evidence comes from Orka's authorized event API, never worker logs
+      # or an answer printed to CI. This tests routing, not model selection.
+      - name: Native Orka Tool — Task invokes read-only health Tool
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          cat > /tmp/orka-tool-model.py <<'PY'
-          import json
-          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-          class Handler(BaseHTTPRequestHandler):
-              def send_json(self, status, payload):
-                  body = json.dumps(payload, separators=(",", ":")).encode()
-                  self.send_response(status)
-                  self.send_header("Content-Type", "application/json")
-                  self.send_header("Content-Length", str(len(body)))
-                  self.end_headers()
-                  self.wfile.write(body)
-
-              def do_GET(self):
-                  self.send_json(200, {"ok": True})
-
-              def do_POST(self):
-                  length = int(self.headers.get("Content-Length", "0"))
-                  request = json.loads(self.rfile.read(length))
-                  inputs = request.get("input", [])
-                  if not isinstance(inputs, list):
-                      inputs = []
-                  results = [item for item in inputs
-                             if item.get("type") == "function_call_output"]
-                  if not results:
-                      output = [{
-                          "type": "function_call",
-                          "id": "fc_k8s",
-                          "call_id": "call_k8s",
-                          "name": "k8s-get-resources",
-                          "arguments": '{"resource":"configmaps","namespace":"orka-system"}',
-                          "status": "completed",
-                      }]
-                  else:
-                      raw_result = results[-1]["output"]
-                      # Orka prefixes tool output with a short label before
-                      # adding it to the next Responses API input item.
-                      result = json.loads(raw_result[raw_result.index("{"):])
-                      names = [item["name"] for item in result["items"]
-                               if item["name"].startswith("probe-")]
-                      if len(names) != 1:
-                          self.send_json(500, {"error": {"message": f"expected one probe marker, got {names}"}})
-                          return
-                      output = [{
-                          "type": "message",
-                          "id": "msg_k8s",
-                          "status": "completed",
-                          "role": "assistant",
-                          "content": [{"type": "output_text", "text": names[0], "annotations": []}],
-                      }]
-                  self.send_json(200, {
-                      "id": "resp_orka_tool_proof",
-                      "object": "response",
-                      "created_at": 1,
-                      "status": "completed",
-                      "model": request.get("model", "tool-fixture"),
-                      "output": output,
-                      "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-                  })
-
-              def log_message(self, fmt, *args):
-                  print("orka-tool-model: " + (fmt % args), flush=True)
-
-          ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
-          PY
           kubectl --context kind-kmx-orka -n orka-system create configmap orka-tool-model \
-            --from-file=server.py=/tmp/orka-tool-model.py
-          kubectl --context kind-kmx-orka apply -f - <<'YAML'
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: orka-tool-model
-            namespace: orka-system
-          spec:
-            selector:
-              matchLabels:
-                app: orka-tool-model
-            template:
-              metadata:
-                labels:
-                  app: orka-tool-model
-              spec:
-                securityContext:
-                  runAsNonRoot: true
-                  runAsUser: 1000
-                  runAsGroup: 1000
-                  seccompProfile:
-                    type: RuntimeDefault
-                containers:
-                  - name: model
-                    image: python:3.13-alpine
-                    command: [python3, -B, /app/server.py]
-                    ports:
-                      - containerPort: 8080
-                    resources:
-                      requests:
-                        cpu: 10m
-                        memory: 32Mi
-                      limits:
-                        memory: 64Mi
-                    securityContext:
-                      allowPrivilegeEscalation: false
-                      readOnlyRootFilesystem: true
-                      capabilities:
-                        drop: [ALL]
-                    volumeMounts:
-                      - name: source
-                        mountPath: /app
-                        readOnly: true
-                volumes:
-                  - name: source
-                    configMap:
-                      name: orka-tool-model
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: orka-tool-model
-            namespace: orka-system
-          spec:
-            selector:
-              app: orka-tool-model
-            ports:
-              - port: 8080
-                targetPort: 8080
-          YAML
+            --from-file=server.py=scripts/ci/orka-tool-model.py
+          kubectl --context kind-kmx-orka apply -f scripts/ci/orka-tool-model.yaml
           kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s
           bin/kmx --context kind-kmx-orka agent create orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
             --tools k8s-get-resources \
-            --task "Call k8s-get-resources and return the probe ConfigMap name." \
-            --result-service-account orka-result-reader > orka-tool-answer.out
-          test "$(cat orka-tool-answer.out)" = "$TOOL_MARKER"
+            --task 'Check deployment health in orka-system using k8s-get-resources.' \
+            --result-service-account orka-result-reader \
+            --out /tmp/orka-tool-agent.yaml --bundle-path /tmp/orka-tool-bundle \
+            >/dev/null 2>/dev/null || { echo 'health Task failed (answer and worker output suppressed)'; exit 1; }
           task=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
-            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, matches; print(matches[0]["metadata"]["name"])')
-          test "$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded
-          job=$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.jobName}')
-          kubectl --context kind-kmx-orka -n orka-system logs "job/$job" | tee orka-tool-worker.out
-          grep -q 'Executing tool: k8s-get-resources' orka-tool-worker.out
+            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one Task for health proof"; print(matches[0]["metadata"]["name"])')
+          test "$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded || { echo 'health Task did not succeed'; exit 1; }
+          KMX_W133_KIND_CONTEXT=kind-kmx-orka KMX_W133_TASK_NAME="$task" \
+            go test ./internal/kmx/app -run '^TestLiveInspectQuickstartToolEvents$' -count=1 -v
       # Provider → Agent → Task, and a REAL answer. The prompt is
       # deterministic and the comparison is exact: "a non-empty reply" would
       # pass on an error string, and a 3B model asked an open question is
@@ -3395,23 +3269,138 @@ jobs:
           phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
-      - name: Cluster state on failure
+      - name: Task and Tool phase diagnostics on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
-          kubectl --context kind-kmx-orka get pods -A || true
-          kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai,agents.core.orka.ai,tasks.core.orka.ai,tools.core.orka.ai -o wide || true
-          kubectl --context kind-kmx-orka -n orka-system logs deploy/orka-api-controller --tail=100 || true
-          kubectl --context kind-kmx-orka -n orka-system logs deploy/kmx-k8s-tool --tail=100 || true
+          if [ "${KMX_W133_KMX_CREATED:-}" = 1 ]; then
+            kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:", [t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
+            kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
+          fi
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
-        run: kind delete cluster --name kmx-orka || true
+        run: |
+          if [ "${KMX_W133_KMX_CREATED:-}" = 1 ]; then kind delete cluster --name kmx-orka; fi
+      - name: Docs-only short-circuit
+        id: docs-only-summary
+        if: steps.changes.outputs.docs_only == 'true'
+        run: echo "every changed file is documentation; no cluster booted"
+  # Independent stock Helm release: no kmx fullnameOverride or owner marker.
+  # It uses the same production Prepare installer and authorized Task-event probe.
+  e2e-orka-helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Classify the change (docs-only short-circuit, fail closed)
+        id: changes
+        uses: ./.github/actions/classify-change
+      - name: Install kind
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+      - uses: actions/setup-go@v5
+        if: steps.changes.outputs.docs_only != 'true'
+        with:
+          go-version-file: go.mod
+      - name: Create only the dedicated Helm cluster
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          if kind get clusters | grep -qx w133-orka-helm; then
+            echo 'refusing to reuse or delete an existing kind cluster'; exit 1
+          fi
+          kind create cluster --name w133-orka-helm --wait 90s
+          echo 'KMX_W133_HELM_CREATED=1' >> "$GITHUB_ENV"
+      - name: Install SHA-256 verified stock Orka harness-v2 chart
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 https://github.com/orka-agents/orka/releases/download/v0.2.0/orka-0.2.0.tgz -o /tmp/w133-orka-0.2.0.tgz
+          printf '%s  %s\n' 'b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79' /tmp/w133-orka-0.2.0.tgz | sha256sum -c -
+          mkdir -p /tmp/w133-chart
+          tar -xzf /tmp/w133-orka-0.2.0.tgz -C /tmp/w133-chart orka/crds
+          kubectl --context kind-w133-orka-helm apply -f /tmp/w133-chart/orka/crds/ >/dev/null
+          kubectl --context kind-w133-orka-helm wait --for=condition=Established --timeout=120s -f /tmp/w133-chart/orka/crds/ >/dev/null
+          helm --kube-context kind-w133-orka-helm install orka /tmp/w133-orka-0.2.0.tgz -n orka-system \
+            --create-namespace --wait --timeout 10m --set controller.mode=harness-v2 >/dev/null 2>/dev/null || {
+              echo 'stock Orka Helm install failed (chart output suppressed)'; exit 1;
+            }
+          helm --kube-context kind-w133-orka-helm -n orka-system get values orka -o json | python3 -c '
+          import json, sys
+          v = json.load(sys.stdin)
+          assert v["controller"]["mode"] == "harness-v2", "unexpected controller mode"
+          assert not v.get("fullnameOverride"), "stock release has fullnameOverride"
+          '
+          kubectl --context kind-w133-orka-helm -n orka-system rollout status deploy/orka-controller --timeout=180s >/dev/null
+      - name: Prepare the stock Tool and scoped result access through kmx methods
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm go test ./internal/kmx/app \
+            -run '^TestLiveProvisionOrkaResultReader$' -count=1
+          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm go test ./internal/kmx/app \
+            -run '^TestLiveInstallQuickstartK8sTool$' -count=1
+          kubectl --context kind-w133-orka-helm -n orka-system get rolebinding kmx-k8s-tool-policy-reader -o json | python3 -c '
+          import json, sys
+          b = json.load(sys.stdin)
+          assert b["subjects"] == [{"kind":"ServiceAccount","name":"orka-ai-worker","namespace":"orka-system"}], "wrong stock AI worker grant"
+          assert b["roleRef"]["name"] == "kmx-k8s-tool-policy-reader", "wrong reader Role"
+          '
+          kubectl --context kind-w133-orka-helm -n orka-system get role kmx-k8s-tool-policy-reader -o json | python3 -c '
+          import json, sys
+          assert json.load(sys.stdin)["rules"] == [{"apiGroups":["core.orka.ai"],"resources":["outboundaccesspolicies"],"resourceNames":["kmx-k8s-tool-gateway"],"verbs":["get"]}], "policy Role is not exactly named get"
+          '
+          test "$(kubectl --context kind-w133-orka-helm -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-ai-worker)" = yes
+          test "$(kubectl --context kind-w133-orka-helm -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/unrelated --as=system:serviceaccount:orka-system:orka-ai-worker || true)" = no
+      - name: Helm-style Tool health Task succeeds with projected event metadata
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-w133-orka-helm -n orka-system create secret generic local-provider-key \
+            --from-literal=api-key=not-used-by-this-endpoint >/dev/null
+          kubectl --context kind-w133-orka-helm -n orka-system create configmap orka-tool-model \
+            --from-file=server.py=scripts/ci/orka-tool-model.py >/dev/null
+          kubectl --context kind-w133-orka-helm apply -f scripts/ci/orka-tool-model.yaml >/dev/null
+          kubectl --context kind-w133-orka-helm -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
+          go build -o /tmp/w133-kmx ./cmd/kmx
+          /tmp/w133-kmx --context kind-w133-orka-helm agent create orka-tool-proof \
+            --namespace orka-system --provider-type openai --model tool-fixture \
+            --secret local-provider-key \
+            --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
+            --tools k8s-get-resources --orka-api-service orka \
+            --task 'Check deployment health in orka-system using k8s-get-resources.' \
+            --result-service-account orka-result-reader \
+            --out /tmp/orka-tool-agent.yaml --bundle-path /tmp/orka-tool-bundle \
+            >/dev/null 2>/dev/null || { echo 'stock health Task failed (answer and worker output suppressed)'; exit 1; }
+          task=$(kubectl --context kind-w133-orka-helm -n orka-system get tasks.core.orka.ai -o json | \
+            python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one stock health Task"; print(matches[0]["metadata"]["name"])')
+          test "$(kubectl --context kind-w133-orka-helm -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded || { echo 'stock health Task did not succeed'; exit 1; }
+          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm KMX_W133_TASK_NAME="$task" \
+            go test ./internal/kmx/app -run '^TestLiveInspectQuickstartToolEvents$' -count=1 -v
+      - name: Helm Task and Tool phase diagnostics on failure
+        if: failure() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          if [ "${KMX_W133_HELM_CREATED:-}" = 1 ]; then
+            kubectl --context kind-w133-orka-helm -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:",[t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
+            kubectl --context kind-w133-orka-helm -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
+          fi
+      - name: Delete only the cluster created by this job
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          if [ "${KMX_W133_HELM_CREATED:-}" = 1 ]; then kind delete cluster --name w133-orka-helm; fi
       - name: Docs-only short-circuit
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-hosted-models, e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-spend]
+    needs: [e2e-hosted-models, e2e-models, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart, e2e-resilience, e2e-spend]
     if: always()
     steps:
       - name: Every e2e shard succeeded

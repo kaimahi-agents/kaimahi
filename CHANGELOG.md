@@ -30,6 +30,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Bundle lift can require a passing staging evaluation before a production lift. Commit `lift-policy.yaml` beside `agent.yaml` with rules mapping destination cluster UID and namespace to evaluation cluster UID and namespace, or require a context ad hoc with `kmx agent lift --require-evaluated <context>`; context names are display labels, not identities. Lift and `--plan` report whether a local receipt passes for the current portable digest and complete case set. The gate reads local receipts only, never contacts the evaluation cluster, and refuses absent, stale, partial, failed or unknown evidence before deployment. To bootstrap CI, lift to staging, evaluate there, then lift to production in the same workspace; teammates without local receipts must evaluate for themselves. Receipts are forgeable local evidence, not intended to be committed.
 - `kmx agent lift --override-gate "reason"` bypasses only an evaluation gate with an explicit explanation; the reason and bypassed condition are printed to stderr and stored in the local destination lift receipt until the next lift overwrites it. Interactive `/lift` and console use the shared read-only gate check: a passing gate appears in the review plan, while a refusal stops before deployment review; neither silently bypasses it.
 
+### Fixed
+
+- The quickstart Orka Kubernetes Tool now grants named-policy `get` only to the AI worker configured by the installed v0.2.0 chart, including stock Helm `orka` releases. Installation and Agent lift refuse missing or ambiguous worker identity and ineffective policy authorization even when a Tool reports Available. Console Prepare can reapply the scoped grant; see [repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant). CI proves both chart variants with a succeeded health Task and metadata-only Tool-call events instead of worker logs or printed answers.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

@@ -134,13 +134,25 @@ Lift checks prerequisites; it never installs them:
   if needed; create a missing namespace separately.
 - The selected destination Provider is Ready, and its referenced Secret exists
   in that namespace. Provision these separately before lifting.
-- Every Tool referenced by the bundle is Available in the destination. Prepare
-  Tools separately before lifting.
+- Every enabled Tool referenced by the bundle is Available for its current
+  generation in the destination. For an HTTP Tool with an
+  `outboundAccessPolicyRef`, the verified Orka chart AI worker must also have
+  effective `get` access to that **named policy** in the Tool's namespace.
+  The same read-only check runs during `--plan`, deploy and bundle-less
+  live-copy `/lift`; an Available Tool alone does not prove worker access.
+  Prepare Tools separately before lifting.
 
 Each missing prerequisite is reported separately with the relevant preparation
 command where one exists. The quickstart Kubernetes inventory Tool requires its
 same-namespace `OutboundAccessPolicy` to be Accepted before the Tool becomes
 Available; a target missing or rejecting that policy is refused until repaired.
+If a lift refuses despite `Tool/k8s-get-resources` being Available, inspect
+the named policy-reader RoleBinding for the installed chart's actual AI worker
+ServiceAccount and its effective named-policy `get` permission. The refusal
+names the account, namespace, policy and verb. Use console's separately
+confirmed **Prepare target** action to reapply the quickstart Tool's exact
+grant; do not bind a guessed worker, add `list` privileges or bypass `--plan`.
+See [the quickstart Tool repair guide](orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
 Lift creates no AKS cluster, namespace, Orka installation, Tool, policy, Secret
 or Task. It does not change or delete the source Agent. Evaluation-gate
 refusals and recovery are described below; a gate refusal occurs before any

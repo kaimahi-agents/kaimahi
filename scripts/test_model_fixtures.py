@@ -63,6 +63,47 @@ class ModelFixtureTests(unittest.TestCase):
         caught.exception.close()
 
 
+class OrkaHealthToolFixtureTests(unittest.TestCase):
+    def setUp(self):
+        source = SOURCE.parent / "orka-tool-model.py"
+        spec = importlib.util.spec_from_file_location("orka_health_fixture", source)
+        fixture_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture_module)
+        self.server = HTTPServer(("127.0.0.1", 0), fixture_module.Handler)
+        worker = threading.Thread(target=self.server.serve_forever, daemon=True)
+        worker.start()
+        self.addCleanup(worker.join)
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def post(self, inputs):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.server.server_port}/v1/responses",
+            data=json.dumps({"model": "tool-fixture", "input": inputs}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return json.load(response)
+
+    def test_calls_only_read_only_deployment_health(self):
+        call = self.post([])["output"][0]
+        self.assertEqual(call["name"], "k8s-get-resources")
+        self.assertEqual(json.loads(call["arguments"]),
+                         {"resource": "deployments", "namespace": "orka-system"})
+        result = self.post([{"type": "function_call_output",
+                            "output": 'Tool result: {"resource":"deployments","items":[]}'}])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["output"][0]["content"][0]["text"],
+                         "Health inventory checked.")
+
+    def test_rejects_unexpected_tool_result(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post([{"type": "function_call_output",
+                        "output": 'Tool result: {"resource":"secrets","items":[]}'}])
+        self.assertEqual(caught.exception.code, 500)
+        caught.exception.close()
+
+
 class UpgradeProbeCustodyTests(unittest.TestCase):
     def test_upgrade_probe_keeps_bearers_out_of_curl_argv(self):
         source = SOURCE.parent.parent / "plane-upgrade-probe.sh"
