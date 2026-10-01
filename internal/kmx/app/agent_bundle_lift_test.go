@@ -31,7 +31,7 @@ func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *byt
 	}
 	var notes bytes.Buffer
 	adapter.app.Err = &notes
-	setupRetireDeleteTestAPI(t,dir)
+	setupRetireDeleteTestAPI(t, dir)
 	return adapter.app, LiftAgentBundleOptions{BundleDir: bundle, ToContext: "kind-test", Inference: "provider:inference"}, dir, &notes
 }
 
