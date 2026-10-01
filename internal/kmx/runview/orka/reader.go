@@ -163,10 +163,11 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 	}
 	queue := []nativeTask{root}
 	seen := map[string]bool{rootUID: true}
+	parents := map[string]string{}
 	for len(queue) > 0 {
 		parent := queue[0]
 		queue = queue[1:]
-		task := runview.Task{ID: parent.Metadata.UID, Name: parent.Metadata.Name, Agent: agentOf(parent), Status: parent.Status.Phase, StartedAt: parent.Metadata.CreationTimestamp, FinishedAt: parent.Status.CompletionTime, Summary: "Task activity (content redacted)", RevisionMissing: missing("no Task-bound bundle revision", "Orka Task")}
+		task := runview.Task{ID: parent.Metadata.UID, Name: parent.Metadata.Name, Agent: agentOf(parent), ParentTask: parents[parent.Metadata.UID], Status: parent.Status.Phase, StartedAt: parent.Metadata.CreationTimestamp, FinishedAt: parent.Status.CompletionTime, Summary: "Task activity (content redacted)", RevisionMissing: missing("no Task-bound bundle revision", "Orka Task")}
 		if task.Status == "" {
 			task.Status = "Unknown"
 		}
@@ -177,12 +178,6 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 					task.FailureReason = condition.Reason
 					task.FailureMissing = nil
 				}
-			}
-		}
-		for _, owner := range parent.Metadata.OwnerReferences {
-			if owner.Kind == "Task" {
-				task.ParentTask = owner.UID
-				break
 			}
 		}
 		for _, a := range out.Agents {
@@ -273,6 +268,7 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 		})
 		for _, child := range children {
 			out.HandOffs = append(out.HandOffs, runview.HandOff{FromTask: parent.Metadata.UID, ToTask: child.Metadata.UID, ObservedAt: child.Metadata.CreationTimestamp})
+			parents[child.Metadata.UID] = parent.Metadata.UID
 			queue = append(queue, child)
 		}
 	}

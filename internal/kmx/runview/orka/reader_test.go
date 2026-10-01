@@ -104,6 +104,17 @@ func TestReadRunIgnoresReusedNameAndScheduledChild(t *testing.T) {
 		t.Fatalf("invalid child treated as delegation: %+v", run)
 	}
 }
+func TestReadRunDoesNotAssignParentToScheduledRoot(t *testing.T) {
+	root := strings.Replace(task("root", "uid-root", "lead", "Scheduled", "", ""), `"uid":"uid-root"`, `"uid":"uid-root","ownerReferences":[{"kind":"Task","name":"template","uid":"template-uid"}]`, 1)
+	f := fixtureSource{tasks: map[string]string{"root": root}}
+	run, err := NewReader(f).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Tasks[0].ParentTask != "" || len(run.HandOffs) != 0 {
+		t.Fatalf("scheduled root acquired delegation parent: %+v", run)
+	}
+}
 func TestReadRunChildFailureDoesNotEndRootAndChildTerminalAfterRoot(t *testing.T) {
 	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Succeeded", "", ""), "failed": task("failed", "uid-f", "helper", "Failed", "root", "uid-root"), "late": strings.Replace(task("late", "uid-l", "helper", "Succeeded", "root", "uid-root"), "02:00:00Z", "03:00:00Z", 1)}, children: map[string][]string{"root": {"failed", "late"}}}
 	run, err := NewReader(f).Read(context.Background(), "cluster", "team", "root", "uid-root")
