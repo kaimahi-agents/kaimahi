@@ -144,6 +144,7 @@ SCOPED_SUPPORT_FILES = {
         "internal/kmx/app/runtime_kagent_lifecycle.go",
         "internal/kmx/runtime/kagent_bindings.go",
         "internal/kmx/runtime/portable.go",
+        "internal/kmx/runtime/prepared.go",
         "internal/kmx/runtime/runtime.go",
         "internal/kmx/scaffold/kagent.go",
     }),
@@ -157,6 +158,10 @@ SCOPED_SUPPORT_FILES = {
         "internal/kmx/runtime/portable_secretshapes_test.go",
         "internal/kmx/runtime/portable_test.go",
         "internal/kmx/scaffold/kagent_test.go",
+    }),
+    "bundle-fixture": frozenset({
+        "internal/kmx/app/testdata/bundle-format/kagent/agent.yaml",
+        "internal/kmx/app/testdata/bundle-format/kagent/bindings.yaml",
     }),
     # Keep this list to documents that currently carry the new contract. The
     # other docs named by the rollout earn no exemption until they need one.
@@ -248,6 +253,9 @@ def support_category_problem(category: str, path: str) -> str | None:
     elif category == "test":
         if not path.endswith("_test.go") or not path.startswith(("cmd/", "internal/")):
             return "test support must be a Go test under cmd/ or internal/"
+    elif category == "bundle-fixture":
+        if path not in SCOPED_SUPPORT_FILES["bundle-fixture"]:
+            return "bundle fixture support is restricted to the two pinned Kagent YAML files"
     elif category == "current-doc":
         if not current_doc(path):
             return "current-doc support must be current Markdown under docs/ or a root guide"
@@ -907,7 +915,7 @@ def floors(paths, read, historical, support=None) -> list[str]:
                      "scripts/legacy-runtime-allowlist.json"}:
         bad.append(f"the self-exemption set is no longer this checker and its allowlist: {sorted(SELF)}")
     if support is not None and set(support) != frozenset().union(*SCOPED_SUPPORT_FILES.values()):
-        bad.append("the loaded scoped support paths no longer equal the closed production/test/current-doc/workflow set")
+        bad.append("the loaded scoped support paths no longer equal the closed production/test/bundle-fixture/current-doc/workflow set")
     if SCOPED_SUPPORT_RULES != frozenset({
             "api-group", "api-kind", "schema-version", "image", "create-selector", "bare-name"}):
         bad.append(f"the scoped support rule set widened or shrank: {sorted(SCOPED_SUPPORT_RULES)}")
@@ -1482,6 +1490,12 @@ def selftest():
         case(support_category_problem("workflow", ".github/workflows/release.yml") is not None,
              "the workflow category directly refuses a second workflow path",
              "the workflow category itself widened beyond the reviewed CI path")
+        case(support_category_problem("bundle-fixture", "internal/kmx/app/testdata/bundle-format/kagent/agent.yaml") is None,
+             "the pinned portable fixture earns scoped vocabulary",
+             "the pinned portable fixture was refused by its own category")
+        case(support_category_problem("bundle-fixture", "internal/kmx/app/testdata/bundle-format/other/agent.yaml") is not None,
+             "the bundle-fixture category refuses another YAML file",
+             "the bundle-fixture category widened beyond the pinned files")
         for mutate, what in (
                 (lambda p: p["files"]["production"].append("internal/kmx/app/extra_kagent.go"),
                  "an unauthorized support path"),
