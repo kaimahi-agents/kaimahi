@@ -3149,8 +3149,7 @@ jobs:
         run: |
           set -euo pipefail
           marker="probe-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-          echo "marker=$marker"
-          kubectl --context kind-kmx-orka -n orka-system create configmap "$marker" --from-literal=probe=1
+          kubectl --context kind-kmx-orka -n orka-system create configmap "$marker" --from-literal=probe=1 >/dev/null
           # --address pins IPv4: kubectl's default `localhost` can bind the
           # v6 side only while curl talks to 127.0.0.1. The forward's own
           # output is kept and printed on failure, and the trap stops it
@@ -3180,7 +3179,7 @@ jobs:
           # back through a tool a model can call.
           assert all(set(i) <= {"name", "namespace", "phase", "readyReplicas",
                                 "replicas", "succeeded", "failed"} for i in body["items"]), "Tool returned unexpected fields"
-          print(f"live listing: {len(names)} ConfigMaps, including {marker}")
+          print("live ConfigMap marker present in read-only listing")
           EOF
       # The denied half, asserted at BOTH boundaries, because either one
       # alone is a single point of silent failure: the server's own
@@ -3221,16 +3220,22 @@ jobs:
           # pass the seven checks above and prove nothing. Scoped to
           # orka-system to match the namespace the live request above hits.
           kubectl --context kind-kmx-orka auth can-i list configmaps -n orka-system --as="$sa"
-      # The deterministic model fixture calls the Tool for deployment health.
+      # The fixture requires a per-run Deployment from the Tool's response,
+      # not a name in its source or prompt. Zero replicas create no image pulls.
       # Task evidence comes from Orka's authorized event API, never worker logs
       # or an answer printed to CI. This tests routing, not model selection.
       - name: Native Orka Tool — Task invokes read-only health Tool
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
+          health_marker="health-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          kubectl --context kind-kmx-orka -n orka-system create deployment "$health_marker" \
+            --image=registry.k8s.io/pause:3.10 --replicas=0 >/dev/null
           kubectl --context kind-kmx-orka -n orka-system create configmap orka-tool-model \
             --from-file=server.py=scripts/ci/orka-tool-model.py
           kubectl --context kind-kmx-orka apply -f scripts/ci/orka-tool-model.yaml
+          kubectl --context kind-kmx-orka -n orka-system set env deployment/orka-tool-model \
+            ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s
           bin/kmx --context kind-kmx-orka agent create orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
@@ -3361,11 +3366,16 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
+          health_marker="health-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          kubectl --context kind-w133-orka-helm -n orka-system create deployment "$health_marker" \
+            --image=registry.k8s.io/pause:3.10 --replicas=0 >/dev/null
           kubectl --context kind-w133-orka-helm -n orka-system create secret generic local-provider-key \
             --from-literal=api-key=not-used-by-this-endpoint >/dev/null
           kubectl --context kind-w133-orka-helm -n orka-system create configmap orka-tool-model \
             --from-file=server.py=scripts/ci/orka-tool-model.py >/dev/null
           kubectl --context kind-w133-orka-helm apply -f scripts/ci/orka-tool-model.yaml >/dev/null
+          kubectl --context kind-w133-orka-helm -n orka-system set env deployment/orka-tool-model \
+            ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-w133-orka-helm -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
           go build -o /tmp/w133-kmx ./cmd/kmx
           /tmp/w133-kmx --context kind-w133-orka-helm agent create orka-tool-proof \

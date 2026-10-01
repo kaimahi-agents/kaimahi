@@ -1,6 +1,7 @@
 """Deterministic Responses API fixture for a read-only Orka health Tool call."""
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -38,11 +39,12 @@ class Handler(BaseHTTPRequestHandler):
                 raw_result = results[-1]["output"]
                 # Orka prefixes the Tool result with a label.
                 result = json.loads(raw_result[raw_result.index("{"):])
-                if (result["resource"] != "deployments" or
+                marker = os.environ.get("ORKA_HEALTH_DEPLOYMENT_MARKER")
+                if (not marker or result["resource"] != "deployments" or
                         not isinstance(result["items"], list) or
-                        not any(isinstance(item, dict) and item.get("name") == "orka-tool-model" and
+                        not any(isinstance(item, dict) and item.get("name") == marker and
                                 item.get("namespace") == "orka-system" for item in result["items"])):
-                    raise ValueError("health deployment missing")
+                    raise ValueError("live health deployment missing")
             except (KeyError, ValueError, TypeError):
                 self.send_json(500, {"error": {"message": "health inventory unavailable"}})
                 return

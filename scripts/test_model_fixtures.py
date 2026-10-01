@@ -4,11 +4,13 @@ import importlib.util
 import json
 import os
 import pathlib
+import secrets
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -65,6 +67,10 @@ class ModelFixtureTests(unittest.TestCase):
 
 class OrkaHealthToolFixtureTests(unittest.TestCase):
     def setUp(self):
+        self.marker = "health-" + secrets.token_hex(8)
+        marker_env = unittest.mock.patch.dict(os.environ, {"ORKA_HEALTH_DEPLOYMENT_MARKER": self.marker})
+        marker_env.start()
+        self.addCleanup(marker_env.stop)
         source = SOURCE.parent / "orka-tool-model.py"
         spec = importlib.util.spec_from_file_location("orka_health_fixture", source)
         fixture_module = importlib.util.module_from_spec(spec)
@@ -90,20 +96,38 @@ class OrkaHealthToolFixtureTests(unittest.TestCase):
         self.assertEqual(call["name"], "k8s-get-resources")
         self.assertEqual(json.loads(call["arguments"]),
                          {"resource": "deployments", "namespace": "orka-system"})
-        result = self.post([{"type": "function_call_output",
-                            "output": 'Tool result: {"resource":"deployments","items":[{"name":"orka-tool-model","namespace":"orka-system"}]}'}])
+        payload = json.dumps({"resource": "deployments", "items": [
+            {"name": self.marker, "namespace": "orka-system"},
+        ]})
+        result = self.post([{"type": "function_call_output", "output": "Tool result: " + payload}])
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["output"][0]["content"][0]["text"],
                          "Health inventory checked.")
 
     def test_rejects_missing_live_deployment(self):
-        for items in ([], [{"name": "some-other-deployment", "namespace": "orka-system"}]):
-            with self.subTest(has_other_deployment=bool(items)):
+        cases = (
+            ("empty", []),
+            ("unrelated", [{"name": "some-other-deployment", "namespace": "orka-system"}]),
+            ("known_static", [{"name": "orka-tool-model", "namespace": "orka-system"}]),
+            ("wrong_marker", [{"name": "health-other", "namespace": "orka-system"}]),
+            ("wrong_namespace", [{"name": self.marker, "namespace": "other"}]),
+        )
+        for name, items in cases:
+            with self.subTest(case=name):
                 payload = json.dumps({"resource": "deployments", "items": items})
                 with self.assertRaises(urllib.error.HTTPError) as caught:
                     self.post([{"type": "function_call_output", "output": "Tool result: " + payload}])
                 self.assertEqual(caught.exception.code, 500)
                 caught.exception.close()
+
+    def test_rejects_unset_live_marker(self):
+        with unittest.mock.patch.dict(os.environ, {"ORKA_HEALTH_DEPLOYMENT_MARKER": ""}):
+            payload = json.dumps({"resource": "deployments", "items": [
+                {"name": "orka-tool-model", "namespace": "orka-system"}]})
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.post([{"type": "function_call_output", "output": "Tool result: " + payload}])
+            self.assertEqual(caught.exception.code, 500)
+            caught.exception.close()
 
     def test_rejects_unexpected_tool_result(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
