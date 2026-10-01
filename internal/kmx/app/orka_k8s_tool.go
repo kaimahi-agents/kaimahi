@@ -35,11 +35,10 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 		return "", err
 	}
 	labels := controller.Metadata.Labels
-	if legacy || labels["helm.sh/chart"] != "orka-0.2.0" ||
-		labels["app.kubernetes.io/name"] != "orka" ||
+	if legacy || labels["helm.sh/chart"] == "" || labels["app.kubernetes.io/name"] != "orka" ||
 		labels["app.kubernetes.io/instance"] == "" ||
 		labels["app.kubernetes.io/managed-by"] != "Helm" {
-		return "", fmt.Errorf("Orka controller Deployment must have chart=orka-0.2.0, nonempty instance, app name=orka and managed-by=Helm labels")
+		return "", fmt.Errorf("Orka controller Deployment must have nonempty chart and instance, app name=orka and managed-by=Helm labels")
 	}
 	const flag = "--ai-worker-service-account-name="
 	const flagName = "ai-worker-service-account-name"
@@ -184,22 +183,23 @@ type policyPermissionDenied struct {
 }
 
 func (e *policyPermissionDenied) Error() string {
-	return fmt.Sprintf("denied ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", OrkaNamespace, e.Worker, e.Policy, e.Namespace)
+	return fmt.Sprintf("denied ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", e.Namespace, e.Worker, e.Policy, e.Namespace)
 }
 
 // Check effective access for the one named policy, not a broader list grant.
+// The Agent's worker and its referenced Tool policy share namespace here.
 // SAR responses and kubectl stderr can contain sensitive admission details;
 // only the requested identity and permission are included in errors.
 func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, policy string) error {
-	permission := fmt.Sprintf("ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", OrkaNamespace, worker, policy, namespace)
+	permission := fmt.Sprintf("ServiceAccount %s/%s get outboundaccesspolicies.core.orka.ai/%s in namespace %s", namespace, worker, policy, namespace)
 	if scaffold.ValidateObjectName(worker) != nil || scaffold.ValidateNamespace(namespace) != nil || scaffold.ValidateObjectName(policy) != nil {
 		return fmt.Errorf("invalid worker or named policy permission: %s", permission)
 	}
 	request, err := json.Marshal(map[string]any{
 		"apiVersion": "authorization.k8s.io/v1", "kind": "SubjectAccessReview",
 		"spec": map[string]any{
-			"user":   "system:serviceaccount:" + OrkaNamespace + ":" + worker,
-			"groups": []string{"system:serviceaccounts", "system:serviceaccounts:" + OrkaNamespace, "system:authenticated"},
+			"user":   "system:serviceaccount:" + namespace + ":" + worker,
+			"groups": []string{"system:serviceaccounts", "system:serviceaccounts:" + namespace, "system:authenticated"},
 			"resourceAttributes": map[string]string{
 				"namespace": namespace, "group": "core.orka.ai", "resource": "outboundaccesspolicies",
 				"name": policy, "verb": "get",

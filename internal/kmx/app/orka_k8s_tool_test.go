@@ -15,6 +15,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -35,9 +36,11 @@ func TestOrkaAIWorkerAccount(t *testing.T) {
 	}{
 		{"kmx override", `[ ` + workerController("orka-api-controller", chart, "orka-api", "Helm", `["--ai-worker-service-account-name=orka-api-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-api-ai-worker", OrkaNamespace, chart, "orka-api", "ai") + ` ]`, "orka-api-ai-worker", ""},
 		{"stock Helm", `[ ` + workerController("orka-controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + ` ]`, "orka-ai-worker", ""},
+		{"newer chart matching worker", `[ ` + workerController("orka-controller", "orka-0.2.1", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.1", "orka", "ai") + ` ]`, "orka-ai-worker", ""},
 		{"no controller", `[]`, `[]`, "", "no Orka controller"},
 		{"ambiguous controllers", `[ ` + workerController("one", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + `,` + workerController("two", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "multiple Orka controller"},
-		{"wrong controller chart", `[ ` + workerController("controller", "orka-0.1.3", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "chart"},
+		{"controller and worker chart mismatch", `[ ` + workerController("controller", "orka-0.1.3", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "ai") + ` ]`, "", "chart"},
+		{"missing chart labels", `[ ` + workerController("controller", "", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, "", "orka", "ai") + ` ]`, "", "chart"},
 		{"missing instance", `[ ` + workerController("controller", chart, "", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "instance"},
 		{"wrong manager", `[ ` + workerController("controller", chart, "orka", "unknown", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "managed-by"},
 		{"no flag", `[ ` + workerController("controller", chart, "orka", "Helm", `[]`) + ` ]`, `[]`, "", "--ai-worker-service-account-name"},
@@ -153,6 +156,83 @@ printf '%%s' %[3]q`, args, stdin, tt.response, tt.failure))
 			body, _ := os.ReadFile(stdin)
 			if json.Unmarshal(body, &sent) != nil || sent.APIVersion != "authorization.k8s.io/v1" || sent.Kind != "SubjectAccessReview" || sent.Spec.User != "system:serviceaccount:orka-system:orka-ai-worker" || !reflect.DeepEqual(sent.Spec.Groups, []string{"system:serviceaccounts", "system:serviceaccounts:orka-system", "system:authenticated"}) || sent.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{OrkaNamespace, "core.orka.ai", "outboundaccesspolicies", quickstartK8sToolPolicy, "get"}) {
 				t.Fatal("SAR did not target the exact worker and named get permission")
+			}
+		})
+	}
+}
+
+func TestOrkaWorkerCanGetPolicyUsesTaskNamespace(t *testing.T) {
+	for _, tc := range []struct {
+		name, grantNamespace string
+		allowed              bool
+	}{
+		{"task namespace grant", "health-team", true},
+		{"release namespace grant only", OrkaNamespace, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			request := filepath.Join(dir, "review")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`/bin/cat > %[1]q
+if /bin/grep -q '"user":"system:serviceaccount:%[2]s:orka-ai-worker"' %[1]q; then
+  printf '%%s' '{"status":{"allowed":true}}'
+else
+  printf '%%s' '{"status":{"allowed":false}}'
+fi`, request, tc.grantNamespace))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
+			err := a.orkaWorkerCanGetPolicy(t.Context(), "orka-ai-worker", "health-team", "health-gateway")
+			if tc.allowed && err != nil || !tc.allowed && (err == nil || !strings.Contains(err.Error(), "health-team/orka-ai-worker")) {
+				t.Fatalf("task-namespace policy result: allowed=%t err=%v", tc.allowed, err)
+			}
+			var review struct {
+				Spec struct {
+					User               string   `json:"user"`
+					Groups             []string `json:"groups"`
+					ResourceAttributes struct {
+						Namespace, Group, Resource, Name, Verb string
+					} `json:"resourceAttributes"`
+				} `json:"spec"`
+			}
+			body, readErr := os.ReadFile(request)
+			if readErr != nil || json.Unmarshal(body, &review) != nil ||
+				review.Spec.User != "system:serviceaccount:health-team:orka-ai-worker" ||
+				!reflect.DeepEqual(review.Spec.Groups, []string{"system:serviceaccounts", "system:serviceaccounts:health-team", "system:authenticated"}) ||
+				review.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{"health-team", "core.orka.ai", "outboundaccesspolicies", "health-gateway", "get"}) {
+				t.Fatal("review did not ask about the Task namespace worker's exact policy permission")
+			}
+		})
+	}
+}
+
+func TestLiftToolPolicyUsesAgentNamespace(t *testing.T) {
+	for _, tc := range []struct {
+		grantNamespace string
+		allowed        bool
+	}{
+		{"health-team", true},
+		{OrkaNamespace, false},
+	} {
+		t.Run(tc.grantNamespace, func(t *testing.T) {
+			dir := t.TempDir()
+			request := filepath.Join(dir, "review")
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`case " $* " in
+  *" get deploy -o json "*) printf '%%s' '{"items":[%s]}' ;;
+  *" get serviceaccounts -o json "*) printf '%%s' '{"items":[%s]}' ;;
+  *" get tools.core.orka.ai health --ignore-not-found=true -o json "*) printf '%%s' '{"kind":"Tool","metadata":{"name":"health","namespace":"health-team","generation":1},"spec":{"http":{"outboundAccessPolicyRef":{"name":"health-gateway"}}},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}' ;;
+  *" create --raw "*) /bin/cat > %[3]q
+    if /bin/grep -q '"user":"system:serviceaccount:%[4]s:orka-ai-worker"' %[3]q; then printf '%%s' '{"status":{"allowed":true}}'; else printf '%%s' '{"status":{"allowed":false}}'; fi ;;
+  *) exit 1 ;;
+esac`, workerController("orka-controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), request, tc.grantNamespace))
+			t.Setenv("PATH", dir)
+			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
+			bundle := &scaffold.OrkaBundle{Agent: map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"name": "health"}}}}}
+			err := a.liftToolsAvailable(t.Context(), "health-team", bundle)
+			if tc.allowed && err != nil || !tc.allowed && (err == nil || !strings.Contains(err.Error(), "health-team/orka-ai-worker")) {
+				t.Fatalf("Tool in health-team, grant in %s: %v", tc.grantNamespace, err)
+			}
+			body, readErr := os.ReadFile(request)
+			if readErr != nil || !bytes.Contains(body, []byte(`"user":"system:serviceaccount:health-team:orka-ai-worker"`)) {
+				t.Fatal("Tool preflight did not review the health-team worker")
 			}
 		})
 	}

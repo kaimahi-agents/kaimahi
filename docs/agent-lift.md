@@ -140,8 +140,9 @@ Lift checks prerequisites; it never installs them:
   in that namespace. Provision these separately before lifting.
 - Every enabled Tool referenced by the bundle is Available for its current
   generation in the destination. For an HTTP Tool with an
-  `outboundAccessPolicyRef`, the verified Orka chart AI worker must also have
-  effective `get` access to that **named policy** in the Tool's namespace.
+  `outboundAccessPolicyRef`, the configured Orka AI worker in the Agent's
+  namespace must also have effective `get` access to that **named policy** in
+  the Tool's namespace.
   The same read-only check runs during `--plan`, deploy and bundle-less
   live-copy `/lift`; an Available Tool alone does not prove worker access.
   Prepare Tools separately before lifting.
@@ -152,8 +153,8 @@ same-namespace `OutboundAccessPolicy` to be Accepted before the Tool becomes
 Available; a target missing or rejecting that policy is refused until repaired.
 If a lift refuses despite `Tool/k8s-get-resources` being Available, inspect
 the named policy-reader RoleBinding for the installed chart's actual AI worker
-ServiceAccount and its effective named-policy `get` permission. The refusal
-names the account, namespace, policy and verb. For a non-allowing review
+ServiceAccount in the Agent's namespace and its effective named-policy `get`
+permission. The refusal names the account, namespace, policy and verb. For a non-allowing review
 (explicit denial or NoOpinion) on the built-in policy in `orka-system`, console
 offers a separately confirmed **Prepare target** action to reapply the
 quickstart Tool's exact grant, then

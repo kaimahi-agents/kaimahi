@@ -15,9 +15,10 @@ and binds it to an exact same-namespace `OutboundAccessPolicy`; Orka sends the
 request only to the `kmx-k8s-tool` Service on port 8080. The public IP avoids
 v0.2.0's bounded DNS-answer check on the logical authority; no Tool data is
 sent to that public IP. The v0.2.0 chart worker lacks read access to the
-policy by default. kmx reads the installed v0.2.0 controller's configured AI
-worker ServiceAccount and checks that account's Helm release and AI-worker
-labels before granting it `get` on **only this named policy** in `orka-system`.
+policy by default. kmx reads the installed Orka controller's configured AI
+worker ServiceAccount and checks the release-namespace account's matching
+Helm and AI-worker labels before granting it `get` on **only this named
+policy** in `orka-system`.
 This works for both kmx's `orka-api-ai-worker` and a stock Helm release's
 `orka-ai-worker`; kmx refuses a missing, ambiguous or unverified worker rather
 than binding a guessed account. Installation waits for the current policy
@@ -108,7 +109,10 @@ A Tool can remain `Available` after its policy-reader RoleBinding is removed:
 Tool admission is not an authorization check on the AI worker. Before lifting
 an Agent that references an HTTP Tool with an `outboundAccessPolicyRef`, both
 bundle `--plan` / deploy and bundle-less live-copy `/lift` check the worker's
-**effective** `get` on that specific policy in the Tool's namespace. A refusal
+**effective** `get` on that specific policy in the Tool's namespace, using
+`system:serviceaccount:<Agent namespace>:<configured worker name>`. The
+release-namespace account identifies the worker name; Orka's Task-namespace
+worker account is the identity that needs permission. A refusal
 names the Tool, worker account, namespace, policy and verb. Neither denied nor
 indeterminate authorization permits broadening the Role or bypassing the check.
 For a **non-allowing review** (explicit denial or NoOpinion) on the quickstart

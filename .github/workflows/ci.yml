@@ -3329,7 +3329,7 @@ jobs:
             echo 'refusing to reuse or delete an existing kind cluster'; exit 1
           fi
           bin/kmx up --step cluster
-          echo 'KMX_W133_KMX_CREATED=1' >> "$GITHUB_ENV"
+          echo 'KMX_ORKA_RUNTIME_CREATED=1' >> "$GITHUB_ENV"
           bin/kmx up --step ollama
           bin/kmx up --step model
           # Fail closed on the premise. If a later edit made any of the three
@@ -3386,7 +3386,7 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          KMX_W133_KIND_CONTEXT=kind-kmx-orka go test ./internal/kmx/app \
+          KMX_LIVE_KIND_CONTEXT=kind-kmx-orka go test ./internal/kmx/app \
             -run '^TestLiveInstallQuickstartK8sTool$' -count=1
           sum=$(sha256sum scripts/orka-k8s-tool.py | cut -d' ' -f1)
           # Admitted by ORKA's own CRD, not merely by the API server: a Tool
@@ -3604,7 +3604,7 @@ jobs:
           task=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one Task for health proof"; print(matches[0]["metadata"]["name"])')
           test "$(kubectl --context kind-kmx-orka -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded || { echo 'health Task did not succeed'; exit 1; }
-          KMX_W133_KIND_CONTEXT=kind-kmx-orka KMX_W133_TASK_NAME="$task" \
+          KMX_LIVE_KIND_CONTEXT=kind-kmx-orka KMX_LIVE_TASK_NAME="$task" \
             go test ./internal/kmx/app -run '^TestLiveInspectQuickstartToolEvents$' -count=1 -v
       # Provider → Agent → Task, and a REAL answer. The prompt is
       # deterministic and the comparison is exact: "a non-empty reply" would
@@ -3628,17 +3628,26 @@ jobs:
           phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
-      - name: Task and Tool phase diagnostics on failure
+      - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
-          if [ "${KMX_W133_KMX_CREATED:-}" = 1 ]; then
+          if [ "${KMX_ORKA_RUNTIME_CREATED:-}" = 1 ]; then
+            kubectl --context kind-kmx-orka get pods -A || true
+            kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai,agents.core.orka.ai,tasks.core.orka.ai,tools.core.orka.ai -o wide || true
+            for deployment in orka-api-controller kmx-k8s-tool; do
+              kubectl --context kind-kmx-orka -n orka-system logs "deploy/$deployment" --tail=100 2>/dev/null | python3 -c '
+          import sys
+          lines = sys.stdin.read().lower().splitlines()
+          print(sys.argv[1], "log summary: lines=", len(lines), "errors=", sum("error" in line for line in lines))
+          ' "$deployment" || true
+            done
             kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:", [t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
             kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
           fi
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
-          if [ "${KMX_W133_KMX_CREATED:-}" = 1 ]; then kind delete cluster --name kmx-orka; fi
+          if [ "${KMX_ORKA_RUNTIME_CREATED:-}" = 1 ]; then kind delete cluster --name kmx-orka; fi
       - name: Docs-only short-circuit
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
@@ -3671,69 +3680,69 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          if kind get clusters | grep -qx w133-orka-helm; then
+          if kind get clusters | grep -qx helm-release-orka; then
             echo 'refusing to reuse or delete an existing kind cluster'; exit 1
           fi
-          kind create cluster --name w133-orka-helm --wait 90s
-          echo 'KMX_W133_HELM_CREATED=1' >> "$GITHUB_ENV"
+          kind create cluster --name helm-release-orka --wait 90s
+          echo 'KMX_ORKA_HELM_CREATED=1' >> "$GITHUB_ENV"
       - name: Install SHA-256 verified stock Orka harness-v2 chart
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 https://github.com/orka-agents/orka/releases/download/v0.2.0/orka-0.2.0.tgz -o /tmp/w133-orka-0.2.0.tgz
-          printf '%s  %s\n' 'b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79' /tmp/w133-orka-0.2.0.tgz | sha256sum -c -
-          mkdir -p /tmp/w133-chart
-          tar -xzf /tmp/w133-orka-0.2.0.tgz -C /tmp/w133-chart orka/crds
-          kubectl --context kind-w133-orka-helm apply -f /tmp/w133-chart/orka/crds/ >/dev/null
-          kubectl --context kind-w133-orka-helm wait --for=condition=Established --timeout=120s -f /tmp/w133-chart/orka/crds/ >/dev/null
-          helm --kube-context kind-w133-orka-helm install orka /tmp/w133-orka-0.2.0.tgz -n orka-system \
+          curl -fsSL --retry 3 https://github.com/orka-agents/orka/releases/download/v0.2.0/orka-0.2.0.tgz -o /tmp/orka-helm-0.2.0.tgz
+          printf '%s  %s\n' 'b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79' /tmp/orka-helm-0.2.0.tgz | sha256sum -c -
+          mkdir -p /tmp/orka-helm-chart
+          tar -xzf /tmp/orka-helm-0.2.0.tgz -C /tmp/orka-helm-chart orka/crds
+          kubectl --context kind-helm-release-orka apply -f /tmp/orka-helm-chart/orka/crds/ >/dev/null
+          kubectl --context kind-helm-release-orka wait --for=condition=Established --timeout=120s -f /tmp/orka-helm-chart/orka/crds/ >/dev/null
+          helm --kube-context kind-helm-release-orka install orka /tmp/orka-helm-0.2.0.tgz -n orka-system \
             --create-namespace --wait --timeout 10m --set controller.mode=harness-v2 >/dev/null 2>/dev/null || {
               echo 'stock Orka Helm install failed (chart output suppressed)'; exit 1;
             }
-          helm --kube-context kind-w133-orka-helm -n orka-system get values orka -o json | python3 -c '
+          helm --kube-context kind-helm-release-orka -n orka-system get values orka -o json | python3 -c '
           import json, sys
           v = json.load(sys.stdin)
           assert v["controller"]["mode"] == "harness-v2", "unexpected controller mode"
           assert not v.get("fullnameOverride"), "stock release has fullnameOverride"
           '
-          kubectl --context kind-w133-orka-helm -n orka-system rollout status deploy/orka-controller --timeout=180s >/dev/null
+          kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-controller --timeout=180s >/dev/null
       - name: Prepare the stock Tool and scoped result access through kmx methods
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
-          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm go test ./internal/kmx/app \
+          KMX_LIVE_KIND_CONTEXT=kind-helm-release-orka go test ./internal/kmx/app \
             -run '^TestLiveProvisionOrkaResultReader$' -count=1
-          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm go test ./internal/kmx/app \
+          KMX_LIVE_KIND_CONTEXT=kind-helm-release-orka go test ./internal/kmx/app \
             -run '^TestLiveInstallQuickstartK8sTool$' -count=1
-          kubectl --context kind-w133-orka-helm -n orka-system get rolebinding kmx-k8s-tool-policy-reader -o json | python3 -c '
+          kubectl --context kind-helm-release-orka -n orka-system get rolebinding kmx-k8s-tool-policy-reader -o json | python3 -c '
           import json, sys
           b = json.load(sys.stdin)
           assert b["subjects"] == [{"kind":"ServiceAccount","name":"orka-ai-worker","namespace":"orka-system"}], "wrong stock AI worker grant"
           assert b["roleRef"]["name"] == "kmx-k8s-tool-policy-reader", "wrong reader Role"
           '
-          kubectl --context kind-w133-orka-helm -n orka-system get role kmx-k8s-tool-policy-reader -o json | python3 -c '
+          kubectl --context kind-helm-release-orka -n orka-system get role kmx-k8s-tool-policy-reader -o json | python3 -c '
           import json, sys
           assert json.load(sys.stdin)["rules"] == [{"apiGroups":["core.orka.ai"],"resources":["outboundaccesspolicies"],"resourceNames":["kmx-k8s-tool-gateway"],"verbs":["get"]}], "policy Role is not exactly named get"
           '
-          test "$(kubectl --context kind-w133-orka-helm -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-ai-worker)" = yes
-          test "$(kubectl --context kind-w133-orka-helm -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/unrelated --as=system:serviceaccount:orka-system:orka-ai-worker || true)" = no
+          test "$(kubectl --context kind-helm-release-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/kmx-k8s-tool-gateway --as=system:serviceaccount:orka-system:orka-ai-worker)" = yes
+          test "$(kubectl --context kind-helm-release-orka -n orka-system auth can-i get outboundaccesspolicies.core.orka.ai/unrelated --as=system:serviceaccount:orka-system:orka-ai-worker || true)" = no
       - name: Helm-style Tool health Task succeeds with projected event metadata
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           health_marker="health-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-          kubectl --context kind-w133-orka-helm -n orka-system create deployment "$health_marker" \
+          kubectl --context kind-helm-release-orka -n orka-system create deployment "$health_marker" \
             --image=registry.k8s.io/pause:3.10 --replicas=0 >/dev/null
-          kubectl --context kind-w133-orka-helm -n orka-system create secret generic local-provider-key \
+          kubectl --context kind-helm-release-orka -n orka-system create secret generic local-provider-key \
             --from-literal=api-key=not-used-by-this-endpoint >/dev/null
-          kubectl --context kind-w133-orka-helm -n orka-system create configmap orka-tool-model \
+          kubectl --context kind-helm-release-orka -n orka-system create configmap orka-tool-model \
             --from-file=server.py=scripts/ci/orka-tool-model.py >/dev/null
-          kubectl --context kind-w133-orka-helm apply -f scripts/ci/orka-tool-model.yaml >/dev/null
-          kubectl --context kind-w133-orka-helm -n orka-system set env deployment/orka-tool-model \
+          kubectl --context kind-helm-release-orka apply -f scripts/ci/orka-tool-model.yaml >/dev/null
+          kubectl --context kind-helm-release-orka -n orka-system set env deployment/orka-tool-model \
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
-          kubectl --context kind-w133-orka-helm -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
-          go build -o /tmp/w133-kmx ./cmd/kmx
-          /tmp/w133-kmx --context kind-w133-orka-helm agent create orka-tool-proof \
+          kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
+          go build -o /tmp/orka-helm-kmx ./cmd/kmx
+          /tmp/orka-helm-kmx --context kind-helm-release-orka agent create orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
@@ -3742,22 +3751,22 @@ jobs:
             --result-service-account orka-result-reader \
             --out /tmp/orka-tool-agent.yaml --bundle-path /tmp/orka-tool-bundle \
             >/dev/null 2>/dev/null || { echo 'stock health Task failed (answer and worker output suppressed)'; exit 1; }
-          task=$(kubectl --context kind-w133-orka-helm -n orka-system get tasks.core.orka.ai -o json | \
+          task=$(kubectl --context kind-helm-release-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one stock health Task"; print(matches[0]["metadata"]["name"])')
-          test "$(kubectl --context kind-w133-orka-helm -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded || { echo 'stock health Task did not succeed'; exit 1; }
-          KMX_W133_KIND_CONTEXT=kind-w133-orka-helm KMX_W133_TASK_NAME="$task" \
+          test "$(kubectl --context kind-helm-release-orka -n orka-system get task "$task" -o jsonpath='{.status.phase}')" = Succeeded || { echo 'stock health Task did not succeed'; exit 1; }
+          KMX_LIVE_KIND_CONTEXT=kind-helm-release-orka KMX_LIVE_TASK_NAME="$task" \
             go test ./internal/kmx/app -run '^TestLiveInspectQuickstartToolEvents$' -count=1 -v
       - name: Helm Task and Tool phase diagnostics on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
-          if [ "${KMX_W133_HELM_CREATED:-}" = 1 ]; then
-            kubectl --context kind-w133-orka-helm -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:",[t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
-            kubectl --context kind-w133-orka-helm -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
+          if [ "${KMX_ORKA_HELM_CREATED:-}" = 1 ]; then
+            kubectl --context kind-helm-release-orka -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:",[t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
+            kubectl --context kind-helm-release-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
           fi
       - name: Delete only the cluster created by this job
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
-          if [ "${KMX_W133_HELM_CREATED:-}" = 1 ]; then kind delete cluster --name w133-orka-helm; fi
+          if [ "${KMX_ORKA_HELM_CREATED:-}" = 1 ]; then kind delete cluster --name helm-release-orka; fi
       - name: Docs-only short-circuit
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'

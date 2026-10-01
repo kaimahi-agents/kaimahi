@@ -21,21 +21,21 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-var w133KindContextPattern = regexp.MustCompile(`^kind-[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+var liveKindContextPattern = regexp.MustCompile(`^kind-[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
-func w133KindContext(value string) (string, error) {
+func liveKindContext(value string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	if len(value) > 253 || !w133KindContextPattern.MatchString(value) {
-		return "", fmt.Errorf("KMX_W133_KIND_CONTEXT must name a kind- context")
+	if len(value) > 253 || !liveKindContextPattern.MatchString(value) {
+		return "", fmt.Errorf("KMX_LIVE_KIND_CONTEXT must name a kind- context")
 	}
 	return value, nil
 }
 
 // The opt-in test is not a cluster creator: kind naming alone does not
 // authorize it to touch a destination. Inspect only pinned kubeconfig metadata.
-func requireW133LocalKind(ctx context.Context, a *App) error {
+func requireLiveLocalKind(ctx context.Context, a *App) error {
 	raw, err := a.orkaCapture(ctx, nil, "config", "view", "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot inspect opt-in live test context: %w", err)
@@ -59,22 +59,22 @@ func requireW133LocalKind(ctx context.Context, a *App) error {
 }
 
 func liveInstallQuickstartK8sTool(output io.Writer) error {
-	contextName, err := w133KindContext(os.Getenv("KMX_W133_KIND_CONTEXT"))
+	contextName, err := liveKindContext(os.Getenv("KMX_LIVE_KIND_CONTEXT"))
 	if err != nil {
 		return err
 	}
 	if contextName == "" {
-		return fmt.Errorf("KMX_W133_KIND_CONTEXT must be set for live installation")
+		return fmt.Errorf("KMX_LIVE_KIND_CONTEXT must be set for live installation")
 	}
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: output, Err: io.Discard}
-	if err := requireW133LocalKind(context.Background(), app); err != nil {
+	if err := requireLiveLocalKind(context.Background(), app); err != nil {
 		return err
 	}
 	return app.installQuickstartK8sTool()
 }
 
-func assertW133QuickstartToolEvents(envelope map[string]json.RawMessage) error {
+func assertQuickstartToolEvents(envelope map[string]json.RawMessage) error {
 	var events []struct {
 		Type     string `json:"type"`
 		ToolName string `json:"toolName"`
@@ -102,7 +102,7 @@ func assertW133QuickstartToolEvents(envelope map[string]json.RawMessage) error {
 	return nil
 }
 
-func TestW133QuickstartToolEventsRequireAuthoritativeName(t *testing.T) {
+func TestQuickstartToolEventsRequireAuthoritativeName(t *testing.T) {
 	for _, tt := range []struct {
 		name, events string
 		valid        bool
@@ -114,7 +114,7 @@ func TestW133QuickstartToolEventsRequireAuthoritativeName(t *testing.T) {
 		{"malformed envelope", `null`, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := assertW133QuickstartToolEvents(map[string]json.RawMessage{"events": json.RawMessage(tt.events)})
+			err := assertQuickstartToolEvents(map[string]json.RawMessage{"events": json.RawMessage(tt.events)})
 			if (err == nil) != tt.valid {
 				t.Fatalf("valid=%t, error=%v", tt.valid, err)
 			}
@@ -125,7 +125,7 @@ func TestW133QuickstartToolEventsRequireAuthoritativeName(t *testing.T) {
 	}
 }
 
-func TestW133LiveInstallGuard(t *testing.T) {
+func TestLiveToolInstallContextGuard(t *testing.T) {
 	for _, tt := range []struct {
 		name, context         string
 		wantSkip, wantRefusal bool
@@ -134,10 +134,10 @@ func TestW133LiveInstallGuard(t *testing.T) {
 		{name: "remote", context: "kmx-teams-w112", wantRefusal: true},
 		{name: "empty kind name", context: "kind-", wantRefusal: true},
 		{name: "malformed", context: "kind-demo/other", wantRefusal: true},
-		{name: "valid", context: "kind-w133-ci"},
+		{name: "valid", context: "kind-tool-ci"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := w133KindContext(tt.context)
+			got, err := liveKindContext(tt.context)
 			if tt.wantRefusal {
 				if err == nil || got != "" {
 					t.Fatalf("context=%q error=%v: expected refusal", got, err)
@@ -151,7 +151,7 @@ func TestW133LiveInstallGuard(t *testing.T) {
 	}
 }
 
-func TestW133LiveTargetRequiresExistingLoopbackContext(t *testing.T) {
+func TestLiveToolRequiresExistingLoopbackContext(t *testing.T) {
 	for _, tc := range []struct {
 		name, config string
 		allowed      bool
@@ -171,7 +171,7 @@ if [ "$*" != '--context kind-ci --request-timeout=10s config view -o json' ]; th
 printf '%%s' %[3]q`, args, marker, tc.config))
 			t.Setenv("PATH", dir)
 			a := &App{Cfg: &config.Config{KubeContext: "kind-ci"}, Run: &run.Runner{}}
-			err := requireW133LocalKind(t.Context(), a)
+			err := requireLiveLocalKind(t.Context(), a)
 			if (err == nil) != tc.allowed {
 				t.Fatalf("allowed=%t, error=%v", tc.allowed, err)
 			}
@@ -186,7 +186,7 @@ printf '%%s' %[3]q`, args, marker, tc.config))
 	}
 }
 
-func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
+func TestLiveToolInstallRefusesUnverifiedTarget(t *testing.T) {
 	for _, tc := range []struct{ name, config string }{
 		{"remote", `{"contexts":[{"name":"kind-ci","context":{"cluster":"aks"}}],"clusters":[{"name":"aks","cluster":{"server":"https://aks.example.invalid"}}]}`},
 		{"missing", `{"contexts":[],"clusters":[]}`},
@@ -196,7 +196,7 @@ func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
 			marker := filepath.Join(dir, "cluster-command")
 			fakeTool(t, dir, "kubectl", fmt.Sprintf(`if [ "$*" = '--context kind-ci --request-timeout=10s config view -o json' ]; then printf '%%s' %[1]q; else : > %[2]q; exit 1; fi`, tc.config, marker))
 			t.Setenv("PATH", dir)
-			t.Setenv("KMX_W133_KIND_CONTEXT", "kind-ci")
+			t.Setenv("KMX_LIVE_KIND_CONTEXT", "kind-ci")
 			if err := liveInstallQuickstartK8sTool(io.Discard); err == nil {
 				t.Fatal("unverified target accepted")
 			}
@@ -207,12 +207,12 @@ func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
 	}
 }
 
-func TestW133LiveInstallRefusesBeforeKubectl(t *testing.T) {
+func TestLiveToolInstallRefusesInvalidContextBeforeKubectl(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "kubectl-invoked")
 	fakeTool(t, dir, "kubectl", ": > "+shellArg(marker))
 	t.Setenv("PATH", dir)
-	t.Setenv("KMX_W133_KIND_CONTEXT", "kind-")
+	t.Setenv("KMX_LIVE_KIND_CONTEXT", "kind-")
 	var output bytes.Buffer
 	err := liveInstallQuickstartK8sTool(&output)
 	if err == nil || !strings.Contains(err.Error(), "kind-") {
@@ -226,22 +226,22 @@ func TestW133LiveInstallRefusesBeforeKubectl(t *testing.T) {
 // The Task API is read through the existing bounded, pinned result session.
 // Only the expected Tool-call outcome, not event bodies, reaches test output.
 func TestLiveInspectQuickstartToolEvents(t *testing.T) {
-	contextName, err := w133KindContext(os.Getenv("KMX_W133_KIND_CONTEXT"))
+	contextName, err := liveKindContext(os.Getenv("KMX_LIVE_KIND_CONTEXT"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if contextName == "" {
-		t.Skip("set KMX_W133_KIND_CONTEXT to the dedicated kind context to opt in")
+		t.Skip("set KMX_LIVE_KIND_CONTEXT to the dedicated kind context to opt in")
 	}
-	name := os.Getenv("KMX_W133_TASK_NAME")
+	name := os.Getenv("KMX_LIVE_TASK_NAME")
 	if scaffold.ValidateObjectName(name) != nil {
-		t.Fatal("KMX_W133_TASK_NAME must name the dedicated Task")
+		t.Fatal("KMX_LIVE_TASK_NAME must name the dedicated Task")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: io.Discard, Err: io.Discard}
-	if err := requireW133LocalKind(ctx, app); err != nil {
+	if err := requireLiveLocalKind(ctx, app); err != nil {
 		t.Fatal(err)
 	}
 	session, err := app.openOrkaResultSession(ctx, CreateOptions{Namespace: OrkaNamespace,
@@ -257,23 +257,23 @@ func TestLiveInspectQuickstartToolEvents(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("Task events HTTP status: %d", status)
 	}
-	if err := assertW133QuickstartToolEvents(envelope); err != nil {
+	if err := assertQuickstartToolEvents(envelope); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("Task event projection: ToolCallStarted and ToolCallCompleted for k8s-get-resources; no ToolCallFailed")
 }
 
 func TestLiveProvisionOrkaResultReader(t *testing.T) {
-	contextName, err := w133KindContext(os.Getenv("KMX_W133_KIND_CONTEXT"))
+	contextName, err := liveKindContext(os.Getenv("KMX_LIVE_KIND_CONTEXT"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if contextName == "" {
-		t.Skip("set KMX_W133_KIND_CONTEXT to the dedicated kind context to opt in")
+		t.Skip("set KMX_LIVE_KIND_CONTEXT to the dedicated kind context to opt in")
 	}
 	app := &App{Cfg: &config.Config{KubeContext: contextName},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Out: io.Discard, Err: io.Discard}
-	if err := requireW133LocalKind(t.Context(), app); err != nil {
+	if err := requireLiveLocalKind(t.Context(), app); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.orkaResultReader(); err != nil {
@@ -282,8 +282,8 @@ func TestLiveProvisionOrkaResultReader(t *testing.T) {
 }
 
 func TestLiveInstallQuickstartK8sTool(t *testing.T) {
-	if os.Getenv("KMX_W133_KIND_CONTEXT") == "" {
-		t.Skip("set KMX_W133_KIND_CONTEXT to the dedicated kind context to opt in")
+	if os.Getenv("KMX_LIVE_KIND_CONTEXT") == "" {
+		t.Skip("set KMX_LIVE_KIND_CONTEXT to the dedicated kind context to opt in")
 	}
 	if err := liveInstallQuickstartK8sTool(&bytes.Buffer{}); err != nil {
 		t.Fatal(err)
