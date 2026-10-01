@@ -1,0 +1,9 @@
+# One evaluation case for kmx agent evaluate. Each eval/*.yaml file is one
+# case: kmx creates one Orka Task with this input against the deployed
+# revision, and the case passes when the Task succeeds and its answer
+# contains every expectContains string (exact, case-sensitive). Unknown
+# fields are refused. Cases test a revision; they are not part of its digest.
+id: example
+input: Reply with exactly the word READY and nothing else.
+expectContains:
+  - READY

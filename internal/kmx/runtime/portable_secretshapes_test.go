@@ -68,6 +68,28 @@ func TestParsePortableAgentRefusesCredentialShapesBeforeAnythingCanEchoThem(t *t
 	}
 }
 
+func TestParsePortableAgentRefusesKagentCredentialShapesBeforeValidation(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			for _, tc := range []struct{ field, old, replacement string }{
+				{"runtime", "    runtime: python\n", "    runtime: %s\n"},
+				{"server.kind", "          kind: RemoteMCPServer\n", "          kind: %s\n"},
+				{"server.name", "          name: cluster-tools\n", "          name: %s\n"},
+				{"toolNames", "          - get_resources\n", "          - %s\n"},
+			} {
+				t.Run(tc.field, func(t *testing.T) {
+					doc := mustReplace(t, validKagentYAML, tc.old, strings.Replace(tc.replacement, "%s", shape.Example, 1))
+					agent, err := ParsePortableAgent([]byte(doc))
+					assertRefusedWithoutEcho(t, err, shape.Example)
+					if agent != nil {
+						t.Fatal("credential-shaped Kagent behavior parsed")
+					}
+				})
+			}
+		})
+	}
+}
+
 // The scan must beat the YAML parser and the node walk. A document that is
 // malformed AND credential-shaped is exactly the case where the value would
 // otherwise reach a log inside another gate's quoted error.
@@ -241,6 +263,41 @@ func TestEncodeOrkaShorthandRefusesCredentialShapesBeforeValidation(t *testing.T
 					assertRefusedWithoutEcho(t, err, shape.Example)
 					if agent != nil {
 						t.Fatal("a refused shorthand still produced a document")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestEncodeKagentShorthandRefusesCredentialShapesInEveryField(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		t.Run(shape.Name, func(t *testing.T) {
+			for _, tc := range []struct {
+				field string
+				edit  func(*KagentShorthand, string)
+			}{
+				{"name", func(s *KagentShorthand, v string) { s.Name = v }},
+				{"namespace", func(s *KagentShorthand, v string) { s.Namespace = v }},
+				{"instructions", func(s *KagentShorthand, v string) { s.Instructions = v }},
+				{"description", func(s *KagentShorthand, v string) { s.Description = v }},
+				{"runtime", func(s *KagentShorthand, v string) { s.Runtime = v }},
+				{"provider", func(s *KagentShorthand, v string) { s.ProviderType = v }},
+				{"model", func(s *KagentShorthand, v string) { s.Model = v }},
+				{"base URL", func(s *KagentShorthand, v string) { s.BaseURL = v }},
+				{"Secret name", func(s *KagentShorthand, v string) { s.SecretName = v }},
+				{"Secret key", func(s *KagentShorthand, v string) { s.SecretKey = v }},
+				{"server kind", func(s *KagentShorthand, v string) { s.Tools[0].Server.Kind = v }},
+				{"server name", func(s *KagentShorthand, v string) { s.Tools[0].Server.Name = v }},
+				{"tool name", func(s *KagentShorthand, v string) { s.Tools[0].ToolNames[0] = v }},
+			} {
+				t.Run(tc.field, func(t *testing.T) {
+					s := validKagentShorthand()
+					tc.edit(&s, shape.Example)
+					agent, err := EncodeKagentShorthand(s)
+					assertRefusedWithoutEcho(t, err, shape.Example)
+					if agent != nil {
+						t.Fatal("credential-shaped Kagent shorthand produced a document")
 					}
 				})
 			}

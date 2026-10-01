@@ -32,9 +32,10 @@ gateway is retired.
 
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
-custom authoring and a first answer, use the wizard described below. The three
-legacy install steps have been removed; invoking one is now an unknown step.
-A cluster that still runs the legacy runtime is operated with kubectl.
+custom authoring and a first answer, use the wizard described below. The old
+Kagent setup steps remain removed; invoking one is still an unknown step.
+KMX does not install or upgrade Kagent; only explicit exact-v0.10.2 create is
+available for an installation an operator already owns.
 `orka.harness.v2` is outside the direction.
 
 ## Prerequisites
@@ -167,14 +168,16 @@ line above therefore needs an Agent from one of those two commands first. Orka
 chat is a session: `--interactive` is required, and a one-shot invocation is
 refused with the command that works.
 
-kmx no longer installs the legacy runtime or its two demonstration
-agents. Its three `kmx up --step` names are
-unknown steps, their manifests are no longer shipped in the binary, and
-agent editing, governance and preset switching went with the runtime adapter.
-`kmx agent chat` and `kmx agent list` remain and are Orka-only.
+KMX no longer installs Kagent or its two demonstration agents. Its three old
+`kmx up --step` names are unknown steps, their manifests are no longer shipped
+in the binary, and agent editing, governance and preset switching remain
+retired. `kmx agent chat` and `kmx agent list` remain Orka-only. The one scoped
+exception is `kmx agent create --runtime kagent <name>` for a preinstalled exact
+v0.10.2; it does not alter this setup or quickstart path.
 
-A cluster that still carries that runtime is untouched by any of this, and is
-operated with kubectl. An old gateway reference needs
+A cluster that still carries Kagent is untouched by Orka setup. Other than the
+explicit exact-v0.10.2 create path, operate it with upstream tools or kubectl.
+An old gateway reference needs
 [explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
 Interactive `/help` lists local controls.
 
@@ -213,6 +216,13 @@ No-name terminal invocation offers a wizard. `agent chat --interactive` and
 `agent list --namespace <ns>` are Orka-only; a live Agent is edited with
 `kubectl edit agents.core.orka.ai`. BYO images, model-preset and MCP conversion
 are not provided.
+
+For the separate, advanced Kagent v0.10.2 create-only path, use the complete
+[create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
+requires neither an installed Kagent nor a provisioned cluster Secret. Online
+creation requires both an exact v0.10.2 installation and a separately
+provisioned Secret. Neither mode adds Kagent chat, list, show, status, lift,
+evaluate, console, quickstart, `up`, or AKS support.
 
 ## Using Podman instead of Docker
 

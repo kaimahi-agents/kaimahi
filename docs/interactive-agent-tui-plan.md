@@ -211,9 +211,10 @@ or Git state. `r` reloads the pane's own agent, even if the inventory behind
 it has since moved the selection; closing or reloading cancels a read still
 running. `j`/`k` and PgUp/PgDn scroll, Esc or Enter
 closes. The menu entry is last, so no existing action changes position.
-External runtimes have no bundle, so neither the key nor the menu entry
-is offered for them. Demo mode shows `behind`, `drifted` and `unknown` from
-sample data.
+The console inventories Orka only. A Kagent bundle may exist after explicit
+create, but this pane intentionally refuses it before cluster reads; it is not
+offered as a comparison or lift target. Demo mode shows `behind`, `drifted` and
+`unknown` from sample data.
 
 ## Chat and lift
 

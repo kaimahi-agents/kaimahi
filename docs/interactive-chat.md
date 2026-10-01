@@ -21,10 +21,10 @@ shell: sticky agent/location header, tools, `/agent`, `/lift`, inference selecti
 verbose controls, response timings and reusable connections. Discovery/read errors
 are reported rather than silently connecting to a different runtime.
 
-If no Orka Agent matches, the command says so. There is nothing left to fall
-back to: the legacy runtime's route, its resumable sessions, its A2A approval flow
-and its in-chat preset governance were removed with the runtime, and
-a `--runtime` naming it is now refused by name rather than resolved to Orka. Those
+If no Orka Agent matches, the command says so. There is no fallback: the Kagent
+create-only adapter is not registered for chat or discovery. Its former
+resumable chat, A2A approval flow and in-chat preset governance remain removed,
+and `--runtime kagent` is refused rather than resolved to Orka. Those
 runtime-specific semantics are not implemented by the Orka Task API.
 
 An optional message after the Agent name is sent once before the interactive

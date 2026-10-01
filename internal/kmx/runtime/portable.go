@@ -1,19 +1,18 @@
 // Portable authoring document: a closed `kmx.kaimahi.dev/v1alpha1` document
-// carrying neutral agent behavior plus exactly one runtime extension, which
-// today is Orka. It is decoded strictly — unknown fields, duplicate keys,
+// carrying neutral agent behavior plus exactly one Orka or Kagent runtime
+// extension. It is decoded strictly — unknown fields, duplicate keys,
 // merge keys, aliases, extra documents and credential-shaped values are all
 // refused — because these exact bytes become the portable identity a
 // LifecycleAdapter renders from, and an adapter must render what the
 // document literally says, nothing more.
 //
-// The Orka extension states only portable behavior: Provider and Agent
-// rate limits, and optional Agent tools/skills. Namespace, Provider endpoint
-// and Secret references belong to a separately validated bindings document.
-// The optional common spec.description is rendered as the Agent description
-// annotation. The extension does not
-// restate the model — spec.model.name is the document's one model, and
-// the adapter renders it into the Orka Provider's defaultModel — so a
-// document cannot say two different things about the same model.
+// Runtime extensions state only portable behavior. Namespace, provider
+// endpoint and Secret references belong to separately validated bindings
+// documents.
+// The common spec.description remains optional for Orka and is required for
+// Kagent, whose scaffold explicitly states it. An extension does not restate the model:
+// spec.model.name is the document's one model, so a document cannot say two
+// different things about the same model.
 package runtime
 
 import (
@@ -36,7 +35,8 @@ const (
 	PortableAPIVersion = "kmx.kaimahi.dev/v1alpha1"
 	PortableKind       = "PortableAgent"
 
-	orkaExtensionAPIVersion = "core.orka.ai/v1alpha1"
+	orkaExtensionAPIVersion   = "core.orka.ai/v1alpha1"
+	kagentExtensionAPIVersion = "kagent.dev/v1alpha2"
 	// portableMergeKey is YAML's merge key, refused rather than resolved.
 	portableMergeKey = "<<"
 )
@@ -70,12 +70,11 @@ type PortableModel struct {
 	Name string `yaml:"name"`
 }
 
-// PortableExtensions holds the runtime-specific blocks. Orka is the shipped
-// runtime and the only extension modeled, so it is required: a document with
-// no extension has no lifecycle target. A future runtime is added here as a
-// separate optional field, never by loosening this one.
+// PortableExtensions is a strict union. Exactly one pointer must be non-nil;
+// a document cannot have no lifecycle target or two conflicting targets.
 type PortableExtensions struct {
-	Orka *OrkaExtension `yaml:"orka"`
+	Orka   *OrkaExtension   `yaml:"orka,omitempty"`
+	Kagent *KagentExtension `yaml:"kagent,omitempty"`
 }
 
 // OrkaExtension holds runtime-specific behavior, never creation-target data.
@@ -119,6 +118,27 @@ type OrkaNamedRef struct {
 type OrkaRateLimit struct {
 	RequestsPerMinute *int32 `yaml:"requestsPerMinute,omitempty"`
 	TokensPerMinute   *int64 `yaml:"tokensPerMinute,omitempty"`
+}
+
+// KagentExtension carries only behavior rendered into a Kagent v0.10.2 declarative
+// Agent. Runtime is explicit rather than relying on Kagent's default. Tool
+// bindings omit namespace by design: Kagent resolves them in the Agent's own
+// namespace, and cross-namespace references are not portable authoring input.
+type KagentExtension struct {
+	APIVersion string             `yaml:"apiVersion"`
+	Runtime    string             `yaml:"runtime"`
+	Tools      []KagentMCPBinding `yaml:"tools,omitempty"`
+}
+
+// KagentMCPBinding grants a nonempty, explicit subset of one RemoteMCPServer.
+type KagentMCPBinding struct {
+	Server    KagentMCPServerRef `yaml:"server"`
+	ToolNames []string           `yaml:"toolNames"`
+}
+
+type KagentMCPServerRef struct {
+	Kind string `yaml:"kind"`
+	Name string `yaml:"name"`
 }
 
 // ParsePortableAgent strictly decodes exactly one YAML document into a
@@ -167,6 +187,9 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	}
 	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)
+	}
+	if hasBothPortableExtensions(root.Content[0]) {
+		return nil, fmt.Errorf("portable agent document: extensions must contain exactly one of %q or %q", Orka, Kagent)
 	}
 	if block := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination"); block != nil && block.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination must be a mapping")
@@ -290,6 +313,27 @@ func portablePathOrRoot(path string) string {
 	return path
 }
 
+// hasBothPortableExtensions checks authored keys, not decoded pointers. A
+// null arm is still an authored union arm and cannot accompany the other one.
+func hasBothPortableExtensions(root *yaml.Node) bool {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "extensions" || root.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		var orka, kagent bool
+		for j := 0; j+1 < len(root.Content[i+1].Content); j += 2 {
+			switch root.Content[i+1].Content[j].Value {
+			case "orka":
+				orka = true
+			case "kagent":
+				kagent = true
+			}
+		}
+		return orka && kagent
+	}
+	return false
+}
+
 // validate applies every requirement this closed schema states beyond what
 // strict field decoding already enforces. It is the single validation path:
 // an authored document and a shorthand-encoded one are held to it equally.
@@ -339,11 +383,28 @@ func (p *PortableAgent) validate() error {
 	if err := scaffold.ValidateSingleLineText(p.Spec.Model.Name); err != nil {
 		return fmt.Errorf("spec.model.name %w", err)
 	}
-	if p.Extensions.Orka == nil {
-		return fmt.Errorf("extensions.orka is required: %q is the only runtime this document targets", Orka)
+	extensions := 0
+	if p.Extensions.Orka != nil {
+		extensions++
 	}
-	if err := p.Extensions.Orka.validate(); err != nil {
-		return fmt.Errorf("extensions.orka.%w", err)
+	if p.Extensions.Kagent != nil {
+		extensions++
+	}
+	if extensions != 1 {
+		return fmt.Errorf("extensions must contain exactly one of %q or %q", Orka, Kagent)
+	}
+	if p.Extensions.Kagent != nil && strings.TrimSpace(p.Spec.Description) == "" {
+		return fmt.Errorf("spec.description is required for the %q runtime", Kagent)
+	}
+	if p.Extensions.Orka != nil {
+		if err := p.Extensions.Orka.validate(); err != nil {
+			return fmt.Errorf("extensions.orka.%w", err)
+		}
+	}
+	if p.Extensions.Kagent != nil {
+		if err := p.Extensions.Kagent.validate(); err != nil {
+			return fmt.Errorf("extensions.kagent.%w", err)
+		}
 	}
 	return nil
 }
@@ -411,6 +472,48 @@ func (l *OrkaRateLimit) validate() error {
 	return nil
 }
 
+func (e *KagentExtension) validate() error {
+	if e.APIVersion != kagentExtensionAPIVersion {
+		return fmt.Errorf("apiVersion must be %q for the %q runtime (found %q)", kagentExtensionAPIVersion, Kagent, e.APIVersion)
+	}
+	if e.Runtime != "go" && e.Runtime != "python" {
+		return fmt.Errorf("runtime must be explicitly go or python")
+	}
+	seenServers := make(map[string]bool, len(e.Tools))
+	for i, binding := range e.Tools {
+		if binding.Server.Kind != scaffold.KagentRemoteMCPServerKind {
+			return fmt.Errorf("tools[%d].server.kind must be exactly %s", i, scaffold.KagentRemoteMCPServerKind)
+		}
+		if strings.Contains(binding.Server.Name, ":") {
+			return fmt.Errorf("tools[%d].server.name must be an explicit name, not server:tool syntax", i)
+		}
+		if err := scaffold.ValidateObjectName(binding.Server.Name); err != nil {
+			return fmt.Errorf("tools[%d].server.name: %w", i, err)
+		}
+		if seenServers[binding.Server.Name] {
+			return fmt.Errorf("tools[%d].server.name duplicates another MCP binding", i)
+		}
+		seenServers[binding.Server.Name] = true
+		if len(binding.ToolNames) == 0 {
+			return fmt.Errorf("tools[%d].toolNames must be nonempty", i)
+		}
+		seenToolNames := make(map[string]bool, len(binding.ToolNames))
+		for j, name := range binding.ToolNames {
+			if err := scaffold.ValidateKagentToolName(name); err != nil {
+				return fmt.Errorf("tools[%d].toolNames[%d]: %w", i, j, err)
+			}
+			if seenToolNames[name] {
+				return fmt.Errorf("tools[%d].toolNames[%d] duplicates another tool name", i, j)
+			}
+			seenToolNames[name] = true
+		}
+	}
+	if len(e.Tools) > 1 {
+		return fmt.Errorf("tools supports at most one RemoteMCPServer binding")
+	}
+	return nil
+}
+
 // refusePortableInvalidUTF8 rejects a decoded string that is not valid
 // UTF-8. It walks every string field this closed schema models, including
 // tools, skills and allowed Agents, so nothing decoded can carry
@@ -442,6 +545,21 @@ func refusePortableInvalidUTF8(p *PortableAgent) error {
 			}
 		}
 	}
+	if kagent := p.Extensions.Kagent; kagent != nil {
+		fields = append(fields,
+			struct{ path, value string }{"extensions.kagent.apiVersion", kagent.APIVersion},
+			struct{ path, value string }{"extensions.kagent.runtime", kagent.Runtime},
+		)
+		for i, binding := range kagent.Tools {
+			fields = append(fields,
+				struct{ path, value string }{fmt.Sprintf("extensions.kagent.tools[%d].server.kind", i), binding.Server.Kind},
+				struct{ path, value string }{fmt.Sprintf("extensions.kagent.tools[%d].server.name", i), binding.Server.Name},
+			)
+			for j, name := range binding.ToolNames {
+				fields = append(fields, struct{ path, value string }{fmt.Sprintf("extensions.kagent.tools[%d].toolNames[%d]", i, j), name})
+			}
+		}
+	}
 	for _, field := range fields {
 		if !utf8.ValidString(field.value) {
 			return fmt.Errorf("%s must be valid UTF-8", field.path)
@@ -469,6 +587,13 @@ func refusePortableSecretShapes(p *PortableAgent) error {
 					values = append(values, ref.Name)
 				}
 			}
+		}
+	}
+	if kagent := p.Extensions.Kagent; kagent != nil {
+		values = append(values, kagent.APIVersion, kagent.Runtime)
+		for _, binding := range kagent.Tools {
+			values = append(values, binding.Server.Kind, binding.Server.Name)
+			values = append(values, binding.ToolNames...)
 		}
 	}
 	for _, value := range values {
@@ -623,6 +748,81 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 	source, err := yaml.Marshal(agent)
 	if err != nil {
 		return nil, fmt.Errorf("encode Orka shorthand: %w", err)
+	}
+	agent.source = source
+	return agent, nil
+}
+
+// KagentShorthand is flag-shaped Kagent creation input. Only behavior fields
+// enter the PortableAgent source; namespace and model credentials are checked
+// independently through KagentBindings.
+type KagentShorthand struct {
+	Name, Namespace, Instructions, Description string
+	Runtime, ProviderType, Model, BaseURL      string
+	SecretName, SecretKey                      string
+	Tools                                      []KagentMCPBinding
+}
+
+// EncodeKagentShorthand deterministically encodes behavior and validates the
+// creation target separately so target changes never alter portable identity.
+// An omitted SecretKey is validated using DefaultKagentSecretKey;
+// callers encoding the companion bindings get the same documented default.
+func EncodeKagentShorthand(s KagentShorthand) (*PortableAgent, error) {
+	values := []string{s.Name, s.Namespace, s.Instructions, s.Description, s.Runtime,
+		s.ProviderType, s.Model, s.BaseURL, s.SecretName, s.SecretKey}
+	for _, binding := range s.Tools {
+		values = append(values, binding.Server.Kind, binding.Server.Name)
+		values = append(values, binding.ToolNames...)
+	}
+	for _, value := range values {
+		if err := refusePortableSecretShape(value); err != nil {
+			return nil, err
+		}
+	}
+	agent := &PortableAgent{
+		APIVersion: PortableAPIVersion,
+		Kind:       PortableKind,
+		Metadata:   PortableMetadata{Name: s.Name},
+		Spec: PortableSpec{
+			Instructions: s.Instructions,
+			Description:  s.Description,
+			Model:        PortableModel{Name: s.Model},
+		},
+		Extensions: PortableExtensions{Kagent: &KagentExtension{
+			APIVersion: kagentExtensionAPIVersion,
+			Runtime:    s.Runtime,
+		}},
+	}
+	for _, binding := range s.Tools {
+		copyBinding := binding
+		copyBinding.ToolNames = append([]string(nil), binding.ToolNames...)
+		agent.Extensions.Kagent.Tools = append(agent.Extensions.Kagent.Tools, copyBinding)
+	}
+	secretKey := s.SecretKey
+	if secretKey == "" {
+		secretKey = DefaultKagentSecretKey
+	}
+	if err := (KagentBindings{
+		APIVersion: KagentBindingsAPIVersion,
+		Kind:       KagentBindingsKind,
+		Namespace:  s.Namespace,
+		ModelConfig: KagentModelConfigBindings{
+			Provider: s.ProviderType,
+			BaseURL:  s.BaseURL,
+			SecretRef: KagentSecretRefBindings{
+				Name: s.SecretName,
+				Key:  secretKey,
+			},
+		},
+	}).validate(); err != nil {
+		return nil, fmt.Errorf("Kagent creation bindings: %w", err)
+	}
+	if err := agent.validate(); err != nil {
+		return nil, fmt.Errorf("portable agent document: %w", err)
+	}
+	source, err := yaml.Marshal(agent)
+	if err != nil {
+		return nil, fmt.Errorf("encode Kagent shorthand: %w", err)
 	}
 	agent.source = source
 	return agent, nil

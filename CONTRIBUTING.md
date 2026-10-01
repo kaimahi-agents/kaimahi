@@ -6,12 +6,19 @@ corrections, tests, and small capability changes. Start with the organization
 
 ## Before building something new
 
-Orka is the platform; Kaimahi is tooling to help people get agents onto it.
-Check Orka, Kubernetes and existing integrations first. In the pull request,
-explain why configuration, integration or an upstream contribution cannot
-provide the requested behavior. The migration bridge should shrink as upstream
-capabilities cover it. Native-only versus a v1 YAML authoring surface over
-Orka remains an open question, and no such surface is supported today.
+Orka remains the first-class/default platform; Kaimahi is tooling to help people
+get agents onto it. Check Orka, Kubernetes and existing integrations first. In
+the pull request, explain why configuration, integration or an upstream
+contribution cannot provide the requested behavior. The migration bridge should
+shrink as upstream capabilities cover it.
+
+Kagent support is intentionally bounded to explicit
+`kmx agent create --runtime kagent <name>` against an already-installed exact
+v0.10.2. Do not infer or add an installer, upgrade path, auto-detection, chat,
+list/show/status, lift/evaluate, console, quickstart, `up`, or AKS payload from
+that adapter. Preserve Orka defaults and keep runtime choice distinct from the
+model-provider choice. A wider cross-runtime authoring/lifecycle surface remains
+an open, unsupported question.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and
@@ -51,9 +58,11 @@ meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
 
 Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
-`plane/` is the retained model seam's. Gateway/tool-governance and custom
-approval/grant runtime are retired; ordinary model caps/accounting remain.
-Historical SQL migrations and stored data are not cleanup targets.
+`plane/` is the retained model seam's. The root includes the first-class Orka
+paths and the narrowly scoped Kagent v0.10.2 create adapter. Gateway/tool
+governance and custom approval/grant runtime are retired; ordinary model
+caps/accounting remain. Historical SQL migrations, stored data, and legacy AKS
+teardown records are not cleanup targets.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name to avoid changing another developer's cluster. See

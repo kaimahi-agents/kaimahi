@@ -29,6 +29,64 @@ const minimalPortableYAML = portableCore + `extensions:
     apiVersion: core.orka.ai/v1alpha1
 `
 
+const minimalKagentYAML = `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: hello
+spec:
+  instructions: Do the thing.
+  description: A helpful assistant
+  model:
+    name: gpt-4o-mini
+extensions:
+  kagent:
+    apiVersion: kagent.dev/v1alpha2
+    runtime: go
+`
+
+const validKagentYAML = `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: hello
+spec:
+  instructions: Answer briefly, and say plainly when you do not know.
+  description: A review assistant
+  model:
+    name: gpt-4o-mini
+extensions:
+  kagent:
+    apiVersion: kagent.dev/v1alpha2
+    runtime: python
+    tools:
+      - server:
+          kind: RemoteMCPServer
+          name: cluster-tools
+        toolNames:
+          - get_resources
+          - describe-resource
+`
+
+const kagentShorthandGolden = `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+    name: hello
+spec:
+    instructions: Answer briefly.
+    description: A review assistant
+    model:
+        name: gpt-4o-mini
+extensions:
+    kagent:
+        apiVersion: kagent.dev/v1alpha2
+        runtime: go
+        tools:
+            - server:
+                kind: RemoteMCPServer
+                name: cluster-tools
+              toolNames:
+                - get_resources
+`
+
 // validPortableYAML states every field the closed schema models.
 const validPortableYAML = `apiVersion: kmx.kaimahi.dev/v1alpha1
 kind: PortableAgent
@@ -485,19 +543,107 @@ func TestParsePortableAgentRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 	}
 }
 
-// The Orka extension is the only extension this schema models and the only
-// thing that gives a document a lifecycle target, so exactly it is required.
-func TestParsePortableAgentRequiresExactlyTheOrkaExtension(t *testing.T) {
+// A portable revision has exactly one lifecycle target, never none or two.
+func TestParsePortableAgentRequiresExactlyOneExtension(t *testing.T) {
 	for _, tc := range []struct{ name, doc, want string }{
-		{"no extensions block", portableCore, "extensions.orka is required"},
-		{"empty extensions block", portableCore + "extensions: {}\n", "extensions.orka is required"},
-		{"null orka extension", portableCore + "extensions:\n  orka:\n", "extensions.orka is required"},
+		{"no extensions block", portableCore, "exactly one"},
+		{"empty extensions block", portableCore + "extensions: {}\n", "exactly one"},
+		{"null orka extension", portableCore + "extensions:\n  orka:\n", "exactly one"},
+		{"null kagent extension", portableCore + "extensions:\n  kagent:\n", "exactly one"},
+		{"both extensions", minimalPortableYAML + "  kagent:\n    apiVersion: kagent.dev/v1alpha2\n    runtime: go\n", "exactly one"},
+		{"both extensions with null Orka", minimalKagentYAML + "  orka: null\n", "exactly one"},
+		{"both extensions with null Kagent", minimalPortableYAML + "  kagent: null\n", "exactly one"},
 		{"an unknown extension", portableCore + "extensions:\n  another:\n    namespace: elsewhere\n", "field another not found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mustNotParse(t, tc.doc, tc.want)
 		})
 	}
+}
+
+func TestParsePortableAgentAcceptsKagentBehavior(t *testing.T) {
+	agent, err := ParsePortableAgent([]byte(validKagentYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Extensions.Orka != nil || agent.Extensions.Kagent == nil {
+		t.Fatalf("extension union = %+v", agent.Extensions)
+	}
+	kagent := agent.Extensions.Kagent
+	if kagent.APIVersion != "kagent.dev/v1alpha2" || kagent.Runtime != "python" {
+		t.Fatalf("Kagent identity/runtime = %+v", kagent)
+	}
+	if len(kagent.Tools) != 1 || kagent.Tools[0].Server.Kind != "RemoteMCPServer" ||
+		kagent.Tools[0].Server.Name != "cluster-tools" || strings.Join(kagent.Tools[0].ToolNames, ",") != "get_resources,describe-resource" {
+		t.Fatalf("Kagent MCP bindings = %+v", kagent.Tools)
+	}
+}
+
+func TestParsePortableAgentAcceptsMinimalKagentBehavior(t *testing.T) {
+	agent, err := ParsePortableAgent([]byte(minimalKagentYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Extensions.Kagent == nil || agent.Extensions.Kagent.Runtime != "go" || agent.Extensions.Kagent.Tools != nil {
+		t.Fatalf("minimal Kagent behavior gained an implicit field: %+v", agent.Extensions.Kagent)
+	}
+}
+
+func TestParsePortableAgentRejectsInvalidKagentBehavior(t *testing.T) {
+	for _, tc := range []struct{ name, old, replacement, want string }{
+		{"apiVersion", "    apiVersion: kagent.dev/v1alpha2\n", "    apiVersion: kagent.dev/v1alpha1\n", "apiVersion"},
+		{"missing description", "  description: A review assistant\n", "", "spec.description is required"},
+		{"missing runtime", "    runtime: python\n", "", "runtime"},
+		{"runtime spelling", "    runtime: python\n", "    runtime: Python\n", "go or python"},
+		{"server kind", "          kind: RemoteMCPServer\n", "          kind: MCPServer\n", "exactly RemoteMCPServer"},
+		{"server name", "          name: cluster-tools\n", "          name: Cluster_Tools\n", "server.name"},
+		{"server shortcut", "          name: cluster-tools\n", "          name: cluster-tools:get_resources\n", "server.name"},
+		{"empty tools", "        toolNames:\n          - get_resources\n          - describe-resource\n", "        toolNames: []\n", "nonempty"},
+		{"duplicate tool", "          - describe-resource\n", "          - get_resources\n", "duplicates"},
+		{"tool shortcut", "          - describe-resource\n", "          - cluster-tools:describe-resource\n", "server:tool"},
+		{"unknown namespace", "          name: cluster-tools\n", "          name: cluster-tools\n          namespace: elsewhere\n", "field namespace not found"},
+		{"inline credentials", "          name: cluster-tools\n", "          name: cluster-tools\n          headers: {Authorization: forbidden}\n", "field headers not found"},
+		{"server alias field", "          name: cluster-tools\n", "          name: cluster-tools\n          alias: tools\n", "field alias not found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustNotParse(t, mustReplace(t, validKagentYAML, tc.old, tc.replacement), tc.want)
+		})
+	}
+	duplicateServer := mustReplace(t, validKagentYAML, "    tools:\n", `    tools:
+      - server:
+          kind: RemoteMCPServer
+          name: cluster-tools
+        toolNames:
+          - another_tool
+`)
+	mustNotParse(t, duplicateServer, "duplicates")
+	distinctServer := mustReplace(t, validKagentYAML, "    tools:\n", `    tools:
+      - server:
+          kind: RemoteMCPServer
+          name: other-tools
+        toolNames:
+          - read
+`)
+	mustNotParse(t, distinctServer, "at most one")
+}
+
+func TestParsePortableAgentStrictlyRejectsKagentYAMLHazards(t *testing.T) {
+	unknown := mustReplace(t, validKagentYAML, "    runtime: python\n", "    runtime: python\n    credential: value\n")
+	duplicate := mustReplace(t, validKagentYAML, "    runtime: python\n", "    runtime: python\n    runtime: go\n")
+	alias := mustReplace(t, validKagentYAML, "          name: cluster-tools\n", "          name: &server cluster-tools\n        toolNames: *server\n")
+	merge := mustReplace(t, validKagentYAML, "      - server:\n", "      - <<: &binding {toolNames: [get_resources]}\n        server:\n")
+	for _, tc := range []struct{ name, doc, want string }{
+		{"unknown", unknown, "field credential not found"},
+		{"duplicate", duplicate, "duplicate key"},
+		{"alias", alias, "alias"},
+		{"merge", merge, "plain name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { mustNotParse(t, tc.doc, tc.want) })
+	}
+}
+
+func TestParsePortableAgentRejectsExtraDocumentAfterKagent(t *testing.T) {
+	mustNotParse(t, validKagentYAML+"---\nkind: ConfigMap\n", "exactly one YAML document")
 }
 
 // Every reference this document carries names something a renderer must be
@@ -595,6 +741,14 @@ func TestParsePortableAgentRejectsInvalidUTF8InADecodedField(t *testing.T) {
 	}
 }
 
+func TestParsePortableAgentRejectsInvalidUTF8InDecodedKagentBehavior(t *testing.T) {
+	doc := mustReplace(t, validKagentYAML, "          - describe-resource\n", "          - !!binary /w==\n")
+	err := mustNotParse(t, doc, "extensions.kagent.tools[0].toolNames[1]")
+	if !strings.Contains(err.Error(), "UTF-8") || strings.Contains(err.Error(), "\xff") {
+		t.Fatalf("invalid Kagent text was accepted or echoed: %v", err)
+	}
+}
+
 // spec.instructions is rendered as a literal block scalar and spec.model.name
 // as a single-line one, so each is held here to exactly the renderer's
 // control-character policy: a document that validated at authoring time and
@@ -654,6 +808,36 @@ func validShorthand() OrkaShorthand {
 		SecretKey:    "api-key",
 		Tools:        []string{"web-search"},
 		Skills:       []string{"triage"},
+	}
+}
+
+const originalOrkaShorthandGolden = `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+    name: hello
+spec:
+    instructions: Answer briefly, and say plainly when you do not know.
+    model:
+        name: gpt-4o-mini
+extensions:
+    orka:
+        apiVersion: core.orka.ai/v1alpha1
+        agent:
+            tools:
+                - name: web-search
+            skills:
+                - name: triage
+`
+
+// Adding the second union arm must not alter bytes already used as Orka
+// portable identity, including indentation, ordering, or omitted blocks.
+func TestEncodeOrkaShorthandPreservesOriginalBytes(t *testing.T) {
+	agent, err := EncodeOrkaShorthand(validShorthand())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(agent.Source()); got != originalOrkaShorthandGolden {
+		t.Fatalf("Orka shorthand bytes changed:\ngot:\n%s\nwant:\n%s", got, originalOrkaShorthandGolden)
 	}
 }
 
@@ -924,5 +1108,108 @@ func TestEncodeOrkaShorthandClonesNilAndPartialRateLimits(t *testing.T) {
 				t.Errorf("provider rate limit was aliased, not cloned")
 			}
 		})
+	}
+}
+
+func validKagentShorthand() KagentShorthand {
+	return KagentShorthand{
+		Name:         "hello",
+		Namespace:    "agents",
+		Instructions: "Answer briefly.",
+		Description:  "A review assistant",
+		Runtime:      "go",
+		ProviderType: "openai",
+		Model:        "gpt-4o-mini",
+		BaseURL:      "https://models.example.invalid/v1",
+		SecretName:   "review-key",
+		SecretKey:    "api-key",
+		Tools: []KagentMCPBinding{{
+			Server:    KagentMCPServerRef{Kind: "RemoteMCPServer", Name: "cluster-tools"},
+			ToolNames: []string{"get_resources"},
+		}},
+	}
+}
+
+func TestEncodeKagentShorthandIsDeterministicBehaviorOnlyAndDefensive(t *testing.T) {
+	s := validKagentShorthand()
+	first, err := EncodeKagentShorthand(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EncodeKagentShorthand(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first.Source()) != string(second.Source()) {
+		t.Fatal("Kagent shorthand encoding is not deterministic")
+	}
+	if strings.Contains(string(first.Source()), "orka:") {
+		t.Fatalf("Kagent shorthand encoded an absent Orka union arm:\n%s", first.Source())
+	}
+	if got := string(first.Source()); got != kagentShorthandGolden {
+		t.Fatalf("Kagent shorthand bytes changed:\ngot:\n%s\nwant:\n%s", got, kagentShorthandGolden)
+	}
+	otherTarget := s
+	otherTarget.Namespace = "other-agents"
+	otherTarget.ProviderType = "anthropic"
+	otherTarget.BaseURL = "https://other.example.invalid"
+	otherTarget.SecretName = "other-key"
+	otherTarget.SecretKey = "token"
+	retargeted, err := EncodeKagentShorthand(otherTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first.Source()) != string(retargeted.Source()) {
+		t.Fatalf("target-only changes altered behavior source:\n%s\n---\n%s", first.Source(), retargeted.Source())
+	}
+	for _, targetOnly := range []string{s.Namespace, s.ProviderType, s.BaseURL, s.SecretName, s.SecretKey, "secretRef", "baseURL"} {
+		if strings.Contains(string(first.Source()), targetOnly) {
+			t.Fatalf("target field %q leaked into portable source:\n%s", targetOnly, first.Source())
+		}
+	}
+	reparsed, err := ParsePortableAgent(first.Source())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reparsed.Extensions.Orka != nil || reparsed.Extensions.Kagent == nil || reparsed.Extensions.Kagent.Runtime != "go" {
+		t.Fatalf("round-tripped extension = %+v", reparsed.Extensions)
+	}
+	before := string(first.Source())
+	s.Tools[0].Server.Name = "other"
+	s.Tools[0].ToolNames[0] = "other_tool"
+	if string(first.Source()) != before || first.Extensions.Kagent.Tools[0].Server.Name != "cluster-tools" || first.Extensions.Kagent.Tools[0].ToolNames[0] != "get_resources" {
+		t.Fatal("encoded shorthand aliases caller-owned MCP input")
+	}
+}
+
+func TestEncodeKagentShorthandValidatesTargetAndBehaviorSeparately(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*KagentShorthand)
+		want string
+	}{
+		{"target namespace", func(s *KagentShorthand) { s.Namespace = "Agents" }, "Kagent creation bindings"},
+		{"target provider", func(s *KagentShorthand) { s.ProviderType = "OpenAI" }, "Kagent creation bindings"},
+		{"target secret", func(s *KagentShorthand) { s.SecretName = "review/key" }, "Kagent creation bindings"},
+		{"behavior runtime", func(s *KagentShorthand) { s.Runtime = "Go" }, "portable agent document"},
+		{"behavior MCP kind", func(s *KagentShorthand) { s.Tools[0].Server.Kind = "MCPServer" }, "portable agent document"},
+		{"behavior duplicate tool", func(s *KagentShorthand) { s.Tools[0].ToolNames = []string{"read", "read"} }, "duplicates"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := validKagentShorthand()
+			tc.edit(&s)
+			agent, err := EncodeKagentShorthand(s)
+			if err == nil || agent != nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("invalid shorthand accepted or wrong validation path: agent=%v err=%v", agent, err)
+			}
+		})
+	}
+}
+
+func TestEncodeKagentShorthandUsesDocumentedDefaultSecretKey(t *testing.T) {
+	s := validKagentShorthand()
+	s.SecretKey = ""
+	if _, err := EncodeKagentShorthand(s); err != nil {
+		t.Fatalf("omitted key did not use the documented encoder default: %v", err)
 	}
 }

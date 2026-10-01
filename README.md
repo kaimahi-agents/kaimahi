@@ -53,8 +53,13 @@ Create an agent, choose **Chat with agent**, get a local answer, then enter
 `/lift`. After connecting, send a new message to confirm the lifted agent
 answers; follow [getting started](docs/getting-started.md) for the steps.
 
-`kmx agent create` writes an editable bundle on a prepared target.
-`kmx agent lift` and interactive `/lift` deploy that same bundle to a prepared
+`kmx agent create` defaults to Orka, writes an editable bundle, and preserves
+all existing no-flag behavior. The explicit
+`kmx agent create --runtime kagent <name>` path is a narrowly scoped,
+create-only integration for an already-installed exact Kagent v0.10.2, with an
+optional single A2A message as part of that create invocation; KMX never
+installs or upgrades it.
+`kmx agent lift` and interactive `/lift` deploy Orka bundles only to a prepared
 Orka target; the console offers a separately confirmed preparation step when
 Orka or the quickstart Tool is missing.
 `kmx agent status` reads its revision, readiness, drift and evaluation result.
@@ -94,9 +99,13 @@ From a checkout, `make` builds `bin/kmx` without provisioning anything.
 
 ## Runtime Contract
 
-[Orka](https://github.com/orka-agents/orka) is the first-class runtime. The
-selected runtime owns execution and enforcement. Read the [runtime adapter
-contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
+[Orka](https://github.com/orka-agents/orka) remains the first-class and default
+runtime. The explicit Kagent v0.10.2 create capability does not change any
+no-flag workflow or add Kagent installation, discovery, chat, inspection, lift,
+evaluation, console, quickstart, `up`, or AKS payload support. The selected
+runtime owns execution and enforcement; runtime choice and model provider are
+separate. Read the [runtime adapter contract](docs/runtime-adapters.md) for the
+boundaries between KMX and runtimes.
 
 ## Current Commands
 
@@ -105,27 +114,35 @@ contract](docs/runtime-adapters.md) for the boundaries between KMX and runtimes.
 | Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
 | Provision the local runtime only | `kmx up` | Does not create an agent |
 | Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
-| Create on a prepared target | `kmx agent create` | Does not install the runtime or provision credentials |
-| Prove an answer | Interactive chat or `kmx agent create --task ...` | Readiness alone is not execution proof |
-| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Reconciles on an existing Orka target; `--plan` writes nothing |
-| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Read-only per-target revision, readiness, drift and evaluation |
-| Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Runs `eval/*.yaml` cases as Tasks against the deployed revision; exits non-zero unless all pass |
-| Lift an agent interactively | `/lift` in chat or console | Deploy the local bundle through the same lift as the CLI; a labelled live-copy fallback without a bundle is not tracked |
-| Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while `create` requires `--namespace` |
+| Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
+| Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |
+| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Orka bundles only; reconciles on an existing target and `--plan` writes nothing |
+| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Orka bundles only; read-only per-target revision, readiness, drift and evaluation |
+| Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Orka bundles only; runs `eval/*.yaml` cases as Tasks and exits non-zero unless all pass |
+| Lift an agent interactively | `/lift` in chat or console | Orka only; deploys the local bundle through the same lift as the CLI, with an untracked labelled live-copy fallback when no bundle exists |
+| Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
 | Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
 
-`kmx agent create` writes reviewable YAML, validates it against the selected
+Default Orka create writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation
-readiness. A real answer requires `--task` plus pre-existing result access.
-Credentials, namespaces, and RBAC remain separate operator responsibilities.
-Use `--out -` or `--no-apply` for offline output and `--dry-run` for server
-admission without cluster writes. Read the complete
+readiness. Its real answer requires `--task` plus pre-existing result access.
+Explicit Kagent create writes a review artifact and portable bundle; `--out -`
+omits the bundle unless `--bundle-path` is set. Offline rendering requires
+neither an installed Kagent nor a cluster Secret. Online creation requires both,
+and creates only a new ModelConfig and Agent; it never adopts, updates, or rolls
+back. Kagent bundles are intentionally refused
+by the currently Orka-only lift, status, evaluate, console, and interactive
+`/lift` paths. Credentials, namespaces, and RBAC remain separate operator
+responsibilities. Use `--out -` or `--no-apply` for offline output and
+`--dry-run` for server admission without cluster writes. Read the complete
 [`agent create` contract](docs/kmx.md#kmx-agent-create).
 
 ## Lifecycle
 
-Bundles, lift receipts, revision-aware status and evaluation are available as
-standalone commands. The [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
+Orka bundles, lift receipts, revision-aware status and evaluation are available
+as standalone commands. Only a successful online Kagent create writes its own
+private, prompt/answer-free receipt. Lift, status, and evaluation remain Orka-only. The
+[lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
 also discusses rollback, which does not have a standalone command. Deploying
 and verifying an earlier revision cannot undo an agent's completed external
 actions. KMX uses Git and the selected runtime rather than a separate server.
@@ -147,11 +164,15 @@ limits.
 
 ## Status
 
-Kaimahi is pre-1.0 and incubating. Interactive local creation, creation on the
-first-class runtime, inspection, chat, bundle lift and interactive lift to an
-existing target, AKS platform provisioning, and model-traffic migration are
-implemented. Rollback remains directional. The legacy runtime's
-commands are retired; the model-traffic bridge (`kmx plane`, `kmx migrate`) remains.
+Kaimahi is pre-1.0 and incubating. Interactive local creation, default creation
+on the first-class Orka runtime, inspection, chat, bundle lift and interactive
+lift to an existing target, AKS platform provisioning, and model-traffic
+migration are implemented. The only current Kagent capability is explicit,
+create-only authoring for an already-installed exact v0.10.2, optionally ending
+in one A2A message from that invocation. Its former broad
+command surface remains retired, and historical AKS records remain
+teardown-only. Rollback remains directional; the model-traffic bridge
+(`kmx plane`, `kmx migrate`) remains.
 AKS paths use billable resources and are not continuously re-proved in CI.
 
 ## Documentation
@@ -161,7 +182,7 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | [Getting started](docs/getting-started.md) | Prerequisites and current local workflows |
 | [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
-| [Runtime setup](docs/orka.md) | First-class implementation setup, native creation, and first task |
+| [Runtime setup](docs/orka.md) | First-class default implementation setup, native creation, and first task |
 | [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
 | [Interactive lift](docs/interactive-lift.md) | Bundle lift with guided preparation and the labelled live-copy fallback |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |

@@ -66,27 +66,15 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
-      # A runtime this repository removed stays removed. What survives a
-      # removal is not code but CLAIMS: a comment explaining a namespace
-      # nothing writes to, a probe defaulting to one nothing creates, a
-      # manifest rule admitting traffic from it, a doc row linking it. Each
-      # reads as support, and the cost is paid by a reader months later who
-      # believes it.
-      #
-      # Hard identifiers — the API group and kinds, the images, the version
-      # pin, the three command spellings — are refused in EVERY tracked
-      # file, workflows included, because a workflow is where an install
-      # would come back. The bare name is refused from the surfaces a reader
-      # takes as current, one approved line at a time in
-      # scripts/legacy-runtime-allowlist.json, because prose can refuse a
-      # runtime or advertise it and no pattern tells those apart.
-      #
-      # The scanner is itself a gate that fails OPEN, so it proves it still
-      # catches each class, and still refuses an empty enumeration, a
-      # widened exemption and a stale one, before its verdict is trusted.
-      - name: Legacy-runtime scanner still catches every class
+      # Explicit alternate-runtime v0.10.2 create is a closed support boundary, not a
+      # restoration of the old runtime surface. The checker permits only its
+      # reviewed production/test/docs files and vocabulary; installer assets,
+      # moving pins, chat/list/status/lift/evaluate/console/quickstart, old up
+      # steps and the AKS payload remain refused everywhere. Its self-test and
+      # mutation suite prove the path/rule sets cannot quietly widen.
+      - name: Alternate-runtime boundary scanner still catches every class
         run: python3 scripts/check-legacy-runtime.py --selftest
-      - name: No support for the retired legacy runtime in tree
+      - name: Alternate-runtime support stays inside exact-version create
         run: python3 scripts/check-legacy-runtime.py
       # And the checkers themselves: each one is copied, broken on purpose
       # in a named way, and required to notice. A self-test built from
@@ -590,16 +578,11 @@ jobs:
           # remove it from the guard.
           converted = ["e2e-resilience", "e2e-spend", "e2e-models", "e2e-hosted-models",
                        "e2e-quickstart"]
-          # A bare `kmx up` installs the Orka runtime, which is why
-          # `e2e-quickstart` can run one and still belong here. The legacy
-          # install requires explicitly naming that runtime, so forbid its
-          # component steps.
-          # `kmx agent chat` is NOT on this list. It survived the retirement
-          # as an Orka-only session against agents.core.orka.ai, so forbidding
-          # it by name would refuse a supported command and say nothing about
-          # the legacy runtime. What is forbidden is the legacy runtime
-          # itself: its install steps, its retired commands, its own API
-          # group, and any attempt to aim a surviving command at it.
+          # A bare `kmx up` installs Orka. Explicit alternate-runtime create
+          # support does not let these converted Orka shards install it or aim
+          # any non-create command at it. API-group text is no longer globally
+          # forbidden because supported create must render it; these controls
+          # instead name the unsupported operations.
           forbidden = [
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
@@ -609,8 +592,11 @@ jobs:
                "the retired preset switch selects the legacy runtime"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
                "the retired source editor edits a legacy Agent"),
-              (re.compile(r"--runtime(?:=|\s+)kagent\b"), "a surviving command aimed at the legacy runtime"),
-              (re.compile(r"kagent\.dev"), "a resource of the legacy runtime's API group"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:agent\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
+               "a non-create command aimed at the alternate runtime"),
+              (re.compile(r"--payload(?:=|\s+)kagent\b"), "the retired alternate-runtime AKS payload"),
+              (re.compile(r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b"),
+               "a retired alternate-runtime installer, CLI, shim, preset, or moving version pin"),
           ]
           # Negative controls, checked before the shards are: a guard whose
           # patterns have drifted either refuses supported commands or
@@ -622,16 +608,21 @@ jobs:
               "kmx --container-engine=podman use kagent",
               "kmx --context=kind-x agent edit hello-world",
               "kmx agent chat --runtime kagent hello-world",
-              "kubectl -n kagent get agents.kagent.dev",
+              "kmx agent list --runtime=kagent",
+              "kmx aks up --payload kagent",
+              "KAGENT_VERSION=0.10.2",
+              "helm install -f kagent-values.yaml kagent",
           ]
           must_not_match = [
               "kmx agent chat --interactive --namespace orka-system hello-world-agent",
               "kmx agent chat --interactive --runtime orka hello-world-agent",
               "kmx agent list --namespace orka-system",
               "kmx agent create orka-hello --namespace orka-system",
+              "kmx agent create kagent-hello --runtime kagent --namespace agents",
               "kmx up",
               "kmx migrate demo --namespace demo --model local/qwen2.5:3b",
               "kubectl get ns kagent",
+              "kubectl -n agents get agents.kagent.dev",
               "kubectl get agents.core.orka.ai -n orka-system",
           ]
           control = []
@@ -697,8 +688,10 @@ jobs:
               problems.append("the result account is made by hand: `kmx up --step orka` provisions it")
           if "--result-service-account orka-result-reader" not in joined:
               problems.append("no Orka Task proof reading its result through orka-result-reader")
-          # Retired commands, forbidden by name. A step that reached for one
-          # would fail at runtime; refusing it here says why.
+          # Retired operations, forbidden by name. Supported create/API
+          # vocabulary is not globally banned; this Orka-only job may still
+          # not install the alternate runtime, select it for another command,
+          # or use its retired AKS payload.
           for pattern, why in [
                   (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
                    "an explicit legacy install step"),
@@ -706,9 +699,13 @@ jobs:
                    "the retired governance command"),
                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+use\b",
                    "the retired preset switch"),
-                  (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
-                   "the retired source editor"),
-                  (r"kagent\.dev", "a resource of the legacy runtime's API group")]:
+                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
+                    "the retired source editor"),
+                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:agent\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
+                    "a non-create command aimed at the alternate runtime"),
+                   (r"--payload(?:=|\s+)kagent\b", "the retired alternate-runtime AKS payload"),
+                   (r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b",
+                    "a retired alternate-runtime installer, CLI, shim, preset, or moving version pin")]:
               if re.search(pattern, joined):
                   problems.append(f"{why}: {pattern!r}")
           if problems:
@@ -1109,11 +1106,11 @@ jobs:
           PGPASSWORD: ci-throwaway
         run: bash scripts/plane-upgrade-probe.sh
 
-  # Six retained shards isolate model budgets, protocol/onboarding safety,
-  # hosted model upstreams, quickstart, owner-managed governance and the
-  # Orka runtime. The required aggregator covers every shard; every cluster
-  # step has a docs guard. `e2e-orka-runtime` and `e2e-resilience` are
-  # separate, legacy-free boundaries.
+  # Seven retained shards isolate model budgets, protocol/onboarding safety,
+  # hosted model upstreams, quickstart, owner-managed governance, the Orka
+  # runtime, and exact-version Kagent create. The required aggregator covers
+  # every shard; every cluster step has a docs guard. `e2e-orka-runtime`,
+  # `e2e-resilience`, and `e2e-kagent-create` are separate boundaries.
   #
   # Hosted upstream evidence uses direct authenticated TLS calls to the
   # plane's model seam; no agent runtime is required. Assert the legacy
@@ -2908,6 +2905,364 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
+  # Live proof for the deliberately narrow alternate-runtime boundary. The two
+  # official charts below are installed by CI as an external precondition;
+  # KMX receives a ready exact-v0.10.2 cluster and is tested only for create.
+  # Fail stubs plus KMX_TOOLCHAIN=off make any attempted Helm or kagent CLI use
+  # by the command fail. No hosted credential is used: the model is a hardened,
+  # deterministic in-cluster OpenAI chat-completions fixture.
+  e2e-kagent-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: kmx-kagent-create
+      KUBE_CTX: kind-kmx-kagent-create
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Classify the change (docs-only short-circuit, fail closed)
+        id: changes
+        uses: ./.github/actions/classify-change
+      - name: Install kind 0.33.0
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          test "$(sha256sum kind | cut -d' ' -f1)" = aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+          test "$(kind version -q)" = 0.33.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        if: steps.changes.outputs.docs_only != 'true'
+        with:
+          go-version-file: go.mod
+      - name: Install Helm 3.20.0
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/helm-v3.20.0-linux-amd64.tar.gz"
+          curl -sSfLo "$archive" https://get.helm.sh/helm-v3.20.0-linux-amd64.tar.gz
+          test "$(sha256sum "$archive" | cut -d' ' -f1)" = dbb4c8fc8e19d159d1a63dda8db655f9ffa4aac1b9a6b188b34a40957119b286
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
+          test "$(helm version --template '{{.Version}}')" = v3.20.0
+      - name: Build kmx
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          mkdir -p bin
+          go build -o bin/kmx ./cmd/kmx
+      - name: Create the dedicated cluster and install the external exact-version precondition
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kind create cluster --name kmx-kagent-create --wait 180s
+          test "$(kubectl config current-context)" = kind-kmx-kagent-create
+          charts="$RUNNER_TEMP/kagent-v0.10.2-charts"
+          mkdir -p "$charts/crds" "$charts/runtime"
+          helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir "$charts/crds"
+          helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --untar --untardir "$charts/runtime"
+          crds_chart="$charts/crds/kagent-crds"
+          runtime_chart="$charts/runtime/kagent"
+          test "$(helm show chart "$crds_chart" | awk '/^name:/ {print $2}')" = kagent-crds
+          test "$(helm show chart "$runtime_chart" | awk '/^name:/ {print $2}')" = kagent
+          test "$(helm show chart "$crds_chart" | awk '/^version:/ {print $2}')" = 0.10.2
+          test "$(helm show chart "$runtime_chart" | awk '/^version:/ {print $2}')" = 0.10.2
+          helm install kagent-crds "$crds_chart" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --wait --timeout 5m
+          helm install kagent "$runtime_chart" --namespace kagent --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --set kagent-tools.enabled=false --set k8s-agent.enabled=false --set kgateway-agent.enabled=false --set istio-agent.enabled=false --set promql-agent.enabled=false --set observability-agent.enabled=false --set argo-rollouts-agent.enabled=false --set helm-agent.enabled=false --set cilium-policy-agent.enabled=false --set cilium-manager-agent.enabled=false --set cilium-debug-agent.enabled=false --set grafana-mcp.enabled=false --set oauth2-proxy.enabled=false --set providers.default=ollama --set-string providers.ollama.config.host=http://unused.invalid:11434 --set ui.replicas=0 --wait --timeout 10m
+          kubectl --context kind-kmx-kagent-create -n kagent rollout status deployment/kagent-controller --timeout=300s
+          kubectl --context kind-kmx-kagent-create -n kagent rollout status deployment/kagent-postgresql --timeout=300s
+      - name: Provision the model prerequisite and hardened deterministic fixture
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-kmx-kagent-create create namespace agents
+          # This value has no hosted authority and is never printed or placed
+          # in argv. The temporary file is private and removed after creation.
+          dummy_file="$RUNNER_TEMP/model-key-value"
+          umask 077
+          openssl rand -hex 16 | tr -d '\n' > "$dummy_file"
+          kubectl --context kind-kmx-kagent-create -n agents create secret generic model-key \
+            --from-file=api-key="$dummy_file"
+          rm -f "$dummy_file"
+          kubectl --context kind-kmx-kagent-create -n agents apply -f - <<'YAML'
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: model
+          data:
+            server.py: |
+              import json
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      length = int(self.headers.get("Content-Length", "0"))
+                      try:
+                          request = json.loads(self.rfile.read(length))
+                      except (ValueError, UnicodeDecodeError):
+                          self.send_error(400)
+                          return
+                      if self.path != "/v1/chat/completions" or not isinstance(request, dict):
+                          self.send_error(404)
+                          return
+                      payload = {
+                          "id": "chatcmpl-kmx-kagent-create",
+                          "object": "chat.completion",
+                          "created": 1,
+                          "model": request.get("model", "fixture"),
+                          "choices": [{
+                              "index": 0,
+                              "message": {"role": "assistant", "content": "Kagent says hello."},
+                              "finish_reason": "stop",
+                          }],
+                          "usage": {"prompt_tokens": 4, "completion_tokens": 4, "total_tokens": 8},
+                      }
+                      body = json.dumps(payload, separators=(",", ":")).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+
+                  def log_message(self, fmt, *args):
+                      print("model: " + (fmt % args), flush=True)
+
+              ThreadingHTTPServer(("0.0.0.0", 9000), Handler).serve_forever()
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: model
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: model
+            template:
+              metadata:
+                labels:
+                  app: model
+              spec:
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  runAsGroup: 1000
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: model
+                    image: python:3.13-alpine
+                    command: [python3, -B, /app/server.py]
+                    ports:
+                      - name: http
+                        containerPort: 9000
+                    readinessProbe:
+                      tcpSocket:
+                        port: http
+                      periodSeconds: 1
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 24Mi
+                      limits:
+                        cpu: 100m
+                        memory: 48Mi
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: [ALL]
+                    volumeMounts:
+                      - name: source
+                        mountPath: /app
+                        readOnly: true
+                      - name: tmp
+                        mountPath: /tmp
+                volumes:
+                  - name: source
+                    configMap:
+                      name: model
+                  - name: tmp
+                    emptyDir:
+                      sizeLimit: 8Mi
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: model
+          spec:
+            selector:
+              app: model
+            ports:
+              - name: http
+                port: 9000
+                targetPort: http
+          YAML
+          kubectl --context kind-kmx-kagent-create -n agents rollout status deployment/model --timeout=180s
+      - name: KMX creates the exact-version Agent and gets the exact answer without installer tools
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/kagent-create"
+          mkdir -p "$fixture/fail-bin"
+          kubectl_path=$(command -v kubectl)
+          for tool in helm kagent; do
+            printf '#!/bin/sh\necho "%s must not be invoked by kmx agent create" >&2\nexit 97\n' "$tool" > "$fixture/fail-bin/$tool"
+            chmod +x "$fixture/fail-bin/$tool"
+          done
+          test "$(PATH="$fixture/fail-bin:$PATH" command -v helm)" = "$fixture/fail-bin/helm"
+          test "$(PATH="$fixture/fail-bin:$PATH" command -v kagent)" = "$fixture/fail-bin/kagent"
+          test -x "$kubectl_path"
+          case "$kubectl_path" in /*) ;; *) echo "kubectl path is not absolute" >&2; exit 1 ;; esac
+          ln -s "$kubectl_path" "$fixture/fail-bin/kubectl"
+          artifact="$fixture/live-kagent.yaml"
+          bundle="$fixture/bundle"
+          PATH="$fixture/fail-bin:/usr/bin:/bin" KMX_TOOLCHAIN=off \
+            "$GITHUB_WORKSPACE/bin/kmx" --context kind-kmx-kagent-create \
+            agent create live-kagent --runtime kagent --namespace agents \
+            --description 'Deterministic live Kagent create proof' \
+            --provider-type openai --model fixture --secret model-key \
+            --base-url http://model.agents.svc.cluster.local:9000/v1 \
+            --task 'Reply with exactly: Kagent says hello.' \
+            --out "$artifact" --bundle-path "$bundle" > "$fixture/answer.out"
+          test "$(cat "$fixture/answer.out")" = 'Kagent says hello.'
+          printf 'KAGENT_CREATE_ARTIFACT=%s\nKAGENT_CREATE_BUNDLE=%s\n' "$artifact" "$bundle" >> "$GITHUB_ENV"
+      - name: Assert live identities, readiness, ownership, image and private receipt
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          kubectl --context kind-kmx-kagent-create get --raw \
+            /api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/version \
+            > "$RUNNER_TEMP/kagent-version.json"
+          kubectl --context kind-kmx-kagent-create -n agents get modelconfigs.kagent.dev live-kagent -o json \
+            > "$RUNNER_TEMP/live-model.json"
+          kubectl --context kind-kmx-kagent-create -n agents get agents.kagent.dev live-kagent -o json \
+            > "$RUNNER_TEMP/live-agent.json"
+          kubectl --context kind-kmx-kagent-create -n agents get deployment live-kagent -o json \
+            > "$RUNNER_TEMP/live-deployment.json"
+          kubectl --context kind-kmx-kagent-create -n agents get service live-kagent -o json \
+            > "$RUNNER_TEMP/live-service.json"
+          kubectl --context kind-kmx-kagent-create -n agents get pods -l kagent=live-kagent -o json \
+            > "$RUNNER_TEMP/live-pods.json"
+          kubectl --context kind-kmx-kagent-create get namespace kube-system -o json \
+            > "$RUNNER_TEMP/kube-system.json"
+          python3 - "$KAGENT_CREATE_ARTIFACT" "$KAGENT_CREATE_BUNDLE" \
+            "$RUNNER_TEMP/kagent-version.json" "$RUNNER_TEMP/live-model.json" \
+            "$RUNNER_TEMP/live-agent.json" "$RUNNER_TEMP/live-deployment.json" \
+            "$RUNNER_TEMP/live-service.json" "$RUNNER_TEMP/live-pods.json" \
+            "$RUNNER_TEMP/kube-system.json" <<'PY'
+          import glob, json, os, pathlib, re, stat, sys
+
+          artifact, bundle, version_path, model_path, agent_path, deploy_path, service_path, pods_path, namespace_path = sys.argv[1:]
+          version = json.load(open(version_path))
+          assert version.get("kagent_version") == "0.10.2", version
+          assert version.get("git_commit") == "68df64f", version
+          assert len(version.get("git_commit", "")) == 7, version
+
+          model = json.load(open(model_path))
+          agent = json.load(open(agent_path))
+          deployment = json.load(open(deploy_path))
+          service = json.load(open(service_path))
+
+          def current(obj, required):
+              generation = obj["metadata"]["generation"]
+              assert obj.get("status", {}).get("observedGeneration") == generation, obj.get("status")
+              conditions = obj.get("status", {}).get("conditions", [])
+              for condition_type in required:
+                  matches = [c for c in conditions if c.get("type") == condition_type and c.get("status") == "True"]
+                  assert len(matches) == 1, (condition_type, conditions)
+                  observed = matches[0].get("observedGeneration", 0)
+                  assert observed == generation or obj["kind"] == "ModelConfig" and observed == 0, matches[0]
+
+          current(model, ["Accepted"])
+          current(agent, ["Accepted", "Ready"])
+          ready = [c for c in agent["status"]["conditions"] if c.get("type") == "Ready"]
+          assert ready[0].get("reason") == "DeploymentReady", ready
+          agent_uid = agent["metadata"]["uid"]
+          for child in (deployment, service):
+              owners = [o for o in child["metadata"].get("ownerReferences", []) if o.get("controller") is True]
+              assert len(owners) == 1, owners
+              assert (owners[0].get("apiVersion"), owners[0].get("kind"), owners[0].get("name"), owners[0].get("uid")) == (
+                  "kagent.dev/v1alpha2", "Agent", "live-kagent", agent_uid
+              ), owners
+          containers = deployment["spec"]["template"]["spec"]["containers"]
+          runtime = [c for c in containers if c.get("name") == "kagent"]
+          assert len(runtime) == 1 and runtime[0].get("image") == "ghcr.io/kagent-dev/kagent/golang-adk:0.10.2", runtime
+          pods = json.load(open(pods_path))["items"]
+          assert len(pods) == 1, pods
+          statuses = [s for s in pods[0]["status"]["containerStatuses"] if s.get("name") == "kagent"]
+          assert len(statuses) == 1 and statuses[0].get("ready") is True, statuses
+          accepted_go_digests = {
+              "c1ae7865e4c4ed1d4708bbcc04ea952c54c3014a3da3178427bf31922d0956dd",  # index
+              "922dd44552c55cad46c9e38c9d56b1138a682114e665e89b60caebde8f1952f6",  # amd64
+              "0b8e0c9b04304240efab0bee39d943240cd88f852760af01b8da25b23e4c6245",  # arm64
+          }
+          image_id = statuses[0].get("imageID", "")
+          if "://" in image_id:
+              image_id = image_id.split("://", 1)[1]
+          repository = "kagent-dev/kagent/golang-adk"
+          for prefix in (repository + "@", "ghcr.io/" + repository + "@"):
+              if image_id.startswith(prefix):
+                  image_id = image_id.removeprefix(prefix)
+                  break
+          else:
+              assert image_id.startswith("sha256:"), statuses
+          image_digests = image_id.split("@")
+          assert image_digests and all(re.fullmatch(r"sha256:[0-9a-f]{64}", value)
+                                       for value in image_digests), statuses
+          assert all(value.removeprefix("sha256:") in accepted_go_digests
+                     for value in image_digests), (image_digests, statuses)
+
+          marker_names = {"kaimahi.dev/bundle", "kaimahi.dev/portable-digest", "kaimahi.dev/rendered-digest"}
+          artifact_text = pathlib.Path(artifact).read_text()
+          assert not any(name in artifact_text for name in marker_names), "review artifact carries ownership markers"
+          assert "Kagent says hello." not in artifact_text, "review artifact carries the answer"
+          assert "Reply with exactly: Kagent says hello." not in artifact_text, "review artifact carries the task prompt"
+          for obj in (model, agent):
+              annotations = obj["metadata"].get("annotations", {})
+              assert all(annotations.get(name) for name in marker_names), annotations
+
+          receipts = glob.glob(os.path.join(bundle, "receipts", "create-*.json"))
+          assert len(receipts) == 1, receipts
+          receipt_path = receipts[0]
+          receipt = json.load(open(receipt_path))
+          assert receipt.get("kind") == "KagentCreateReceipt", receipt
+          cluster_uid = json.load(open(namespace_path))["metadata"]["uid"]
+          assert receipt["clusterUID"] == cluster_uid, receipt
+          assert receipt["agentRef"]["Runtime"] == "kagent" and receipt["agentRef"]["UID"] == agent_uid, receipt
+          assert receipt["deploy"]["Target"]["Runtime"] == "kagent", receipt
+          resources = receipt["deploy"]["Resources"]
+          expected = {"ModelConfig": model["metadata"]["uid"], "Agent": agent_uid}
+          assert len(resources) == 2 and {r["Kind"]: r["UID"] for r in resources} == expected, resources
+          receipt_text = pathlib.Path(receipt_path).read_text()
+          assert "Reply with exactly: Kagent says hello." not in receipt_text, receipt_text
+          assert "Kagent says hello." not in receipt_text, receipt_text
+          assert "Deterministic live Kagent create proof" not in receipt_text, receipt_text
+          assert stat.S_IMODE(os.stat(receipt_path).st_mode) == 0o600, oct(stat.S_IMODE(os.stat(receipt_path).st_mode))
+          print("exact controller, current conditions, Agent-owned workload, official Go image, marker split and private receipt proved")
+          PY
+      - name: Cluster state on failure
+        if: failure() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          kubectl --context kind-kmx-kagent-create get pods -A -o wide || true
+          kubectl --context kind-kmx-kagent-create -n kagent get deploy,svc,pods,pvc -o wide || true
+          kubectl --context kind-kmx-kagent-create -n kagent logs deployment/kagent-controller --tail=120 || true
+          kubectl --context kind-kmx-kagent-create -n kagent logs deployment/kagent-postgresql --tail=80 || true
+          kubectl --context kind-kmx-kagent-create -n agents get modelconfigs.kagent.dev,agents.kagent.dev,deploy,svc,pods -o wide || true
+          kubectl --context kind-kmx-kagent-create -n agents get events --sort-by=.lastTimestamp || true
+          kubectl --context kind-kmx-kagent-create -n agents logs deployment/model --tail=80 || true
+          kubectl --context kind-kmx-kagent-create -n agents logs deployment/live-kagent --tail=120 || true
+      - name: Delete only the dedicated Kagent create cluster
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: kind delete cluster --name kmx-kagent-create || true
+      - name: Docs-only short-circuit
+        id: docs-only-summary
+        if: steps.changes.outputs.docs_only == 'true'
+        run: echo "every changed file is documentation; no cluster booted"
   # The Orka runtime, proved on every pull request and without the legacy
   # runtime.
   #
@@ -3411,7 +3766,7 @@ jobs:
         run: echo "every changed file is documentation; no cluster booted"
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-hosted-models, e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-spend]
+    needs: [e2e-hosted-models, e2e-kagent-create, e2e-models, e2e-orka-runtime, e2e-quickstart, e2e-resilience, e2e-spend]
     if: always()
     steps:
       - name: Every e2e shard succeeded
