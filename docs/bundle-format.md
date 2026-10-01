@@ -71,8 +71,10 @@ and recorded digests before counting evidence; another kmx version's readable
 receipt does not by itself establish that today's bundle or target was tested.
 
 Today kmx recognizes only the single Orka extension `apiVersion` above; it has
-no negotiation for a second one. An added optional field under this version
-still requires a kmx release that knows that field. Changing an existing
+no negotiation for a second one. The optional
+`extensions.orka.agent.coordination` block uses this same version: a kmx
+release without that field refuses a bundle that states it. Any added optional
+field under this version still requires a kmx release that knows that field. Changing an existing
 field's meaning would require a new extension version **and** reader support
 for whichever older version remains accepted; changing the string alone does
 not provide compatibility. Before using a newly authored field, upgrade kmx
