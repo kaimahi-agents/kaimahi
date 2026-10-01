@@ -478,8 +478,8 @@ func (b *KagentBundle) YAML() (string, error) {
 	return KagentArtifact(documents)
 }
 
-// KagentArtifact validates already-final document bytes, preserves them, and
-// adds the non-applicability warning. The header pins the upstream contract.
+// KagentArtifact validates document bytes, canonicalizes their YAML framing,
+// and adds the non-applicability warning. The header pins the upstream contract.
 func KagentArtifact(documents [][]byte) (string, error) {
 	if len(documents) != 3 {
 		return "", fmt.Errorf("a Kagent review artifact requires Secret, ModelConfig and Agent documents")
@@ -503,8 +503,12 @@ func KagentArtifact(documents [][]byte) (string, error) {
 			return "", fmt.Errorf("Kagent artifact document %d: %w", i+1, err)
 		}
 		decoded = append(decoded, doc)
+		encoded, err := yaml.Marshal(doc)
+		if err != nil {
+			return "", fmt.Errorf("Kagent artifact document %d: cannot encode canonical YAML", i+1)
+		}
 		out.WriteString("---\n")
-		out.Write(document)
+		out.Write(encoded)
 	}
 	if err := (&KagentBundle{Secret: decoded[0], ModelConfig: decoded[1], Agent: decoded[2]}).Validate(); err != nil {
 		return "", fmt.Errorf("Kagent artifact: %w", err)

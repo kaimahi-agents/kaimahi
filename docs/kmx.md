@@ -364,7 +364,8 @@ kmx agent create reviewer --runtime kagent --namespace agents \
 `--bundle-path agents/reviewer` to retain the portable bundle when using stdout;
 otherwise file output and `--no-apply` use `agents/<name>.yaml` and
 `agents/<name>/` by default. The artifact contains, in review order, a
-metadata-only Secret skeleton, ModelConfig, and Agent. Never apply the Secret
+metadata-only Secret skeleton, ModelConfig, and Agent, including the Agent's
+reviewed system instructions. Never apply the Secret
 skeleton or bulk-apply the artifact. The bundle contains a strict portable
 `agent.yaml` plus creation-target-only `bindings.yaml`; it does not scaffold
 evaluation cases.
@@ -444,7 +445,7 @@ credential.
 After every successful online create, KMX writes a mode-0600
 `KagentCreateReceipt` under the bundle's `receipts/` directory. It records the
 cluster and resource identities and portable/rendered digests, never prompt or
-answer text. This receipt does not make the bundle eligible for other lifecycle
+answer text or system instructions. This receipt does not make the bundle eligible for other lifecycle
 commands: `kmx agent lift`, `status`, `evaluate`, console bundle operations, and
 interactive `/lift` are currently Orka-only and intentionally refuse Kagent
 bundles before target work.

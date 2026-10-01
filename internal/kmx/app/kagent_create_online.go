@@ -1747,10 +1747,8 @@ func completedKagentAnswer(raw []byte, rpcID string) (string, error) {
 				Parts     []kagentA2APart `json:"parts"`
 			} `json:"message"`
 		} `json:"status"`
-		Artifacts []struct {
-			Parts []kagentA2APart `json:"parts"`
-		} `json:"artifacts"`
-		History []struct {
+		Artifacts []json.RawMessage `json:"artifacts"`
+		History   []struct {
 			Role      string          `json:"role"`
 			MessageID string          `json:"messageId"`
 			ContextID string          `json:"contextId"`
@@ -1777,16 +1775,9 @@ func completedKagentAnswer(raw []byte, rpcID string) (string, error) {
 		if result.Status.State != "completed" {
 			return "", fmt.Errorf("task did not reach the required completed state")
 		}
-		for _, artifact := range result.Artifacts {
-			answer, answerErr = kagentText(artifact.Parts)
-			if answerErr != nil {
-				return "", answerErr
-			}
-			if answer != "" {
-				break
-			}
-		}
-		if answer == "" && result.Status.Message != nil {
+		// v0.10.2 artifacts have no agent role/message/context identity, so
+		// only status or history messages can supply a task answer.
+		if result.Status.Message != nil {
 			statusAnswer, statusErr := kagentText(result.Status.Message.Parts)
 			if statusErr != nil {
 				return "", statusErr

@@ -759,6 +759,9 @@ func TestKagentOnlineDependencyAndWriteOrder(t *testing.T) {
 	if err != nil || !strings.Contains(string(artifact), "exact Kagent v0.10.2") {
 		t.Fatalf("online artifact missing: %v\n%s", err, artifact)
 	}
+	if !strings.Contains(string(artifact), opt.InstructionText) {
+		t.Fatal("review artifact omitted the system instructions")
+	}
 	if strings.Contains(string(artifact), "kaimahi.dev/bundle") || strings.Contains(string(artifact), "portable-digest") {
 		t.Fatal("online artifact contains write-only ownership annotations")
 	}
@@ -1354,6 +1357,11 @@ func TestCompletedKagentAnswerStrictSafety(t *testing.T) {
 			name:     "data artifact falls back to latest agent history",
 			response: `{"jsonrpc":"2.0","id":"rpc-1","result":{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"},"artifacts":[{"parts":[{"kind":"data","data":{"answer":"not text"}}]}],"history":[{"role":"agent","messageId":"message-1","contextId":"ctx-1","parts":[{"kind":"text","text":"history answer"}]}]}}`,
 			want:     "history answer",
+		},
+		{
+			name:     "text artifact without message identity is refused",
+			response: `{"jsonrpc":"2.0","id":"rpc-1","result":{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"},"artifacts":[{"parts":[{"kind":"text","text":"unbound answer"}]}]}}`,
+			wantErr:  "no nonblank agent text answer",
 		},
 		{
 			name:     "valid live shaped status response",

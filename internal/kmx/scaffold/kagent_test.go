@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"bytes"
 	"io"
 	"reflect"
 	"strings"
@@ -226,6 +227,38 @@ func TestKagentArtifactRejectsWrongOrderAndInvalidContent(t *testing.T) {
 	badUTF8 = append(badUTF8, 0xff)
 	if out, err := KagentArtifact([][]byte{documents[0], documents[1], badUTF8}); err == nil || out != "" {
 		t.Fatal("artifact accepted invalid UTF-8")
+	}
+}
+
+func TestKagentArtifactCanonicalizesValidDocumentFraming(t *testing.T) {
+	bundle := kagentBundle(t, kagentSpec())
+	documents := make([][]byte, 0, 3)
+	for _, doc := range bundle.Documents() {
+		encoded, err := yaml.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		documents = append(documents, encoded)
+	}
+	documents[0] = bytes.TrimSuffix(documents[0], []byte("\n"))
+	documents[1] = append([]byte("---\n"), documents[1]...)
+	artifact, err := KagentArtifact(documents)
+	if err != nil {
+		t.Fatalf("valid YAML framing was refused: %v", err)
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(artifact))
+	var kinds []string
+	for {
+		var doc map[string]any
+		if err := decoder.Decode(&doc); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		kinds = append(kinds, doc["kind"].(string))
+	}
+	if !reflect.DeepEqual(kinds, []string{"Secret", "ModelConfig", "Agent"}) {
+		t.Fatalf("canonical artifact kinds = %v", kinds)
 	}
 }
 
