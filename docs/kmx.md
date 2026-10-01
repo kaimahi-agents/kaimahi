@@ -253,7 +253,7 @@ to match when authoring; a Task-level model override can still target another
 deployment. Use `--provider-type openai` instead for the v1-compatible
 `/openai/v1` endpoint. `--azure-api-version` is optional; if omitted, kmx leaves
 the field out, but the Orka CRD can default it on apply. We recommend setting
-`--azure-api-version` explicitly for predictable runtime behavior. For example:
+`--azure-api-version` explicitly for predictable runtime behavior.
 
 The key file must contain **only the key, with no trailing newline**. Orka
 does not trim it: the Provider can be Ready while every Task fails because the
@@ -270,8 +270,9 @@ kmx --context <ctx> agent create my-azure-agent --namespace <ns> \
 ```
 
 The key stays in the file and the existing namespaced Secret; kmx accepts only
-the Secret name/key reference, not key bytes or a key-file flag. `--instructions` reads a system-prompt file; `--tools` and
-`--skills` name Orka references, not legacy `server:tool` selections or translated
+the Secret name/key reference, not key bytes or a key-file flag.
+`--instructions` reads a system-prompt file; `--tools` and `--skills` name Orka
+references, not legacy `server:tool` selections or translated
 MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
 - `--out -` prints rendered YAML only and implies offline; it writes no files
