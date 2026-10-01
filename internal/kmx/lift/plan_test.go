@@ -212,12 +212,6 @@ func TestTheBannerNamesTheTargetAndTheTeardownRule(t *testing.T) {
 	}
 }
 
-// The guarantee that no subscription id reaches the banner cannot be tested
-// here: Banner takes an account name and a user name, and there is no id in
-// scope for it to print. The test that used to sit here asserted the absence
-// of a GUID from a string that could never have contained one. It lives in
-// the app package now, next to the signed-in account that does carry an id.
-
 func TestAClusterWithNoPolicyEngineIsRefusedBeforeAnythingIsInstalled(t *testing.T) {
 	for _, engine := range []string{"", "none", "None", "  "} {
 		err := PolicyEngineVerdict(engine, true)

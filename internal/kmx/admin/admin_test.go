@@ -128,10 +128,8 @@ func reporting(contract int, reported string, next http.HandlerFunc) http.Handle
 	}
 }
 
-// The custody rule (docs/COORDINATION.md security guidance): a token travels
-// through pipes and process memory, never argv, the environment, a file or a
-// log. The shell had to spill the admin bearer into a 0600 file for curl;
-// this asserts Go does not put it anywhere at all.
+// The admin bearer travels in process memory and the Authorization header,
+// not argv, the environment, a file or a log.
 func TestTokensNeverLeaveTheProcess(t *testing.T) {
 	var gotAuth string
 	c, k := open(t, health(func(w http.ResponseWriter, r *http.Request) {

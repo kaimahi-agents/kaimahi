@@ -34,10 +34,8 @@ const planeWorkload = "kaimahi-proxy"
 //     says who to trust and confers nothing, so it is the one piece that
 //     leaves the plane's namespace.
 //
-// It publishes NOWHERE on its own. It used to copy the authority into the
-// retired runtime's namespace on every run, for agents this repository
-// installed there; that runtime is gone, and no owner-managed workload lives at a namespace
-// kmx could guess. Publication is now the job of the command that points a
+// It publishes NOWHERE on its own: no owner-managed workload lives at a
+// namespace kmx could guess. Publication belongs to the command that points a
 // workload at the seam and is therefore told which namespace that is —
 // `kmx migrate`, through publishPlaneAuthority.
 //

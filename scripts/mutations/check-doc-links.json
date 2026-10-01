@@ -17,7 +17,7 @@
     {
       "name": "a missing target is not a problem",
       "breaks": "The file is resolved, found not to exist, and the finding is thrown away — the check runs and reports nothing.",
-      "find": "        if not os.path.exists(resolved):\n            problems.append(f\"{path}:{lineno(pos)}: missing {what} {target}\")\n            return\n",
+      "find": "        if not os.path.exists(resolved):\n            if retired_board_link(path, target):\n                return\n            problems.append(f\"{path}:{lineno(pos)}: missing {what} {target}\")\n            return\n",
       "replace": "        if not os.path.exists(resolved):\n            return\n"
     },
     {

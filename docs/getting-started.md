@@ -44,7 +44,7 @@ available for an installation an operator already owns.
 |---|---|
 | Go 1.26+ | `go install` builds and fetched plane builds; not needed to run the downloaded CLI |
 | Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
-| kind, kubectl | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
+| kind, kubectl, helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
 | git, make | checkout-based development and remaining scripts/helpers |
 | authenticated Azure CLI | AKS only; never installed by kmx |
 

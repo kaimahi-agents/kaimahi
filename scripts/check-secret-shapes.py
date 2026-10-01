@@ -100,9 +100,8 @@ def skipped(p, root=ROOT):
     The directory names are matched against the path RELATIVE to the
     repository root, never the absolute one. An absolute path carries
     whatever the checkout happens to sit under, and this repository can sit
-    under `.claude/worktrees/...` — which made an earlier version of this
-    skip every file in the tree and report it clean, in the exact
-    fail-open shape the whole check exists to prevent.
+    under `.claude/worktrees/...`. Matching that absolute path would skip
+    every file in the tree and report it clean.
     """
     try:
         # Both sides resolved, or a symlink anywhere above the root makes
@@ -209,11 +208,9 @@ def selftest():
             print("ok   a shape list with no shapes is refused")
 
         # The skip rules judge the path RELATIVE to the repository root. A
-        # checkout can sit anywhere — this one sits under a directory named
-        # .claude — and an earlier version matched the absolute path, which
-        # skipped every file in the tree and reported it clean. That is the
-        # worst failure a scanner has, because it looks exactly like
-        # success.
+        # checkout can sit under .claude; matching the absolute path would
+        # skip every file and report it clean. That failure looks exactly
+        # like success.
         nested = d / "outer" / ".claude" / "worktrees" / "checkout"
         (nested / "docs").mkdir(parents=True)
         leaky = nested / "docs" / "leak.md"

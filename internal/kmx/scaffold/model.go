@@ -43,9 +43,7 @@ var (
 // every use of it requires. It reserves nothing: the caller names an upstream
 // the plane's table ALREADY carries, so refusing a committed name here would
 // refuse the ordinary case. (The reservation belongs to ValidateModelName,
-// which creates overlay entries and must not shadow a committed one.) The
-// list this used to carry named four upstreams of the retired gateway, which
-// no manifest in this tree has defined since it was removed.
+// which creates overlay entries and must not shadow a committed one.)
 func ValidateUpstreamName(name string) error {
 	if !upstreamNameRE.MatchString(name) || len(name) > 40 {
 		return fmt.Errorf("%q is not a usable upstream name: lowercase letters, digits and dashes, "+

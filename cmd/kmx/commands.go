@@ -106,11 +106,8 @@ func newCredentialCommand(state *commandState) *cobra.Command {
 	issue := &cobra.Command{Use: "issue <name>", Short: "Issue a credential to a Secret or discard its bearer", Args: usageArgs(1, 1, "kmx credential issue <name> (--discard | --secret <name> --namespace <namespace>) [--ttl duration]")}
 	issue.Flags().BoolVar(&discard, "discard", false, "discard the one-time bearer instead of storing or printing it")
 	issue.Flags().StringVar(&secret, "secret", "", "store the one-time bearer in this Kubernetes Secret")
-	// No default. The namespace a one-time token is written into is the
-	// operator's own, and it used to default to the legacy runtime's — a
-	// credential silently issued into a namespace nothing here installs any
-	// more is not a convenience, it is an unrecoverable token in the wrong
-	// place.
+	// No default: a one-time token must be written into the operator's chosen
+	// namespace, not silently issued into the wrong place.
 	issue.Flags().StringVar(&namespace, "namespace", "", "namespace the Secret is created in (required with --secret)")
 	issue.Flags().StringVar(&issueTTL, "ttl", "-", "credential lifetime, e.g. 30d (default: plane policy)")
 	issue.MarkFlagsOneRequired("discard", "secret")

@@ -35,8 +35,7 @@ func (a *App) Status() error { return a.StatusWithOptions(StatusOptions{}) }
 //
 // `table` is the only format there is, and json/yaml are refused BY NAME
 // rather than quietly falling back to the table or emitting an empty
-// document. They used to publish a governance envelope counted off the
-// retired runtime's Agents and model presets. Nothing owner-managed replaces that count:
+// document. No owner-managed report can supply a governance count:
 // `kmx migrate` points somebody's own Deployment at the seam, and those
 // workloads have no discovery index — there is no query that lists them, so
 // any document kmx published would be a tally of what it happened to be told

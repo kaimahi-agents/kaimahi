@@ -140,6 +140,16 @@ if install_run "plain v0.1.0 install" --version=v0.1.0; then
     "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest' "$workdir/out" && echo ok || echo no)"
 fi
 
+# --help prints the header comment, in full, and nothing else. It is read
+# from the file rather than a hard-coded slice of it, so the check is that
+# the help keeps the comment's LAST line and never leaks the script body —
+# the two ways a line-numbered slice goes wrong.
+help_out=$(sh "$installer" --help 2>&1) || true
+check "--help prints the header comment's last line" \
+  "$(grep -q 'checksum database. Pin' <<<"$help_out" && echo ok || echo no)"
+check "--help stops before the script body" \
+  "$(grep -q 'set -eu' <<<"$help_out" && echo no || echo ok)"
+
 if [ "$fails" -ne 0 ]; then
   echo "install.sh: $fails check(s) failed" >&2
   exit 1

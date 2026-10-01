@@ -63,9 +63,7 @@ const (
 	ReasonCredentialExpired Reason = "credential_expired"
 	// ReasonUnmetered: the upstream answered, and the plane could not
 	// read the token counts out of it. Counted apart from every other
-	// outcome because it is the one that used to be invisible — a
-	// Responses-API call read by a chat-completions reader was ledgered
-	// `0 in / 0 out` and looked like a cheap call.
+	// outcome so missing usage cannot look like a reported zero.
 	ReasonUnmetered Reason = "unmetered"
 	ReasonOther     Reason = "other"
 )

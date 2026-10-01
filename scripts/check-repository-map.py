@@ -67,8 +67,7 @@ MAP = "docs/repository-map.md"
 # checker, which has to quote the map's paths to anchor to them, would
 # then read as a caller of every script the map mentions.
 NOT_EVIDENCE = {MAP, "scripts/check-repository-map.py",
-                "scripts/mutations/check-repository-map.json",
-                "docs/COORDINATION.md"}
+                "scripts/mutations/check-repository-map.json"}
 
 NUMBER_WORDS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,

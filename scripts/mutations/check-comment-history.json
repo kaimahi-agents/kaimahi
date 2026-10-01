@@ -1,0 +1,38 @@
+{
+  "checker": "check-comment-history.py",
+  "why": "The comment scanner must detect forbidden references without interpreting strings as comments.",
+  "verify": ["python3", "scripts/check-comment-history.py", "--selftest"],
+  "signature": "comment-history self-test: ok",
+  "mutations": [
+    {
+      "name": "the pattern accepts nothing",
+      "breaks": "Historical references in comments pass silently.",
+      "find": "PATTERN = re.compile(r\"(?i)(?<![a-z0-9_])w[0-9]+(?![a-z0-9_])|\\b(?:this|the) lane\\b\")",
+      "replace": "PATTERN = re.compile(r\"(?!)\")"
+    },
+    {
+      "name": "workflow yaml is excluded",
+      "breaks": "The scanner drops .yml workflow files from its tracked file selection.",
+      "find": "SUFFIXES = {\".go\", \".py\", \".sh\", \".yaml\", \".yml\"}",
+      "replace": "SUFFIXES = {\".go\", \".py\", \".sh\", \".yaml\"}"
+    },
+    {
+      "name": "whole-line shell and yaml comments are skipped",
+      "breaks": "The tripwire ignores shell and YAML comments.",
+      "find": "if text.lstrip().startswith(\"#\") and PATTERN.search(text):",
+      "replace": "if False:"
+    },
+    {
+      "name": "python comments are skipped",
+      "breaks": "The tripwire ignores Python comments.",
+      "find": "if PATTERN.search(text))",
+      "replace": "if False)"
+    },
+    {
+      "name": "go comments are skipped",
+      "breaks": "The tripwire ignores Go comments.",
+      "find": "if PATTERN.search(item[\"text\"]):",
+      "replace": "if False:"
+    }
+  ]
+}

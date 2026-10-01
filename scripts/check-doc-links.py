@@ -22,16 +22,13 @@ them:
     the shortcut form `[label]`: the target is verified at the
     definition, so every way of referring to it is verified with it.
 
-For a while this checked only the first form, so HTML images could break without
-the documentation check noticing.
-
 Fenced code blocks are not links, and neither is anything inside a
 `backtick` code span: both are blanked out before the scan, so a sample
 link in an example stays an example.
 
-The docs were restructured by capability once; the old phase-named files
-are stubs that forward. This is what keeps every forward, every README
-pointer, and every FAQ anchor honest from now on.
+Current guides, historical pointers and indexes all keep their relative
+links and heading anchors valid, except for the dated review's retired-board
+reference.
 
 Run:  python3 scripts/check-doc-links.py [file.md ...]
       (no arguments: every tracked *.md, plus untracked ones git would add)
@@ -119,6 +116,12 @@ def label(raw):
     return " ".join(raw.split()).lower()
 
 
+def retired_board_link(path, target):
+    """The dated review retains its reference to the retired board as history."""
+    return (path.replace(os.sep, "/").endswith("docs/reviews/2026-09-09-orka-composition.md")
+            and target == "../COORDINATION.md")
+
+
 def check(path, slug_cache):
     problems = []
     text = prose(path)
@@ -137,6 +140,8 @@ def check(path, slug_cache):
         else:
             resolved = path
         if not os.path.exists(resolved):
+            if retired_board_link(path, target):
+                return
             problems.append(f"{path}:{lineno(pos)}: missing {what} {target}")
             return
         if frag and resolved.endswith(".md"):
@@ -220,8 +225,7 @@ def selftest():
     case("an anchor with no heading fails",
          dict(real, **{"a.md": "see [x](there.md#no-such-heading)\n"}), 1)
 
-    # HTML images — the README's hero pictures are written this way, and
-    # were unchecked while this checker read inline links only.
+    # HTML images — the README's hero pictures are written this way.
     case("an <img src> pointing at a file that exists passes",
          dict(real, **{"a.md": '<p><img src="pic.png" alt="a"></p>\n'}), 0)
     case("an <img src> pointing at a missing file fails",
@@ -270,6 +274,16 @@ def selftest():
                                "[t]: mailto:nobody@example.invalid\n"}), 0)
     case("...while the same paths taken as relative fail",
          dict(real, **{"a.md": '[x](nowhere.md)\n'}), 1)
+
+    # The dated review is immutable history, but its board target is retired.
+    case("the review retains its historical board reference",
+         {"docs/reviews/2026-09-09-orka-composition.md":
+          "[board](../COORDINATION.md)\n"}, 0)
+    case("another missing target in that review still fails",
+         {"docs/reviews/2026-09-09-orka-composition.md":
+          "[missing](../other.md)\n"}, 1)
+    case("another review cannot borrow the exception",
+         {"docs/reviews/other.md": "[board](../COORDINATION.md)\n"}, 1)
 
     # A run that found nothing to read is not a clean run. The pair is a
     # repository with a document and a repository with none.
