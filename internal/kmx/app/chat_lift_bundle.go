@@ -406,7 +406,7 @@ func (b *orkaChatBackend) bundleLiftProviders(ctx context.Context, worker *App, 
 	return names, nil
 }
 
-// Only an explicit denial for the fixed quickstart identity can be repaired
+// Only a non-allowing review for the fixed quickstart identity can be repaired
 // by reapplying its named grant. API errors and other policy failures cannot.
 func quickstartPolicyRepairable(namespace string, err error) bool {
 	var denied *policyPermissionDenied
