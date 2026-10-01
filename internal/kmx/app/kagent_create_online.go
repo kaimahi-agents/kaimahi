@@ -49,6 +49,10 @@ var (
 	kagentAgentSchemaSHA256 = "b6048ddf43a7fff6ea11bb168b09d737c78ee6e36afd57df2f3a050f480e80c6"
 	kagentModelSchemaSHA256 = "1742024902c0987df9f9131ece110aa2746e9a5a91055d96f91ba3e5b2ca48a3"
 	kagentPollInterval      = time.Second
+	kagentPreflightTimeout  = 5 * time.Minute
+	kagentReadinessTimeout  = 10 * time.Minute
+	kagentAgentCardTimeout  = 5 * time.Minute
+	kagentTaskTimeout       = 5 * time.Minute
 )
 
 type kagentControllerService struct {
@@ -210,6 +214,9 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 	if err := a.guardKagentCreate(ctx, opt); err != nil {
 		return result, err
 	}
+	operationCtx := ctx
+	ctx, cancelPreflight := kagentPhaseContext(operationCtx, kagentPreflightTimeout)
+	defer cancelPreflight()
 	service, err := a.preflightKagentInstallation(ctx, opt.KagentRuntime, opt.Namespace)
 	if err != nil {
 		return result, err
@@ -313,6 +320,11 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 	if err := a.emitKagentArtifact(opt, document, true); err != nil {
 		return result, err
 	}
+	if err := ctx.Err(); err != nil {
+		return result, fmt.Errorf("Kagent pre-create preflight timed out; no Kubernetes resources were changed: %w", err)
+	}
+	cancelPreflight()
+	ctx = operationCtx
 	var created []string
 	defer func() {
 		if err == nil {
@@ -352,8 +364,11 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
 		identities = append(identities, id)
 		a.notef("Created %s/%s (UID %s); waiting for current-generation conditions.", id.Kind, id.Name, id.UID)
-		if err := a.waitKagentReady(ctx, opt.Namespace, id); err != nil {
-			return result, err
+		readyCtx, cancelReady := kagentPhaseContext(ctx, kagentReadinessTimeout)
+		readyErr := a.waitKagentReady(readyCtx, opt.Namespace, id)
+		cancelReady()
+		if readyErr != nil {
+			return result, readyErr
 		}
 		if id.Kind == "ModelConfig" {
 			modelSecretHash, err = a.verifyKagentModelState(ctx, opt.Namespace, id, "")
@@ -378,8 +393,11 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
 			return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 immediately before task send: %w", err)
 		}
-		if err := a.waitKagentAgentCard(ctx, service, opt.Namespace, opt.Name); err != nil {
-			return result, err
+		cardCtx, cancelCard := kagentPhaseContext(ctx, kagentAgentCardTimeout)
+		cardErr := a.waitKagentAgentCard(cardCtx, service, opt.Namespace, opt.Name)
+		cancelCard()
+		if cardErr != nil {
+			return result, cardErr
 		}
 		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
 			return result, fmt.Errorf("exact Kagent v0.10.2 installation changed immediately before task send: %w", err)
@@ -396,7 +414,9 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
 			return result, fmt.Errorf("Kagent tool dependency changed immediately before task send: %w", err)
 		}
-		answer, err := a.sendKagentTask(ctx, service, opt.Namespace, opt.Name, opt.Task)
+		taskCtx, cancelTask := kagentPhaseContext(ctx, kagentTaskTimeout)
+		answer, err := a.sendKagentTask(taskCtx, service, opt.Namespace, opt.Name, opt.Task)
+		cancelTask()
 		if err != nil {
 			return result, err
 		}
@@ -455,6 +475,10 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		return agentruntime.DeployResult{}, fmt.Errorf("persist Kagent create receipt after deployment success: %w", err)
 	}
 	return result, nil
+}
+
+func kagentPhaseContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, timeout)
 }
 
 func kagentWriteDocuments(bundle *scaffold.KagentBundle, rendered agentruntime.RenderedBundle) ([]map[string]any, error) {

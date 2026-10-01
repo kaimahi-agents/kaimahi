@@ -411,7 +411,9 @@ captured dependencies, creates Agent, and waits for current-generation
 `Accepted` and `Ready`. Every create response and later live read must retain
 the admitted spec and KMX markers. Success also proves the Agent-owned
 Deployment and Service, the complete current rollout, and the selected official
-v0.10.2 runtime image tag/digest identity. Before an optional task it additionally proves
+v0.10.2 runtime image tag/digest identity. Pre-create cluster checks have a
+five-minute budget; each created resource then receives a fresh ten-minute
+readiness budget. Before an optional task it additionally proves
 the controller-proxied A2A card. KMX never adopts, updates, reconciles, or
 deletes an existing Kagent object.
 
@@ -422,7 +424,8 @@ named resources and deliberately clean up only what should be recreated.
 Ambiguous creates are never retried, adopted, or deleted.
 
 `--task` sends one A2A `message/send` after all readiness, workload, image, and
-agent-card proof. It never retries an ambiguous send. KMX accepts only a strict
+agent-card proof. Agent-card discovery and the send each receive a fresh
+five-minute budget. It never retries an ambiguous send. KMX accepts only a strict
 matching JSON-RPC response containing an `agent` text message or a completed
 task whose answer message has a nonblank ID and the task's exact context ID,
 strips unsafe terminal

@@ -32,8 +32,10 @@ inspection, no-write planning, dry-run and upgrade limits.
 Orka remains the default. The only current Kagent capability is explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
 v0.10.2. KMX never installs or upgrades it. This path renders a review artifact
-and portable bundle and can create a new ModelConfig then a new Agent; it does
-not adopt/update existing objects or roll back partial writes. An optional
+and portable bundle; `--out -` omits the bundle unless `--bundle-path` is set.
+Offline rendering needs neither an installation nor a cluster Secret. Online
+creation requires both and can create a new ModelConfig then a new Agent; it
+does not adopt/update existing objects or roll back partial writes. An optional
 `--task` sends one A2A message as the final step of that same create invocation;
 it is not a standalone or resumable chat capability.
 

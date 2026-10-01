@@ -27,14 +27,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent create --runtime kagent <name>` adds an explicit, create-only
   integration for an already-installed exact Kagent v0.10.2. Orka remains the
   default and all no-flag behavior is unchanged. Offline create needs no cluster
-  or tool and writes a review artifact plus portable bundle; online create
-  requires a separately provisioned Secret, proves the exact controller
-  version and its release-reported pinned commit prefix, CRD schemas,
+  or tool and writes a review artifact plus portable bundle, except that
+  `--out -` omits the bundle unless `--bundle-path` is set. Online create
+  requires a separately provisioned Secret and exact installation, proves the
+  controller version and its release-reported pinned commit prefix, CRD schemas,
   controller/runtime image configuration and identities, then creates
   ModelConfig and Agent in order and waits for their
   current-generation conditions and the Agent-owned workload. It never installs
   or upgrades Kagent, adopts or updates existing objects, or rolls back partial
-  writes. A successful create writes a private prompt/answer-free receipt.
+  writes. Only a successful online create writes a private prompt/answer-free
+  receipt.
 - Kagent create supports namespace, description, `openai|anthropic` model
   provider, model, Secret name/key, optional base URL and instructions, one
   `server:tool1,tool2` binding, `go|python` declarative runtime, optional

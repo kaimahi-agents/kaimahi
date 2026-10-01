@@ -202,6 +202,12 @@
       "breaks": "An exact CI or test assertion may exercise retired syntax, but it must not become an escape hatch for a future version or newly supported lifecycle operation.",
       "find": "    \"unsupported-runtime-command\", \"unsupported-runtime-options\", \"wrong-api-version\",\n})\n\n# These current-doc notices",
       "replace": "    \"unsupported-runtime-command\", \"unsupported-runtime-options\", \"wrong-api-version\",\n    \"moving-version\", \"broad-operation\",\n})\n\n# These current-doc notices"
+    },
+    {
+      "name": "kubectl manifest installs are ignored",
+      "breaks": "A scoped documentation or workflow file could apply an alternate-runtime release manifest while the waived bare-name and image rules make that installer invisible.",
+      "find": "          r\"(?i:\\bkubectl\\b.{0,120}\\b(?:apply|create|replace)\\b.{0,80}\"\n          r\"(?:-f|--filename|-k|--kustomize)(?:=|\\s+)\\S*\" + NAME + r\")|\"",
+      "replace": ""
     }
   ]
 }

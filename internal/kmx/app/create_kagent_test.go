@@ -80,6 +80,9 @@ func TestKagentKubectlHelper(t *testing.T) {
 			os.Exit(0)
 		}
 		if strings.HasSuffix(path, "/.well-known/agent-card.json") {
+			if scenario == "card-stale" {
+				fail()
+			}
 			if scenario == "card-lag" {
 				marker := filepath.Join(dir, "card-attempt")
 				if _, err := os.Stat(marker); os.IsNotExist(err) {
@@ -91,6 +94,11 @@ func TestKagentKubectlHelper(t *testing.T) {
 			os.Exit(0)
 		}
 		if call.Body["method"] != "message/send" || !strings.Contains(path, "/api/a2a/agents/sample") {
+			fail()
+		}
+		if scenario == "task-timeout" {
+			_ = os.WriteFile(filepath.Join(dir, "message-attempted"), []byte("attempted"), 0o600)
+			time.Sleep(5 * time.Second)
 			fail()
 		}
 		id, _ := call.Body["id"].(string)
@@ -143,6 +151,10 @@ func TestKagentKubectlHelper(t *testing.T) {
 					fmt.Print("present")
 				}
 				os.Exit(0)
+			}
+			if scenario == "slow-preflight" {
+				time.Sleep(5 * time.Second)
+				fail()
 			}
 			count := markInstallRead()
 			imageTag := "0.10.2"
@@ -406,11 +418,15 @@ func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *b
 	t.Setenv("KMX_KAGENT_TEST_RUNTIME", "go")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	oldAgentSchema, oldModelSchema, oldPoll := kagentAgentSchemaSHA256, kagentModelSchemaSHA256, kagentPollInterval
+	oldPreflight, oldReadiness := kagentPreflightTimeout, kagentReadinessTimeout
+	oldCard, oldTask := kagentAgentCardTimeout, kagentTaskTimeout
 	kagentAgentSchemaSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(`{"type":"object"}`)))
 	kagentModelSchemaSHA256 = kagentAgentSchemaSHA256
 	kagentPollInterval = 10 * time.Millisecond
 	t.Cleanup(func() {
 		kagentAgentSchemaSHA256, kagentModelSchemaSHA256, kagentPollInterval = oldAgentSchema, oldModelSchema, oldPoll
+		kagentPreflightTimeout, kagentReadinessTimeout = oldPreflight, oldReadiness
+		kagentAgentCardTimeout, kagentTaskTimeout = oldCard, oldTask
 	})
 	out, diagnostics := &bytes.Buffer{}, &bytes.Buffer{}
 	runner := &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}
@@ -678,6 +694,17 @@ func TestKagentExactVersionMismatchStopsBeforeAdmissionOrWrites(t *testing.T) {
 	}
 }
 
+func TestKagentPreflightTimeoutStopsBeforeWrites(t *testing.T) {
+	a, opt, _, _, dir := kagentCreateFixture(t, "slow-preflight")
+	kagentPreflightTimeout = 50 * time.Millisecond
+	err := a.CreateAgent(opt)
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "no Kubernetes resources were changed") {
+		t.Fatalf("preflight timeout error = %v", err)
+	}
+	assertKagentNoClusterWrites(t, dir)
+	assertKagentNoTaskOrReceipt(t, opt, dir)
+}
+
 func TestKagentOnlineDependencyAndWriteOrder(t *testing.T) {
 	a, opt, _, _, dir := kagentCreateFixture(t, "")
 	if err := a.CreateAgent(opt); err != nil {
@@ -768,6 +795,64 @@ func TestKagentOnlineDependencyAndWriteOrder(t *testing.T) {
 	info, err := os.Stat(filepath.Join(opt.BundlePath, "receipts", receipts[0].Name()))
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("Kagent create receipt mode = %v, %v", info, err)
+	}
+}
+
+func TestKagentPhaseTimeoutsDoNotConsumeTheOperationContext(t *testing.T) {
+	operationCtx, cancelOperation := context.WithCancel(t.Context())
+	defer cancelOperation()
+	preflightCtx, cancelPreflight := kagentPhaseContext(operationCtx, time.Nanosecond)
+	defer cancelPreflight()
+	<-preflightCtx.Done()
+	if !errors.Is(preflightCtx.Err(), context.DeadlineExceeded) || operationCtx.Err() != nil {
+		t.Fatalf("preflight timeout changed operation context: preflight=%v operation=%v", preflightCtx.Err(), operationCtx.Err())
+	}
+	readinessCtx, cancelReadiness := kagentPhaseContext(operationCtx, time.Second)
+	defer cancelReadiness()
+	if readinessCtx.Err() != nil {
+		t.Fatalf("fresh readiness phase inherited preflight timeout: %v", readinessCtx.Err())
+	}
+}
+
+func TestKagentTaskPhasesHaveIndependentTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		scenario, want string
+	}{
+		{"card-stale", "agent card"},
+		{"task-timeout", "may have executed"},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			a, opt, _, _, dir := kagentCreateFixture(t, tc.scenario)
+			opt.Task = "private prompt"
+			if tc.scenario == "card-stale" {
+				kagentAgentCardTimeout = 50 * time.Millisecond
+			} else {
+				kagentTaskTimeout = 2 * time.Second
+			}
+			err := a.CreateAgent(opt)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), opt.Task) {
+				t.Fatalf("phase timeout error = %v", err)
+			}
+			if tc.scenario == "card-stale" {
+				assertKagentNoTaskOrReceipt(t, opt, dir)
+			} else {
+				if _, statErr := os.Stat(filepath.Join(opt.BundlePath, "receipts")); !os.IsNotExist(statErr) {
+					t.Fatalf("ambiguous task wrote receipt: %v", statErr)
+				}
+				if _, statErr := os.Stat(filepath.Join(dir, "message-attempted")); statErr != nil {
+					t.Fatalf("task timeout happened before message/send started: %v", statErr)
+				}
+				sends := 0
+				for _, call := range kagentCalls(t, dir) {
+					if call.Body["method"] == "message/send" {
+						sends++
+					}
+				}
+				if sends != 1 {
+					t.Fatalf("ambiguous task sends = %d, want 1", sends)
+				}
+			}
+		})
 	}
 }
 
@@ -948,12 +1033,10 @@ func TestKagentAgentCardRegistrationLagIsPolledWithoutMessageRetry(t *testing.T)
 func TestKagentStaleAgentReadinessStopsWithoutTask(t *testing.T) {
 	a, opt, out, _, dir := kagentCreateFixture(t, "stale-agent")
 	opt.Task = "do not print this prompt"
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	a.Run.Context = ctx
+	kagentReadinessTimeout = 50 * time.Millisecond
 	err := a.CreateAgent(opt)
-	if err == nil || !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		t.Fatalf("stale Agent readiness error = %v, context = %v", err, ctx.Err())
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("stale Agent readiness error = %v", err)
 	}
 	if strings.Contains(err.Error(), opt.Task) || strings.Contains(out.String(), opt.Task) {
 		t.Fatal("task prompt leaked")

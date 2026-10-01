@@ -451,6 +451,8 @@ RULES = [
     Rule("installer", "a Kagent installer operation or chart",
          (r"(?i:\bhelm\s+(?:install|upgrade)\b.{0,160}\b" + NAME + r"\b)|"
           r"/" + NAME + r"/helm/|"
+          r"(?i:\bkubectl\b.{0,120}\b(?:apply|create|replace)\b.{0,80}"
+          r"(?:-f|--filename|-k|--kustomize)(?:=|\s+)\S*" + NAME + r")|"
           r"(?i:\bkubectl\b.{0,80}\bcreate\s+(?:ns|namespace)\s+" + NAME + r"\b)"),
          "helm install " + NAME + " oci://ghcr.io/" + NAME + "-dev/" + NAME + "/helm/" + NAME,
          "inspect the preinstalled exact " + NAME.capitalize() + " v0.10.2", True),
@@ -1167,6 +1169,15 @@ def selftest():
         case("installer" in arbitrary_hits,
              "an arbitrary installer line remains refused in the approved workflow",
              f"workflow scope waived an arbitrary installer (found: {sorted(arbitrary_hits) or 'nothing'})")
+
+        manifest_installer = (f"kubectl apply -f https://github.com/{NAME}-dev/{NAME}/"
+                              "releases/download/v0.10.2/install.yaml")
+        (d / approved).write_text(manifest_installer + "\n")
+        manifest_hits = {r.name for _, _, r, _ in judge(
+            [approved], [], [], {approved}, root=d)[0] if r}
+        case("installer" in manifest_hits,
+             "a kubectl manifest installer remains refused in an approved support file",
+             f"support scope waived a kubectl manifest installer (found: {sorted(manifest_hits) or 'nothing'})")
 
         unsupported = f"kmx agent chat --runtime {NAME} demo"
         (d / workflow).write_text(unsupported + "\n")

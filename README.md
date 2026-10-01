@@ -126,9 +126,11 @@ boundaries between KMX and runtimes.
 Default Orka create writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation
 readiness. Its real answer requires `--task` plus pre-existing result access.
-Explicit Kagent create writes a review artifact and portable bundle, requires a
-separately provisioned Secret, and creates only a new ModelConfig and Agent; it
-never adopts, updates, or rolls back. Kagent bundles are intentionally refused
+Explicit Kagent create writes a review artifact and portable bundle; `--out -`
+omits the bundle unless `--bundle-path` is set. Offline rendering requires
+neither an installed Kagent nor a cluster Secret. Online creation requires both,
+and creates only a new ModelConfig and Agent; it never adopts, updates, or rolls
+back. Kagent bundles are intentionally refused
 by the currently Orka-only lift, status, evaluate, console, and interactive
 `/lift` paths. Credentials, namespaces, and RBAC remain separate operator
 responsibilities. Use `--out -` or `--no-apply` for offline output and
@@ -138,8 +140,8 @@ responsibilities. Use `--out -` or `--no-apply` for offline output and
 ## Lifecycle
 
 Orka bundles, lift receipts, revision-aware status and evaluation are available
-as standalone commands. A successful Kagent create writes its own private,
-prompt/answer-free receipt. Lift, status, and evaluation remain Orka-only. The
+as standalone commands. Only a successful online Kagent create writes its own
+private, prompt/answer-free receipt. Lift, status, and evaluation remain Orka-only. The
 [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
 also discusses rollback, which does not have a standalone command. Deploying
 and verifying an earlier revision cannot undo an agent's completed external

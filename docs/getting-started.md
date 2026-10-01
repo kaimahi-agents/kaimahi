@@ -218,10 +218,11 @@ No-name terminal invocation offers a wizard. `agent chat --interactive` and
 are not provided.
 
 For the separate, advanced Kagent v0.10.2 create-only path, use the complete
-[create contract](kmx.md#explicit-kagent-v0102-create). It requires an existing
-installation and separately provisioned Secret, and it does not add Kagent
-chat, list, show, status, lift, evaluate, console, quickstart, `up`, or AKS
-support.
+[create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
+requires neither an installed Kagent nor a provisioned cluster Secret. Online
+creation requires both an exact v0.10.2 installation and a separately
+provisioned Secret. Neither mode adds Kagent chat, list, show, status, lift,
+evaluate, console, quickstart, `up`, or AKS support.
 
 ## Using Podman instead of Docker
 
