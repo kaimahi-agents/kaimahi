@@ -424,19 +424,22 @@ func TestConsoleInferenceSharedProviderKeepsNamespace(t *testing.T) {
 	fakeTool(t, dir, "kubectl", `case "$*" in
  *'config view'*) printf '%s' '{"contexts":[{"name":"remote","context":{"cluster":"r"}}],"clusters":[{"name":"r","cluster":{"server":"https://remote.example.com"}}]}' ;;
  *'get agents.core.orka.ai demo'*) printf '%s' '{"metadata":{"resourceVersion":"42"},"spec":{"providerRef":{"name":"shared","namespace":"inference"}}}' ;;
- *'-n agents get providers.core.orka.ai -o json'*) printf '%s' '{"items":[]}' ;;
- *'-n inference get providers.core.orka.ai shared'*) printf '%s' '{"metadata":{"name":"shared"},"spec":{"type":"openai","defaultModel":"shared-model"}}' ;;
+ *'-n agents get providers.core.orka.ai -o json'*) printf '%s' '{"items":[{"metadata":{"name":"local"},"spec":{"type":"azure-openai","defaultModel":"local-model","azure":{"deploymentName":"local-deployment"}}}]}' ;;
+ *'-n inference get providers.core.orka.ai shared'*) printf '%s' '{"metadata":{"name":"shared"},"spec":{"type":"azure-openai","defaultModel":"shared-model","azure":{"deploymentName":"shared-deployment"}}}' ;;
  *) exit 1 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
 	snapshot, err := a.consoleLoadInference(t.Context(), agentTUIEnvironment{Name: "remote"}, agentTUIAgent{Runtime: "orka", Name: "demo", Namespace: "agents"})
-	if err != nil || len(snapshot.Sources) != 1 {
+	if err != nil || len(snapshot.Sources) != 2 {
 		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
 	}
-	source := snapshot.Sources[0]
-	if source.Namespace != "inference" || source.Name != "shared" {
-		t.Fatal("lost shared Provider identity")
+	if snapshot.Sources[0].AzureDeployment != "local-deployment" {
+		t.Fatal("lost local Azure Provider deployment")
+	}
+	source := snapshot.Sources[1]
+	if source.Namespace != "inference" || source.Name != "shared" || source.AzureDeployment != "shared-deployment" {
+		t.Fatal("lost shared Azure Provider identity or deployment")
 	}
 	raw, err := consoleInferencePatch(snapshot.Version, source.Name, source.Namespace, "", nil)
 	if err != nil || !strings.Contains(string(raw), `"namespace":"inference"`) {

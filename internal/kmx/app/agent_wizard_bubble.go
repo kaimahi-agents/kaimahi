@@ -26,6 +26,9 @@ const (
 	createNamespace
 	createProviderType
 	createModel
+	createAzureDeployment
+	createAzureBaseURL
+	createAzureAPIVersion
 	createSecret
 	createResultAccount
 	createConfirm
@@ -47,14 +50,15 @@ func (k createWizardKeys) FullHelp() [][]key.Binding {
 }
 
 type createWizardModel struct {
-	opt       CreateOptions
-	input     textinput.Model
-	help      help.Model
-	keys      createWizardKeys
-	step      createWizardStep
-	selection int
-	err       error
-	cancelled bool
+	opt               CreateOptions
+	input             textinput.Model
+	help              help.Model
+	keys              createWizardKeys
+	step              createWizardStep
+	selection         int
+	err               error
+	cancelled         bool
+	azureVersionAsked bool
 }
 
 func newCreateWizardModel(opt CreateOptions) (createWizardModel, error) {
@@ -118,9 +122,16 @@ func (m *createWizardModel) startMissingStep() {
 	case strings.TrimSpace(m.opt.Namespace) == "":
 		m.startReferenceStep(createNamespace, "Namespace the Orka controller watches", scaffold.ValidateNamespace)
 	case strings.TrimSpace(m.opt.ProviderType) == "":
-		m.startReferenceStep(createProviderType, "openai or anthropic", nil)
+		m.startReferenceStep(createProviderType, "openai, anthropic or azure-openai", nil)
 	case strings.TrimSpace(m.opt.Model) == "":
-		m.startReferenceStep(createModel, "Provider model identifier (e.g. local/qwen2.5:3b)", nil)
+		m.startReferenceStep(createModel, "Provider model identifier (Azure: deployment name)", nil)
+	case m.opt.ProviderType == "azure-openai" && m.opt.AzureDeployment == "":
+		m.startReferenceStep(createAzureDeployment, "Azure deployment name (must match model)", nil)
+	case m.opt.ProviderType == "azure-openai" && m.opt.BaseURL == "":
+		m.startReferenceStep(createAzureBaseURL, "Azure resource base URL (not /openai/v1)", nil)
+	case m.opt.ProviderType == "azure-openai" && !m.azureVersionAsked && m.opt.AzureAPIVersion == "":
+		m.startReferenceStep(createAzureAPIVersion, "Azure API version (optional; blank omits it)", nil)
+		m.input.Validate = nil
 	case strings.TrimSpace(m.opt.Secret) == "":
 		m.startReferenceStep(createSecret, "Secret name, never its value", scaffold.ValidateObjectName)
 	case m.opt.Task != "" && !m.opt.NoApply && m.opt.Out != "-" && !m.opt.DryRun && m.opt.ResultServiceAccount == "":
@@ -240,6 +251,13 @@ func (m createWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.opt.ProviderType = value
 			case createModel:
 				m.opt.Model = value
+			case createAzureDeployment:
+				m.opt.AzureDeployment = value
+			case createAzureBaseURL:
+				m.opt.BaseURL = value
+			case createAzureAPIVersion:
+				m.opt.AzureAPIVersion = value
+				m.azureVersionAsked = true
 			case createSecret:
 				m.opt.Secret = value
 			case createResultAccount:
@@ -277,13 +295,16 @@ func (m createWizardModel) View() tea.View {
 	case createName:
 		body.WriteString("Description: " + displayWizardValue(m.opt.Description) + "\n\nAgent name\n")
 		body.WriteString(m.input.View())
-	case createNamespace, createProviderType, createModel, createSecret, createResultAccount:
+	case createNamespace, createProviderType, createModel, createAzureDeployment, createAzureBaseURL, createAzureAPIVersion, createSecret, createResultAccount:
 		labels := map[createWizardStep]string{
-			createNamespace:     "Namespace the Orka controller watches",
-			createProviderType:  "Provider type (openai or anthropic)",
-			createModel:         "Provider model identifier (e.g. local/qwen2.5:3b)",
-			createSecret:        "Existing Provider Secret name (not its value)",
-			createResultAccount: "Existing result-reader ServiceAccount",
+			createNamespace:       "Namespace the Orka controller watches",
+			createProviderType:    "Provider type (openai, anthropic or azure-openai)",
+			createAzureDeployment: "Azure deployment name (must match model)",
+			createAzureBaseURL:    "Azure resource base URL (not /openai/v1)",
+			createAzureAPIVersion: "Azure API version (optional; blank omits it)",
+			createModel:           "Provider model identifier (e.g. local/qwen2.5:3b)",
+			createSecret:          "Existing Provider Secret name (not its value)",
+			createResultAccount:   "Existing result-reader ServiceAccount",
 		}
 		body.WriteString(labels[m.step] + "\n")
 		body.WriteString(m.input.View())
@@ -291,6 +312,9 @@ func (m createWizardModel) View() tea.View {
 		fmt.Fprintf(&body, "Name:        %s\nDescription: %s\nNamespace:   %s\nProvider:    %s\nModel:       %s\nSecret:      %s\nOutput:      %s\n", displayWizardValue(m.opt.Name), displayWizardValue(m.opt.Description), displayWizardValue(m.opt.Namespace), displayWizardValue(m.opt.ProviderType), displayWizardValue(m.opt.Model), displayWizardValue(m.opt.Secret), displayWizardValue(m.opt.Out))
 		if m.opt.BaseURL != "" {
 			fmt.Fprintf(&body, "Base URL:    %s\n", displayWizardValue(m.opt.BaseURL))
+		}
+		if m.opt.ProviderType == "azure-openai" {
+			fmt.Fprintf(&body, "Azure deployment: %s\nAzure API version: %s\n", displayWizardValue(m.opt.AzureDeployment), displayWizardValue(m.opt.AzureAPIVersion))
 		}
 		if m.opt.Task != "" {
 			body.WriteString("\n" + createTaskAuthorityNotice + "\n")
@@ -306,7 +330,7 @@ func (m createWizardModel) View() tea.View {
 			body.WriteString(marker + choice + "  ")
 		}
 	}
-	if m.opt.BaseURL == "" {
+	if m.opt.BaseURL == "" && m.opt.ProviderType != "azure-openai" {
 		body.WriteString("\n\n" + createBaseURLHint)
 	}
 	if m.err != nil {

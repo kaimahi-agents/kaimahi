@@ -105,7 +105,7 @@ func (p *consoleInferencePane) setFields(kind string) {
 		labels = []string{"Ollama endpoint (reachable from cluster)", "Model"}
 		values = []string{"http://ollama.ollama.svc.cluster.local:11434", "qwen2.5:3b"}
 	case "apikey":
-		labels = []string{"Provider type (openai / anthropic)", "API endpoint", "Model", "Existing Kubernetes Secret name", "Secret key name"}
+		labels = []string{"Provider type (openai / anthropic / azure-openai)", "API endpoint (Azure: resource root)", "Model (Azure: deployment name)", "Existing Kubernetes Secret name", "Secret key name"}
 		values = []string{"openai", "https://api.openai.com/v1", "", "", "api-key"}
 	case "cluster":
 		labels = []string{"Model override (empty uses Provider default)"}
@@ -120,6 +120,25 @@ func (p *consoleInferencePane) setFields(kind string) {
 			input.Focus()
 		}
 		p.fields = append(p.fields, consoleInferenceField{label, input})
+	}
+}
+
+func (p *consoleInferencePane) ensureAzureFields() {
+	if p.source.Kind != "apikey" {
+		return
+	}
+	if strings.TrimSpace(p.fields[0].input.Value()) != "azure-openai" {
+		p.fields = p.fields[:min(5, len(p.fields))]
+		return
+	}
+	if len(p.fields) > 5 {
+		return
+	}
+	for _, label := range []string{"Azure deployment name (must match model)", "Azure API version (optional)"} {
+		input := textinput.New()
+		input.CharLimit = 512
+		input.SetWidth(64)
+		p.fields = append(p.fields, consoleInferenceField{label: label, input: input})
 	}
 }
 
@@ -140,6 +159,9 @@ func (p *consoleInferencePane) readFields() error {
 		s.Endpoint, s.Model = v(0), v(1)
 	case "apikey":
 		s.Provider, s.Endpoint, s.Model, s.Secret, s.SecretKey = v(0), v(1), v(2), v(3), v(4)
+		if len(p.fields) > 5 {
+			s.AzureDeployment, s.AzureAPIVersion = v(5), v(6)
+		}
 	}
 	s.Name = consoleInferenceDefaultName(s)
 	if err := s.validate(); err != nil {
@@ -297,6 +319,7 @@ func (m agentTUIModel) updateInference(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if msg.Code == tea.KeyTab || msg.Code == tea.KeyEnter || msg.String() == "shift+tab" {
+				p.ensureAzureFields()
 				p.fields[p.field].input.Blur()
 				step := 1
 				if msg.String() == "shift+tab" {

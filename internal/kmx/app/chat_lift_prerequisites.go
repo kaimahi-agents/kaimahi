@@ -115,9 +115,30 @@ func useLiftProvider(bundle *scaffold.OrkaBundle, spec map[string]any) error {
 	if !ok {
 		return fmt.Errorf("selected inference has no Secret reference")
 	}
+	if err := validateAzureLiftModel(bundle.Agent, copySpec); err != nil {
+		return err
+	}
 	bundle.Provider["spec"] = copySpec
 	bundle.Secret["metadata"].(map[string]any)["name"] = name
 	return bundle.Validate()
+}
+
+func validateAzureLiftModel(agent map[string]any, provider map[string]any) error {
+	if provider["type"] != "azure-openai" {
+		return nil
+	}
+	azure, _ := provider["azure"].(map[string]any)
+	deployment, _ := azure["deploymentName"].(string)
+	model, _ := provider["defaultModel"].(string)
+	if agentSpec, ok := agent["spec"].(map[string]any); ok {
+		if override, ok := agentSpec["model"].(map[string]any); ok {
+			if name, ok := override["name"].(string); ok && name != "" {
+				model = name
+			}
+		}
+	}
+	baseURL, _ := provider["baseURL"].(string)
+	return scaffold.ValidateOrkaProvider("azure-openai", model, baseURL, deployment, "")
 }
 
 func (b *orkaChatBackend) selectLiftInference(ctx context.Context, target *App, cluster chatLiftTarget, bundle *scaffold.OrkaBundle, r *chatRenderer) error {

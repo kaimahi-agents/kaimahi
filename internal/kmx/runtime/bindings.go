@@ -23,7 +23,13 @@ type OrkaBindings struct {
 type OrkaProviderBindings struct {
 	Type      string                `yaml:"type"`
 	BaseURL   string                `yaml:"baseURL,omitempty"`
+	Azure     OrkaAzureBindings     `yaml:"azure,omitempty"`
 	SecretRef OrkaSecretRefBindings `yaml:"secretRef"`
+}
+
+type OrkaAzureBindings struct {
+	DeploymentName string `yaml:"deploymentName,omitempty"`
+	APIVersion     string `yaml:"apiVersion,omitempty"`
 }
 
 type OrkaSecretRefBindings struct {
@@ -105,6 +111,7 @@ func (b OrkaBindings) validate() error {
 	fields := []struct{ path, value string }{
 		{"apiVersion", b.APIVersion}, {"kind", b.Kind}, {"namespace", b.Namespace},
 		{"provider.type", b.Provider.Type}, {"provider.baseURL", b.Provider.BaseURL},
+		{"provider.azure.deploymentName", b.Provider.Azure.DeploymentName}, {"provider.azure.apiVersion", b.Provider.Azure.APIVersion},
 		{"provider.secretRef.name", b.Provider.SecretRef.Name}, {"provider.secretRef.key", b.Provider.SecretRef.Key},
 	}
 	for _, field := range fields {
@@ -126,7 +133,11 @@ func (b OrkaBindings) validate() error {
 	if err := scaffold.ValidateNamespace(b.Namespace); err != nil {
 		return fmt.Errorf("namespace: %w", err)
 	}
-	if err := scaffold.ValidateOrkaProvider(b.Provider.Type, "bound-model", b.Provider.BaseURL); err != nil {
+	model := "bound-model"
+	if b.Provider.Type == "azure-openai" {
+		model = b.Provider.Azure.DeploymentName
+	}
+	if err := scaffold.ValidateOrkaProvider(b.Provider.Type, model, b.Provider.BaseURL, b.Provider.Azure.DeploymentName, b.Provider.Azure.APIVersion); err != nil {
 		return fmt.Errorf("provider: %w", err)
 	}
 	if err := scaffold.ValidateObjectName(b.Provider.SecretRef.Name); err != nil {
