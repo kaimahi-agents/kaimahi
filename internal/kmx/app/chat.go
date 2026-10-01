@@ -41,7 +41,8 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 	// There is no one-shot transport left to fall back to, so say which
 	// command does work rather than dialing a controller that is gone.
 	if !opt.Interactive {
-		return fmt.Errorf("Orka chat requires --interactive:\n  %s",
+		return fmt.Errorf("Orka chat requires --interactive; for a one-shot Task use kmx agent run --agent %s --namespace %s --prompt-file -:\n  %s",
+			agent, valueOr(opt.Namespace, OrkaNamespace),
 			a.operationCommand("agent", "chat", "--interactive", "--namespace",
 				valueOr(opt.Namespace, OrkaNamespace), agent))
 	}
