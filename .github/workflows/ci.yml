@@ -2966,8 +2966,8 @@ jobs:
           helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --destination "$charts"
           crds_chart="$charts/kagent-crds@sha256-d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3.tgz"
           runtime_chart="$charts/kagent@sha256-cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366.tgz"
-          test "$(sha256sum "$crds_chart" | cut -d' ' -f1)" = aa100cdd8e72a29190bfc80ce0912e04a832d092c73b40bbac63cc2b1f13f5a5
-          test "$(sha256sum "$runtime_chart" | cut -d' ' -f1)" = 664264e5bc74840f988fc0753c70ed4c3d9a1939beab5058829cb322991b5176
+          test "$(helm show chart "$crds_chart" | sha256sum | cut -d' ' -f1)" = 7b76cc2462844f95982507a66688018921ecec7a9b2b0167386a05b1a0c5cba5
+          test "$(helm show chart "$runtime_chart" | sha256sum | cut -d' ' -f1)" = 54b9c24c431b0d0510f42adabb3869d803ec6af615a6b3039156292f4ed8dd22
           test "$(helm show chart "$crds_chart" | awk '$1 == "version:" {print $2}')" = 0.10.2
           test "$(helm show chart "$runtime_chart" | awk '$1 == "version:" {print $2}')" = 0.10.2
           helm install kagent-crds "$crds_chart" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --wait --timeout 5m

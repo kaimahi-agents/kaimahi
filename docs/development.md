@@ -181,8 +181,8 @@ owner's own application, which is the supported path.
 CI first creates its own dedicated kind cluster and installs the official
 `kagent-crds` and `kagent` OCI charts at exactly v0.10.2 as an **external test
 precondition**. The shard pulls them by published OCI digest, checks their
-archive hashes and chart versions, scales the UI to zero, disables tools,
-built-in agents and optional subcharts, and retains bundled Postgres. It then provisions a keyless,
+normalized chart metadata hashes and versions, scales the UI to zero, disables
+tools, built-in agents and optional subcharts, and retains bundled Postgres. It then provisions a keyless,
 deterministic in-cluster OpenAI fixture and a separately named dummy Secret.
 With `KMX_TOOLCHAIN=off` and failing `helm` and `kagent` executables first on
 `PATH`, the shard requires `kmx agent create --runtime kagent` to return the

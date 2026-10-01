@@ -65,13 +65,13 @@
       "path": ".github/workflows/ci.yml",
       "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --destination \"$charts\"",
       "category": "fixture",
-      "why": "External official CRD chart is pulled by immutable OCI digest before its archive hash and chart version are checked."
+      "why": "External official CRD chart is pulled by immutable OCI digest before its normalized chart metadata hash and version are checked."
     },
     {
       "path": ".github/workflows/ci.yml",
       "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --destination \"$charts\"",
       "category": "fixture",
-      "why": "External official runtime chart is pulled by immutable OCI digest before its archive hash and chart version are checked."
+      "why": "External official runtime chart is pulled by immutable OCI digest before its normalized chart metadata hash and version are checked."
     },
     {
       "path": ".github/workflows/ci.yml",
