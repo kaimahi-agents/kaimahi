@@ -260,14 +260,17 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 	}
 	type configuration struct {
 		Metadata struct{ Name string }
-		Spec     struct{ Type, Provider, DefaultModel, Model, BaseURL string }
+		Spec     struct {
+			Type, Provider, DefaultModel, Model, BaseURL string
+			Azure                                        struct{ DeploymentName, APIVersion string }
+		}
 	}
 	var list objectList[configuration]
 	if err = decodeConsoleList(raw, &list); err != nil {
 		return snapshot, err
 	}
 	for _, c := range list.Items {
-		snapshot.Sources = append(snapshot.Sources, consoleInferenceSource{Kind: "cluster", Namespace: agent.Namespace, Name: c.Metadata.Name, Model: valueOr(c.Spec.DefaultModel, c.Spec.Model), Provider: valueOr(c.Spec.Type, c.Spec.Provider), Endpoint: c.Spec.BaseURL})
+		snapshot.Sources = append(snapshot.Sources, consoleInferenceSource{Kind: "cluster", Namespace: agent.Namespace, Name: c.Metadata.Name, Model: valueOr(c.Spec.DefaultModel, c.Spec.Model), Provider: valueOr(c.Spec.Type, c.Spec.Provider), Endpoint: c.Spec.BaseURL, AzureDeployment: c.Spec.Azure.DeploymentName, AzureAPIVersion: c.Spec.Azure.APIVersion})
 	}
 	ref := object.Spec.ProviderRef
 	if ref.Namespace != "" && ref.Namespace != agent.Namespace {
@@ -282,7 +285,7 @@ func (a *App) consoleLoadInference(ctx context.Context, env agentTUIEnvironment,
 		if shared.Metadata.Name != ref.Name {
 			return snapshot, fmt.Errorf("shared Provider returned an invalid identity")
 		}
-		snapshot.Sources = append(snapshot.Sources, consoleInferenceSource{Kind: "cluster", Name: ref.Name, Namespace: ref.Namespace, Model: shared.Spec.DefaultModel, Provider: shared.Spec.Type, Endpoint: shared.Spec.BaseURL})
+		snapshot.Sources = append(snapshot.Sources, consoleInferenceSource{Kind: "cluster", Name: ref.Name, Namespace: ref.Namespace, Model: shared.Spec.DefaultModel, Provider: shared.Spec.Type, Endpoint: shared.Spec.BaseURL, AzureDeployment: shared.Spec.Azure.DeploymentName, AzureAPIVersion: shared.Spec.Azure.APIVersion})
 	}
 	saved, err := loadConsoleInference(env, agent)
 	if err != nil {
@@ -307,6 +310,11 @@ func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment,
 	}
 	if err := refuseWizardCredentials(model); err != nil {
 		return err
+	}
+	if source.Kind == "cluster" && source.Provider == "azure-openai" {
+		if err := scaffold.ValidateOrkaProvider(source.Provider, valueOr(model, source.Model), source.Endpoint, source.AzureDeployment, source.AzureAPIVersion); err != nil {
+			return fmt.Errorf("selected cluster Provider: %w", err)
+		}
 	}
 	if source.Kind != "cluster" {
 		if err := source.validate(); err != nil {

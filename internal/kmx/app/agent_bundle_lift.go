@@ -311,6 +311,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 			} `json:"secretRef"`
 		} `json:"spec"`
 		Status struct {
+			Ready      bool              `json:"ready"`
 			Conditions []serverCondition `json:"conditions"`
 		} `json:"status"`
 	}
@@ -323,7 +324,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 			ready = true
 		}
 	}
-	if !ready {
+	if !selected.Status.Ready || !ready {
 		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s is not Ready for its current generation", provider)
 	}
 	// Render defaults an absent key to api-key for shorthand create. A lift

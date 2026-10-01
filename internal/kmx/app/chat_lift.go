@@ -389,11 +389,10 @@ func portableLiftBundle(agent, provider map[string]any, name, namespace string) 
 	ps, _ := provider["spec"].(map[string]any)
 	secret, _ := ps["secretRef"].(map[string]any)
 	bundle := &scaffold.OrkaBundle{Agent: agent, Provider: provider, Secret: map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": secret["name"], "namespace": namespace}}}
-	if err := bundle.Validate(); err != nil {
+	if err := validateAzureLiftModel(bundle.Agent, ps); err != nil {
 		return nil, err
 	}
-	sourceModel, _ := bundle.Provider["spec"].(map[string]any)["defaultModel"].(string)
-	if err := validateAzureLiftModel(bundle.Agent, bundle.Provider["spec"].(map[string]any), sourceModel); err != nil {
+	if err := bundle.Validate(); err != nil {
 		return nil, err
 	}
 	return bundle, nil

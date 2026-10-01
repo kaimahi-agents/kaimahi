@@ -243,7 +243,7 @@ kmx agent create preview --namespace orka-system \
 Namespace, Provider type (`openai|anthropic|azure-openai`), actual model ID and existing Secret
 name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
 not credential values. For native Azure OpenAI, set `--azure-deployment` to the
-same value as `--model` and `--base-url` to the resource root (for example,
+same value as `--model` and `--base-url` to the HTTPS resource root (for example,
 `https://example.openai.azure.com`, **not** `/openai/v1`). Orka v0.2.0 validates
 `Provider.spec.azure.deploymentName`, but its request client addresses the
 Azure deployment using the effective model name. kmx therefore requires them
@@ -253,8 +253,14 @@ deployment. Use `--provider-type openai` instead for the v1-compatible
 the field out, but the Orka CRD can default it on apply. We recommend setting
 `--azure-api-version` explicitly for predictable runtime behavior. For example:
 
+The key file must contain **only the key, with no trailing newline**. Orka
+does not trim it: the Provider can be Ready while every Task fails because the
+key contains a line ending. In Bash or Zsh, this context-pinned command removes
+LF and CRLF line endings without putting the key on the command line or printing it:
+
 ```bash
-kubectl --context <ctx> -n <ns> create secret generic <name> --from-file=api-key=<path>
+kubectl --context <ctx> -n <ns> create secret generic <name> \
+  --from-file=api-key=<(tr -d '\r\n' < <path>)
 kmx --context <ctx> agent create my-azure-agent --namespace <ns> \
   --provider-type azure-openai --model <deployment> --azure-deployment <deployment> \
   --azure-api-version <version> --base-url https://example.openai.azure.com \

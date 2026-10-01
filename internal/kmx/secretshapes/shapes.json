@@ -83,6 +83,22 @@
       "counterexample": ["xapp", "-1-", "short"]
     },
     {
+      "name": "azure-openai-key-hex",
+      "what": "an Azure OpenAI API key",
+      "why": "Azure OpenAI resource keys include an unprefixed 32-character hexadecimal form. Standalone matching avoids treating the random hexadecimal suffix of a generated Task name or half of a longer digest as a key.",
+      "regexp": "(?:^|[^A-Za-z0-9_-])[a-fA-F0-9]{32}(?:$|[^A-Za-z0-9_-])",
+      "example": ["a1b2c3d4", "e5f60718", "a1b2c3d4", "e5f60718"],
+      "counterexample": ["a1b2c3d4", "e5f60718", "a1b2c3d4", "e5f6071"]
+    },
+    {
+      "name": "azure-openai-key-extended",
+      "what": "an extended Azure OpenAI API key",
+      "why": "Extended Azure OpenAI keys can be long, mixed-case base64-like strings with a characteristic JQQJ, AAAB or ACOGk segment. Match the bare key too, so a mistaken model name cannot reach a mismatch diagnostic.",
+      "regexp": "\\b(?:[A-Za-z0-9+/]{0,59}(?:JQQJ|AAAB|ACOGk)[A-Za-z0-9+/]{60,130}|[A-Za-z0-9+/]{30,100}(?:JQQJ|AAAB|ACOGk)[A-Za-z0-9+/]{30,130}|[A-Za-z0-9+/]{60,100}(?:JQQJ|AAAB|ACOGk)[A-Za-z0-9+/]{0,30})={0,2}",
+      "example": ["Aa1bAa1bAa1bAa1b", "Aa1bAa1bAa1bAa1b", "Aa1bAa1bAa1bAa1b", "Aa1bAa1bAa1bAa1b", "JQQJ", "c9Dc9Dc9Dc9Dc9Dc9D"],
+      "counterexample": ["Aa1bAa1bAa1bAa1b", "Aa1bAa1bAa1bAa1b", "Aa1bAa1bAa1bAa1b", "short"]
+    },
+    {
       "name": "azure-devops-pat",
       "what": "an Azure DevOps personal access token",
       "why": "Azure DevOps issues a bare 52-character base32 value with no prefix at all, so this is a shape rule and nothing more: a 52-character run of lowercase letters and the digits 2 to 7, whole-word. It is the loosest rule in this list and the only one that could in principle fire on something that is not a credential; a real hex digest carries 0, 1, 8 or 9 and a base64 value carries uppercase or +/=, so neither matches.",

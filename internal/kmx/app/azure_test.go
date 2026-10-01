@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -78,6 +80,26 @@ func TestAzureAPIKeyConnectorReadsDeploymentAndVersion(t *testing.T) {
 	pane.fields[1].input.SetValue("https://example.openai.azure.com/openai/v1")
 	if err := pane.readFields(); err == nil || !strings.Contains(err.Error(), "use openai") {
 		t.Fatalf("v1 endpoint accepted: %v", err)
+	}
+}
+
+func TestConsoleAzureClusterRefusesDifferentEffectiveModel(t *testing.T) {
+	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
+	env := agentTUIEnvironment{Name: "test"}
+	agent := agentTUIAgent{Name: "sample", Namespace: "orka-system"}
+	for _, tc := range []struct {
+		name, providerDefault, override string
+	}{
+		{"override", "chat-prod", "other-deployment"},
+		{"provider default", "other-deployment", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := consoleInferenceSource{Kind: "cluster", Name: "azure", Provider: "azure-openai", Model: tc.providerDefault, AzureDeployment: "chat-prod", Endpoint: "https://example.openai.azure.com"}
+			err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, tc.override)
+			if err == nil || !strings.Contains(err.Error(), "chat-prod") || !strings.Contains(err.Error(), "other-deployment") || !strings.Contains(err.Error(), "effective model") {
+				t.Fatalf("cluster Provider model mismatch not refused before patch: %v", err)
+			}
+		})
 	}
 }
 

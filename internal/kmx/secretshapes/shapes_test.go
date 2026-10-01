@@ -38,12 +38,32 @@ func TestTheListIsNotEmptyAndNamesTheCredentialsThisProjectActuallyHandles(t *te
 	// The seams this repository has actually run, named so that deleting
 	// one is a test failure rather than a silent narrowing.
 	for _, name := range []string{
-		"anthropic-api-key", "openai-api-key", "kaimahi-credential",
+		"anthropic-api-key", "openai-api-key", "azure-openai-key-hex", "azure-openai-key-extended", "kaimahi-credential",
 		"github-token", "github-fine-grained-token",
 		"slack-token", "slack-app-token", "private-key",
 	} {
 		if !has(all, name) {
 			t.Errorf("shapes.json no longer declares %q", name)
+		}
+	}
+}
+
+func TestAzureOpenAIKeysAreMatchedWithoutContext(t *testing.T) {
+	if match := Match("task-" + strings.Repeat("a1b2", 8)); match != nil {
+		t.Fatalf("generated Task suffix mistaken for an API key: %s", match.Name)
+	}
+	for _, tc := range []struct {
+		name, value string
+	}{
+		{"azure-openai-key-hex", strings.Repeat("a1b2", 8)},
+		{"azure-openai-key-extended", strings.Repeat("Aa1b", 16) + "JQQJ" + strings.Repeat("c9D", 6)},
+		{"azure-openai-key-extended", strings.Repeat("Aa1b", 16) + "ACOGk" + strings.Repeat("c9/", 6) + "=="},
+		{"azure-openai-key-extended", strings.Repeat("Aa1b", 5) + "JQQJ" + strings.Repeat("c9D", 22)},
+		{"azure-openai-key-extended", strings.Repeat("Aa1b", 10) + "AAAB" + strings.Repeat("c9D", 14)},
+	} {
+		match := Match(tc.value)
+		if match == nil || match.Name != tc.name {
+			t.Errorf("%s was not identified: %v", tc.name, match)
 		}
 	}
 }

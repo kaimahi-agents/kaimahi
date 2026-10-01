@@ -55,6 +55,23 @@ func TestAzureLiftPreservesReadyDestinationAndRefusesDifferentDeployment(t *test
 	}
 }
 
+func TestAzureLiftRejectsContradictoryProviderReady(t *testing.T) {
+	for _, plan := range []bool{true, false} {
+		t.Run(map[bool]string{true: "plan", false: "apply"}[plan], func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			t.Setenv("KMX_LIFT_SELECTED_AZURE", "1")
+			t.Setenv("KMX_LIFT_STATUS_NOT_READY", "1")
+			t.Setenv("KMX_LIFT_AZURE_DEPLOYMENT", "gpt-4o-mini")
+			opt.Plan = plan
+			err := a.LiftAgentBundle(opt)
+			if err == nil || !strings.Contains(err.Error(), "not Ready") {
+				t.Fatalf("contradictory Provider readiness accepted: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
+}
+
 func TestAzureStatusIgnoresServerDefaultedAPIVersion(t *testing.T) {
 	a, opt, dir, _, name := bundleStatusFixture(t)
 	binding := agentruntime.OrkaBindings{Namespace: "orka-system", Provider: agentruntime.OrkaProviderBindings{
@@ -89,6 +106,38 @@ func TestAzureStatusIgnoresServerDefaultedAPIVersion(t *testing.T) {
 	}
 	if report.Targets[0].State != bundleStateInSync {
 		t.Fatalf("server default counted as drift: %+v", report.Targets[0])
+	}
+}
+
+func TestAzureChatLiftUsesEffectiveModel(t *testing.T) {
+	source, err := createOrkaBundle(azureCreateOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.Provider["spec"].(map[string]any)["defaultModel"] = "unused-source-default"
+	source.Agent["spec"].(map[string]any)["model"] = map[string]any{"name": "chat-prod"}
+	if _, err := portableLiftBundle(source.Agent, source.Provider, "sample", "orka-system"); err != nil {
+		t.Fatalf("Agent override matching deployment was refused: %v", err)
+	}
+	selected := map[string]any{"type": "azure-openai", "baseURL": "https://example.openai.azure.com", "defaultModel": "unused-target-default", "azure": map[string]any{"deploymentName": "chat-prod"}, "secretRef": map[string]any{"name": "target-key", "key": "api-key"}}
+	if err := useLiftProvider(source, selected); err != nil {
+		t.Fatalf("selected Azure Provider ignored matching Agent override: %v", err)
+	}
+	sourceOtherDefault, err := createOrkaBundle(azureCreateOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceOtherDefault.Provider["spec"].(map[string]any)["defaultModel"] = "unused-source-default"
+	matchingSelected := map[string]any{"type": "azure-openai", "baseURL": "https://example.openai.azure.com", "defaultModel": "chat-prod", "azure": map[string]any{"deploymentName": "chat-prod"}, "secretRef": map[string]any{"name": "target-key", "key": "api-key"}}
+	if err := useLiftProvider(sourceOtherDefault, matchingSelected); err != nil {
+		t.Fatalf("selection compared unused source default instead of selected Provider default: %v", err)
+	}
+	withoutOverride, err := createOrkaBundle(azureCreateOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := useLiftProvider(withoutOverride, selected); err == nil || !strings.Contains(err.Error(), "unused-target-default") || !strings.Contains(err.Error(), "chat-prod") || strings.Contains(err.Error(), "unused-source-default") || !strings.Contains(err.Error(), "effective model") {
+		t.Fatalf("selection did not compare Provider default with deployment: %v", err)
 	}
 }
 

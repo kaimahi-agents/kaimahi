@@ -204,6 +204,9 @@ func ValidateOrkaProvider(providerType, model, baseURL, deployment, version stri
 			return fmt.Errorf("azure deployment and API version require provider type azure-openai")
 		}
 	case "azure-openai":
+		if model != deployment && (secretshapes.Match(model) != nil || secretshapes.Match(deployment) != nil) {
+			return fmt.Errorf("azure-openai model/deployment mismatch: looks like a credential; not shown")
+		}
 		if err := refuseOrkaKeyShapes(model); err != nil {
 			return err
 		}
@@ -228,7 +231,7 @@ func ValidateOrkaProvider(providerType, model, baseURL, deployment, version stri
 			return fmt.Errorf("an explicit Orka Provider model identifier is required")
 		}
 		if model != deployment {
-			return fmt.Errorf("portable model %q differs from Azure deployment %q: a different deployment is a different model; the revision that passed evaluation must be the one that runs", model, deployment)
+			return fmt.Errorf("effective model %q differs from Azure deployment %q: a different deployment is a different model; the revision that passed evaluation must be the one that runs", model, deployment)
 		}
 	default:
 		return fmt.Errorf("an explicit Orka Provider type is required: openai, anthropic or azure-openai")
@@ -247,6 +250,9 @@ func ValidateOrkaProvider(providerType, model, baseURL, deployment, version stri
 		return fmt.Errorf("Orka Provider baseURL must be an absolute HTTP(S) URL with a host and no credentials, query, or fragment")
 	}
 	if providerType == "azure-openai" {
+		if u.Scheme != "https" {
+			return fmt.Errorf("azure-openai baseURL requires HTTPS")
+		}
 		path := strings.TrimRight(u.Path, "/")
 		if strings.HasSuffix(path, "/openai/v1") {
 			return fmt.Errorf("azure-openai needs the resource root, not /openai/v1; use openai for a v1-compatible endpoint")
@@ -351,6 +357,14 @@ func (b *OrkaBundle) Validate() error {
 	providerSpec, _ := b.Provider["spec"].(map[string]any)
 	providerType, _ := providerSpec["type"].(string)
 	model, _ := providerSpec["defaultModel"].(string)
+	if providerType == "azure-openai" {
+		agentSpec, _ := b.Agent["spec"].(map[string]any)
+		if override, ok := agentSpec["model"].(map[string]any); ok {
+			if name, ok := override["name"].(string); ok && name != "" {
+				model = name
+			}
+		}
+	}
 	baseURL, _ := providerSpec["baseURL"].(string)
 	azure, hasAzure := providerSpec["azure"].(map[string]any)
 	if providerSpec["azure"] != nil && !hasAzure {
