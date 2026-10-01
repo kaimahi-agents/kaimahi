@@ -91,10 +91,19 @@ class OrkaHealthToolFixtureTests(unittest.TestCase):
         self.assertEqual(json.loads(call["arguments"]),
                          {"resource": "deployments", "namespace": "orka-system"})
         result = self.post([{"type": "function_call_output",
-                            "output": 'Tool result: {"resource":"deployments","items":[]}'}])
+                            "output": 'Tool result: {"resource":"deployments","items":[{"name":"orka-tool-model","namespace":"orka-system"}]}'}])
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["output"][0]["content"][0]["text"],
                          "Health inventory checked.")
+
+    def test_rejects_missing_live_deployment(self):
+        for items in ([], [{"name": "some-other-deployment", "namespace": "orka-system"}]):
+            with self.subTest(has_other_deployment=bool(items)):
+                payload = json.dumps({"resource": "deployments", "items": items})
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self.post([{"type": "function_call_output", "output": "Tool result: " + payload}])
+                self.assertEqual(caught.exception.code, 500)
+                caught.exception.close()
 
     def test_rejects_unexpected_tool_result(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:

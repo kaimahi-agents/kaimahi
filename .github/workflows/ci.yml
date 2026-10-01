@@ -3150,7 +3150,6 @@ jobs:
           set -euo pipefail
           marker="probe-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
           echo "marker=$marker"
-          echo "TOOL_MARKER=$marker" >> "$GITHUB_ENV"
           kubectl --context kind-kmx-orka -n orka-system create configmap "$marker" --from-literal=probe=1
           # --address pins IPv4: kubectl's default `localhost` can bind the
           # v6 side only while curl talks to 127.0.0.1. The forward's own

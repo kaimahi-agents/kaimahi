@@ -38,8 +38,11 @@ class Handler(BaseHTTPRequestHandler):
                 raw_result = results[-1]["output"]
                 # Orka prefixes the Tool result with a label.
                 result = json.loads(raw_result[raw_result.index("{"):])
-                if result["resource"] != "deployments" or not isinstance(result["items"], list):
-                    raise ValueError("unexpected health inventory")
+                if (result["resource"] != "deployments" or
+                        not isinstance(result["items"], list) or
+                        not any(isinstance(item, dict) and item.get("name") == "orka-tool-model" and
+                                item.get("namespace") == "orka-system" for item in result["items"])):
+                    raise ValueError("health deployment missing")
             except (KeyError, ValueError, TypeError):
                 self.send_json(500, {"error": {"message": "health inventory unavailable"}})
                 return
