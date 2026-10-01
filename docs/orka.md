@@ -186,10 +186,12 @@ used through the interactive chat:
 kmx agent chat --interactive --namespace <ns> <name>
 ```
 
-Orka chat is a session, so a one-shot invocation is refused and names that
-command. A live Agent is edited with `kubectl edit agents.core.orka.ai` and read
-back with `kmx agent show`. No automatic MCP translation, application image
-deployment or governance is added here.
+Orka chat is a session, so a non-interactive invocation is refused. Use
+`kmx agent run --agent <name> --prompt-file -` for a one-shot Task, and
+`kmx task result <task> --wait 5m` to retrieve a later answer. A live Agent is
+edited with `kubectl edit agents.core.orka.ai` and read back with
+`kmx agent show`. No automatic MCP translation, application image deployment
+or governance is added here.
 
 ## The whole journey, from nothing
 
