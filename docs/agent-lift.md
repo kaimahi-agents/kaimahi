@@ -153,9 +153,10 @@ Available; a target missing or rejecting that policy is refused until repaired.
 If a lift refuses despite `Tool/k8s-get-resources` being Available, inspect
 the named policy-reader RoleBinding for the installed chart's actual AI worker
 ServiceAccount and its effective named-policy `get` permission. The refusal
-names the account, namespace, policy and verb. For an explicit denial on the
-built-in policy in `orka-system`, console offers a separately confirmed
-**Prepare target** action to reapply the quickstart Tool's exact grant, then
+names the account, namespace, policy and verb. For a non-allowing review
+(explicit denial or NoOpinion) on the built-in policy in `orka-system`, console
+offers a separately confirmed **Prepare target** action to reapply the
+quickstart Tool's exact grant, then
 rechecks the lift preflight. API failures, indeterminate reviews and custom
 policies are not repair offers. Do not bind a guessed worker, add `list`
 privileges or bypass `--plan`.

@@ -167,7 +167,7 @@ func TestW133LiveTargetRequiresExistingLoopbackContext(t *testing.T) {
 			marker := filepath.Join(dir, "other-kubectl")
 			args := filepath.Join(dir, "args")
 			fakeTool(t, dir, "kubectl", fmt.Sprintf(`printf '%%s\n' "$*" > %[1]q
-if [ "$*" != '--context kind-ci --request-timeout=10s config view -o json' ]; then touch %[2]q; exit 1; fi
+if [ "$*" != '--context kind-ci --request-timeout=10s config view -o json' ]; then : > %[2]q; exit 1; fi
 printf '%%s' %[3]q`, args, marker, tc.config))
 			t.Setenv("PATH", dir)
 			a := &App{Cfg: &config.Config{KubeContext: "kind-ci"}, Run: &run.Runner{}}
@@ -194,7 +194,7 @@ func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			marker := filepath.Join(dir, "cluster-command")
-			fakeTool(t, dir, "kubectl", fmt.Sprintf(`if [ "$*" = '--context kind-ci --request-timeout=10s config view -o json' ]; then printf '%%s' %[1]q; else touch %[2]q; exit 1; fi`, tc.config, marker))
+			fakeTool(t, dir, "kubectl", fmt.Sprintf(`if [ "$*" = '--context kind-ci --request-timeout=10s config view -o json' ]; then printf '%%s' %[1]q; else : > %[2]q; exit 1; fi`, tc.config, marker))
 			t.Setenv("PATH", dir)
 			t.Setenv("KMX_W133_KIND_CONTEXT", "kind-ci")
 			if err := liveInstallQuickstartK8sTool(io.Discard); err == nil {
@@ -210,7 +210,7 @@ func TestW133LiveInstallerRefusesUnverifiedTargetsWithoutWrites(t *testing.T) {
 func TestW133LiveInstallRefusesBeforeKubectl(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "kubectl-invoked")
-	fakeTool(t, dir, "kubectl", "touch '"+marker+"'")
+	fakeTool(t, dir, "kubectl", ": > "+shellArg(marker))
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_W133_KIND_CONTEXT", "kind-")
 	var output bytes.Buffer

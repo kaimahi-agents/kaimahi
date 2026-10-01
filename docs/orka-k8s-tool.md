@@ -111,9 +111,10 @@ bundle `--plan` / deploy and bundle-less live-copy `/lift` check the worker's
 **effective** `get` on that specific policy in the Tool's namespace. A refusal
 names the Tool, worker account, namespace, policy and verb. Neither denied nor
 indeterminate authorization permits broadening the Role or bypassing the check.
-For an **explicit denial** on the quickstart Tool and its built-in policy in
-`orka-system`, the console offers a separately confirmed **Prepare target**
-action to reapply the Tool through kmx, rediscover the current chart account,
+For a **non-allowing review** (explicit denial or NoOpinion) on the quickstart
+Tool and its built-in policy in `orka-system`, the console offers a separately
+confirmed **Prepare target** action to reapply the Tool through kmx, rediscover
+the current chart account,
 and reconcile the single named-policy RoleBinding. API failures, indeterminate
 reviews and custom policies do not offer this repair; investigate them first.
 On an unknown/foreign Orka chart or an unreadable controller/account, verify

@@ -45,6 +45,8 @@ func TestOrkaAIWorkerAccount(t *testing.T) {
 		{"invalid account name", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=INVALID NAME"]`) + ` ]`, `[]`, "", "invalid"},
 		{"duplicate flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","--ai-worker-service-account-name=other"]`) + ` ]`, `[]`, "", "multiple"},
 		{"duplicate split flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","--ai-worker-service-account-name","other"]`) + ` ]`, `[]`, "", "multiple"},
+		{"unsupported split flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name","orka-ai-worker"]`) + ` ]`, `[]`, "", "unsupported split"},
+		{"unsupported single-dash split flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["-ai-worker-service-account-name","orka-ai-worker"]`) + ` ]`, `[]`, "", "unsupported split"},
 		{"duplicate single-dash flag", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker","-ai-worker-service-account-name=other"]`) + ` ]`, `[]`, "", "multiple"},
 		{"absent account", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[]`, "", "ServiceAccount"},
 		{"wrong trust", `[ ` + workerController("controller", chart, "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`) + ` ]`, `[ ` + workerAccount("orka-ai-worker", OrkaNamespace, chart, "orka", "controller") + ` ]`, "", "worker-trust"},

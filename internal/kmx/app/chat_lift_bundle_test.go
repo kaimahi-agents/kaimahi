@@ -332,16 +332,17 @@ func TestInteractiveBundleLiftMissingBundleLabelsUntrackedLegacyRoute(t *testing
 // target Tool and refuse before showing the final deploy action or writing it.
 func TestLiveCopyLiftOffersRepairOnlyForQuickstartPolicyDenial(t *testing.T) {
 	for _, tc := range []struct {
-		name, response, policy string
-		apiFailure, repair     bool
+		name, response, policy      string
+		apiFailure, repair, repoint bool
 	}{
-		{"denied", `{"status":{"allowed":false,"denied":true}}`, quickstartK8sToolPolicy, false, true},
-		{"no opinion", `{"status":{"allowed":false,"denied":false}}`, quickstartK8sToolPolicy, false, true},
-		{"api failure", "", quickstartK8sToolPolicy, true, false},
-		{"evaluation error", `{"status":{"allowed":false,"denied":false,"evaluationError":"cannot decide"}}`, quickstartK8sToolPolicy, false, false},
-		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, quickstartK8sToolPolicy, false, false},
-		{"malformed", `{"status":"invalid"}`, quickstartK8sToolPolicy, false, false},
-		{"custom policy", `{"status":{"allowed":false,"denied":false}}`, "another-policy", false, false},
+		{"denied", `{"status":{"allowed":false,"denied":true}}`, quickstartK8sToolPolicy, false, true, false},
+		{"no opinion", `{"status":{"allowed":false,"denied":false}}`, quickstartK8sToolPolicy, false, true, false},
+		{"repointed before repair", `{"status":{"allowed":false,"denied":false}}`, quickstartK8sToolPolicy, false, false, true},
+		{"api failure", "", quickstartK8sToolPolicy, true, false, false},
+		{"evaluation error", `{"status":{"allowed":false,"denied":false,"evaluationError":"cannot decide"}}`, quickstartK8sToolPolicy, false, false, false},
+		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, quickstartK8sToolPolicy, false, false, false},
+		{"malformed", `{"status":"invalid"}`, quickstartK8sToolPolicy, false, false, false},
+		{"custom policy", `{"status":{"allowed":false,"denied":false}}`, "another-policy", false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
@@ -370,7 +371,13 @@ func TestLiveCopyLiftOffersRepairOnlyForQuickstartPolicyDenial(t *testing.T) {
 			if tc.apiFailure {
 				t.Setenv("KMX_LIFT_POLICY_API_FAIL", "1")
 			}
+			if tc.repoint {
+				t.Setenv("KMX_LIFT_REPOINT_AFTER_PREFLIGHT", "1")
+			}
 			err = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+			if tc.repoint && (err == nil || !strings.Contains(err.Error(), "different cluster")) {
+				t.Fatalf("repointed preparation was not refused: %v", err)
+			}
 			if tc.repair {
 				if err != nil {
 					t.Fatalf("cancelled repair failed: %v", err)

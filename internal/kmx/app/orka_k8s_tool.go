@@ -46,6 +46,7 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 	worker := ""
 	controllers := 0
 	flags := 0
+	splitFlag := false
 	for _, container := range controller.Spec.Template.Spec.Containers {
 		if container.Name != "controller" {
 			continue
@@ -56,10 +57,12 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 			case strings.HasPrefix(arg, flag):
 				flags++
 				worker = strings.TrimPrefix(arg, flag)
-			case arg == "--"+flagName, arg == "-"+flagName,
-				strings.HasPrefix(arg, "-"+flagName+"="):
-				// Go flag parsing accepts split and single-dash forms too. Never
-				// select a name that might differ from the controller's effective one.
+			case arg == "--"+flagName, arg == "-"+flagName:
+				flags++
+				splitFlag = true
+			case strings.HasPrefix(arg, "-"+flagName+"="):
+				// Go flag parsing accepts single-dash forms too. Never select a
+				// name that might differ from the controller's effective one.
 				flags++
 			}
 		}
@@ -69,6 +72,9 @@ func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {
 	}
 	if flags > 1 {
 		return "", fmt.Errorf("Orka controller has multiple %s flags", flag)
+	}
+	if splitFlag {
+		return "", fmt.Errorf("Orka controller has an unsupported split %s flag; use the joined form", flagName)
 	}
 	if flags != 1 || worker == "" {
 		return "", fmt.Errorf("Orka controller must have one nonempty %s flag", flag)
