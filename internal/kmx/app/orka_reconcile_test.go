@@ -103,11 +103,16 @@ func TestReconcileKubectlHelper(t *testing.T) {
 						os.Exit(0)
 					}
 					ready := os.Getenv("KMX_LIFT_MISSING") != "provider-ready"
+					reportedReady := ready && os.Getenv("KMX_LIFT_STATUS_NOT_READY") != "1"
 					key := "api-key"
 					if os.Getenv("KMX_LIFT_MISSING") == "provider-key" {
 						key = ""
 					}
-					fmt.Printf(`{"kind":"Provider","metadata":{"name":%q,"namespace":"orka-system","uid":"inference-uid","generation":1},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"target-default","secretRef":{"name":"target-secret","key":%q}},"status":{"ready":%t,"conditions":[{"type":"Ready","status":%q,"observedGeneration":1}]}}`, name, key, ready, map[bool]string{true: "True", false: "False"}[ready])
+					if os.Getenv("KMX_LIFT_SELECTED_AZURE") == "1" {
+						fmt.Printf(`{"kind":"Provider","metadata":{"name":%q,"namespace":"orka-system","uid":"inference-uid","generation":1},"spec":{"type":"azure-openai","baseURL":"https://target.openai.azure.com","defaultModel":"chat-prod","azure":{"deploymentName":%q,"apiVersion":"2024-02-15-preview"},"secretRef":{"name":"target-secret","key":%q}},"status":{"ready":%t,"conditions":[{"type":"Ready","status":%q,"observedGeneration":1}]}}`, name, getenvLiftTest("KMX_LIFT_AZURE_DEPLOYMENT", "chat-prod"), key, reportedReady, map[bool]string{true: "True", false: "False"}[ready])
+						os.Exit(0)
+					}
+					fmt.Printf(`{"kind":"Provider","metadata":{"name":%q,"namespace":"orka-system","uid":"inference-uid","generation":1},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"target-default","secretRef":{"name":"target-secret","key":%q}},"status":{"ready":%t,"conditions":[{"type":"Ready","status":%q,"observedGeneration":1}]}}`, name, key, reportedReady, map[bool]string{true: "True", false: "False"}[ready])
 					os.Exit(0)
 				}
 			case "tools.core.orka.ai":
@@ -260,6 +265,13 @@ func TestReconcileKubectlHelper(t *testing.T) {
 		// Admission defaults an omitted field on both dry-run and real replace.
 		if defaulted, ok := live["spec"].(map[string]any)["rateLimit"]; ok {
 			call.Document["spec"].(map[string]any)["rateLimit"] = defaulted
+		}
+		if kind == "Provider" {
+			liveAzure, _ := live["spec"].(map[string]any)["azure"].(map[string]any)
+			candidateAzure, _ := call.Document["spec"].(map[string]any)["azure"].(map[string]any)
+			if candidateAzure != nil && liveAzure["apiVersion"] != nil && candidateAzure["apiVersion"] == nil {
+				candidateAzure["apiVersion"] = liveAzure["apiVersion"]
+			}
 		}
 		if slices.Contains(args, "--dry-run=server") {
 			_ = json.NewEncoder(os.Stdout).Encode(call.Document)

@@ -113,11 +113,15 @@ spec:
     key: api-key
 ```
 
-The Secret must be provisioned separately. KMX's `azure-openai` scaffold type is
-currently refused because its legacy deployment/API-version fields are not
-scaffolded; the v1 `openai` configuration above is the appropriate existing route.
-An already-configured local Agent using this Provider can use normal Orka chat
-today. The guided Foundry setup currently lives only in lift.
+The Secret must be provisioned separately. The `openai` configuration above is
+still the route for the v1-compatible `/openai/v1` endpoint. Native Orka
+`azure-openai` instead takes the resource root URL, an Azure deployment and an
+optional API version through `kmx agent create`; see the
+[create guide](kmx.md#kmx-agent-create). The quickstart-wizard's hosted Foundry
+choice continues to use host inference with a local Provider fallback, not a
+native hosted Provider. Its agent-create wizard can author a native Azure
+Provider separately. An already-configured local Agent using the v1 Provider
+can use normal Orka chat. The guided Foundry setup currently lives only in lift.
 
 ## Reuse, then decouple, existing setup
 

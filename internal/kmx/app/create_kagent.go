@@ -93,7 +93,7 @@ func (a *App) createKagentAgent(opt CreateOptions) error {
 func validateKagentCreateOptions(opt *CreateOptions) error {
 	for _, value := range []string{
 		opt.Name, opt.Namespace, opt.Description, opt.ProviderType, opt.Model,
-		opt.BaseURL, opt.Secret, opt.SecretKey, opt.Instructions, opt.InstructionText,
+		opt.BaseURL, opt.AzureDeployment, opt.AzureAPIVersion, opt.Secret, opt.SecretKey, opt.Instructions, opt.InstructionText,
 		opt.Tools, opt.Skills, opt.Task, opt.AgentRequestsPerMinute,
 		opt.AgentTokensPerMinute, opt.ProviderRequestsPerMinute,
 		opt.ProviderTokensPerMinute, opt.ResultServiceAccount, opt.OrkaAPIService,
@@ -127,6 +127,12 @@ func validateKagentCreateOptions(opt *CreateOptions) error {
 	}
 	if opt.SchemaTarget != "" {
 		return fmt.Errorf("--schema-target is Orka-only and is not supported by Kagent create")
+	}
+	if opt.AzureDeployment != "" {
+		return fmt.Errorf("--azure-deployment is Orka-only and is not supported by Kagent create")
+	}
+	if opt.AzureAPIVersion != "" {
+		return fmt.Errorf("--azure-api-version is Orka-only and is not supported by Kagent create")
 	}
 	if opt.ResultServiceAccount != "" {
 		return fmt.Errorf("--result-service-account is Orka-only and is not supported by Kagent create")

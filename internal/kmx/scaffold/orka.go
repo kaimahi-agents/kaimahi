@@ -23,10 +23,10 @@ type OrkaRateLimit struct {
 
 // OrkaSpec describes a native Orka agent, never a credential or application image.
 type OrkaSpec struct {
-	Name, Namespace, Description, ProviderType, Model, BaseURL, SecretName, SecretKey, Instructions string
-	Tools, Skills                                                                                   []string
-	AgentRateLimit, ProviderRateLimit                                                               *OrkaRateLimit
-	TaskPrompt                                                                                      string
+	Name, Namespace, Description, ProviderType, Model, BaseURL, AzureDeployment, AzureAPIVersion, SecretName, SecretKey, Instructions string
+	Tools, Skills                                                                                                                     []string
+	AgentRateLimit, ProviderRateLimit                                                                                                 *OrkaRateLimit
+	TaskPrompt                                                                                                                        string
 }
 
 // OrkaBundle is a review artifact, not a safely bulk-applied transaction.
@@ -56,7 +56,7 @@ var orkaSecretKeyRE = regexp.MustCompile(`^[-._a-zA-Z0-9]+$`)
 // before emission; Validate enforces the stronger, schema-independent invariant.
 func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	inputs := []string{spec.Name, spec.Namespace, spec.Description, spec.ProviderType, spec.Model,
-		spec.BaseURL, spec.SecretName, spec.SecretKey, spec.Instructions, spec.TaskPrompt}
+		spec.BaseURL, spec.AzureDeployment, spec.AzureAPIVersion, spec.SecretName, spec.SecretKey, spec.Instructions, spec.TaskPrompt}
 	inputs = append(inputs, spec.Tools...)
 	inputs = append(inputs, spec.Skills...)
 	for _, input := range inputs {
@@ -70,7 +70,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	if err := ValidateNamespace(spec.Namespace); err != nil {
 		return nil, fmt.Errorf("an explicit Orka namespace is required: %w", err)
 	}
-	if err := ValidateOrkaProvider(spec.ProviderType, spec.Model, spec.BaseURL); err != nil {
+	if err := ValidateOrkaProvider(spec.ProviderType, spec.Model, spec.BaseURL, spec.AzureDeployment, spec.AzureAPIVersion); err != nil {
 		return nil, err
 	}
 	if err := ValidateObjectName(spec.SecretName); err != nil {
@@ -82,7 +82,7 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	if err := ValidateOrkaSecretKey(spec.SecretKey); err != nil {
 		return nil, err
 	}
-	for _, input := range []string{spec.Description, spec.Model, spec.BaseURL} {
+	for _, input := range []string{spec.Description, spec.Model, spec.BaseURL, spec.AzureDeployment, spec.AzureAPIVersion} {
 		if _, err := quote(input); err != nil {
 			return nil, err
 		}
@@ -111,6 +111,13 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 	}
 	if spec.BaseURL != "" {
 		providerSpec["baseURL"] = spec.BaseURL
+	}
+	if spec.ProviderType == "azure-openai" {
+		azure := map[string]any{"deploymentName": spec.AzureDeployment}
+		if spec.AzureAPIVersion != "" {
+			azure["apiVersion"] = spec.AzureAPIVersion
+		}
+		providerSpec["azure"] = azure
 	}
 	agentSpec := map[string]any{
 		"providerRef":  map[string]any{"name": spec.Name, "namespace": spec.Namespace},
@@ -190,13 +197,44 @@ func ValidateOrkaRefNames(field string, refs []string) error {
 
 // ValidateOrkaProvider checks the Provider fields this repository can
 // scaffold. It never echoes baseURL: the URL itself may carry credentials.
-func ValidateOrkaProvider(providerType, model, baseURL string) error {
+func ValidateOrkaProvider(providerType, model, baseURL, deployment, version string) error {
 	switch providerType {
 	case "openai", "anthropic":
+		if deployment != "" || version != "" {
+			return fmt.Errorf("azure deployment and API version require provider type azure-openai")
+		}
 	case "azure-openai":
-		return fmt.Errorf("azure-openai requires separate deployment/version fields that are not scaffolded; use openai or anthropic")
+		if model != deployment && (secretshapes.Match(model) != nil || secretshapes.Match(deployment) != nil) {
+			return fmt.Errorf("azure-openai model/deployment mismatch: looks like a credential; not shown")
+		}
+		if err := refuseOrkaKeyShapes(model); err != nil {
+			return err
+		}
+		if err := refuseOrkaKeyShapes(deployment); err != nil {
+			return err
+		}
+		if err := refuseOrkaKeyShapes(version); err != nil {
+			return err
+		}
+		for _, field := range []string{deployment, version} {
+			if _, err := quote(field); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(deployment) == "" {
+			return fmt.Errorf("azure-openai requires azure deploymentName")
+		}
+		if baseURL == "" {
+			return fmt.Errorf("azure-openai requires resource baseURL")
+		}
+		if strings.TrimSpace(model) == "" {
+			return fmt.Errorf("an explicit Orka Provider model identifier is required")
+		}
+		if model != deployment {
+			return fmt.Errorf("effective model %q differs from Azure deployment %q: a different deployment is a different model; the revision that passed evaluation must be the one that runs", model, deployment)
+		}
 	default:
-		return fmt.Errorf("an explicit Orka Provider type is required: openai or anthropic")
+		return fmt.Errorf("an explicit Orka Provider type is required: openai, anthropic or azure-openai")
 	}
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("an explicit Orka Provider model identifier is required")
@@ -210,6 +248,18 @@ func ValidateOrkaProvider(providerType, model, baseURL string) error {
 		// The URL itself may contain credentials; never echo it, including
 		// through net/url's parse error.
 		return fmt.Errorf("Orka Provider baseURL must be an absolute HTTP(S) URL with a host and no credentials, query, or fragment")
+	}
+	if providerType == "azure-openai" {
+		if u.Scheme != "https" {
+			return fmt.Errorf("azure-openai baseURL requires HTTPS")
+		}
+		path := strings.TrimRight(u.Path, "/")
+		if strings.HasSuffix(path, "/openai/v1") {
+			return fmt.Errorf("azure-openai needs the resource root, not /openai/v1; use openai for a v1-compatible endpoint")
+		}
+		if path != "" {
+			return fmt.Errorf("azure-openai baseURL must be the resource root without a path")
+		}
 	}
 	return nil
 }
@@ -307,8 +357,30 @@ func (b *OrkaBundle) Validate() error {
 	providerSpec, _ := b.Provider["spec"].(map[string]any)
 	providerType, _ := providerSpec["type"].(string)
 	model, _ := providerSpec["defaultModel"].(string)
+	if providerType == "azure-openai" {
+		agentSpec, _ := b.Agent["spec"].(map[string]any)
+		if override, ok := agentSpec["model"].(map[string]any); ok {
+			if name, ok := override["name"].(string); ok && name != "" {
+				model = name
+			}
+		}
+	}
 	baseURL, _ := providerSpec["baseURL"].(string)
-	if err := ValidateOrkaProvider(providerType, model, baseURL); err != nil {
+	azure, hasAzure := providerSpec["azure"].(map[string]any)
+	if providerSpec["azure"] != nil && !hasAzure {
+		return fmt.Errorf("Provider.spec.azure must be a deployment/version mapping")
+	}
+	deployment, _ := azure["deploymentName"].(string)
+	version, _ := azure["apiVersion"].(string)
+	for key, value := range azure {
+		if key != "deploymentName" && key != "apiVersion" {
+			return fmt.Errorf("Provider.spec.azure contains unsupported field")
+		}
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("Provider.spec.azure.%s must be a string", key)
+		}
+	}
+	if err := ValidateOrkaProvider(providerType, model, baseURL, deployment, version); err != nil {
 		return err
 	}
 	secretRef, _ := providerSpec["secretRef"].(map[string]any)

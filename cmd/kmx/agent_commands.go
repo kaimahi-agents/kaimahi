@@ -67,6 +67,14 @@ identifier such as local/qwen2.5:3b, and a separately provisioned Secret are req
 This command does not build or deploy application images. Keep your Deployment
 or chart; use kmx migrate for an existing application's model seam.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
+For azure-openai, --base-url is the HTTPS Azure resource root (not /openai/v1),
+--azure-deployment is required and must equal --model: portable model.name names
+the deployment Orka sends to the Azure SDK. --azure-api-version is optional;
+if unset it is absent from generated YAML. The key file must contain only
+its key, with no trailing newline; Orka does not trim it. In Bash or Zsh,
+provision the existing Secret without printing the key:
+kubectl --context <ctx> -n <ns> create secret generic <name> --from-file=api-key=<(tr -d '\r\n' < <path>)
+Only pass --secret <name> to kmx; never pass the key in command arguments.
 
 With --runtime kagent, create targets a preinstalled exact Kagent v0.10.2 and
 requires a name and --description. --kagent-runtime selects go or python. Kagent tools use exactly
@@ -93,11 +101,13 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "Kagent declarative runtime: go or python")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
-	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai or anthropic (required)")
+	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai, anthropic or azure-openai (required)")
 	cmd.Flags().StringVar(&opt.Model, "model", "", "Provider model identifier (required)")
 	cmd.Flags().StringVar(&opt.Secret, "secret", "", "existing Provider Secret name (required)")
 	cmd.Flags().StringVar(&opt.SecretKey, "secret-key", "api-key", "key name within the existing Secret; never a value")
-	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "optional HTTP(S) Provider endpoint, no credentials/query/fragment")
+	cmd.Flags().StringVar(&opt.BaseURL, "base-url", "", "HTTP(S) Provider endpoint (Azure requires an HTTPS resource root), no credentials/query/fragment")
+	cmd.Flags().StringVar(&opt.AzureDeployment, "azure-deployment", "", "Azure OpenAI deployment name (required for azure-openai; must match --model)")
+	cmd.Flags().StringVar(&opt.AzureAPIVersion, "azure-api-version", "", "Azure OpenAI API version (optional; omitted from YAML when unset)")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
 	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; Kagent: exactly one server:tool1,tool2 binding")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
@@ -117,7 +127,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
 	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
 	_ = cmd.RegisterFlagCompletionFunc("kagent-runtime", staticCompletion([]string{"go", "python"}))
-	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic"}))
+	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic", "azure-openai"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(opt.Runtime) != opt.Runtime {
@@ -140,7 +150,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 				return fmt.Errorf("--kagent-runtime must be go or python")
 			}
 			for _, name := range []string{
-				"skills", "orka-api-service", "result-port", "agent-requests-per-minute",
+				"skills", "azure-deployment", "azure-api-version", "orka-api-service", "result-port", "agent-requests-per-minute",
 				"agent-tokens-per-minute", "provider-requests-per-minute",
 				"provider-tokens-per-minute", "schema-target", "result-service-account",
 			} {

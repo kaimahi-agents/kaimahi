@@ -228,6 +228,8 @@ func TestAgentCreateRuntimeSpecificFlagRefusalsBeforeConfigLoad(t *testing.T) {
 	}{
 		{"Kagent runtime with Orka", append(orkaCreateArgs(), "--kagent-runtime", "python"), "requires --runtime kagent"},
 		{"explicit empty skills with Kagent", append(kagentCreateArgs(), "--skills="), "unsupported"},
+		{"Azure deployment with Kagent", append(kagentCreateArgs(), "--azure-deployment="), "Orka-only"},
+		{"Azure API version with Kagent", append(kagentCreateArgs(), "--azure-api-version="), "Orka-only"},
 		{"Orka service with Kagent", append(kagentCreateArgs(), "--orka-api-service", "other"), "Orka-only"},
 		{"result port with Kagent", append(kagentCreateArgs(), "--result-port", "1234"), "Orka-only"},
 		{"rate flag with Kagent", append(kagentCreateArgs(), "--agent-requests-per-minute="), "unsupported"},

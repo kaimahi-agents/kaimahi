@@ -199,6 +199,7 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 	return scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: opt.Name, Namespace: opt.Namespace, Description: opt.Description,
 		ProviderType: opt.ProviderType, Model: opt.Model, BaseURL: opt.BaseURL,
+		AzureDeployment: opt.AzureDeployment, AzureAPIVersion: opt.AzureAPIVersion,
 		SecretName: opt.Secret, SecretKey: opt.SecretKey, Instructions: instructions,
 		Tools: orkaNameList(opt.Tools), Skills: orkaNameList(opt.Skills), TaskPrompt: opt.Task,
 		AgentRateLimit: agentLimits, ProviderRateLimit: providerLimits,

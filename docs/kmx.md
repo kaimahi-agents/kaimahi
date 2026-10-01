@@ -253,12 +253,38 @@ kmx agent create preview --namespace orka-system \
   --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
 ```
 
-Namespace, Provider type (`openai|anthropic`), actual model ID and existing Secret
+Namespace, Provider type (`openai|anthropic|azure-openai`), actual model ID and existing Secret
 name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
-not credential values. `--instructions` reads a system-prompt file; on this
-default Orka path, `--tools` and `--skills` name Orka references rather than
-`server:tool` selections or translated MCP wiring. Use
-`kmx agent create --help` for all flags and defaults.
+not credential values. For native Azure OpenAI, set `--azure-deployment` to the
+same value as `--model` and `--base-url` to the HTTPS resource root (for example,
+`https://example.openai.azure.com`, **not** `/openai/v1`). Orka v0.2.0 validates
+`Provider.spec.azure.deploymentName`, but its request client addresses the
+Azure deployment using the effective model name. kmx therefore requires them
+to match when authoring; a Task-level model override can still target another
+deployment. Use `--provider-type openai` instead for the v1-compatible
+`/openai/v1` endpoint. `--azure-api-version` is optional; if omitted, kmx leaves
+the field out, but the Orka CRD can default it on apply. We recommend setting
+`--azure-api-version` explicitly for predictable runtime behavior.
+
+The key file must contain **only the key, with no trailing newline**. Orka
+does not trim it: the Provider can be Ready while every Task fails because the
+key contains a line ending. In Bash or Zsh, this context-pinned command removes
+LF and CRLF line endings without putting the key on the command line or printing it:
+
+```bash
+kubectl --context <ctx> -n <ns> create secret generic <name> \
+  --from-file=api-key=<(tr -d '\r\n' < <path>)
+kmx --context <ctx> agent create my-azure-agent --namespace <ns> \
+  --provider-type azure-openai --model <deployment> --azure-deployment <deployment> \
+  --azure-api-version <version> --base-url https://example.openai.azure.com \
+  --secret <name>
+```
+
+The key stays in the file and the existing namespaced Secret; kmx accepts only
+the Secret name/key reference, not key bytes or a key-file flag.
+`--instructions` reads a system-prompt file; `--tools` and `--skills` name Orka
+references on this default Orka path, not Kagent `server:tool` selections or
+translated MCP wiring. Use `kmx agent create --help` for all flags and defaults.
 
 - `--out -` prints rendered YAML only and implies offline; it writes no files
   unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
@@ -273,7 +299,8 @@ default Orka path, `--tools` and `--skills` name Orka references rather than
   `agent.yaml` contains the portable behavior revision (name, description,
   instructions, model, Orka tools, skills and rate limits); `bindings.yaml`
   records **only the creation target** (namespace, Provider type and endpoint,
-  Secret name/key reference, never a value). A future lift will obtain other
+  Azure deployment/optional API version when applicable, Secret name/key reference,
+  never a value). A future lift will obtain other
   targets' bindings from its flags and kmx's local state, not additional bundle
   files. A new bundle also gets one example evaluation case,
   `eval/example.yaml`, for [`kmx agent evaluate`](agent-lift.md#evaluating-a-deployed-revision);
