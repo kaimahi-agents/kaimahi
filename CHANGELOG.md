@@ -25,6 +25,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Added
 
 - `kmx agent run` submits one Task to an already-deployed bundle or live Orka Agent without rewriting its definition or the bundle. It prints only the answer on stdout, reports the Task name and deployed state on stderr, and leaves timed-out Tasks available for later retrieval with `kmx task result`. The latter reads an existing AI Task's phase and answer, optionally waiting for completion. Pending results exit 2; failed or cancelled Tasks exit 1.
+- Documented the current bundle format compatibility rules and pinned historical and current bundles in tests, including strict version/field refusal, portable and rendered digests, and versionless local evidence. See [bundle format compatibility](docs/bundle-format.md).
 
 ## v0.4.1 — 2026-09-30
 
