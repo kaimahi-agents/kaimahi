@@ -42,6 +42,81 @@ func TestRetireDeletesOwnedCreatedObjectsAndRemembersHistory(t *testing.T) {
 	}
 }
 
+func TestRetireRetryClearsSelectionAfterRemovalFailure(t *testing.T) {
+	a, lift, _, _ := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(lift); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := bundleLiftSelectionPath(lift.BundleDir)
+	t.Setenv("KMX_RETIRE_SELECTION_BLOCK", path)
+	opt := RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext}
+	if err := a.RetireAgentBundle(opt); err == nil {
+		t.Fatal("selection removal failure accepted")
+	}
+	t.Setenv("KMX_RETIRE_SELECTION_BLOCK", "")
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", Namespace: OrkaNamespace, ClusterUID: "cluster-uid", Inference: "provider:inference"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.RetireAgentBundle(opt); err != nil {
+		t.Fatalf("retry must clear selection: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("retry left target selection: %v", err)
+	}
+}
+
+func TestRetireResolvesUniqueRecordedNamespaceAfterSelectionCleared(t *testing.T) {
+	bundle := t.TempDir()
+	for _, ns := range []string{"custom"} {
+		writeBundleReceipt(t, bundle, "kind-test", ns, "cluster-uid", "sample", "uncommitted")
+	}
+	ns, err := resolveRetireNamespace(bundle, "kind-test", "", bundleLiftSelection{})
+	if err != nil || ns != "custom" {
+		t.Fatalf("recorded namespace: %q %v", ns, err)
+	}
+	writeBundleReceipt(t, bundle, "kind-test", "other", "cluster-uid", "sample", "uncommitted")
+	if _, err := resolveRetireNamespace(bundle, "kind-test", "", bundleLiftSelection{}); err == nil {
+		t.Fatal("ambiguous namespaces silently selected")
+	}
+	ns, err = resolveRetireNamespace(bundle, "kind-test", "custom", bundleLiftSelection{})
+	if err != nil || ns != "custom" {
+		t.Fatalf("explicit namespace: %q %v", ns, err)
+	}
+}
+
+func TestRetireAlreadyMissingObjectsRecordsCompletionAndForgetsSelection(t *testing.T) {
+	a, lift, dir, _ := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(lift); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"agents", "providers"} {
+		if err := os.Remove(filepath.Join(dir, kind+".core.orka.ai.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selection, _ := bundleLiftSelectionPath(lift.BundleDir)
+	if err := a.RetireAgentBundle(RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(selection); !os.IsNotExist(err) {
+		t.Errorf("remembered target remained: %v", err)
+	}
+	raw, err := os.ReadFile(bundleRetireReceiptPath(lift.BundleDir, "kind-test", OrkaNamespace, "cluster-uid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt bundleRetireReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Complete {
+		t.Fatal("missing-resource retirement was not completed")
+	}
+}
+
 func TestRetirePlanUsesSameInspectionAndWritesNothing(t *testing.T) {
 	a, lift, dir, _ := liftBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
@@ -161,6 +236,30 @@ func TestRetireRefusesForeignAgentWithoutDeletingProvider(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "providers.core.orka.ai.json")); err != nil {
 		t.Fatalf("provider was removed: %v", err)
+	}
+}
+
+func TestRetireDoesNotCompleteWhileDeleteIsPending(t *testing.T) {
+	a, lift, dir, _ := liftBundleFixture(t)
+	if err := a.LiftAgentBundle(lift); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_RETIRE_PERSIST_DELETE_KIND", "agents.core.orka.ai")
+	err := a.RetireAgentBundle(RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext})
+	if err == nil {
+		t.Fatal("pending deletion reported complete")
+	}
+	raw, err := os.ReadFile(bundleRetireReceiptPath(lift.BundleDir, "kind-test", OrkaNamespace, "cluster-uid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt bundleRetireReceipt
+	_ = json.Unmarshal(raw, &receipt)
+	if receipt.Complete {
+		t.Fatal("pending deletion receipt marked complete")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agents.core.orka.ai.json")); err != nil {
+		t.Fatalf("simulated finalizer disappeared: %v", err)
 	}
 }
 

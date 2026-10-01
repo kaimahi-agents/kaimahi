@@ -430,7 +430,7 @@ func (a *App) observeBundleTarget(ctx context.Context, bundle, name, portableDig
 		if retiredReleasedResourcesMatch(bundle, target, uid, name, result) {
 			result.State = bundleStateNotDeployed
 			if result.Agent.Found && !result.Agent.Marked {
-				result.Detail = "unmanaged Agent of that name still exists; a later lift would adopt it"
+				result.Detail = "unmanaged Agent of that name still exists; a later lift would adopt it if its rendered fields remain identical"
 			}
 			return result
 		}

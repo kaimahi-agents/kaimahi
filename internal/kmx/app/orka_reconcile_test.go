@@ -96,6 +96,10 @@ func TestReconcileKubectlHelper(t *testing.T) {
 				w.WriteHeader(http.StatusConflict)
 				return
 			}
+			if os.Getenv("KMX_RETIRE_PERSIST_DELETE_KIND") == kind {
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
 			if os.Remove(filepath.Join(dir, kind+".json")) != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -160,6 +164,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 					uid := getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid")
 					if _, err := os.Stat(filepath.Join(dir, "repointed-after-preflight")); err == nil {
 						uid = "repointed-uid"
+					}
+					if path := os.Getenv("KMX_RETIRE_SELECTION_BLOCK"); path != "" {
+						_ = os.Remove(path)
+						_ = os.Mkdir(path, 0700)
+						_ = os.WriteFile(filepath.Join(path, "block"), nil, 0600)
 					}
 					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, uid)
 					os.Exit(0)
@@ -304,9 +313,12 @@ func TestReconcileKubectlHelper(t *testing.T) {
 			fail()
 		}
 		if len(call.Patch) >= 5 && call.Patch[0]["op"] == "test" && call.Patch[1]["path"] == "/metadata/uid" {
-			if os.Getenv("KMX_RETIRE_FAIL_PATCH_ONCE")==kind {
-				flag:=filepath.Join(dir,"retire-failed-"+kind)
-				if _,err:=os.Stat(flag);os.IsNotExist(err) { _=os.WriteFile(flag,nil,0600); fail() }
+			if os.Getenv("KMX_RETIRE_FAIL_PATCH_ONCE") == kind {
+				flag := filepath.Join(dir, "retire-failed-"+kind)
+				if _, err := os.Stat(flag); os.IsNotExist(err) {
+					_ = os.WriteFile(flag, nil, 0600)
+					fail()
+				}
 			}
 			if call.Patch[0]["value"] != meta["resourceVersion"] || call.Patch[1]["value"] != meta["uid"] {
 				fail()

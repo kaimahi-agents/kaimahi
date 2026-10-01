@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -18,13 +17,14 @@ import (
 // RetireAgentBundleOptions identifies the target whose bundle-owned resources
 // should be removed. The explicit target never falls back to current-context.
 type RetireAgentBundleOptions struct {
-	BundleDir, ToContext string
-	Plan, DeleteAdopted  bool
+	BundleDir, ToContext, ToNamespace string
+	Plan, DeleteAdopted               bool
 }
 
 type retireDecision struct {
 	kind, name, uid, version, action, reason string
 	portableDigest, renderedDigest           string
+	hasOrigin                                bool
 }
 
 type bundleRetireReceipt struct {
@@ -50,6 +50,35 @@ type retireDecisionRecord struct {
 func bundleRetireReceiptPath(bundle, contextName, namespace, clusterUID string) string {
 	key := sha256.Sum256([]byte(contextName + "\x00" + namespace + "\x00" + clusterUID))
 	return filepath.Join(bundle, "receipts", fmt.Sprintf("retire-%x.json", key))
+}
+
+func resolveRetireNamespace(bundle, contextName, explicit string, selection bundleLiftSelection) (string, error) {
+	namespace := explicit
+	if namespace == "" && selection.Context == contextName {
+		namespace = selection.Namespace
+	}
+	if namespace == "" {
+		targets, err := loadBundleReceiptTargets(bundle)
+		if err != nil {
+			return "", err
+		}
+		for _, target := range targets {
+			if target.Context != contextName {
+				continue
+			}
+			if namespace != "" && namespace != target.Namespace {
+				return "", fmt.Errorf("ambiguous recorded namespaces for context %s; specify --to-namespace", contextName)
+			}
+			namespace = target.Namespace
+		}
+	}
+	if namespace == "" {
+		namespace = OrkaNamespace
+	}
+	if scaffold.ValidateNamespace(namespace) != nil {
+		return "", fmt.Errorf("invalid destination namespace")
+	}
+	return namespace, nil
 }
 
 func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
@@ -89,9 +118,9 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 	if contextName == "" {
 		return fmt.Errorf("retire requires --to-context (no target remembered for this bundle)")
 	}
-	namespace := OrkaNamespace
-	if selection.Context == contextName && selection.Namespace != "" {
-		namespace = selection.Namespace
+	namespace, err := resolveRetireNamespace(bundle, contextName, opt.ToNamespace, selection)
+	if err != nil {
+		return err
 	}
 	worker := *a
 	cfg := *a.Cfg
@@ -142,6 +171,9 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 		return err
 	}
 	if retired {
+		if err := clearRetiredSelection(selectionPath, selection, contextName, namespace, uid); err != nil {
+			return err
+		}
 		worker.notef("Agent/%s and Provider/%s already retired; no changes", name, name)
 		return nil
 	}
@@ -202,10 +234,6 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 		worker.notef("Refusal: %v", inspectionErr)
 		return inspectionErr
 	}
-	if partial.Resources == nil && decisions[0].action == "absent" && decisions[1].action == "absent" {
-		worker.notef("Agent/%s and Provider/%s already retired; no changes", name, name)
-		return nil
-	}
 	if err := worker.verifyRetireDependents(ctx, namespace, name, decisions[1].action == "delete"); err != nil {
 		return err
 	}
@@ -247,8 +275,12 @@ func (a *App) RetireAgentBundle(opt RetireAgentBundleOptions) error {
 	if err := writeBundleRetireReceipt(bundle, receipt); err != nil {
 		return fmt.Errorf("resources retired but receipt was not saved: %w", err)
 	}
+	return clearRetiredSelection(selectionPath, selection, contextName, namespace, uid)
+}
+
+func clearRetiredSelection(path string, selection bundleLiftSelection, contextName, namespace, uid string) error {
 	if selection.Context == contextName && selection.Namespace == namespace && selection.ClusterUID == uid {
-		if err := os.Remove(selectionPath); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("resources retired and receipt saved but remembered target was not cleared: %w", err)
 		}
 	}
@@ -385,14 +417,15 @@ func (a *App) inspectRetireObject(ctx context.Context, namespace, kind, name str
 	}
 	owner := obj.Metadata.Annotations[orkaBundleMarker]
 	if owner != name {
-		return d, fmt.Errorf("%s/%s is not owned by this bundle (bundle marker %q)", kind, name, owner)
+		return d, fmt.Errorf("%s/%s is not owned by this bundle (bundle marker differs or is missing)", kind, name)
 	}
 	if !validOrkaMarkerDigest(obj.Metadata.Annotations[orkaPortableMarker]) || !validOrkaMarkerDigest(obj.Metadata.Annotations[orkaRenderedMarker]) {
 		return d, fmt.Errorf("%s/%s has incomplete ownership markers", kind, name)
 	}
 	d.uid, d.version = obj.Metadata.UID, obj.Metadata.ResourceVersion
 	d.portableDigest, d.renderedDigest = obj.Metadata.Annotations[orkaPortableMarker], obj.Metadata.Annotations[orkaRenderedMarker]
-	origin := obj.Metadata.Annotations["kaimahi.dev/origin"]
+	origin, hasOrigin := obj.Metadata.Annotations[orkaOriginMarker]
+	d.hasOrigin = hasOrigin
 	switch origin {
 	case "created":
 		d.action, d.reason = "delete", "origin created"
@@ -428,12 +461,10 @@ func (a *App) applyRetireDecision(ctx context.Context, namespace string, d retir
 	} else {
 		ops := []map[string]any{{"op": "test", "path": "/metadata/resourceVersion", "value": d.version}, {"op": "test", "path": "/metadata/uid", "value": d.uid}}
 		for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, "kaimahi.dev/origin"} {
+			if key == orkaOriginMarker && !d.hasOrigin {
+				continue
+			}
 			ops = append(ops, map[string]any{"op": "remove", "path": "/metadata/annotations/" + orkaAnnotationPointer(key)})
-		}
-		// A legacy object has no origin annotation; omitting its remove operation
-		// keeps the JSON Patch valid without changing any non-kmx metadata.
-		if strings.Contains(d.reason, "legacy") {
-			ops = ops[:len(ops)-1]
 		}
 		raw, _ := json.Marshal(ops)
 		_, err = a.orkaCapture(ctx, nil, "-n", namespace, "patch", orkaPlural(d.kind), d.name, "--type=json", "-p", string(raw))

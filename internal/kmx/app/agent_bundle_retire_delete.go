@@ -86,5 +86,28 @@ func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retire
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("conditional deletion refused (HTTP %d); inspect object version and permissions", response.StatusCode)
 	}
-	return nil
+	waitCtx, stop := context.WithTimeout(ctx, 8*time.Second)
+	defer stop()
+	for {
+		raw, err := a.orkaCapture(waitCtx, nil, "-n", namespace, "get", orkaPlural(d.kind), d.name, "--ignore-not-found=true", "-o", "json")
+		if err != nil {
+			return fmt.Errorf("cannot confirm %s/%s was deleted: %w", d.kind, d.name, err)
+		}
+		if len(raw) == 0 {
+			return nil
+		}
+		var live struct {
+			Metadata struct {
+				UID string `json:"uid"`
+			} `json:"metadata"`
+		}
+		if json.Unmarshal(raw, &live) != nil || live.Metadata.UID != d.uid {
+			return fmt.Errorf("%s/%s changed while waiting for deletion", d.kind, d.name)
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("%s/%s deletion is still pending; retirement remains incomplete", d.kind, d.name)
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }

@@ -7,7 +7,7 @@ func TestAgentRetireCommandFlags(t *testing.T) {
 	if err != nil || cmd == nil || cmd.Name() != "retire" {
 		t.Fatalf("retire command missing: %v", err)
 	}
-	for _, name := range []string{"to-context", "plan", "delete-adopted"} {
+	for _, name := range []string{"to-context", "to-namespace", "plan", "delete-adopted"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing --%s", name)
 		}

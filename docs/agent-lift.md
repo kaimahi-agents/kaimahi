@@ -423,12 +423,15 @@ loopback port-forward; do not grant it more access than needed.
 ## Retiring a bundle from a target
 
 ```console
-kmx agent retire <bundle-dir> [--to-context <ctx>] [--plan] [--delete-adopted]
+kmx agent retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]
 ```
 
 Retire uses the bundle's remembered destination or an explicit context, pins
 kubectl to it, checks cluster identity against the remembered target and lift
 receipts, and applies the remote-context confirmation guard before writing.
+After the remembered target is cleared, it recovers a uniquely recorded
+namespace from lift receipts; if several were used under one context, supply
+`--to-namespace`.
 `--plan` runs the same ownership and dependent inspection as execution and
 reports each proposed deletion or release without changing resources, receipts
 or remembered selection. The selected destination Provider, its Secret, Tools,
@@ -466,7 +469,8 @@ Retire records UID-bound decisions in `receipts/retire-<target>.json` before
 mutation, marks it complete only after both resources have been retired, retains
 the lift receipt as history, and forgets the remembered target once complete.
 Status shows `not deployed`; after a release it also notes that an unmanaged
-Agent of the same name remains and a later lift would adopt it. A repeat retire
+Agent of the same name remains and a later lift would adopt it if its rendered
+fields still match. A repeat retire
 of the same objects is a no-op. A failure after the first mutation can leave a
 partial retirement: inspect and rerun after fixing its cause. The console has
 no retire action; adding one is a separate follow-up.
