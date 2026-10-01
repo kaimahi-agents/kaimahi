@@ -47,7 +47,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   capture are disclosed before the write.
 - A seventh required e2e shard now exercises that create-only contract against
   a disposable kind cluster. CI pulls the official exact-v0.10.2 charts by OCI
-  digest, verifies their normalized chart metadata hashes and versions, and
+  digest, verifies their unpacked chart names and versions, and
   installs them externally as test preconditions, then proves KMX uses neither Helm nor the
   Kagent CLI, gets an exact answer from a keyless in-cluster fixture, and leaves
   live ownership/readiness and a private prompt/answer-free receipt. This is

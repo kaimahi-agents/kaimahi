@@ -344,12 +344,12 @@ def ci_negative_control(text: str) -> bool:
 CRDS_PULL_LINE = (
     f"helm pull oci://ghcr.io/{NAME}-dev/{NAME}/helm/{NAME}-crds@"
     "sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 "
-    '--destination "$charts"'
+    '--untar --untardir "$charts/crds"'
 )
 CHART_PULL_LINE = (
     f"helm pull oci://ghcr.io/{NAME}-dev/{NAME}/helm/{NAME}@"
     "sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 "
-    '--destination "$charts"'
+    '--untar --untardir "$charts/runtime"'
 )
 CRDS_FIXTURE_LINE = (
     f'helm install {NAME}-crds "$crds_chart" '
