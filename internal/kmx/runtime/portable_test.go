@@ -79,16 +79,37 @@ func TestParsePortableCoordination(t *testing.T) {
 func TestParsePortableCoordinationRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, block, want string }{
 		{"unknown", "        enabled: true\n        mystery: true\n", "mystery"},
-		{"namespace", "        enabled: true\n        allowedAgents:\n          - name: helper\n            namespace: elsewhere\n", "namespace"},
+		{"namespace", "        enabled: true\n        allowedAgents:\n          - name: helper\n            namespace: elsewhere\n", "allowedAgents namespace is a creation-target choice"},
+		{"empty allowlist", "        enabled: true\n", "enabled coordination requires at least one allowed agent"},
+		{"explicit empty allowlist", "        enabled: true\n        allowedAgents: []\n", "enabled coordination requires at least one allowed agent"},
+		{"null allowlist", "        enabled: true\n        allowedAgents: null\n", "enabled coordination requires at least one allowed agent"},
+		{"depth too large", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 11\n", "maxDepth must be between 1 and 10"},
+		{"zero depth", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 0\n", "maxDepth must be between 1 and 10"},
 		{"autonomous false", "        enabled: true\n        autonomous: false\n", "autonomous is not supported yet"},
 		{"autonomous true", "        enabled: true\n        autonomous: true\n", "autonomous is not supported yet"},
 		{"no enabled", "        maxDepth: 3\n", "enabled"},
 		{"null enabled", "        enabled: null\n", "enabled"},
-		{"zero concurrency", "        enabled: true\n        maxConcurrentChildren: 0\n", "maxConcurrentChildren must be positive"},
-		{"negative depth", "        enabled: true\n        maxDepth: -1\n", "maxDepth must be positive"},
+		{"zero concurrency", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxConcurrentChildren: 0\n", "maxConcurrentChildren must be positive"},
+		{"negative depth", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: -1\n", "maxDepth must be between 1 and 10"},
 		{"invalid agent name", "        enabled: true\n        allowedAgents:\n          - name: Helper_1\n", "allowedAgents"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { mustNotParse(t, portableWithCoordination(tc.block), tc.want) })
+	}
+}
+
+func TestParsePortableAllowsMaximumCoordinationDepth(t *testing.T) {
+	if _, err := ParsePortableAgent([]byte(portableWithCoordination("        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 10\n"))); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParsePortableAllowsDisabledCoordinationWithoutHelpers(t *testing.T) {
+	agent, err := ParsePortableAgent([]byte(portableWithCoordination("        enabled: false\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Extensions.Orka.Agent.Coordination.Enabled == nil || *agent.Extensions.Orka.Agent.Coordination.Enabled {
+		t.Fatalf("disabled coordination lost: %+v", agent.Extensions.Orka.Agent.Coordination)
 	}
 }
 
@@ -665,6 +686,27 @@ func TestEncodeOrkaShorthandIsDeterministicAndRoundTrips(t *testing.T) {
 	}
 	if orka.Agent == nil || len(orka.Agent.Tools) != 1 || orka.Agent.Tools[0].Name != "web-search" {
 		t.Errorf("round-tripped tools = %+v", orka.Agent)
+	}
+}
+
+func TestEncodeOrkaShorthandRequiresNamedCoordinationTargets(t *testing.T) {
+	s := validShorthand()
+	s.Coordination = true
+	if _, err := EncodeOrkaShorthand(s); err == nil || !strings.Contains(err.Error(), "empty allowedAgents list as any Agent") {
+		t.Fatalf("unrestricted coordination accepted: %v", err)
+	}
+	s.AllowedAgents = []string{"helper", "reviewer"}
+	encoded, err := EncodeOrkaShorthand(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := encoded.Extensions.Orka.Agent.Coordination.AllowedAgents
+	if len(refs) != 2 || refs[0].Name != "helper" || refs[1].Name != "reviewer" {
+		t.Fatalf("allowed agents lost: %+v", refs)
+	}
+	s.Coordination = false
+	if _, err := EncodeOrkaShorthand(s); err == nil || !strings.Contains(err.Error(), "allowed agents require coordination") {
+		t.Fatalf("unused allowed agents silently accepted: %v", err)
 	}
 }
 

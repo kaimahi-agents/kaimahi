@@ -52,22 +52,31 @@ func renderForTest(t *testing.T, opt CreateOptions) (orkaRuntimeAdapter, agentru
 	return adapter, rendered
 }
 
-func TestCreateWizardValidatesCoordinationFlag(t *testing.T) {
+func TestCreateWizardValidatesCoordinationTargets(t *testing.T) {
 	opt := goldenNoTaskCreate("")
 	opt.Coordination = true
+	if _, err := createOrkaBundle(opt); err == nil || !strings.Contains(err.Error(), "empty allowedAgents list as any Agent") {
+		t.Fatalf("wizard allowed unrestricted delegation: %v", err)
+	}
+	opt.AllowedAgents = []string{"helper"}
 	bundle, err := createOrkaBundle(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := bundle.Agent["spec"].(map[string]any)["coordination"]
-	if !reflect.DeepEqual(got, map[string]any{"enabled": true}) {
+	want := map[string]any{"enabled": true, "allowedAgents": []any{map[string]any{"name": "helper"}}}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wizard did not validate requested coordination: %#v", got)
 	}
 }
 
-func TestCreateCoordinationFlagAuthorsEnabledOnly(t *testing.T) {
+func TestCreateCoordinationFlagAuthorsNamedTargetsOnly(t *testing.T) {
 	opt := goldenNoTaskCreate("")
 	opt.Coordination = true
+	if _, err := portableOrkaSource(opt); err == nil || !strings.Contains(err.Error(), "empty allowedAgents list as any Agent") {
+		t.Fatalf("create allowed unrestricted delegation: %v", err)
+	}
+	opt.AllowedAgents = []string{"helper", "reviewer"}
 	source, err := portableOrkaSource(opt)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +86,7 @@ func TestCreateCoordinationFlagAuthorsEnabledOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := portable.Extensions.Orka.Agent.Coordination
-	if c == nil || c.Enabled == nil || !*c.Enabled || len(c.AllowedAgents) != 0 || c.MaxDepth != nil || c.MaxConcurrentChildren != nil {
+	if c == nil || c.Enabled == nil || !*c.Enabled || len(c.AllowedAgents) != 2 || c.AllowedAgents[0].Name != "helper" || c.AllowedAgents[1].Name != "reviewer" || c.MaxDepth != nil || c.MaxConcurrentChildren != nil {
 		t.Fatalf("flag authored unexpected coordination: %+v", c)
 	}
 	_, rendered := renderForTest(t, opt)
@@ -86,7 +95,7 @@ func TestCreateCoordinationFlagAuthorsEnabledOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := objects.Agent["spec"].(map[string]any)["coordination"]
-	if !reflect.DeepEqual(got, map[string]any{"enabled": true}) {
+	if !reflect.DeepEqual(got, map[string]any{"enabled": true, "allowedAgents": []any{map[string]any{"name": "helper"}, map[string]any{"name": "reviewer"}}}) {
 		t.Fatalf("rendered flag: %#v", got)
 	}
 }

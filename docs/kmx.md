@@ -244,9 +244,9 @@ Namespace, Provider type (`openai|anthropic`), actual model ID and existing Secr
 name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
 not credential values. `--instructions` reads a system-prompt file; `--tools` and
 `--skills` name Orka references, not legacy `server:tool` selections or translated
-MCP wiring. `--coordination` puts `enabled: true` in the portable Orka
-extension; edit the bundle to specify allowed helper Agents and delegation
-limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Use
+MCP wiring. `--coordination` requires at least one repeatable `--allowed-agent
+<name>`; both go in the portable Orka extension. Edit the bundle for optional
+delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Use
 `kmx agent create --help` for all flags and defaults.
 
 - `--out -` prints rendered YAML only and implies offline; it writes no files

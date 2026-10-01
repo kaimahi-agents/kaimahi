@@ -197,6 +197,41 @@ func liftBundleWithCoordination(t *testing.T, path string, names ...string) {
 	}
 }
 
+func TestLiftPlanSkipsDisabledAndSelfAllowedAgentPrerequisites(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent string
+		disabled    bool
+	}{
+		{"disabled coordination", "helper", true},
+		{"self delegation", "sample", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			liftBundleWithCoordination(t, opt.BundleDir, tc.agent)
+			if tc.disabled {
+				path := filepath.Join(opt.BundleDir, "agent.yaml")
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				updated := bytes.Replace(source, []byte("enabled: true"), []byte("enabled: false"), 1)
+				if bytes.Equal(source, updated) {
+					t.Fatal("fixture missing enabled flag")
+				}
+				if err := os.WriteFile(path, updated, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("KMX_LIFT_MISSING", "allowed-agent")
+			opt.Plan = true
+			if err := a.LiftAgentBundle(opt); err != nil {
+				t.Fatalf("irrelevant Agent prerequisite refused: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
+}
+
 func TestLiftPlanRefusesMissingAllowedAgentsAndUnsupportedCRD(t *testing.T) {
 	for _, tc := range []struct{ name, missing, want string }{
 		{"missing helpers", "allowed-agent", "helper, other"},

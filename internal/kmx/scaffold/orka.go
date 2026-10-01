@@ -142,6 +142,9 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 		if c.Enabled == nil {
 			return nil, fmt.Errorf("Agent.spec.coordination.enabled is required")
 		}
+		if *c.Enabled && len(c.AllowedAgents) == 0 {
+			return nil, fmt.Errorf("Agent.spec.coordination: enabled coordination requires at least one allowed agent; Orka treats an empty allowedAgents list as any Agent")
+		}
 		coordination := map[string]any{"enabled": *c.Enabled}
 		if len(c.AllowedAgents) > 0 {
 			refs := make([]any, 0, len(c.AllowedAgents))
@@ -158,6 +161,9 @@ func GenerateOrka(spec OrkaSpec) (*OrkaBundle, error) {
 			value *int32
 		}{{"maxConcurrentChildren", c.MaxConcurrentChildren}, {"maxDepth", c.MaxDepth}} {
 			if limit.value != nil {
+				if limit.name == "maxDepth" && (*limit.value < 1 || *limit.value > 10) {
+					return nil, fmt.Errorf("Agent.spec.coordination.maxDepth must be between 1 and 10")
+				}
 				if *limit.value <= 0 {
 					return nil, fmt.Errorf("Agent.spec.coordination.%s must be positive", limit.name)
 				}

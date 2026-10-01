@@ -330,6 +330,26 @@ func TestOrkaTaskEntropyFailure(t *testing.T) {
 	}
 }
 
+func TestOrkaCoordinationRefusesUnrestrictedDelegation(t *testing.T) {
+	s := orkaSpec()
+	enabled := true
+	s.Coordination = &OrkaCoordination{Enabled: &enabled}
+	if _, err := GenerateOrka(s); err == nil || !strings.Contains(err.Error(), "empty allowedAgents list as any Agent") {
+		t.Fatalf("unsafe coordination accepted: %v", err)
+	}
+	enabled = false
+	if _, err := GenerateOrka(s); err != nil {
+		t.Fatalf("disabled coordination should not require helpers: %v", err)
+	}
+	enabled = true
+	s.Coordination.AllowedAgents = []string{"helper"}
+	depth := int32(11)
+	s.Coordination.MaxDepth = &depth
+	if _, err := GenerateOrka(s); err == nil || !strings.Contains(err.Error(), "between 1 and 10") {
+		t.Fatalf("unsupported depth accepted: %v", err)
+	}
+}
+
 func TestOrkaCoordinationRendersOnlyAuthoredFields(t *testing.T) {
 	s := orkaSpec()
 	bare, err := GenerateOrka(s)

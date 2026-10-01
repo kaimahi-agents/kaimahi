@@ -5,6 +5,7 @@ package app
 type CreateOptions struct {
 	Name, Namespace, Description, ProviderType, Model, BaseURL, Secret, SecretKey string
 	Instructions, InstructionText, Tools, Skills, Task                            string
+	AllowedAgents                                                                 []string
 	AgentRequestsPerMinute, AgentTokensPerMinute                                  string
 	ProviderRequestsPerMinute, ProviderTokensPerMinute                            string
 	ResultServiceAccount, OrkaAPIService, ResultPort, SchemaTarget                string

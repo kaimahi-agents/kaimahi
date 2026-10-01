@@ -384,6 +384,10 @@ func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *
 func (a *App) liftAllowedAgentsPresent(ctx context.Context, namespace string, bundle *scaffold.OrkaBundle) error {
 	spec, _ := bundle.Agent["spec"].(map[string]any)
 	coordination, _ := spec["coordination"].(map[string]any)
+	if coordination["enabled"] != true {
+		return nil
+	}
+	self := orkaObjectName(bundle.Agent)
 	refs, _ := coordination["allowedAgents"].([]any)
 	var missing []string
 	seen := make(map[string]bool)
@@ -393,7 +397,7 @@ func (a *App) liftAllowedAgentsPresent(ctx context.Context, namespace string, bu
 		if name == "" {
 			return fmt.Errorf("rendered Agent has invalid allowed Agent reference")
 		}
-		if seen[name] {
+		if name == self || seen[name] {
 			continue
 		}
 		seen[name] = true

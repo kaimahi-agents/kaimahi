@@ -108,8 +108,8 @@ type OrkaCoordination struct {
 	MaxDepth              *int32         `yaml:"maxDepth,omitempty"`
 }
 
-// OrkaNamedRef is one Orka tool or skill reference: an explicit name, never
-// server:tool syntax or an inline definition.
+// OrkaNamedRef carries an explicit name for a tool, skill, or allowed Agent.
+// Its containing field determines which resource kind that name identifies.
 type OrkaNamedRef struct {
 	Name string `yaml:"name"`
 }
@@ -173,6 +173,13 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	}
 	if portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination", "autonomous") != nil {
 		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination.autonomous is not supported yet")
+	}
+	if refs := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination", "allowedAgents"); refs != nil && refs.Kind == yaml.SequenceNode {
+		for i, entry := range refs.Content {
+			if portableValueAt(entry, "namespace") != nil {
+				return nil, fmt.Errorf("portable agent document: allowedAgents namespace is a creation-target choice; remove namespace from entry %d", i)
+			}
+		}
 	}
 
 	strict := yaml.NewDecoder(bytes.NewReader(data))
@@ -365,6 +372,9 @@ func (e *OrkaExtension) validate() error {
 		if c.Enabled == nil {
 			return fmt.Errorf("agent.coordination.enabled is required when coordination is stated")
 		}
+		if *c.Enabled && len(c.AllowedAgents) == 0 {
+			return fmt.Errorf("agent.coordination: enabled coordination requires at least one allowed agent; Orka treats an empty allowedAgents list as any Agent")
+		}
 		for i, ref := range c.AllowedAgents {
 			if err := scaffold.ValidateName(ref.Name); err != nil {
 				return fmt.Errorf("agent.coordination.allowedAgents[%d].name: %w", i, err)
@@ -373,8 +383,8 @@ func (e *OrkaExtension) validate() error {
 		if c.MaxConcurrentChildren != nil && *c.MaxConcurrentChildren <= 0 {
 			return fmt.Errorf("agent.coordination.maxConcurrentChildren must be positive")
 		}
-		if c.MaxDepth != nil && *c.MaxDepth <= 0 {
-			return fmt.Errorf("agent.coordination.maxDepth must be positive")
+		if c.MaxDepth != nil && (*c.MaxDepth < 1 || *c.MaxDepth > 10) {
+			return fmt.Errorf("agent.coordination.maxDepth must be between 1 and 10")
 		}
 	}
 	return nil
@@ -396,8 +406,8 @@ func (l *OrkaRateLimit) validate() error {
 }
 
 // refusePortableInvalidUTF8 rejects a decoded string that is not valid
-// UTF-8. It walks every string field this closed schema models, tools and
-// skills slices included, so nothing decoded from a document can carry
+// UTF-8. It walks every string field this closed schema models, including
+// tools, skills and allowed Agents, so nothing decoded can carry
 // binary content past this point. The error names the field, never the
 // value: the value is exactly what is refused for not being displayable
 // text, so quoting it would defeat the refusal.
@@ -515,7 +525,7 @@ func refusePortableSecretShape(value string) error {
 type OrkaShorthand struct {
 	Name, Namespace, Instructions, Description          string
 	ProviderType, Model, BaseURL, SecretName, SecretKey string
-	Tools, Skills                                       []string
+	Tools, Skills, AllowedAgents                        []string
 	Coordination                                        bool
 	ProviderRateLimit, AgentRateLimit                   *OrkaRateLimit
 }
@@ -549,6 +559,9 @@ func cloneOrkaRateLimit(limit *OrkaRateLimit) *OrkaRateLimit {
 // The revision is validated by the authored-document rules; target fields
 // are validated separately before either can be quoted in an error.
 func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
+	if !s.Coordination && len(s.AllowedAgents) > 0 {
+		return nil, fmt.Errorf("allowed agents require coordination")
+	}
 	agent := &PortableAgent{
 		APIVersion: PortableAPIVersion,
 		Kind:       PortableKind,
@@ -572,6 +585,9 @@ func EncodeOrkaShorthand(s OrkaShorthand) (*PortableAgent, error) {
 		if s.Coordination {
 			enabled := true
 			block.Coordination = &OrkaCoordination{Enabled: &enabled}
+			for _, name := range s.AllowedAgents {
+				block.Coordination.AllowedAgents = append(block.Coordination.AllowedAgents, OrkaNamedRef{Name: name})
+			}
 		}
 		for _, name := range s.Tools {
 			block.Tools = append(block.Tools, OrkaNamedRef{Name: name})

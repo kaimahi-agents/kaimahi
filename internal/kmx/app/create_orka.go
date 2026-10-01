@@ -197,9 +197,12 @@ func createOrkaBundle(opt CreateOptions) (*scaffold.OrkaBundle, error) {
 		return nil, err
 	}
 	var coordination *scaffold.OrkaCoordination
+	if !opt.Coordination && len(opt.AllowedAgents) > 0 {
+		return nil, fmt.Errorf("allowed agents require coordination")
+	}
 	if opt.Coordination {
 		enabled := true
-		coordination = &scaffold.OrkaCoordination{Enabled: &enabled}
+		coordination = &scaffold.OrkaCoordination{Enabled: &enabled, AllowedAgents: append([]string(nil), opt.AllowedAgents...)}
 	}
 	return scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: opt.Name, Namespace: opt.Namespace, Description: opt.Description,

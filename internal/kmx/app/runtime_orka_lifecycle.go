@@ -705,6 +705,7 @@ func portableOrkaSource(opt CreateOptions) ([]byte, error) {
 		Tools:             orkaNameList(opt.Tools),
 		Skills:            orkaNameList(opt.Skills),
 		Coordination:      opt.Coordination,
+		AllowedAgents:     append([]string(nil), opt.AllowedAgents...),
 		AgentRateLimit:    orkaRateLimitExtension(agentLimits),
 		ProviderRateLimit: orkaRateLimitExtension(providerLimits),
 	})
