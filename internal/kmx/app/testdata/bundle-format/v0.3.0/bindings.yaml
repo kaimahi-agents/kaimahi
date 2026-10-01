@@ -1,0 +1,10 @@
+# Creation target only; other targets supply their own bindings.
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: OrkaBindings
+namespace: orka-system
+provider:
+    type: openai
+    baseURL: https://models.example.invalid/v1
+    secretRef:
+        name: fixture-secret
+        key: api-key

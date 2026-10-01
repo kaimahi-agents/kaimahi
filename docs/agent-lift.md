@@ -17,7 +17,8 @@ The bundle contains `agent.yaml` (the portable definition) and
 `RenderOrkaBundleFile`. It does not copy a Secret or take inference from the
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
-the target-specific rendering.
+the target-specific rendering. See [bundle format compatibility](bundle-format.md)
+for accepted versions, strict decoding and cross-version behavior.
 
 ## Coordination in `agent.yaml`
 
