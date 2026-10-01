@@ -44,7 +44,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (28 files) | **Installed** | CLI and tests: Orka operations, bundle lift, status, evaluation and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (29 files) | **Installed** | CLI and tests: Orka operations, bundle lift, status, evaluation and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 

@@ -330,6 +330,52 @@ func TestOrkaTaskEntropyFailure(t *testing.T) {
 	}
 }
 
+func TestOrkaCoordinationRefusesUnrestrictedDelegation(t *testing.T) {
+	s := orkaSpec()
+	enabled := true
+	s.Coordination = &OrkaCoordination{Enabled: &enabled}
+	if _, err := GenerateOrka(s); err == nil || !strings.Contains(err.Error(), "empty allowedAgents list as any Agent") {
+		t.Fatalf("unsafe coordination accepted: %v", err)
+	}
+	enabled = false
+	if _, err := GenerateOrka(s); err != nil {
+		t.Fatalf("disabled coordination should not require helpers: %v", err)
+	}
+	enabled = true
+	s.Coordination.AllowedAgents = []string{"helper"}
+	depth := int32(11)
+	s.Coordination.MaxDepth = &depth
+	if _, err := GenerateOrka(s); err == nil || !strings.Contains(err.Error(), "between 1 and 10") {
+		t.Fatalf("unsupported depth accepted: %v", err)
+	}
+}
+
+func TestOrkaCoordinationRendersOnlyAuthoredFields(t *testing.T) {
+	s := orkaSpec()
+	bare, err := GenerateOrka(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := bare.Agent["spec"].(map[string]any)["coordination"]; ok {
+		t.Fatal("omitted coordination was rendered")
+	}
+	child, depth := int32(2), int32(4)
+	enabled := true
+	s.Coordination = &OrkaCoordination{Enabled: &enabled, AllowedAgents: []string{"helper"}, MaxConcurrentChildren: &child, MaxDepth: &depth}
+	bundle, err := GenerateOrka(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := bundle.Agent["spec"].(map[string]any)["coordination"].(map[string]any)
+	if !ok || len(c) != 4 || c["enabled"] != true || c["maxConcurrentChildren"] != int32(2) || c["maxDepth"] != int32(4) {
+		t.Fatalf("coordination = %#v", c)
+	}
+	refs, ok := c["allowedAgents"].([]any)
+	if !ok || len(refs) != 1 || !reflect.DeepEqual(refs[0], map[string]any{"name": "helper"}) {
+		t.Fatalf("refs = %#v", c["allowedAgents"])
+	}
+}
+
 func TestOrkaRateLimitsAreExplicitPositiveAndLossless(t *testing.T) {
 	var rpm int32 = math.MaxInt32
 	var tpm int64 = math.MaxInt64

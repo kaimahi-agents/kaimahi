@@ -20,6 +20,56 @@ and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering. See [bundle format compatibility](bundle-format.md)
 for accepted versions, strict decoding and cross-version behavior.
 
+## Coordination in `agent.yaml`
+
+A coordinator's delegation policy is portable behavior, not a destination
+binding. For example, after creating a helper bundle and a coordinator bundle,
+edit the coordinator's `agent.yaml` to include:
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: coordinator
+spec:
+  instructions: Delegate the calculation to helper, then summarize its answer.
+  model:
+    name: qwen2.5:3b
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+    agent:
+      coordination:
+        enabled: true
+        allowedAgents:
+          - name: helper
+        maxConcurrentChildren: 2
+        maxDepth: 2
+```
+
+`enabled` is required when the block is present. With `enabled: true`, list at
+least one allowed Agent: Orka's AI worker treats an empty list as permission to
+delegate to **any** Agent. `maxConcurrentChildren` must be positive and
+`maxDepth` must be 1–10. Omitting the block renders no `spec.coordination`;
+omitting the limits lets Orka supply its defaults of **5 concurrent children**
+and **depth 3**. kmx does not insert those defaults in the rendered Agent.
+`allowedAgents` entries contain names only: when coordination is enabled, lift
+looks for each Agent other than the coordinator itself in the **destination
+Agent's namespace** and refuses a plan if any is absent. A `namespace` in an
+entry is refused because the namespace belongs to the destination, not the
+portable definition. Lift also refuses a target whose installed Agent CRD does
+not support coordination. The upstream `autonomous` field is not supported yet:
+it starts a repeated Job loop and needs a separate design.
+
+`kmx agent create --coordination --allowed-agent helper` authors `enabled: true`
+and the named helper; repeat `--allowed-agent` for additional helpers. Edit the
+bundle for optional limits. Lift the helper before the coordinator. The pinned
+Orka installation binds delegation worker RBAC only in its release namespace
+(`orka-system`); kmx does not grant coordination worker permissions in another
+namespace. Editing coordination changes the exact-source portable digest; a
+lift updates the owned Agent and status reports cluster-side edits as drift
+when the live portable digest still matches the bundle.
+
 ## From create to evaluation
 
 For a local Ollama creation target that already has Orka, the namespace and a

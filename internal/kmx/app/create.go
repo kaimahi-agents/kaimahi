@@ -5,11 +5,12 @@ package app
 type CreateOptions struct {
 	Name, Namespace, Description, ProviderType, Model, BaseURL, AzureDeployment, AzureAPIVersion, Secret, SecretKey string
 	Instructions, InstructionText, Tools, Skills, Task                                                              string
+	AllowedAgents                                                                                                   []string
 	AgentRequestsPerMinute, AgentTokensPerMinute                                                                    string
 	ProviderRequestsPerMinute, ProviderTokensPerMinute                                                              string
 	ResultServiceAccount, OrkaAPIService, ResultPort, SchemaTarget                                                  string
 	Out, BundlePath                                                                                                 string
-	NoApply, DryRun                                                                                                 bool
+	NoApply, DryRun, Coordination                                                                                   bool
 	// Resolved before entering raw terminal mode. Keep the original flags and
 	// distinguish an empty file from an instruction source not yet read.
 	instructionFileText *string
