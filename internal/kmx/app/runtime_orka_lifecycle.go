@@ -105,7 +105,7 @@ func (a orkaRuntimeAdapter) renderOrka(prepared *agentruntime.PreparedPortableRe
 	if err := a.lifecycleVerbError(a.Capabilities().Render, agentruntime.VerbRender); err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
-	portable, source, err := prepared.ForAdapter(a.ID())
+	portable, source, err := prepared.ForAdapter(a)
 	if err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}

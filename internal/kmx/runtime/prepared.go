@@ -2,14 +2,16 @@ package runtime
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
 // PreparedPortableRender carries source bytes validated for one target. Its
 // private fields prevent callers from supplying unchecked behavior to Render.
 type PreparedPortableRender struct {
-	source []byte
-	target ID
+	source   []byte
+	target   ID
+	consumed []ID
 }
 
 // PreparePortableRender validates authored bytes and refuses behavior in any
@@ -22,8 +24,9 @@ func PreparePortableRender(source []byte, adapter LifecycleAdapter) (*PreparedPo
 	if err != nil {
 		return nil, err
 	}
-	consumes := make(map[ID]bool)
-	for _, extension := range adapter.ConsumedExtensions() {
+	declared := sortedConsumedExtensions(adapter.ConsumedExtensions())
+	consumes := make(map[ID]bool, len(declared))
+	for _, extension := range declared {
 		consumes[extension] = true
 	}
 	var paths []string
@@ -55,7 +58,13 @@ func PreparePortableRender(source []byte, adapter LifecycleAdapter) (*PreparedPo
 	if len(paths) != 0 {
 		return nil, fmt.Errorf("runtime %s cannot honor behavior in %s", adapter.ID(), strings.Join(paths, ", "))
 	}
-	return &PreparedPortableRender{source: agent.Source(), target: adapter.ID()}, nil
+	return &PreparedPortableRender{source: agent.Source(), target: adapter.ID(), consumed: declared}, nil
+}
+
+func sortedConsumedExtensions(extensions []ID) []ID {
+	result := slices.Clone(extensions)
+	slices.Sort(result)
+	return slices.Compact(result)
 }
 
 func hasOrkaLimit(limit *OrkaRateLimit) bool {
@@ -64,12 +73,12 @@ func hasOrkaLimit(limit *OrkaRateLimit) bool {
 
 // ForAdapter returns independent copies of the checked document and exact
 // source. A nil, zero-value or wrong-target preparation cannot be rendered.
-func (p *PreparedPortableRender) ForAdapter(target ID) (*PortableAgent, []byte, error) {
-	if p == nil || p.target == "" || len(p.source) == 0 {
+func (p *PreparedPortableRender) ForAdapter(adapter LifecycleAdapter) (*PortableAgent, []byte, error) {
+	if p == nil || p.target == "" || len(p.source) == 0 || adapter == nil {
 		return nil, nil, fmt.Errorf("render requires a prepared portable document")
 	}
-	if p.target != target {
-		return nil, nil, fmt.Errorf("portable document prepared for %s, not %s", p.target, target)
+	if p.target != adapter.ID() || !slices.Equal(p.consumed, sortedConsumedExtensions(adapter.ConsumedExtensions())) {
+		return nil, nil, fmt.Errorf("portable document was not prepared for this runtime and its consumed extensions")
 	}
 	agent, err := ParsePortableAgent(p.source)
 	if err != nil {

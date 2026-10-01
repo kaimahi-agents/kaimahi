@@ -26,7 +26,7 @@ func (exampleAdapter) Open(context.Context, Target) (Session, error) { return ni
 func (a exampleAdapter) Capabilities() Capabilities                  { return a.capabilities }
 func (exampleAdapter) ConsumedExtensions() []ID                      { return nil }
 func (a exampleAdapter) Render(_ context.Context, prepared *PreparedPortableRender, _ RenderOptions) (RenderedBundle, error) {
-	agent, source, err := prepared.ForAdapter(a.ID())
+	agent, source, err := prepared.ForAdapter(a)
 	if err != nil {
 		return RenderedBundle{}, err
 	}
@@ -152,13 +152,13 @@ func TestPreparedPortableRenderProtectsSourceAndBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 	original[0] = 'X'
-	first, copyOfSource, err := prepared.ForAdapter(testRuntime)
+	first, copyOfSource, err := prepared.ForAdapter(exampleAdapter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	first.Spec.Instructions = "altered"
 	copyOfSource[0] = 'X'
-	second, source, err := prepared.ForAdapter(testRuntime)
+	second, source, err := prepared.ForAdapter(exampleAdapter{})
 	if err != nil {
 		t.Fatal(err)
 	}

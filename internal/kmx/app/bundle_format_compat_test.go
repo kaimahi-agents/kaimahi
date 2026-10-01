@@ -133,6 +133,28 @@ extensions:
 	}
 }
 
+type overclaimingOrkaAdapter struct{ orkaRuntimeAdapter }
+
+func (overclaimingOrkaAdapter) ConsumedExtensions() []agentruntime.ID {
+	return []agentruntime.ID{agentruntime.Orka, agentruntime.Kagent}
+}
+
+func TestPreparedRenderCannotMoveBetweenSameIDAdaptersWithDifferentConsumption(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "kagent", "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := orkaBindingsFromCreate(goldenNoTaskCreate(""))
+	orka := orkaRuntimeAdapter{create: &CreateOptions{}, bindings: &bindings}
+	prepared, err := agentruntime.PreparePortableRender(source, overclaimingOrkaAdapter{orka})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := orka.Render(t.Context(), prepared, agentruntime.RenderOptions{}); err == nil || !strings.Contains(err.Error(), "prepared") {
+		t.Fatalf("Orka rendered a document prepared under a different extension declaration: %v", err)
+	}
+}
+
 func TestBundleFormatRefusesNewerVersionsAndUnknownFields(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "main", "agent.yaml"))
 	if err != nil {
