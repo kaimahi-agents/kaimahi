@@ -1,8 +1,9 @@
 # Bundle format compatibility
 
 A bundle's portable definition is `agent.yaml`; `bindings.yaml` describes its
-creation target, `eval/*.yaml` holds optional tests, and `receipts/` holds local
-deployment and evaluation evidence. kmx is pre-1.0: these are the rules of the
+creation target, `eval/*.yaml` holds optional tests, `lift-policy.yaml` can
+require evaluation before lift, and `receipts/` holds local deployment and
+evaluation evidence. kmx is pre-1.0: these are the rules of the
 current reader, not a guarantee that every pre-1.0 release can read every
 other release's output.
 
@@ -13,10 +14,12 @@ other release's output.
 | `agent.yaml` | Exactly one `kmx.kaimahi.dev/v1alpha1` `PortableAgent`, with the required `extensions.orka.apiVersion: core.orka.ai/v1alpha1`. No other document or Orka extension version is accepted. |
 | `bindings.yaml` | Creation-target `kmx.kaimahi.dev/v1alpha1` `OrkaBindings`; lift supplies new target bindings rather than copying these. |
 | `eval/*.yaml` | One case per file (`id`, `input`, non-empty `expectContains`); **no** `apiVersion` field. |
+| `lift-policy.yaml` | Optional strict YAML mapping of destination and evaluated cluster UID/namespace rules; **no** `apiVersion` field. See [the evaluation gate](agent-lift.md#requiring-evaluation-before-lift). |
 | Lift/evaluation receipts and remembered target | JSON with **no** format-version field or version negotiation. Remembered selections live in local kmx state, outside the bundle and Git. |
 
-`agent.yaml` and evaluation cases use strict YAML decoding: an unknown field
-(including a future optional field) is an error, not silently discarded. A
+`agent.yaml`, evaluation cases and a present `lift-policy.yaml` use strict
+YAML decoding: an unknown field (including a future optional field) is an
+error, not silently discarded. A
 future document or extension `apiVersion` is also refused with the required and
 found versions. `bindings.yaml` is strictly decoded too. An older kmx thus
 refuses a newer bundle that uses fields it does not know, even if its
@@ -33,8 +36,8 @@ The **portable digest** identifies the exact authored bytes of `agent.yaml`,
 including comments, whitespace and trailing newline. kmx hashes a framed
 entry—`portable-agent.yaml`, a space, the decimal byte length, a newline, the
 file bytes and a final newline—with SHA-256. It is not the bare SHA-256 of the
-file or a hash of decoded YAML. Target bindings, evaluation cases and receipts
-are outside this digest. An upgrade that leaves `agent.yaml` untouched cannot
+file or a hash of decoded YAML. Target bindings, evaluation cases, lift policy
+and receipts are outside this digest. An upgrade that leaves `agent.yaml` untouched cannot
 change its portable digest under this format's digest rule.
 
 The **rendered digest** instead identifies the exact ordered rendered documents
@@ -62,8 +65,8 @@ prior evaluation result for that set. JSON receipts and the remembered target
 have no schema version. Unknown JSON keys are tolerated, not interpreted as
 new behavior; there is no general migration or cross-version compatibility
 promise for local evidence. Status skips malformed deployment receipts,
-counts a malformed or mismatched evaluation receipt as `none`, and a malformed
-remembered selection is refused as ambiguous. Status checks target identity
+counts a malformed, incomplete or mismatched evaluation receipt as `none`,
+and a malformed remembered selection is refused as ambiguous. Status checks target identity
 and recorded digests before counting evidence; another kmx version's readable
 receipt does not by itself establish that today's bundle or target was tested.
 

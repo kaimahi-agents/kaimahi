@@ -151,6 +151,27 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 
 // Removing the bundle route must make this test attempt to copy a live Agent
 // instead of stopping safely at the read-only plan review.
+func TestInteractiveBundleLiftGatePrecedesPreparation(t *testing.T) {
+	b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r")
+	gatePolicy(t, opt.BundleDir, "cluster-uid", "staging-uid")
+	t.Setenv("KMX_LIFT_MISSING", "controller")
+	err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+	if err == nil || !strings.Contains(err.Error(), "no evaluation receipt") {
+		t.Fatalf("console offered preparation before gate refusal: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestInteractiveBundleLiftRefusesFailedEvaluationGate(t *testing.T) {
+	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r")
+	gatePolicy(t, opt.BundleDir, "cluster-uid", "staging-uid")
+	err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
+	if err == nil || !strings.Contains(err.Error(), "no evaluation receipt") {
+		t.Fatalf("console omitted gate condition: %v; %s", err, out.String())
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
 func TestInteractiveBundleLiftPlanCancelIsReadOnly(t *testing.T) {
 	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
 	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {

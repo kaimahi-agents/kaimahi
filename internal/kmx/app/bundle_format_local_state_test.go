@@ -42,8 +42,8 @@ func TestBundleLocalStateDoesNotNegotiateFormatVersions(t *testing.T) {
 	target := bundleTargetStatus{Context: "ctx", Namespace: "orka-system", ObservedClusterUID: "cluster", LiveDigest: "portable", Agent: bundleResourceStatus{UID: "agent"}}
 	path := bundleEvaluationReceiptPath(bundle, "ctx", "orka-system", "cluster")
 	write(path, `{"formatVersion":99,"portableDigest":"portable","casesDigest":"cases","target":{"context":"ctx","namespace":"orka-system","agentUID":"agent"},"result":"pass"}`)
-	if got := bundleEvaluationStatus(bundle, target, "portable", "cases"); got != "pass" {
-		t.Fatalf("known evaluation evidence with unknown key = %s", got)
+	if got := bundleEvaluationStatus(bundle, target, "portable", "cases"); got != "none" {
+		t.Fatalf("incomplete evaluation evidence with unknown key = %s, want none", got)
 	}
 	write(path, `{not json`)
 	if got := bundleEvaluationStatus(bundle, target, "portable", "cases"); got != "none" {

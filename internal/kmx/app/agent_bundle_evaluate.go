@@ -55,13 +55,13 @@ const (
 )
 
 // bundleEvaluationReceipt is what evaluate writes to
-// receipts/eval-<target>.json. It never holds answer text: receipts may be
-// committed to public repositories, so an answer is recorded only as its
-// SHA-256.
+// receipts/eval-<target>.json. It never holds answer text: only its SHA-256
+// is recorded. Receipts remain local and are not intended to be committed.
 type bundleEvaluationReceipt struct {
 	Bundle         string                   `json:"bundle"`
 	PortableDigest string                   `json:"portableDigest"`
 	CasesDigest    string                   `json:"casesDigest"`
+	FullCaseSet    bool                     `json:"fullCaseSet"`
 	GitCommit      string                   `json:"gitCommit"`
 	Target         bundleEvaluationTarget   `json:"target"`
 	Result         string                   `json:"result"`
@@ -69,11 +69,12 @@ type bundleEvaluationReceipt struct {
 }
 
 type bundleEvaluationTarget struct {
-	Runtime   agentruntime.ID `json:"runtime"`
-	Context   string          `json:"context"`
-	Namespace string          `json:"namespace"`
-	Agent     string          `json:"agent"`
-	AgentUID  string          `json:"agentUID"`
+	Runtime    agentruntime.ID `json:"runtime"`
+	Context    string          `json:"context"`
+	Namespace  string          `json:"namespace"`
+	ClusterUID string          `json:"clusterUID"`
+	Agent      string          `json:"agent"`
+	AgentUID   string          `json:"agentUID"`
 }
 
 type bundleEvaluationResult struct {
@@ -192,9 +193,9 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 
 	adapter := orkaRuntimeAdapter{app: &worker, resultPort: opt.ResultPort}
 	receipt := bundleEvaluationReceipt{
-		Bundle: name, PortableDigest: portableDigest, CasesDigest: casesDigest,
+		Bundle: name, PortableDigest: portableDigest, CasesDigest: casesDigest, FullCaseSet: opt.Case == "",
 		GitCommit: liftAgentCommit(ctx, bundle, portableDigest),
-		Target:    bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: contextName, Namespace: namespace, Agent: name, AgentUID: ref.UID},
+		Target:    bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: contextName, Namespace: namespace, ClusterUID: uid, Agent: name, AgentUID: ref.UID},
 	}
 	ui := cliui.New(a.Out)
 	for _, c := range cases {
@@ -417,6 +418,9 @@ func writeBundleEvaluationReceipt(bundle, clusterUID string, receipt bundleEvalu
 	if err := checkLiftReceiptsDir(bundle); err != nil {
 		return err
 	}
+	if receipt.Target.ClusterUID != clusterUID {
+		return fmt.Errorf("evaluation receipt target cluster UID does not match its file identity")
+	}
 	raw, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		return err
@@ -434,21 +438,32 @@ func bundleEvaluationStatus(bundle string, target bundleTargetStatus, portableDi
 	if casesDigest == "" || target.ObservedClusterUID == "" || target.LiveDigest != portableDigest || target.Agent.UID == "" {
 		return none
 	}
-	raw, err := os.ReadFile(bundleEvaluationReceiptPath(bundle, target.Context, target.Namespace, target.ObservedClusterUID))
+	evidence, err := readBundleGateEvidence(bundle)
 	if err != nil {
 		return none
 	}
-	var receipt bundleEvaluationReceipt
-	if json.Unmarshal(raw, &receipt) != nil {
-		return none
+	result := ""
+	for _, item := range evidence {
+		receipt := item.Receipt
+		if receipt.Target.ClusterUID != target.ObservedClusterUID || receipt.Target.Namespace != target.Namespace || receipt.Target.AgentUID != target.Agent.UID ||
+			!receipt.FullCaseSet || receipt.PortableDigest != portableDigest || receipt.CasesDigest != casesDigest {
+			continue
+		}
+		if receipt.Result == string(agentruntime.EvaluationPass) {
+			cases, _, err := loadBundleEvaluationCases(bundle)
+			if err != nil || !bundleCaseResultsPass(receipt.Cases, cases) {
+				return none
+			}
+		} else if receipt.Result != string(agentruntime.EvaluationFail) && receipt.Result != string(agentruntime.EvaluationUnknown) {
+			continue
+		}
+		if result != "" && result != receipt.Result {
+			return none
+		}
+		result = receipt.Result
 	}
-	if receipt.PortableDigest != portableDigest || receipt.CasesDigest != casesDigest ||
-		receipt.Target.Context != target.Context || receipt.Target.Namespace != target.Namespace || receipt.Target.AgentUID != target.Agent.UID {
-		return none
-	}
-	switch receipt.Result {
-	case string(agentruntime.EvaluationPass), string(agentruntime.EvaluationFail), string(agentruntime.EvaluationUnknown):
-		return receipt.Result
+	if result != "" {
+		return result
 	}
 	return none
 }

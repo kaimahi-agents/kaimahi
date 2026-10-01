@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 // previous successful lift of this exact local bundle path.
 type LiftAgentBundleOptions struct {
 	BundleDir, ToContext, ToNamespace, Inference string
+	RequireEvaluated, OverrideGate               string
 	Plan                                         bool
 }
 
@@ -35,8 +37,10 @@ type bundleLiftSelection struct {
 }
 
 type bundleLiftReceipt struct {
-	Receipt   agentruntime.DeployReceipt `json:"receipt"`
-	GitCommit string                     `json:"gitCommit"`
+	Receipt             agentruntime.DeployReceipt `json:"receipt"`
+	GitCommit           string                     `json:"gitCommit"`
+	GateOverrideReason  string                     `json:"gateOverrideReason,omitempty"`
+	GateFailedCondition string                     `json:"gateFailedCondition,omitempty"`
 }
 
 // LiftAgentBundle deploys only the portable agent.yaml. In particular it does
@@ -57,6 +61,10 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		return err
 	}
 	if err := checkLiftReceiptsDir(bundle); err != nil {
+		return err
+	}
+	policy, err := loadBundleLiftPolicy(bundle)
+	if err != nil {
 		return err
 	}
 	selectionPath, err := bundleLiftSelectionPath(bundle)
@@ -128,6 +136,31 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	if remembered.Context == contextName && remembered.ClusterUID != "" && remembered.ClusterUID != uid {
 		return fmt.Errorf("stale remembered target: context %s now identifies another cluster; remove local selection %s before retrying with --to-context and --inference", contextName, selectionPath)
 	}
+	if opt.OverrideGate != "" && strings.TrimSpace(opt.OverrideGate) == "" {
+		return fmt.Errorf("--override-gate requires a non-empty reason")
+	}
+	name, _, digest, err := readBundlePortableAgent(bundle)
+	if err != nil {
+		return err
+	}
+	destination := bundleGateTarget{ClusterUID: uid, Namespace: namespace}
+	required, failed := evaluateBundleLiftGate(bundle, name, digest, destination, opt.RequireEvaluated)
+	if opt.OverrideGate != "" && !required {
+		return fmt.Errorf("--override-gate requires an evaluation gate")
+	}
+	if required {
+		switch {
+		case failed == "":
+			worker.notef("Gate: pass")
+		case opt.OverrideGate != "" && !opt.Plan:
+			worker.notef("Gate: overridden (%s); reason: %s", failed, opt.OverrideGate)
+		default:
+			worker.notef("Gate: refused (%s)", failed)
+			return fmt.Errorf("lift evaluation gate refused: %s", failed)
+		}
+	} else {
+		worker.notef("Gate: not required")
+	}
 	worker.notef("Lift destination: context %s, cluster %s, namespace %s", contextName, cluster, namespace)
 	if err := worker.liftPrerequisites(ctx, namespace); err != nil {
 		return err
@@ -150,6 +183,9 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	if provider == orkaObjectName(renderedBundle.Provider) {
 		return fmt.Errorf("selected Provider/%s is the Agent's target Provider; lift would modify the selected Provider", provider)
 	}
+	if rendered.PortableDigest() != digest {
+		return fmt.Errorf("agent.yaml changed during gate check; retry lift")
+	}
 	if err := worker.liftToolsAvailable(ctx, namespace, renderedBundle); err != nil {
 		return err
 	}
@@ -166,8 +202,28 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		worker.notef("Plan only: no resources, receipt or remembered target written")
 		return nil
 	}
-	// Deploy uses the very same read-only preflight as plan, followed by a
-	// versioned reinspection immediately before each resource mutation.
+	// Recheck local evidence immediately before the first resource mutation.
+	if _, _, currentDigest, err := readBundlePortableAgent(bundle); err != nil || currentDigest != digest {
+		return fmt.Errorf("agent.yaml changed during preflight; retry lift")
+	}
+	currentPolicy, err := loadBundleLiftPolicy(bundle)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(policy.Rules, currentPolicy.Rules) {
+		return fmt.Errorf("lift policy changed during preflight; retry lift")
+	}
+	currentRequired, currentFailure := evaluateBundleLiftGate(bundle, name, digest, destination, opt.RequireEvaluated)
+	if currentRequired != required || currentFailure != failed {
+		return fmt.Errorf("lift evaluation gate changed during preflight: %s", currentFailure)
+	}
+	currentUID, err := worker.liftClusterUID(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot verify destination cluster identity before deployment: %w", err)
+	}
+	if currentUID != uid {
+		return fmt.Errorf("destination cluster identity changed during preflight; retry lift")
+	}
 	deployed, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{Reconcile: true})
 	if err != nil {
 		return fmt.Errorf("lift deployment failed; Provider or Agent may have been changed before failure (inspect the destination before retrying): %w", err)
@@ -180,6 +236,9 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 		worker.notef("Warning: agent.yaml is uncommitted (%s)", liftAgentUncommittedReason(ctx, bundle))
 	}
 	wrapped := bundleLiftReceipt{Receipt: deployed.Receipt, GitCommit: gitCommit}
+	if failed != "" && opt.OverrideGate != "" {
+		wrapped.GateOverrideReason, wrapped.GateFailedCondition = opt.OverrideGate, failed
+	}
 	if err := writeLiftReceipt(bundle, uid, wrapped); err != nil {
 		return fmt.Errorf("Agent deployed but receipt was not saved: %w", err)
 	}

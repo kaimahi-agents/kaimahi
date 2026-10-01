@@ -56,7 +56,7 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 88 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status, evaluation and Task result retrieval, interactive agent console with bundle comparison and bundle-backed lift, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 89 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status, evaluation and Task result retrieval, interactive agent console with bundle comparison and bundle-backed lift, shared chat UI, host inference and native platform operations. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/main` | 2 | Scaffolding | Current-writer portable agent and creation bindings. |

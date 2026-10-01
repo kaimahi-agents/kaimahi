@@ -62,6 +62,17 @@ func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chat
 	if err != nil {
 		return err
 	}
+	name, _, digest, err := readBundlePortableAgent(dir)
+	if err != nil {
+		return err
+	}
+	if _, err := loadBundleLiftPolicy(dir); err != nil {
+		return err
+	}
+	required, failed := evaluateBundleLiftGate(dir, name, digest, bundleGateTarget{ClusterUID: selectedUID, Namespace: namespace}, "")
+	if required && failed != "" {
+		return fmt.Errorf("bundle lift evaluation gate refused before target preparation: %s", failed)
+	}
 	// Do not rely on the CLI's remembered target: this review authorizes exactly
 	// the context, namespace, and Ready inference Provider selected here.
 	preparedOrka, preparedResultAccess := false, false
