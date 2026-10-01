@@ -181,6 +181,12 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 			}
 		}
 	}
+	// yaml.v3 otherwise truncates a fractional scalar decoded into *int32.
+	for _, field := range []string{"maxConcurrentChildren", "maxDepth"} {
+		if value := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination", field); value != nil && value.Tag != "!!int" && value.Tag != "!!null" {
+			return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination.%s must be an integer", field)
+		}
+	}
 
 	strict := yaml.NewDecoder(bytes.NewReader(data))
 	strict.KnownFields(true)

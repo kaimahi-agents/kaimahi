@@ -85,6 +85,8 @@ func TestParsePortableCoordinationRefusals(t *testing.T) {
 		{"null allowlist", "        enabled: true\n        allowedAgents: null\n", "enabled coordination requires at least one allowed agent"},
 		{"depth too large", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 11\n", "maxDepth must be between 1 and 10"},
 		{"zero depth", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 0\n", "maxDepth must be between 1 and 10"},
+		{"fractional depth", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxDepth: 10.9\n", "maxDepth must be an integer"},
+		{"fractional concurrency", "        enabled: true\n        allowedAgents:\n          - name: helper\n        maxConcurrentChildren: 1.9\n", "maxConcurrentChildren must be an integer"},
 		{"autonomous false", "        enabled: true\n        autonomous: false\n", "autonomous is not supported yet"},
 		{"autonomous true", "        enabled: true\n        autonomous: true\n", "autonomous is not supported yet"},
 		{"no enabled", "        maxDepth: 3\n", "enabled"},
