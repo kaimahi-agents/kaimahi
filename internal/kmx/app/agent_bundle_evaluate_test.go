@@ -613,6 +613,7 @@ func TestBundleStatusShowsEvaluation(t *testing.T) {
 		write      bool
 	}{
 		{"pass", "pass", nil, true},
+		{"none for missing case results", "none", func(r *bundleEvaluationReceipt) { r.Cases = nil }, true},
 		{"pass from another context alias", "pass", func(r *bundleEvaluationReceipt) { r.Target.Context = "ci" }, true},
 		{"fail", "fail", func(r *bundleEvaluationReceipt) { r.Result = "fail" }, true},
 		{"none without receipt", "none", nil, false},
@@ -627,6 +628,7 @@ func TestBundleStatusShowsEvaluation(t *testing.T) {
 				receipt := bundleEvaluationReceipt{
 					Bundle: name, PortableDigest: rendered.PortableDigest(), CasesDigest: currentBundleCasesDigest(opt.BundleDir), FullCaseSet: true, Result: "pass",
 					Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Agent: name, AgentUID: "agent-uid"},
+					Cases:  []bundleEvaluationResult{{ID: "example", Verdict: "pass"}},
 				}
 				if tc.edit != nil {
 					tc.edit(&receipt)

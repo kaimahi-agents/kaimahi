@@ -55,9 +55,8 @@ const (
 )
 
 // bundleEvaluationReceipt is what evaluate writes to
-// receipts/eval-<target>.json. It never holds answer text: receipts may be
-// committed to public repositories, so an answer is recorded only as its
-// SHA-256.
+// receipts/eval-<target>.json. It never holds answer text: only its SHA-256
+// is recorded. Receipts remain local and are not intended to be committed.
 type bundleEvaluationReceipt struct {
 	Bundle         string                   `json:"bundle"`
 	PortableDigest string                   `json:"portableDigest"`
@@ -450,13 +449,18 @@ func bundleEvaluationStatus(bundle string, target bundleTargetStatus, portableDi
 			!receipt.FullCaseSet || receipt.PortableDigest != portableDigest || receipt.CasesDigest != casesDigest {
 			continue
 		}
-		switch receipt.Result {
-		case string(agentruntime.EvaluationPass), string(agentruntime.EvaluationFail), string(agentruntime.EvaluationUnknown):
-			if result != "" && result != receipt.Result {
+		if receipt.Result == string(agentruntime.EvaluationPass) {
+			cases, _, err := loadBundleEvaluationCases(bundle)
+			if err != nil || !bundleCaseResultsPass(receipt.Cases, cases) {
 				return none
 			}
-			result = receipt.Result
+		} else if receipt.Result != string(agentruntime.EvaluationFail) && receipt.Result != string(agentruntime.EvaluationUnknown) {
+			continue
 		}
+		if result != "" && result != receipt.Result {
+			return none
+		}
+		result = receipt.Result
 	}
 	if result != "" {
 		return result

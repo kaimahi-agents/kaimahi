@@ -118,9 +118,9 @@ rules:
 
 Replace the UID placeholders with the corresponding clusters' `kube-system`
 Namespace UIDs, not kubeconfig context names. The file must be a regular file
-with at least one rule; unknown fields, incomplete targets and duplicate
-destination identities are refused. A destination with no matching rule is
-not gated by that policy. Names such as `staging` and `production` in
+with at least one rule; unknown fields, incomplete targets, duplicate
+destination identities and rules that gate a target on itself are refused.
+A destination with no matching rule is not gated by that policy. Names such as `staging` and `production` in
 kubeconfig are display labels only: renaming a context does not change a
 rule's identity, and repointing one must not turn another cluster's evaluation
 into evidence. Policy selects the required evaluation target; it does not run
@@ -139,8 +139,9 @@ sharing that label is refused, without contacting that cluster. A context label 
 even when `eval/` has only one case.
 The evaluation destination must already have this same portable revision
 lifted, and its receipt must say `pass` for the current complete `eval/` case
-set. A changed `agent.yaml` or case file requires another evaluation. If the
-required evaluation identity or matching local evidence cannot be established,
+set and record a passing result for each current case. A changed `agent.yaml`
+or case file requires another evaluation. If the required evaluation identity
+or matching local evidence cannot be established,
 the lift is refused rather than silently ungated.
 
 The gate checks **local receipts only**. It does not contact the evaluation
@@ -159,7 +160,7 @@ cannot satisfy this gate; rerun the complete evaluation to generate new evidence
 |---|---|
 | Policy cannot be decoded, or the ad-hoc context has no recorded identity or matches several | Correct the policy or run a full evaluation for an unambiguous context; do not infer identity from a matching name. |
 | No local receipt for the required cluster UID and namespace, or only a different target's receipt | Lift the bundle to the required evaluation destination and run `kmx agent evaluate` there. |
-| Receipt is `fail` or `unknown`, or covers only a `--case` selection | Fix the cases or target and run the **full** evaluation again; an individual passing case is insufficient. |
+| Receipt is `fail` or `unknown`, covers only a `--case` selection, or lacks passing results for every current case | Fix the cases or target and run the **full** evaluation again; an individual passing case is insufficient. |
 | Receipt's portable digest or case-set digest differs from the current bundle | Lift and evaluate the changed revision or cases again. |
 
 Multiple receipts for the same UID and namespace under different context

@@ -22,6 +22,9 @@ func gatePolicy(t *testing.T, bundle, destUID, sourceUID string) {
 	if err := os.WriteFile(filepath.Join(bundle, "eval", "hello.yaml"), []byte(evalHelloCase), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(filepath.Join(bundle, "eval", "example.yaml")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func gateReceipt(t *testing.T, bundle, alias, uid, result, digest, cases string) {
@@ -29,10 +32,21 @@ func gateReceipt(t *testing.T, bundle, alias, uid, result, digest, cases string)
 	r := bundleEvaluationReceipt{
 		Bundle: "sample", PortableDigest: digest, CasesDigest: cases, FullCaseSet: true, Result: result,
 		Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: alias, Namespace: "orka-system", Agent: "sample", ClusterUID: uid, AgentUID: "agent-uid"},
+		Cases:  []bundleEvaluationResult{{ID: "greet", Verdict: result}},
 	}
 	if err := writeBundleEvaluationReceipt(bundle, uid, r); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLiftPolicyRefusesSelfEvaluationTarget(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	gatePolicy(t, opt.BundleDir, "cluster-uid", "cluster-uid")
+	opt.OverrideGate = "bootstrap"
+	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "same target") {
+		t.Fatalf("self-gating policy accepted: %v", err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
 
 // Removing the policy check would let a first production lift write even when
@@ -102,6 +116,9 @@ func containsDryRun(args []string) bool {
 
 func TestLiftExplicitGateUsesReceiptContextOnlyToSelectIdentity(t *testing.T) {
 	a, opt, _, _ := liftBundleFixture(t)
+	if err := os.WriteFile(filepath.Join(opt.BundleDir, "eval", "example.yaml"), []byte(evalHelloCase), 0600); err != nil {
+		t.Fatal(err)
+	}
 	_, _, digest, err := readBundlePortableAgent(opt.BundleDir)
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +157,76 @@ func TestLiftGateRejectsSingleCaseEvenWhenItIsOnlyCase(t *testing.T) {
 	}
 	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "single-case") {
 		t.Fatalf("single-case accepted: %v", err)
+	}
+}
+
+func TestLiftGateRequiresPassingResultForEachCurrentCase(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cases []bundleEvaluationResult
+	}{
+		{"no results", nil},
+		{"wrong case", []bundleEvaluationResult{{ID: "different", Verdict: "pass"}}},
+		{"failed case despite overall pass", []bundleEvaluationResult{{ID: "greet", Verdict: "fail"}}},
+		{"unknown case despite overall pass", []bundleEvaluationResult{{ID: "greet", Verdict: "unknown"}}},
+		{"duplicate case", []bundleEvaluationResult{{ID: "greet", Verdict: "pass"}, {ID: "greet", Verdict: "pass"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			gatePolicy(t, opt.BundleDir, "cluster-uid", "staging-uid")
+			_, _, digest, err := readBundlePortableAgent(opt.BundleDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gateReceipt(t, opt.BundleDir, "staging", "staging-uid", "pass", digest, currentBundleCasesDigest(opt.BundleDir))
+			path := bundleEvaluationReceiptPath(opt.BundleDir, "staging", "orka-system", "staging-uid")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var receipt bundleEvaluationReceipt
+			if err := json.Unmarshal(raw, &receipt); err != nil {
+				t.Fatal(err)
+			}
+			receipt.Cases = tc.cases
+			raw, err = json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "case results") {
+				t.Fatalf("invalid case results accepted: %v", err)
+			}
+			for _, call := range orkaCalls(t, dir) {
+				if call.Document != nil && !containsDryRun(call.Args) {
+					t.Fatalf("gate wrote resource: %+v", call)
+				}
+			}
+		})
+	}
+}
+
+func TestLiftGateRefusesRepointedDestinationDuringPreflight(t *testing.T) {
+	a, opt, dir, _ := liftBundleFixture(t)
+	gatePolicy(t, opt.BundleDir, "cluster-uid", "staging-uid")
+	_, _, digest, err := readBundlePortableAgent(opt.BundleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateReceipt(t, opt.BundleDir, "staging", "staging-uid", "pass", digest, currentBundleCasesDigest(opt.BundleDir))
+	t.Setenv("KMX_LIFT_REPOINT_AFTER_PREFLIGHT", "1")
+	if err := a.LiftAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "destination cluster identity changed") {
+		t.Fatalf("repointed context was used for deployment: %v", err)
+	}
+	for _, call := range orkaCalls(t, dir) {
+		if call.Document != nil && !containsDryRun(call.Args) {
+			t.Fatalf("gate wrote resource to repointed context: %+v", call)
+		}
+	}
+	if _, err := os.Stat(bundleReceiptPath(opt.BundleDir, "kind-test", "orka-system", "cluster-uid")); !os.IsNotExist(err) {
+		t.Fatalf("lift receipt written for the wrong cluster: %v", err)
 	}
 }
 

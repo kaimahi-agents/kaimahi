@@ -217,6 +217,13 @@ func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
 	if currentRequired != required || currentFailure != failed {
 		return fmt.Errorf("lift evaluation gate changed during preflight: %s", currentFailure)
 	}
+	currentUID, err := worker.liftClusterUID(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot verify destination cluster identity before deployment: %w", err)
+	}
+	if currentUID != uid {
+		return fmt.Errorf("destination cluster identity changed during preflight; retry lift")
+	}
 	deployed, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{Reconcile: true})
 	if err != nil {
 		return fmt.Errorf("lift deployment failed; Provider or Agent may have been changed before failure (inspect the destination before retrying): %w", err)

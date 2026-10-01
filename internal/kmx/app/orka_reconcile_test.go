@@ -89,7 +89,11 @@ func TestReconcileKubectlHelper(t *testing.T) {
 				os.Exit(0)
 			case "namespace", "namespaces":
 				if name == "kube-system" {
-					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid"))
+					uid := getenvLiftTest("KMX_LIFT_CLUSTER_UID", "cluster-uid")
+					if _, err := os.Stat(filepath.Join(dir, "repointed-after-preflight")); err == nil {
+						uid = "repointed-uid"
+					}
+					fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, uid)
 					os.Exit(0)
 				}
 				if slices.Contains(strings.Split(os.Getenv("KMX_LIFT_MISSING"), ","), "namespace") {
@@ -116,6 +120,9 @@ func TestReconcileKubectlHelper(t *testing.T) {
 					os.Exit(0)
 				}
 			case "tools.core.orka.ai":
+				if os.Getenv("KMX_LIFT_REPOINT_AFTER_PREFLIGHT") == "1" {
+					_ = os.WriteFile(filepath.Join(dir, "repointed-after-preflight"), nil, 0600)
+				}
 				if os.Getenv("KMX_LIFT_MISSING") == "tool" || os.Getenv("KMX_LIFT_MISSING") == "tool-available" && name == "search" {
 					if os.Getenv("KMX_LIFT_MISSING") == "tool" {
 						os.Exit(0)

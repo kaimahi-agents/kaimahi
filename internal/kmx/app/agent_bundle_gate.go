@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"go.yaml.in/yaml/v3"
 )
@@ -69,6 +70,9 @@ func loadBundleLiftPolicy(bundle string) (bundleLiftPolicy, error) {
 				return bundleLiftPolicy{}, fmt.Errorf("invalid lift policy namespace %q", target.Namespace)
 			}
 		}
+		if rule.Destination == rule.Evaluated {
+			return bundleLiftPolicy{}, fmt.Errorf("lift policy destination and evaluated target must not be the same target")
+		}
 		if seen[rule.Destination] {
 			return bundleLiftPolicy{}, fmt.Errorf("duplicate lift policy destination cluster UID %s namespace %s", rule.Destination.ClusterUID, rule.Destination.Namespace)
 		}
@@ -115,7 +119,7 @@ func readBundleGateEvidence(bundle string) ([]bundleGateEvidence, error) {
 
 // bundleGateCondition returns an empty condition only when every receipt for
 // the selected identity agrees on the current revision and records a pass.
-func bundleGateCondition(evidence []bundleGateEvidence, target bundleGateTarget, name, digest, casesDigest string) string {
+func bundleGateCondition(evidence []bundleGateEvidence, target bundleGateTarget, name, digest, casesDigest string, cases []bundleEvaluationCase) string {
 	var matching []bundleGateEvidence
 	for _, item := range evidence {
 		r := item.Receipt
@@ -152,9 +156,28 @@ func bundleGateCondition(evidence []bundleGateEvidence, target bundleGateTarget,
 			return fmt.Sprintf("evaluation receipt %s is a single-case run, not the full case set", item.File)
 		case r.Result != "pass":
 			return fmt.Sprintf("evaluation receipt %s result is %s, not pass", item.File, r.Result)
+		case !bundleCaseResultsPass(r.Cases, cases):
+			return fmt.Sprintf("evaluation receipt %s has incomplete or non-passing case results", item.File)
 		}
 	}
 	return ""
+}
+
+func bundleCaseResultsPass(results []bundleEvaluationResult, cases []bundleEvaluationCase) bool {
+	if len(results) != len(cases) || len(cases) == 0 {
+		return false
+	}
+	expected := make(map[string]bool, len(cases))
+	for _, c := range cases {
+		expected[c.Case.ID] = true
+	}
+	for _, result := range results {
+		if !expected[result.ID] || result.Verdict != string(agentruntime.EvaluationPass) {
+			return false
+		}
+		delete(expected, result.ID)
+	}
+	return len(expected) == 0
 }
 
 func evaluateBundleLiftGate(bundle, name, digest string, destination bundleGateTarget, sourceContext string) (required bool, condition string) {
@@ -192,12 +215,13 @@ func evaluateBundleLiftGate(bundle, name, digest string, destination bundleGateT
 			sources = append(sources, source)
 		}
 	}
-	casesDigest := currentBundleCasesDigest(bundle)
-	if casesDigest == "" {
-		return true, "cannot read the full eval/ case set"
+	cases, files, err := loadBundleEvaluationCases(bundle)
+	if err != nil {
+		return true, fmt.Sprintf("cannot read the full eval/ case set: %v", err)
 	}
+	casesDigest := agentruntime.EvaluationCasesDigest(files)
 	for _, source := range sources {
-		if condition := bundleGateCondition(evidence, source, name, digest, casesDigest); condition != "" {
+		if condition := bundleGateCondition(evidence, source, name, digest, casesDigest, cases); condition != "" {
 			return true, condition
 		}
 	}
