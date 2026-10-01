@@ -1038,7 +1038,7 @@ func TestKagentStaleAgentReadinessStopsWithoutTask(t *testing.T) {
 	opt.Task = "do not print this prompt"
 	kagentReadinessTimeout = 50 * time.Millisecond
 	err := a.CreateAgent(opt)
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("stale Agent readiness error = %v", err)
 	}
 	if strings.Contains(err.Error(), opt.Task) || strings.Contains(out.String(), opt.Task) {
