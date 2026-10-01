@@ -210,7 +210,9 @@ class Journal:
                         child, parent = info.get("id"), info.get("parentID")
                         if isinstance(child, str) and isinstance(parent, str):
                             created.add((child, parent))
-                    elif kind == "message.updated.1" and info.get("error"):
+                    elif kind == "message.updated.1" and "error" in info and info["error"] is not None:
+                        if not isinstance(info["error"], dict) or not info["error"]:
+                            raise JournalUnavailable("native child error evidence malformed")
                         child = entry.get("sessionID")
                         if isinstance(child, str):
                             errored.add(child)
@@ -294,7 +296,7 @@ class Projector:
         for call, (root, child, agent, valid, phase) in self._parts.items():
             tool_task = f"{self.log.attempt}/tool/{hashlib.sha256(call.encode('ascii')).hexdigest()[:16]}"
             if not valid or not child or not agent:
-                if phase == "error":
+                if phase == "error" and not child:
                     observations.append(("coordinator", tool_task, self.log.attempt, None,
                         "failed", "Task tool rejected; no child session observed"))
                 else:

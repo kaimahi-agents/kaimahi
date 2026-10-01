@@ -86,6 +86,14 @@ class ActivityTests(unittest.TestCase):
         rows = self.rows()
         self.assertEqual(rows[0]["bundleDigest"], DIGESTS["coordinator"])
 
+    def test_empty_native_child_error_does_not_become_helper_success(self):
+        self.record(created(FIRST), ("message.updated.1", {"sessionID": FIRST,
+                                                          "info": {"error": {}}}))
+        self.projector.project(tool("call_first", "purchasing", FIRST))
+        with self.assertRaises(JournalUnavailable):
+            self.projector.finish()
+        self.assertEqual(self.rows(), [])
+
     def test_child_error_after_parent_completed_overrides_helper_success(self):
         self.record(created(FIRST))
         self.projector.project(tool("call_first", "purchasing", FIRST))
@@ -164,6 +172,14 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(rows[0]["task"].split("/tool/")[0], "try-1")
         self.assertEqual(rows[0]["parentTask"], "try-1")
         self.assertEqual(rows[0]["evidenceMissing"], "child-session")
+
+    def test_errored_tool_with_unverified_child_is_missing_not_rejected(self):
+        self.record(created(FIRST, "ses_other12345678"))
+        self.projector.project(tool("call_wrong", "purchasing", FIRST,
+                                    status="error", parent="ses_other12345678"))
+        self.projector.finish()
+        self.assertEqual([(r["status"], r.get("evidenceMissing")) for r in self.rows()],
+                         [("running", "child-session")])
 
     def test_mismatched_root_or_child_parent_never_corroborates_handoff(self):
         self.record(created(FIRST, "ses_other12345678"))
