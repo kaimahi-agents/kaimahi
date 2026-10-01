@@ -534,6 +534,8 @@ jobs:
       # what that shard's conclusions rest on.
       - name: Model fixture responses and hosted redirects
         run: python3 scripts/test_model_fixtures.py
+      - name: AX preview activity projection tests
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=error python3 -m unittest discover -s ax-harness -p 'test_activity.py' -v
       - name: Hello-to-governed demo safety and evidence checks
         run: |
           bash -n scripts/demo-hello-to-governed.sh

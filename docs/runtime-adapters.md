@@ -156,6 +156,14 @@ bulk-applied. A successful online create writes a private mode-0600 receipt with
 cluster/resource identities and digests, never prompt or answer text; that
 receipt does not expand the adapter's capabilities.
 
+## AX preview activity source
+
+`ax-harness/` contains a bounded, synthetic-tested OpenCode child-event
+projector. It is not embedded in kmx, run by a Task command, built into a
+signed image, registered as an AX adapter or authorized as a runtime
+result reader. The [activity protocol](../ax-harness/README.md) describes the
+safe JSONL boundary and its limits; AX lift and status remain unavailable.
+
 ## Enforcement contract
 
 KMX is not a generic enforcement plane. It names mutation targets, obtains

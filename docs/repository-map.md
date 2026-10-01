@@ -35,6 +35,7 @@ checks.
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
 | `internal/` | `kmx/` (15 packages), plus embedded schema fixtures | — | — |
+| `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
 | `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 45 (checkers, release packaging, probes, CI fixtures, mutation specs) |
@@ -88,6 +89,14 @@ fixtures or Orka tool names. Neither is the retired custom gateway. Migration
 keeps its original source/generator bytes so a repeated invocation can reuse its
 previously generated identity/patch files. Old generated tool-seam comments are
 not evidence that the removed service or commands still exist.
+
+## `ax-harness/` — preview activity source
+
+The stdlib Python projector (`activity.py`) is checkout-only, not embedded
+in kmx or built into a release image. `test_activity.py` uses synthetic
+native event and journal metadata. No Task command wrapper, AX target or
+runtime read is enabled by these files alone; image packaging, verification
+and publishing require separate reviewed changes.
 
 ## `plane/` — the model bridge
 
