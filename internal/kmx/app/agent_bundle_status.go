@@ -1,4 +1,4 @@
-// `kmx agent status` — a read-only report of one portable bundle's
+// `kmx agent status` — a read-only report of one Orka portable bundle's
 // deployment state across every destination it is known about. It writes
 // nothing: no receipt, no remembered selection, no cluster resource.
 //
@@ -21,8 +21,8 @@
 // target that cannot be read — unreachable cluster, missing ownership
 // marker, foreign bundle — is reported as that target's State, never as a
 // command failure: this command exits zero even when every target is
-// unknown. Only a bundle it cannot read at all (missing or invalid
-// agent.yaml) is an error.
+// unknown. Only a bundle it cannot read as a supported Orka definition
+// (missing, invalid or another runtime's agent.yaml) is an error.
 package app
 
 import (
@@ -158,9 +158,9 @@ func bundleStatusFormat(output string) (string, error) {
 	return format, nil
 }
 
-// bundleStatusReport builds the full report. Only a bundle it cannot read at
-// all returns an error; every per-target observation failure is folded into
-// that target's own State instead.
+// bundleStatusReport builds the full report. Only a bundle it cannot read as a
+// supported Orka definition returns an error; every per-target observation
+// failure is folded into that target's own State instead.
 func (a *App) bundleStatusReport(opt BundleStatusOptions) (bundleStatusReport, error) {
 	if strings.TrimSpace(opt.Namespace) != "" && strings.TrimSpace(opt.Context) == "" {
 		return bundleStatusReport{}, fmt.Errorf("--to-namespace requires --to-context")
@@ -312,8 +312,10 @@ func loadBundleReceiptTargets(bundle string) ([]bundleStatusTarget, error) {
 	}
 	var targets []bundleStatusTarget
 	for _, entry := range entries {
-		// Evaluation receipts share the directory but record no deployment.
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "eval-") {
+		// Evaluation and create-only receipts share the directory but record no
+		// Orka lift target.
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") ||
+			strings.HasPrefix(entry.Name(), "eval-") || strings.HasPrefix(entry.Name(), "create-") {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))

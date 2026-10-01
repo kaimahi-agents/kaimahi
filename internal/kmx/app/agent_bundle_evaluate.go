@@ -1,6 +1,6 @@
-// `kmx agent evaluate` — runs a bundle's evaluation cases against the revision
-// deployed at one destination and records the outcome against that revision's
-// portable digest.
+// `kmx agent evaluate` — runs an Orka portable bundle's evaluation cases
+// against the revision deployed at one destination and records the outcome
+// against that revision's portable digest.
 //
 // Cases live beside the bundle in eval/*.yaml and are not part of the
 // portable digest: they test a revision, they do not define it. The receipt
@@ -256,8 +256,9 @@ func (a *App) bundleEvaluationRef(ctx context.Context, name, namespace, portable
 	return ref, nil
 }
 
-// readBundlePortableAgent reads and strictly parses a bundle's agent.yaml,
-// returning its name, exact bytes and portable digest.
+// readBundlePortableAgent reads and strictly parses an Orka bundle's
+// agent.yaml, returning its name, exact bytes and portable digest. Bundle
+// commands using this helper have not implemented Kagent lifecycle operations.
 func readBundlePortableAgent(bundle string) (string, []byte, string, error) {
 	if err := scaffold.RefuseKeyShapes(bundle); err != nil {
 		return "", nil, "", fmt.Errorf("refusing credential-shaped bundle path")
@@ -284,6 +285,11 @@ func readBundlePortableAgent(bundle string) (string, []byte, string, error) {
 	portable, err := agentruntime.ParsePortableAgent(source)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("invalid portable agent: %w", err)
+	}
+	// ParsePortableAgent requires exactly one extension, so a Kagent arm
+	// unambiguously identifies a bundle these Orka-only callers cannot handle.
+	if portable.Extensions.Kagent != nil {
+		return "", nil, "", fmt.Errorf("runtime %s bundle is not supported by this Orka-only command", agentruntime.Kagent)
 	}
 	name := strings.TrimSpace(portable.Metadata.Name)
 	if name == "" {

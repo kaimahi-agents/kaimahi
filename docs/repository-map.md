@@ -1,13 +1,14 @@
 # What is actually in this repository
 
-**Orka is the platform; Kaimahi provides tools to get agents onto it.**
-The remaining plane is a model-traffic bridge, not an application runtime or
-tool-governance platform. Migrated applications keep their owner-managed
-Deployment and tools. Agent authoring is Orka-native: the legacy operational
-commands, installer, manifests and status adapter have been removed. What
-remains of the legacy runtime is the historical record, bounded negative test
-fixtures, and teardown support for lift records created before retirement;
-scripts/check-legacy-runtime.py refuses everything else.
+**Orka remains the first-class/default platform; Kaimahi provides tools to get
+agents onto it.** The remaining plane is a model-traffic bridge, not an
+application runtime or tool-governance platform. Migrated applications keep
+their owner-managed Deployment and tools. Agent authoring defaults to native
+Orka. The only current Kagent implementation is explicit create against an
+already-installed exact v0.10.2, optionally followed by one A2A message in that
+same create invocation; the old operational commands, installer,
+manifests, status adapter, and AKS payload remain removed. Historical teardown
+support still reads lift records created before retirement.
 
 Read [the documentation index](README.md) for current guides and retirement
 records. This map describes tracked files, packaging and actual callers, not
@@ -44,7 +45,7 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (29 files) | **Installed** | CLI and tests: Orka operations, bundle lift, status, evaluation and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (29 files) | **Installed** | CLI and tests: default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -56,16 +57,16 @@ packages.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 89 | Installed | Command orchestration, the Orka lifecycle adapter, agent bundle persistence, lift, status, evaluation and Task result retrieval, interactive agent console with bundle comparison and bundle-backed lift, shared chat UI, host inference and native platform operations. |
+| `kmx/app` | 92 | Installed | Command orchestration, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/main` | 2 | Scaffolding | Current-writer portable agent and creation bindings. |
 | `kmx/app/testdata/bundle-format/main/eval` | 1 | Scaffolding | Current-writer evaluation case. |
 | `kmx/app/testdata/bundle-format/v0.3.0` | 2 | Scaffolding | First bundle-writer portable agent and creation bindings. |
 | `kmx/app/testdata/bundle-format/v0.3.0/eval` | 1 | Scaffolding | First bundle-writer evaluation case. |
-| `kmx/runtime` | 8 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable authoring document, target bindings and evaluation cases. The only registered identity is Orka. |
+| `kmx/runtime` | 9 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings and evaluation cases. `kagent_bindings.go` adds closed creation-target bindings; only Orka is registered for chat/discovery. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
-| `kmx/scaffold` | 8 | Installed | Orka authoring, model/migration artifacts and shared YAML/name helpers. |
+| `kmx/scaffold` | 9 | Installed | Orka authoring, exact Kagent v0.10.2 review scaffolding in `kagent.go`, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
 | `kmx/orkaschema/fixtures/v0.1.3` | 3 | Installed | Historical release Agent/Provider/Task CRDs for explicit offline validation, not installation. |
 | `kmx/orkaschema/fixtures/v0.2.0` | 3 | Installed | Default offline validation CRDs; the verified chart, not these fixtures, installs Orka. |
@@ -281,7 +282,7 @@ and the separately located historical architecture SVG.
 | `embed.go` | **Installed tooling** | Root-module embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Build/check targets plus plane-image, AKS-credential, network-policy and egress helpers. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. CI includes a required live exact-v0.10.2 Kagent create shard; its official charts are external test preconditions that KMX does not install. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the `release` workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
 | `staticcheck.conf` | **Scaffolding** | Lint configuration for both modules. |
@@ -291,10 +292,11 @@ and the separately located historical architecture SVG.
 
 ## Open questions — one
 
-1. **Agent authoring format.** Whether a future compatibility path should
-   translate the legacy runtime's YAML into Orka-native resources remains an
-   open and unsupported question; the installed CLI authors Orka-native
-   resources only.
+1. **Cross-runtime lifecycle scope.** Whether the exact Kagent v0.10.2
+   create-only adapter should ever grow into a general translation or lifecycle
+   surface remains open and unsupported. The current adapter renders Kagent
+   resources directly; it does not translate them to Orka or add Kagent
+   installation, chat, inspection, lift, status, evaluation, or console support.
 
 ## Existing layout
 
@@ -302,4 +304,5 @@ Eight tracked files under `scripts/` contain the literal `k8s/`. Embedded script
 remain at the paths named by `embed.go`; the separate plane module is fetched
 at the CLI revision. Removed workflow/ERP directories are not kept as empty
 packages or placeholder manifests. Model migration, secret custody, accounting
-and both authoring paths have their own surviving tests.
+and default Orka authoring retain their tests; scoped Kagent creation adds tests
+in `app`, `runtime` and `scaffold` without adding a package directory.

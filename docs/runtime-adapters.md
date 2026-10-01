@@ -5,10 +5,13 @@ this document is the contract between the developer experience and runtime
 implementations; it prevents platform identity, model choice, cluster location,
 and policy from collapsing into one ambiguous "provider" concept.
 
-Orka is the first-class runtime for the current create and lift workflow. It
-owns agent execution, orchestration, and platform governance. KMX owns the
-developer experience and lifecycle around it. The selected platform, not a
-generic KMX control plane, owns enforcement.
+Orka remains the first-class and default runtime for create, chat, inspection,
+lift, status, evaluation, console, quickstart, local setup, and AKS. KMX also
+has one explicit lifecycle-only integration:
+`kmx agent create --runtime kagent <name>` can render and create against an
+already-installed exact Kagent v0.10.2. It does not install or upgrade that
+runtime and does not change any no-flag behavior. The selected platform, not a
+generic KMX control plane, owns execution and enforcement.
 
 ## Terms and ownership
 
@@ -28,10 +31,10 @@ Agent.
 
 ## Adapter contract implemented today
 
-`internal/kmx/runtime` is a platform-neutral chat/session contract. No Kubernetes,
-terminal, or vendor SDK types cross the boundary.
+`internal/kmx/runtime` is a platform-neutral session and lifecycle contract. No
+Kubernetes, terminal, or vendor SDK types cross the boundary.
 
-An adapter:
+A session-capable adapter:
 
 1. Has a stable runtime identity.
 2. Probes a target and returns found, absent, or an error. Some compatibility
@@ -55,11 +58,11 @@ Events are observations, not completion receipts. Only a successful `Send` retur
 means the runtime's terminal-state checks completed successfully. Terminal input
 and presentation stay outside the Session contract.
 
-The current registry contains Orka alone. It preserves explicit namespace rules
-and Orka-first automatic discovery; the ordered walk remains a walk so a second
-platform can be registered without the caller learning about it. A third runtime
-is exercised in tests to ensure capabilities and commands do not leak between
-implementations.
+The chat/session registry contains Orka alone. It preserves explicit namespace
+rules and Orka-first automatic discovery; Kagent is not registered for
+discovery or sessions. Its lifecycle-only adapter is instantiated directly by
+explicit create. A test runtime still ensures session capabilities and commands
+do not leak between implementations.
 
 ## Inference provider contract
 
@@ -78,7 +81,19 @@ The shared adapter is a capability-gated session and lifecycle boundary, not a
 universal Agent CRUD or manifest-conversion API. Each adapter instance declares
 the lifecycle verbs it can execute; unsupported verbs return a typed refusal.
 The configured Orka adapter implements render and deploy, while Orka status and
-revision-bound evaluation do not require create-time configuration.
+revision-bound evaluation do not require create-time configuration. The
+configured Kagent adapter declares only render and deploy, where deploy means
+the exact v0.10.2 create-only sequence: it proves the selected controller watches
+the target namespace and has the required namespaced RBAC, binds server admission
+and later live specs to the reviewed intent, and refuses reconciliation,
+adoption, or same-name generated-child collisions.
+Its status and evaluate verbs return typed unsupported results, and `Open`
+refuses chat.
+
+| Runtime | Render | Deploy/create | Status | Evaluate | Session/chat |
+|---|---|---|---|---|---|
+| Orka (default) | yes | reconcile on supported Orka paths | yes | yes | yes |
+| Kagent v0.10.2 (explicit create only) | yes | new ModelConfig then new Agent; no adopt/update/rollback | no | no | no |
 
 The broader lifecycle direction is tracked in
 [#194](https://github.com/kaimahi-agents/kaimahi/issues/194):
@@ -98,23 +113,35 @@ contract does not require a KMX server or controller.
 
 ### Portable revision and target bindings
 
-A newly authored Orka agent has a Git-friendly bundle directory at
-`agents/<name>/` by default. `agent.yaml` is the closed, versioned portable
-revision: name, description, instructions, model name, Orka tools and skills,
-and Provider and Agent rate limits are behavior-defining inputs. Its **exact
-bytes**, including comments and whitespace, are hashed for the portable digest;
-even a formatting-only edit creates a new revision. The Orka extension remains
-closed and versioned: unknown fields are errors, not ignored settings.
+A newly authored agent has a Git-friendly bundle directory at
+`agents/<name>/` by default. `agent.yaml` is a closed, versioned portable
+revision with exactly one runtime extension. Its **exact bytes**, including
+comments and whitespace, are hashed for the portable digest; even a
+formatting-only edit creates a new revision. Unknown fields and multiple runtime
+extensions are errors, not ignored settings.
 
-`bindings.yaml` records **only the creation target**: namespace, Provider type
-and endpoint, and the name and key of a separately provisioned Secret. It holds
-references, never credential values. Neither these bindings nor a target chosen
-later changes the portable digest. Rendering combines the portable revision
-with explicit bindings for a target; the resulting resources and their rendered
-digest do reflect those bindings. For another target, lift will obtain bindings
-from its flags and kmx's local state, not add another file to this directory.
-The bundle is not a Kubernetes manifest: the rendered artifact contains a
-review-only Secret skeleton and must not be bulk-applied.
+For Orka, behavior-defining inputs remain name, optional description,
+instructions, model name, tools, skills, and Provider/Agent rate limits. For
+Kagent, they are name, required description, instructions, model name,
+declarative runtime (`go|python`), and at most one explicit same-namespace MCP
+server/tool allowlist. Runtime identity and the model provider are separate:
+the Kagent extension chooses the execution runtime, while target bindings choose
+`openai|anthropic` and its endpoint/Secret reference.
+
+`bindings.yaml` records **only the creation target**: namespace, model-provider
+type and endpoint, and the name and key of a separately provisioned Secret. It
+holds references, never credential values. Neither bindings document changes
+the portable digest. Rendering combines the portable revision with explicit
+target bindings; the resulting resources and rendered digest do reflect them.
+
+For Orka, later lift obtains another target's bindings from its flags and local
+state. Kagent bundles currently have no lift consumer: lift, status, evaluate,
+console bundle operations, and interactive `/lift` intentionally refuse them.
+Kagent create also omits `eval/example.yaml`. Its rendered artifact contains a
+review-only Secret skeleton followed by ModelConfig and Agent and must not be
+bulk-applied. A successful online create writes a private mode-0600 receipt with
+cluster/resource identities and digests, never prompt or answer text; that
+receipt does not expand the adapter's capabilities.
 
 ## Enforcement contract
 
@@ -134,10 +161,12 @@ implementation in a generic name.
 
 ## Composition boundary
 
-Runtime registration currently lives in `app/runtime_registry.go`; typed session
-events are bridged to the existing renderers by `runtime_session.go`. Native
-platform and compatibility drivers remain responsible for their existing
-protocol, cancellation, history, and approval semantics.
+Chat registration currently lives in `app/runtime_registry.go`; typed session
+events are bridged to the existing renderers by `runtime_session.go`. Orka's
+lifecycle composition is in `runtime_orka_lifecycle.go`. The Kagent adapter in
+`runtime_kagent_lifecycle.go` is composed only by the explicit create path; it
+does not enter the chat registry. Native platforms remain responsible for their
+protocol, cancellation, history, retention, and approval semantics.
 
 Moving implementations into standalone packages can happen without changing the
 contract. Catalogue digests and deployment receipts remain lifecycle concerns,

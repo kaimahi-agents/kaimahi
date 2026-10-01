@@ -27,18 +27,42 @@ would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
-## Can the legacy runtime's YAML create an Orka agent?
+## What Kagent support exists now?
 
-There is no supported translation in the current CLI. `kmx agent create`
-authors a native Orka Provider + Agent and optional Task, not legacy resources
-or BYO images. `agent chat --interactive` and `agent list` are Orka-only, and
-`agent edit` has been removed. See the
-[create contract](kmx.md#kmx-agent-create) and [first-Task example](orka.md#author-an-orka-agent-and-get-an-answer).
-Whether that YAML will ever become an authoring surface over Orka remains
-open and unsupported;
-native Orka resources are the recommendation in [orka.md](orka.md), not a ruling
-that rules out future integration. The isolated conversion spike does not add
-a supported CLI translation.
+Orka remains the default. The only current Kagent capability is explicit
+`kmx agent create --runtime kagent <name>` against an already-installed exact
+v0.10.2. KMX never installs or upgrades it. This path renders a review artifact
+and portable bundle; `--out -` omits the bundle unless `--bundle-path` is set.
+Offline rendering needs neither an installation nor a cluster Secret. Online
+creation requires both and can create a new ModelConfig then a new Agent; it
+does not adopt/update existing objects or roll back partial writes. An optional
+`--task` sends one A2A message as the final step of that same create invocation;
+it is not a standalone or resumable chat capability.
+
+No Kagent chat, list, show, status, lift, evaluate, console, interactive
+`/lift`, quickstart, `up`, installer, or AKS payload was restored. Those
+commands remain Orka-only where applicable, and historical lift records remain
+teardown-only. See the [Kagent create contract](kmx.md#explicit-kagent-v0102-create).
+
+There is still no supported translation from Kagent YAML into an Orka Agent or
+BYO image. Native Orka resources remain the recommendation in
+[orka.md](orka.md); a general cross-runtime authoring/lifecycle surface remains
+open and unsupported.
+
+## Why did my Kagent create rerun refuse existing objects?
+
+Kagent create is intentionally create-only. A failure can leave a ModelConfig
+or Agent that was created before the later check failed, and KMX performs no
+rollback. Inspect the named resources and their ownership/readiness, then remove
+only what you deliberately want recreated. A rerun will not adopt, reconcile,
+update, or delete them for you.
+
+If `--task` was used and the result was ambiguous, assume the message may have
+executed: KMX sends once and never retries ambiguity. Kagent stores the full
+prompt/history/answer in its database with unlimited upstream default session
+retention, and cluster audit policy may also capture Service-proxy bodies.
+Trusted-proxy task submission is unsupported because KMX accepts no Kagent
+bearer credential.
 
 ## A migrated application's turn still fails
 
@@ -56,10 +80,10 @@ The following describes retained legacy code, not Orka's contracts.
 
 ### Empty replies and `input-required`
 
-This was the legacy runtime's human-in-the-loop state, and it went with
-the runtime: kmx no longer drives its Agents, so there is no `input-required`
-turn for it to resolve. An Orka turn is a Task that either returns a result or
-fails. Historical note, for transcripts that still show it: the small-model path
+This was the former Kagent chat path's human-in-the-loop state. The current
+create-only task path accepts only a completed answer and has no continuation
+operation for `input-required`; Orka turns likewise complete or fail.
+Historical note, for transcripts that still show it: the small-model path
 used to re-sample a question-only response up to twice, but not after a tool call or with
 an explicit session;
 there is no guarantee that a system instruction suppresses questions.

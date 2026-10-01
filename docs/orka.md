@@ -110,8 +110,10 @@ an adopter should learn that here, not at their first model call.
 
 ## Author an Orka Agent and get an answer
 
-`agent create` authors Orka resources; it does not install Orka. On the local
-kind path the runtime is already there: `kmx up` and `kmx quickstart` both
+`agent create` defaults to Orka resources; it does not install Orka. The
+separate explicit Kagent create path is documented in the
+[CLI contract](kmx.md#explicit-kagent-v0102-create) and does not change this
+guide. On the local kind path the runtime is already there: `kmx up` and `kmx quickstart` both
 install the pinned release and leave the Ollama model in place, so author
 against that **same** context. On a cluster kmx did not bring up, install it
 first:
@@ -207,9 +209,9 @@ front door — `kmx up` installs Orka itself, so there is no separate
 
 ## Authoring an agent for Orka
 
-Installing Orka and authoring an agent are separate steps. `kmx agent create`
-now emits native Orka resources; installing Orka does not convert existing
-files written for the legacy runtime's API group.
+Installing Orka and authoring an agent are separate steps. The default
+`kmx agent create` path emits native Orka resources; installing Orka does not
+convert existing files written for another runtime's API group.
 
 For a new agent that will run on Orka, **author Orka's native
 `core.orka.ai/v1alpha1` `Agent` and `Provider` resources and invoke it with

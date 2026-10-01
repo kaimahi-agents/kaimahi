@@ -6,6 +6,9 @@ cluster. It takes a named destination and inference Provider. Interactive
 read-only plan before invoking this operation. A separately confirmed
 **Prepare target** action can install Orka or the quickstart Kubernetes Tool
 before retrying the checks; bundle lift itself never installs them.
+This command is intentionally Orka-only: a portable bundle authored by explicit
+Kagent create is refused before cluster reads. Kagent create receipts do not
+enable lift, status, evaluation, console bundle actions, or interactive `/lift`.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]

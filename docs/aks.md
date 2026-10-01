@@ -3,10 +3,10 @@
 [Orka](orka.md) is the platform; Kaimahi helps applications get onto it.
 For existing applications, start with [model-traffic migration](migrate.md).
 This page documents the **current AKS implementation**, which lands Orka on a
-cluster it provisions. The legacy runtime's Copilot demo journey, once
-selected with its own lift payload, is retired; this is not a claim that
-its authoring
-has been ruled out.
+cluster it provisions. The former Kagent Copilot demo journey and its lift
+payload remain retired. Explicit Kagent v0.10.2 create can target a separately
+installed compatible cluster. KMX does not manage that installation, and the
+alternate-runtime AKS payload remains retired.
 
 AKS is **demonstrated, not maintained**: recorded clusters were short-lived and
 torn down. CI exercises portability and ownership logic with keyless tests;

@@ -195,8 +195,9 @@ including any existing agent-execution snapshot key. Back up the new chart's
 `orka-api-agent-execution-snapshot` key with its controller volume and Orka
 resources without printing its value. Do not use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
 See [safe kind and AKS replacement boundaries](orka.md#limits-stated).
-The retired legacy runtime remains untouched; its old chart is not installed
-by kmx.
+KMX still does not install or upgrade Kagent. Its explicit exact-v0.10.2 create
+path targets an installation the operator already owns; the old chart and broad
+runtime surface are not restored.
 
 ## Upgrading the plane
 

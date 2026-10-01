@@ -20,6 +20,9 @@ import (
 // provisioning or createOrkaOnline. The shared CLI operation owns rendering,
 // admission, versioned reconciliation, receipts and remembered selections.
 func (b *orkaChatBackend) liftBundledAgentTo(ctx context.Context, renderer *chatRenderer, target chatLiftTarget, dir string) error {
+	if _, _, _, err := readBundlePortableAgent(dir); err != nil {
+		return err
+	}
 	worker := *b.app
 	cfg := *b.app.Cfg
 	runner := *b.app.Run

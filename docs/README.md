@@ -11,7 +11,7 @@ or comparing implementations.
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
 | Understand runtime, context, session, inference, lifecycle, and enforcement boundaries | [Runtime contract](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
-| Author a native Provider + Agent, optionally run a Task and retrieve its answer | [Native create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
+| Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Route an existing application's model traffic through Orka | [Migration](migrate.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
@@ -22,13 +22,13 @@ Installing Orka is not migration. A migrated application's Deployment stays
 under its owner's management; the supported migration governs **model
 traffic**, not all activity by the application.
 
-Authoring is a separate, **open** decision: native Orka only versus also
-supporting the legacy runtime's YAML as an authoring surface over Orka.
-Nothing supports that today. The native
-recommendation in [orka.md](orka.md) is not a ruling. `kmx agent create`
-currently authors native Orka resources, not a conversion. Existing legacy
-commands/manifests and the isolated conversion spike are not evidence of a
-supported translation layer.
+Native Orka authoring remains the default and the recommendation in
+[orka.md](orka.md). The explicit Kagent v0.10.2 create adapter is a direct,
+create-only target for a preinstalled runtime, not a YAML translation over Orka
+and not a restoration of the former broad command surface. Whether that narrow
+adapter should ever become a general cross-runtime authoring or lifecycle
+surface remains open and unsupported. Existing retired commands/manifests and
+the removed conversion spike are not evidence of one.
 
 ## References for legacy code still present
 

@@ -6,22 +6,25 @@ For work **on** Kaimahi; contribution/PR expectations are in
 
 ## Direction and current implementation
 
-**Orka is the platform.** Kaimahi tooling helps agents/applications get onto it.
-The current migration governs **model traffic only** and leaves the Deployment
-owner-managed. Native-Orka-only authoring versus the legacy runtime's YAML
-over Orka remains
-open; a recommendation is not a ruling. `kmx agent create` currently authors
-native Provider + Agent resources with an optional Task, not a conversion;
-see its [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside
-the direction. The seam bridge shrinking as upstream capabilities arrive is a
+**Orka remains the first-class/default platform.** Kaimahi tooling helps
+agents/applications get onto it. The current migration governs **model traffic
+only** and leaves the Deployment owner-managed. `kmx agent create` without a
+runtime flag still authors native Orka Provider + Agent resources with an
+optional Task. The explicit Kagent path is intentionally narrower: render and
+create against an already-installed exact v0.10.2, with no installer, upgrade,
+discovery, chat, or later lifecycle verbs. It is not a conversion to Orka; see
+the [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside the
+direction. The seam bridge shrinking as upstream capabilities arrive is a
 successful outcome.
 
 The tree retains the model proxy with its operator APIs, ordinary budgets and
-ledger. The legacy installer, its Agent and model-preset manifests, its
-direct MCP example, the custom MCP gateway, approvals/grants, workflow runner
-and connector fixtures are removed. Current authoring is Orka-native; migration
-routes an owner-managed application's model traffic through the bridge. Document
-the bridge as present implementation, not the long-term platform boundary.
+ledger. The old Kagent installer, demo Agent/model-preset manifests, direct MCP
+example, broad operational surface, custom MCP gateway, approvals/grants,
+workflow runner and connector fixtures remain removed. Current authoring is
+Orka-native by default, with one explicit exact-version Kagent create adapter;
+migration routes an owner-managed application's model traffic through the
+bridge. Document the bridge as present implementation, not the long-term
+platform boundary.
 
 ## Repository layout
 
@@ -29,7 +32,7 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 
 | Path | Responsibility |
 |---|---|
-| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, orchestration, scaffolding, embedded manifests |
+| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and narrowly scoped Kagent create adapters, portable authoring, scaffolding, embedded manifests |
 | `plane/` | separate Go module: model proxy, budgets, durable ledger |
 | `plane/cmd/kaimahi-proxy/` | process/listener wiring |
 | `plane/internal/` | proxy, meter/pricing, config, store/db, redaction, metrics/ops |
@@ -39,8 +42,10 @@ Consult the [repository map](repository-map.md) for product/demo classification.
 
 The root CLI and plane are separate modules because the plane builds independently.
 The isolated conversion experiment that once lived under `spikes/` is removed
-from the tree; nothing here is a supported authoring interface for the legacy
-runtime's YAML. `go:embed` cannot cross module boundaries; clone-free kmx fetches the plane at its own revision.
+from the tree. The supported Kagent surface is the closed v0.10.2 create
+scaffold and lifecycle adapter, not a general legacy-YAML conversion layer.
+`go:embed` cannot cross module boundaries; clone-free kmx fetches the plane at
+its own revision.
 Use `kmx plane --source .` when exercising checkout changes. Plain `make` builds
 `bin/kmx` only. Development Orka commands are not in the older `v0.1.0` release;
 see [installation](kmx.md#install).
@@ -99,9 +104,11 @@ model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
 owner-managed application. Author an Orka Agent with `bin/kmx agent create`, or
 get a first answer with `bin/kmx quickstart`.
 
-kmx neither installs nor drives the legacy runtime. Start by
-establishing the live cluster and Orka runtime; the plane and credential steps
-require that preceding bare `up`:
+KMX never installs or upgrades Kagent and drives it only when
+`agent create --runtime kagent` explicitly targets a preinstalled exact
+v0.10.2. The normal development loop remains Orka. Start by establishing the
+live cluster and Orka runtime; the plane and credential steps require that
+preceding bare `up`:
 
 ```bash
 bin/kmx up
@@ -169,6 +176,27 @@ What that shard does **not** prove: native Orka Agent governance. The pinned
 Orka Provider schema has no field naming a private certificate authority, so an
 Orka Agent cannot be told to trust the plane's seam; the governed caller is the
 owner's own application, which is the supported path.
+
+`e2e-kagent-create` is the live boundary for the explicit Kagent create adapter.
+CI first creates its own dedicated kind cluster and installs the official
+`kagent-crds` and `kagent` OCI charts at exactly v0.10.2 as an **external test
+precondition**. The shard pulls them by published OCI digest, checks their
+unpacked chart names and versions, scales the UI to zero, disables
+tools, built-in agents and optional subcharts, and retains bundled Postgres. It then provisions a keyless,
+deterministic in-cluster OpenAI fixture and a separately named dummy Secret.
+With `KMX_TOOLCHAIN=off` and failing `helm` and `kagent` executables first on
+`PATH`, the shard requires `kmx agent create --runtime kagent` to return the
+exact answer, and independently verifies controller version/commit, live
+current-generation conditions, Agent ownership of the generated Deployment and
+Service, the official Go runtime image, the artifact/live ownership-marker
+split, cluster identity, and one private prompt/answer-free two-resource
+receipt. No hosted credential is used.
+
+What that shard does **not** prove: that KMX installs or upgrades Kagent. The
+workflow, not KMX, installs both official charts before the command runs. It
+also proves no standalone Kagent operation beyond create's optional single A2A
+message, no managed-cluster path, and no hosted model provider; those remain
+outside the closed create boundary.
 
 `e2e-spend` is the spend-control boundary, on the same owner-managed path and
 with no legacy runtime either. It reaches the same starting point as `e2e-resilience` —

@@ -17,9 +17,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-// CreateAgent validates the complete Orka artifact before any emission. Offline
+// createOrkaAgent validates the complete Orka artifact before any emission. Offline
 // paths deliberately do not load kubeconfig, provision tools or query a cluster.
-func (a *App) CreateAgent(opt CreateOptions) error {
+func (a *App) createOrkaAgent(opt CreateOptions) error {
 	if opt.Out == "-" {
 		opt.NoApply = true
 	}

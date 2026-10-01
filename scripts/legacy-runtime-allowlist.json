@@ -1,10 +1,174 @@
 {
-  "why": "Every line in this tree that may still name the retired legacy agent runtime, one at a time, with the reason it earns its place. scripts/check-legacy-runtime.py refuses every other mention. An entry that stops matching is a failure there, so this file cannot outlive the lines it describes.",
+  "why": "The closed boundary around explicit Kagent v0.10.2 create support. scoped_support names the only production, test, current-doc, and CI-workflow files that may use approved Kagent vocabulary; scripts/check-legacy-runtime.py independently pins the same paths and the exact rule classes they waive. Non-waivable operation rules also scan bounded multiline compounds, while exact historical, teardown, refusal, absence, and external test-fixture exemptions remain original physical lines. A stale line, widened path, widened rule, or widened compound window is a failure.",
   "historical_files": [
     "CHANGELOG.md",
     "docs/reviews/"
   ],
+  "scoped_support": {
+    "why": "These paths may waive only bare-name, API group, v1alpha2, ModelConfig/RemoteMCPServer, official-image, and create-selector findings. Installer assets, moving pins, old commands, non-create runtime flags, payloads, and broad operational claims remain forbidden in every one of them, including when a construct spans a bounded multiline window. The workflow category is exactly ci.yml and does not waive installer rules; its four official content-addressed chart pull/install commands are separate exact physical-line fixtures below.",
+    "rules": [
+      "api-group",
+      "api-kind",
+      "schema-version",
+      "image",
+      "create-selector",
+      "bare-name"
+    ],
+    "files": {
+      "production": [
+        "cmd/kmx/agent_commands.go",
+        "internal/kmx/app/agent_bundle_evaluate.go",
+        "internal/kmx/app/create.go",
+        "internal/kmx/app/create_kagent.go",
+        "internal/kmx/app/kagent_create_online.go",
+        "internal/kmx/app/runtime_kagent_lifecycle.go",
+        "internal/kmx/runtime/kagent_bindings.go",
+        "internal/kmx/runtime/portable.go",
+        "internal/kmx/runtime/runtime.go",
+        "internal/kmx/scaffold/kagent.go"
+      ],
+      "test": [
+        "cmd/kmx/agent_create_test.go",
+        "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
+        "internal/kmx/app/create_kagent_test.go",
+        "internal/kmx/runtime/kagent_bindings_test.go",
+        "internal/kmx/runtime/portable_secretshapes_test.go",
+        "internal/kmx/runtime/portable_test.go",
+        "internal/kmx/scaffold/kagent_test.go"
+      ],
+      "current-doc": [
+        "CONTRIBUTING.md",
+        "README.md",
+        "docs/FAQ.md",
+        "docs/README.md",
+        "docs/agent-lift.md",
+        "docs/aks.md",
+        "docs/development.md",
+        "docs/entry-point-principles.md",
+        "docs/getting-started.md",
+        "docs/interactive-agent-tui-plan.md",
+        "docs/interactive-chat.md",
+        "docs/kmx.md",
+        "docs/migrate.md",
+        "docs/orka.md",
+        "docs/releases.md",
+        "docs/repository-map.md",
+        "docs/runtime-adapters.md"
+      ],
+      "workflow": [
+        ".github/workflows/ci.yml"
+      ]
+    }
+  },
   "lines": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir \"$charts/crds\"",
+      "category": "fixture",
+      "why": "External official CRD chart is pulled by immutable OCI digest before its unpacked chart name and version are checked."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --untar --untardir \"$charts/runtime\"",
+      "category": "fixture",
+      "why": "External official runtime chart is pulled by immutable OCI digest before its unpacked chart name and version are checked."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "helm install kagent-crds \"$crds_chart\" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --wait --timeout 5m",
+      "category": "fixture",
+      "why": "External official exact-version CRD chart precondition for the disposable live-create shard; KMX neither invokes nor owns this install."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "helm install kagent \"$runtime_chart\" --namespace kagent --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --set kagent-tools.enabled=false --set k8s-agent.enabled=false --set kgateway-agent.enabled=false --set istio-agent.enabled=false --set promql-agent.enabled=false --set observability-agent.enabled=false --set argo-rollouts-agent.enabled=false --set helm-agent.enabled=false --set cilium-policy-agent.enabled=false --set cilium-manager-agent.enabled=false --set cilium-debug-agent.enabled=false --set grafana-mcp.enabled=false --set oauth2-proxy.enabled=false --set providers.default=ollama --set-string providers.ollama.config.host=http://unused.invalid:11434 --set ui.replicas=0 --wait --timeout 10m",
+      "category": "fixture",
+      "why": "External official exact-version runtime chart precondition for the disposable live-create shard, with only the locally proven minimal values; KMX neither invokes nor owns this install."
+    },
+    {
+      "path": "cmd/kmx/root.go",
+      "text": "retiredCommand(\"govern\", \"kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>\"),",
+      "category": "retirement",
+      "why": "Hidden compatibility stub that refuses the retired command locally and points old callers to supported replacements."
+    },
+    {
+      "path": "cmd/kmx/root.go",
+      "text": "retiredCommand(\"use\", \"kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>\"),",
+      "category": "retirement",
+      "why": "Hidden compatibility stub that refuses the retired command locally and points old callers to supported replacements."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"govern\", \"hello-world\"}, \"kmx migrate\"},",
+      "category": "negative",
+      "why": "Bounded test that the hidden govern stub refuses old argv and names its replacement."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"govern\", \"hello-world\", \"--model\", \"governed-ollama\"}, \"kmx migrate\"},",
+      "category": "negative",
+      "why": "Bounded test that legacy govern flags cannot bypass the retirement stub."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"use\", \"ollama\"}, \"kmx models add\"},",
+      "category": "negative",
+      "why": "Bounded test that the hidden preset-switch stub refuses old argv and names its replacement."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "{[]string{\"use\", \"ollama\", \"--agent\", \"hello-world\"}, \"kmx models add\"},",
+      "category": "negative",
+      "why": "Bounded test that legacy preset flags cannot bypass the retirement stub."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "for _, path := range [][]string{{\"govern\"}, {\"use\"}, {\"agent\", \"edit\"}} {",
+      "category": "negative",
+      "why": "Asserts all three retired command paths remain hidden compatibility stubs."
+    },
+    {
+      "path": "cmd/kmx/root_test.go",
+      "text": "\"ctx\", \"down\", \"flow\", \"govern\", \"ledger\",",
+      "category": "negative",
+      "why": "Closed command-tree assertion includes the hidden retirement stub so removal or accidental replacement is visible."
+    },
+    {
+      "path": "internal/kmx/app/manifests_test.go",
+      "text": "\"models/ollama.yaml\", \"models/governed-ollama.yaml\", \"models/governed-copilot.yaml\"} {",
+      "category": "negative",
+      "why": "Bounded packaging test proving the retired fixed model presets remain absent from the tree and binary."
+    },
+    {
+      "path": "internal/kmx/runtime/portable_test.go",
+      "text": "{\"apiVersion\", \"    apiVersion: kagent.dev/v1alpha2\\n\", \"    apiVersion: kagent.dev/v1alpha1\\n\", \"apiVersion\"},",
+      "category": "negative",
+      "why": "Bounded parser test proving the scoped portable extension rejects every Kagent API version except v1alpha2."
+    },
+    {
+      "path": "internal/kmx/scaffold/kagent_test.go",
+      "text": "{\"version\", func(b *KagentBundle) { b.Agent[\"apiVersion\"] = \"kagent.dev/v1alpha1\" }},",
+      "category": "negative",
+      "why": "Bounded scaffold test proving a rendered Kagent Agent cannot drift from the exact v1alpha2 API."
+    },
+    {
+      "path": "internal/kmx/scaffold/agent.go",
+      "text": "// `kmx up` created agents under those names from k8s/hello-world.yaml and",
+      "category": "retirement",
+      "why": "Explains why the formerly reserved demo name is now available after its fixed manifest was retired."
+    },
+    {
+      "path": "internal/kmx/scaffold/agent.go",
+      "text": "// k8s/tools-agent.yaml. Those manifests and the runtime that applied them",
+      "category": "retirement",
+      "why": "Explains why the formerly reserved demo name is now available after its fixed manifest was retired."
+    },
+    {
+      "path": "cmd/kmx/root_test.go",
+      "text": "\"up\", \"use\", \"version\", \"watch\",",
+      "category": "negative",
+      "why": "Closed command-tree assertion includes the hidden retirement stub so removal or accidental replacement is visible."
+    },
     {
       "path": "cmd/kmx/retirement_test.go",
       "text": "{[]string{\"agent\", \"edit\", \"hello-world\"}, \"kmx agent edit is retired; use kubectl\"},",
@@ -108,6 +272,12 @@
       "why": "Explains that the old command cannot be used and names migrate as its replacement."
     },
     {
+      "path": "docs/interactive-chat.md",
+      "text": "and `--runtime kagent` is refused rather than resolved to Orka. Those",
+      "category": "retired-notice",
+      "why": "Explicitly says the runtime selector remains refused by chat; it does not offer the selector as a supported command."
+    },
+    {
       "path": "docs/kmx.md",
       "text": "`kmx agent edit` is retired; its hidden stub points to kubectl.",
       "category": "retired-notice",
@@ -133,13 +303,79 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "\"kmx up --step kagent\",",
+      "text": "\"kmx agent list --runtime=kagent\",",
       "category": "negative",
-      "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
+      "why": "Negative control proving a runtime selector on another agent operation remains forbidden."
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "\"kubectl -n kagent get agents.kagent.dev\",",
+      "text": "\"kmx aks up --payload kagent\",",
+      "category": "negative",
+      "why": "Negative control proving the retired AKS payload remains forbidden."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"KAGENT_VERSION=0.10.2\",",
+      "category": "negative",
+      "why": "Negative control proving moving Kagent version configuration remains forbidden."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"helm install -f kagent-values.yaml kagent\",",
+      "category": "negative",
+      "why": "Negative control proving the retired chart values and installer remain forbidden."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx agent create kagent-hello --runtime kagent --namespace agents\",",
+      "category": "negative",
+      "why": "Counter-control proving the CI patterns do not reject the supported explicit create command."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kubectl -n agents get agents.kagent.dev\",",
+      "category": "negative",
+      "why": "Counter-control proving the API group itself is no longer globally forbidden."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\"),",
+      "category": "negative",
+      "why": "Inline CI tripwire for Kagent runtime selection on every unsupported non-create operation."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"--payload(?:=|\\s+)kagent\\b\"), \"the retired alternate-runtime AKS payload\"),",
+      "category": "negative",
+      "why": "Inline CI tripwire for the retired Kagent AKS payload."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(re.compile(r\"\\bKAGENT_VERSION\\b|kagent-(?:values|tool-server|tools|shim|cli)\\b|\\bkagent(?:cli|compat)\\b\"),",
+      "category": "negative",
+      "why": "Inline CI tripwire for moving pins and retired installer, CLI, shim, and compatibility assets."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\",",
+      "category": "negative",
+      "why": "Clone-free job tripwire for Kagent runtime selection on every unsupported non-create operation."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(r\"--payload(?:=|\\s+)kagent\\b\", \"the retired alternate-runtime AKS payload\"),",
+      "category": "negative",
+      "why": "Clone-free job tripwire for the retired Kagent AKS payload."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "(r\"\\bKAGENT_VERSION\\b|kagent-(?:values|tool-server|tools|shim|cli)\\b|\\bkagent(?:cli|compat)\\b\",",
+      "category": "negative",
+      "why": "Clone-free job tripwire for moving pins and retired installer, CLI, shim, and compatibility assets."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx up --step kagent\",",
       "category": "negative",
       "why": "Negative controls for the shard tripwires: samples the forbidden-pattern list MUST still catch. A pattern that stopped matching would pass every shard in silence."
     },
@@ -157,31 +393,13 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(r\"kagent\\.dev\", \"a resource of the legacy runtime's API group\")]:",
-      "category": "negative",
-      "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
-    },
-    {
-      "path": ".github/workflows/ci.yml",
       "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
       "category": "negative",
       "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(re.compile(r\"--runtime(?:=|\\s+)kagent\\b\"), \"a surviving command aimed at the legacy runtime\"),",
-      "category": "negative",
-      "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
-    },
-    {
-      "path": ".github/workflows/ci.yml",
       "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
-      "category": "negative",
-      "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
-    },
-    {
-      "path": ".github/workflows/ci.yml",
-      "text": "(re.compile(r\"kagent\\.dev\"), \"a resource of the legacy runtime's API group\"),",
       "category": "negative",
       "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
     },
