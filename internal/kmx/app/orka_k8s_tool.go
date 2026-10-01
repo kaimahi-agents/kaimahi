@@ -171,7 +171,7 @@ func renderQuickstartK8sTool(resources []byte, worker string) ([]byte, error) {
 	return bytes.Replace(resources, placeholder, []byte(worker), 1), nil
 }
 
-// policyPermissionDenied is emitted only for a conclusive SAR refusal.
+// policyPermissionDenied is emitted when SAR does not allow the named permission.
 // Tool is set by the lift preflight, which knows the referring Tool identity.
 type policyPermissionDenied struct {
 	Tool, Worker, Namespace, Policy string
@@ -209,7 +209,7 @@ func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, pol
 	}
 	var review struct {
 		Status *struct {
-			Allowed         bool   `json:"allowed"`
+			Allowed         *bool  `json:"allowed"`
 			Denied          bool   `json:"denied"`
 			EvaluationError string `json:"evaluationError"`
 		} `json:"status"`
@@ -220,11 +220,14 @@ func (a *App) orkaWorkerCanGetPolicy(ctx context.Context, worker, namespace, pol
 	if review.Status.EvaluationError != "" {
 		return fmt.Errorf("indeterminate authorization review for %s", permission)
 	}
-	if review.Status.Denied && !review.Status.Allowed {
-		return &policyPermissionDenied{Worker: worker, Namespace: namespace, Policy: policy}
+	if review.Status.Allowed == nil {
+		return fmt.Errorf("invalid authorization review for %s", permission)
 	}
-	if !review.Status.Allowed || review.Status.Denied {
+	if *review.Status.Allowed && review.Status.Denied {
 		return fmt.Errorf("indeterminate authorization review for %s", permission)
+	}
+	if !*review.Status.Allowed {
+		return &policyPermissionDenied{Worker: worker, Namespace: namespace, Policy: policy}
 	}
 	return nil
 }

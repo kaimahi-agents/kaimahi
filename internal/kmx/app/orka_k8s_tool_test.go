@@ -90,15 +90,21 @@ esac`, tt.deployments, func() string {
 
 // The fake boundary checks the exact SAR permission without touching a cluster.
 func TestOrkaWorkerCanGetPolicy(t *testing.T) {
-	for _, tt := range []struct{ name, response, failure, want string }{
-		{"allowed", `{"status":{"allowed":true}}`, "", ""},
-		{"denied", `{"status":{"allowed":false,"denied":true}}`, "", "denied"},
-		{"not allowed", `{"status":{"allowed":false}}`, "", "indeterminate"},
-		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, "", "indeterminate"},
-		{"evaluation error", `{"status":{"allowed":true,"evaluationError":"sensitive-evaluation"}}`, "", "indeterminate"},
-		{"malformed", `{"status":"sensitive-response"}`, "", "invalid"},
-		{"missing status", `{}`, "", "invalid"},
-		{"kubectl failure", ``, "sensitive-admission", "cannot evaluate"},
+	for _, tt := range []struct {
+		name, response, failure, want string
+		denial                        bool
+	}{
+		{"allowed", `{"status":{"allowed":true}}`, "", "", false},
+		{"denied", `{"status":{"allowed":false,"denied":true}}`, "", "denied", true},
+		{"no opinion", `{"status":{"allowed":false,"denied":false}}`, "", "denied", true},
+		{"denied flag omitted", `{"status":{"allowed":false}}`, "", "denied", true},
+		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, "", "indeterminate", false},
+		{"evaluation error", `{"status":{"allowed":false,"denied":false,"evaluationError":"sensitive-evaluation"}}`, "", "indeterminate", false},
+		{"evaluation error without allowed", `{"status":{"evaluationError":"sensitive-evaluation"}}`, "", "indeterminate", false},
+		{"missing allowed", `{"status":{"denied":false}}`, "", "invalid", false},
+		{"malformed", `{"status":"sensitive-response"}`, "", "invalid", false},
+		{"missing status", `{}`, "", "invalid", false},
+		{"kubectl failure", ``, "sensitive-admission", "cannot evaluate", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -115,7 +121,7 @@ printf '%%s' %[3]q`, args, stdin, tt.response, tt.failure))
 				t.Fatalf("error=%v, want %q", err, tt.want)
 			}
 			var denial *policyPermissionDenied
-			if errors.As(err, &denial) != (tt.name == "denied") {
+			if errors.As(err, &denial) != tt.denial {
 				t.Fatalf("unexpected typed denial for %s: %v", tt.name, err)
 			}
 			if err != nil {
@@ -402,7 +408,7 @@ esac`, steps, applied, tt.deployments, tt.account))
 	}
 }
 
-func TestQuickstartK8sToolInstallDenialAfterGrantRefusesSuccess(t *testing.T) {
+func TestQuickstartK8sToolInstallMissingGrantReportsDenial(t *testing.T) {
 	dir := t.TempDir()
 	steps := filepath.Join(dir, "steps")
 	fakeTool(t, dir, "kubectl", fmt.Sprintf(`case " $* " in
@@ -411,15 +417,16 @@ func TestQuickstartK8sToolInstallDenialAfterGrantRefusesSuccess(t *testing.T) {
   *" apply -f - "*) printf 'apply\n' >> %[3]q; /bin/cat >/dev/null ;;
   *" rollout status "*) exit 0 ;;
   *" get outboundaccesspolicies.core.orka.ai "*) printf '%%s' '{"metadata":{"generation":1},"status":{"conditions":[{"type":"Accepted","status":"True","observedGeneration":1}]}}' ;;
-  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false,"denied":true}}' ;;
+  *" create --raw /apis/authorization.k8s.io/v1/subjectaccessreviews -f - "*) printf 'sar\n' >> %[3]q; /bin/cat >/dev/null; printf '%%s' '{"status":{"allowed":false,"denied":false}}' ;;
   *" get tools.core.orka.ai "*) printf 'tool\n' >> %[3]q; exit 1 ;;
   *) exit 1 ;;
 esac`, workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), steps))
 	t.Setenv("PATH", dir)
 	a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}, Err: io.Discard}
 	err := a.installQuickstartK8sTool()
-	if err == nil || !strings.Contains(err.Error(), "orka-ai-worker") || !strings.Contains(err.Error(), "denied") {
-		t.Fatalf("denied Tool install was accepted: %v", err)
+	var denial *policyPermissionDenied
+	if !errors.As(err, &denial) || denial.Worker != "orka-ai-worker" || denial.Namespace != OrkaNamespace || denial.Policy != quickstartK8sToolPolicy || strings.Contains(err.Error(), "indeterminate") {
+		t.Fatalf("missing grant was not reported as a named permission denial: %v", err)
 	}
 	sequence, _ := os.ReadFile(steps)
 	if string(sequence) != "apply\napply\nsar\n" {

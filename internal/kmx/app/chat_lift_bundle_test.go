@@ -336,11 +336,12 @@ func TestLiveCopyLiftOffersRepairOnlyForQuickstartPolicyDenial(t *testing.T) {
 		apiFailure, repair     bool
 	}{
 		{"denied", `{"status":{"allowed":false,"denied":true}}`, quickstartK8sToolPolicy, false, true},
+		{"no opinion", `{"status":{"allowed":false,"denied":false}}`, quickstartK8sToolPolicy, false, true},
 		{"api failure", "", quickstartK8sToolPolicy, true, false},
-		{"indeterminate", `{"status":{"evaluationError":"cannot decide"}}`, quickstartK8sToolPolicy, false, false},
-		{"no opinion", `{"status":{"allowed":false}}`, quickstartK8sToolPolicy, false, false},
+		{"evaluation error", `{"status":{"allowed":false,"denied":false,"evaluationError":"cannot decide"}}`, quickstartK8sToolPolicy, false, false},
+		{"conflicting", `{"status":{"allowed":true,"denied":true}}`, quickstartK8sToolPolicy, false, false},
 		{"malformed", `{"status":"invalid"}`, quickstartK8sToolPolicy, false, false},
-		{"custom policy", `{"status":{"allowed":false,"denied":true}}`, "another-policy", false, false},
+		{"custom policy", `{"status":{"allowed":false,"denied":false}}`, "another-policy", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
@@ -585,16 +586,24 @@ func bundleWithQuickstartReference(t *testing.T, path string) {
 	}
 }
 
-func TestInteractiveBundleLiftOffersRepairForDeniedPolicy(t *testing.T) {
-	b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
-	bundleWithQuickstartReference(t, opt.BundleDir)
-	t.Setenv("KMX_LIFT_POLICY_TEST", "1")
-	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
-	t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
-	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
-		t.Fatalf("cancelled repair failed: %v", err)
+func TestInteractiveBundleLiftOffersRepairForMissingQuickstartGrant(t *testing.T) {
+	for _, tc := range []struct{ name, review string }{
+		{"explicit denial", `{"status":{"allowed":false,"denied":true}}`},
+		{"no opinion", `{"status":{"allowed":false,"denied":false}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
+			bundleWithQuickstartReference(t, opt.BundleDir)
+			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
+			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
+			t.Setenv("KMX_LIFT_TOOL_SPEC", `{"http":{"outboundAccessPolicyRef":{"name":"kmx-k8s-tool-gateway"}}}`)
+			t.Setenv("KMX_LIFT_POLICY_REVIEW", tc.review)
+			if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
+				t.Fatalf("cancelled repair failed: %v", err)
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
 	}
-	assertNoLiftWrites(t, dir, opt.BundleDir)
 }
 
 func TestInteractiveBundleLiftDoesNotRepairUncertainOrCustomPolicy(t *testing.T) {
@@ -603,12 +612,13 @@ func TestInteractiveBundleLiftDoesNotRepairUncertainOrCustomPolicy(t *testing.T)
 		apiFailure                 bool
 	}{
 		{"API failure", quickstartK8sToolPolicy, "", "cannot evaluate", true},
-		{"indeterminate", quickstartK8sToolPolicy, `{"status":{"evaluationError":"cannot decide"}}`, "indeterminate", false},
-		{"no opinion", quickstartK8sToolPolicy, `{"status":{"allowed":false}}`, "indeterminate", false},
-		{"custom policy denied", "other-policy", `{"status":{"allowed":false,"denied":true}}`, "other-policy", false},
+		{"evaluation error", quickstartK8sToolPolicy, `{"status":{"allowed":false,"denied":false,"evaluationError":"cannot decide"}}`, "indeterminate", false},
+		{"conflicting", quickstartK8sToolPolicy, `{"status":{"allowed":true,"denied":true}}`, "indeterminate", false},
+		{"malformed", quickstartK8sToolPolicy, `{"status":"invalid"}`, "invalid", false},
+		{"custom policy no opinion", "other-policy", `{"status":{"allowed":false,"denied":false}}`, "other-policy", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
+			b, r, opt, dir, _ := interactiveBundleFixture(t, "inference\r\r")
 			bundleWithQuickstartReference(t, opt.BundleDir)
 			t.Setenv("KMX_LIFT_POLICY_TEST", "1")
 			t.Setenv("KMX_LIFT_CONTROLLER_NAME", "orka-controller")
@@ -619,7 +629,7 @@ func TestInteractiveBundleLiftDoesNotRepairUncertainOrCustomPolicy(t *testing.T)
 			}
 			err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("unrepairable policy offered repair or lost diagnostic: %v; %s", err, out.String())
+				t.Fatalf("unrepairable policy offered repair or lost diagnostic: %v", err)
 			}
 			assertNoLiftWrites(t, dir, opt.BundleDir)
 		})
