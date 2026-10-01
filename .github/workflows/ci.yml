@@ -2966,10 +2966,10 @@ jobs:
           helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --untar --untardir "$charts/runtime"
           crds_chart="$charts/crds/kagent-crds"
           runtime_chart="$charts/runtime/kagent"
-          test "$(helm show chart "$crds_chart" | awk '$1 == "name:" {print $2}')" = kagent-crds
-          test "$(helm show chart "$runtime_chart" | awk '$1 == "name:" {print $2}')" = kagent
-          test "$(helm show chart "$crds_chart" | awk '$1 == "version:" {print $2}')" = 0.10.2
-          test "$(helm show chart "$runtime_chart" | awk '$1 == "version:" {print $2}')" = 0.10.2
+          test "$(helm show chart "$crds_chart" | awk '/^name:/ {print $2}')" = kagent-crds
+          test "$(helm show chart "$runtime_chart" | awk '/^name:/ {print $2}')" = kagent
+          test "$(helm show chart "$crds_chart" | awk '/^version:/ {print $2}')" = 0.10.2
+          test "$(helm show chart "$runtime_chart" | awk '/^version:/ {print $2}')" = 0.10.2
           helm install kagent-crds "$crds_chart" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --wait --timeout 5m
           helm install kagent "$runtime_chart" --namespace kagent --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --set kagent-tools.enabled=false --set k8s-agent.enabled=false --set kgateway-agent.enabled=false --set istio-agent.enabled=false --set promql-agent.enabled=false --set observability-agent.enabled=false --set argo-rollouts-agent.enabled=false --set helm-agent.enabled=false --set cilium-policy-agent.enabled=false --set cilium-manager-agent.enabled=false --set cilium-debug-agent.enabled=false --set grafana-mcp.enabled=false --set oauth2-proxy.enabled=false --set providers.default=ollama --set-string providers.ollama.config.host=http://unused.invalid:11434 --set ui.replicas=0 --wait --timeout 10m
           kubectl --context kind-kmx-kagent-create -n kagent rollout status deployment/kagent-controller --timeout=300s
