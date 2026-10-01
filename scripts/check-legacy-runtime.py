@@ -150,8 +150,10 @@ SCOPED_SUPPORT_FILES = {
     "test": frozenset({
         "cmd/kmx/agent_create_test.go",
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
+        "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
         "internal/kmx/runtime/kagent_bindings_test.go",
+        "internal/kmx/runtime/lifecycle_test.go",
         "internal/kmx/runtime/portable_secretshapes_test.go",
         "internal/kmx/runtime/portable_test.go",
         "internal/kmx/scaffold/kagent_test.go",
@@ -165,6 +167,7 @@ SCOPED_SUPPORT_FILES = {
         "docs/README.md",
         "docs/agent-lift.md",
         "docs/aks.md",
+        "docs/bundle-format.md",
         "docs/development.md",
         "docs/entry-point-principles.md",
         "docs/getting-started.md",

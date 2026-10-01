@@ -45,7 +45,11 @@ func renderForTest(t *testing.T, opt CreateOptions) (orkaRuntimeAdapter, agentru
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +122,11 @@ extensions:
 	adapter := lifecycleAdapter(t, opt)
 	render := func(source string) (agentruntime.RenderedBundle, map[string]any) {
 		t.Helper()
-		bundle, err := adapter.Render(context.Background(), []byte(source), agentruntime.RenderOptions{})
+		prepared, err := agentruntime.PreparePortableRender([]byte(source), adapter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +199,15 @@ func TestOrkaAdapterRefusesUndeclaredVerbs(t *testing.T) {
 		call func() error
 	}{
 		{agentruntime.VerbRender, func() error {
-			_, err := adapter.Render(context.Background(), []byte("x"), agentruntime.RenderOptions{})
+			source, err := portableOrkaSource(goldenNoTaskCreate(""))
+			if err != nil {
+				return err
+			}
+			prepared, err := agentruntime.PreparePortableRender(source, adapter)
+			if err != nil {
+				return err
+			}
+			_, err = adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 			return err
 		}},
 		{agentruntime.VerbDeploy, func() error {
@@ -307,7 +323,11 @@ func TestOrkaRenderMintsTaskIdentityOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +357,11 @@ func TestOrkaRenderUsesPortableDescriptionNotCreateFlags(t *testing.T) {
 	}
 	opt.Description = "A different flag value"
 	adapter := lifecycleAdapter(t, opt)
-	rendered, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,9 +394,9 @@ func TestOrkaRenderUsesSpecModelAsTheOnlyModelSource(t *testing.T) {
 	}
 }
 
-// TestOrkaRenderRefusesSourceItDidNotParse proves Render parses the exact
-// portable source rather than trusting its own flags. A document the closed
-// schema refuses cannot be rendered even though the flags beside it are fine.
+// TestOrkaRenderRefusesSourceItDidNotParse proves preparation validates the
+// exact portable source rather than trusting create flags. A document the
+// closed schema refuses cannot reach Render even when the flags are fine.
 func TestOrkaRenderRefusesSourceItDidNotParse(t *testing.T) {
 	adapter := lifecycleAdapter(t, goldenNoTaskCreate(""))
 	for _, tc := range []struct{ name, source string }{
@@ -381,8 +405,8 @@ func TestOrkaRenderRefusesSourceItDidNotParse(t *testing.T) {
 		{"unknown field", "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nsurprise: yes\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := adapter.Render(context.Background(), []byte(tc.source), agentruntime.RenderOptions{}); err == nil {
-				t.Fatal("Render accepted source the closed document refuses")
+			if _, err := agentruntime.PreparePortableRender([]byte(tc.source), adapter); err == nil {
+				t.Fatal("preparation accepted source the closed document refuses")
 			}
 		})
 	}

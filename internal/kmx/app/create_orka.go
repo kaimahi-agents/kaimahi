@@ -43,7 +43,11 @@ func (a *App) createOrkaAgent(opt CreateOptions) error {
 	if err != nil {
 		return err
 	}
-	rendered, provenance, err := adapter.renderOrka(source)
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		return err
+	}
+	rendered, provenance, err := adapter.renderOrka(prepared)
 	if err != nil {
 		return err
 	}

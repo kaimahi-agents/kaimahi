@@ -62,6 +62,10 @@ func (a orkaRuntimeAdapter) Capabilities() agentruntime.Capabilities {
 	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: true, Evaluate: true}
 }
 
+func (orkaRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
+	return []agentruntime.ID{agentruntime.Orka}
+}
+
 // lifecycleVerbError returns the one shared typed error for a verb this
 // adapter does not declare, and nil for one it does.
 func (a orkaRuntimeAdapter) lifecycleVerbError(declared bool, verb string) error {
@@ -75,12 +79,12 @@ func (a orkaRuntimeAdapter) lifecycleVerbError(declared bool, verb string) error
 // emitted artifact header records is not part of the neutral RenderedBundle,
 // so the create command calls renderOrka directly; both entry points enforce
 // the same declared capability.
-func (a orkaRuntimeAdapter) Render(_ context.Context, source []byte, _ agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
-	rendered, _, err := a.renderOrka(source)
+func (a orkaRuntimeAdapter) Render(_ context.Context, prepared *agentruntime.PreparedPortableRender, _ agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
+	rendered, _, err := a.renderOrka(prepared)
 	return rendered, err
 }
 
-// renderOrka generates the Orka bundle from the exact portable source bytes
+// renderOrka generates the Orka bundle from a prepared portable document
 // and returns it as an immutable RenderedBundle plus, for offline artifacts,
 // the provenance of the schema it was validated against.
 //
@@ -97,15 +101,11 @@ func (a orkaRuntimeAdapter) Render(_ context.Context, source []byte, _ agentrunt
 // Provider, Agent and Task are marked for deployment: the skeleton is a
 // review-only document naming a prerequisite an operator provisions
 // separately, and applying it would create an empty Secret.
-func (a orkaRuntimeAdapter) renderOrka(source []byte) (agentruntime.RenderedBundle, string, error) {
+func (a orkaRuntimeAdapter) renderOrka(prepared *agentruntime.PreparedPortableRender) (agentruntime.RenderedBundle, string, error) {
 	if err := a.lifecycleVerbError(a.Capabilities().Render, agentruntime.VerbRender); err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
-	// The source is parsed, not trusted: these exact bytes are the portable
-	// identity this render is about, so what they literally say is what gets
-	// rendered, and a document the closed schema refuses is never rendered
-	// merely because the flags beside it happened to be valid.
-	portable, err := agentruntime.ParsePortableAgent(source)
+	portable, source, err := prepared.ForAdapter(a.ID())
 	if err != nil {
 		return agentruntime.RenderedBundle{}, "", err
 	}
@@ -481,7 +481,7 @@ func (a *App) orkaEvaluationRevisionError(ctx context.Context, ref agentruntime.
 func orkaSpecFromPortable(portable *agentruntime.PortableAgent, bindings agentruntime.OrkaBindings, opt CreateOptions) (scaffold.OrkaSpec, error) {
 	extension := portable.Extensions.Orka
 	if extension == nil {
-		return scaffold.OrkaSpec{}, fmt.Errorf("portable agent %q has no extensions.orka block", portable.Metadata.Name)
+		extension = &agentruntime.OrkaExtension{}
 	}
 	spec := scaffold.OrkaSpec{
 		Name:              portable.Metadata.Name,
@@ -658,7 +658,11 @@ func RenderOrkaBundleFile(path string, bindings agentruntime.OrkaBindings) (agen
 		return agentruntime.RenderedBundle{}, fmt.Errorf("read portable agent: %w", err)
 	}
 	adapter := orkaRuntimeAdapter{create: &CreateOptions{}, bindings: &bindings}
-	rendered, _, err := adapter.renderOrka(source)
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		return agentruntime.RenderedBundle{}, err
+	}
+	rendered, _, err := adapter.renderOrka(prepared)
 	return rendered, err
 }
 

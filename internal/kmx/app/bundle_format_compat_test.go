@@ -74,6 +74,65 @@ func TestBundleFormatAcrossWriterReleases(t *testing.T) {
 	}
 }
 
+// The Kagent fixture pins source identity and parsing independently of Orka's
+// target-specific rendered documents.
+func TestKagentBundleFormatFixture(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "kagent", "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := agentruntime.ParsePortableAgent(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Extensions.Kagent == nil || parsed.Extensions.Kagent.Runtime != "go" || parsed.Extensions.Orka != nil {
+		t.Fatalf("Kagent fixture extension changed: %+v", parsed.Extensions)
+	}
+	if !bytes.Equal(parsed.Source(), source) {
+		t.Fatal("fixture source bytes changed on parse")
+	}
+	if got := agentruntime.PortableBundleDigest(source); got != "987627680304815bf08eeef12844a171ad6c5cc133ef730c4c0418a0a792dc64" {
+		t.Fatalf("Kagent portable digest = %s", got)
+	}
+	bindingsSource, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "kagent", "bindings.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentruntime.ParseKagentBindings(bindingsSource); err != nil {
+		t.Fatalf("Kagent fixture bindings no longer parse: %v", err)
+	}
+}
+
+func TestBuiltInAdaptersRefuseOtherRuntimeBehaviorBeforeRender(t *testing.T) {
+	kagent, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "kagent", "agent.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = agentruntime.PreparePortableRender(kagent, orkaRuntimeAdapter{})
+	if err == nil || !strings.Contains(err.Error(), "extensions.kagent.runtime") {
+		t.Fatalf("Orka did not refuse Kagent runtime behavior: %v", err)
+	}
+	orka := []byte(`apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: example
+spec:
+  instructions: Respond briefly.
+  model:
+    name: fixture
+extensions:
+  orka:
+    apiVersion: core.orka.ai/v1alpha1
+    agent:
+      tools:
+        - name: lookup
+`)
+	_, err = agentruntime.PreparePortableRender(orka, kagentRuntimeAdapter{})
+	if err == nil || !strings.Contains(err.Error(), "extensions.orka.agent.tools") {
+		t.Fatalf("Kagent did not refuse Orka tools: %v", err)
+	}
+}
+
 func TestBundleFormatRefusesNewerVersionsAndUnknownFields(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "bundle-format", "main", "agent.yaml"))
 	if err != nil {

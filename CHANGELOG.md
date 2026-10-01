@@ -24,6 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Portable bundles may omit `extensions` or use `extensions: {}` for a core-only Agent. Orka renders that core like an apiVersion-only Orka extension; create still writes the extension. Lifecycle rendering refuses each behavior field a target cannot honor rather than silently dropping it. `extensions: null` is refused, and existing Orka and Kagent bundle digests remain tied to their exact authored bytes.
+
 - `kmx agent create --runtime kagent <name>` adds an explicit, create-only
   integration for an already-installed exact Kagent v0.10.2. Orka remains the
   default and all no-flag behavior is unchanged. Offline create needs no cluster

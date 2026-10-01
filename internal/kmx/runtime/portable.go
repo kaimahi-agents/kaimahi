@@ -1,5 +1,5 @@
 // Portable authoring document: a closed `kmx.kaimahi.dev/v1alpha1` document
-// carrying neutral agent behavior plus exactly one Orka or Kagent runtime
+// carrying neutral agent behavior and optionally one Orka or Kagent runtime
 // extension. It is decoded strictly — unknown fields, duplicate keys,
 // merge keys, aliases, extra documents and credential-shaped values are all
 // refused — because these exact bytes become the portable identity a
@@ -70,8 +70,7 @@ type PortableModel struct {
 	Name string `yaml:"name"`
 }
 
-// PortableExtensions is a strict union. Exactly one pointer must be non-nil;
-// a document cannot have no lifecycle target or two conflicting targets.
+// PortableExtensions is a strict optional union: zero or one runtime block.
 type PortableExtensions struct {
 	Orka   *OrkaExtension   `yaml:"orka,omitempty"`
 	Kagent *KagentExtension `yaml:"kagent,omitempty"`
@@ -188,8 +187,18 @@ func ParsePortableAgent(data []byte) (*PortableAgent, error) {
 	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return nil, fmt.Errorf("portable agent document: %w", err)
 	}
+	if block := portableValueAt(root.Content[0], "extensions"); block != nil {
+		if block.Tag == "!!null" {
+			return nil, fmt.Errorf("portable agent document: extensions must be a mapping, not null")
+		}
+		for _, name := range []string{"orka", "kagent"} {
+			if arm := portableValueAt(root.Content[0], "extensions", name); arm != nil && arm.Tag == "!!null" {
+				return nil, fmt.Errorf("portable agent document: extensions.%s must be a mapping", name)
+			}
+		}
+	}
 	if hasBothPortableExtensions(root.Content[0]) {
-		return nil, fmt.Errorf("portable agent document: extensions must contain exactly one of %q or %q", Orka, Kagent)
+		return nil, fmt.Errorf("portable agent document: extensions must contain at most one of %q or %q", Orka, Kagent)
 	}
 	if block := portableValueAt(root.Content[0], "extensions", "orka", "agent", "coordination"); block != nil && block.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("portable agent document: extensions.orka.agent.coordination must be a mapping")
@@ -390,8 +399,8 @@ func (p *PortableAgent) validate() error {
 	if p.Extensions.Kagent != nil {
 		extensions++
 	}
-	if extensions != 1 {
-		return fmt.Errorf("extensions must contain exactly one of %q or %q", Orka, Kagent)
+	if extensions > 1 {
+		return fmt.Errorf("extensions must contain at most one of %q or %q", Orka, Kagent)
 	}
 	if p.Extensions.Kagent != nil && strings.TrimSpace(p.Spec.Description) == "" {
 		return fmt.Errorf("spec.description is required for the %q runtime", Kagent)

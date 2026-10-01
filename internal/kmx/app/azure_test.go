@@ -30,7 +30,12 @@ func TestAzureCreatePortableBindingsAndRender(t *testing.T) {
 	if bindings.Provider.Azure.DeploymentName != "chat-prod" {
 		t.Fatalf("lost deployment: %#v", bindings)
 	}
-	rendered, err := (&orkaRuntimeAdapter{create: &opt, bindings: &bindings}).Render(context.Background(), portable, agentruntime.RenderOptions{})
+	adapter := orkaRuntimeAdapter{create: &opt, bindings: &bindings}
+	prepared, err := agentruntime.PreparePortableRender(portable, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -543,16 +543,28 @@ func TestParsePortableAgentRejectsUnknownFieldsAtEveryLevel(t *testing.T) {
 	}
 }
 
-// A portable revision has exactly one lifecycle target, never none or two.
-func TestParsePortableAgentRequiresExactlyOneExtension(t *testing.T) {
+// A core-only revision has no extension; stated extensions must be mappings.
+func TestParsePortableAgentAcceptsCoreOnly(t *testing.T) {
+	for _, doc := range []string{portableCore, portableCore + "extensions: {}\n"} {
+		agent, err := ParsePortableAgent([]byte(doc))
+		if err != nil {
+			t.Fatalf("core-only document refused: %v", err)
+		}
+		if agent.Extensions.Orka != nil || agent.Extensions.Kagent != nil || string(agent.Source()) != doc {
+			t.Fatalf("core-only document changed: %+v", agent.Extensions)
+		}
+	}
+}
+
+func TestParsePortableAgentRejectsInvalidExtensionMapping(t *testing.T) {
 	for _, tc := range []struct{ name, doc, want string }{
-		{"no extensions block", portableCore, "exactly one"},
-		{"empty extensions block", portableCore + "extensions: {}\n", "exactly one"},
-		{"null orka extension", portableCore + "extensions:\n  orka:\n", "exactly one"},
-		{"null kagent extension", portableCore + "extensions:\n  kagent:\n", "exactly one"},
-		{"both extensions", minimalPortableYAML + "  kagent:\n    apiVersion: kagent.dev/v1alpha2\n    runtime: go\n", "exactly one"},
-		{"both extensions with null Orka", minimalKagentYAML + "  orka: null\n", "exactly one"},
-		{"both extensions with null Kagent", minimalPortableYAML + "  kagent: null\n", "exactly one"},
+		{"null extensions", portableCore + "extensions: null\n", "extensions must be a mapping, not null"},
+		{"empty extensions value", portableCore + "extensions:\n", "extensions must be a mapping, not null"},
+		{"null orka extension", portableCore + "extensions:\n  orka:\n", "extensions.orka must be a mapping"},
+		{"null kagent extension", portableCore + "extensions:\n  kagent:\n", "extensions.kagent must be a mapping"},
+		{"both extensions", minimalPortableYAML + "  kagent:\n    apiVersion: kagent.dev/v1alpha2\n    runtime: go\n", "at most one"},
+		{"both extensions with null Orka", minimalKagentYAML + "  orka: null\n", "extensions.orka must be a mapping"},
+		{"both extensions with null Kagent", minimalPortableYAML + "  kagent: null\n", "extensions.kagent must be a mapping"},
 		{"an unknown extension", portableCore + "extensions:\n  another:\n    namespace: elsewhere\n", "field another not found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

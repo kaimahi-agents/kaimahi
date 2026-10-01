@@ -196,7 +196,11 @@ func TestBundleStatusNamesCoordinationDepthDrift(t *testing.T) {
 	}
 	create := goldenNoTaskCreate("")
 	adapter := lifecycleAdapter(t, create)
-	rendered, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

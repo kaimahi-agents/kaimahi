@@ -1,0 +1,10 @@
+# Creation target only; not included in the portable digest.
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: KagentBindings
+namespace: agents
+modelConfig:
+  provider: openai
+  baseURL: https://models.example.invalid/v1
+  secretRef:
+    name: fixture-key
+    key: api-key

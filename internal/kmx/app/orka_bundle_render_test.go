@@ -48,13 +48,17 @@ func TestPortableDigestIndependentOfBindingsAndRenderedDigestDependsOnThem(t *te
 	}
 	bindings := orkaBindingsFromCreate(opt)
 	adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true, SchemaTarget: "v0.1.3"}, bindings: &bindings}
-	first, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	adapter.bindings.Provider.SecretRef.Name = "another-key"
 	adapter.bindings.Namespace = "elsewhere"
-	second, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	second, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +94,18 @@ func TestRenderedDigestChangesForEachTargetBinding(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			adapter := orkaRuntimeAdapter{create: &CreateOptions{NoApply: true, SchemaTarget: "v0.1.3"}, bindings: &base}
-			first, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+			prepared, err := agentruntime.PreparePortableRender(source, adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
 			changed := base
 			tc.change(&changed)
 			adapter.bindings = &changed
-			second, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+			second, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,8 +124,42 @@ func TestExplicitInvalidBindingsNeverFallBackToCreateFlags(t *testing.T) {
 	}
 	adapter := lifecycleAdapter(t, opt)
 	adapter.bindings = &agentruntime.OrkaBindings{Provider: orkaBindingsFromCreate(opt).Provider}
-	if _, err := adapter.Render(context.Background(), source, agentruntime.RenderOptions{}); err == nil {
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{}); err == nil {
 		t.Fatal("empty explicitly supplied namespace fell back to create flags")
+	}
+}
+
+func TestCoreOnlyRendersLikeEmptyOrkaExtension(t *testing.T) {
+	opt := goldenNoTaskCreate("")
+	adapter := lifecycleAdapter(t, opt)
+	core := []byte("apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: PortableAgent\nmetadata:\n  name: hello\nspec:\n  instructions: Do the thing.\n  model:\n    name: gpt-4o-mini\n")
+	withExtension := append(append([]byte(nil), core...), []byte("extensions:\n  orka:\n    apiVersion: core.orka.ai/v1alpha1\n")...)
+	var rendered []agentruntime.RenderedBundle
+	for _, source := range [][]byte{core, withExtension} {
+		prepared, err := agentruntime.PreparePortableRender(source, adapter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := adapter.Render(t.Context(), prepared, agentruntime.RenderOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered = append(rendered, bundle)
+	}
+	if rendered[0].PortableDigest() == rendered[1].PortableDigest() {
+		t.Fatal("distinct authored bytes kept the same portable digest")
+	}
+	if rendered[0].RenderedDigest() != rendered[1].RenderedDigest() {
+		t.Fatal("core-only changed the rendered digest")
+	}
+	for i, doc := range rendered[0].Documents() {
+		if !bytes.Equal(doc, rendered[1].Documents()[i]) {
+			t.Fatalf("rendered document %d differs", i)
+		}
 	}
 }
 

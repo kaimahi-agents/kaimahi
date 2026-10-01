@@ -454,7 +454,11 @@ func reconcileFixture(t *testing.T) (orkaRuntimeAdapter, agentruntime.RenderedBu
 	if e != nil {
 		t.Fatal(e)
 	}
-	rendered, e := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, e := agentruntime.PreparePortableRender(source, adapter)
+	if e != nil {
+		t.Fatal(e)
+	}
+	rendered, e := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1006,7 +1010,11 @@ func TestReconcileRefusesTaskBeforeClusterWrites(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	bundle, e := adapter.Render(context.Background(), source, agentruntime.RenderOptions{})
+	prepared, e := agentruntime.PreparePortableRender(source, adapter)
+	if e != nil {
+		t.Fatal(e)
+	}
+	bundle, e := adapter.Render(context.Background(), prepared, agentruntime.RenderOptions{})
 	if e != nil {
 		t.Fatal(e)
 	}

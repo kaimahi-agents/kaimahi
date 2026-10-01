@@ -36,6 +36,10 @@ func (a kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
 	return agentruntime.Capabilities{Render: configured, Deploy: configured}
 }
 
+func (kagentRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
+	return []agentruntime.ID{agentruntime.Kagent}
+}
+
 func (a kagentRuntimeAdapter) lifecycleVerbError(declared bool, verb string) error {
 	if declared {
 		return nil
@@ -43,11 +47,11 @@ func (a kagentRuntimeAdapter) lifecycleVerbError(declared bool, verb string) err
 	return &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: verb}
 }
 
-func (a kagentRuntimeAdapter) Render(_ context.Context, source []byte, _ agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
+func (a kagentRuntimeAdapter) Render(_ context.Context, prepared *agentruntime.PreparedPortableRender, _ agentruntime.RenderOptions) (agentruntime.RenderedBundle, error) {
 	if err := a.lifecycleVerbError(a.Capabilities().Render, agentruntime.VerbRender); err != nil {
 		return agentruntime.RenderedBundle{}, err
 	}
-	portable, err := agentruntime.ParsePortableAgent(source)
+	portable, source, err := prepared.ForAdapter(a.ID())
 	if err != nil {
 		return agentruntime.RenderedBundle{}, err
 	}

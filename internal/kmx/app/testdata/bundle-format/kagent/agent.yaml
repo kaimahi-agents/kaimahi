@@ -1,0 +1,13 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: kagent-fixture
+spec:
+  instructions: Give a concise answer.
+  description: Kagent compatibility fixture
+  model:
+    name: gpt-4o-mini
+extensions:
+  kagent:
+    apiVersion: kagent.dev/v1alpha2
+    runtime: go

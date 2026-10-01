@@ -11,8 +11,8 @@ other release's output.
 
 | File | Current rule |
 |---|---|
-| `agent.yaml` | Exactly one `kmx.kaimahi.dev/v1alpha1` `PortableAgent`, with the required `extensions.orka.apiVersion: core.orka.ai/v1alpha1`. No other document or Orka extension version is accepted. |
-| `bindings.yaml` | Creation-target `kmx.kaimahi.dev/v1alpha1` `OrkaBindings`; lift supplies new target bindings rather than copying these. |
+| `agent.yaml` | Exactly one `kmx.kaimahi.dev/v1alpha1` `PortableAgent`. `extensions` is absent, `{}`, or holds exactly one of `orka` (`core.orka.ai/v1alpha1`) or `kagent` (`kagent.dev/v1alpha2`). `extensions: null`, null arms, unknown fields and other versions are refused. |
+| `bindings.yaml` | Creation-target `kmx.kaimahi.dev/v1alpha1` `OrkaBindings` or `KagentBindings`; Orka lift supplies new target bindings rather than copying these. |
 | `eval/*.yaml` | One case per file (`id`, `input`, non-empty `expectContains`); **no** `apiVersion` field. |
 | `lift-policy.yaml` | Optional strict YAML mapping of destination and evaluated cluster UID/namespace rules; **no** `apiVersion` field. See [the evaluation gate](agent-lift.md#requiring-evaluation-before-lift). |
 | Lift/evaluation receipts and remembered target | JSON with **no** format-version field or version negotiation. Remembered selections live in local kmx state, outside the bundle and Git. |
@@ -29,6 +29,16 @@ backward parsing compatibility across every release**: v0.2.0 had a portable
 document shape with target bindings inside the Orka extension; current kmx
 rejects those fields even though the version string is unchanged. Persistent
 `agent.yaml`/`bindings.yaml` bundles first shipped in v0.3.0.
+
+A core-only document with absent or empty `extensions` can be rendered to Orka;
+Kagent rendering still requires an explicit `extensions.kagent.runtime` choice.
+A target refuses each behavior field in an extension it does not consume before
+rendering; `apiVersion` alone does not specify behavior. Older kmx readers
+refuse core-only documents instead of ignoring them. The Orka-only reader at
+`47e7d88` reports `portable agent document: extensions.orka is required:
+"orka" is the only runtime this document targets`; the reader at `3926b18`
+reports `portable agent document: extensions must contain exactly one of
+"orka" or "kagent"` (a command may prefix that parser error).
 
 ## What the digests say
 
@@ -70,9 +80,9 @@ and a malformed remembered selection is refused as ambiguous. Status checks targ
 and recorded digests before counting evidence; another kmx version's readable
 receipt does not by itself establish that today's bundle or target was tested.
 
-Today kmx recognizes only the single Orka extension `apiVersion` above; it has
-no negotiation for a second one. The optional
-`extensions.orka.agent.coordination` block uses this same version: a kmx
+Today kmx recognizes the Orka and Kagent extension versions above, but no
+negotiation for future versions. The optional
+`extensions.orka.agent.coordination` block uses the Orka version: a kmx
 release without that field refuses a bundle that states it. Any added optional
 field under this version still requires a kmx release that knows that field. Changing an existing
 field's meaning would require a new extension version **and** reader support

@@ -286,8 +286,8 @@ func readBundlePortableAgent(bundle string) (string, []byte, string, error) {
 	if err != nil {
 		return "", nil, "", fmt.Errorf("invalid portable agent: %w", err)
 	}
-	// ParsePortableAgent requires exactly one extension, so a Kagent arm
-	// unambiguously identifies a bundle these Orka-only callers cannot handle.
+	// A Kagent arm identifies a bundle these Orka-only callers cannot handle;
+	// an absent extension is a core-only bundle Orka can render.
 	if portable.Extensions.Kagent != nil {
 		return "", nil, "", fmt.Errorf("runtime %s bundle is not supported by this Orka-only command", agentruntime.Kagent)
 	}

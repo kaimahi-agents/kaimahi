@@ -4,18 +4,33 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
 // exampleAdapter is a runtime that knows nothing about any cluster: it proves
 // the lifecycle contract is satisfiable through embedding alone.
-type exampleAdapter struct{ capabilities Capabilities }
+type exampleAdapter struct {
+	capabilities Capabilities
+	runtime      ID
+}
 
-func (exampleAdapter) ID() ID                                        { return testRuntime }
+func (a exampleAdapter) ID() ID {
+	if a.runtime != "" {
+		return a.runtime
+	}
+	return testRuntime
+}
 func (exampleAdapter) Probe(context.Context, Target) (Probe, error)  { return Probe{}, nil }
 func (exampleAdapter) Open(context.Context, Target) (Session, error) { return nil, nil }
 func (a exampleAdapter) Capabilities() Capabilities                  { return a.capabilities }
-func (a exampleAdapter) Render(_ context.Context, source []byte, _ RenderOptions) (RenderedBundle, error) {
+func (exampleAdapter) ConsumedExtensions() []ID                      { return nil }
+func (a exampleAdapter) Render(_ context.Context, prepared *PreparedPortableRender, _ RenderOptions) (RenderedBundle, error) {
+	agent, source, err := prepared.ForAdapter(a.ID())
+	if err != nil {
+		return RenderedBundle{}, err
+	}
+	_ = agent
 	return NewRenderedBundle(a.ID(), source, []Document{ApplyDocument(source)})
 }
 func (a exampleAdapter) Deploy(_ context.Context, bundle RenderedBundle, _ DeployOptions) (DeployResult, error) {
@@ -38,7 +53,11 @@ func TestLifecycleAdapterEmbedsAdapterAndReusesIdentity(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	bundle, err := lifecycle.Render(ctx, []byte("source"), RenderOptions{})
+	prepared, err := PreparePortableRender([]byte(portableCore), lifecycle)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	bundle, err := lifecycle.Render(ctx, prepared, RenderOptions{})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -60,6 +79,91 @@ func TestLifecycleAdapterEmbedsAdapterAndReusesIdentity(t *testing.T) {
 	}
 	if !lifecycle.Capabilities().Render || lifecycle.Capabilities().Evaluate {
 		t.Fatalf("declared capabilities do not match the implemented verbs: %+v", lifecycle.Capabilities())
+	}
+}
+
+// A typed render cannot be invoked with unchecked or foreign behavior.
+func TestExampleAdapterRequiresPreparedPortableRender(t *testing.T) {
+	adapter := exampleAdapter{capabilities: Capabilities{Render: true}}
+	for _, input := range []*PreparedPortableRender{nil, {}} {
+		if _, err := adapter.Render(t.Context(), input, RenderOptions{}); err == nil {
+			t.Fatal("example adapter accepted an unchecked document")
+		}
+	}
+	foreign := exampleAdapter{capabilities: Capabilities{Render: true}, runtime: ID("foreign")}
+	prepared, err := PreparePortableRender([]byte(portableCore), foreign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Render(t.Context(), prepared, RenderOptions{}); err == nil {
+		t.Fatal("prepared document accepted for another runtime")
+	}
+}
+
+func TestPreparePortableRenderRefusesUnconsumedBehavior(t *testing.T) {
+	adapter := exampleAdapter{capabilities: Capabilities{Render: true}}
+	for _, tc := range []struct {
+		name, extension string
+		want            []string
+	}{
+		{"apiVersion alone", "    apiVersion: core.orka.ai/v1alpha1\n", nil},
+		{"empty behavior", "    apiVersion: core.orka.ai/v1alpha1\n    provider:\n      rateLimit: {}\n    agent:\n      tools: []\n      skills: []\n      rateLimit: {}\n", nil},
+		{"all behavior", "    apiVersion: core.orka.ai/v1alpha1\n    provider:\n      rateLimit:\n        requestsPerMinute: 10\n    agent:\n      tools:\n        - name: tool-one\n      skills:\n        - name: skill-one\n      rateLimit:\n        tokensPerMinute: 100\n      coordination:\n        enabled: false\n", []string{"extensions.orka.provider.rateLimit", "extensions.orka.agent.tools", "extensions.orka.agent.skills", "extensions.orka.agent.rateLimit", "extensions.orka.agent.coordination"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := []byte(portableCore + "extensions:\n  orka:\n" + tc.extension)
+			prepared, err := PreparePortableRender(source, adapter)
+			if len(tc.want) == 0 {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := adapter.Render(t.Context(), prepared, RenderOptions{}); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("unconsumed behavior was accepted")
+			}
+			last := -1
+			for _, field := range tc.want {
+				at := strings.Index(err.Error(), field)
+				if at <= last {
+					t.Fatalf("missing or unordered %s in %v", field, err)
+				}
+				last = at
+			}
+		})
+	}
+}
+
+func TestPreparePortableRenderRefusesKagentBehaviorWithoutConsumption(t *testing.T) {
+	source := []byte(validKagentYAML)
+	_, err := PreparePortableRender(source, exampleAdapter{capabilities: Capabilities{Render: true}})
+	if err == nil || !strings.Contains(err.Error(), "extensions.kagent.runtime") || !strings.Contains(err.Error(), "extensions.kagent.tools") {
+		t.Fatalf("unconsumed Kagent behavior not named: %v", err)
+	}
+}
+
+func TestPreparedPortableRenderProtectsSourceAndBehavior(t *testing.T) {
+	original := []byte(portableCore)
+	prepared, err := PreparePortableRender(original, exampleAdapter{capabilities: Capabilities{Render: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original[0] = 'X'
+	first, copyOfSource, err := prepared.ForAdapter(testRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Spec.Instructions = "altered"
+	copyOfSource[0] = 'X'
+	second, source, err := prepared.ForAdapter(testRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Spec.Instructions != "Do the thing." || string(source) != portableCore {
+		t.Fatal("prepared document was mutated after validation")
 	}
 }
 

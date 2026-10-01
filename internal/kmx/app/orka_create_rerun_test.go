@@ -120,7 +120,11 @@ func TestOrkaCreateRerunAfterSuccessReusesBoth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, _, err := adapter.renderOrka(source)
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, _, err := adapter.renderOrka(prepared)
 	if err != nil {
 		t.Fatal(err)
 	}

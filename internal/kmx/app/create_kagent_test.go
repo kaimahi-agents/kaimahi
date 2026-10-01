@@ -1522,7 +1522,11 @@ func TestKagentDeployRefusesMutatedRenderedDocuments(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := kagentRuntimeAdapter{app: &App{}, create: &opt, bindings: &bindings}
-	rendered, err := adapter.Render(t.Context(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := adapter.Render(t.Context(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

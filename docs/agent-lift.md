@@ -15,7 +15,13 @@ kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference
 ```
 
 The bundle contains `agent.yaml` (the portable definition) and
-`bindings.yaml` (its creation-target bindings). Lift reads the definition from
+`bindings.yaml` (its creation-target bindings). An `agent.yaml` with no
+`extensions` block or `extensions: {}` can be lifted to Orka: its name,
+description, instructions and model render exactly as they do with an
+apiVersion-only Orka extension. Orka-specific tools, skills, rate limits and
+coordination require the Orka extension; a target that does not consume them
+refuses the named fields rather than dropping them. `kmx agent create` still
+writes the Orka extension. Lift reads the definition from
 `agent.yaml`, resolves **new** target bindings, and renders with
 `RenderOrkaBundleFile`. It does not copy a Secret or take inference from the
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments

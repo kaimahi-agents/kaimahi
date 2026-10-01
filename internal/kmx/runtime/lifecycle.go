@@ -1,9 +1,9 @@
 // Lifecycle contracts. LifecycleAdapter is the sibling of the chat Adapter:
 // a runtime that can render, deploy, report on, or evaluate an agent embeds
 // Adapter and reuses the same ID, AgentRef and Status types rather than
-// introducing a parallel identity model. Nothing here knows about Kubernetes,
-// a document schema, or any specific platform: Render takes the exact
-// validated source bytes a caller already holds.
+// introducing a parallel identity model. Nothing here knows about Kubernetes:
+// Render takes a target-bound portable document whose exact source was checked
+// before the adapter received it.
 package runtime
 
 import (
@@ -17,10 +17,11 @@ import (
 type LifecycleAdapter interface {
 	Adapter
 	Capabilities() Capabilities
-	// Render consumes the exact prevalidated source bytes. Those bytes are the
-	// authoritative portable-identity input. An adapter may decode them to learn
-	// what to render, but must not render from a re-serialized copy.
-	Render(context.Context, []byte, RenderOptions) (RenderedBundle, error)
+	// ConsumedExtensions declares the runtime-specific behavior Render honors.
+	ConsumedExtensions() []ID
+	// Render takes only a document prepared for this adapter. Its source bytes
+	// remain the authoritative portable-identity input.
+	Render(context.Context, *PreparedPortableRender, RenderOptions) (RenderedBundle, error)
 	// Deploy uses Render's bundle without re-rendering; a reconciler may add
 	// ownership metadata to the write payload without changing the digest.
 	Deploy(context.Context, RenderedBundle, DeployOptions) (DeployResult, error)

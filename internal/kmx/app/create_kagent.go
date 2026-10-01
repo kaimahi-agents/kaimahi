@@ -37,7 +37,11 @@ func (a *App) createKagentAgent(opt CreateOptions) error {
 		return err
 	}
 	adapter := kagentRuntimeAdapter{app: a, create: &opt, bindings: &bindings}
-	rendered, err := adapter.Render(a.operationContext(), source, agentruntime.RenderOptions{})
+	prepared, err := agentruntime.PreparePortableRender(source, adapter)
+	if err != nil {
+		return err
+	}
+	rendered, err := adapter.Render(a.operationContext(), prepared, agentruntime.RenderOptions{})
 	if err != nil {
 		return err
 	}

@@ -106,19 +106,24 @@ The broader lifecycle direction is tracked in
 - rollback deploys and verifies an earlier revision but cannot undo completed
   external actions.
 
-Built-in lifecycle adapters should advertise capabilities and return explicit
-unsupported results. They must preserve platform-specific fields they do not
-understand. Git and the selected runtime are the initial state stores; this
+Built-in lifecycle adapters advertise capabilities and the extensions whose
+behavior they consume. Before rendering, `PreparePortableRender` validates the
+exact authored source and refuses every behavior field from an extension the
+target does not consume. `LifecycleAdapter.Render` accepts only that prepared,
+target-bound document; missing or wrong-target preparation is refused. An
+extension's `apiVersion` alone does not add behavior. Unsupported lifecycle
+verbs return explicit errors. Git and the selected runtime are the initial state stores; this
 contract does not require a KMX server or controller.
 
 ### Portable revision and target bindings
 
 A newly authored agent has a Git-friendly bundle directory at
 `agents/<name>/` by default. `agent.yaml` is a closed, versioned portable
-revision with exactly one runtime extension. Its **exact bytes**, including
-comments and whitespace, are hashed for the portable digest; even a
-formatting-only edit creates a new revision. Unknown fields and multiple runtime
-extensions are errors, not ignored settings.
+revision with zero or one runtime extension. Absent `extensions` and
+`extensions: {}` are core-only; `extensions: null` is refused. Its **exact
+bytes**, including comments and whitespace, are hashed for the portable
+digest; even a formatting-only edit creates a new revision. Unknown fields and
+multiple runtime extensions are errors, not ignored settings.
 
 For Orka, behavior-defining inputs remain name, optional description,
 instructions, model name, tools, skills, and Provider/Agent rate limits. For
