@@ -1,0 +1,12 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+    name: historical-agent
+spec:
+    instructions: You are historical-agent, a declarative Orka agent running on Kubernetes. Answer briefly and in plain text, and say plainly when you do not know something.
+    description: Historical fixture
+    model:
+        name: qwen2.5:3b
+extensions:
+    orka:
+        apiVersion: core.orka.ai/v1alpha1

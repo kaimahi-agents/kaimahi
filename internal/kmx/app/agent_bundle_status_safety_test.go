@@ -61,8 +61,31 @@ func TestBundleStatusStaleRenderedMarkersAreNotInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Targets[0].State == bundleStateInSync {
-		t.Fatalf("stale rendered markers reported in sync: %+v", report.Targets[0])
+	if report.Targets[0].State != bundleStateUnknown || !strings.Contains(report.Targets[0].Detail, "live ownership digests do not match the rendered revision") {
+		t.Fatalf("stale rendered markers did not report unknown: %+v", report.Targets[0])
+	}
+}
+
+func TestBundleStatusStaleRenderedMarkerPrecedesAgentFieldDrift(t *testing.T) {
+	a, opt, dir, rendered, name := bundleStatusFixture(t)
+	stale := strings.Repeat("a", 64)
+	provider := reconcileLive(t, dir, "Provider", rendered)
+	markBundleOwned(provider, name, rendered)
+	provider["metadata"].(map[string]any)["annotations"].(map[string]any)[orkaRenderedMarker] = stale
+	seedReconcile(t, dir, provider)
+	agent := reconcileLive(t, dir, "Agent", rendered)
+	markBundleOwned(agent, name, rendered)
+	agent["metadata"].(map[string]any)["annotations"].(map[string]any)[orkaRenderedMarker] = stale
+	agent["spec"].(map[string]any)["systemPrompt"] = map[string]any{"inline": "edited live"}
+	seedReconcile(t, dir, agent)
+	opt.Context = "kind-test"
+	report, err := a.bundleStatusReport(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 1 || report.Targets[0].State != bundleStateUnknown ||
+		!strings.Contains(report.Targets[0].Detail, "live ownership digests do not match the rendered revision") {
+		t.Fatalf("Provider marker refresh did not precede Agent drift: %+v", report.Targets)
 	}
 }
 

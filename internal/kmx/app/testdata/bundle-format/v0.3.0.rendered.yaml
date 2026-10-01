@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: fixture-secret
+    namespace: orka-system
+---
+apiVersion: core.orka.ai/v1alpha1
+kind: Provider
+metadata:
+    name: historical-agent
+    namespace: orka-system
+spec:
+    baseURL: https://models.example.invalid/v1
+    defaultModel: qwen2.5:3b
+    secretRef:
+        key: api-key
+        name: fixture-secret
+    type: openai
+---
+apiVersion: core.orka.ai/v1alpha1
+kind: Agent
+metadata:
+    annotations:
+        kaimahi.dev/description: Historical fixture
+    name: historical-agent
+    namespace: orka-system
+spec:
+    providerRef:
+        name: historical-agent
+        namespace: orka-system
+    systemPrompt:
+        inline: You are historical-agent, a declarative Orka agent running on Kubernetes. Answer briefly and in plain text, and say plainly when you do not know something.
