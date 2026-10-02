@@ -9,7 +9,7 @@ func newConsoleCommand(state *commandState) *cobra.Command {
 	var opt app.AgentTUIOptions
 	cmd := &cobra.Command{
 		Use: "console", Short: "Open the interactive workspace for agents and environments", Args: cobra.NoArgs,
-		Long: "Browse one local kind and one remote Kubernetes environment side by side.\nThe console lists, creates, chats with and edits native Orka Agents only.\nUse h/j/k/l or arrows to navigate; / opens commands and argument completion.\nR opens recent read-only Orka runs for the selected Agent (caller Task-list access required).\n/lift offers local Orka agents, remote contexts, and a new AKS environment.\nUse --demo to explore with sample data and no cluster access.",
+		Long: "Browse one local kind and one remote Kubernetes environment side by side.\nThe console lists, creates, chats with and edits native Orka Agents only.\nUse h/j/k/l or arrows to navigate; / opens commands and argument completion.\nR opens recent read-only Orka runs for the selected Agent (caller must list/get Tasks and get the kube-system Namespace).\n/lift offers local Orka agents, remote contexts, and a new AKS environment.\nUse --demo to explore with sample data and no cluster access.",
 	}
 	cmd.Flags().StringVar(&opt.LocalContext, "local-context", "", "local kind context (default: last TUI selection, configured context, or first local)")
 	cmd.Flags().StringVar(&opt.RemoteContext, "remote-context", "", "remote context (default: last TUI selection, last lift target, configured context, or first remote)")

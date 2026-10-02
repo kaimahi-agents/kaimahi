@@ -20,8 +20,10 @@ func TestConsoleHelpAndNonterminal(t *testing.T) {
 			t.Fatalf("help missing %s", flag)
 		}
 	}
-	if !strings.Contains(out.String(), "R opens recent read-only Orka runs") {
-		t.Fatal("help omits the read-only run shortcut")
+	for _, want := range []string{"R opens recent read-only Orka runs", "list/get Tasks", "get the kube-system Namespace"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("help omits %q", want)
+		}
 	}
 	if err := execute([]string{"console", "--demo"}, deps); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("err=%v", err)

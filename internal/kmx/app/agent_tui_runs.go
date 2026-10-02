@@ -54,6 +54,9 @@ func consoleRunError(err error) string {
 	if err == nil {
 		return ""
 	}
+	if strings.Contains(err.Error(), "cannot establish destination cluster identity (kube-system UID)") {
+		return "kube-system Namespace identity unavailable (get access required)"
+	}
 	if errors.Is(err, runorka.ErrDenied) || strings.Contains(err.Error(), "access forbidden") {
 		return "permission denied"
 	}
@@ -325,7 +328,11 @@ func (m agentTUIModel) runsView() string {
 }
 func (m agentTUIModel) recentRunLines() ([]string, int) {
 	p := m.runs
-	rows := []string{"Recent root Tasks for this agent"}
+	heading := "Recent root Tasks for this agent"
+	if p.list.Missing != "" {
+		heading = "Root Tasks among scanned pages"
+	}
+	rows := []string{heading}
 	if p.loading {
 		return append(rows, "Reading Tasks using the selected Kubernetes context…"), 0
 	}
@@ -341,7 +348,11 @@ func (m agentTUIModel) recentRunLines() ([]string, int) {
 		}
 		return rows, 0
 	}
-	rows = append(rows, fmt.Sprintf("Showing %d of %d recent roots", len(p.list.Roots), p.list.Count), "")
+	noun := "recent roots"
+	if p.list.Missing != "" {
+		noun = "scanned roots"
+	}
+	rows = append(rows, fmt.Sprintf("Showing %d of %d %s", len(p.list.Roots), p.list.Count, noun), "")
 	anchor := 0
 	for i, ref := range p.list.Roots {
 		mark := "  "
@@ -506,6 +517,9 @@ func (m agentTUIModel) runDetailLines() []string {
 		if e.missing != nil {
 			rows = append(rows, consoleRunEvidence(e.label, e.missing))
 		}
+	}
+	if task.Status == "Failed" && task.FailureReason != "" {
+		rows = append(rows, "Failure reason: "+task.FailureReason)
 	}
 	rows = append(rows, "", "Recent safe events")
 	count := 0

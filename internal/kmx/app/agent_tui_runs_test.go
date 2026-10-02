@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -289,6 +290,42 @@ func TestConsoleRunsTerminalSizesAndNoSensitiveText(t *testing.T) {
 				t.Fatalf("%dx%d detail=%v rows=%d", size[0], size[1], detail, rows)
 			}
 		}
+	}
+}
+
+func TestConsoleRunsDetailsShowApprovedFailureReason(t *testing.T) {
+	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+	m.width, m.height = 80, 28
+	m = tuiKey(m, 'R', "R")
+	m = tuiKey(m, tea.KeyEnter, "")
+	m.runs.run.Tasks[0].Status = "Failed"
+	m.runs.run.Tasks[0].FailureReason = "DeadlineExceeded"
+	m.runs.run.Tasks[0].FailureMissing = nil
+	m = tuiKey(m, 'i', "i")
+	if text := ansi.Strip(m.View().Content); !strings.Contains(text, "Failure reason: DeadlineExceeded") {
+		t.Fatalf("approved failure reason hidden:\n%s", text)
+	}
+	m.runs.run.Tasks[0].Status = "Succeeded"
+	if text := ansi.Strip(m.View().Content); strings.Contains(text, "Failure reason: DeadlineExceeded") {
+		t.Fatalf("successful Task acquired a failure reason:\n%s", text)
+	}
+}
+
+func TestConsoleRunsExplainsClusterIdentityAccessWithoutStderr(t *testing.T) {
+	err := errors.New("cannot establish destination cluster identity (kube-system UID): kubectl request failed: access forbidden")
+	if got := consoleRunError(err); got != "kube-system Namespace identity unavailable (get access required)" {
+		t.Fatalf("read error=%q", got)
+	}
+}
+
+func TestConsoleRunsPartialListLabelsScannedSubset(t *testing.T) {
+	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+	m.width, m.height = 90, 24
+	m = tuiKey(m, 'R', "R")
+	m.runs.list.Missing = "scan limit reached"
+	text := ansi.Strip(m.View().Content)
+	if !strings.Contains(text, "List incomplete: scan limit reached") || !strings.Contains(text, "Showing 2 of 2 scanned roots") || strings.Contains(text, "Showing 2 of 2 recent roots") {
+		t.Fatalf("partial list claimed global recency:\n%s", text)
 	}
 }
 
