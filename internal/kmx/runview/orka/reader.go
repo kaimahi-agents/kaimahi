@@ -41,12 +41,19 @@ func ParentSelector(name string) string {
 	return prefix + "-" + hex.EncodeToString(digest[:])[:12]
 }
 
+// HelperPolicy is the currently observed Agent permission, not a historical
+// assertion about the policy under which this Task ran.
+type HelperPolicy struct {
+	State   string
+	Helpers []runview.Agent
+}
+
 // Source is the caller-scoped read boundary. Task must check the caller's own
 // Kubernetes get permission even if Events and Trace use a separate bearer.
 type Source interface {
 	Task(context.Context, string, string) ([]byte, error)
 	Children(context.Context, string, string) ([][]byte, error)
-	Helpers(context.Context, string, string) ([]string, error)
+	Helpers(context.Context, string, string) (HelperPolicy, error)
 	Events(context.Context, string, string, int64, int) ([]byte, int, error)
 	Trace(context.Context, string, string) (int, error)
 }
@@ -159,14 +166,21 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 	if out.Status == "" {
 		out.Status = "Unknown"
 	}
-	helpers, err := r.source.Helpers(ctx, namespace, root.Spec.AgentRef.Name)
+	coordinator := agentOf(root)
+	policy, err := r.source.Helpers(ctx, coordinator.Namespace, coordinator.Name)
 	out.DeclaredSource = "current Orka Agent coordination"
+	out.DeclaredState = policy.State
 	if err != nil {
+		out.DeclaredState = "unknown"
 		out.DeclaredMissing = missing(readReason(err), "Orka Agent coordination")
-	}
-	for _, name := range helpers {
-		if name != "" {
-			out.DeclaredHelpers = append(out.DeclaredHelpers, runview.DeclaredHelper{From: agentOf(root), To: runview.Agent{Name: name, Namespace: namespace}})
+	} else if policy.State == "unbounded" {
+		out.DeclaredMissing = missing("unbounded helper policy", "Orka Agent coordination")
+	} else if policy.State == "enabled" {
+		for _, helper := range policy.Helpers {
+			if helper.Namespace == "" {
+				helper.Namespace = namespace
+			}
+			out.DeclaredHelpers = append(out.DeclaredHelpers, runview.DeclaredHelper{From: coordinator, To: helper})
 		}
 	}
 	queue := []nativeTask{root}
@@ -246,7 +260,11 @@ func (r Reader) Read(ctx context.Context, clusterUID, namespace, rootName, rootU
 		var children []nativeTask
 		for _, raw := range rawChildren {
 			candidate, err := decodeTask(raw, namespace)
-			if err != nil || !delegated(candidate, parent) || seen[candidate.Metadata.UID] {
+			if err != nil {
+				out.DiscoveryMissing = missing("invalid Task list item", "Kubernetes Task discovery")
+				continue
+			}
+			if !delegated(candidate, parent) || seen[candidate.Metadata.UID] {
 				continue
 			}
 			// A namespace list is not proof that this caller can get the child.
@@ -313,9 +331,9 @@ func (r Reader) events(ctx context.Context, out *runview.Run, ns string, task na
 	pageLimit := 100
 	for len(seen) < 5000 {
 		after := cursor
-		if cursor > 0 {
+		if cursor > 0 && pageLimit > 1 {
 			after--
-		} // Deliberate overlap for reconnects.
+		} // A one-record page has no room for both an overlap and progress.
 		if check := r.verifyTask(ctx, ns, task); check != nil {
 			out.EventsMissing = check
 			return

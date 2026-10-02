@@ -68,6 +68,7 @@ type Run struct {
 	Tasks           []Task
 	Agents          []Agent
 	DeclaredHelpers []DeclaredHelper
+	DeclaredState   string
 	DeclaredSource  string
 	DeclaredMissing *Missing
 	HandOffs        []HandOff

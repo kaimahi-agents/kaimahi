@@ -52,9 +52,28 @@ func TestOrkaRunHTTPReadDistinguishesDenialAndMalformedContentFromDisconnect(t *
 }
 
 func TestOrkaRunHelpersReadCurrentPolicyNotSpecText(t *testing.T) {
-	raw := []byte(`{"spec":{"coordination":{"allowedAgents":[{"name":"receiving"},{"name":"purchasing"}]},"systemPrompt":"PRIVATE PROMPT"}}`)
-	names, err := orkaRunHelpers(raw)
-	if err != nil || len(names) != 2 || names[0] != "receiving" || names[1] != "purchasing" {
-		t.Fatalf("helpers=%v err=%v", names, err)
+	raw := []byte(`{"kind":"Agent","metadata":{"name":"lead","namespace":"shared","uid":"agent-uid"},"spec":{"coordination":{"enabled":true,"allowedAgents":[{"name":"receiving"},{"name":"purchasing","namespace":"partners"}]},"systemPrompt":"PRIVATE PROMPT"}}`)
+	policy, err := orkaRunHelpers(raw, "shared", "lead")
+	if err != nil || policy.State != "enabled" || len(policy.Helpers) != 2 || policy.Helpers[0].Name != "receiving" || policy.Helpers[0].Namespace != "" || policy.Helpers[1].Namespace != "partners" {
+		t.Fatalf("policy=%+v err=%v", policy, err)
+	}
+}
+func TestOrkaRunHelpersDistinguishDisabledUnconfiguredAndInvalidIdentity(t *testing.T) {
+	for _, tc := range []struct{ name, coordination, want string }{
+		{"disabled", `{"enabled":false,"allowedAgents":[{"name":"helper"}]}`, "disabled"},
+		{"unconfigured", `null`, "not configured"},
+		{"unbounded", `{"enabled":true,"allowedAgents":[]}`, "unbounded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(fmt.Sprintf(`{"kind":"Agent","metadata":{"name":"lead","namespace":"shared","uid":"agent-uid"},"spec":{"coordination":%s}}`, tc.coordination))
+			policy, err := orkaRunHelpers(raw, "shared", "lead")
+			if err != nil || policy.State != tc.want || len(policy.Helpers) != 0 {
+				t.Fatalf("policy=%+v err=%v", policy, err)
+			}
+		})
+	}
+	raw := []byte(`{"kind":"Agent","metadata":{"name":"lead","namespace":"elsewhere","uid":"agent-uid"},"spec":{}}`)
+	if _, err := orkaRunHelpers(raw, "shared", "lead"); err == nil {
+		t.Fatal("accepted policy from wrong Agent namespace")
 	}
 }

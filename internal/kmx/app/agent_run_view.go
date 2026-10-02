@@ -98,36 +98,47 @@ func (s orkaRunSource) Children(ctx context.Context, ns, parent string) ([][]byt
 	}
 	return out, nil
 }
-func orkaRunHelpers(raw []byte) ([]string, error) {
+func orkaRunHelpers(raw []byte, namespace, name string) (runorka.HelperPolicy, error) {
 	var agent struct {
-		Spec struct {
-			Coordination struct {
-				AllowedAgents []struct {
-					Name string `json:"name"`
-				} `json:"allowedAgents"`
+		Kind     string                                `json:"kind"`
+		Metadata struct{ Name, Namespace, UID string } `json:"metadata"`
+		Spec     struct {
+			Coordination *struct {
+				Enabled       bool                               `json:"enabled"`
+				AllowedAgents []struct{ Name, Namespace string } `json:"allowedAgents"`
 			} `json:"coordination"`
 		} `json:"spec"`
 	}
-	if err := json.Unmarshal(raw, &agent); err != nil {
-		return nil, fmt.Errorf("invalid Agent coordination")
+	if json.Unmarshal(raw, &agent) != nil || agent.Kind != "Agent" || agent.Metadata.Name != name || agent.Metadata.Namespace != namespace || agent.Metadata.UID == "" {
+		return runorka.HelperPolicy{}, fmt.Errorf("invalid Agent coordination response")
 	}
-	names := make([]string, 0, len(agent.Spec.Coordination.AllowedAgents))
+	if agent.Spec.Coordination == nil {
+		return runorka.HelperPolicy{State: "not configured"}, nil
+	}
+	if !agent.Spec.Coordination.Enabled {
+		return runorka.HelperPolicy{State: "disabled"}, nil
+	}
+	if len(agent.Spec.Coordination.AllowedAgents) == 0 {
+		return runorka.HelperPolicy{State: "unbounded"}, nil
+	}
+	policy := runorka.HelperPolicy{State: "enabled"}
 	for _, ref := range agent.Spec.Coordination.AllowedAgents {
-		if ref.Name != "" {
-			names = append(names, ref.Name)
+		if scaffold.ValidateObjectName(ref.Name) != nil || (ref.Namespace != "" && scaffold.ValidateNamespace(ref.Namespace) != nil) {
+			return runorka.HelperPolicy{}, fmt.Errorf("invalid Agent helper reference")
 		}
+		policy.Helpers = append(policy.Helpers, runview.Agent{Name: ref.Name, Namespace: ref.Namespace})
 	}
-	return names, nil
+	return policy, nil
 }
-func (s orkaRunSource) Helpers(ctx context.Context, ns, name string) ([]string, error) {
+func (s orkaRunSource) Helpers(ctx context.Context, ns, name string) (runorka.HelperPolicy, error) {
 	if name == "" {
-		return nil, fmt.Errorf("root has no Agent reference")
+		return runorka.HelperPolicy{}, fmt.Errorf("root has no Agent reference")
 	}
 	raw, err := s.app.orkaCapture(ctx, nil, "-n", ns, "get", orkaPlural("Agent"), name, "-o", "json")
 	if err != nil {
-		return nil, orkaRunReadError(err)
+		return runorka.HelperPolicy{}, orkaRunReadError(err)
 	}
-	return orkaRunHelpers(raw)
+	return orkaRunHelpers(raw, ns, name)
 }
 func (s orkaRunSource) Events(ctx context.Context, ns, name string, after int64, limit int) ([]byte, int, error) {
 	if s.session == nil {

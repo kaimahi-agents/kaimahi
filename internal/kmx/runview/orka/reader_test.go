@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runview"
 )
 
 type fixtureSource struct {
@@ -51,8 +53,8 @@ func (f fixtureSource) Trace(_ context.Context, _, name string) (int, error) {
 	}
 	return 501, nil
 }
-func (f fixtureSource) Helpers(context.Context, string, string) ([]string, error) {
-	return []string{"helper", "idle"}, nil
+func (f fixtureSource) Helpers(context.Context, string, string) (HelperPolicy, error) {
+	return HelperPolicy{State: "enabled", Helpers: []runview.Agent{{Name: "helper"}, {Name: "idle"}}}, nil
 }
 
 func task(name, uid, agent, phase, parent, parentUID string) string {
@@ -126,6 +128,16 @@ func TestReadRunChildFailureDoesNotEndRootAndChildTerminalAfterRoot(t *testing.T
 	}
 	if run.Tasks[1].Status != "Failed" || run.Tasks[2].Status != "Succeeded" || !run.Tasks[2].FinishedAt.After(run.FinishedAt) {
 		t.Fatalf("child status lost: %+v", run.Tasks)
+	}
+}
+func TestReadRunMarksMalformedListedTaskAsIncompleteDiscovery(t *testing.T) {
+	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Running", "", ""), "broken": `{"kind":"Task","metadata":{"name":"broken","namespace":"team"}}`}, children: map[string][]string{"root": {"broken"}}}
+	run, err := NewReader(f).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(run.Tasks) != 1 || run.DiscoveryMissing == nil || run.DiscoveryMissing.Reason != "invalid Task list item" {
+		t.Fatalf("malformed list item: %+v", run)
 	}
 }
 func TestReadRunDeduplicatesChildListedTwice(t *testing.T) {
@@ -216,6 +228,29 @@ func (lostEventSource) Events(context.Context, string, string, int64, int) ([]by
 	return nil, 0, ErrConnectionLost
 }
 
+func TestReadRunReadsCoordinatorPolicyFromReferencedAgentNamespace(t *testing.T) {
+	root := strings.Replace(task("root", "uid-root", "lead", "Running", "", ""), `"agentRef":{"name":"lead"}`, `"agentRef":{"name":"lead","namespace":"shared"}`, 1)
+	var calls []string
+	f := policyRecordingSource{fixtureSource: fixtureSource{tasks: map[string]string{"root": root}}, calls: &calls}
+	run, err := NewReader(f).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "shared/lead" || run.Agents[0].Namespace != "shared" || run.DeclaredState != "enabled" || len(run.DeclaredHelpers) != 2 || run.DeclaredHelpers[0].To.Namespace != "team" || run.DeclaredHelpers[1].To.Namespace != "partners" {
+		t.Fatalf("policy namespace: calls=%v run=%+v", calls, run)
+	}
+}
+
+type policyRecordingSource struct {
+	fixtureSource
+	calls *[]string
+}
+
+func (s policyRecordingSource) Helpers(_ context.Context, ns, name string) (HelperPolicy, error) {
+	*s.calls = append(*s.calls, ns+"/"+name)
+	return HelperPolicy{State: "enabled", Helpers: []runview.Agent{{Name: "helper"}, {Name: "remote", Namespace: "partners"}}}, nil
+}
+
 func TestReadRunMarksUnavailablePolicyWithoutErasingObservedEdges(t *testing.T) {
 	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Succeeded", "", ""), "child": task("child", "uid-child", "helper", "Failed", "root", "uid-root")}, children: map[string][]string{"root": {"child"}}}
 	run, err := NewReader(deniedHelpersSource{f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
@@ -229,8 +264,49 @@ func TestReadRunMarksUnavailablePolicyWithoutErasingObservedEdges(t *testing.T) 
 
 type deniedHelpersSource struct{ fixtureSource }
 
-func (deniedHelpersSource) Helpers(context.Context, string, string) ([]string, error) {
-	return nil, ErrDenied
+func (deniedHelpersSource) Helpers(context.Context, string, string) (HelperPolicy, error) {
+	return HelperPolicy{}, ErrDenied
+}
+
+func TestReadRunSeparatesDisabledPolicyFromUnavailablePolicy(t *testing.T) {
+	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Running", "", "")}}
+	run, err := NewReader(inactiveHelpersSource{f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.DeclaredState != "disabled" || run.DeclaredMissing != nil || len(run.DeclaredHelpers) != 0 {
+		t.Fatalf("disabled policy: %+v", run)
+	}
+	run, err = NewReader(deniedHelpersSource{f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.DeclaredState != "unknown" || run.DeclaredMissing == nil {
+		t.Fatalf("unavailable policy: %+v", run)
+	}
+}
+
+type inactiveHelpersSource struct{ fixtureSource }
+
+func (inactiveHelpersSource) Helpers(context.Context, string, string) (HelperPolicy, error) {
+	return HelperPolicy{State: "disabled"}, nil
+}
+
+func TestReadRunDoesNotCallUnboundedPolicyAnEmptyHelperGroup(t *testing.T) {
+	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Running", "", "")}}
+	run, err := NewReader(unboundedHelpersSource{f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.DeclaredState != "unbounded" || run.DeclaredMissing == nil || run.DeclaredMissing.Reason != "unbounded helper policy" || len(run.DeclaredHelpers) != 0 {
+		t.Fatalf("unbounded policy: %+v", run)
+	}
+}
+
+type unboundedHelpersSource struct{ fixtureSource }
+
+func (unboundedHelpersSource) Helpers(context.Context, string, string) (HelperPolicy, error) {
+	return HelperPolicy{State: "unbounded"}, nil
 }
 
 func TestReadRunTreatsOversizeTraceAsMissingNotDisconnect(t *testing.T) {
@@ -324,6 +400,26 @@ func (s oversizePageSource) Events(_ context.Context, _, name string, after int6
 		return nil, 0, ErrPageTooLarge
 	}
 	return []byte(page(name, 1, after, 1)), 200, nil
+}
+
+func TestReadRunAdvancesWhenEventsRequireSingleRecordPages(t *testing.T) {
+	f := fixtureSource{tasks: map[string]string{"root": task("root", "uid-root", "lead", "Succeeded", "", "")}}
+	run, err := NewReader(singleEventPageSource{fixtureSource: f}).Read(context.Background(), "cluster", "team", "root", "uid-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Tasks[0].EventsMissing != nil || len(run.Events) != 3 || run.Events[2].Seq != 3 {
+		t.Fatalf("single-record paging: %+v", run)
+	}
+}
+
+type singleEventPageSource struct{ fixtureSource }
+
+func (singleEventPageSource) Events(_ context.Context, _, name string, after int64, limit int) ([]byte, int, error) {
+	if limit > 1 {
+		return nil, 0, ErrPageTooLarge
+	}
+	return []byte(page(name, 3, after, after+1)), 200, nil
 }
 
 func TestReadRunRejectsReplacedRoot(t *testing.T) {
