@@ -7,12 +7,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -64,6 +66,9 @@ type agentTUIModel struct {
 	startCreate                                  func(agentTUIEnvironment, string, CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc)
 	bundle                                       *consoleBundlePane
 	loadBundle                                   func(context.Context, agentTUIEnvironment, agentTUIAgent) consoleBundleSnapshot
+	runs                                         *consoleRunsPane
+	loadRuns                                     func(context.Context, agentTUIEnvironment, agentTUIAgent) (consoleRunList, error)
+	loadRun                                      func(context.Context, agentTUIEnvironment, consoleRunRef) (runview.Run, error)
 }
 
 func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
@@ -141,6 +146,10 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 		m.loadInventory = func(env agentTUIEnvironment) ([]agentTUIAgent, error) {
 			return a.agentTUIInventory(ctx, env, opt.Namespace)
 		}
+		m.loadRuns = a.consoleRecentOrkaRuns
+		m.loadRun = func(readCtx context.Context, env agentTUIEnvironment, ref consoleRunRef) (runview.Run, error) {
+			return env.app(a).withRunContext(readCtx).ReadOrkaRun(readCtx, ref.Namespace, ref.Name, ref.UID)
+		}
 		m.loadBundle = func(paneCtx context.Context, env agentTUIEnvironment, agent agentTUIAgent) consoleBundleSnapshot {
 			return a.consoleBundleStatus(paneCtx, env, agent, opt.Bundles)
 		}
@@ -203,6 +212,35 @@ func (m *agentTUIModel) refresh() tea.Cmd {
 }
 
 func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if loaded, ok := msg.(consoleRunsListed); ok {
+		if m.runs != nil && loaded.pane == m.runs {
+			m.runs.loading, m.runs.list, m.runs.listErr = false, loaded.list, consoleRunError(loaded.err)
+		}
+		return m, nil
+	}
+	if loaded, ok := msg.(consoleRunsRead); ok {
+		if m.runs != nil && loaded.pane == m.runs && m.runs.runLoading {
+			m.runs.runLoading, m.runs.runErr = false, consoleRunError(loaded.err)
+			if loaded.err == nil && m.runs.selection < len(m.runs.list.Roots) && loaded.run.ID == m.runs.list.Roots[m.runs.selection].UID {
+				loaded.run.Tasks = consoleRunTaskOrder(loaded.run.Tasks)
+				m.runs.run = &loaded.run
+				m.runs.readAt = time.Now()
+			} else if loaded.err == nil {
+				m.runs.runErr = "root Task identity changed"
+			}
+		}
+		return m, nil
+	}
+	if m.runs != nil {
+		switch event := msg.(type) {
+		case tea.KeyPressMsg:
+			return m.updateRuns(event)
+		case tea.WindowSizeMsg:
+			m.width, m.height = event.Width, event.Height
+			m.input.SetWidth(max(1, event.Width-4))
+			return m, nil
+		}
+	}
 	if loaded, ok := msg.(consoleBundleLoaded); ok {
 		// Every finished read releases its context, and only the pane still
 		// open is drawn: a read for a pane since closed or reopened is stale.
@@ -365,6 +403,8 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailScroll = 0
 		case "b":
 			return m.openBundle()
+		case "R":
+			return m.openRuns()
 		case "n":
 			return m.createAgent()
 		case "c":
@@ -479,7 +519,7 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 	// Last, after every entry that existed before it, so no existing entry
 	// moves: an operator who reaches an action by position still reaches it.
 	if !a.External {
-		actions = append(actions, agentTUIMenuAction{"b", "Compare with local bundle"})
+		actions = append(actions, agentTUIMenuAction{"b", "Compare with local bundle"}, agentTUIMenuAction{"R", "View recent runs"})
 	}
 	return actions
 }
@@ -491,6 +531,9 @@ func (m agentTUIModel) agentHints(a agentTUIAgent) string {
 	}
 	if m.focus == 0 && a.canLift() {
 		hints += " · L lift"
+	}
+	if !a.External {
+		hints += " · R runs"
 	}
 	return hints + " · <enter> actions"
 }
@@ -532,6 +575,8 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.detailScroll = 0
 	case "b":
 		return m.openBundle()
+	case "R":
+		return m.openRuns()
 	case "c":
 		return m.execute("/chat " + m.agentToken(*a, m.focus))
 	case "L":
@@ -880,6 +925,11 @@ func agentTUIKeyHints(s string) string {
 }
 
 func (m agentTUIModel) View() tea.View {
+	if m.runs != nil {
+		v := tea.NewView(m.runsView())
+		v.AltScreen = true
+		return v
+	}
 	w, h := max(1, m.width), max(1, m.height)
 	if w < 64 || h < 18 {
 		v := tea.NewView(ansi.Truncate("Resize to at least 64×18 · ctrl+c quits", w, ""))
@@ -896,7 +946,7 @@ func (m agentTUIModel) View() tea.View {
 		header += " · discovering environments…"
 	}
 	header = accent.Render(header)
-	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create · r refresh · ? help · q quit")}
+	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create · r refresh · R runs · ? help · q quit")}
 	if m.status != "" {
 		footer = append([]string{fit(m.status)}, footer...)
 	}
@@ -937,7 +987,7 @@ func (m agentTUIModel) View() tea.View {
 	case m.help:
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
-			"<enter> actions · i inspect · b bundle · c chat · L lift local agent · r refresh\n\n" +
+			"<enter> actions · i inspect · b bundle · R recent runs (Orka) · c chat · L lift local agent · r refresh\n\n" +
 			"n create agent in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +

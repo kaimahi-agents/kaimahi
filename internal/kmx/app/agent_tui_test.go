@@ -505,7 +505,7 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.focus = 1
-	if got := m.agentActions(*m.selected()); len(got) != 5 {
+	if got := m.agentActions(*m.selected()); len(got) != 6 || got[5].key != "R" {
 		t.Fatalf("remote actions=%v", got)
 	}
 	m.columns[1].Agents[0].External = true

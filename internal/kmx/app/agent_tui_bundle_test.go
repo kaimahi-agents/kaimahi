@@ -787,9 +787,8 @@ func TestConsoleBundleReloadKeepsThePanesOwnAgent(t *testing.T) {
 	m.bundle.stop()
 }
 
-// The new entry goes last, so every entry that existed before keeps its
-// position in both columns: an operator who reaches an action by position
-// still reaches it.
+// New entries stay after existing actions, preserving the earlier positions
+// an operator may reach by keyboard.
 func TestConsoleBundleMenuEntryMovesNoExistingEntry(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	keys := func() string {
@@ -799,12 +798,12 @@ func TestConsoleBundleMenuEntryMovesNoExistingEntry(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	if got := keys(); got != "i c f t L b" {
-		t.Errorf("local actions = %q, want the previous order with b appended", got)
+	if got := keys(); got != "i c f t L b R" {
+		t.Errorf("local actions = %q, want the previous order with b and R appended", got)
 	}
 	m.focus = 1
-	if got := keys(); got != "i c f t b" {
-		t.Errorf("remote actions = %q, want the previous order with b appended", got)
+	if got := keys(); got != "i c f t b R" {
+		t.Errorf("remote actions = %q, want the previous order with b and R appended", got)
 	}
 }
 
