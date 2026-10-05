@@ -356,7 +356,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"lift", "lift down", "metrics", "migrate", "models", "models add",
 		"models credential", "models credential copilot", "orka", "orka install", "orka status",
 		"plane", "quickstart", "quickstart-wizard",
-		"restore", "status", "console", "task", "task result",
+		"restore", "status", "suite", "suite validate", "console", "task", "task result",
 		"up", "use", "version", "watch",
 	}
 	sort.Strings(want)

@@ -52,6 +52,15 @@ func (s *commandState) application() (*app.App, error) {
 	return a, nil
 }
 
+func (s *commandState) offlineApplication() *app.App {
+	a := s.deps.newApp(&config.Config{})
+	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
+	if a.Run != nil {
+		a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
+	}
+	return a
+}
+
 // operationApplication adds invocation identity to a configured App. Keep it
 // separate from application(): help and completion need no operation, while
 // the credential issue path deliberately validates its destination before it
@@ -124,6 +133,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
 		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
+		newSuiteCommand(state),
 		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
 		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 	)

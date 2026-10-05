@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/agent.schema.json",
+  "title": "AgentSuite agent manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "mediaType", "id", "instructions", "model"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.agent.v1+json"},
+    "id": {"$ref": "#/$defs/id"},
+    "description": {"type": "string", "maxLength": 4096},
+    "instructions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "model"],
+      "properties": {
+        "protocol": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "endpointEnv": {"$ref": "#/$defs/env"},
+        "secretRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+      }
+    },
+    "tools": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "executionMode"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "version": {"$ref": "#/$defs/version"},
+          "executionMode": {"enum": ["in-agent-sandbox", "remote-mcp", "isolated-tool-sandbox"]}
+        }
+      }
+    },
+    "invokes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent", "maxConcurrent", "maxDepth"],
+        "properties": {
+          "agent": {"$ref": "#/$defs/id"},
+          "maxConcurrent": {"type": "integer", "minimum": 1},
+          "maxDepth": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "extensions": {"type": "array"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^/\\\\][^\\\\]*$"},
+    "env": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"}
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-set.schema.json",
+  "title": "Resolved AgentSuite tool set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "mediaType", "agent", "platform", "buildProfile", "tools"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.tool-set.v1+json"},
+    "agent": {"$ref": "#/$defs/id"},
+    "platform": {"$ref": "#/$defs/platform"},
+    "buildProfile": {"$ref": "#/$defs/id"},
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "manifestDigest", "executionMode"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "version": {"$ref": "#/$defs/version"},
+          "manifestDigest": {"$ref": "#/$defs/digest"},
+          "variantDigest": {"$ref": "#/$defs/digest"},
+          "executionMode": {"enum": ["in-agent-sandbox", "remote-mcp", "isolated-tool-sandbox"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {
+        "os": {"const": "linux"},
+        "architecture": {"enum": ["amd64", "arm64"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+)
+
+func TestSuiteValidateMinimalLayout(t *testing.T) {
+	fixture := filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal")
+	for _, tc := range []struct {
+		name string
+		args []string
+		json bool
+	}{
+		{name: "text", args: []string{"suite", "validate", fixture}},
+		{name: "json", args: []string{"suite", "validate", fixture, "--output", "json"}, json: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			if err := execute(tc.args, deps); err != nil {
+				t.Fatalf("execute(%v) error = %v\n%s", tc.args, err, diagnostics.String())
+			}
+			if *loads != 0 {
+				t.Fatalf("offline suite validation loaded operational config %d time(s)", *loads)
+			}
+			if !tc.json {
+				want := "AgentSuite minimal: conformant (agents=1 tools=0 toolSets=1 capabilities=none)\n"
+				if out.String() != want {
+					t.Fatalf("text output = %q, want %q", out.String(), want)
+				}
+				return
+			}
+			var report agentsuite.Report
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+				t.Fatalf("decode JSON output: %v\n%s", err, out.String())
+			}
+			if report.Name != "minimal" || report.Agents != 1 || report.Tools != 0 || report.ToolSets != 1 {
+				t.Fatalf("unexpected JSON report: %+v", report)
+			}
+			if strings.TrimSpace(diagnostics.String()) != "" {
+				t.Fatalf("unexpected diagnostics: %s", diagnostics.String())
+			}
+		})
+	}
+}
