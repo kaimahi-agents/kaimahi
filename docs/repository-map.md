@@ -34,7 +34,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (19 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (20 packages), plus embedded schema fixtures | — | — |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
@@ -50,8 +50,9 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is nineteen packages at the top level (twenty Go packages
-including nested `runview/orka`). The short version counts top-level directories.
+`internal/kmx/` is twenty packages at the top level (twenty-one Go packages
+including nested `runview/orka` and `adapter/orka`; `adapter` itself holds only
+`adapter/orka`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data; versioned fixtures are not additional Go
@@ -76,6 +77,7 @@ packages.
 | `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
 | `kmx/krm` | 4 | Installed | Resource model: Provider, Tool and Agent types, strict decoding, per-resource validation, the reference-checked resource graph and dependency-aware Agent identity. No directory, packaging or runtime knowledge. |
 | `kmx/bundle` | 1 | Installed | Loads a composable bundle directory into a `krm` graph: strict `Bundle.yaml`, the `providers/`, `tools/` and `agents/` layout and file-name rules. |
+| `kmx/adapter/orka` | 1 | Installed | Orka adapter for the `krm` resource model: renders a graph to Orka Provider, Tool and Agent resources, rendering each shared resource once. |
 | `kmx/bundle/testdata/research-team` | 1 | Scaffolding | `Bundle.yaml` for the example bundle whose two Agents share one Provider and one Tool. |
 | `kmx/bundle/testdata/research-team/agents` | 2 | Scaffolding | Researcher, which may delegate to summarizer, and summarizer. |
 | `kmx/bundle/testdata/research-team/providers` | 1 | Scaffolding | The shared OpenAI-compatible Provider. |
