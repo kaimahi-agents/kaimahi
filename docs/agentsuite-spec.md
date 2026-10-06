@@ -765,8 +765,8 @@ Construction MUST be a pure, offline file-composition operation:
    digest;
 2. materialize the pinned runtime-base filesystem;
 3. compose the pinned harness filesystem;
-4. recursively traverse each selected tool's exact dependency closure and copy
-   each payload to its declared install root;
+4. copy selected tool payloads and exact dependency closures to their declared
+   install roots;
 5. reject non-identical destination collisions;
 6. install agent instructions and immutable runtime metadata;
 7. create no writable content paths;
