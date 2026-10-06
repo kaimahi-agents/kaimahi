@@ -15,6 +15,7 @@ var (
 	versionPattern    = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
 	envPattern        = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 	capabilityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,127}$`)
+	schemePattern     = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 )
 
 type Report struct {
@@ -339,26 +340,17 @@ func (v *validator) validateReferences() error {
 				if resolved.ManifestDigest != v.toolDigests[toolKey] || resolved.ExecutionMode != requirement.ExecutionMode {
 					errs = append(errs, fmt.Errorf("composition %s has stale resolution for %s", key, toolKey))
 				}
-				switch resolved.ExecutionMode {
-				case ExecutionInAgentSandbox:
-					variant, matches := exactVariant(tool.Variants, composition.Platform)
-					if matches != 1 || resolved.VariantDigest != variant.VariantDigest {
-						errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, toolKey))
-						continue
-					}
-					for _, entry := range variant.Files {
-						destination := path.Join(variant.InstallRoot, entry.Path)
-						if existing, ok := destinations[destination]; ok && !sameInstallEntry(existing, entry) {
-							errs = append(errs, fmt.Errorf("composition %s has non-identical destination collision at %s", key, destination))
-						} else {
-							destinations[destination] = entry
-						}
-					}
-				case ExecutionIsolatedSandbox:
-					errs = append(errs, fmt.Errorf("composition %s requests reserved isolated-tool-sandbox capability", key))
-				default:
-					if tool.Remote == nil || resolved.VariantDigest != "" {
-						errs = append(errs, fmt.Errorf("composition %s has invalid remote resolution for %s", key, toolKey))
+				variant, matches := exactVariant(tool.Variants, composition.Platform)
+				if matches != 1 || resolved.VariantDigest != variant.VariantDigest {
+					errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, toolKey))
+					continue
+				}
+				for _, entry := range variant.Files {
+					destination := path.Join(variant.InstallRoot, entry.Path)
+					if existing, ok := destinations[destination]; ok && !sameInstallEntry(existing, entry) {
+						errs = append(errs, fmt.Errorf("composition %s has non-identical destination collision at %s", key, destination))
+					} else {
+						destinations[destination] = entry
 					}
 				}
 			}
@@ -412,10 +404,8 @@ func validateAgent(agent Agent) error {
 			errs = append(errs, fmt.Errorf("duplicate tool requirement %s", key))
 		}
 		seen[key] = true
-		switch tool.ExecutionMode {
-		case ExecutionInAgentSandbox, "remote-mcp", ExecutionIsolatedSandbox:
-		default:
-			errs = append(errs, fmt.Errorf("tool requirement %s has unknown executionMode", key))
+		if tool.ExecutionMode != ExecutionSharedSandbox {
+			errs = append(errs, fmt.Errorf("tool requirement %s executionMode must be %q", key, ExecutionSharedSandbox))
 		}
 	}
 	invokes := map[string]bool{}
@@ -453,7 +443,7 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 		errs = append(errs, errors.New("tool id or exact version is invalid"))
 	}
 	if tool.Provider.Protocol != "mcp" || tool.Provider.Revision == "" || len(tool.Provider.Operations) == 0 {
-		errs = append(errs, errors.New("v1 tool provider must declare an MCP revision and at least one operation"))
+		errs = append(errs, errors.New("the draft tool provider must declare an MCP revision and at least one operation"))
 	}
 	operations := map[string]bool{}
 	for _, operation := range tool.Provider.Operations {
@@ -469,21 +459,16 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 				errs = append(errs, fmt.Errorf("operation %q output schema: %w", operation.Name, err))
 			}
 		}
+		effects := map[string]bool{}
+		for _, effect := range operation.Effects {
+			if effect == "" || effects[effect] {
+				errs = append(errs, fmt.Errorf("operation %q has an empty or duplicate effect", operation.Name))
+			}
+			effects[effect] = true
+		}
 	}
-	arms := 0
-	if len(tool.Variants) > 0 {
-		arms++
-	}
-	if tool.Remote != nil {
-		arms++
-		errs = append(errs, validateRemote(*tool.Remote))
-	}
-	if tool.Isolated != nil {
-		arms++
-		errs = append(errs, errors.New("isolated-tool-sandbox is reserved in v1 and must be rejected"))
-	}
-	if arms != 1 {
-		errs = append(errs, errors.New("tool must select exactly one bundled, remote, or isolated connector"))
+	if len(tool.Variants) == 0 {
+		errs = append(errs, errors.New("tool must declare at least one shared-sandbox variant"))
 	}
 	platforms := map[string]bool{}
 	variantDigests, err := rawVariantDigests(raw)
@@ -543,6 +528,9 @@ func validateVariant(variant ToolVariant, expectedDigest string, content *conten
 	if len(variant.Files) == 0 {
 		errs = append(errs, errors.New("files must contain a complete payload inventory"))
 	}
+	errs = append(errs, validateAbsolutePathList("searchPath", variant.SearchPath))
+	errs = append(errs, validateAbsolutePathList("writablePaths", variant.WritablePaths))
+	errs = append(errs, validateAbsolutePathList("runtime.requiredBasePaths", variant.Runtime.RequiredPaths))
 	for _, argument := range variant.Arguments {
 		if strings.Contains(argument, "${") || strings.Contains(argument, "$(") {
 			errs = append(errs, errors.New("arguments must not interpolate environment or secret values"))
@@ -564,6 +552,20 @@ func validateVariant(variant ToolVariant, expectedDigest string, content *conten
 			errs = append(errs, fmt.Errorf("environment name %s can inject executable code", env.Name))
 		}
 	}
+	networkSeen := map[string]bool{}
+	for _, access := range variant.Network {
+		key := fmt.Sprintf("%s://%s:%d", access.Scheme, access.Host, access.Port)
+		if !schemePattern.MatchString(access.Scheme) || access.Host == "" || access.Port < 1 || access.Port > 65535 || networkSeen[key] {
+			errs = append(errs, fmt.Errorf("network access %q is invalid or duplicated", key))
+		}
+		networkSeen[key] = true
+	}
+	if variant.SBOM != nil && !validDescriptor(*variant.SBOM) {
+		errs = append(errs, errors.New("sbom descriptor is invalid"))
+	}
+	if variant.Provenance != nil && !validDescriptor(*variant.Provenance) {
+		errs = append(errs, errors.New("provenance descriptor is invalid"))
+	}
 	inventory := map[string]InventoryEntry{}
 	for _, entry := range variant.Files {
 		if _, err := validateContentPath(entry.Path); err != nil {
@@ -573,6 +575,25 @@ func validateVariant(variant ToolVariant, expectedDigest string, content *conten
 		if _, exists := inventory[entry.Path]; exists {
 			errs = append(errs, fmt.Errorf("duplicate inventory path %s", entry.Path))
 			continue
+		}
+		switch entry.Type {
+		case "file":
+			if entry.Size < 0 || !validDigest(entry.Digest) || entry.LinkTarget != "" {
+				errs = append(errs, fmt.Errorf("inventory file %s has invalid size, digest, or link target", entry.Path))
+			}
+		case "directory":
+			if entry.Size != 0 || entry.Digest != "" || entry.LinkTarget != "" {
+				errs = append(errs, fmt.Errorf("inventory directory %s has file or link metadata", entry.Path))
+			}
+		case "symlink", "hardlink":
+			if entry.Size != 0 || entry.Digest != "" || validateLinkTarget(entry.Path, entry.LinkTarget) != nil {
+				errs = append(errs, fmt.Errorf("inventory link %s has invalid metadata or target", entry.Path))
+			}
+		default:
+			errs = append(errs, fmt.Errorf("inventory path %s has unsupported type %q", entry.Path, entry.Type))
+		}
+		if entry.Mode > 0o777 {
+			errs = append(errs, fmt.Errorf("inventory path %s has invalid mode %#o", entry.Path, entry.Mode))
 		}
 		inventory[entry.Path] = entry
 		actualPath := path.Join(variant.PayloadRoot, entry.Path)
@@ -613,6 +634,18 @@ func validateVariant(variant ToolVariant, expectedDigest string, content *conten
 	return errors.Join(errs...)
 }
 
+func validateAbsolutePathList(name string, values []string) error {
+	var errs []error
+	seen := map[string]bool{}
+	for _, value := range values {
+		if value == "" || !strings.HasPrefix(value, "/") || path.Clean(value) != value || seen[value] {
+			errs = append(errs, fmt.Errorf("%s contains invalid or duplicate path %q", name, value))
+		}
+		seen[value] = true
+	}
+	return errors.Join(errs...)
+}
+
 func rawVariantDigests(rawTool []byte) ([]string, error) {
 	var document map[string]json.RawMessage
 	if err := json.Unmarshal(rawTool, &document); err != nil {
@@ -642,30 +675,6 @@ func rawVariantDigests(rawTool []byte) ([]string, error) {
 		}
 	}
 	return digests, nil
-}
-
-func validateRemote(remote RemoteMCP) error {
-	var errs []error
-	if remote.Transport != "streamable-http" || !envPattern.MatchString(remote.URLRef) || unsafeInjectionEnv(remote.URLRef) {
-		errs = append(errs, errors.New("remote MCP requires streamable-http and an environment URL reference"))
-	}
-	for _, header := range remote.Headers {
-		if header.Name == "" || (header.Value == "") == (header.ValueEnv == "") {
-			errs = append(errs, errors.New("remote header must select exactly one literal or environment value"))
-		}
-		if header.ValueEnv != "" && (!envPattern.MatchString(header.ValueEnv) || unsafeInjectionEnv(header.ValueEnv)) {
-			errs = append(errs, fmt.Errorf("remote header %s has invalid environment reference", header.Name))
-		}
-		if strings.ContainsAny(header.Name+header.Value, "\r\n") {
-			errs = append(errs, fmt.Errorf("remote header %s contains a newline", header.Name))
-		}
-		lower := strings.ToLower(header.Name)
-		if header.Value != "" && (lower == "authorization" || lower == "cookie" || lower == "x-api-key") {
-			errs = append(errs, fmt.Errorf("credential header %s must not contain a literal value", header.Name))
-		}
-	}
-	errs = append(errs, validateIdentifierList("remote secretRefs", remote.SecretRefs))
-	return errors.Join(errs...)
 }
 
 func validateBundleDependencies(toolKey string, variant ToolVariant, tools map[string]Tool) error {
@@ -714,13 +723,19 @@ func validateComposition(composition Composition) error {
 	}
 	errs = append(errs, validatePlatform(composition.Platform))
 	seen := map[string]bool{}
-	for _, tool := range composition.Tools {
+	previousID, previousVersion := "", ""
+	for index, tool := range composition.Tools {
 		key := tool.ID + "@" + tool.Version
+		if index > 0 && (tool.ID < previousID || tool.ID == previousID && tool.Version <= previousVersion) {
+			errs = append(errs, errors.New("resolved tools must be sorted by id and version"))
+		}
 		if seen[key] || !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) ||
-			!validDigest(tool.ManifestDigest) {
+			!validDigest(tool.ManifestDigest) || !validDigest(tool.VariantDigest) ||
+			tool.ExecutionMode != ExecutionSharedSandbox {
 			errs = append(errs, fmt.Errorf("resolved tool %s is invalid or duplicated", key))
 		}
 		seen[key] = true
+		previousID, previousVersion = tool.ID, tool.Version
 	}
 	return errors.Join(errs...)
 }
@@ -777,13 +792,13 @@ func profileSupportsPlatform(profile BuildProfile, platform Platform) bool {
 
 func validatePlatform(platform Platform) error {
 	if platform.OS != "linux" {
-		return fmt.Errorf("v1 supports exact Linux tool platforms only, got %s", platform.String())
+		return fmt.Errorf("the draft supports exact Linux tool platforms only, got %s", platform.String())
 	}
 	if platform.Architecture != "amd64" && platform.Architecture != "arm64" {
-		return fmt.Errorf("v1 supports linux/amd64 and linux/arm64 tools, got %s", platform.String())
+		return fmt.Errorf("the draft supports linux/amd64 and linux/arm64 tools, got %s", platform.String())
 	}
 	if platform.Variant != "" {
-		return fmt.Errorf("v1 requires an exact platform without OCI variant, got %s", platform.String())
+		return fmt.Errorf("the draft requires an exact platform without OCI variant, got %s", platform.String())
 	}
 	return nil
 }
@@ -821,13 +836,8 @@ func validateExtensions(extensions []Extension) error {
 func derivedCapabilities(tools map[string]Tool) []string {
 	set := map[string]bool{}
 	for _, tool := range tools {
-		switch {
-		case len(tool.Variants) > 0:
+		if len(tool.Variants) > 0 {
 			set["bundled-stdio-mcp"] = true
-		case tool.Remote != nil:
-			set["remote-streamable-http-mcp"] = true
-		case tool.Isolated != nil:
-			set["isolated-tool-sandbox"] = true
 		}
 	}
 	out := make([]string, 0, len(set))

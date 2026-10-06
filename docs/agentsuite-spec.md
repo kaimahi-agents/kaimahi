@@ -38,7 +38,7 @@ Unless stated otherwise:
 
 ## 2. Scope
 
-Version 1 specifies:
+This draft specifies:
 
 - an AgentSuite definition artifact carried by an OCI image manifest;
 - one strict, closed content graph containing agents, tools, compositions, and
@@ -144,8 +144,8 @@ fulfill a missing referenced blob. Descriptor `urls` MUST be absent. Descriptor
 `data`, when present, MUST decode to the exact bytes of the referenced local
 blob and does not replace that blob.
 
-The single-layer rule is intentional for version 1: it gives a suite one
-self-contained validation boundary. Future versions may profile multiple
+The single-layer rule is intentional for this draft: it gives a suite one
+self-contained validation boundary. Later revisions may profile multiple
 content-addressed layers for cross-suite deduplication without changing the
 logical manifests.
 
@@ -313,11 +313,7 @@ referenced document's canonical digest and identity.
 `capabilities` MUST exactly equal the sorted, duplicate-free capabilities
 derived from tool declarations:
 
-- bundled variants imply `bundled-stdio-mcp`;
-- remote streamable-HTTP declarations imply
-  `remote-streamable-http-mcp`;
-- isolated declarations imply `isolated-tool-sandbox`, but version 1
-  validation still fails because that capability is reserved.
+- bundled variants imply `bundled-stdio-mcp`.
 
 Unknown critical extensions MUST be rejected. Non-critical extensions MAY be
 retained or ignored.
@@ -337,6 +333,16 @@ An agent manifest defines:
 Every tool requirement MUST include exact `id`, semantic `version`, and
 `executionMode`. Version ranges and floating tags are invalid in a packaged
 suite.
+
+This draft defines one execution mode:
+
+| Value | Meaning |
+|---|---|
+| `shared-sandbox` | The tool implementation is bundled into the Agent Sandbox Image and executes in the same sandbox as the agent harness. The tool and harness may be separate processes, but no isolation or security boundary separates them. |
+
+The `executionMode` value MUST be `shared-sandbox`. Other values are invalid
+in this draft. Later specification revisions MAY define additional execution
+modes; implementations of this draft MUST NOT infer or accept them.
 
 For every agent, the suite MUST contain at least one composition, including an
 empty composition for an agent that uses no tools. This makes the target
@@ -364,7 +370,7 @@ permission only from the declaring source agent to the named target:
 
 Runtimes MUST reject an invocation that has no declared edge or exceeds either
 declared bound. Coordination protocol and scheduling policy within those bounds
-are outside version 1.
+are outside this draft.
 
 For example, this agent-manifest fragment permits `coordinator` to invoke
 `writer` and `reviewer`:
@@ -396,6 +402,39 @@ The complete conformant example is checked in at
 
 ## 9. Tools
 
+A tool is an immutable, versioned MCP provider contract plus one or more
+platform-specific implementations bundled into the Agent Sandbox Image. It is
+not merely an executable filename, one MCP operation, or an installed runtime
+process.
+
+A tool manifest defines:
+
+| Field | Meaning |
+|---|---|
+| `id` | Stable suite-local tool identifier. |
+| `version` | Exact semantic version of the provider contract and execution definition. |
+| `provider` | MCP revision and the complete set of model-visible operations authorized by the suite. |
+| `variants` | One or more bundled, platform-specific implementations for `shared-sandbox` execution. |
+| `extensions` | Optional non-critical extension records. |
+
+`variants` MUST be present and contain at least one implementation. The
+combination of `id` and `version` names the tool contract; the JCS digest of
+the complete manifest identifies its exact immutable definition. Two
+manifests with the same `id` and `version` but different digests are
+conflicting definitions and MUST NOT coexist in one suite.
+
+The provider contract and bundled variants serve different purposes:
+
+- `provider.operations` defines what the model is authorized to discover and
+  call;
+- the selected variant defines the exact platform implementation available to
+  the harness;
+- a composition binds an agent requirement to the exact manifest and one exact
+  platform implementation.
+
+The complete machine-readable shape is
+[`tool.schema.json`](../internal/kmx/agentsuite/schema/tool.schema.json).
+
 ### 9.1 Tool catalog
 
 The tool catalog is the closed, suite-level index of available tool manifests.
@@ -412,16 +451,10 @@ Example:
   "mediaType": "application/vnd.agentsuite.tool-catalog.v1+json",
   "tools": [
     {
-      "id": "filesystem",
-      "version": "1.2.3",
-      "path": "tools/filesystem/1.2.3/tool.json",
+      "id": "datetime",
+      "version": "1.0.0",
+      "path": "tools/datetime/1.0.0/tool.json",
       "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
-    {
-      "id": "source-control",
-      "version": "2.0.0",
-      "path": "tools/source-control/2.0.0/tool.json",
-      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     }
   ]
 }
@@ -434,8 +467,8 @@ ordering.
 ### 9.2 Provider and operations
 
 A tool manifest separates the provider process or endpoint from the model-
-visible operations it offers. Version 1 providers use MCP and declare one or
-more operations with digest-bound input schemas and optional output schemas.
+visible operations it offers. Providers in this draft use MCP and declare one
+or more operations with digest-bound input schemas and optional output schemas.
 
 The runtime MUST expose only declared operations to the model. The presence of
 other executables or protocol methods in the filesystem does not authorize
@@ -443,9 +476,7 @@ their use as model tools.
 
 ### 9.3 Execution modes
 
-Exactly one provider arm is allowed.
-
-#### `in-agent-sandbox`
+This draft supports only the `shared-sandbox` mode defined in [Section 8](#8-agents).
 
 The tool has one or more exact platform variants. The selected variant is
 copied into the derived Agent Sandbox Image and executes in the same sandbox
@@ -465,18 +496,6 @@ sandbox. They are not independent security boundaries. A requirement for
 distinct privilege, network, secret, or filesystem isolation cannot be met by
 this mode.
 
-#### `remote-mcp`
-
-The tool uses MCP streamable HTTP. URLs and credential-bearing headers MUST be
-environment or secret references. Authorization, cookie, and API-key header
-values MUST NOT be literal content.
-
-#### `isolated-tool-sandbox`
-
-The schema shape is reserved so future suites can identify intent. Version 1
-consumers MUST reject every composition requesting this mode. No
-interoperability or security claim may be made from the reserved shape.
-
 ### 9.4 Bundled variants
 
 A bundled variant includes:
@@ -484,7 +503,7 @@ A bundled variant includes:
 - exact platform;
 - absolute `installRoot`;
 - payload root inside suite content;
-- absolute runtime entrypoint;
+- absolute MCP provider entrypoint;
 - fixed arguments;
 - search paths;
 - named environment and secret inputs;
@@ -494,6 +513,17 @@ A bundled variant includes:
 - complete file inventory;
 - exact bundle dependencies;
 - optional SBOM and provenance descriptors.
+
+A variant is a complete filesystem bundle, not a single-binary declaration. It
+MAY contain any number of executables, shared libraries, interpreters, scripts,
+certificates, schemas, licenses, and data files. Every payload entry MUST appear
+in the variant's file inventory.
+
+`entrypoint` identifies the executable that launches the MCP provider. It does
+not limit the bundle to one executable. The provider MAY invoke other
+executables from the same variant, but those executables are implementation
+details and are not directly model-callable. Only operations declared by
+`provider.operations` are exposed to the model.
 
 Payloads are not assumed relocatable. A Homebrew-style payload may require an
 absolute root such as `/home/linuxbrew/.linuxbrew`.
@@ -510,33 +540,197 @@ target. All other overlaps are errors.
 Bundle dependencies are exact digest-bound bundle identities. They do not
 cause network resolution or installer execution.
 
+### 9.5 CLI-backed providers
+
+A command-line program that is not itself an MCP server is bundled behind an
+MCP provider. The provider validates model inputs against the declared
+operation schemas and translates authorized operations into exact CLI
+invocations. The raw command line is not exposed as an ambient tool.
+
+A Kubernetes variant can inventory a `kubernetes-mcp` provider alongside
+`kubectl`. An Azure CLI variant can inventory an `azure-mcp` provider, `az`,
+its Python runtime, modules, extensions, certificates, and data. Runtime
+package or extension installation is prohibited; the complete runtime closure
+MUST already be present in the variant or in exact bundle dependencies.
+
+The reference schema tests validate complete multi-file examples for
+[`kubectl`](../internal/kmx/agentsuite/testdata/tools/kubectl-tool.json) and
+[`Azure CLI`](../internal/kmx/agentsuite/testdata/tools/azure-cli-tool.json).
+
+### 9.6 UTC datetime example
+
+The following example is a bundled stdio MCP server that returns the current
+UTC time. It does not execute `/bin/date`, depend on distribution userland,
+access the network, use secrets, or require writable paths. The executable is
+part of the suite payload and is selected by digest.
+
+An agent requests the tool by exact identity and execution mode:
+
+```json
+{
+  "id": "datetime",
+  "version": "1.0.0",
+  "executionMode": "shared-sandbox"
+}
+```
+
+The tool manifest declares the model-visible operation and the available
+platform implementation:
+
+```json
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.tool.v1+json",
+  "id": "datetime",
+  "version": "1.0.0",
+  "provider": {
+    "protocol": "mcp",
+    "revision": "2025-06-18",
+    "operations": [
+      {
+        "name": "current_time",
+        "description": "Return the current UTC time in RFC 3339 format.",
+        "inputSchema": {
+          "path": "schemas/datetime/current-time-input.json",
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "outputSchema": {
+          "path": "schemas/datetime/current-time-output.json",
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "effects": ["reads-system-clock"]
+      }
+    ]
+  },
+  "variants": [
+    {
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "variantDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "installRoot": "/opt/agentsuite/tools/datetime/1.0.0",
+      "relocatable": false,
+      "payloadRoot": "tools/datetime/1.0.0/linux-amd64",
+      "entrypoint": "/opt/agentsuite/tools/datetime/1.0.0/bin/datetime",
+      "arguments": [],
+      "searchPath": [],
+      "environment": [],
+      "writablePaths": [],
+      "network": [],
+      "runtime": {
+        "abi": "static",
+        "cpuBaseline": "x86-64-v1"
+      },
+      "files": [
+        {
+          "path": "bin/datetime",
+          "type": "file",
+          "mode": 493,
+          "uid": 0,
+          "gid": 0,
+          "size": 123456,
+          "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "component": "datetime"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "extensions": []
+}
+```
+
+The repeated hexadecimal digest values and illustrative file size stand in for
+values computed from a concrete artifact. A conforming artifact MUST contain
+the referenced schemas and payload bytes and MUST use their actual digests and
+size.
+
+Reading the clock makes the operation result runtime-dependent; it does not
+make the tool artifact mutable. The manifest, schemas, executable, variant,
+and composition remain immutable and digest-bound.
+
 ## 10. Composition manifests
 
 A composition manifest is the closed, resolved, digest-pinned composition of
-one agent for one exact platform and one build profile. It MUST NOT be applied
-to a different agent. Its `tools` array contains the exact tools authorized for
-that composition and MAY be empty. For every agent tool requirement it contains
-exactly one resolved tool record:
+one agent for one exact platform and one build profile. It is not the suite
+tool catalog and it is not a request for runtime resolution. It MUST NOT be
+applied to a different agent.
 
 A composition is a build-time input to Agent Sandbox Image construction. It is
 not a runtime actor template, deployment object, or snapshot policy. Runtime
 systems MAY derive their own templates from the resulting image, but those
 templates and their lifecycle policies are outside this specification.
 
+The composition identity is the tuple:
+
+```text
+(agent, platform, buildProfile)
+```
+
+Its `tools` array MUST be sorted lexicographically by `id` and then `version`.
+For every tool requirement in the named agent manifest, it MUST contain exactly
+one resolved tool record. The array MAY be empty when the agent has no tool
+requirements:
+
 ```json
 {
-  "id": "filesystem",
-  "version": "1.2.3",
-  "manifestDigest": "sha256:...",
-  "variantDigest": "sha256:...",
-  "executionMode": "in-agent-sandbox"
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.composition.v1+json",
+  "agent": "writer",
+  "platform": {
+    "os": "linux",
+    "architecture": "amd64"
+  },
+  "buildProfile": "default",
+  "tools": [
+    {
+      "id": "datetime",
+      "version": "1.0.0",
+      "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "variantDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "executionMode": "shared-sandbox"
+    }
+  ]
 }
 ```
 
-The manifest MUST contain no ambient or undeclared tool. For bundled tools,
-`variantDigest` MUST select exactly one matching platform variant. For remote
-tools, `variantDigest` MUST be absent. Manifests selecting isolated tools MUST
-be rejected.
+The resolved tool fields have these meanings:
+
+| Field | Meaning |
+|---|---|
+| `id`, `version` | Exact tool identity from the agent requirement and catalog. |
+| `manifestDigest` | JCS digest of the exact tool manifest selected from the catalog. |
+| `variantDigest` | JCS digest of the exact bundled variant selected for the composition platform. |
+| `executionMode` | `shared-sandbox`, the only execution mode defined by this draft. |
+
+A producer creates a composition without executing suite content:
+
+1. read the named agent's exact tool requirements;
+2. resolve each `id` and `version` to exactly one tool-catalog entry;
+3. verify the catalog digest against the referenced tool manifest;
+4. verify that the requirement's execution mode is `shared-sandbox`;
+5. select exactly one variant whose platform equals the
+   composition platform and record its `variantDigest`;
+6. verify the selected build profile contains exactly one runtime-base and
+   harness descriptor for that platform;
+7. sort the resolved tool records by `id` and `version` and compute the
+   composition's JCS digest.
+
+The composition MUST contain no ambient, undeclared, missing, duplicate, or
+differently versioned tool. For bundled tools, `variantDigest` MUST be present
+and select exactly one matching platform variant.
+
+Exact dependencies of a bundled variant are traversed from the selected
+variant's digest-bound dependency records. They MUST resolve to tool manifests
+and same-platform variants in the suite catalog, but they do not become
+additional top-level resolved tool records unless the agent also declares them
+directly.
+
+An agent with no tool requirements still MUST have an empty composition for
+each supported platform. The empty composition explicitly binds the agent to a
+platform and build profile and prevents ambient runtime tools from becoming
+implicitly authorized.
 
 The same immutable tool and variant may appear in several compositions.
 
@@ -644,7 +838,7 @@ A conforming suite validator asserts:
 | `AS-TOOL-001` | Bundled variants match content inventory and exact platforms. |
 | `AS-SECRET-001` | Content contains references and names, not credential-shaped literal values. |
 | `AS-CAP-001` | Declared capabilities equal derived capabilities. |
-| `AS-V1-001` | Deferred and reserved version 1 features are rejected. |
+| `AS-DRAFT-001` | Deferred and reserved features are rejected. |
 
 A suite validator MUST accept either an extracted content directory or an OCI
 image-layout directory. Validation MUST operate offline after the referenced
@@ -706,26 +900,26 @@ Signing a suite establishes publisher intent over immutable bytes; it does not
 prove that a derived image used those bytes or that a runtime enforces the
 declared boundary. Build provenance and runtime policy remain separate claims.
 
-Same-sandbox tools are mutually exposed through their shared process and
+Shared-sandbox tools are mutually exposed through their shared process and
 filesystem environment. A malicious tool can attempt to inspect another
 tool's files, environment, sockets, or runtime credentials. Deployments that
-require separation MUST wait for a future isolated-tool-sandbox profile or use
-separate agent sandboxes.
+require separation MUST use separate agent sandboxes. A future specification
+version MAY define additional execution modes with different isolation
+properties.
 
 SBOM and provenance descriptors are evidence references, not trust decisions.
 Consumers choose trusted issuers and policies outside this specification.
 
-## Appendix A. Version 1 exclusions
+## Appendix A. Draft exclusions
 
-Version 1 does not specify:
+This draft does not specify:
 
 - session transcripts, checkpoints, snapshots, or mutable memory;
 - plaintext credentials or resolved secret values;
 - dependency solving inside a packaged suite;
 - generic shell tools, OpenAPI tools, or arbitrary HTTP connectors;
 - Windows, macOS, or non-`amd64`/`arm64` platforms;
-- a usable isolated tool sandbox. Its declaration shape is reserved and MUST
-  be rejected by version 1 consumers;
+- additional execution modes or per-tool isolation boundaries;
 - a new OCI Distribution endpoint or registry authentication mechanism;
 - byte-identical gzip output across arbitrary compressor implementations.
 

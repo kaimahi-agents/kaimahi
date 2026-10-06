@@ -40,7 +40,7 @@
         "properties": {
           "id": {"$ref": "#/$defs/id"},
           "version": {"$ref": "#/$defs/version"},
-          "executionMode": {"enum": ["in-agent-sandbox", "remote-mcp", "isolated-tool-sandbox"]}
+          "executionMode": {"const": "shared-sandbox"}
         }
       }
     },

@@ -2,86 +2,59 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool.schema.json",
   "title": "AgentSuite tool manifest",
+  "description": "An immutable MCP provider contract with bundled, platform-specific shared-sandbox implementations.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "id", "version", "provider"],
+  "required": ["schemaVersion", "mediaType", "id", "version", "provider", "variants"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
     "mediaType": {"const": "application/vnd.agentsuite.tool.v1+json"},
     "id": {"$ref": "#/$defs/id"},
     "version": {"$ref": "#/$defs/version"},
-    "provider": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["protocol", "revision", "operations"],
-      "properties": {
-        "protocol": {"const": "mcp"},
-        "revision": {"type": "string", "minLength": 1},
-        "operations": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["name", "inputSchema"],
-            "properties": {
-              "name": {"$ref": "#/$defs/id"},
-              "description": {"type": "string"},
-              "inputSchema": {"$ref": "#/$defs/fileRef"},
-              "outputSchema": {"$ref": "#/$defs/fileRef"},
-              "effects": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
-            }
-          }
-        }
-      }
-    },
+    "provider": {"$ref": "#/$defs/provider"},
     "variants": {
       "type": "array",
       "minItems": 1,
+      "uniqueItems": true,
       "items": {"$ref": "#/$defs/variant"}
     },
-    "remote": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["transport", "urlRef"],
-      "properties": {
-        "transport": {"const": "streamable-http"},
-        "urlRef": {"$ref": "#/$defs/env"},
-        "headers": {"type": "array"},
-        "secretRefs": {"type": "array", "items": {"$ref": "#/$defs/id"}}
-      }
-    },
-    "isolated": {
-      "type": "object",
-      "description": "Reserved in v1; validators reject this arm semantically.",
-      "additionalProperties": false,
-      "required": ["platformImages", "protocol", "revision"],
-      "properties": {
-        "platformImages": {"type": "array", "minItems": 1},
-        "protocol": {"type": "string"},
-        "revision": {"type": "string"}
-      }
-    },
-    "extensions": {"type": "array"}
+    "extensions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/extension"}
+    }
   },
-  "oneOf": [
-    {"required": ["variants"], "not": {"anyOf": [{"required": ["remote"]}, {"required": ["isolated"]}]}},
-    {"required": ["remote"], "not": {"anyOf": [{"required": ["variants"]}, {"required": ["isolated"]}]}},
-    {"required": ["isolated"], "not": {"anyOf": [{"required": ["variants"]}, {"required": ["remote"]}]}}
-  ],
   "$defs": {
-    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
-    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
-    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-    "env": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"},
-    "fileRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "digest"],
-      "properties": {
-        "path": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^/\\\\][^\\\\]*$"},
-        "digest": {"$ref": "#/$defs/digest"}
-      }
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "env": {
+      "type": "string",
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "capability": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$"
+    },
+    "contentPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^/\\\\][^\\\\]*$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/"
     },
     "platform": {
       "type": "object",
@@ -92,37 +65,239 @@
         "architecture": {"enum": ["amd64", "arm64"]}
       }
     },
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "digest", "size"],
+      "properties": {
+        "mediaType": {"type": "string", "minLength": 1},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0}
+      }
+    },
+    "fileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest"],
+      "properties": {
+        "path": {"$ref": "#/$defs/contentPath"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "critical"],
+      "properties": {
+        "name": {"$ref": "#/$defs/capability"},
+        "critical": {"type": "boolean"},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "inputSchema"],
+      "properties": {
+        "name": {"$ref": "#/$defs/id"},
+        "description": {"type": "string"},
+        "inputSchema": {"$ref": "#/$defs/fileRef"},
+        "outputSchema": {"$ref": "#/$defs/fileRef"},
+        "effects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "revision", "operations"],
+      "properties": {
+        "protocol": {"const": "mcp"},
+        "revision": {"type": "string", "minLength": 1},
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/operation"}
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/env"},
+        "required": {"type": "boolean"},
+        "secret": {"type": "boolean"},
+        "delivery": {"enum": ["env", "file"]}
+      },
+      "oneOf": [
+        {
+          "required": ["secret", "delivery"],
+          "properties": {"secret": {"const": true}}
+        },
+        {
+          "not": {"required": ["delivery"]},
+          "properties": {"secret": {"const": false}}
+        }
+      ]
+    },
+    "networkAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "host", "port"],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]*$"
+        },
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["abi", "cpuBaseline"],
+      "properties": {
+        "abi": {"enum": ["static", "gnu", "musl"]},
+        "abiVersion": {"type": "string", "minLength": 1},
+        "cpuBaseline": {"type": "string", "minLength": 1},
+        "requiredBasePaths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/absolutePath"}
+        }
+      }
+    },
+    "inventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "type", "mode", "uid", "gid"],
+      "properties": {
+        "path": {"$ref": "#/$defs/contentPath"},
+        "type": {"enum": ["file", "directory", "symlink", "hardlink"]},
+        "mode": {"type": "integer", "minimum": 0, "maximum": 511},
+        "uid": {"const": 0},
+        "gid": {"const": 0},
+        "size": {"type": "integer", "minimum": 0},
+        "digest": {"$ref": "#/$defs/digest"},
+        "linkTarget": {"type": "string", "minLength": 1},
+        "component": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [
+        {
+          "properties": {"type": {"const": "file"}},
+          "required": ["size", "digest"],
+          "not": {"required": ["linkTarget"]}
+        },
+        {
+          "properties": {"type": {"const": "directory"}},
+          "allOf": [
+            {
+              "if": {"required": ["size"]},
+              "then": {"properties": {"size": {"const": 0}}}
+            }
+          ],
+          "not": {
+            "anyOf": [
+              {"required": ["digest"]},
+              {"required": ["linkTarget"]}
+            ]
+          }
+        },
+        {
+          "properties": {"type": {"enum": ["symlink", "hardlink"]}},
+          "required": ["linkTarget"],
+          "allOf": [
+            {
+              "if": {"required": ["size"]},
+              "then": {"properties": {"size": {"const": 0}}}
+            },
+            {"not": {"required": ["digest"]}}
+          ]
+        }
+      ]
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "variantDigest"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "version": {"$ref": "#/$defs/version"},
+        "variantDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
     "variant": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["platform", "variantDigest", "installRoot", "payloadRoot", "entrypoint", "runtime", "files"],
+      "required": [
+        "platform",
+        "variantDigest",
+        "installRoot",
+        "payloadRoot",
+        "entrypoint",
+        "runtime",
+        "files"
+      ],
       "properties": {
         "platform": {"$ref": "#/$defs/platform"},
         "variantDigest": {"$ref": "#/$defs/digest"},
-        "installRoot": {"type": "string", "pattern": "^/"},
+        "installRoot": {"$ref": "#/$defs/absolutePath"},
         "relocatable": {"type": "boolean"},
-        "payloadRoot": {"type": "string"},
-        "entrypoint": {"type": "string", "pattern": "^/"},
-        "arguments": {"type": "array", "items": {"type": "string"}},
-        "searchPath": {"type": "array", "items": {"type": "string", "pattern": "^/"}},
-        "environment": {"type": "array"},
-        "writablePaths": {"type": "array", "items": {"type": "string", "pattern": "^/"}},
-        "network": {"type": "array"},
-        "runtime": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["abi", "cpuBaseline"],
-          "properties": {
-            "abi": {"enum": ["static", "gnu", "musl"]},
-            "abiVersion": {"type": "string"},
-            "cpuBaseline": {"type": "string", "minLength": 1},
-            "requiredBasePaths": {"type": "array", "items": {"type": "string", "pattern": "^/"}}
-          }
+        "payloadRoot": {
+          "$ref": "#/$defs/contentPath",
+          "description": "Root of the complete multi-file payload in AgentSuite content."
         },
-        "files": {"type": "array", "minItems": 1},
-        "dependencies": {"type": "array"},
-        "sbom": {"type": "object"},
-        "provenance": {"type": "object"}
+        "entrypoint": {
+          "$ref": "#/$defs/absolutePath",
+          "description": "Absolute path of the MCP provider launcher. Other inventoried executables may support the provider but are not directly model-callable."
+        },
+        "arguments": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "searchPath": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Absolute directories containing bundled helper executables available to the provider.",
+          "items": {"$ref": "#/$defs/absolutePath"}
+        },
+        "environment": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/environment"}
+        },
+        "writablePaths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/absolutePath"}
+        },
+        "network": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/networkAccess"}
+        },
+        "runtime": {"$ref": "#/$defs/runtime"},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Complete inventory of all payload files, directories, links, executables, libraries, scripts, and data.",
+          "items": {"$ref": "#/$defs/inventoryEntry"}
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/dependency"}
+        },
+        "sbom": {"$ref": "#/$defs/descriptor"},
+        "provenance": {"$ref": "#/$defs/descriptor"}
       }
     }
   }

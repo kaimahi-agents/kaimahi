@@ -13,21 +13,23 @@
     "buildProfile": {"$ref": "#/$defs/id"},
     "tools": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "version", "manifestDigest", "executionMode"],
-        "properties": {
-          "id": {"$ref": "#/$defs/id"},
-          "version": {"$ref": "#/$defs/version"},
-          "manifestDigest": {"$ref": "#/$defs/digest"},
-          "variantDigest": {"$ref": "#/$defs/digest"},
-          "executionMode": {"enum": ["in-agent-sandbox", "remote-mcp", "isolated-tool-sandbox"]}
-        }
-      }
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/resolvedTool"}
     }
   },
   "$defs": {
+    "resolvedTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "manifestDigest", "variantDigest", "executionMode"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "version": {"$ref": "#/$defs/version"},
+        "manifestDigest": {"$ref": "#/$defs/digest"},
+        "variantDigest": {"$ref": "#/$defs/digest"},
+        "executionMode": {"const": "shared-sandbox"}
+      }
+    },
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
     "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
     "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},

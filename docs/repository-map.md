@@ -74,6 +74,7 @@ packages.
 | `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
 | `kmx/agentsuite/testdata/coordinator-workers/compositions` | 3 | Scaffolding | Empty composition manifests for all three agents on Linux amd64. |
 | `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
+| `kmx/agentsuite/testdata/tools` | 2 | Scaffolding | Complete multi-file `kubectl` and Azure CLI tool manifests validated against the reference tool schema. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/kagent` | 2 | Scaffolding | Kagent portable agent and creation bindings; the parser and portable digest are pinned in compatibility tests. |

@@ -148,7 +148,7 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 			Instructions: FileRef{Path: instructionPath, Digest: digestBytes(instructions)},
 			Model:        ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
 			Tools: []ToolRequirement{{
-				ID: "reader", Version: "1.2.3", ExecutionMode: ExecutionInAgentSandbox,
+				ID: "reader", Version: "1.2.3", ExecutionMode: ExecutionSharedSandbox,
 			}},
 			Invokes: []AgentInvoke{}, Extensions: []Extension{},
 		}
@@ -159,7 +159,7 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 			Platform: Platform{OS: "linux", Architecture: "amd64"}, BuildProfile: "default",
 			Tools: []ResolvedTool{{
 				ID: "reader", Version: "1.2.3", ManifestDigest: toolDigest,
-				VariantDigest: variant.VariantDigest, ExecutionMode: ExecutionInAgentSandbox,
+				VariantDigest: variant.VariantDigest, ExecutionMode: ExecutionSharedSandbox,
 			}},
 		}
 		compositionPath := "compositions/" + id + "-linux-amd64.json"
@@ -245,6 +245,35 @@ func TestEmptyOCIConfigIsExact(t *testing.T) {
 		if err := validateEmptyConfig(value); err == nil {
 			t.Errorf("validateEmptyConfig(%q) succeeded", value)
 		}
+	}
+}
+
+func TestCompositionToolsMustBeSortedByIdentity(t *testing.T) {
+	composition := Composition{
+		SchemaVersion: SpecVersion,
+		MediaType:     MediaTypeComposition,
+		Agent:         "writer",
+		Platform:      Platform{OS: "linux", Architecture: "amd64"},
+		BuildProfile:  "default",
+		Tools: []ResolvedTool{
+			{
+				ID:             "source-control",
+				Version:        "1.0.0",
+				ManifestDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				VariantDigest:  "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+				ExecutionMode:  ExecutionSharedSandbox,
+			},
+			{
+				ID:             "datetime",
+				Version:        "1.0.0",
+				ManifestDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				VariantDigest:  "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+				ExecutionMode:  ExecutionSharedSandbox,
+			},
+		},
+	}
+	if err := validateComposition(composition); err == nil || !strings.Contains(err.Error(), "sorted by id and version") {
+		t.Fatalf("expected tool ordering error, got %v", err)
 	}
 }
 
@@ -466,6 +495,63 @@ func TestVariantAllowsWritableSymlinkMode(t *testing.T) {
 	}
 }
 
+func TestVariantRejectsSchemaConstrainedFields(t *testing.T) {
+	payload := []byte("x")
+	digest := digestBytes(payload)
+	base := func() ToolVariant {
+		return ToolVariant{
+			Platform:      Platform{OS: "linux", Architecture: "amd64"},
+			VariantDigest: digest,
+			InstallRoot:   "/opt/tool",
+			PayloadRoot:   "payload",
+			Entrypoint:    "/opt/tool/bin/tool",
+			Runtime:       RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
+			Files: []InventoryEntry{{
+				Path: "bin/tool", Type: "file", Mode: 0o755, Size: 1, Digest: digest,
+			}},
+		}
+	}
+	content := &contentSet{entries: map[string]contentEntry{
+		"payload/bin/tool": {Path: "payload/bin/tool", Type: "file", Mode: 0o755, Size: 1, Digest: digest},
+	}}
+	tests := []struct {
+		name    string
+		mutate  func(*ToolVariant)
+		message string
+	}{
+		{
+			name: "relative search path",
+			mutate: func(variant *ToolVariant) {
+				variant.SearchPath = []string{"bin"}
+			},
+			message: "searchPath",
+		},
+		{
+			name: "invalid network port",
+			mutate: func(variant *ToolVariant) {
+				variant.Network = []NetworkAccess{{Scheme: "https", Host: "example.com", Port: 0}}
+			},
+			message: "network access",
+		},
+		{
+			name: "invalid sbom descriptor",
+			mutate: func(variant *ToolVariant) {
+				variant.SBOM = &Descriptor{MediaType: "application/spdx+json", Digest: "invalid", Size: 1}
+			},
+			message: "sbom descriptor",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			variant := base()
+			test.mutate(&variant)
+			if err := validateVariant(variant, digest, content); err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("validateVariant() error = %v, want %q", err, test.message)
+			}
+		})
+	}
+}
+
 func TestVariantRejectsPayloadOwnerMismatch(t *testing.T) {
 	payload := []byte("x")
 	digest := digestBytes(payload)
@@ -563,8 +649,8 @@ func TestRawVariantDigestsPreserveExplicitZeroValues(t *testing.T) {
 
 func TestDeclaredCapabilitiesMustAlreadyBeSortedAndUnique(t *testing.T) {
 	v := &validator{
-		suite:        Suite{Capabilities: []string{"remote-streamable-http-mcp", "remote-streamable-http-mcp"}},
-		tools:        map[string]Tool{"remote@1.0.0": {Remote: &RemoteMCP{}}},
+		suite:        Suite{Capabilities: []string{"bundled-stdio-mcp", "bundled-stdio-mcp"}},
+		tools:        map[string]Tool{"reader@1.0.0": {Variants: []ToolVariant{{}}}},
 		agents:       map[string]Agent{},
 		compositions: map[string]Composition{},
 	}

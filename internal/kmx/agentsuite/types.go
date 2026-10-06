@@ -16,8 +16,7 @@ const (
 	MediaTypeBuildProfile   = "application/vnd.agentsuite.build-profile.v1+json"
 	MediaTypeSandboxBinding = "application/vnd.agentsuite.sandbox-binding.v1+json"
 
-	ExecutionInAgentSandbox  = "in-agent-sandbox"
-	ExecutionIsolatedSandbox = "isolated-tool-sandbox"
+	ExecutionSharedSandbox = "shared-sandbox"
 )
 
 type Descriptor struct {
@@ -124,9 +123,7 @@ type Tool struct {
 	ID            string        `json:"id"`
 	Version       string        `json:"version"`
 	Provider      ToolProvider  `json:"provider"`
-	Variants      []ToolVariant `json:"variants,omitempty"`
-	Remote        *RemoteMCP    `json:"remote,omitempty"`
-	Isolated      *IsolatedTool `json:"isolated,omitempty"`
+	Variants      []ToolVariant `json:"variants"`
 	Extensions    []Extension   `json:"extensions,omitempty"`
 }
 
@@ -199,25 +196,6 @@ type BundleDependency struct {
 	ID            string `json:"id"`
 	Version       string `json:"version"`
 	VariantDigest string `json:"variantDigest"`
-}
-
-type RemoteMCP struct {
-	Transport  string         `json:"transport"`
-	URLRef     string         `json:"urlRef"`
-	Headers    []RemoteHeader `json:"headers,omitempty"`
-	SecretRefs []string       `json:"secretRefs,omitempty"`
-}
-
-type RemoteHeader struct {
-	Name     string `json:"name"`
-	Value    string `json:"value,omitempty"`
-	ValueEnv string `json:"valueEnv,omitempty"`
-}
-
-type IsolatedTool struct {
-	PlatformImages []PlatformImage `json:"platformImages"`
-	Protocol       string          `json:"protocol"`
-	Revision       string          `json:"revision"`
 }
 
 type PlatformImage struct {

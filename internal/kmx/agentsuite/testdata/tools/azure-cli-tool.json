@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.tool.v1+json",
+  "id": "azure",
+  "version": "1.0.0",
+  "provider": {
+    "protocol": "mcp",
+    "revision": "2025-06-18",
+    "operations": [
+      {
+        "name": "list_resources",
+        "inputSchema": {
+          "path": "schemas/azure/list-resources-input.json",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ]
+  },
+  "variants": [
+    {
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "variantDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "installRoot": "/opt/agentsuite/tools/azure/1.0.0",
+      "payloadRoot": "tools/azure/1.0.0/linux-amd64",
+      "entrypoint": "/opt/agentsuite/tools/azure/1.0.0/bin/azure-mcp",
+      "arguments": [],
+      "searchPath": [
+        "/opt/agentsuite/tools/azure/1.0.0/bin",
+        "/opt/agentsuite/tools/azure/1.0.0/python/bin"
+      ],
+      "environment": [],
+      "writablePaths": [],
+      "network": [],
+      "runtime": {
+        "abi": "gnu",
+        "abiVersion": "2.35",
+        "cpuBaseline": "x86-64-v1"
+      },
+      "files": [
+        {
+          "path": "bin/azure-mcp",
+          "type": "file",
+          "mode": 493,
+          "uid": 0,
+          "gid": 0,
+          "size": 123456,
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "component": "azure-mcp"
+        },
+        {
+          "path": "bin/az",
+          "type": "file",
+          "mode": 493,
+          "uid": 0,
+          "gid": 0,
+          "size": 1024,
+          "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "component": "azure-cli"
+        },
+        {
+          "path": "python/bin/python3",
+          "type": "file",
+          "mode": 493,
+          "uid": 0,
+          "gid": 0,
+          "size": 654321,
+          "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "component": "python"
+        },
+        {
+          "path": "python/site-packages/azure/cli/__init__.py",
+          "type": "file",
+          "mode": 420,
+          "uid": 0,
+          "gid": 0,
+          "size": 256,
+          "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "component": "azure-cli"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "extensions": []
+}
