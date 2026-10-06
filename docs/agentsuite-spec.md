@@ -495,10 +495,6 @@ sandbox. They are not independent security boundaries. A requirement for
 distinct privilege, network, secret, or filesystem isolation cannot be met by
 this mode.
 
-Remote MCP providers, including streamable-HTTP providers, are deferred to a
-future specification revision. This draft also does not define deploy-time
-bindings that attach undeclared remote providers to a suite.
-
 ### 9.4 Bundled variants
 
 A bundled variant includes:
