@@ -34,7 +34,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (17 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (18 packages), plus embedded schema fixtures | — | — |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
@@ -50,7 +50,7 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is seventeen packages at the top level (eighteen Go packages
+`internal/kmx/` is eighteen packages at the top level (nineteen Go packages
 including nested `runview/orka`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
@@ -74,6 +74,7 @@ packages.
 | `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
 | `kmx/agentsuite/testdata/coordinator-workers/compositions` | 3 | Scaffolding | Empty composition manifests for all three agents on Linux amd64. |
 | `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
+| `kmx/krm` | 4 | Installed | Resource model: Provider, Tool and Agent types, strict decoding, per-resource validation, the reference-checked resource graph and dependency-aware Agent identity. No directory, packaging or runtime knowledge. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/kagent` | 2 | Scaffolding | Kagent portable agent and creation bindings; the parser and portable digest are pinned in compatibility tests. |
