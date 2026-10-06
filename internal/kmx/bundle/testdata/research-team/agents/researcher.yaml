@@ -1,0 +1,14 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: Agent
+metadata:
+  name: researcher
+spec:
+  description: Researches a requested topic
+  instructions: |
+    Search authoritative sources and summarize the findings.
+  provider: default-chat
+  tools:
+    - web-search
+    - fetch-page
+  allowedAgents:
+    - summarizer

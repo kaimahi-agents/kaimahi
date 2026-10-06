@@ -1,0 +1,6 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: Bundle
+metadata:
+  name: research-team
+  version: 0.1.0
+  description: Agents and shared resources for research workflows

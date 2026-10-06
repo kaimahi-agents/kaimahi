@@ -1,0 +1,13 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: Provider
+metadata:
+  name: default-chat
+spec:
+  type: openai
+  model: qwen2.5:3b
+  openAI:
+    baseURL: http://ollama.ollama:11434/v1
+  credentials:
+    secret:
+      name: local-model
+      key: api-key

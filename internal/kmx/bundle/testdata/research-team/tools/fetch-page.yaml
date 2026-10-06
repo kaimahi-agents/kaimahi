@@ -1,0 +1,16 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: Tool
+metadata:
+  name: fetch-page
+spec:
+  description: Fetch a web page and return its text
+  parameters:
+    type: object
+    required:
+      - url
+    properties:
+      url:
+        type: string
+  http:
+    method: POST
+    url: https://fetch.example.com/page

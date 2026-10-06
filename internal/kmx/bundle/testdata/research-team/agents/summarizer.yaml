@@ -1,0 +1,11 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: Agent
+metadata:
+  name: summarizer
+spec:
+  description: Summarizes research
+  instructions: |
+    Produce a concise summary with citations.
+  provider: default-chat
+  tools:
+    - fetch-page
