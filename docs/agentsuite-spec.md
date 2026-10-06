@@ -332,9 +332,57 @@ For every agent, the suite MUST contain at least one platform tool-set lock,
 including an empty lock for an agent that uses no tools. This makes the target
 platform and build profile explicit.
 
-Agent invocation references form a closed graph: every target MUST be another
-agent in the suite. Coordination protocol and runtime scheduling are outside
-version 1.
+### 8.1 Agent invocation relationships
+
+The optional `invokes` element declares which other agents an agent is
+permitted to invoke. It is an array of invocation relationship objects:
+
+| Field | Requirement |
+|---|---|
+| `agent` | REQUIRED. Exact identifier of the target agent. The target MUST be another agent in the same suite. |
+| `maxConcurrent` | REQUIRED. Positive integer limiting concurrent invocations of this target by the declaring agent. |
+| `maxDepth` | REQUIRED. Positive integer limiting the invocation chain initiated through this edge. The directly invoked target is depth 1. |
+
+Each target agent MUST occur at most once in an agent's `invokes` array.
+Invocation relationships form a closed directed graph. An edge grants
+permission only from the declaring source agent to the named target:
+
+- it does not grant a reverse edge;
+- it does not grant transitive permission to other agents;
+- an omitted or empty `invokes` array grants no permission to invoke another
+  suite agent.
+
+Runtimes MUST reject an invocation that has no declared edge or exceeds either
+declared bound. Coordination protocol and scheduling policy within those bounds
+are outside version 1.
+
+For example, this agent-manifest fragment permits `coordinator` to invoke
+`writer` and `reviewer`:
+
+```json
+{
+  "id": "coordinator",
+  "invokes": [
+    {
+      "agent": "writer",
+      "maxConcurrent": 1,
+      "maxDepth": 1
+    },
+    {
+      "agent": "reviewer",
+      "maxConcurrent": 1,
+      "maxDepth": 1
+    }
+  ]
+}
+```
+
+The `writer` and `reviewer` manifests have empty `invokes` arrays. Invocation
+permission is directional: the coordinator's edges do not grant either worker
+permission to invoke the coordinator or each other.
+
+The complete conformant example is checked in at
+[`internal/kmx/agentsuite/testdata/coordinator-workers/`](../internal/kmx/agentsuite/testdata/coordinator-workers/).
 
 ## 9. Tools
 

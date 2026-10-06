@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.manifest.v1+json",
+  "name": "coordinator-workers",
+  "agents": [
+    {
+      "id": "coordinator",
+      "path": "agents/coordinator.json",
+      "digest": "sha256:ca83fdd724b1fcdfad804b50f9e4d35d34172db4867bf73a49aa5a324102ae36"
+    },
+    {
+      "id": "writer",
+      "path": "agents/writer.json",
+      "digest": "sha256:f5df7085ce99b352c3967366c8f3bb045c5e9db1357b320774de7b7704281fb4"
+    },
+    {
+      "id": "reviewer",
+      "path": "agents/reviewer.json",
+      "digest": "sha256:72bddbaaf6e1e0f2d965e651cdcabd3ead1922eec7988cb0e3e5e669a4448bbf"
+    }
+  ],
+  "toolCatalog": {
+    "id": "catalog",
+    "path": "tools/catalog.json",
+    "digest": "sha256:98aefca0842f347cca9b9143f0b39f7d1edf8c6a5f0d091afcc805ecfb507a1c"
+  },
+  "toolSets": [
+    {
+      "agent": "coordinator",
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "path": "tool-sets/coordinator-linux-amd64.json",
+      "digest": "sha256:f3176c037db8f679ce0914c87c1bb3cd00d128869cbafff7227f7f0d043bc646"
+    },
+    {
+      "agent": "writer",
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "path": "tool-sets/writer-linux-amd64.json",
+      "digest": "sha256:3c14eca0edcc6844364e1430f75f34bc24504871f57b179c4a8a7b2291bc8f7f"
+    },
+    {
+      "agent": "reviewer",
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "path": "tool-sets/reviewer-linux-amd64.json",
+      "digest": "sha256:f20c5bb25466c7ddd86c3f8ed09ed52c7f9eb4d3b8915ea286b738584a11a67a"
+    }
+  ],
+  "buildProfiles": [
+    {
+      "id": "default",
+      "path": "build-profiles/default.json",
+      "digest": "sha256:83201c5185d01b9099e5c74eae58460f613c4a41e27375c8b1d9051325a01084"
+    }
+  ],
+  "capabilities": [],
+  "extensions": []
+}

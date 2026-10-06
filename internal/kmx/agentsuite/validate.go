@@ -420,7 +420,7 @@ func validateAgent(agent Agent) error {
 	}
 	invokes := map[string]bool{}
 	for _, invoke := range agent.Invokes {
-		if !identifierPattern.MatchString(invoke.Agent) || invokes[invoke.Agent] {
+		if !identifierPattern.MatchString(invoke.Agent) || invoke.Agent == agent.ID || invokes[invoke.Agent] {
 			errs = append(errs, fmt.Errorf("invoked agent %q is invalid or duplicated", invoke.Agent))
 		}
 		invokes[invoke.Agent] = true

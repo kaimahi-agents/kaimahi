@@ -26,6 +26,61 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 	}
 }
 
+func TestCoordinatorWorkersFixtureIsConformant(t *testing.T) {
+	root := filepath.Join("testdata", "coordinator-workers")
+	report, err := ValidatePath(root)
+	if err != nil {
+		t.Fatalf("ValidatePath(%s) error = %v", root, err)
+	}
+	if report.Name != "coordinator-workers" || report.Agents != 3 || report.Tools != 0 || report.ToolSets != 3 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+
+	readAgent := func(name string) Agent {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, "agents", name+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var agent Agent
+		if err := decodeStrict(data, &agent); err != nil {
+			t.Fatal(err)
+		}
+		return agent
+	}
+	coordinator := readAgent("coordinator")
+	writer := readAgent("writer")
+	reviewer := readAgent("reviewer")
+	if len(coordinator.Invokes) != 2 ||
+		coordinator.Invokes[0].Agent != "writer" ||
+		coordinator.Invokes[1].Agent != "reviewer" {
+		t.Fatalf("coordinator invocation edges = %+v, want coordinator -> writer and coordinator -> reviewer", coordinator.Invokes)
+	}
+	if len(writer.Invokes) != 0 {
+		t.Fatalf("writer must not invoke another agent: %+v", writer.Invokes)
+	}
+	if len(reviewer.Invokes) != 0 {
+		t.Fatalf("reviewer must not invoke another agent: %+v", reviewer.Invokes)
+	}
+}
+
+func TestValidateAgentRejectsSelfInvocation(t *testing.T) {
+	agent := Agent{
+		SchemaVersion: SpecVersion,
+		MediaType:     MediaTypeAgent,
+		ID:            "coordinator",
+		Instructions: FileRef{
+			Path:   "instructions/coordinator.md",
+			Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		},
+		Model:   ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
+		Invokes: []AgentInvoke{{Agent: "coordinator", MaxConcurrent: 1, MaxDepth: 1}},
+	}
+	if err := validateAgent(agent); err == nil || !strings.Contains(err.Error(), "invoked agent") {
+		t.Fatalf("expected self-invocation rejection, got %v", err)
+	}
+}
+
 func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.T) {
 	root := t.TempDir()
 	schemaBytes := []byte(`{"type":"object","additionalProperties":false}`)

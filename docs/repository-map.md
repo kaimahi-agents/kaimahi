@@ -68,6 +68,12 @@ packages.
 | `kmx/agentsuite/testdata/minimal/instructions` | 1 | Scaffolding | Digest-bound instruction content for the minimal writer agent. |
 | `kmx/agentsuite/testdata/minimal/tool-sets` | 1 | Scaffolding | Empty exact tool-set lock for the minimal agent and platform. |
 | `kmx/agentsuite/testdata/minimal/tools` | 1 | Scaffolding | Empty closed tool catalog for the minimal suite. |
+| `kmx/agentsuite/testdata/coordinator-workers` | 1 | Scaffolding | Root manifest for the conformant coordinator, writer and reviewer fixture. |
+| `kmx/agentsuite/testdata/coordinator-workers/agents` | 3 | Scaffolding | Coordinator, writer and reviewer manifests; only the coordinator declares invocation edges. |
+| `kmx/agentsuite/testdata/coordinator-workers/build-profiles` | 1 | Scaffolding | Shared exact Linux build profile for all three agents. |
+| `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
+| `kmx/agentsuite/testdata/coordinator-workers/tool-sets` | 3 | Scaffolding | Empty exact tool-set locks for all three agents on Linux amd64. |
+| `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/kagent` | 2 | Scaffolding | Kagent portable agent and creation bindings; the parser and portable digest are pinned in compatibility tests. |
