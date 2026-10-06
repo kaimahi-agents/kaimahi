@@ -118,6 +118,21 @@ func TestLoadRefuses(t *testing.T) {
 				t.Skip(err)
 			}
 		}, "only regular .yaml"},
+		{"symlinked resource directory", func(t *testing.T, dir string) {
+			outside := filepath.Join(t.TempDir(), "tools")
+			if err := os.Rename(filepath.Join(dir, "tools"), outside); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(dir, "tools")); err != nil {
+				t.Skip(err)
+			}
+		}, "tools/: must be a directory, not a symlink"},
+		{"dangling resource directory symlink", func(t *testing.T, dir string) {
+			os.RemoveAll(filepath.Join(dir, "agents"))
+			if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), filepath.Join(dir, "agents")); err != nil {
+				t.Skip(err)
+			}
+		}, "agents/: must be a directory, not a symlink"},
 		{"no Agents", func(t *testing.T, dir string) { os.RemoveAll(filepath.Join(dir, "agents")) }, "no Agents"},
 		{"invalid resource", func(t *testing.T, dir string) {
 			edit(t, dir, "tools/fetch-page.yaml", "method: POST", "method: TRACE")

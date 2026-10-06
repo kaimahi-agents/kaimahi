@@ -62,7 +62,8 @@ reads kmx configuration or contacts a cluster.
 - `providers/`, `tools/` and `agents/` each hold one resource kind. A missing
   directory is empty. Every bundle needs at least one Agent.
 - Each resource file holds exactly one document and is named
-  `<metadata.name>.yaml`. Any other entry in those directories is refused.
+  `<metadata.name>.yaml`. Any other entry in those directories is refused, and
+  the directories themselves must not be symlinks.
   Files elsewhere in the bundle directory are ignored.
 - Every document uses `apiVersion: kmx.kaimahi.dev/v1alpha1`.
 

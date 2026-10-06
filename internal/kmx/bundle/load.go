@@ -151,13 +151,21 @@ func (m *Manifest) validate() error {
 }
 
 // resourceFiles lists one conventional directory in lexical order. A missing
-// directory is empty; anything other than a regular .yaml file is refused
-// rather than silently skipped.
+// directory is empty. The directory itself must not be a symlink, so a bundle
+// cannot load resources from outside its own tree, and anything inside it
+// other than a regular .yaml file is refused rather than silently skipped.
 func resourceFiles(root, dir string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(root, dir))
+	info, err := os.Lstat(filepath.Join(root, dir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("%s/: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s/: must be a directory, not a symlink or file", dir)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, dir))
 	if err != nil {
 		return nil, fmt.Errorf("%s/: %w", dir, err)
 	}
