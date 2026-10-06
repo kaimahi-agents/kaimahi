@@ -115,7 +115,8 @@ spec:
 ```
 
 HTTP is the only Tool implementation. `Authorization`, `Proxy-Authorization` and
-`Cookie` headers are refused. Use `credentials` instead.
+`Cookie` headers are refused. Use `credentials` instead. A `parameters` schema
+may use `$ref` only within itself; references to files or URLs are refused.
 
 ## Agent
 

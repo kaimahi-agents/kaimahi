@@ -1,6 +1,9 @@
 package krm
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -367,5 +370,21 @@ func TestNewGraphReportsEveryBrokenReference(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not report %s", err, want)
 		}
+	}
+}
+
+func TestToolParametersResolveOnlyLocalReferences(t *testing.T) {
+	external := filepath.Join(t.TempDir(), "query.json")
+	if err := os.WriteFile(external, []byte(`{"type": "string"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref := (&url.URL{Scheme: "file", Path: filepath.ToSlash(external)}).String()
+	withRef := replace(t, fetchPageDoc, "      url:\n        type: string\n", "      url:\n        $ref: "+ref+"\n")
+	if _, err := DecodeTool([]byte(withRef)); err == nil || !strings.Contains(err.Error(), "not a valid JSON Schema") {
+		t.Fatalf("external $ref: err = %v", err)
+	}
+	local := replace(t, fetchPageDoc, "      url:\n        type: string\n", "      url:\n        $ref: \"#/$defs/url\"\n    $defs:\n      url:\n        type: string\n")
+	if _, err := DecodeTool([]byte(local)); err != nil {
+		t.Fatalf("local $ref: %v", err)
 	}
 }

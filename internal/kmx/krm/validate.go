@@ -252,6 +252,9 @@ func validateParameters(params map[string]any) error {
 	}
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
+	// The default loader reads files. A Tool's schema may reference only
+	// itself, so validation never depends on bytes outside the document.
+	compiler.UseLoader(nil)
 	compiler.AssertFormat()
 	const location = "kmx:///tool-parameters.json"
 	if err := compiler.AddResource(location, doc); err != nil {
