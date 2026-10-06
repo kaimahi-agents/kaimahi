@@ -21,8 +21,8 @@ func (a *App) ValidateSuite(path, output string) error {
 		if capabilities == "" {
 			capabilities = "none"
 		}
-		_, err = fmt.Fprintf(a.Out, "AgentSuite %s: conformant (agents=%d tools=%d toolSets=%d capabilities=%s)\n",
-			report.Name, report.Agents, report.Tools, report.ToolSets, capabilities)
+		_, err = fmt.Fprintf(a.Out, "AgentSuite %s: conformant (agents=%d tools=%d compositions=%d capabilities=%s)\n",
+			report.Name, report.Agents, report.Tools, report.Compositions, capabilities)
 		return err
 	case "json":
 		return json.NewEncoder(a.Out).Encode(report)

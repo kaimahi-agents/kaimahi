@@ -332,7 +332,8 @@ func ValidateSandboxBinding(data []byte) (*SandboxBinding, error) {
 		return nil, errors.New("sandbox binding has unsupported schemaVersion or mediaType")
 	}
 	if !validDigest(binding.SuiteDigest) || !identifierPattern.MatchString(binding.Agent) ||
-		binding.BuildProfile == "" || !validDescriptor(binding.ToolSet) || !validDescriptor(binding.Inventory) {
+		binding.BuildProfile == "" || !validDescriptor(binding.Composition) ||
+		binding.Composition.MediaType != MediaTypeComposition || !validDescriptor(binding.Inventory) {
 		return nil, errors.New("sandbox binding identity or descriptors are invalid")
 	}
 	if err := validatePlatform(binding.Platform); err != nil {

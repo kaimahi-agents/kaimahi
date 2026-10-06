@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool-set.v1+json",
+  "mediaType": "application/vnd.agentsuite.composition.v1+json",
   "agent": "writer",
   "platform": {
     "os": "linux",

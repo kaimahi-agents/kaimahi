@@ -21,19 +21,19 @@ type Report struct {
 	Name           string          `json:"name"`
 	Agents         int             `json:"agents"`
 	Tools          int             `json:"tools"`
-	ToolSets       int             `json:"toolSets"`
+	Compositions   int             `json:"compositions"`
 	Capabilities   []string        `json:"capabilities"`
 	AgentPlatforms []AgentPlatform `json:"agentPlatforms"`
 }
 
 type validator struct {
-	content     *contentSet
-	suite       Suite
-	agents      map[string]Agent
-	tools       map[string]Tool
-	toolDigests map[string]string
-	toolSets    map[string]ToolSet
-	builds      map[string]BuildProfile
+	content      *contentSet
+	suite        Suite
+	agents       map[string]Agent
+	tools        map[string]Tool
+	toolDigests  map[string]string
+	compositions map[string]Composition
+	builds       map[string]BuildProfile
 }
 
 func validateContent(content *contentSet) (*Report, error) {
@@ -46,20 +46,20 @@ func validateContent(content *contentSet) (*Report, error) {
 		return nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	v := &validator{
-		content:     content,
-		suite:       suite,
-		agents:      map[string]Agent{},
-		tools:       map[string]Tool{},
-		toolDigests: map[string]string{},
-		toolSets:    map[string]ToolSet{},
-		builds:      map[string]BuildProfile{},
+		content:      content,
+		suite:        suite,
+		agents:       map[string]Agent{},
+		tools:        map[string]Tool{},
+		toolDigests:  map[string]string{},
+		compositions: map[string]Composition{},
+		builds:       map[string]BuildProfile{},
 	}
 	var errs []error
 	errs = append(errs, v.validateSuite())
 	errs = append(errs, v.loadAgents())
 	errs = append(errs, v.loadTools())
 	errs = append(errs, v.loadBuildProfiles())
-	errs = append(errs, v.loadToolSets())
+	errs = append(errs, v.loadCompositions())
 	errs = append(errs, v.validateReferences())
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
@@ -68,9 +68,9 @@ func validateContent(content *contentSet) (*Report, error) {
 	agentPlatforms := make([]AgentPlatform, 0, len(v.agents))
 	for agentID := range v.agents {
 		var platforms []Platform
-		for _, toolSet := range v.toolSets {
-			if toolSet.Agent == agentID {
-				platforms = append(platforms, toolSet.Platform)
+		for _, composition := range v.compositions {
+			if composition.Agent == agentID {
+				platforms = append(platforms, composition.Platform)
 			}
 		}
 		slices.SortFunc(platforms, func(a, b Platform) int {
@@ -85,7 +85,7 @@ func validateContent(content *contentSet) (*Report, error) {
 		Name:           suite.Name,
 		Agents:         len(v.agents),
 		Tools:          len(v.tools),
-		ToolSets:       len(v.toolSets),
+		Compositions:   len(v.compositions),
 		Capabilities:   capabilities,
 		AgentPlatforms: agentPlatforms,
 	}, nil
@@ -257,43 +257,43 @@ func (v *validator) loadTools() error {
 	return errors.Join(errs...)
 }
 
-func (v *validator) loadToolSets() error {
+func (v *validator) loadCompositions() error {
 	var errs []error
-	for _, ref := range v.suite.ToolSets {
+	for _, ref := range v.suite.Compositions {
 		key := ref.Agent + "@" + ref.Platform.String()
-		if _, exists := v.toolSets[key]; exists {
-			errs = append(errs, fmt.Errorf("duplicate tool set %s", key))
+		if _, exists := v.compositions[key]; exists {
+			errs = append(errs, fmt.Errorf("duplicate composition %s", key))
 			continue
 		}
 		data, err := v.content.data(ref.Path)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("tool set %s: %w", key, err))
+			errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 			continue
 		}
 		digest, err := canonicalDigest(data)
 		if err != nil || digest != ref.Digest {
-			errs = append(errs, fmt.Errorf("tool set %s digest mismatch", key))
+			errs = append(errs, fmt.Errorf("composition %s digest mismatch", key))
 			continue
 		}
-		var toolSet ToolSet
-		if err := decodeStrict(data, &toolSet); err != nil {
-			errs = append(errs, fmt.Errorf("tool set %s: %w", key, err))
+		var composition Composition
+		if err := decodeStrict(data, &composition); err != nil {
+			errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 			continue
 		}
-		if err := validateToolSet(toolSet); err != nil {
-			errs = append(errs, fmt.Errorf("tool set %s: %w", key, err))
+		if err := validateComposition(composition); err != nil {
+			errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 			continue
 		}
-		if toolSet.Agent != ref.Agent || toolSet.Platform != ref.Platform {
-			errs = append(errs, fmt.Errorf("tool set %s identity does not match its reference", key))
+		if composition.Agent != ref.Agent || composition.Platform != ref.Platform {
+			errs = append(errs, fmt.Errorf("composition %s identity does not match its reference", key))
 			continue
 		}
-		profile, ok := v.builds[toolSet.BuildProfile]
-		if !ok || !profileSupportsPlatform(profile, toolSet.Platform) {
-			errs = append(errs, fmt.Errorf("tool set %s build profile %q does not support %s", key, toolSet.BuildProfile, toolSet.Platform))
+		profile, ok := v.builds[composition.BuildProfile]
+		if !ok || !profileSupportsPlatform(profile, composition.Platform) {
+			errs = append(errs, fmt.Errorf("composition %s build profile %q does not support %s", key, composition.BuildProfile, composition.Platform))
 			continue
 		}
-		v.toolSets[key] = toolSet
+		v.compositions[key] = composition
 	}
 	return errors.Join(errs...)
 }
@@ -311,8 +311,8 @@ func (v *validator) validateReferences() error {
 				errs = append(errs, fmt.Errorf("agent %s invokes unknown agent %s", agentID, invoke.Agent))
 			}
 		}
-		for key, toolSet := range v.toolSets {
-			if toolSet.Agent != agentID {
+		for key, composition := range v.compositions {
+			if composition.Agent != agentID {
 				continue
 			}
 			destinations := map[string]InventoryEntry{}
@@ -320,62 +320,62 @@ func (v *validator) validateReferences() error {
 			for _, requirement := range agent.Tools {
 				requirements[requirement.ID+"@"+requirement.Version] = requirement
 			}
-			if len(requirements) != len(toolSet.Tools) {
-				errs = append(errs, fmt.Errorf("tool set %s does not lock every agent requirement exactly once", key))
+			if len(requirements) != len(composition.Tools) {
+				errs = append(errs, fmt.Errorf("composition %s does not resolve every agent requirement exactly once", key))
 				continue
 			}
-			for _, locked := range toolSet.Tools {
-				toolKey := locked.ID + "@" + locked.Version
+			for _, resolved := range composition.Tools {
+				toolKey := resolved.ID + "@" + resolved.Version
 				requirement, ok := requirements[toolKey]
 				if !ok {
-					errs = append(errs, fmt.Errorf("tool set %s locks undeclared tool %s", key, toolKey))
+					errs = append(errs, fmt.Errorf("composition %s contains undeclared tool %s", key, toolKey))
 					continue
 				}
 				tool, exists := v.tools[toolKey]
 				if !exists {
-					errs = append(errs, fmt.Errorf("tool set %s locks missing tool %s", key, toolKey))
+					errs = append(errs, fmt.Errorf("composition %s contains missing tool %s", key, toolKey))
 					continue
 				}
-				if locked.ManifestDigest != v.toolDigests[toolKey] || locked.ExecutionMode != requirement.ExecutionMode {
-					errs = append(errs, fmt.Errorf("tool set %s has stale binding for %s", key, toolKey))
+				if resolved.ManifestDigest != v.toolDigests[toolKey] || resolved.ExecutionMode != requirement.ExecutionMode {
+					errs = append(errs, fmt.Errorf("composition %s has stale resolution for %s", key, toolKey))
 				}
-				switch locked.ExecutionMode {
+				switch resolved.ExecutionMode {
 				case ExecutionInAgentSandbox:
-					variant, matches := exactVariant(tool.Variants, toolSet.Platform)
-					if matches != 1 || locked.VariantDigest != variant.VariantDigest {
-						errs = append(errs, fmt.Errorf("tool set %s must select exactly one matching variant for %s", key, toolKey))
+					variant, matches := exactVariant(tool.Variants, composition.Platform)
+					if matches != 1 || resolved.VariantDigest != variant.VariantDigest {
+						errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, toolKey))
 						continue
 					}
 					for _, entry := range variant.Files {
 						destination := path.Join(variant.InstallRoot, entry.Path)
 						if existing, ok := destinations[destination]; ok && !sameInstallEntry(existing, entry) {
-							errs = append(errs, fmt.Errorf("tool set %s has non-identical destination collision at %s", key, destination))
+							errs = append(errs, fmt.Errorf("composition %s has non-identical destination collision at %s", key, destination))
 						} else {
 							destinations[destination] = entry
 						}
 					}
 				case ExecutionIsolatedSandbox:
-					errs = append(errs, fmt.Errorf("tool set %s requests reserved isolated-tool-sandbox capability", key))
+					errs = append(errs, fmt.Errorf("composition %s requests reserved isolated-tool-sandbox capability", key))
 				default:
-					if tool.Remote == nil || locked.VariantDigest != "" {
-						errs = append(errs, fmt.Errorf("tool set %s has invalid remote binding for %s", key, toolKey))
+					if tool.Remote == nil || resolved.VariantDigest != "" {
+						errs = append(errs, fmt.Errorf("composition %s has invalid remote resolution for %s", key, toolKey))
 					}
 				}
 			}
 		}
 		found := false
-		for _, toolSet := range v.toolSets {
-			if toolSet.Agent == agentID {
+		for _, composition := range v.compositions {
+			if composition.Agent == agentID {
 				found = true
 			}
 		}
 		if !found {
-			errs = append(errs, fmt.Errorf("agent %s has no platform tool set", agentID))
+			errs = append(errs, fmt.Errorf("agent %s has no platform composition", agentID))
 		}
 	}
-	for key, toolSet := range v.toolSets {
-		if _, ok := v.agents[toolSet.Agent]; !ok {
-			errs = append(errs, fmt.Errorf("tool set %s references unknown agent %s", key, toolSet.Agent))
+	for key, composition := range v.compositions {
+		if _, ok := v.agents[composition.Agent]; !ok {
+			errs = append(errs, fmt.Errorf("composition %s references unknown agent %s", key, composition.Agent))
 		}
 	}
 	if !slices.Equal(v.suite.Capabilities, derivedCapabilities(v.tools)) {
@@ -701,24 +701,24 @@ func unsafeInjectionEnv(name string) bool {
 	return strings.HasPrefix(name, "LD_") || name == "PYTHONPATH" || name == "NODE_OPTIONS" || name == "BASH_ENV"
 }
 
-func validateToolSet(toolSet ToolSet) error {
+func validateComposition(composition Composition) error {
 	var errs []error
-	if toolSet.SchemaVersion != SpecVersion || toolSet.MediaType != MediaTypeToolSet {
+	if composition.SchemaVersion != SpecVersion || composition.MediaType != MediaTypeComposition {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}
-	if !identifierPattern.MatchString(toolSet.Agent) {
+	if !identifierPattern.MatchString(composition.Agent) {
 		errs = append(errs, errors.New("agent id is invalid"))
 	}
-	if !identifierPattern.MatchString(toolSet.BuildProfile) {
+	if !identifierPattern.MatchString(composition.BuildProfile) {
 		errs = append(errs, errors.New("buildProfile is invalid"))
 	}
-	errs = append(errs, validatePlatform(toolSet.Platform))
+	errs = append(errs, validatePlatform(composition.Platform))
 	seen := map[string]bool{}
-	for _, tool := range toolSet.Tools {
+	for _, tool := range composition.Tools {
 		key := tool.ID + "@" + tool.Version
 		if seen[key] || !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) ||
 			!validDigest(tool.ManifestDigest) {
-			errs = append(errs, fmt.Errorf("locked tool %s is invalid or duplicated", key))
+			errs = append(errs, fmt.Errorf("resolved tool %s is invalid or duplicated", key))
 		}
 		seen[key] = true
 	}

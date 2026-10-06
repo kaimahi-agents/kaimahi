@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-set.schema.json",
-  "title": "Resolved AgentSuite tool set",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/composition.schema.json",
+  "title": "AgentSuite composition manifest",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "mediaType", "agent", "platform", "buildProfile", "tools"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
-    "mediaType": {"const": "application/vnd.agentsuite.tool-set.v1+json"},
+    "mediaType": {"const": "application/vnd.agentsuite.composition.v1+json"},
     "agent": {"$ref": "#/$defs/id"},
     "platform": {"$ref": "#/$defs/platform"},
     "buildProfile": {"$ref": "#/$defs/id"},

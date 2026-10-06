@@ -21,7 +21,7 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Name != "example" || report.Agents != 1 || report.Tools != 0 || report.ToolSets != 1 {
+	if report.Name != "example" || report.Agents != 1 || report.Tools != 0 || report.Compositions != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -32,7 +32,7 @@ func TestCoordinatorWorkersFixtureIsConformant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidatePath(%s) error = %v", root, err)
 	}
-	if report.Name != "coordinator-workers" || report.Agents != 3 || report.Tools != 0 || report.ToolSets != 3 {
+	if report.Name != "coordinator-workers" || report.Agents != 3 || report.Tools != 0 || report.Compositions != 3 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 
@@ -138,7 +138,7 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
 
 	var agentRefs []ManifestRef
-	var toolSetRefs []ToolSetRef
+	var compositionRefs []CompositionRef
 	for _, id := range []string{"writer", "reviewer"} {
 		instructions := []byte("Use the reader tool.\n")
 		instructionPath := "instructions/" + id + ".md"
@@ -154,24 +154,24 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		}
 		agentPath := "agents/" + id + ".json"
 		agentRefs = append(agentRefs, ManifestRef{ID: id, Path: agentPath, Digest: mustWriteJSON(t, root, agentPath, agent)})
-		toolSet := ToolSet{
-			SchemaVersion: SpecVersion, MediaType: MediaTypeToolSet, Agent: id,
+		composition := Composition{
+			SchemaVersion: SpecVersion, MediaType: MediaTypeComposition, Agent: id,
 			Platform: Platform{OS: "linux", Architecture: "amd64"}, BuildProfile: "default",
-			Tools: []LockedTool{{
+			Tools: []ResolvedTool{{
 				ID: "reader", Version: "1.2.3", ManifestDigest: toolDigest,
 				VariantDigest: variant.VariantDigest, ExecutionMode: ExecutionInAgentSandbox,
 			}},
 		}
-		toolSetPath := "tool-sets/" + id + "-linux-amd64.json"
-		toolSetRefs = append(toolSetRefs, ToolSetRef{
-			Agent: id, Platform: toolSet.Platform, Path: toolSetPath,
-			Digest: mustWriteJSON(t, root, toolSetPath, toolSet),
+		compositionPath := "compositions/" + id + "-linux-amd64.json"
+		compositionRefs = append(compositionRefs, CompositionRef{
+			Agent: id, Platform: composition.Platform, Path: compositionPath,
+			Digest: mustWriteJSON(t, root, compositionPath, composition),
 		})
 	}
 	suite := Suite{
 		SchemaVersion: SpecVersion, MediaType: MediaTypeSuite, Name: "shared-tool",
 		Agents: agentRefs, ToolCatalog: ManifestRef{ID: "catalog", Path: "tools/catalog.json", Digest: catalogDigest},
-		ToolSets: toolSetRefs,
+		Compositions: compositionRefs,
 		BuildProfiles: []ManifestRef{{
 			ID: "default", Path: "build-profiles/default.json", Digest: profileDigest,
 		}},
@@ -183,7 +183,7 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Agents != 2 || report.Tools != 1 || report.ToolSets != 2 {
+	if report.Agents != 2 || report.Tools != 1 || report.Compositions != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -563,10 +563,10 @@ func TestRawVariantDigestsPreserveExplicitZeroValues(t *testing.T) {
 
 func TestDeclaredCapabilitiesMustAlreadyBeSortedAndUnique(t *testing.T) {
 	v := &validator{
-		suite:    Suite{Capabilities: []string{"remote-streamable-http-mcp", "remote-streamable-http-mcp"}},
-		tools:    map[string]Tool{"remote@1.0.0": {Remote: &RemoteMCP{}}},
-		agents:   map[string]Agent{},
-		toolSets: map[string]ToolSet{},
+		suite:        Suite{Capabilities: []string{"remote-streamable-http-mcp", "remote-streamable-http-mcp"}},
+		tools:        map[string]Tool{"remote@1.0.0": {Remote: &RemoteMCP{}}},
+		agents:       map[string]Agent{},
+		compositions: map[string]Composition{},
 	}
 	if err := v.validateReferences(); err == nil || !strings.Contains(err.Error(), "capabilities") {
 		t.Fatalf("duplicate capabilities error = %v", err)
@@ -597,11 +597,27 @@ func TestValidateSandboxBindingRejectsUnpinnedIdentity(t *testing.T) {
 	  "agent":"writer",
 	  "platform":{"os":"linux","architecture":"amd64"},
 	  "buildProfile":"default",
-	  "toolSet":{"mediaType":"application/json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
+	  "composition":{"mediaType":"application/vnd.agentsuite.composition.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
 	  "inventory":{"mediaType":"application/json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":1}
 	}`)
 	if _, err := ValidateSandboxBinding(data); err == nil {
 		t.Fatal("expected invalid suite digest to be rejected")
+	}
+}
+
+func TestValidateSandboxBindingRejectsWrongCompositionMediaType(t *testing.T) {
+	data := []byte(`{
+	  "schemaVersion":"1.0.0-draft",
+	  "mediaType":"application/vnd.agentsuite.sandbox-binding.v1+json",
+	  "suiteDigest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	  "agent":"writer",
+	  "platform":{"os":"linux","architecture":"amd64"},
+	  "buildProfile":"default",
+	  "composition":{"mediaType":"application/json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
+	  "inventory":{"mediaType":"application/json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":1}
+	}`)
+	if _, err := ValidateSandboxBinding(data); err == nil {
+		t.Fatal("expected composition media type to be rejected")
 	}
 }
 
@@ -653,15 +669,15 @@ func writeMinimalSuite(t *testing.T) string {
 	}
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
 
-	toolSet := ToolSet{
+	composition := Composition{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeToolSet,
+		MediaType:     MediaTypeComposition,
 		Agent:         "writer",
 		Platform:      Platform{OS: "linux", Architecture: "amd64"},
 		BuildProfile:  "default",
-		Tools:         []LockedTool{},
+		Tools:         []ResolvedTool{},
 	}
-	toolSetDigest := mustWriteJSON(t, root, "tool-sets/writer-linux-amd64.json", toolSet)
+	compositionDigest := mustWriteJSON(t, root, "compositions/writer-linux-amd64.json", composition)
 
 	suite := Suite{
 		SchemaVersion: SpecVersion,
@@ -671,9 +687,9 @@ func writeMinimalSuite(t *testing.T) string {
 			ID: "writer", Path: "agents/writer.json", Digest: agentDigest,
 		}},
 		ToolCatalog: ManifestRef{ID: "catalog", Path: "tools/catalog.json", Digest: catalogDigest},
-		ToolSets: []ToolSetRef{{
+		Compositions: []CompositionRef{{
 			Agent: "writer", Platform: Platform{OS: "linux", Architecture: "amd64"},
-			Path: "tool-sets/writer-linux-amd64.json", Digest: toolSetDigest,
+			Path: "compositions/writer-linux-amd64.json", Digest: compositionDigest,
 		}},
 		BuildProfiles: []ManifestRef{{
 			ID: "default", Path: "build-profiles/default.json", Digest: profileDigest,

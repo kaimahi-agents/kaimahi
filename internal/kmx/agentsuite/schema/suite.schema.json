@@ -4,7 +4,7 @@
   "title": "AgentSuite manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "name", "agents", "toolCatalog", "toolSets", "buildProfiles"],
+  "required": ["schemaVersion", "mediaType", "name", "agents", "toolCatalog", "compositions", "buildProfiles"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
     "mediaType": {"const": "application/vnd.agentsuite.manifest.v1+json"},
@@ -15,7 +15,7 @@
       "items": {"$ref": "#/$defs/ref"}
     },
     "toolCatalog": {"$ref": "#/$defs/ref"},
-    "toolSets": {
+    "compositions": {
       "type": "array",
       "items": {
         "type": "object",

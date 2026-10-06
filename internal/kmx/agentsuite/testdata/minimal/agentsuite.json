@@ -14,15 +14,15 @@
     "path": "tools/catalog.json",
     "digest": "sha256:98aefca0842f347cca9b9143f0b39f7d1edf8c6a5f0d091afcc805ecfb507a1c"
   },
-  "toolSets": [
+  "compositions": [
     {
       "agent": "writer",
       "platform": {
         "os": "linux",
         "architecture": "amd64"
       },
-      "path": "tool-sets/writer-linux-amd64.json",
-      "digest": "sha256:3c14eca0edcc6844364e1430f75f34bc24504871f57b179c4a8a7b2291bc8f7f"
+      "path": "compositions/writer-linux-amd64.json",
+      "digest": "sha256:d42dae10d5c1154ca9fbdde41cc70881690f1e54c29fa8a6ff0e9c0444f38a63"
     }
   ],
   "buildProfiles": [

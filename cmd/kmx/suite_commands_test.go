@@ -32,7 +32,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 				t.Fatalf("offline suite validation loaded operational config %d time(s)", *loads)
 			}
 			if !tc.json {
-				want := "AgentSuite minimal: conformant (agents=1 tools=0 toolSets=1 capabilities=none)\n"
+				want := "AgentSuite minimal: conformant (agents=1 tools=0 compositions=1 capabilities=none)\n"
 				if out.String() != want {
 					t.Fatalf("text output = %q, want %q", out.String(), want)
 				}
@@ -42,7 +42,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 				t.Fatalf("decode JSON output: %v\n%s", err, out.String())
 			}
-			if report.Name != "minimal" || report.Agents != 1 || report.Tools != 0 || report.ToolSets != 1 {
+			if report.Name != "minimal" || report.Agents != 1 || report.Tools != 0 || report.Compositions != 1 {
 				t.Fatalf("unexpected JSON report: %+v", report)
 			}
 			if strings.TrimSpace(diagnostics.String()) != "" {

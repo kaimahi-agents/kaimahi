@@ -12,7 +12,7 @@ const (
 	MediaTypeAgent          = "application/vnd.agentsuite.agent.v1+json"
 	MediaTypeToolCatalog    = "application/vnd.agentsuite.tool-catalog.v1+json"
 	MediaTypeTool           = "application/vnd.agentsuite.tool.v1+json"
-	MediaTypeToolSet        = "application/vnd.agentsuite.tool-set.v1+json"
+	MediaTypeComposition    = "application/vnd.agentsuite.composition.v1+json"
 	MediaTypeBuildProfile   = "application/vnd.agentsuite.build-profile.v1+json"
 	MediaTypeSandboxBinding = "application/vnd.agentsuite.sandbox-binding.v1+json"
 
@@ -51,15 +51,15 @@ type Extension struct {
 }
 
 type Suite struct {
-	SchemaVersion string        `json:"schemaVersion"`
-	MediaType     string        `json:"mediaType"`
-	Name          string        `json:"name"`
-	Agents        []ManifestRef `json:"agents"`
-	ToolCatalog   ManifestRef   `json:"toolCatalog"`
-	ToolSets      []ToolSetRef  `json:"toolSets"`
-	BuildProfiles []ManifestRef `json:"buildProfiles"`
-	Capabilities  []string      `json:"capabilities,omitempty"`
-	Extensions    []Extension   `json:"extensions,omitempty"`
+	SchemaVersion string           `json:"schemaVersion"`
+	MediaType     string           `json:"mediaType"`
+	Name          string           `json:"name"`
+	Agents        []ManifestRef    `json:"agents"`
+	ToolCatalog   ManifestRef      `json:"toolCatalog"`
+	Compositions  []CompositionRef `json:"compositions"`
+	BuildProfiles []ManifestRef    `json:"buildProfiles"`
+	Capabilities  []string         `json:"capabilities,omitempty"`
+	Extensions    []Extension      `json:"extensions,omitempty"`
 }
 
 type ManifestRef struct {
@@ -69,7 +69,7 @@ type ManifestRef struct {
 	Digest  string `json:"digest"`
 }
 
-type ToolSetRef struct {
+type CompositionRef struct {
 	Agent    string   `json:"agent"`
 	Platform Platform `json:"platform"`
 	Path     string   `json:"path"`
@@ -225,16 +225,16 @@ type PlatformImage struct {
 	Image    Descriptor `json:"image"`
 }
 
-type ToolSet struct {
-	SchemaVersion string       `json:"schemaVersion"`
-	MediaType     string       `json:"mediaType"`
-	Agent         string       `json:"agent"`
-	Platform      Platform     `json:"platform"`
-	BuildProfile  string       `json:"buildProfile"`
-	Tools         []LockedTool `json:"tools"`
+type Composition struct {
+	SchemaVersion string         `json:"schemaVersion"`
+	MediaType     string         `json:"mediaType"`
+	Agent         string         `json:"agent"`
+	Platform      Platform       `json:"platform"`
+	BuildProfile  string         `json:"buildProfile"`
+	Tools         []ResolvedTool `json:"tools"`
 }
 
-type LockedTool struct {
+type ResolvedTool struct {
 	ID             string `json:"id"`
 	Version        string `json:"version"`
 	ManifestDigest string `json:"manifestDigest"`
@@ -258,6 +258,6 @@ type SandboxBinding struct {
 	Agent         string     `json:"agent"`
 	Platform      Platform   `json:"platform"`
 	BuildProfile  string     `json:"buildProfile"`
-	ToolSet       Descriptor `json:"toolSet"`
+	Composition   Descriptor `json:"composition"`
 	Inventory     Descriptor `json:"inventory"`
 }

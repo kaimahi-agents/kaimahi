@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Version:** `1.0.0-draft`
-**Last updated:** October 5, 2026
+**Last updated:** October 6, 2026
 
 ## Abstract
 
@@ -10,8 +10,9 @@ AgentSuite is a portable, content-addressed definition of one or more related
 agents and the exact tools from which their runnable sandboxes are derived. An
 AgentSuite is distributed as an artifact conforming to the
 [OCI Image Format Specification][oci-image-spec]. Each runnable agent and
-platform has an exact tool-set lock and a pinned build profile. A producer
-combines those records by file composition to create an Agent Sandbox Image.
+platform has an exact composition manifest and a pinned build profile. A
+producer combines those records by file composition to create an Agent Sandbox
+Image.
 
 This specification defines the OCI envelope, content layout, closed JSON
 schemas, canonical identities, tool bundle model, sandbox-image binding,
@@ -40,8 +41,8 @@ Unless stated otherwise:
 Version 1 specifies:
 
 - an AgentSuite definition artifact carried by an OCI image manifest;
-- one strict, closed content graph containing agents, tools, locks, and build
-  profiles;
+- one strict, closed content graph containing agents, tools, compositions, and
+  build profiles;
 - bundled stdio MCP providers statically installed into an agent sandbox;
 - remote MCP providers using streamable HTTP;
 - exact Linux platform selection;
@@ -61,7 +62,7 @@ An **Agent Sandbox Image** is a runnable OCI image derived for exactly one:
 - agent identifier;
 - platform;
 - build profile;
-- tool-set lock.
+- composition manifest.
 
 A tool may be referenced by several agents. Each derived Agent Sandbox Image
 materializes that tool's exact platform bundle independently. Registry
@@ -81,7 +82,7 @@ change the image-local closure.
 | [Agent manifest](#8-agents) | `application/vnd.agentsuite.agent.v1+json` |
 | [Tool catalog](#91-tool-catalog) | `application/vnd.agentsuite.tool-catalog.v1+json` |
 | [Tool manifest](#9-tools) | `application/vnd.agentsuite.tool.v1+json` |
-| [Tool-set lock](#10-tool-set-locks) | `application/vnd.agentsuite.tool-set.v1+json` |
+| [Composition manifest](#10-composition-manifests) | `application/vnd.agentsuite.composition.v1+json` |
 | [Build profile](#11-build-profiles) | `application/vnd.agentsuite.build-profile.v1+json` |
 | [Sandbox binding](#13-sandbox-binding) | `application/vnd.agentsuite.sandbox-binding.v1+json` |
 
@@ -202,7 +203,7 @@ serialization details.
 │           ├── tool.json
 │           └── <platform>/
 │               └── ...
-├── tool-sets/
+├── compositions/
 │   └── <agent>-<os>-<architecture>.json
 ├── build-profiles/
 │   └── <profile>.json
@@ -279,11 +280,20 @@ identity commits to platform, install root, entrypoint, runtime requirements,
 file inventory, dependencies, SBOM, provenance descriptors, and the presence
 of optional members.
 
-### 6.4 Tool sets
+### 6.4 Compositions
 
-The digest in a suite `toolSets` reference is the JCS digest of the complete
-tool-set lock. A lock is an exact result, not a version constraint or resolver
-input.
+A composition manifest resolves the inputs for one buildable unit:
+
+```text
+agent + platform + build profile + zero or more tools
+```
+
+After this definition, **composition** means a composition manifest unless the
+context states otherwise.
+
+The digest in a suite `compositions` reference is the JCS digest of the
+complete composition manifest. The manifest is an exact, resolved result, not
+a version constraint or resolver input.
 
 ## 7. Suite manifest
 
@@ -292,7 +302,7 @@ input.
 - suite name;
 - one or more digest-bound agent references;
 - one digest-bound tool catalog;
-- one or more per-agent, per-platform tool-set locks;
+- one or more per-agent, per-platform compositions;
 - one or more digest-bound build profiles;
 - capabilities derived from tool declarations;
 - optional non-critical extensions.
@@ -328,8 +338,8 @@ Every tool requirement MUST include exact `id`, semantic `version`, and
 `executionMode`. Version ranges and floating tags are invalid in a packaged
 suite.
 
-For every agent, the suite MUST contain at least one platform tool-set lock,
-including an empty lock for an agent that uses no tools. This makes the target
+For every agent, the suite MUST contain at least one composition, including an
+empty composition for an agent that uses no tools. This makes the target
 platform and build profile explicit.
 
 ### 8.1 Agent invocation relationships
@@ -391,8 +401,8 @@ The complete conformant example is checked in at
 The tool catalog is the closed, suite-level index of available tool manifests.
 Each entry MUST bind one exact tool identifier and semantic version to a
 content path and canonical manifest digest. Tool identities and versions MUST
-be unique within the catalog. Every tool referenced by an agent or tool-set
-lock MUST appear in the catalog.
+be unique within the catalog. Every tool referenced by an agent or composition
+MUST appear in the catalog.
 
 Example:
 
@@ -464,8 +474,8 @@ values MUST NOT be literal content.
 #### `isolated-tool-sandbox`
 
 The schema shape is reserved so future suites can identify intent. Version 1
-consumers MUST reject every lock requesting this mode. No interoperability or
-security claim may be made from the reserved shape.
+consumers MUST reject every composition requesting this mode. No
+interoperability or security claim may be made from the reserved shape.
 
 ### 9.4 Bundled variants
 
@@ -500,10 +510,18 @@ target. All other overlaps are errors.
 Bundle dependencies are exact digest-bound bundle identities. They do not
 cause network resolution or installer execution.
 
-## 10. Tool-set locks
+## 10. Composition manifests
 
-A tool-set lock is scoped to one agent, one exact platform, and one build
-profile. For every agent requirement it contains exactly one locked record:
+A composition manifest is the closed, resolved, digest-pinned composition of
+one agent for one exact platform and one build profile. It MUST NOT be applied
+to a different agent. Its `tools` array contains the exact tools authorized for
+that composition and MAY be empty. For every agent tool requirement it contains
+exactly one resolved tool record:
+
+A composition is a build-time input to Agent Sandbox Image construction. It is
+not a runtime actor template, deployment object, or snapshot policy. Runtime
+systems MAY derive their own templates from the resulting image, but those
+templates and their lifecycle policies are outside this specification.
 
 ```json
 {
@@ -515,11 +533,12 @@ profile. For every agent requirement it contains exactly one locked record:
 }
 ```
 
-The lock MUST contain no ambient or undeclared tool. For bundled tools,
+The manifest MUST contain no ambient or undeclared tool. For bundled tools,
 `variantDigest` MUST select exactly one matching platform variant. For remote
-tools, `variantDigest` MUST be absent. Isolated locks MUST be rejected.
+tools, `variantDigest` MUST be absent. Manifests selecting isolated tools MUST
+be rejected.
 
-The same immutable tool and variant may appear in several agent locks.
+The same immutable tool and variant may appear in several compositions.
 
 ## 11. Build profiles
 
@@ -532,8 +551,8 @@ A build profile pins, per platform:
 Descriptors MUST identify OCI image manifests by digest and size. Tags are not
 part of the profile.
 
-Every tool-set platform MUST have exactly one matching runtime-base and harness
-entry in its selected profile.
+The platform named by every composition MUST have exactly one matching
+runtime-base and harness entry in its selected profile.
 
 OCI platform fields alone do not establish native compatibility. Producers
 MUST validate the combined final filesystem against each bundled tool's ABI,
@@ -544,7 +563,8 @@ path, and CPU-baseline requirements.
 
 Construction MUST be a pure, offline file-composition operation:
 
-1. resolve the suite, agent, platform, lock, and build profile by digest;
+1. resolve the suite, agent, platform, composition, and build profile by
+   digest;
 2. materialize the pinned runtime-base filesystem;
 3. compose the pinned harness filesystem;
 4. copy each selected tool payload to its declared install root;
@@ -585,7 +605,7 @@ The binding commits to:
 - agent identifier;
 - exact platform;
 - build-profile identifier;
-- tool-set descriptor;
+- composition descriptor;
 - final image inventory descriptor.
 
 For a multi-platform image index, each selected platform manifest has its own
@@ -600,8 +620,8 @@ v1.1.1][oci-distribution-spec] operations.
 Consumers MUST support digest pulls. Producers SHOULD push all blobs before
 publishing the referencing manifest.
 
-Tags are discovery names only. A deployment, lock, attestation, or sandbox
-binding that requires immutable identity MUST use a digest.
+Tags are discovery names only. A deployment, composition, attestation, or
+sandbox binding that requires immutable identity MUST use a digest.
 
 Clients MUST verify every received descriptor before parsing or extracting its
 content. Registry transport security and authentication are deployment
@@ -618,9 +638,9 @@ A conforming suite validator asserts:
 | `AS-OCI-001` | OCI layout, index, manifest, descriptors, config, and one content layer are valid. |
 | `AS-JSON-001` | Normative JSON is strict, duplicate-free, closed, and schema-valid. |
 | `AS-PATH-001` | Archive paths, links, entry types, modes, collisions, and limits are safe. |
-| `AS-ID-001` | Every JSON, file, variant, and lock identity matches its normative algorithm. |
-| `AS-GRAPH-001` | Agent, tool, build-profile, invocation, and lock references form a closed graph. |
-| `AS-LOCK-001` | Every agent/platform lock is exact and contains neither missing nor ambient tools. |
+| `AS-ID-001` | Every content-addressed identity matches its normative algorithm. |
+| `AS-GRAPH-001` | All manifest and invocation references form a closed graph. |
+| `AS-COMPOSE-001` | Every agent/platform composition exactly resolves its declared tools and contains no ambient tools. |
 | `AS-TOOL-001` | Bundled variants match content inventory and exact platforms. |
 | `AS-SECRET-001` | Content contains references and names, not credential-shaped literal values. |
 | `AS-CAP-001` | Declared capabilities equal derived capabilities. |
@@ -638,7 +658,7 @@ A conforming sandbox image validator asserts:
 | ID | Requirement |
 |---|---|
 | `ASI-BIND-001` | The label, embedded binding, binding digest, and selected image platform agree. |
-| `ASI-SRC-001` | Suite, agent, lock, and build inputs match binding identities. |
+| `ASI-SRC-001` | Suite, agent, composition, and build inputs match binding identities. |
 | `ASI-FS-001` | Final inventory, ownership, modes, links, collision rules, and writable-path rules hold. |
 | `ASI-ABI-001` | Native loaders, libraries, interpreters, CPU baseline, and required base paths resolve in the final filesystem. |
 | `ASI-RUN-001` | Image user, entrypoint, capabilities, and `no_new_privs` contract are valid. |
@@ -651,7 +671,7 @@ A conforming runtime test asserts:
 |---|---|
 | `ASR-OPS-001` | The model can invoke only declared provider operations. |
 | `ASR-FS-001` | Immutable image paths remain non-writable and declared writable mounts start empty. |
-| `ASR-NET-001` | Effective egress is no broader than the union required by the locked tools and model endpoint. |
+| `ASR-NET-001` | Effective egress is no broader than the union required by the resolved tools and model endpoint. |
 | `ASR-SEC-001` | Secret values are injected only at runtime and are not persisted into image or suite content. |
 | `ASR-PROC-001` | The process executes non-root with no added capabilities and `no_new_privs`. |
 
