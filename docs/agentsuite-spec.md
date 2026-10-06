@@ -44,6 +44,8 @@ This draft specifies:
 - one strict, closed content graph containing agents, tools, compositions, and
   build profiles;
 - bundled stdio MCP providers statically installed into an agent sandbox;
+- remote Streamable HTTP MCP Tool authoring and cataloging without agent
+  composition or runtime binding;
 - exact Linux platform selection;
 - pinned runtime-base and harness images;
 - deterministic, network-free Agent Sandbox Image construction;
@@ -82,8 +84,10 @@ change the image-local closure.
 | [Tool catalog](#91-tool-catalog) | `application/vnd.agentsuite.tool-catalog.v1+json` |
 | [Tool manifest](#9-tools) | `application/vnd.agentsuite.tool.v1+json` |
 | [Composition manifest](#10-composition-manifests) | `application/vnd.agentsuite.composition.v1+json` |
+| [Tool composition](#101-tool-compositions) | `application/vnd.agentsuite.tool-composition.v1+json` |
 | [Build profile](#11-build-profiles) | `application/vnd.agentsuite.build-profile.v1+json` |
 | [Sandbox binding](#13-sandbox-binding) | `application/vnd.agentsuite.sandbox-binding.v1+json` |
+| [Tool sandbox binding](#132-tool-sandbox-binding) | `application/vnd.agentsuite.tool-sandbox-binding.v1+json` |
 
 ### 4.2 OCI image layout
 
@@ -204,6 +208,8 @@ serialization details.
 │               └── ...
 ├── compositions/
 │   └── <agent>-<os>-<architecture>.json
+├── tool-compositions/
+│   └── <tool>-<os>-<architecture>.json
 ├── build-profiles/
 │   └── <profile>.json
 ├── schemas/
@@ -281,18 +287,24 @@ of optional members.
 
 ### 6.4 Compositions
 
-A composition manifest resolves the inputs for one buildable unit:
+An agent composition resolves:
 
 ```text
 agent + platform + build profile + zero or more tools
 ```
 
-After this definition, **composition** means a composition manifest unless the
-context states otherwise.
+A Tool composition resolves:
+
+```text
+tool manifest + platform variant + build profile
+```
 
 The digest in a suite `compositions` reference is the JCS digest of the
 complete composition manifest. The manifest is an exact, resolved result, not
 a version constraint or resolver input.
+
+The digest in a suite `toolCompositions` reference is the JCS digest of the
+complete Tool composition manifest.
 
 ## 7. Suite manifest
 
@@ -302,6 +314,7 @@ a version constraint or resolver input.
 - one or more digest-bound agent references;
 - one digest-bound tool catalog;
 - one or more per-agent, per-platform compositions;
+- zero or more per-Tool, per-platform Tool compositions;
 - one or more digest-bound build profiles;
 - capabilities derived from tool declarations;
 - optional non-critical extensions.
@@ -401,10 +414,9 @@ The complete conformant example is checked in at
 
 ## 9. Tools
 
-A tool is an immutable, versioned MCP provider contract plus one or more
-platform-specific implementations bundled into the Agent Sandbox Image. It is
-not merely an executable filename, one MCP operation, or an installed runtime
-process.
+A tool is an immutable, versioned MCP provider contract with bundled platform
+variants, a remote Streamable HTTP declaration, or both. It is not merely an
+executable filename, one MCP operation, or an installed runtime process.
 
 A tool manifest defines:
 
@@ -412,15 +424,19 @@ A tool manifest defines:
 |---|---|
 | `id` | Stable suite-local tool identifier. |
 | `version` | Exact semantic version of the provider contract and execution definition. |
+| `retained` | Optional explicit `true` marker permitting a Tool with no inward reference to remain in the catalog. |
 | `provider` | MCP revision and the complete set of model-visible operations authorized by the suite. |
 | `variants` | One or more bundled, platform-specific implementations for `shared-sandbox` execution. |
+| `remote` | A remote Streamable HTTP declaration containing references and connection behavior, but no endpoint or credential values. |
 | `extensions` | Optional non-critical extension records. |
 
-`variants` MUST be present and contain at least one implementation. The
-combination of `id` and `version` names the tool contract; the JCS digest of
-the complete manifest identifies its exact immutable definition. Two
-manifests with the same `id` and `version` but different digests are
-conflicting definitions and MUST NOT coexist in one suite.
+At least one of `variants` or `remote` MUST be present. A remotely callable
+Tool MAY also contain variants used to construct its deployable Tool Sandbox
+Image. `variants` MUST contain at least one implementation. The combination of
+`id` and `version` names the tool contract; the JCS digest of the complete
+manifest identifies its exact immutable definition. Two manifests with the
+same `id` and `version` but different digests are conflicting definitions and
+MUST NOT coexist in one suite.
 
 The provider contract and bundled variants serve different purposes:
 
@@ -428,6 +444,8 @@ The provider contract and bundled variants serve different purposes:
   call;
 - the selected variant defines the exact platform implementation available to
   the harness;
+- the remote declaration defines immutable connection requirements without
+  resolving deployment values;
 - a composition binds an agent requirement to the exact manifest and one exact
   platform implementation.
 
@@ -441,6 +459,14 @@ Each entry MUST bind one exact tool identifier and semantic version to a
 content path and canonical manifest digest. Tool identities and versions MUST
 be unique within the catalog. Every tool referenced by an agent or composition
 MUST appear in the catalog.
+
+Every catalog Tool MUST have at least one inward reference from an agent Tool
+requirement, a Tool composition, or an exact bundle dependency. A Tool with no
+inward reference is invalid unless its manifest explicitly declares
+`"retained": true`. The marker records intentional catalog retention; it does
+not authorize agent use, create a composition, or add a runtime binding.
+
+Tool topology is inward-only: Tools do not name agents or compositions.
 
 Example:
 
@@ -480,6 +506,9 @@ This draft supports only the `shared-sandbox` mode defined in [Section 8](#8-age
 The tool has one or more exact platform variants. The selected variant is
 copied into the derived Agent Sandbox Image and executes in the same sandbox
 as the agent harness.
+
+A cataloged remote Tool is not selectable by an agent or composition in this
+draft. Remote execution mode and runtime binding are outside this section.
 
 All such tools share the sandbox's effective:
 
@@ -544,7 +573,62 @@ model access or cause network resolution or installer execution.
 A variant MUST include private runtimes required by its provider. This draft
 does not define standalone runtime bundles.
 
-### 9.5 CLI-backed providers
+### 9.5 Remote MCP declarations
+
+A remote Tool's `remote` object defines:
+
+- `streamable-http` transport;
+- an identifier naming an unresolved endpoint binding;
+- optional HTTP headers whose values come only from named Secret keys;
+- one or more unresolved network-destination references;
+- positive connect and request timeouts;
+- propagated cancellation;
+- protocol-managed session behavior.
+
+Endpoint, destination, and Secret references MUST be identifiers, not URLs,
+hosts, tokens, cookies, API keys, or header values. Transport-managed headers
+MUST NOT be declared. Header names are compared case-insensitively for
+duplicates.
+
+The complete fixture is
+[`internal/kmx/agentsuite/testdata/remote-mcp/`](../internal/kmx/agentsuite/testdata/remote-mcp/).
+Its Tool manifest includes:
+
+```json
+{
+  "remote": {
+    "transport": "streamable-http",
+    "endpointRef": "search-mcp-endpoint",
+    "headers": [
+      {
+        "name": "Authorization",
+        "secretRef": {
+          "name": "search-mcp-auth",
+          "key": "token"
+        }
+      }
+    ],
+    "network": [
+      {
+        "destinationRef": "search-mcp-egress"
+      }
+    ],
+    "timeouts": {
+      "connectMilliseconds": 5000,
+      "requestMilliseconds": 60000
+    },
+    "cancellation": "propagate",
+    "connection": "session-aware"
+  }
+}
+```
+
+These fields contribute to the canonical Tool manifest digest. Cataloging the
+Tool does not authorize an agent to call it and does not resolve any reference.
+When the same Tool also declares `variants`, a Tool composition MAY select one
+variant for standalone sandbox construction.
+
+### 9.6 CLI-backed providers
 
 A command-line program that is not itself an MCP server is bundled behind an
 MCP provider. The provider validates model inputs against the declared
@@ -558,10 +642,33 @@ package or extension installation is prohibited; the complete runtime closure
 MUST already be present in the variant or in exact bundle dependencies.
 
 The reference schema tests validate multi-file bundle fixtures for
-[`kubectl`](../internal/kmx/agentsuite/testdata/tools/kubectl-tool.json) and
-[`Azure CLI`](../internal/kmx/agentsuite/testdata/tools/azure-cli-tool.json).
+[`kubectl`](../internal/kmx/agentsuite/testdata/tools/kubectl-tool.json),
+[`Azure CLI`](../internal/kmx/agentsuite/testdata/tools/azure-cli-tool.json),
+and [`OPA`](../internal/kmx/agentsuite/testdata/tools/opa-tool.json).
 
-### 9.6 UTC datetime example
+### 9.7 OPA writer and reviewer example
+
+The OPA fixture exposes one `evaluate_document` operation backed by an
+`opa-mcp` provider and the OPA executable. The operation accepts a structured
+document, Rego policy, and query, and returns an allow decision and violations.
+
+A writer can evaluate its document before handoff. A reviewer can independently
+evaluate the same document. Both agents request the same Tool contract:
+
+```json
+{
+  "id": "opa",
+  "version": "1.0.0",
+  "executionMode": "shared-sandbox"
+}
+```
+
+The fixture contains both a bundled variant and a remote declaration. The
+variant can participate in an Agent Sandbox Image or a standalone Tool Sandbox
+Image. The remote declaration catalogs the connection contract for a deployed
+instance without defining agent binding.
+
+### 9.8 UTC datetime example
 
 The following example is a bundled stdio MCP server that returns the current
 UTC time. It does not execute `/bin/date`, depend on distribution userland,
@@ -738,6 +845,57 @@ implicitly authorized.
 
 The same immutable tool and variant may appear in several compositions.
 
+### 10.1 Tool compositions
+
+A Tool composition is the closed build input for one standalone Tool Sandbox
+Image:
+
+```text
+Tool manifest
+    |
+    v
+Tool composition
+    |
+    | build
+    v
+Tool Sandbox Image
+    |-- selected Tool variant and dependencies
+    |-- final inventory
+    `-- /.agentsuite/tool-binding.json
+```
+
+The Tool manifest defines the available implementations. The Tool composition
+selects one exact manifest, platform variant, and build profile. Construction
+materializes that selection into an image and embeds the resulting inventory
+and Tool sandbox binding. The binding points back to the Tool composition by
+descriptor; it does not repeat the composition's Tool identity or build
+selection.
+
+```json
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.tool-composition.v1+json",
+  "id": "search",
+  "version": "1.0.0",
+  "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "platform": {
+    "os": "linux",
+    "architecture": "amd64"
+  },
+  "variantDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "buildProfile": "default"
+}
+```
+
+The Tool manifest MUST resolve from the catalog by exact identity and digest.
+`variantDigest` MUST select exactly one matching platform variant. The build
+profile MUST contain exactly one runtime-base descriptor for that platform.
+The variant dependency closure participates in collision checks and image
+construction.
+
+A Tool composition does not authorize any agent, resolve a remote endpoint, or
+deploy the resulting image.
+
 ## 11. Build profiles
 
 A build profile pins, per platform:
@@ -749,8 +907,9 @@ A build profile pins, per platform:
 Descriptors MUST identify OCI image manifests by digest and size. Tags are not
 part of the profile.
 
-The platform named by every composition MUST have exactly one matching
-runtime-base and harness entry in its selected profile.
+The platform named by every agent composition MUST have exactly one matching
+runtime-base and harness entry in its selected profile. A Tool composition
+requires only the matching runtime-base entry.
 
 OCI platform fields alone do not establish native compatibility. Producers
 MUST validate the combined final filesystem against each bundled tool's ABI,
@@ -784,7 +943,29 @@ Restricting `PATH` is useful for discoverability but is not process
 confinement. Runtime conformance MUST separately test the intended execution
 boundary.
 
+### 12.1 Tool Sandbox Image construction
+
+Tool Sandbox Image construction MUST:
+
+1. resolve the suite, Tool composition, Tool manifest, exact variant, and build
+   profile by digest;
+2. materialize the pinned runtime-base filesystem;
+3. copy the selected variant and exact dependency closure to their declared
+   install roots;
+4. reject non-identical destination collisions;
+5. set the variant entrypoint and fixed arguments as the image process;
+6. create no writable content paths;
+7. embed the Tool sandbox binding and complete final inventory;
+8. emit an OCI image or multi-platform image index.
+
+Construction is subject to the same offline, deterministic, non-root, and
+no-installer requirements as Agent Sandbox Image construction. It does not
+deploy the image or resolve the Tool's remote endpoint, network, or Secret
+references.
+
 ## 13. Sandbox binding
+
+### 13.1 Agent sandbox binding
 
 Each platform image MUST embed a binding record at:
 
@@ -811,6 +992,45 @@ For a multi-platform image index, each selected platform manifest has its own
 binding. An OCI `subject` relationship alone is not an authenticity proof.
 Producers SHOULD publish signed attestations or OCI referrers binding the suite
 manifest, build inputs, and resulting image manifests.
+
+### 13.2 Tool sandbox binding
+
+Each Tool Sandbox Image MUST embed:
+
+```text
+/.agentsuite/tool-binding.json
+```
+
+The image config MUST contain:
+
+```text
+org.agentsuite.tool-binding.digest=sha256:<JCS digest of tool-binding.json>
+```
+
+The binding contains only:
+
+```json
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+  "suiteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "composition": {
+    "mediaType": "application/vnd.agentsuite.tool-composition.v1+json",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size": 512
+  },
+  "inventory": {
+    "mediaType": "application/vnd.agentsuite.inventory.v1+json",
+    "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "size": 4096
+  }
+}
+```
+
+The Tool composition is the single source of Tool identity, Tool manifest
+digest, variant digest, platform, and build-profile identifier. The binding
+does not repeat those fields. Its composition descriptor commits to those
+inputs, and its inventory descriptor commits to the resulting filesystem.
 
 ## 14. Distribution
 
@@ -840,7 +1060,8 @@ A conforming suite validator asserts:
 | `AS-ID-001` | Every content-addressed identity matches its normative algorithm. |
 | `AS-GRAPH-001` | All manifest and invocation references form a closed graph. |
 | `AS-COMPOSE-001` | Every agent/platform composition exactly resolves its declared tools and contains no ambient tools. |
-| `AS-TOOL-001` | Bundled variants match content inventory and exact platforms. |
+| `AS-TOOL-COMPOSE-001` | Every Tool composition resolves one exact same-platform variant, dependency closure, and runtime base. |
+| `AS-TOOL-001` | Bundled variants match content inventory and exact platforms; remote Tools contain only supported transports and valid references. |
 | `AS-SECRET-001` | Content contains references and names, not credential-shaped literal values. |
 | `AS-CAP-001` | Declared capabilities equal derived capabilities. |
 | `AS-DRAFT-001` | Deferred and reserved features are rejected. |
@@ -923,7 +1144,7 @@ This draft does not specify:
 - plaintext credentials or resolved secret values;
 - dependency solving inside a packaged suite;
 - generic shell tools, OpenAPI tools, or arbitrary HTTP connectors;
-- remote MCP providers or deploy-time bindings to remote providers;
+- agent composition and deploy-time binding for remote MCP providers;
 - standalone non-tool bundles for shared runtimes or libraries;
 - Windows, macOS, or non-`amd64`/`arm64` platforms;
 - additional execution modes or per-tool isolation boundaries;

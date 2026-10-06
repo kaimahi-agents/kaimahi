@@ -2,15 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool.schema.json",
   "title": "AgentSuite tool manifest",
-  "description": "An immutable MCP provider contract with bundled, platform-specific shared-sandbox implementations.",
+  "description": "An immutable MCP provider contract with bundled shared-sandbox variants, one remote Streamable HTTP declaration, or both.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "id", "version", "provider", "variants"],
+  "required": ["schemaVersion", "mediaType", "id", "version", "provider"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
     "mediaType": {"const": "application/vnd.agentsuite.tool.v1+json"},
     "id": {"$ref": "#/$defs/id"},
     "version": {"$ref": "#/$defs/version"},
+    "retained": {"const": true},
     "provider": {"$ref": "#/$defs/provider"},
     "variants": {
       "type": "array",
@@ -18,12 +19,17 @@
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/variant"}
     },
+    "remote": {"$ref": "#/$defs/remote"},
     "extensions": {
       "type": "array",
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/extension"}
     }
   },
+  "anyOf": [
+    {"required": ["variants"]},
+    {"required": ["remote"]}
+  ],
   "$defs": {
     "id": {
       "type": "string",
@@ -157,6 +163,80 @@
         },
         "host": {"type": "string", "minLength": 1},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "secretKeyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "key"],
+      "properties": {
+        "name": {"$ref": "#/$defs/id"},
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      }
+    },
+    "remoteHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "secretRef"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+        },
+        "secretRef": {"$ref": "#/$defs/secretKeyRef"}
+      }
+    },
+    "remoteNetworkRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["destinationRef"],
+      "properties": {
+        "destinationRef": {"$ref": "#/$defs/id"}
+      }
+    },
+    "remote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "endpointRef",
+        "network",
+        "timeouts",
+        "cancellation",
+        "connection"
+      ],
+      "properties": {
+        "transport": {"const": "streamable-http"},
+        "endpointRef": {"$ref": "#/$defs/id"},
+        "headers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/remoteHeader"}
+        },
+        "network": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/remoteNetworkRequirement"}
+        },
+        "timeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["connectMilliseconds", "requestMilliseconds"],
+          "properties": {
+            "connectMilliseconds": {"type": "integer", "minimum": 1, "maximum": 3600000},
+            "requestMilliseconds": {"type": "integer", "minimum": 1, "maximum": 86400000}
+          }
+        },
+        "cancellation": {"const": "propagate"},
+        "connection": {"const": "session-aware"}
       }
     },
     "runtime": {

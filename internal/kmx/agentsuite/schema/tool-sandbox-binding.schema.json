@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-sandbox-binding.schema.json",
+  "title": "Tool Sandbox Image binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mediaType",
+    "suiteDigest",
+    "composition",
+    "inventory"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.tool-sandbox-binding.v1+json"},
+    "suiteDigest": {"$ref": "#/$defs/digest"},
+    "composition": {"$ref": "#/$defs/compositionDescriptor"},
+    "inventory": {"$ref": "#/$defs/descriptor"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "digest", "size"],
+      "properties": {
+        "mediaType": {"type": "string", "minLength": 1},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0}
+      }
+    },
+    "compositionDescriptor": {
+      "allOf": [
+        {"$ref": "#/$defs/descriptor"},
+        {
+          "properties": {
+            "mediaType": {"const": "application/vnd.agentsuite.tool-composition.v1+json"}
+          }
+        }
+      ]
+    }
+  }
+}

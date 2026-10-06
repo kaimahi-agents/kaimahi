@@ -111,7 +111,15 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 				Name: "read", InputSchema: FileRef{Path: "schemas/read.json", Digest: digestBytes(schemaBytes)},
 			}},
 		},
-		Variants:   []ToolVariant{variant},
+		Variants: []ToolVariant{variant},
+		Remote: &RemoteMCP{
+			Transport:    "streamable-http",
+			EndpointRef:  "reader-mcp-endpoint",
+			Network:      []RemoteNetworkRequirement{{DestinationRef: "reader-mcp-egress"}},
+			Timeouts:     RemoteTimeouts{ConnectMilliseconds: 5_000, RequestMilliseconds: 60_000},
+			Cancellation: "propagate",
+			Connection:   "session-aware",
+		},
 		Extensions: []Extension{},
 	}
 	toolDigest := mustWriteJSON(t, root, "tools/reader/1.2.3/tool.json", tool)
@@ -136,6 +144,18 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		SourceEpoch: 1,
 	}
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
+	toolComposition := ToolComposition{
+		SchemaVersion:  SpecVersion,
+		MediaType:      MediaTypeToolComposition,
+		ID:             "reader",
+		Version:        "1.2.3",
+		ManifestDigest: toolDigest,
+		Platform:       Platform{OS: "linux", Architecture: "amd64"},
+		VariantDigest:  variant.VariantDigest,
+		BuildProfile:   "default",
+	}
+	toolCompositionPath := "tool-compositions/reader-linux-amd64.json"
+	toolCompositionDigest := mustWriteJSON(t, root, toolCompositionPath, toolComposition)
 
 	var agentRefs []ManifestRef
 	var compositionRefs []CompositionRef
@@ -171,6 +191,10 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 	suite := Suite{
 		SchemaVersion: SpecVersion, MediaType: MediaTypeSuite, Name: "shared-tool",
 		Agents: agentRefs, ToolCatalog: ManifestRef{ID: "catalog", Path: "tools/catalog.json", Digest: catalogDigest},
+		ToolCompositions: []ToolCompositionRef{{
+			ID: "reader", Version: "1.2.3", Platform: toolComposition.Platform,
+			Path: toolCompositionPath, Digest: toolCompositionDigest,
+		}},
 		Compositions: compositionRefs,
 		BuildProfiles: []ManifestRef{{
 			ID: "default", Path: "build-profiles/default.json", Digest: profileDigest,
@@ -183,8 +207,356 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Agents != 2 || report.Tools != 1 || report.Compositions != 2 {
+	if report.Agents != 2 || report.Tools != 1 || report.ToolCompositions != 1 || report.Compositions != 2 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestLoadToolCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	toolDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	variantDigest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	image := Descriptor{
+		MediaType: ociManifestMediaType,
+		Digest:    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Size:      1,
+	}
+	baseTool := Tool{
+		ID: "reader", Version: "1.2.3",
+		Variants: []ToolVariant{{
+			Platform: platform, VariantDigest: variantDigest,
+			InstallRoot: "/opt/reader",
+		}},
+	}
+	baseComposition := ToolComposition{
+		SchemaVersion: SpecVersion, MediaType: MediaTypeToolComposition,
+		ID: "reader", Version: "1.2.3", ManifestDigest: toolDigest,
+		Platform: platform, VariantDigest: variantDigest, BuildProfile: "default",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*validator, *ToolComposition)
+		want   string
+	}{
+		{
+			name: "missing tool",
+			mutate: func(v *validator, _ *ToolComposition) {
+				delete(v.tools, "reader@1.2.3")
+			},
+			want: "missing or stale Tool manifest",
+		},
+		{
+			name: "stale manifest digest",
+			mutate: func(v *validator, _ *ToolComposition) {
+				v.toolDigests["reader@1.2.3"] = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+			},
+			want: "missing or stale Tool manifest",
+		},
+		{
+			name: "wrong platform",
+			mutate: func(v *validator, _ *ToolComposition) {
+				tool := v.tools["reader@1.2.3"]
+				tool.Variants[0].Platform.Architecture = "arm64"
+				v.tools["reader@1.2.3"] = tool
+			},
+			want: "exactly one matching variant",
+		},
+		{
+			name: "stale variant digest",
+			mutate: func(_ *validator, composition *ToolComposition) {
+				composition.VariantDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			},
+			want: "exactly one matching variant",
+		},
+		{
+			name: "remote-only tool",
+			mutate: func(v *validator, _ *ToolComposition) {
+				tool := v.tools["reader@1.2.3"]
+				tool.Variants = nil
+				v.tools["reader@1.2.3"] = tool
+			},
+			want: "exactly one matching variant",
+		},
+		{
+			name: "missing runtime base",
+			mutate: func(v *validator, _ *ToolComposition) {
+				v.builds["default"] = BuildProfile{ID: "default"}
+			},
+			want: "does not support linux/amd64",
+		},
+		{
+			name: "dependency collision",
+			mutate: func(v *validator, _ *ToolComposition) {
+				tool := v.tools["reader@1.2.3"]
+				tool.Variants[0].InstallRoot = "/opt/shared"
+				tool.Variants[0].Files = []InventoryEntry{{
+					Path: "bin/tool", Type: "file", Digest: toolDigest,
+				}}
+				tool.Variants[0].Dependencies = []BundleDependency{{
+					ID: "runtime", Version: "1.0.0",
+					VariantDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				}}
+				v.tools["reader@1.2.3"] = tool
+				v.tools["runtime@1.0.0"] = Tool{
+					ID: "runtime", Version: "1.0.0",
+					Variants: []ToolVariant{{
+						Platform:      platform,
+						VariantDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+						InstallRoot:   "/opt/shared",
+						Files: []InventoryEntry{{
+							Path: "bin/tool", Type: "file",
+							Digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+						}},
+					}},
+				}
+			},
+			want: "non-identical destination collision",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			composition := baseComposition
+			tool := baseTool
+			tool.Variants = append([]ToolVariant(nil), baseTool.Variants...)
+			v := &validator{
+				suite: Suite{ToolCompositions: []ToolCompositionRef{{
+					ID: composition.ID, Version: composition.Version, Platform: composition.Platform,
+					Path: "tool-compositions/reader.json",
+				}}},
+				content: &contentSet{entries: map[string]contentEntry{}},
+				tools: map[string]Tool{
+					"reader@1.2.3": tool,
+				},
+				toolDigests:      map[string]string{"reader@1.2.3": toolDigest},
+				toolCompositions: map[string]ToolComposition{},
+				builds: map[string]BuildProfile{
+					"default": {
+						ID: "default",
+						RuntimeBase: []PlatformImage{{
+							Platform: platform, Image: image,
+						}},
+					},
+				},
+			}
+			test.mutate(v, &composition)
+			data, err := json.Marshal(composition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest, err := canonicalDigest(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v.suite.ToolCompositions[0].Digest = digest
+			v.content.entries["tool-compositions/reader.json"] = contentEntry{
+				Path: "tool-compositions/reader.json", Type: "file",
+				Size: int64(len(data)), Digest: digestBytes(data), Data: data,
+			}
+			if err := v.loadToolCompositions(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("loadToolCompositions() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
+	fixture := filepath.Join("testdata", "remote-mcp")
+	content, err := loadDirectory(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tool Tool
+	if err := decodeStrict(raw, &tool); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTool(tool, raw, content); err != nil {
+		t.Fatalf("validateTool() error = %v", err)
+	}
+
+	root := writeMinimalSuite(t)
+	for _, name := range []string{"search-input.json", "search-output.json"} {
+		data, err := os.ReadFile(filepath.Join(fixture, "schemas", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, root, filepath.Join("schemas", name), data)
+	}
+	toolPath := "tools/search/1.0.0/tool.json"
+	mustWrite(t, root, toolPath, raw)
+	toolDigest, err := canonicalDigest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := ToolCatalog{
+		SchemaVersion: SpecVersion,
+		MediaType:     MediaTypeToolCatalog,
+		Tools: []ManifestRef{{
+			ID: "search", Version: "1.0.0", Path: toolPath, Digest: toolDigest,
+		}},
+	}
+	catalogDigest := mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	suiteData, err := os.ReadFile(filepath.Join(root, "agentsuite.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var suite Suite
+	if err := decodeStrict(suiteData, &suite); err != nil {
+		t.Fatal(err)
+	}
+	suite.ToolCatalog.Digest = catalogDigest
+	mustWriteJSON(t, root, "agentsuite.json", suite)
+
+	report, err := ValidatePath(root)
+	if err != nil {
+		t.Fatalf("ValidatePath() error = %v", err)
+	}
+	if report.Tools != 1 || len(report.Capabilities) != 0 {
+		t.Fatalf("remote catalog report = %+v", report)
+	}
+}
+
+func TestRemoteMCPMetadataContributesToToolIdentity(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := canonicalDigest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, changedRaw := range map[string]string{
+		"remote metadata": strings.Replace(string(raw), `"requestMilliseconds": 60000`, `"requestMilliseconds": 60001`, 1),
+		"operation schema": strings.Replace(
+			string(raw),
+			"sha256:25f52652219a4e1e8581e76db1955df62b26a1174a2612eb12538b3efa9d8c84",
+			"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			1,
+		),
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed, err := canonicalDigest([]byte(changedRaw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if original == changed {
+				t.Fatalf("%s did not affect tool identity", name)
+			}
+		})
+	}
+}
+
+func TestValidateToolInboundReferencesRequiresExplicitRetention(t *testing.T) {
+	unreferenced := Tool{ID: "opa", Version: "1.0.0"}
+	tools := map[string]Tool{"opa@1.0.0": unreferenced}
+	if err := validateToolInboundReferences(tools, nil, nil); err == nil ||
+		!strings.Contains(err.Error(), "has no inward reference") {
+		t.Fatalf("unreferenced Tool error = %v", err)
+	}
+
+	retained := true
+	unreferenced.Retained = &retained
+	tools["opa@1.0.0"] = unreferenced
+	if err := validateToolInboundReferences(tools, nil, nil); err != nil {
+		t.Fatalf("retained Tool error = %v", err)
+	}
+}
+
+func TestValidateToolInboundReferencesAcceptsEveryInwardEdge(t *testing.T) {
+	dependencyDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	tests := []struct {
+		name         string
+		tools        map[string]Tool
+		agents       map[string]Agent
+		compositions map[string]ToolComposition
+	}{
+		{
+			name:  "agent requirement",
+			tools: map[string]Tool{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
+			agents: map[string]Agent{"writer": {
+				Tools: []ToolRequirement{{ID: "opa", Version: "1.0.0"}},
+			}},
+		},
+		{
+			name:  "Tool composition",
+			tools: map[string]Tool{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
+			compositions: map[string]ToolComposition{"opa@1.0.0@linux/amd64": {
+				ID: "opa", Version: "1.0.0",
+			}},
+		},
+		{
+			name: "bundle dependency",
+			tools: map[string]Tool{
+				"root@1.0.0": {
+					ID: "root", Version: "1.0.0", Retained: boolPointer(true),
+					Variants: []ToolVariant{{Dependencies: []BundleDependency{{
+						ID: "opa", Version: "1.0.0", VariantDigest: dependencyDigest,
+					}}}},
+				},
+				"opa@1.0.0": {ID: "opa", Version: "1.0.0"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateToolInboundReferences(test.tools, test.agents, test.compositions); err != nil {
+				t.Fatalf("validateToolInboundReferences() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateToolRequiresAnImplementation(t *testing.T) {
+	tool := Tool{
+		SchemaVersion: SpecVersion,
+		MediaType:     MediaTypeTool,
+		ID:            "search",
+		Version:       "1.0.0",
+		Provider: ToolProvider{
+			Protocol: "mcp",
+			Revision: "2025-06-18",
+			Operations: []ToolOperation{{
+				Name:        "search",
+				InputSchema: FileRef{Path: "schemas/search-input.json", Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			}},
+		},
+	}
+	content := &contentSet{entries: map[string]contentEntry{
+		"schemas/search-input.json": {
+			Path: "schemas/search-input.json", Type: "file",
+			Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		},
+	}}
+	err := validateTool(tool, []byte(`{}`), content)
+	if err == nil || !strings.Contains(err.Error(), "or both") {
+		t.Fatalf("expected missing implementation error, got %v", err)
+	}
+}
+
+func boolPointer(value bool) *bool {
+	return &value
+}
+
+func TestValidateRemoteMCPRejectsTransportManagedAndDuplicateHeaders(t *testing.T) {
+	remote := RemoteMCP{
+		Transport:   "streamable-http",
+		EndpointRef: "search-mcp-endpoint",
+		Headers: []RemoteHeader{
+			{Name: "Content-Type", SecretRef: SecretKeyRef{Name: "auth", Key: "token"}},
+			{Name: "X-API-Key", SecretRef: SecretKeyRef{Name: "auth", Key: "api-key"}},
+			{Name: "x-api-key", SecretRef: SecretKeyRef{Name: "auth", Key: "api-key-2"}},
+		},
+		Network:      []RemoteNetworkRequirement{{DestinationRef: "search-mcp-egress"}},
+		Timeouts:     RemoteTimeouts{ConnectMilliseconds: 5_000, RequestMilliseconds: 60_000},
+		Cancellation: "propagate",
+		Connection:   "session-aware",
+	}
+	err := validateRemoteMCP(remote)
+	if err == nil || !strings.Contains(err.Error(), "transport-managed") || !strings.Contains(err.Error(), "duplicated") {
+		t.Fatalf("expected header validation errors, got %v", err)
 	}
 }
 
@@ -786,6 +1158,19 @@ func TestValidateSandboxBindingRejectsWrongCompositionMediaType(t *testing.T) {
 	}`)
 	if _, err := ValidateSandboxBinding(data); err == nil {
 		t.Fatal("expected composition media type to be rejected")
+	}
+}
+
+func TestValidateToolSandboxBindingAcceptsPinnedComposition(t *testing.T) {
+	data := []byte(`{
+		  "schemaVersion":"1.0.0-draft",
+		  "mediaType":"application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+		  "suiteDigest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		  "composition":{"mediaType":"application/vnd.agentsuite.tool-composition.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
+		  "inventory":{"mediaType":"application/json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":1}
+		}`)
+	if _, err := ValidateToolSandboxBinding(data); err != nil {
+		t.Fatalf("ValidateToolSandboxBinding() error = %v", err)
 	}
 }
 

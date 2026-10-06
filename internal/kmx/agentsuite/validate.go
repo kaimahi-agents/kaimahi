@@ -16,25 +16,29 @@ var (
 	envPattern        = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 	capabilityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,127}$`)
 	schemePattern     = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
+	headerNamePattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+	secretKeyPattern  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,253}$`)
 )
 
 type Report struct {
-	Name           string          `json:"name"`
-	Agents         int             `json:"agents"`
-	Tools          int             `json:"tools"`
-	Compositions   int             `json:"compositions"`
-	Capabilities   []string        `json:"capabilities"`
-	AgentPlatforms []AgentPlatform `json:"agentPlatforms"`
+	Name             string          `json:"name"`
+	Agents           int             `json:"agents"`
+	Tools            int             `json:"tools"`
+	ToolCompositions int             `json:"toolCompositions"`
+	Compositions     int             `json:"compositions"`
+	Capabilities     []string        `json:"capabilities"`
+	AgentPlatforms   []AgentPlatform `json:"agentPlatforms"`
 }
 
 type validator struct {
-	content      *contentSet
-	suite        Suite
-	agents       map[string]Agent
-	tools        map[string]Tool
-	toolDigests  map[string]string
-	compositions map[string]Composition
-	builds       map[string]BuildProfile
+	content          *contentSet
+	suite            Suite
+	agents           map[string]Agent
+	tools            map[string]Tool
+	toolDigests      map[string]string
+	toolCompositions map[string]ToolComposition
+	compositions     map[string]Composition
+	builds           map[string]BuildProfile
 }
 
 func validateContent(content *contentSet) (*Report, error) {
@@ -47,19 +51,21 @@ func validateContent(content *contentSet) (*Report, error) {
 		return nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	v := &validator{
-		content:      content,
-		suite:        suite,
-		agents:       map[string]Agent{},
-		tools:        map[string]Tool{},
-		toolDigests:  map[string]string{},
-		compositions: map[string]Composition{},
-		builds:       map[string]BuildProfile{},
+		content:          content,
+		suite:            suite,
+		agents:           map[string]Agent{},
+		tools:            map[string]Tool{},
+		toolDigests:      map[string]string{},
+		toolCompositions: map[string]ToolComposition{},
+		compositions:     map[string]Composition{},
+		builds:           map[string]BuildProfile{},
 	}
 	var errs []error
 	errs = append(errs, v.validateSuite())
 	errs = append(errs, v.loadAgents())
 	errs = append(errs, v.loadTools())
 	errs = append(errs, v.loadBuildProfiles())
+	errs = append(errs, v.loadToolCompositions())
 	errs = append(errs, v.loadCompositions())
 	errs = append(errs, v.validateReferences())
 	if err := errors.Join(errs...); err != nil {
@@ -83,12 +89,13 @@ func validateContent(content *contentSet) (*Report, error) {
 		return strings.Compare(a.ID, b.ID)
 	})
 	return &Report{
-		Name:           suite.Name,
-		Agents:         len(v.agents),
-		Tools:          len(v.tools),
-		Compositions:   len(v.compositions),
-		Capabilities:   capabilities,
-		AgentPlatforms: agentPlatforms,
+		Name:             suite.Name,
+		Agents:           len(v.agents),
+		Tools:            len(v.tools),
+		ToolCompositions: len(v.toolCompositions),
+		Compositions:     len(v.compositions),
+		Capabilities:     capabilities,
+		AgentPlatforms:   agentPlatforms,
 	}, nil
 }
 
@@ -258,6 +265,69 @@ func (v *validator) loadTools() error {
 	return errors.Join(errs...)
 }
 
+func (v *validator) loadToolCompositions() error {
+	var errs []error
+	for _, ref := range v.suite.ToolCompositions {
+		key := ref.ID + "@" + ref.Version + "@" + ref.Platform.String()
+		if _, exists := v.toolCompositions[key]; exists {
+			errs = append(errs, fmt.Errorf("duplicate tool composition %s", key))
+			continue
+		}
+		data, err := v.content.data(ref.Path)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			continue
+		}
+		digest, err := canonicalDigest(data)
+		if err != nil || digest != ref.Digest {
+			errs = append(errs, fmt.Errorf("tool composition %s digest mismatch", key))
+			continue
+		}
+		var composition ToolComposition
+		if err := decodeStrict(data, &composition); err != nil {
+			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			continue
+		}
+		if err := validateToolComposition(composition); err != nil {
+			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			continue
+		}
+		if composition.ID != ref.ID || composition.Version != ref.Version || composition.Platform != ref.Platform {
+			errs = append(errs, fmt.Errorf("tool composition %s identity does not match its reference", key))
+			continue
+		}
+		toolKey := composition.ID + "@" + composition.Version
+		tool, ok := v.tools[toolKey]
+		if !ok || composition.ManifestDigest != v.toolDigests[toolKey] {
+			errs = append(errs, fmt.Errorf("tool composition %s references a missing or stale Tool manifest", key))
+			continue
+		}
+		variant, matches := exactVariant(tool.Variants, composition.Platform)
+		if matches != 1 || composition.VariantDigest != variant.VariantDigest {
+			errs = append(errs, fmt.Errorf("tool composition %s must select exactly one matching variant", key))
+			continue
+		}
+		profile, ok := v.builds[composition.BuildProfile]
+		if !ok || !profileSupportsToolPlatform(profile, composition.Platform) {
+			errs = append(errs, fmt.Errorf("tool composition %s build profile %q does not support %s", key, composition.BuildProfile, composition.Platform))
+			continue
+		}
+		destinations := map[string]InventoryEntry{}
+		closure, err := bundleClosure(toolKey, variant, v.tools)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			continue
+		}
+		for _, bundle := range closure {
+			if err := addVariantDestinations(destinations, bundle.variant); err != nil {
+				errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			}
+		}
+		v.toolCompositions[key] = composition
+	}
+	return errors.Join(errs...)
+}
+
 func (v *validator) loadCompositions() error {
 	var errs []error
 	for _, ref := range v.suite.Compositions {
@@ -372,8 +442,39 @@ func (v *validator) validateReferences() error {
 			errs = append(errs, fmt.Errorf("composition %s references unknown agent %s", key, composition.Agent))
 		}
 	}
+	errs = append(errs, validateToolInboundReferences(v.tools, v.agents, v.toolCompositions))
 	if !slices.Equal(v.suite.Capabilities, derivedCapabilities(v.tools)) {
 		errs = append(errs, errors.New("suite capabilities must exactly equal capabilities derived from its tool declarations"))
+	}
+	return errors.Join(errs...)
+}
+
+func validateToolInboundReferences(tools map[string]Tool, agents map[string]Agent, compositions map[string]ToolComposition) error {
+	referenced := map[string]bool{}
+	for _, agent := range agents {
+		for _, requirement := range agent.Tools {
+			referenced[requirement.ID+"@"+requirement.Version] = true
+		}
+	}
+	for _, composition := range compositions {
+		referenced[composition.ID+"@"+composition.Version] = true
+	}
+	for _, tool := range tools {
+		for _, variant := range tool.Variants {
+			for _, dependency := range variant.Dependencies {
+				referenced[dependency.ID+"@"+dependency.Version] = true
+			}
+		}
+	}
+
+	var errs []error
+	for key, tool := range tools {
+		if referenced[key] {
+			continue
+		}
+		if tool.Retained == nil || !*tool.Retained {
+			errs = append(errs, fmt.Errorf("tool %s has no inward reference and must declare retained true to remain in the catalog", key))
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -444,6 +545,9 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 	if !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) {
 		errs = append(errs, errors.New("tool id or exact version is invalid"))
 	}
+	if tool.Retained != nil && !*tool.Retained {
+		errs = append(errs, errors.New("retained, when present, must be true"))
+	}
 	if tool.Provider.Protocol != "mcp" || tool.Provider.Revision == "" || len(tool.Provider.Operations) == 0 {
 		errs = append(errs, errors.New("the draft tool provider must declare an MCP revision and at least one operation"))
 	}
@@ -469,8 +573,8 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 			effects[effect] = true
 		}
 	}
-	if len(tool.Variants) == 0 {
-		errs = append(errs, errors.New("tool must declare at least one shared-sandbox variant"))
+	if len(tool.Variants) == 0 && tool.Remote == nil {
+		errs = append(errs, errors.New("tool must declare bundled variants, remote MCP, or both"))
 	}
 	platforms := map[string]bool{}
 	variantDigests, err := rawVariantDigests(raw)
@@ -492,8 +596,67 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 		}
 		errs = append(errs, validateVariant(variant, expectedDigest, content))
 	}
+	if tool.Remote != nil {
+		errs = append(errs, validateRemoteMCP(*tool.Remote))
+	}
 	errs = append(errs, validateExtensions(tool.Extensions))
 	return errors.Join(errs...)
+}
+
+func validateRemoteMCP(remote RemoteMCP) error {
+	var errs []error
+	if remote.Transport != "streamable-http" {
+		errs = append(errs, errors.New("remote transport must be streamable-http"))
+	}
+	if !identifierPattern.MatchString(remote.EndpointRef) {
+		errs = append(errs, errors.New("remote endpointRef is invalid"))
+	}
+	if remote.Cancellation != "propagate" {
+		errs = append(errs, errors.New("remote cancellation must be propagate"))
+	}
+	if remote.Connection != "session-aware" {
+		errs = append(errs, errors.New("remote connection must be session-aware"))
+	}
+	if remote.Timeouts.ConnectMilliseconds <= 0 || remote.Timeouts.ConnectMilliseconds > 3_600_000 {
+		errs = append(errs, errors.New("remote connect timeout is invalid"))
+	}
+	if remote.Timeouts.RequestMilliseconds <= 0 || remote.Timeouts.RequestMilliseconds > 86_400_000 {
+		errs = append(errs, errors.New("remote request timeout is invalid"))
+	}
+
+	headers := map[string]bool{}
+	for _, header := range remote.Headers {
+		name := strings.ToLower(header.Name)
+		if !headerNamePattern.MatchString(header.Name) || headers[name] || reservedRemoteHeader(name) {
+			errs = append(errs, fmt.Errorf("remote header %q is invalid, duplicated, or transport-managed", header.Name))
+		}
+		headers[name] = true
+		if !identifierPattern.MatchString(header.SecretRef.Name) || !secretKeyPattern.MatchString(header.SecretRef.Key) {
+			errs = append(errs, fmt.Errorf("remote header %q secret reference is invalid", header.Name))
+		}
+	}
+
+	if len(remote.Network) == 0 {
+		errs = append(errs, errors.New("remote network must contain at least one destination reference"))
+	}
+	destinations := map[string]bool{}
+	for _, network := range remote.Network {
+		if !identifierPattern.MatchString(network.DestinationRef) || destinations[network.DestinationRef] {
+			errs = append(errs, fmt.Errorf("remote network destination %q is invalid or duplicated", network.DestinationRef))
+		}
+		destinations[network.DestinationRef] = true
+	}
+	return errors.Join(errs...)
+}
+
+func reservedRemoteHeader(name string) bool {
+	switch name {
+	case "accept", "connection", "content-length", "content-type", "host",
+		"last-event-id", "mcp-protocol-version", "mcp-session-id", "transfer-encoding":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateFileRef(ref FileRef, content *contentSet) error {
@@ -792,6 +955,24 @@ func validateComposition(composition Composition) error {
 	return errors.Join(errs...)
 }
 
+func validateToolComposition(composition ToolComposition) error {
+	var errs []error
+	if composition.SchemaVersion != SpecVersion || composition.MediaType != MediaTypeToolComposition {
+		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
+	}
+	if !identifierPattern.MatchString(composition.ID) || !versionPattern.MatchString(composition.Version) {
+		errs = append(errs, errors.New("tool identity is invalid"))
+	}
+	if !validDigest(composition.ManifestDigest) || !validDigest(composition.VariantDigest) {
+		errs = append(errs, errors.New("tool manifest or variant digest is invalid"))
+	}
+	if !identifierPattern.MatchString(composition.BuildProfile) {
+		errs = append(errs, errors.New("buildProfile is invalid"))
+	}
+	errs = append(errs, validatePlatform(composition.Platform))
+	return errors.Join(errs...)
+}
+
 func validateBuildProfile(profile BuildProfile) error {
 	var errs []error
 	if profile.SchemaVersion != SpecVersion || profile.MediaType != MediaTypeBuildProfile {
@@ -840,6 +1021,15 @@ func profileSupportsPlatform(profile BuildProfile, platform Platform) bool {
 		harness = harness || image.Platform == platform
 	}
 	return base && harness
+}
+
+func profileSupportsToolPlatform(profile BuildProfile, platform Platform) bool {
+	for _, image := range profile.RuntimeBase {
+		if image.Platform == platform {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePlatform(platform Platform) error {

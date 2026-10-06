@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-composition.schema.json",
+  "title": "AgentSuite Tool composition manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mediaType",
+    "id",
+    "version",
+    "manifestDigest",
+    "platform",
+    "variantDigest",
+    "buildProfile"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.tool-composition.v1+json"},
+    "id": {"$ref": "#/$defs/id"},
+    "version": {"$ref": "#/$defs/version"},
+    "manifestDigest": {"$ref": "#/$defs/digest"},
+    "platform": {"$ref": "#/$defs/platform"},
+    "variantDigest": {"$ref": "#/$defs/digest"},
+    "buildProfile": {"$ref": "#/$defs/id"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {
+        "os": {"const": "linux"},
+        "architecture": {"enum": ["amd64", "arm64"]}
+      }
+    }
+  }
+}

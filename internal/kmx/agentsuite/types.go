@@ -5,16 +5,18 @@ const (
 
 	LayoutVersion = "1.0.0"
 
-	MediaTypeArtifact       = "application/vnd.agentsuite.suite.v1"
-	MediaTypeEmptyConfig    = "application/vnd.oci.empty.v1+json"
-	MediaTypeContent        = "application/vnd.agentsuite.content.v1.tar+gzip"
-	MediaTypeSuite          = "application/vnd.agentsuite.manifest.v1+json"
-	MediaTypeAgent          = "application/vnd.agentsuite.agent.v1+json"
-	MediaTypeToolCatalog    = "application/vnd.agentsuite.tool-catalog.v1+json"
-	MediaTypeTool           = "application/vnd.agentsuite.tool.v1+json"
-	MediaTypeComposition    = "application/vnd.agentsuite.composition.v1+json"
-	MediaTypeBuildProfile   = "application/vnd.agentsuite.build-profile.v1+json"
-	MediaTypeSandboxBinding = "application/vnd.agentsuite.sandbox-binding.v1+json"
+	MediaTypeArtifact           = "application/vnd.agentsuite.suite.v1"
+	MediaTypeEmptyConfig        = "application/vnd.oci.empty.v1+json"
+	MediaTypeContent            = "application/vnd.agentsuite.content.v1.tar+gzip"
+	MediaTypeSuite              = "application/vnd.agentsuite.manifest.v1+json"
+	MediaTypeAgent              = "application/vnd.agentsuite.agent.v1+json"
+	MediaTypeToolCatalog        = "application/vnd.agentsuite.tool-catalog.v1+json"
+	MediaTypeTool               = "application/vnd.agentsuite.tool.v1+json"
+	MediaTypeToolComposition    = "application/vnd.agentsuite.tool-composition.v1+json"
+	MediaTypeComposition        = "application/vnd.agentsuite.composition.v1+json"
+	MediaTypeBuildProfile       = "application/vnd.agentsuite.build-profile.v1+json"
+	MediaTypeSandboxBinding     = "application/vnd.agentsuite.sandbox-binding.v1+json"
+	MediaTypeToolSandboxBinding = "application/vnd.agentsuite.tool-sandbox-binding.v1+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )
@@ -50,15 +52,16 @@ type Extension struct {
 }
 
 type Suite struct {
-	SchemaVersion string           `json:"schemaVersion"`
-	MediaType     string           `json:"mediaType"`
-	Name          string           `json:"name"`
-	Agents        []ManifestRef    `json:"agents"`
-	ToolCatalog   ManifestRef      `json:"toolCatalog"`
-	Compositions  []CompositionRef `json:"compositions"`
-	BuildProfiles []ManifestRef    `json:"buildProfiles"`
-	Capabilities  []string         `json:"capabilities,omitempty"`
-	Extensions    []Extension      `json:"extensions,omitempty"`
+	SchemaVersion    string               `json:"schemaVersion"`
+	MediaType        string               `json:"mediaType"`
+	Name             string               `json:"name"`
+	Agents           []ManifestRef        `json:"agents"`
+	ToolCatalog      ManifestRef          `json:"toolCatalog"`
+	ToolCompositions []ToolCompositionRef `json:"toolCompositions,omitempty"`
+	Compositions     []CompositionRef     `json:"compositions"`
+	BuildProfiles    []ManifestRef        `json:"buildProfiles"`
+	Capabilities     []string             `json:"capabilities,omitempty"`
+	Extensions       []Extension          `json:"extensions,omitempty"`
 }
 
 type ManifestRef struct {
@@ -70,6 +73,14 @@ type ManifestRef struct {
 
 type CompositionRef struct {
 	Agent    string   `json:"agent"`
+	Platform Platform `json:"platform"`
+	Path     string   `json:"path"`
+	Digest   string   `json:"digest"`
+}
+
+type ToolCompositionRef struct {
+	ID       string   `json:"id"`
+	Version  string   `json:"version"`
 	Platform Platform `json:"platform"`
 	Path     string   `json:"path"`
 	Digest   string   `json:"digest"`
@@ -122,8 +133,10 @@ type Tool struct {
 	MediaType     string        `json:"mediaType"`
 	ID            string        `json:"id"`
 	Version       string        `json:"version"`
+	Retained      *bool         `json:"retained,omitempty"`
 	Provider      ToolProvider  `json:"provider"`
-	Variants      []ToolVariant `json:"variants"`
+	Variants      []ToolVariant `json:"variants,omitempty"`
+	Remote        *RemoteMCP    `json:"remote,omitempty"`
 	Extensions    []Extension   `json:"extensions,omitempty"`
 }
 
@@ -139,6 +152,35 @@ type ToolOperation struct {
 	InputSchema  FileRef  `json:"inputSchema"`
 	OutputSchema *FileRef `json:"outputSchema,omitempty"`
 	Effects      []string `json:"effects,omitempty"`
+}
+
+type RemoteMCP struct {
+	Transport    string                     `json:"transport"`
+	EndpointRef  string                     `json:"endpointRef"`
+	Headers      []RemoteHeader             `json:"headers,omitempty"`
+	Network      []RemoteNetworkRequirement `json:"network"`
+	Timeouts     RemoteTimeouts             `json:"timeouts"`
+	Cancellation string                     `json:"cancellation"`
+	Connection   string                     `json:"connection"`
+}
+
+type RemoteHeader struct {
+	Name      string       `json:"name"`
+	SecretRef SecretKeyRef `json:"secretRef"`
+}
+
+type SecretKeyRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+type RemoteNetworkRequirement struct {
+	DestinationRef string `json:"destinationRef"`
+}
+
+type RemoteTimeouts struct {
+	ConnectMilliseconds int `json:"connectMilliseconds"`
+	RequestMilliseconds int `json:"requestMilliseconds"`
 }
 
 type ToolVariant struct {
@@ -220,6 +262,17 @@ type ResolvedTool struct {
 	ExecutionMode  string `json:"executionMode"`
 }
 
+type ToolComposition struct {
+	SchemaVersion  string   `json:"schemaVersion"`
+	MediaType      string   `json:"mediaType"`
+	ID             string   `json:"id"`
+	Version        string   `json:"version"`
+	ManifestDigest string   `json:"manifestDigest"`
+	Platform       Platform `json:"platform"`
+	VariantDigest  string   `json:"variantDigest"`
+	BuildProfile   string   `json:"buildProfile"`
+}
+
 type BuildProfile struct {
 	SchemaVersion string          `json:"schemaVersion"`
 	MediaType     string          `json:"mediaType"`
@@ -236,6 +289,14 @@ type SandboxBinding struct {
 	Agent         string     `json:"agent"`
 	Platform      Platform   `json:"platform"`
 	BuildProfile  string     `json:"buildProfile"`
+	Composition   Descriptor `json:"composition"`
+	Inventory     Descriptor `json:"inventory"`
+}
+
+type ToolSandboxBinding struct {
+	SchemaVersion string     `json:"schemaVersion"`
+	MediaType     string     `json:"mediaType"`
+	SuiteDigest   string     `json:"suiteDigest"`
 	Composition   Descriptor `json:"composition"`
 	Inventory     Descriptor `json:"inventory"`
 }

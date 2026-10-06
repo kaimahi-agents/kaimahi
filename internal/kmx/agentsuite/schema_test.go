@@ -55,6 +55,19 @@ func TestToolSchemaDefinesBundledImplementation(t *testing.T) {
 	  "extensions":[]
 	}`
 	validateSchemaJSON(t, schema, valid, true)
+	retained := strings.Replace(valid, `"provider":`, `"retained":true,"provider":`, 1)
+	validateSchemaJSON(t, schema, retained, true)
+	validateSchemaJSON(t, schema, strings.Replace(retained, `"retained":true`, `"retained":false`, 1), false)
+	withRemote := strings.Replace(valid, `"extensions":[]`, `"remote":{
+	    "transport":"streamable-http",
+	    "endpointRef":"datetime-mcp-endpoint",
+	    "network":[{"destinationRef":"datetime-mcp-egress"}],
+	    "timeouts":{"connectMilliseconds":5000,"requestMilliseconds":60000},
+	    "cancellation":"propagate",
+	    "connection":"session-aware"
+	  },
+	  "extensions":[]`, 1)
+	validateSchemaJSON(t, schema, withRemote, true)
 	withoutFileDigest := strings.Replace(
 		valid,
 		`"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"`,
@@ -66,13 +79,40 @@ func TestToolSchemaDefinesBundledImplementation(t *testing.T) {
 
 func TestToolSchemaAcceptsMultiFileCLIBundles(t *testing.T) {
 	schema := compileReferenceSchema(t, "tool.schema.json")
-	for _, name := range []string{"kubectl-tool.json", "azure-cli-tool.json"} {
+	for _, name := range []string{"kubectl-tool.json", "azure-cli-tool.json", "opa-tool.json"} {
 		t.Run(name, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("testdata", "tools", name))
 			if err != nil {
 				t.Fatal(err)
 			}
 			validateSchemaJSON(t, schema, string(data), true)
+		})
+	}
+}
+
+func TestToolSchemaDefinesRemoteMCPImplementation(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool.schema.json")
+	data, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := string(data)
+	validateSchemaJSON(t, schema, valid, true)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"streamable-http"`, `"sse"`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"search-mcp-endpoint"`, `"https://example.test/mcp"`, 1), false)
+	for _, header := range []string{"Authorization", "Cookie", "X-API-Key"} {
+		t.Run(header, func(t *testing.T) {
+			withHeader := strings.Replace(valid, `"Authorization"`, `"`+header+`"`, 1)
+			plaintext := strings.Replace(
+				withHeader,
+				`"secretRef": {
+          "name": "search-mcp-auth",
+          "key": "token"
+        }`,
+				`"value": "plaintext-secret"`,
+				1,
+			)
+			validateSchemaJSON(t, schema, plaintext, false)
 		})
 	}
 }
@@ -118,6 +158,44 @@ func TestCompositionSchemaDefinesSharedSandboxResolution(t *testing.T) {
 	validateSchemaJSON(t, schema, strings.Replace(base, "%s", resolved, 1), true)
 	validateSchemaJSON(t, schema, strings.Replace(base, "%s", strings.Replace(resolved, `"variantDigest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",`, "", 1), 1), false)
 	validateSchemaJSON(t, schema, strings.Replace(base, "%s", strings.Replace(resolved, `"shared-sandbox"`, `"unsupported"`, 1), 1), false)
+}
+
+func TestToolCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-composition.schema.json")
+	valid := `{
+	  "schemaVersion":"1.0.0-draft",
+	  "mediaType":"application/vnd.agentsuite.tool-composition.v1+json",
+	  "id":"search",
+	  "version":"1.0.0",
+	  "manifestDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	  "platform":{"os":"linux","architecture":"amd64"},
+	  "variantDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	  "buildProfile":"default"
+	}`
+	validateSchemaJSON(t, schema, valid, true)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"variantDigest"`, `"notVariantDigest"`, 1), false)
+}
+
+func TestToolSandboxBindingSchemaPinsCompositionAndInventory(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-sandbox-binding.schema.json")
+	valid := `{
+	  "schemaVersion":"1.0.0-draft",
+	  "mediaType":"application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+	  "suiteDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	  "composition":{
+	    "mediaType":"application/vnd.agentsuite.tool-composition.v1+json",
+	    "digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	    "size":1
+	  },
+	  "inventory":{
+	    "mediaType":"application/vnd.agentsuite.inventory.v1+json",
+	    "digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+	    "size":1
+	  }
+	}`
+	validateSchemaJSON(t, schema, valid, true)
+	validateSchemaJSON(t, schema, strings.Replace(valid, MediaTypeToolComposition, MediaTypeComposition, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"suiteDigest"`, `"id":"search","suiteDigest"`, 1), false)
 }
 
 func compileReferenceSchema(t *testing.T, name string) *jsonschema.Schema {
