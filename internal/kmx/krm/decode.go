@@ -18,7 +18,10 @@ import (
 // retains a copy of its exact bytes as its Source.
 func DecodeProvider(data []byte) (*Provider, error) {
 	p := &Provider{}
-	if err := DecodeStrict(data, KindProvider, p); err != nil {
+	if err := DecodeStrict(data, KindProvider, p,
+		requireInteger("spec", "rateLimits", "requestsPerMinute"),
+		requireInteger("spec", "rateLimits", "tokensPerMinute"),
+	); err != nil {
 		return nil, err
 	}
 	if err := p.validate(); err != nil {
@@ -144,6 +147,17 @@ func rejectKeyHazards(node *yaml.Node, path string) error {
 		}
 	}
 	return nil
+}
+
+// requireInteger refuses a non-integer scalar at path. yaml.v3 otherwise
+// truncates a fractional value such as 60.9 into an integer field.
+func requireInteger(path ...string) func(*yaml.Node) error {
+	return func(doc *yaml.Node) error {
+		if node := valueAt(doc, path...); node != nil && node.Tag != "!!int" && node.Tag != "!!null" {
+			return fmt.Errorf("%s must be an integer", strings.Join(path, "."))
+		}
+		return nil
+	}
 }
 
 // rejectEmptyList refuses an authored empty list, which decodes the same as

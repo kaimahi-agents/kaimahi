@@ -91,7 +91,8 @@ spec:
 
 `azure-openai` uses `azure: {endpoint, apiVersion}` instead of `openAI`. The
 endpoint must be the HTTPS resource root. Credentials always name an existing
-Secret and key; values are never stored in a bundle.
+Secret and key; values are never stored in a bundle. Rate limits must be
+positive integers.
 
 ## Tool
 
