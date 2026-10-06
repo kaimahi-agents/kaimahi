@@ -44,7 +44,6 @@ This draft specifies:
 - one strict, closed content graph containing agents, tools, compositions, and
   build profiles;
 - bundled stdio MCP providers statically installed into an agent sandbox;
-- remote MCP providers using streamable HTTP;
 - exact Linux platform selection;
 - pinned runtime-base and harness images;
 - deterministic, network-free Agent Sandbox Image construction;
@@ -496,6 +495,10 @@ sandbox. They are not independent security boundaries. A requirement for
 distinct privilege, network, secret, or filesystem isolation cannot be met by
 this mode.
 
+Remote MCP providers, including streamable-HTTP providers, are deferred to a
+future specification revision. This draft also does not define deploy-time
+bindings that attach undeclared remote providers to a suite.
+
 ### 9.4 Bundled variants
 
 A bundled variant includes:
@@ -537,8 +540,17 @@ Two selected bundles may overlap at the same destination path only when the
 resulting entries are identical in type, bytes, mode, ownership, and link
 target. All other overlaps are errors.
 
-Bundle dependencies are exact digest-bound bundle identities. They do not
-cause network resolution or installer execution.
+Bundle dependencies are exact digest-bound references to other tool variants
+in the suite catalog. Consumers recursively traverse the dependency graph,
+reject cycles, and include every dependency payload in filesystem collision
+checks and image construction. Dependencies do not become model-callable
+operations unless the agent also declares the dependency as a top-level tool.
+They do not cause network resolution or installer execution.
+
+Dependencies are not a generic package or runtime abstraction in this draft.
+A runtime used only by one provider, such as the Python runtime for Azure CLI,
+belongs in that provider's complete variant. This draft does not define a
+standalone non-tool bundle manifest for sharing such a runtime.
 
 ### 9.5 CLI-backed providers
 
@@ -553,9 +565,13 @@ its Python runtime, modules, extensions, certificates, and data. Runtime
 package or extension installation is prohibited; the complete runtime closure
 MUST already be present in the variant or in exact bundle dependencies.
 
-The reference schema tests validate complete multi-file examples for
+The reference schema tests validate multi-file bundle fixtures for
 [`kubectl`](../internal/kmx/agentsuite/testdata/tools/kubectl-tool.json) and
 [`Azure CLI`](../internal/kmx/agentsuite/testdata/tools/azure-cli-tool.json).
+These fixtures demonstrate complete filesystem inventories and CLI placement;
+they are not runnable deployment examples. A runnable `kubectl` or Azure CLI
+variant must also declare its actual network, credential, and writable-state
+requirements.
 
 ### 9.6 UTC datetime example
 
@@ -761,7 +777,8 @@ Construction MUST be a pure, offline file-composition operation:
    digest;
 2. materialize the pinned runtime-base filesystem;
 3. compose the pinned harness filesystem;
-4. copy each selected tool payload to its declared install root;
+4. recursively traverse each selected tool's exact dependency closure and copy
+   each payload to its declared install root;
 5. reject non-identical destination collisions;
 6. install agent instructions and immutable runtime metadata;
 7. create no writable content paths;
@@ -918,6 +935,8 @@ This draft does not specify:
 - plaintext credentials or resolved secret values;
 - dependency solving inside a packaged suite;
 - generic shell tools, OpenAPI tools, or arbitrary HTTP connectors;
+- remote MCP providers or deploy-time bindings to remote providers;
+- standalone non-tool bundles for shared runtimes or libraries;
 - Windows, macOS, or non-`amd64`/`arm64` platforms;
 - additional execution modes or per-tool isolation boundaries;
 - a new OCI Distribution endpoint or registry authentication mechanism;

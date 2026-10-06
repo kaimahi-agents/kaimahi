@@ -345,12 +345,14 @@ func (v *validator) validateReferences() error {
 					errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, toolKey))
 					continue
 				}
-				for _, entry := range variant.Files {
-					destination := path.Join(variant.InstallRoot, entry.Path)
-					if existing, ok := destinations[destination]; ok && !sameInstallEntry(existing, entry) {
-						errs = append(errs, fmt.Errorf("composition %s has non-identical destination collision at %s", key, destination))
-					} else {
-						destinations[destination] = entry
+				closure, err := bundleClosure(toolKey, variant, v.tools)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
+					continue
+				}
+				for _, bundle := range closure {
+					if err := addVariantDestinations(destinations, bundle.variant); err != nil {
+						errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 					}
 				}
 			}
@@ -678,24 +680,74 @@ func rawVariantDigests(rawTool []byte) ([]string, error) {
 }
 
 func validateBundleDependencies(toolKey string, variant ToolVariant, tools map[string]Tool) error {
+	_, err := bundleClosure(toolKey, variant, tools)
+	return err
+}
+
+type selectedBundle struct {
+	toolKey string
+	variant ToolVariant
+}
+
+func bundleClosure(rootKey string, root ToolVariant, tools map[string]Tool) ([]selectedBundle, error) {
+	var (
+		closure []selectedBundle
+		errs    []error
+	)
+	visited := map[string]bool{}
+	active := map[string]bool{}
+
+	var visit func(string, ToolVariant)
+	visit = func(toolKey string, variant ToolVariant) {
+		identity := toolKey + "#" + variant.VariantDigest
+		if active[identity] {
+			errs = append(errs, fmt.Errorf("tool %s has a dependency cycle through %s", rootKey, toolKey))
+			return
+		}
+		if visited[identity] {
+			return
+		}
+		active[identity] = true
+		closure = append(closure, selectedBundle{toolKey: toolKey, variant: variant})
+
+		seen := map[string]bool{}
+		for _, dependency := range variant.Dependencies {
+			key := dependency.ID + "@" + dependency.Version
+			if key == toolKey || seen[key] || !identifierPattern.MatchString(dependency.ID) ||
+				!versionPattern.MatchString(dependency.Version) || !validDigest(dependency.VariantDigest) {
+				errs = append(errs, fmt.Errorf("tool %s has invalid or duplicate dependency %s", toolKey, key))
+				continue
+			}
+			seen[key] = true
+			dependencyTool, ok := tools[key]
+			if !ok {
+				errs = append(errs, fmt.Errorf("tool %s depends on missing tool %s", toolKey, key))
+				continue
+			}
+			selected, matches := exactVariant(dependencyTool.Variants, variant.Platform)
+			if matches != 1 || selected.VariantDigest != dependency.VariantDigest {
+				errs = append(errs, fmt.Errorf("tool %s dependency %s does not bind one %s variant", toolKey, key, variant.Platform))
+				continue
+			}
+			visit(key, selected)
+		}
+
+		delete(active, identity)
+		visited[identity] = true
+	}
+
+	visit(rootKey, root)
+	return closure, errors.Join(errs...)
+}
+
+func addVariantDestinations(destinations map[string]InventoryEntry, variant ToolVariant) error {
 	var errs []error
-	seen := map[string]bool{}
-	for _, dependency := range variant.Dependencies {
-		key := dependency.ID + "@" + dependency.Version
-		if key == toolKey || seen[key] || !identifierPattern.MatchString(dependency.ID) ||
-			!versionPattern.MatchString(dependency.Version) || !validDigest(dependency.VariantDigest) {
-			errs = append(errs, fmt.Errorf("tool %s has invalid or duplicate dependency %s", toolKey, key))
-			continue
-		}
-		seen[key] = true
-		dependencyTool, ok := tools[key]
-		if !ok {
-			errs = append(errs, fmt.Errorf("tool %s depends on missing tool %s", toolKey, key))
-			continue
-		}
-		selected, matches := exactVariant(dependencyTool.Variants, variant.Platform)
-		if matches != 1 || selected.VariantDigest != dependency.VariantDigest {
-			errs = append(errs, fmt.Errorf("tool %s dependency %s does not bind one %s variant", toolKey, key, variant.Platform))
+	for _, entry := range variant.Files {
+		destination := path.Join(variant.InstallRoot, entry.Path)
+		if existing, ok := destinations[destination]; ok && !sameInstallEntry(existing, entry) {
+			errs = append(errs, fmt.Errorf("non-identical destination collision at %s", destination))
+		} else {
+			destinations[destination] = entry
 		}
 	}
 	return errors.Join(errs...)

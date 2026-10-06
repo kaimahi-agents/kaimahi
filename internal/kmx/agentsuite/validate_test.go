@@ -574,6 +574,88 @@ func TestVariantRejectsPayloadOwnerMismatch(t *testing.T) {
 	}
 }
 
+func TestBundleClosureTraversesDependenciesAndChecksTheirCollisions(t *testing.T) {
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	variant := func(digest, installRoot, fileDigest string, dependencies ...BundleDependency) ToolVariant {
+		return ToolVariant{
+			Platform:      platform,
+			VariantDigest: digest,
+			InstallRoot:   installRoot,
+			Files: []InventoryEntry{{
+				Path: "bin/tool", Type: "file", Mode: 0o755, UID: 0, GID: 0, Size: 1, Digest: fileDigest,
+			}},
+			Dependencies: dependencies,
+		}
+	}
+	runtimeVariant := variant(
+		"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		"/opt/shared",
+		"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	)
+	bridgeVariant := variant(
+		"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"/opt/bridge",
+		"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		BundleDependency{ID: "runtime", Version: "1.0.0", VariantDigest: runtimeVariant.VariantDigest},
+	)
+	rootVariant := variant(
+		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"/opt/root",
+		"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		BundleDependency{ID: "bridge", Version: "1.0.0", VariantDigest: bridgeVariant.VariantDigest},
+	)
+	tools := map[string]Tool{
+		"bridge@1.0.0":  {ID: "bridge", Version: "1.0.0", Variants: []ToolVariant{bridgeVariant}},
+		"runtime@1.0.0": {ID: "runtime", Version: "1.0.0", Variants: []ToolVariant{runtimeVariant}},
+	}
+
+	closure, err := bundleClosure("root@1.0.0", rootVariant, tools)
+	if err != nil {
+		t.Fatalf("bundleClosure() error = %v", err)
+	}
+	if len(closure) != 3 || closure[1].toolKey != "bridge@1.0.0" || closure[2].toolKey != "runtime@1.0.0" {
+		t.Fatalf("bundleClosure() = %+v, want root and transitive dependencies", closure)
+	}
+
+	destinations := map[string]InventoryEntry{}
+	for _, bundle := range closure {
+		if err := addVariantDestinations(destinations, bundle.variant); err != nil {
+			t.Fatalf("addVariantDestinations() error = %v", err)
+		}
+	}
+	conflicting := variant(
+		"sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		"/opt/shared",
+		"sha256:2222222222222222222222222222222222222222222222222222222222222222",
+	)
+	if err := addVariantDestinations(destinations, conflicting); err == nil ||
+		!strings.Contains(err.Error(), "/opt/shared/bin/tool") {
+		t.Fatalf("dependency collision error = %v", err)
+	}
+}
+
+func TestBundleClosureRejectsTransitiveCycle(t *testing.T) {
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	aDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	bDigest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	a := ToolVariant{
+		Platform: platform, VariantDigest: aDigest,
+		Dependencies: []BundleDependency{{ID: "b", Version: "1.0.0", VariantDigest: bDigest}},
+	}
+	b := ToolVariant{
+		Platform: platform, VariantDigest: bDigest,
+		Dependencies: []BundleDependency{{ID: "a", Version: "1.0.0", VariantDigest: aDigest}},
+	}
+	tools := map[string]Tool{
+		"a@1.0.0": {ID: "a", Version: "1.0.0", Variants: []ToolVariant{a}},
+		"b@1.0.0": {ID: "b", Version: "1.0.0", Variants: []ToolVariant{b}},
+	}
+	if _, err := bundleClosure("a@1.0.0", a, tools); err == nil ||
+		!strings.Contains(err.Error(), "dependency cycle") {
+		t.Fatalf("cycle error = %v", err)
+	}
+}
+
 func TestOCIContentRejectsDescriptorURLsAndMismatchedData(t *testing.T) {
 	root := t.TempDir()
 	descriptor := writeOCIBlob(t, root, MediaTypeEmptyConfig, emptyConfigBytes)
