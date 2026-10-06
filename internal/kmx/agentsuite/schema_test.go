@@ -162,37 +162,22 @@ func TestCompositionSchemaDefinesSharedSandboxResolution(t *testing.T) {
 
 func TestToolCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T) {
 	schema := compileReferenceSchema(t, "tool-composition.schema.json")
-	valid := `{
-	  "schemaVersion":"1.0.0-draft",
-	  "mediaType":"application/vnd.agentsuite.tool-composition.v1+json",
-	  "id":"search",
-	  "version":"1.0.0",
-	  "manifestDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	  "platform":{"os":"linux","architecture":"amd64"},
-	  "variantDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-	  "buildProfile":"default"
-	}`
+	data, err := os.ReadFile(filepath.Join("testdata", "tools", "opa-tool-composition.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := string(data)
 	validateSchemaJSON(t, schema, valid, true)
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"variantDigest"`, `"notVariantDigest"`, 1), false)
 }
 
 func TestToolSandboxBindingSchemaPinsCompositionAndInventory(t *testing.T) {
 	schema := compileReferenceSchema(t, "tool-sandbox-binding.schema.json")
-	valid := `{
-	  "schemaVersion":"1.0.0-draft",
-	  "mediaType":"application/vnd.agentsuite.tool-sandbox-binding.v1+json",
-	  "suiteDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	  "composition":{
-	    "mediaType":"application/vnd.agentsuite.tool-composition.v1+json",
-	    "digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-	    "size":1
-	  },
-	  "inventory":{
-	    "mediaType":"application/vnd.agentsuite.inventory.v1+json",
-	    "digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-	    "size":1
-	  }
-	}`
+	data, err := os.ReadFile(filepath.Join("testdata", "tools", "opa-tool-sandbox-binding.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := string(data)
 	validateSchemaJSON(t, schema, valid, true)
 	validateSchemaJSON(t, schema, strings.Replace(valid, MediaTypeToolComposition, MediaTypeComposition, 1), false)
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"suiteDigest"`, `"id":"search","suiteDigest"`, 1), false)

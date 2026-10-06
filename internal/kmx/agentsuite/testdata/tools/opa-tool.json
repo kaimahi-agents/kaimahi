@@ -3,7 +3,6 @@
   "mediaType": "application/vnd.agentsuite.tool.v1+json",
   "id": "opa",
   "version": "1.0.0",
-  "retained": true,
   "provider": {
     "protocol": "mcp",
     "revision": "2025-06-18",

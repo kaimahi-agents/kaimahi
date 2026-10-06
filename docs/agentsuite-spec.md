@@ -668,6 +668,19 @@ variant can participate in an Agent Sandbox Image or a standalone Tool Sandbox
 Image. The remote declaration catalogs the connection contract for a deployed
 instance without defining agent binding.
 
+The complete three-stage example is:
+
+1. [`opa-tool.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool.json)
+   defines the Tool contract and available implementation;
+2. [`opa-tool-composition.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool-composition.json)
+   selects the exact Tool manifest, variant, platform, and build profile;
+3. [`opa-tool-sandbox-binding.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool-sandbox-binding.json)
+   shows the binding embedded in the resulting image.
+
+The repeated hexadecimal digests and descriptor sizes in these examples are
+illustrative. A producer MUST replace them with values computed from the
+concrete Tool manifest, composition, suite artifact, and final inventory.
+
 ### 9.8 UTC datetime example
 
 The following example is a bundled stdio MCP server that returns the current

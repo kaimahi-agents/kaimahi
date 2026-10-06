@@ -74,7 +74,7 @@ packages.
 | `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
 | `kmx/agentsuite/testdata/coordinator-workers/compositions` | 3 | Scaffolding | Empty composition manifests for all three agents on Linux amd64. |
 | `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
-| `kmx/agentsuite/testdata/tools` | 3 | Scaffolding | Complete multi-file `kubectl`, Azure CLI, and OPA tool manifests validated against the reference tool schema. |
+| `kmx/agentsuite/testdata/tools` | 5 | Scaffolding | `kubectl` and Azure CLI Tool manifests plus the OPA Tool, Tool composition, and expected Tool Sandbox binding examples. |
 | `kmx/agentsuite/testdata/remote-mcp` | 1 | Scaffolding | Remote Streamable HTTP MCP Tool manifest used by schema and semantic validation tests. |
 | `kmx/agentsuite/testdata/remote-mcp/schemas` | 2 | Scaffolding | Digest-bound input and output schemas for the remote MCP Tool fixture. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
