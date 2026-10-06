@@ -582,7 +582,8 @@ func validateVariant(variant ToolVariant, expectedDigest string, content *conten
 			continue
 		}
 		if actual.Type != entry.Type || actual.Mode != entry.Mode || actual.Size != entry.Size ||
-			actual.Digest != entry.Digest || actual.LinkTarget != entry.LinkTarget {
+			actual.Digest != entry.Digest || actual.LinkTarget != entry.LinkTarget ||
+			actual.UID != entry.UID || actual.GID != entry.GID {
 			errs = append(errs, fmt.Errorf("inventory path %s does not match payload metadata", entry.Path))
 		}
 		if entry.UID != 0 || entry.GID != 0 {

@@ -227,6 +227,9 @@ func TestDecodeStrictRejectsInvalidUnicodeAndLossyNumbers(t *testing.T) {
 	if err := decodeStrict([]byte(`{"value":333333333.33333329}`), &value); err != nil {
 		t.Fatalf("valid JCS number was rejected: %v", err)
 	}
+	if err := decodeStrict([]byte(`{"value":9007199254740993}`), &value); err == nil {
+		t.Fatal("lossy integral JCS value succeeded")
+	}
 }
 
 func TestDecodeStrictRequiresExactFieldNamesButAllowsMapKeyCase(t *testing.T) {
@@ -339,6 +342,28 @@ func TestContentLayerAllowsWritableSymlinkMode(t *testing.T) {
 	}
 }
 
+func TestContentLayerAllowsDirectoryTrailingSlash(t *testing.T) {
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	tarWriter := tar.NewWriter(gzipWriter)
+	if err := tarWriter.WriteHeader(&tar.Header{Name: "agents/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	content, err := loadContentLayer(bytes.NewReader(compressed.Bytes()))
+	if err != nil {
+		t.Fatalf("loadContentLayer() error = %v", err)
+	}
+	if got := content.entries["agents"]; got.Type != "directory" {
+		t.Fatalf("directory entry = %+v", got)
+	}
+}
+
 func TestContentLayerRejectsInvalidGzipTrailer(t *testing.T) {
 	var compressed bytes.Buffer
 	gzipWriter := gzip.NewWriter(&compressed)
@@ -383,6 +408,28 @@ func TestVariantAllowsWritableSymlinkMode(t *testing.T) {
 	}}
 	if err := validateVariant(variant, digest, content); err != nil {
 		t.Fatalf("validateVariant() error = %v", err)
+	}
+}
+
+func TestVariantRejectsPayloadOwnerMismatch(t *testing.T) {
+	payload := []byte("x")
+	digest := digestBytes(payload)
+	variant := ToolVariant{
+		Platform:      Platform{OS: "linux", Architecture: "amd64"},
+		VariantDigest: digest,
+		InstallRoot:   "/opt/tool",
+		PayloadRoot:   "payload",
+		Entrypoint:    "/opt/tool/bin/tool",
+		Runtime:       RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
+		Files: []InventoryEntry{{
+			Path: "bin/tool", Type: "file", Mode: 0o755, UID: 0, GID: 0, Size: 1, Digest: digest,
+		}},
+	}
+	content := &contentSet{entries: map[string]contentEntry{
+		"payload/bin/tool": {Path: "payload/bin/tool", Type: "file", Mode: 0o755, UID: 1000, GID: 0, Size: 1, Digest: digest},
+	}}
+	if err := validateVariant(variant, digest, content); err == nil || !strings.Contains(err.Error(), "payload metadata") {
+		t.Fatalf("owner mismatch error = %v", err)
 	}
 }
 

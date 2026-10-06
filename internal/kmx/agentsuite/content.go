@@ -185,7 +185,11 @@ func loadContentLayer(reader io.Reader) (*contentSet, error) {
 		if count > maxContentEntries {
 			return nil, fmt.Errorf("content has more than %d entries", maxContentEntries)
 		}
-		name, err := validateContentPath(header.Name)
+		rawName := header.Name
+		if header.Typeflag == tar.TypeDir {
+			rawName = strings.TrimSuffix(rawName, "/")
+		}
+		name, err := validateContentPath(rawName)
 		if err != nil {
 			return nil, err
 		}

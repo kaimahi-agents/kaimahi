@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,7 +13,7 @@ import (
 )
 
 func TestSuiteValidateMinimalLayout(t *testing.T) {
-	fixture := filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal")
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -48,4 +50,30 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func copySuiteFixture(t *testing.T, source string) string {
+	t.Helper()
+	destination := t.TempDir()
+	if err := filepath.WalkDir(source, func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, name)
+		if err != nil || relative == "." {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return destination
 }

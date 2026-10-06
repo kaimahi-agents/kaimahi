@@ -191,6 +191,10 @@ func sameJSONValue(a, b any) bool {
 		if !ok {
 			return false
 		}
+		if left, err := a.Int64(); err == nil {
+			right, err := other.Int64()
+			return err == nil && left == right
+		}
 		left, leftErr := a.Float64()
 		right, rightErr := other.Float64()
 		return leftErr == nil && rightErr == nil && left == right
