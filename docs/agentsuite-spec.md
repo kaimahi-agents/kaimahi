@@ -560,10 +560,6 @@ MUST already be present in the variant or in exact bundle dependencies.
 The reference schema tests validate multi-file bundle fixtures for
 [`kubectl`](../internal/kmx/agentsuite/testdata/tools/kubectl-tool.json) and
 [`Azure CLI`](../internal/kmx/agentsuite/testdata/tools/azure-cli-tool.json).
-These fixtures demonstrate complete filesystem inventories and CLI placement;
-they are not runnable deployment examples. A runnable `kubectl` or Azure CLI
-variant must also declare its actual network, credential, and writable-state
-requirements.
 
 ### 9.6 UTC datetime example
 
