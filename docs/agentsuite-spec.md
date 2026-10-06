@@ -536,17 +536,13 @@ Two selected bundles may overlap at the same destination path only when the
 resulting entries are identical in type, bytes, mode, ownership, and link
 target. All other overlaps are errors.
 
-Bundle dependencies are exact digest-bound references to other tool variants
-in the suite catalog. Consumers recursively traverse the dependency graph,
-reject cycles, and include every dependency payload in filesystem collision
-checks and image construction. Dependencies do not become model-callable
-operations unless the agent also declares the dependency as a top-level tool.
-They do not cause network resolution or installer execution.
+Bundle dependencies MUST identify exact same-platform tool variants by digest.
+Consumers MUST traverse them recursively, reject cycles, and include their
+payloads in collision checks and image construction. Dependencies do not grant
+model access or cause network resolution or installer execution.
 
-Dependencies are not a generic package or runtime abstraction in this draft.
-A runtime used only by one provider, such as the Python runtime for Azure CLI,
-belongs in that provider's complete variant. This draft does not define a
-standalone non-tool bundle manifest for sharing such a runtime.
+A variant MUST include private runtimes required by its provider. This draft
+does not define standalone runtime bundles.
 
 ### 9.5 CLI-backed providers
 
