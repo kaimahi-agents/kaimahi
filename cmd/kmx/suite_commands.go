@@ -2,9 +2,11 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
-func newSuiteCommand(state *commandState) *cobra.Command {
+func newSuiteCommand() *cobra.Command {
 	group := &cobra.Command{
 		Use:   "suite",
 		Short: "Work with portable AgentSuite artifacts",
@@ -19,8 +21,9 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	}
 	validate.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
 	_ = validate.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
-	validate.RunE = func(*cobra.Command, []string) error {
-		return state.offlineApplication().ValidateSuite(validate.Flags().Arg(0), output)
+	validate.RunE = func(cmd *cobra.Command, args []string) error {
+		a := &app.App{Out: cmd.OutOrStdout()}
+		return a.ValidateSuite(args[0], output)
 	}
 	group.AddCommand(validate)
 	return group

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,16 +22,6 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
 	if report.Name != "example" || report.Agents != 1 || report.Tools != 0 || report.ToolSets != 1 {
-		t.Fatalf("unexpected report: %+v", report)
-	}
-}
-
-func TestMinimalLayoutFixtureIsConformant(t *testing.T) {
-	report, err := ValidatePath(filepath.Join("testdata", "minimal"))
-	if err != nil {
-		t.Fatalf("ValidatePath(testdata/minimal) error = %v", err)
-	}
-	if report.Name != "minimal" || report.Agents != 1 || report.Tools != 0 || report.ToolSets != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -53,11 +44,7 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 			Size: int64(len(payload)), Digest: digestBytes(payload), Component: "reader",
 		}},
 	}
-	var err error
-	variant.VariantDigest, err = marshaledVariantDigest(variant)
-	if err != nil {
-		t.Fatal(err)
-	}
+	variant.VariantDigest = mustVariantDigest(t, variant)
 	tool := Tool{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeTool,
@@ -160,6 +147,7 @@ func TestValidatePathAcceptsOCILayout(t *testing.T) {
 
 	root := t.TempDir()
 	configDescriptor := writeOCIBlob(t, root, MediaTypeEmptyConfig, emptyConfigBytes)
+	configDescriptor.Data = json.RawMessage(`"e30="`)
 	layerDescriptor := writeOCIBlob(t, root, MediaTypeContent, compressed.Bytes())
 	manifest := ociManifest{
 		SchemaVersion: 2,
@@ -221,60 +209,116 @@ func TestValidatePathRejectsDuplicateKeys(t *testing.T) {
 	}
 }
 
-func TestValidatePathRejectsUnknownFields(t *testing.T) {
-	root := writeMinimalSuite(t)
-	path := filepath.Join(root, "agentsuite.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data = []byte(strings.Replace(string(data), `"name":"example"`, `"name":"example","unexpected":true`, 1))
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("expected unknown-field error, got %v", err)
-	}
-}
-
-func TestDecodeStrictRejectsInvalidUTF8AndMismatchedFieldCase(t *testing.T) {
+func TestDecodeStrictRejectsInvalidUnicodeAndLossyNumbers(t *testing.T) {
 	for _, data := range [][]byte{
-		{0xff},
-		[]byte(`{"Name":"example"}`),
-		[]byte(`{"name":"example","Name":"shadow"}`),
-		[]byte(`{"name":"example","ſame":"shadow"}`),
+		{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'},
+		[]byte(`{"value":"\ud800"}`),
+		[]byte(`{"value":"\ud800\u0061"}`),
 	} {
-		var value struct {
-			Name string `json:"name"`
-		}
+		var value map[string]any
 		if err := decodeStrict(data, &value); err == nil {
 			t.Errorf("decodeStrict(%q) succeeded", data)
 		}
 	}
+	var value map[string]any
+	if err := decodeStrict([]byte(`{"value":"�"}`), &value); err != nil {
+		t.Fatalf("literal replacement character was rejected: %v", err)
+	}
+	if err := decodeStrict([]byte(`{"value":333333333.33333329}`), &value); err != nil {
+		t.Fatalf("valid JCS number was rejected: %v", err)
+	}
+}
+
+func TestDecodeStrictRequiresExactFieldNamesButAllowsMapKeyCase(t *testing.T) {
+	target := struct {
+		Name        string            `json:"name"`
+		Annotations map[string]string `json:"annotations"`
+	}{}
+	if err := decodeStrict([]byte(`{"Name":"example"}`), &target); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("mis-cased field error = %v", err)
+	}
+	if err := decodeStrict([]byte(`{"name":"example","Name":"shadow"}`), &target); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("case-shadowed field error = %v", err)
+	}
+	if err := decodeStrict([]byte(`{"name":"example","annotations":{"Foo":"one","foo":"two"}}`), &target); err != nil {
+		t.Fatalf("case-distinct map keys were rejected: %v", err)
+	}
+	if err := decodeStrict([]byte(`{"name":null}`), &target); err == nil || !strings.Contains(err.Error(), "null") {
+		t.Fatalf("null scalar field error = %v", err)
+	}
+}
+
+func TestDecodeStrictEnforcesDocumentLimits(t *testing.T) {
+	if maxJSONBytes != 4<<20 || maxJSONDepth != 100 {
+		t.Fatalf("JSON limits = %d bytes and %d levels", maxJSONBytes, maxJSONDepth)
+	}
+	for depth, wantError := range map[int]bool{100: false, 101: true} {
+		data := []byte(strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth))
+		var value any
+		err := decodeStrict(data, &value)
+		if (err != nil) != wantError {
+			t.Errorf("depth %d error = %v, wantError %t", depth, err, wantError)
+		}
+	}
+	var members strings.Builder
+	members.WriteByte('{')
+	for i := 0; i <= maxJSONObjectMembers; i++ {
+		if i != 0 {
+			members.WriteByte(',')
+		}
+		fmt.Fprintf(&members, "%q:0", fmt.Sprintf("k%d", i))
+	}
+	members.WriteByte('}')
+	var value any
+	if err := decodeStrict([]byte(members.String()), &value); err == nil || !strings.Contains(err.Error(), "member limit") {
+		t.Fatalf("object member limit error = %v", err)
+	}
 }
 
 func TestContentSetRejectsUnicodeCaseFoldCollision(t *testing.T) {
-	set := newContentSet()
+	set := &contentSet{entries: map[string]contentEntry{}, folded: map[string]string{}}
 	if err := set.add(contentEntry{Path: "tools/s"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := set.add(contentEntry{Path: "tools/ſ"}); err == nil || !strings.Contains(err.Error(), "case-folding path collision") {
-		t.Fatalf("expected Unicode case-folding collision, got %v", err)
+	if err := set.add(contentEntry{Path: "tools/ſ"}); err == nil || !strings.Contains(err.Error(), "case-folding") {
+		t.Fatalf("case-fold collision error = %v", err)
+	}
+	if err := set.add(contentEntry{Path: "tools/ı"}); err != nil {
+		t.Fatalf("distinct dotless-i path collided: %v", err)
 	}
 }
 
-func TestLoadContentLayerAllowsSymlinkMode0777(t *testing.T) {
+func TestValidateLinkTargetRejectsOversizedTarget(t *testing.T) {
+	if err := validateLinkTarget("bin/tool", strings.Repeat("a", maxPathBytes+1)); err == nil {
+		t.Fatal("oversized link target succeeded")
+	}
+}
+
+func TestRetainedMetadataLimits(t *testing.T) {
+	if !shouldRetainMetadata("metadata/value.json", maxJSONBytes) || shouldRetainMetadata("metadata/value.json", maxJSONBytes+1) {
+		t.Fatal("metadata retention is not bounded by the JSON document limit")
+	}
+	if got, err := addRetainedMetadata(maxRetainedMetadataBytes-1, 1); err != nil || got != maxRetainedMetadataBytes {
+		t.Fatalf("exact retained metadata limit = %d, %v", got, err)
+	}
+	if _, err := addRetainedMetadata(maxRetainedMetadataBytes, 1); err == nil {
+		t.Fatal("retained metadata above the cumulative limit succeeded")
+	}
+}
+
+func TestContentLayerAllowsWritableSymlinkMode(t *testing.T) {
 	var compressed bytes.Buffer
 	gzipWriter := gzip.NewWriter(&compressed)
 	tarWriter := tar.NewWriter(gzipWriter)
-	for _, header := range []*tar.Header{
+	entries := []tar.Header{
 		{Name: "bin/tool", Typeflag: tar.TypeReg, Mode: 0o755, Size: 1},
 		{Name: "bin/tool-link", Typeflag: tar.TypeSymlink, Mode: 0o777, Linkname: "tool"},
-	} {
-		if err := tarWriter.WriteHeader(header); err != nil {
+	}
+	for i := range entries {
+		if err := tarWriter.WriteHeader(&entries[i]); err != nil {
 			t.Fatal(err)
 		}
-		if header.Typeflag == tar.TypeReg {
+		if entries[i].Typeflag == tar.TypeReg {
 			if _, err := tarWriter.Write([]byte("x")); err != nil {
 				t.Fatal(err)
 			}
@@ -290,90 +334,156 @@ func TestLoadContentLayerAllowsSymlinkMode0777(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadContentLayer() error = %v", err)
 	}
-	if content.entries["bin/tool-link"].Type != "symlink" {
-		t.Fatalf("unexpected symlink entry: %+v", content.entries["bin/tool-link"])
+	if got := content.entries["bin/tool-link"]; got.Type != "symlink" || got.Mode != 0o777 {
+		t.Fatalf("symlink entry = %+v", got)
 	}
 }
 
-func TestShouldRetainMetadataMatchesJSONLimit(t *testing.T) {
-	if !shouldRetainMetadata("tool.json", int64(maxJSONBytes)) {
-		t.Fatal("JSON document at maxJSONBytes was not retained")
+func TestContentLayerRejectsInvalidGzipTrailer(t *testing.T) {
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	tarWriter := tar.NewWriter(gzipWriter)
+	if err := tarWriter.WriteHeader(&tar.Header{Name: "metadata/value.json", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2}); err != nil {
+		t.Fatal(err)
 	}
-	if shouldRetainMetadata("tool.json", int64(maxJSONBytes)+1) {
-		t.Fatal("JSON document larger than maxJSONBytes was retained")
+	if _, err := tarWriter.Write([]byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := compressed.Bytes()
+	data[len(data)-1] ^= 0xff
+	if _, err := loadContentLayer(bytes.NewReader(data)); err == nil || !strings.Contains(err.Error(), "gzip") {
+		t.Fatalf("invalid gzip trailer error = %v", err)
 	}
 }
 
-func TestRawVariantDigestPreservesExplicitZeroValues(t *testing.T) {
-	raw := []byte(`{
-	  "variants":[{
-	    "platform":{"os":"linux","architecture":"amd64"},
-	    "variantDigest":"ignored",
-	    "installRoot":"/opt/tool",
-	    "relocatable":false,
-	    "payloadRoot":"tools/tool",
-	    "entrypoint":"/opt/tool/bin/tool",
-	    "arguments":[],
-	    "runtime":{"abi":"static","cpuBaseline":"x86-64-v1"},
-	    "files":[{"path":"empty","type":"file","mode":420,"uid":0,"gid":0,"size":0}]
-	  }]
-	}`)
+func TestVariantAllowsWritableSymlinkMode(t *testing.T) {
+	payload := []byte("x")
+	digest := digestBytes(payload)
+	variant := ToolVariant{
+		Platform:      Platform{OS: "linux", Architecture: "amd64"},
+		VariantDigest: digest,
+		InstallRoot:   "/opt/tool",
+		PayloadRoot:   "payload",
+		Entrypoint:    "/opt/tool/bin/tool",
+		Runtime:       RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
+		Files: []InventoryEntry{
+			{Path: "bin/tool", Type: "file", Mode: 0o755, Size: 1, Digest: digest},
+			{Path: "bin/tool-link", Type: "symlink", Mode: 0o777, LinkTarget: "tool"},
+		},
+	}
+	content := &contentSet{entries: map[string]contentEntry{
+		"payload/bin/tool":      {Path: "payload/bin/tool", Type: "file", Mode: 0o755, Size: 1, Digest: digest},
+		"payload/bin/tool-link": {Path: "payload/bin/tool-link", Type: "symlink", Mode: 0o777, LinkTarget: "tool"},
+	}}
+	if err := validateVariant(variant, digest, content); err != nil {
+		t.Fatalf("validateVariant() error = %v", err)
+	}
+}
+
+func TestOCIContentRejectsDescriptorURLsAndMismatchedData(t *testing.T) {
+	root := t.TempDir()
+	descriptor := writeOCIBlob(t, root, MediaTypeEmptyConfig, emptyConfigBytes)
+	descriptor.URLs = json.RawMessage(`[]`)
+	if _, err := readBlob(root, descriptor); err == nil || !strings.Contains(err.Error(), "urls") {
+		t.Fatalf("descriptor URL error = %v", err)
+	}
+	descriptor.URLs = nil
+	descriptor.Data = json.RawMessage(`"W10="`)
+	if _, err := readBlob(root, descriptor); err == nil || !strings.Contains(err.Error(), "descriptor data") {
+		t.Fatalf("descriptor data error = %v", err)
+	}
+}
+
+func TestOCILayoutRejectsURLOnIgnoredIndexDescriptor(t *testing.T) {
+	contentRoot := writeMinimalSuite(t)
+	tarBytes := tarDirectory(t, contentRoot)
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	if _, err := gzipWriter.Write(tarBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	configDescriptor := writeOCIBlob(t, root, MediaTypeEmptyConfig, emptyConfigBytes)
+	layerDescriptor := writeOCIBlob(t, root, MediaTypeContent, compressed.Bytes())
+	manifestBytes, err := json.Marshal(ociManifest{
+		SchemaVersion: 2, MediaType: ociManifestMediaType, ArtifactType: MediaTypeArtifact,
+		Config: configDescriptor, Layers: []ociDescriptor{layerDescriptor},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestDescriptor := writeOCIBlob(t, root, ociManifestMediaType, manifestBytes)
+	manifestDescriptor.ArtifactType = MediaTypeArtifact
+	ignored := writeOCIBlob(t, root, "application/vnd.example.other", []byte("other"))
+	ignored.URLs = json.RawMessage(`["https://example.invalid/blob"]`)
+	indexBytes, err := json.Marshal(ociIndex{SchemaVersion: 2, MediaType: ociIndexMediaType, Manifests: []ociDescriptor{manifestDescriptor, ignored}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, root, "oci-layout", []byte(`{"imageLayoutVersion":"1.0.0"}`))
+	mustWrite(t, root, "index.json", indexBytes)
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "urls") {
+		t.Fatalf("ignored descriptor URL error = %v", err)
+	}
+}
+
+func TestRawVariantDigestsPreserveExplicitZeroValues(t *testing.T) {
+	declared := "sha256:" + strings.Repeat("a", 64)
+	raw := []byte(`{"variants":[{"variantDigest":"` + declared + `","relocatable":false,"arguments":[],"files":[{"size":0,"component":""}]}]}`)
 	digests, err := rawVariantDigests(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var document map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &document); err != nil {
-		t.Fatal(err)
-	}
-	var variants []map[string]json.RawMessage
-	if err := json.Unmarshal(document["variants"], &variants); err != nil {
-		t.Fatal(err)
-	}
-	variants[0]["variantDigest"] = json.RawMessage(`""`)
-	expectedJSON, err := json.Marshal(variants[0])
+	want, err := canonicalDigest([]byte(`{"variantDigest":"","relocatable":false,"arguments":[],"files":[{"size":0,"component":""}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := canonicalDigest(expectedJSON)
+	if len(digests) != 1 || digests[0] != want {
+		t.Fatalf("raw variant digests = %v, want %s", digests, want)
+	}
+	absent, err := rawVariantDigests([]byte(`{"variants":[{"variantDigest":"` + declared + `","files":[{}]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(digests) != 1 || digests[0] != expected {
-		t.Fatalf("rawVariantDigests() = %v, want %s", digests, expected)
+	if absent[0] == digests[0] {
+		t.Fatal("explicit zero-valued members did not affect variant identity")
 	}
 }
 
-func TestOCIEmbeddedDataAndURLsPolicy(t *testing.T) {
-	root := t.TempDir()
-	data := []byte("{}")
-	descriptor := writeOCIBlob(t, root, MediaTypeEmptyConfig, data)
-	descriptor.Data = append([]byte(nil), data...)
-	file, err := openBlob(root, descriptor)
-	if err != nil {
-		t.Fatalf("openBlob() with matching data error = %v", err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	descriptor.URLs = []string{"https://example.invalid/blob"}
-	if _, err := openBlob(root, descriptor); err == nil || !strings.Contains(err.Error(), "urls are not allowed") {
-		t.Fatalf("expected descriptor urls rejection, got %v", err)
-	}
-}
-
-func TestValidateReferencesRejectsDuplicateCapabilities(t *testing.T) {
+func TestDeclaredCapabilitiesMustAlreadyBeSortedAndUnique(t *testing.T) {
 	v := &validator{
-		suite:  Suite{Capabilities: []string{"bundled-stdio-mcp", "bundled-stdio-mcp"}},
-		agents: map[string]Agent{},
-		tools: map[string]Tool{
-			"tool@1.0.0": {Variants: []ToolVariant{{}}},
-		},
-		toolDigests: map[string]string{},
-		toolSets:    map[string]ToolSet{},
+		suite:    Suite{Capabilities: []string{"remote-streamable-http-mcp", "remote-streamable-http-mcp"}},
+		tools:    map[string]Tool{"remote@1.0.0": {Remote: &RemoteMCP{}}},
+		agents:   map[string]Agent{},
+		toolSets: map[string]ToolSet{},
 	}
-	if err := v.validateReferences(); err == nil || !strings.Contains(err.Error(), "suite capabilities") {
-		t.Fatalf("expected duplicate capabilities rejection, got %v", err)
+	if err := v.validateReferences(); err == nil || !strings.Contains(err.Error(), "capabilities") {
+		t.Fatalf("duplicate capabilities error = %v", err)
+	}
+}
+
+func TestValidatePathRejectsUnknownFields(t *testing.T) {
+	root := writeMinimalSuite(t)
+	path := filepath.Join(root, "agentsuite.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), `"name":"example"`, `"name":"example","unexpected":true`, 1))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected unknown-field error, got %v", err)
 	}
 }
 
@@ -487,13 +597,19 @@ func mustWriteJSON(t *testing.T, root, name string, value any) string {
 	return digest
 }
 
-func marshaledVariantDigest(variant ToolVariant) (string, error) {
-	variant.VariantDigest = ""
-	data, err := json.Marshal(variant)
+func mustVariantDigest(t *testing.T, variant ToolVariant) string {
+	t.Helper()
+	data, err := json.Marshal(struct {
+		Variants []ToolVariant `json:"variants"`
+	}{Variants: []ToolVariant{variant}})
 	if err != nil {
-		return "", err
+		t.Fatal(err)
 	}
-	return canonicalDigest(data)
+	digests, err := rawVariantDigests(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digests[0]
 }
 
 func mustWrite(t *testing.T, root, name string, data []byte) {

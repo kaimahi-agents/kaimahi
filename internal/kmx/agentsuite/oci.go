@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 const (
 	ociManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 	ociIndexMediaType    = "application/vnd.oci.image.index.v1+json"
+	maxOCIIndexEntries   = 1000
+	maxIndexedBlobBytes  = int64(1 << 30)
 )
 
 var emptyConfigBytes = []byte("{}")
@@ -27,8 +30,8 @@ type ociDescriptor struct {
 	MediaType    string            `json:"mediaType"`
 	Digest       string            `json:"digest"`
 	Size         int64             `json:"size"`
-	Data         []byte            `json:"data,omitempty"`
-	URLs         []string          `json:"urls,omitempty"`
+	Data         json.RawMessage   `json:"data,omitempty"`
+	URLs         json.RawMessage   `json:"urls,omitempty"`
 	ArtifactType string            `json:"artifactType,omitempty"`
 	Platform     *Platform         `json:"platform,omitempty"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
@@ -74,7 +77,7 @@ func ValidatePath(value string) (*Report, error) {
 }
 
 func validateOCILayout(root string) (*Report, error) {
-	layoutBytes, err := os.ReadFile(filepath.Join(root, "oci-layout"))
+	layoutBytes, err := readRegularFile(filepath.Join(root, "oci-layout"), maxJSONBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read oci-layout: %w", err)
 	}
@@ -85,7 +88,7 @@ func validateOCILayout(root string) (*Report, error) {
 	if layout.ImageLayoutVersion != LayoutVersion {
 		return nil, fmt.Errorf("oci-layout imageLayoutVersion must be %s", LayoutVersion)
 	}
-	indexBytes, err := os.ReadFile(filepath.Join(root, "index.json"))
+	indexBytes, err := readRegularFile(filepath.Join(root, "index.json"), maxJSONBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read index.json: %w", err)
 	}
@@ -96,8 +99,26 @@ func validateOCILayout(root string) (*Report, error) {
 	if index.SchemaVersion != 2 || index.MediaType != "" && index.MediaType != ociIndexMediaType {
 		return nil, errors.New("index.json is not an OCI image index")
 	}
+	if len(index.Manifests) > maxOCIIndexEntries {
+		return nil, fmt.Errorf("index.json has more than %d manifest descriptors", maxOCIIndexEntries)
+	}
 	var candidates []ociDescriptor
-	for _, descriptor := range index.Manifests {
+	var indexedBytes int64
+	for i, descriptor := range index.Manifests {
+		if err := validateDescriptorFields(descriptor); err != nil {
+			return nil, fmt.Errorf("index.json manifest descriptor %d: %w", i, err)
+		}
+		if descriptor.Size > maxIndexedBlobBytes-indexedBytes {
+			return nil, fmt.Errorf("index.json references more than %d bytes", maxIndexedBlobBytes)
+		}
+		indexedBytes += descriptor.Size
+		blob, err := openBlob(root, descriptor)
+		if err != nil {
+			return nil, fmt.Errorf("index.json manifest descriptor %d: %w", i, err)
+		}
+		if err := blob.Close(); err != nil {
+			return nil, fmt.Errorf("index.json manifest descriptor %d: %w", i, err)
+		}
 		if descriptor.MediaType == ociManifestMediaType &&
 			(descriptor.ArtifactType == "" || descriptor.ArtifactType == MediaTypeArtifact) {
 			candidates = append(candidates, descriptor)
@@ -127,6 +148,12 @@ func validateOCILayout(root string) (*Report, error) {
 	if len(manifest.Layers) != 1 || manifest.Layers[0].MediaType != MediaTypeContent {
 		return nil, fmt.Errorf("AgentSuite manifest must contain exactly one %s layer", MediaTypeContent)
 	}
+	if err := validateDescriptorFields(manifest.Config); err != nil {
+		return nil, fmt.Errorf("AgentSuite config descriptor: %w", err)
+	}
+	if err := validateDescriptorFields(manifest.Layers[0]); err != nil {
+		return nil, fmt.Errorf("AgentSuite content descriptor: %w", err)
+	}
 	configBytes, err := readBlob(root, manifest.Config)
 	if err != nil {
 		return nil, fmt.Errorf("read AgentSuite config: %w", err)
@@ -151,6 +178,29 @@ func validateOCILayout(root string) (*Report, error) {
 		return nil, err
 	}
 	return report, nil
+}
+
+func readRegularFile(name string, limit int64) ([]byte, error) {
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > limit {
+		return nil, fmt.Errorf("file must be regular and at most %d bytes", limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != info.Size() {
+		return nil, errors.New("file size changed while reading")
+	}
+	return data, nil
 }
 
 func validateEmptyConfig(data []byte) error {
@@ -183,15 +233,15 @@ func readBlob(root string, descriptor ociDescriptor) ([]byte, error) {
 }
 
 func openBlob(root string, descriptor ociDescriptor) (*os.File, error) {
-	if !validDigest(descriptor.Digest) || descriptor.Size < 0 {
-		return nil, errors.New("descriptor digest or size is invalid")
+	if err := validateDescriptorFields(descriptor); err != nil {
+		return nil, err
 	}
-	if len(descriptor.URLs) != 0 {
-		return nil, errors.New("descriptor urls are not allowed in a self-contained AgentSuite layout")
+	embedded, hasEmbedded, err := descriptor.embeddedData()
+	if err != nil {
+		return nil, err
 	}
-	if descriptor.Data != nil &&
-		(int64(len(descriptor.Data)) != descriptor.Size || digestBytes(descriptor.Data) != descriptor.Digest) {
-		return nil, errors.New("descriptor data does not match its digest and size")
+	if hasEmbedded && (int64(len(embedded)) != descriptor.Size || digestBytes(embedded) != descriptor.Digest) {
+		return nil, errors.New("descriptor data does not match digest and size")
 	}
 	encoded := strings.TrimPrefix(descriptor.Digest, "sha256:")
 	blobPath := filepath.Join(root, "blobs", "sha256", encoded)
@@ -217,11 +267,57 @@ func openBlob(root string, descriptor ociDescriptor) (*os.File, error) {
 		file.Close()
 		return nil, errors.New("blob digest does not match descriptor")
 	}
+	if hasEmbedded {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			file.Close()
+			return nil, err
+		}
+		local, err := io.ReadAll(io.LimitReader(file, descriptor.Size+1))
+		if err != nil {
+			file.Close()
+			return nil, err
+		}
+		if !bytes.Equal(embedded, local) {
+			file.Close()
+			return nil, errors.New("descriptor data does not match blob")
+		}
+	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		file.Close()
 		return nil, err
 	}
 	return file, nil
+}
+
+func validateDescriptorFields(descriptor ociDescriptor) error {
+	if !validDigest(descriptor.Digest) || descriptor.Size < 0 {
+		return errors.New("descriptor digest or size is invalid")
+	}
+	if descriptor.URLs != nil {
+		return errors.New("descriptor urls are not allowed in a self-contained AgentSuite layout")
+	}
+	embedded, hasEmbedded, err := descriptor.embeddedData()
+	if err != nil {
+		return err
+	}
+	if hasEmbedded && (int64(len(embedded)) != descriptor.Size || digestBytes(embedded) != descriptor.Digest) {
+		return errors.New("descriptor data does not match digest and size")
+	}
+	return nil
+}
+
+func (d ociDescriptor) embeddedData() ([]byte, bool, error) {
+	if d.Data == nil {
+		return nil, false, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(d.Data), []byte("null")) {
+		return nil, false, errors.New("descriptor data must be a base64 string")
+	}
+	var data []byte
+	if err := json.Unmarshal(d.Data, &data); err != nil {
+		return nil, false, fmt.Errorf("descriptor data must be a base64 string: %w", err)
+	}
+	return data, true, nil
 }
 
 // ValidateSandboxBinding validates the fixed binding record embedded in a

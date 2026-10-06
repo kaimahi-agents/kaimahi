@@ -100,6 +100,18 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 	}
 }
 
+func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	err := execute([]string{"suite", "validate", t.TempDir()}, deps)
+	if err == nil || !strings.Contains(err.Error(), "agentsuite.json") {
+		t.Fatalf("validation error = %v", err)
+	}
+	if *loads != 0 {
+		t.Fatalf("suite validation loaded operational config %d times", *loads)
+	}
+}
+
 func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 	for _, path := range [][]string{{"quickstart-wizard"}, {"agent", "chat"}} {
 		var out, errOut bytes.Buffer

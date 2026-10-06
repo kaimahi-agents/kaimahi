@@ -243,12 +243,7 @@ func (v *validator) loadTools() error {
 			errs = append(errs, fmt.Errorf("tool %s: %w", key, err))
 			continue
 		}
-		variantDigests, err := rawVariantDigests(raw)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("tool %s variant identities: %w", key, err))
-			continue
-		}
-		if err := validateTool(tool, variantDigests, v.content); err != nil {
+		if err := validateTool(tool, raw, v.content); err != nil {
 			errs = append(errs, fmt.Errorf("tool %s: %w", key, err))
 			continue
 		}
@@ -449,7 +444,7 @@ func validateIdentifierList(name string, values []string) error {
 	return errors.Join(errs...)
 }
 
-func validateTool(tool Tool, variantDigests []string, content *contentSet) error {
+func validateTool(tool Tool, raw []byte, content *contentSet) error {
 	var errs []error
 	if tool.SchemaVersion != SpecVersion || tool.MediaType != MediaTypeTool {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
@@ -491,8 +486,12 @@ func validateTool(tool Tool, variantDigests []string, content *contentSet) error
 		errs = append(errs, errors.New("tool must select exactly one bundled, remote, or isolated connector"))
 	}
 	platforms := map[string]bool{}
+	variantDigests, err := rawVariantDigests(raw)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("variant identities: %w", err))
+	}
 	if len(variantDigests) != len(tool.Variants) {
-		errs = append(errs, errors.New("variant identity count does not match variants"))
+		errs = append(errs, errors.New("raw and decoded variant counts differ"))
 	}
 	for i, variant := range tool.Variants {
 		key := variant.Platform.String()
@@ -628,6 +627,9 @@ func rawVariantDigests(rawTool []byte) ([]string, error) {
 	}
 	digests := make([]string, len(variants))
 	for i, variant := range variants {
+		if _, ok := variant["variantDigest"]; !ok {
+			return nil, fmt.Errorf("variant %d has no variantDigest", i)
+		}
 		variant["variantDigest"] = json.RawMessage(`""`)
 		data, err := json.Marshal(variant)
 		if err != nil {

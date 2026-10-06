@@ -139,12 +139,9 @@ Every descriptor size and digest MUST match the referenced regular blob.
 Every blob referenced by `index.json`, the selected manifest, or a normative
 AgentSuite descriptor MUST be present in the image layout. AgentSuite image
 layouts are self-contained and MUST NOT rely on an external blob store to
-fulfill a missing referenced blob.
-
-Descriptors MAY include the OCI `data` field. When present, its decoded bytes
-MUST match the descriptor size and digest and the corresponding blob MUST still
-be present. Descriptors MUST NOT include `urls`; external retrieval is
-incompatible with the self-contained layout requirement.
+fulfill a missing referenced blob. Descriptor `urls` MUST be absent. Descriptor
+`data`, when present, MUST decode to the exact bytes of the referenced local
+blob and does not replace that blob.
 
 The single-layer rule is intentional for version 1: it gives a suite one
 self-contained validation boundary. Future versions may profile multiple
@@ -233,8 +230,11 @@ A conforming validator MUST reject:
 - content exceeding implementation-declared limits.
 
 The reference validator limits JSON documents to 4 MiB, JSON nesting to 100
-levels, content entries to 100,000, and expanded regular-file content to
-4 GiB. It retains at most 256 MiB of JSON metadata while validating a layout.
+levels, JSON object membership to 1,024 members per object and 100,000 per
+document, content entries to 100,000, and expanded regular-file content to 4
+GiB. OCI indexes contain at most 1,000 descriptors referencing at most 1 GiB
+in aggregate. It retains at most 256 MiB of JSON metadata while validating an
+artifact.
 
 ### 5.3 JSON profile
 
@@ -242,10 +242,8 @@ All normative JSON documents:
 
 - MUST be UTF-8;
 - MUST contain one JSON value followed only by whitespace;
-- MUST reject duplicate object names, including names that differ only by
-  Unicode case folding;
+- MUST reject duplicate object names;
 - MUST reject unknown properties;
-- MUST match property-name case exactly;
 - MUST conform to [JSON Schema draft 2020-12][json-schema-2020-12];
 - MUST NOT contain non-finite numbers;
 - SHOULD avoid numbers where an exact string or integer is possible.
@@ -274,11 +272,12 @@ type, mode, numeric owner, size, digest or link target, and component.
 
 ### 6.3 Tool variants
 
-To compute `variantDigest`, serialize the complete tool variant with
-`variantDigest` set to the empty string, canonicalize with JCS, and hash the
-canonical bytes. This identity commits to platform, install root, entrypoint,
-runtime requirements, file inventory, dependencies, SBOM, and provenance
-descriptors.
+To compute `variantDigest`, take the complete variant object as represented in
+the tool manifest, replace only the value of its `variantDigest` member with the
+empty string, canonicalize with JCS, and hash the canonical bytes. This
+identity commits to platform, install root, entrypoint, runtime requirements,
+file inventory, dependencies, SBOM, provenance descriptors, and the presence
+of optional members.
 
 ### 6.4 Tool sets
 
