@@ -362,7 +362,7 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status",
-		"aks", "aks up", "aks down", "backup", "budget", "completion",
+		"aks", "aks up", "aks down", "backup", "budget", "bundle", "bundle render", "bundle validate", "completion",
 		"credential", "credential issue", "credential renew", "credentials",
 		"ctx", "down", "flow", "govern", "ledger",
 		"lift", "lift down", "metrics", "migrate", "models", "models add",

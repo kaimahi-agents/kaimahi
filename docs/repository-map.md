@@ -39,14 +39,14 @@ checks.
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
 | `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 45 (checkers, release packaging, probes, CI fixtures, mutation specs) |
-| `docs/` | 47 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `docs/` | 48 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (33 files) | **Installed** | CLI and tests: top-level offline AgentSuite validation, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (35 files) | **Installed** | CLI and tests: top-level offline AgentSuite validation, offline composable bundle validation and Orka rendering, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -270,15 +270,15 @@ throwaway CA and a documentation-range address routed over kind's network,
 so a public-looking hosted upstream can be dialed without a hosted account.
 CI holds no hosted credential.
 
-## `docs/` — 47 tracked files, guides and retirement records
+## `docs/` — 48 tracked files, guides and retirement records
 
-**Guides and index (23):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (24):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `spend.md`,
 `approvals.md`, `egress.md`, `hosted-upstreams.md`, `identity.md`,
 `operations.md`, `releases.md`, `workflows.md`, `FAQ.md`,
 `migrate.md`, `orka.md`, `copilot-inference.md`, `interactive-chat.md`,
 `interactive-lift.md`, `orka-k8s-tool.md`, `bundle-format.md`,
-`agentsuite-spec.md` and `runtime-adapters.md`. Retired tool/workflow pages are pointers, not
+`agentsuite-spec.md`, `composable-bundles.md` and `runtime-adapters.md`. Retired tool/workflow pages are pointers, not
 operating instructions for deleted code.
 
 **Retired scenario/integration records (5):** `inbound.md`, `slack.md`,
