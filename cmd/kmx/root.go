@@ -52,15 +52,6 @@ func (s *commandState) application() (*app.App, error) {
 	return a, nil
 }
 
-func (s *commandState) offlineApplication() *app.App {
-	a := s.deps.newApp(&config.Config{})
-	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
-	if a.Run != nil {
-		a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
-	}
-	return a
-}
-
 // operationApplication adds invocation identity to a configured App. Keep it
 // separate from application(): help and completion need no operation, while
 // the credential issue path deliberately validates its destination before it
