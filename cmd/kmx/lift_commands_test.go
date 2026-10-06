@@ -166,6 +166,19 @@ func TestAKSUpDefaultsToOrkaWithoutContactingAzure(t *testing.T) {
 	}
 }
 
+func TestAKSDownStillReachesTeardownValidation(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	err := execute([]string{"aks", "down"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "--resource-group") || !strings.Contains(err.Error(), "--cluster") {
+		t.Fatalf("expected teardown identity validation, got %v", err)
+	}
+	if strings.Contains(errOut.String(), "deprecated") || strings.Contains(err.Error(), "retired") {
+		t.Fatalf("aks down became deprecated or retired: %v\n%s", err, errOut.String())
+	}
+}
+
 // The lift is a sibling of quickstart, not a flag on `up`. `up` builds
 // something free that is deleted by removing a container; this bills money
 // until it is torn down, and putting both behind one word would hide that.

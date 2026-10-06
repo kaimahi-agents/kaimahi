@@ -63,6 +63,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- `kmx aks` is hidden from root help and shell completion as a temporary compatibility route; direct `kmx aks up` and `kmx aks down` invocation keeps unchanged flags and behavior.
 - Kagent bundles are explicitly refused by the currently Orka-only lift,
   status, evaluate, console bundle, and interactive `/lift` paths. No Kagent
   chat, list, show, status, lift, evaluate, console, quickstart, `up`, installer,

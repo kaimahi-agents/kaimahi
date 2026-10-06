@@ -32,7 +32,7 @@ func newLiftCommand(state *commandState) *cobra.Command {
 }
 
 func newAKSCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "aks", Short: "Provision and remove an AKS target", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "aks", Short: "Provision and remove an AKS target", Hidden: true, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	cmd.AddCommand(newManagedUpCommand(state, "up", lift.PayloadOrka, "default: orka"), newManagedDownCommand(state, false))
 	return cmd

@@ -39,9 +39,9 @@ func TestChatMessageIsJoined(t *testing.T) {
 }
 
 // `kmx` with no arguments is how an operator finds out what kmx does, so a
-// command missing from that page is a command that effectively does not
-// exist. The list is taken from the tree rather than written out, because a
-// written-out list cannot notice a command that was hidden by accident.
+// public command missing from that page is effectively undiscoverable. The
+// list is taken from the tree rather than written out, because a written-out
+// list cannot notice a command that was hidden by accident.
 func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	var out bytes.Buffer
 	root := newRootCommand(&commandState{deps: productionDependencies()})
@@ -52,9 +52,9 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	named := 0
 	for _, child := range root.Commands() {
 		if child.Hidden {
-			// The retired spellings are parseable for useful errors, but must
-			// not be offered as commands; retirement_test.go pins their stubs.
-			if child.Name() != "govern" && child.Name() != "use" {
+			// Retired spellings keep useful errors; aks keeps working as a
+			// compatibility route. Neither belongs in the public root help.
+			if child.Name() != "govern" && child.Name() != "use" && child.Name() != "aks" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue

@@ -121,7 +121,11 @@ boundaries between KMX and runtimes.
 | Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Orka bundles only; runs `eval/*.yaml` cases as Tasks and exits non-zero unless all pass |
 | Lift an agent interactively | `/lift` in chat or console | Orka only; deploys the local bundle through the same lift as the CLI, with an untracked labelled live-copy fallback when no bundle exists |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
-| Provision an AKS target | `kmx aks up` | Billable platform workflow; does not create the agent |
+
+`kmx aks up` / `kmx aks down` remain temporary compatibility routes, not
+first-class KMX commands. They are hidden from root help and shell completion;
+direct invocation keeps unchanged flags and behavior for billable AKS provisioning,
+recovery and safe teardown. See the [AKS compatibility guide](docs/aks.md).
 
 Default Orka create writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation

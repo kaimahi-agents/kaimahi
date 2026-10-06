@@ -8,6 +8,13 @@ payload remain retired. Explicit Kagent v0.10.2 create can target a separately
 installed compatible cluster. KMX does not manage that installation, and the
 alternate-runtime AKS payload remains retired.
 
+`kmx aks up` and `kmx aks down` are **temporary compatibility routes**,
+not a first-class KMX domain. They are hidden from root help and shell
+completion, but direct invocation retains the same flags and behavior for
+existing workflows, historical records, recovery and safe teardown. Cloud-provider
+extraction remains tracked in [#223](https://github.com/kaimahi-agents/kaimahi/issues/223);
+this visibility change does not move or redesign Azure implementation.
+
 AKS is **demonstrated, not maintained**: recorded clusters were short-lived and
 torn down. CI exercises portability and ownership logic with keyless tests;
 it has no Azure credential and does not re-prove live cloud behavior.

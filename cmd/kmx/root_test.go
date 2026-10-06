@@ -100,6 +100,36 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 	}
 }
 
+func TestAKSIsAbsentFromRootHelpAndCompletion(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"},
+		{"completion", "bash"}, {"completion", "zsh"}, {"completion", "fish"},
+		{"__complete", ""}, {"__complete", "a"}, {"__complete", "aks"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			if err := execute(args, deps); err != nil {
+				t.Fatal(err)
+			}
+			if *loads != 0 {
+				t.Fatalf("%v loaded operational config %d times", args, *loads)
+			}
+			if out.Len() == 0 {
+				t.Fatalf("%v produced no output", args)
+			}
+			if strings.Contains(out.String(), "aks") {
+				t.Fatalf("%v advertised aks:\n%s", args, out.String())
+			}
+			if args[0] == "--help" || args[0] == "__complete" && args[1] != "aks" {
+				if !strings.Contains(out.String(), "agent") {
+					t.Fatalf("%v lost visible agent command:\n%s", args, out.String())
+				}
+			}
+		})
+	}
+}
+
 func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
