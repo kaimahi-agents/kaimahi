@@ -814,8 +814,13 @@ templates and their lifecycle policies are outside this specification.
 The composition identity is the tuple:
 
 ```text
-(agent, platform, buildProfile)
+(agent, platform)
 ```
+
+The composition selects exactly one `buildProfile`. A suite MUST contain exactly
+one composition for each supported `(agent, platform)` pair; selecting another
+build profile therefore requires replacing that composition and its digest,
+rather than adding an ambiguous second composition for the same pair.
 
 Its `toolProviders` array MUST be sorted lexicographically by `id` and then `version`.
 For every provider requirement in the named agent manifest, it MUST contain exactly

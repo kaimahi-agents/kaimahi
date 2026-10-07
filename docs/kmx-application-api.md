@@ -3,85 +3,58 @@
 **Status:** Experimental design evidence
 
 **Depends on:** [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md)
+and the [AgentSuite Artifact Specification](agentsuite-spec.md)
 
 **Implementation status:** `pkg/kmx` defines the interfaces and neutral values
-described here. It does not yet provide an orchestration implementation, wire
-the CLI to these interfaces, or adapt a production runtime.
+described here. The repository currently validates AgentSuite content and OCI
+layouts offline. It does not yet implement lifecycle orchestration, AgentSuite
+OCI packaging, sandbox-image construction, registry publication, CLI wiring, or
+a production runtime adapter for these interfaces.
 
-## Purpose
+## Three northbound interfaces
 
-Another Go layer should be able to perform KMX lifecycle operations without
-calling Cobra commands, parsing terminal output, or constructing concrete
-platform and runtime adapters.
+Another Go layer receives only the lifecycle areas it needs:
 
-The intended dependency direction is:
+```go
+type Controller struct {
+    environment kmx.AgentEnvironment
+    suites      kmx.AgentSuites
+    deployments kmx.AgentDeployments
+}
+```
+
+Their responsibilities are deliberately separate:
+
+| Interface | Owns | Does not own |
+|---|---|---|
+| `AgentEnvironment` | Destination target and runtime setup | Agent definition or deployment |
+| `AgentSuites` | Definition validation, OCI packaging, sandbox-image derivation | Destination mutation |
+| `AgentDeployments` | Build direct revisions and lift/status/retire deployable sources | Target teardown or OCI publication |
+
+The dependency direction is:
 
 ```text
 CLI / UI / controller / in-process service
-                    |
-                    v
-      EnvironmentService / AgentService
-                    |
-                    v
-          KMX orchestration and stores
-                    |
-          +---------+---------+
-          |                   |
-     Platform SPI         Runtime SPI
-          |                   |
-          +---------+---------+
-                    |
-             native systems
+                      |
+        +-------------+-------------+
+        |             |             |
+ AgentEnvironment  AgentSuites  AgentDeployments
+        |             |             |
+        +-------------+-------------+
+                      |
+            KMX orchestration/stores
+                      |
+             Platform / Suite / Runtime SPIs
 ```
 
-`EnvironmentService` and `AgentService` are the northbound usage contracts.
-`Platform*` and `Runtime*` are southbound management interfaces implemented by
-concrete integrations. A consumer sees the former and does not assemble the
-latter.
+Consumers do not construct concrete target, suite-builder, or runtime adapters.
 
-## Consumer dependency
+## Agent environment
 
-A consuming layer accepts only the service it needs:
+`AgentEnvironment` prepares and manages a destination:
 
 ```go
-type DeploymentController struct {
-    environments kmx.EnvironmentService
-    agents       kmx.AgentService
-}
-```
-
-There is deliberately no aggregate `Client` interface in the alpha API. It
-would add indirection without evidence and force one consumer to know about
-unrelated workflow areas.
-
-Construction belongs at an application composition root, outside `pkg/kmx`:
-
-```go
-services, err := kmxapp.New(kmxapp.Options{
-    Platforms:   platformRegistry,
-    Runtimes:    runtimeRegistry,
-    Targets:     targetStore,
-    Deployments: deploymentStore,
-    Receipts:    receiptStore,
-    Operations:  operationStore,
-})
-
-controller := DeploymentController{
-    environments: services.Environments,
-    agents:       services.Agents,
-}
-```
-
-`kmxapp` is illustrative; it is not implemented in this change. Concrete
-implementations remain internal until a real second consumer proves a stable
-construction contract.
-
-## Environment management
-
-`EnvironmentService` owns composed environment setup:
-
-```go
-type EnvironmentService interface {
+type AgentEnvironment interface {
     Up(context.Context, UpRequest) (UpResult, error)
     RecoverUp(context.Context, OperationID) (UpProgress, error)
     Register(context.Context, TargetSpec) (TargetRef, error)
@@ -92,21 +65,10 @@ type EnvironmentService interface {
 }
 ```
 
-### Up
-
-`Up` is broader than platform provisioning. It composes:
-
-```text
-resolve or provision target
-    -> install or verify runtime
-    -> record target ownership
-    -> persist infrastructure and runtime evidence
-```
-
-Example:
+### Prepare a destination
 
 ```go
-result, err := environments.Up(ctx, kmx.UpRequest{
+setup, err := controller.environment.Up(ctx, kmx.UpRequest{
     Operation: "setup-local-001",
     Target: kmx.TargetSpec{
         Name:     "local",
@@ -117,76 +79,132 @@ result, err := environments.Up(ctx, kmx.UpRequest{
 })
 ```
 
-The target name is a friendly configuration name. The returned `TargetRef` is
-the platform-qualified durable identity. `UpResult.Infrastructure` is nil when
-the target was resolved or registered rather than provisioned by KMX. It is not
-nil authority to invent teardown ownership.
+`Up` composes target resolution or provisioning with runtime installation. A
+platform-qualified `TargetRef` is the durable destination identity; `local`,
+`staging`, and `production` remain friendly configuration names.
 
-The application implementation performs roughly:
+If provisioning succeeds but runtime setup fails, `RecoverUp` returns durable
+`UpProgress` containing the infrastructure receipt. The caller can explicitly
+resume or tear down without losing ownership evidence.
+
+### Existing destinations
+
+`Register` records an existing target without claiming infrastructure ownership.
+`Forget` removes only that registration. A registered target has no
+`InfrastructureReceipt` and therefore cannot be brought down by KMX.
+
+### Teardown
+
+```go
+receipt, err := controller.environment.Down(ctx, kmx.DownRequest{
+    Operation:      "teardown-local-001",
+    Infrastructure: *setup.Infrastructure,
+})
+```
+
+`Down` verifies platform-owned evidence before mutation. Workloads may disappear
+as a consequence of deleting an owned target, but `Down` does not fabricate
+runtime retirement receipts or claim each retirement workflow ran.
+
+## AgentSuite shipping lifecycle
+
+An AgentSuite Artifact is a portable, content-addressed OCI definition of one or
+more agents and their tools, compositions, and build profiles. It is not directly
+runnable. A producer derives an Agent Sandbox Image for one suite digest, agent,
+platform, build profile, and composition.
 
 ```text
-EnvironmentService.Up
-    -> PlatformResolver.Resolve or PlatformProvisioner.Provision
-    -> RuntimeInstaller.Ensure
-    -> save target, runtime and receipts
-    -> return UpResult
+SuiteSource
+    -> Validate
+    -> Package as AgentSuite OCI artifact
+    -> BuildSandbox for one agent/platform
+    -> AgentSandboxImage
+    -> AgentDeployments.Lift
 ```
 
-If target provisioning succeeds and runtime installation later fails, KMX
-persists `UpProgress` with the target and infrastructure receipt before
-returning. `RecoverUp` exposes that partial state so the caller can explicitly
-resume setup or call `Down`; ownership evidence is not trapped behind an
-all-or-nothing result.
-
-The current `kmx up` can eventually become a CLI adapter over this workflow.
-Its local profile may still choose kind, model prerequisites, and Orka without
-putting those implementation names in this interface.
-
-### Register and forget
-
-`Register` records an existing target without creating an
-`InfrastructureReceipt`. `Forget` removes only KMX's local registration:
+`AgentSuites` represents that lifecycle:
 
 ```go
-target, err := environments.Register(ctx, kmx.TargetSpec{
-    Name:     "production",
-    Platform: "existing-target",
-    Profile:  "production",
+type AgentSuites interface {
+    Validate(context.Context, ValidateSuiteRequest) (SuiteReport, error)
+    Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error)
+    RecoverPackage(context.Context, OperationID) (PackageSuiteResult, error)
+    BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error)
+    RecoverBuildSandbox(context.Context, OperationID) (AgentSandboxImage, error)
+    Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
+    RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
+}
+```
+
+### Validate and package
+
+```go
+report, err := controller.suites.Validate(ctx, kmx.ValidateSuiteRequest{
+    Source: kmx.SuiteSource{Path: suiteDirectory},
 })
 
-err = environments.Forget(ctx, target)
+packaged, err := controller.suites.Package(ctx, kmx.PackageSuiteRequest{
+    Operation:   "package-suite-001",
+    Source:      kmx.SuiteSource{Path: suiteDirectory},
+    Output:      suiteLayoutDirectory,
+})
+
+selection, err := packaged.Report.Composition(
+    "writer",
+    kmx.SandboxPlatform{OS: "linux", Architecture: "amd64"},
+)
 ```
 
-`Forget` never removes a runtime or target. A registered target cannot be
-brought down because KMX has no infrastructure ownership receipt for it.
+The existing implementation can inform `Validate`; packaging remains follow-up
+work. `Package` is an offline operation that returns an immutable OCI identity
+and its validation report, not mutable registry state.
 
-### Down
-
-`Down` requires infrastructure evidence and a new operation identity:
+### Derive a runnable image
 
 ```go
-receipt, err := environments.Down(ctx, kmx.DownRequest{
-    Operation:      "teardown-local-001",
-    Infrastructure: *result.Infrastructure,
+image, err := controller.suites.BuildSandbox(ctx, kmx.BuildSandboxRequest{
+    Operation: "build-writer-amd64-001",
+    Suite:     packaged.Artifact,
+    Agent:     "writer",
+    Platform: kmx.SandboxPlatform{
+        OS: "linux", Architecture: "amd64",
+    },
+    BuildProfile: selection.BuildProfile,
+    Composition: selection.Digest,
+    Output: writerImageLayoutDirectory,
 })
 ```
 
-The implementation must verify the receipt against platform-owned durable
-evidence before mutation. It may refuse while known deployments remain. If an
-owned target is deprovisioned, resident workloads disappear as a consequence of
-target teardown; `Down` must not fabricate deployment retirement receipts or
-claim that each runtime retirement workflow ran.
+`AgentSandboxImage` binds the runnable image to the exact AgentSuite digest,
+agent, platform, build profile, composition digest, and embedded sandbox-binding
+digest. The destination runtime must verify the image label, embedded binding,
+selected platform, and OCI manifest identity before deployment.
 
-Runtime uninstall on a registered target is deliberately deferred. Neither
-`Forget` nor target `Down` silently provides that missing operation.
-
-## Agent management
-
-`AgentService` is the northbound deployment lifecycle:
+Both package and sandbox construction are deterministic, network-free operations.
+Publication is an explicit separate call:
 
 ```go
-type AgentService interface {
-    Build(context.Context, BuildRequest) (BuildResult, error)
+published, err := controller.suites.Publish(ctx, kmx.PublishArtifactRequest{
+    Operation:   "publish-writer-001",
+    Artifact:    image.Image,
+    Destination: "registry.example/agents/writer",
+})
+
+image.Image = published
+```
+
+Registry authentication, push transport, retention, and deletion policy remain
+publisher concerns. Publication changes only the retrieval location: it must
+preserve the input manifest digest, media type, and artifact type. No lifecycle
+receipt grants authority to delete an OCI repository or tag.
+
+## Agent deployment lifecycle
+
+`AgentDeployments` manages placements in an `AgentEnvironment`:
+
+```go
+type AgentDeployments interface {
+    BuildRevision(context.Context, BuildRequest) (BuildResult, error)
     Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
     RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
     Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
@@ -195,226 +213,161 @@ type AgentService interface {
 }
 ```
 
-### Build
+There are two deployable inputs.
 
-Build turns exact authored bytes into a byte-addressed revision and reports
-validation diagnostics:
+### Direct authored revision
 
 ```go
 source, err := kmx.NewAgentSource(agentYAML)
-if err != nil {
-    return err
-}
-
-built, err := agents.Build(ctx, kmx.BuildRequest{Source: source})
+built, err := controller.deployments.BuildRevision(ctx, kmx.BuildRequest{Source: source})
+deployable, err := kmx.NewRevisionDeploymentSource(built.Revision)
 ```
 
-`AgentRevision` itself identifies exact bytes. The `AgentService.Build`
-implementation owns authoring validation. Runtime builders must independently
-parse the exact source and reject behavior they cannot honor.
+This preserves the current Git-friendly bundle path. `AgentRevision` identifies
+exact authored bytes; build and runtime validation still reject invalid or
+unconsumed behavior.
+
+### OCI sandbox image
+
+```go
+deployable, err := kmx.NewSandboxDeploymentSource(image)
+```
+
+The sandbox image came from `AgentSuites.BuildSandbox` and can be used at any
+compatible destination. Direct suite artifacts cannot be lifted because they are
+definition data, not runnable images.
 
 ### Lift
 
-The caller supplies a stable operation ID before any mutation. Target identity
-comes from `TargetBinding`, so the request does not carry a second target that
-could disagree:
-
 ```go
 binding, err := kmx.NewTargetBinding(
-    result.Target,
+    setup.Target,
     "example.dev/v1alpha1",
     "RuntimeBinding",
     bindingBytes,
 )
-if err != nil {
-    return err
-}
 
-deployment, err := agents.Lift(ctx, kmx.LiftRequest{
-    Operation: "lift-support-001",
-    Revision:  built.Revision,
+deployment, err := controller.deployments.Lift(ctx, kmx.LiftRequest{
+    Operation: "lift-writer-001",
+    Source:    deployable,
     Binding:   binding,
-    Runtime:   result.Runtime.Runtime,
+    Runtime:   setup.Runtime.Runtime,
     Options:   kmx.LiftOptions{Reconcile: true},
 })
 ```
 
-KMX orchestration performs:
+Target identity comes from the binding; the request cannot carry a second
+destination that disagrees. KMX resolves the runtime installation and invokes
+the runtime build/deploy ports. The caller never passes a concrete adapter.
 
-```text
-AgentService.Lift
-    -> resolve the recorded runtime installation
-    -> NewRuntimeBuildInput
-    -> RuntimeBuilder.Build
-    -> RuntimeDeployer.Deploy
-    -> persist DeploymentReceipt by operation ID
-```
-
-The consumer never passes a concrete adapter. Runtime selection is an ID or
-saved policy resolved through KMX's internal registry.
-
-### Status
-
-Status uses the durable reference in the deployment receipt:
+### Status and retire
 
 ```go
-snapshot, err := agents.Status(ctx, deployment.Deployment)
-```
+snapshot, err := controller.deployments.Status(ctx, deployment.Deployment)
 
-An absent deployment is a successful observation. Authentication, permission,
-timeout, malformed response, and network failures return an error and cannot be
-reported as absence.
-
-### Retire
-
-Retirement derives its deployment identity from scoped evidence:
-
-```go
-retired, err := agents.Retire(ctx, kmx.RetireRequest{
-    Operation:  "retire-support-001",
+retired, err := controller.deployments.Retire(ctx, kmx.RetireRequest{
+    Operation:  "retire-writer-001",
     Deployment: deployment,
 })
 ```
 
-The runtime verifies the receipt and native ownership evidence before mutation.
-It may delete KMX-created resources or release adopted resources according to
-implementation policy. It receives no `InfrastructureReceipt` and cannot
-deprovision the target.
-
-Planning should be a separate future operation with a non-mutating result. A
-`Plan` flag is not included in `RetireRequest` because a plan must not return a
-retirement receipt.
+Retirement verifies deployment and native ownership evidence. It receives no
+infrastructure receipt and cannot deprovision the environment.
 
 ## Unknown outcomes and recovery
 
-Every remotely mutating request carries a caller-known `OperationID`. If a timeout or
-connection failure happens after a possible mutation, KMX returns
-`OutcomeUnknownError` containing that ID:
+Every remotely mutating request has a caller-known `OperationID` before the
+first side effect. On ambiguous transport failure:
 
 ```go
-deployment, err := agents.Lift(ctx, request)
+deployment, err := controller.deployments.Lift(ctx, request)
 var unknown *kmx.OutcomeUnknownError
 if errors.As(err, &unknown) {
-    deployment, err = agents.RecoverLift(ctx, unknown.OperationID())
+    deployment, err = controller.deployments.RecoverLift(
+        ctx, unknown.OperationID(),
+    )
 }
 ```
 
-Recovery reads durable operation or implementation evidence; it does not repeat
-the mutation blindly. Equivalent recovery methods exist for `Up`, `Down`, and
-`Retire`, with southbound recovery capabilities for implementations that own the
-native operation. Unknown outcomes do not return successful retirement or
-teardown receipts; a receipt records only an established result after recovery.
+Equivalent recovery exists for environment setup/teardown, suite packaging,
+sandbox construction, and retirement. Recovery reads durable operation/native
+evidence and does not blindly repeat a non-idempotent mutation. Successful
+receipts are returned only after outcomes are established.
 
-Operation ID scope, retention, and same-ID/different-input conflict behavior
-remain part of the first orchestration implementation design. The key invariant
-is already represented: an ambiguous mutation always has a caller-known lookup
-identity.
+## Internal management ports
 
-## Management interfaces
+The application services compose these southbound ports:
 
-The application service composes narrow southbound ports:
-
-| Responsibility | Interface |
+| Concern | Interfaces |
 |---|---|
-| Resolve an existing target | `PlatformResolver` |
-| Provision target infrastructure | `PlatformProvisioner` |
-| Recover target provisioning | `PlatformProvisionRecoverer` |
-| Inspect target infrastructure | `PlatformInspector` |
-| Deprovision owned infrastructure | `PlatformDeprovisioner` |
-| Recover target deprovisioning | `PlatformDeprovisionRecoverer` |
-| Install or verify a runtime | `RuntimeInstaller` |
-| Recover runtime installation | `RuntimeInstallRecoverer` |
-| Validate and render a revision | `RuntimeBuilder` |
-| Deploy a runtime bundle | `RuntimeDeployer` |
-| Recover deployment | `RuntimeDeployRecoverer` |
-| Observe a deployment | `RuntimeObserver` |
-| Retire a deployment | `RuntimeRetirer` |
-| Recover retirement | `RuntimeRetireRecoverer` |
+| Existing or provisioned target | `PlatformResolver`, `PlatformProvisioner`, `PlatformInspector`, `PlatformDeprovisioner` and recovery ports |
+| AgentSuite validation | `AgentSuiteValidator` |
+| Offline OCI package and sandbox construction | `AgentSuiteBuilder`, `AgentSuiteBuildRecoverer` |
+| Registry publication | `OCIArtifactPublisher`, `OCIArtifactPublishRecoverer` |
+| Runtime installation | `RuntimeInstaller`, `RuntimeInstallRecoverer` |
+| Runtime-native rendering | `RuntimeBuilder` |
+| Deployment | `RuntimeDeployer`, `RuntimeDeployRecoverer` |
+| Observation | `RuntimeObserver` |
+| Retirement | `RuntimeRetirer`, `RuntimeRetireRecoverer` |
 
-An Orka implementation may satisfy most runtime interfaces. A create-only
-runtime can implement only build and deploy. An existing-target platform can
-implement resolve and inspect without implementing provision or deprovision.
-
-The composition root performs interface assertions and returns typed
-`UnsupportedCapabilityError` instead of calling an undeclared approximation.
+An existing-target implementation can resolve and inspect without gaining
+provision/deprovision authority. A create-only runtime can build/deploy without
+fake status or retirement methods.
 
 ## Persistence boundary
 
-Another in-process Go layer can pass `AgentSource`, `AgentRevision`,
-`TargetBinding`, and `RuntimeBundle`. These exact-byte values intentionally
-reject JSON encoding and decoding.
-
-Durable references and validated receipts are the cross-process boundary:
+Exact-byte and local-path values are in-process and reject JSON. Durable refs and
+validated receipts cross processes:
 
 ```text
 In process                 Persisted
 ----------                 ---------
 AgentSource                authored source file
 AgentRevision              AgentRevisionRef
+SuiteSource                AgentSuiteArtifact OCI identity
+AgentSuiteArtifact         AgentSandboxImage OCI identity
+DeploymentSource           DeploymentSourceRef
 TargetBinding              binding source file
-RuntimeBuildInput          not persisted; a separate operation DTO stores the ID and input fingerprint
+RuntimeBuildInput          separate operation record
 RuntimeBundle              DeploymentReceipt plus native evidence
 ```
 
-Receipt IDs are lookup keys for implementation-owned native evidence such as
-resource IDs, object UIDs, prior state, and ownership markers. Missing or
-mismatched native evidence must fail closed.
+Receipt IDs index implementation-owned evidence such as cloud resource IDs,
+object UIDs, prior state, OCI descriptors, and ownership markers. Missing or
+mismatched evidence fails closed.
 
-`RenderedDigest` covers all artifact documents, including review-only material.
-Runtime deployers must write only `RuntimeBundle.DeployDocuments()`; they must
-not bulk-apply `RuntimeBundle.Documents()`.
+A future HTTP/gRPC layer needs separate wire DTOs; it cannot directly encode
+in-process source values or add independent destructive target/deployment IDs
+beside receipt-derived identities.
 
-A future HTTP or gRPC layer requires separate wire DTOs. It cannot directly
-JSON-encode the in-process values, and it must not add independent target or
-deployment path IDs alongside receipt-derived destructive identities.
+## CLI mapping and deferred recipes
 
-## CLI and recipes
+Potential CLI adapters are:
 
-The CLI can eventually become an adapter over the same services:
-
-| CLI operation | Service call |
+| CLI operation | Service |
 |---|---|
-| `kmx up` | `EnvironmentService.Up` |
-| `kmx down` | `EnvironmentService.Down` |
-| `kmx agent lift` | `AgentService.Build`, then `Lift` |
-| `kmx agent status` | `AgentService.Status` |
-| `kmx agent retire` | `AgentService.Retire` |
+| `kmx up` / `kmx down` | `AgentEnvironment` |
+| `kmx suite validate` | `AgentSuites.Validate` |
+| future suite package/build/publish commands | `AgentSuites.Package` / `BuildSandbox` / `Publish` |
+| `kmx agent lift/status/retire` | `AgentDeployments` |
 
-`agent init`, run/cancel, quickstart, durable progress streams, and a network API
-are intentionally deferred. They are application recipes or separate lifecycle
-domains, not requirements for the first reusable facade.
-
-Current quickstart would eventually compose environment setup, build, lift, and
-a run operation, but it may remain an explicitly local Orka recipe. The current
-interactive wizard remains a presentation concern and must not put terminal
-types into these services.
-
-## What is internal
-
-The consuming layer does not own:
-
-- concrete platform or runtime construction;
-- runtime selection policy or adapter detection;
-- target, deployment, receipt, and operation stores;
-- native object identity and ownership evidence;
-- retries, reconciliation, or unknown-outcome recovery policy;
-- terminal progress rendering;
-- cloud or Kubernetes clients.
-
-Those belong to KMX orchestration, implementation packages, and the composition
-root.
+Run/cancel, quickstart, durable progress streams, and network APIs remain
+deferred. Quickstart may eventually compose environment setup, direct revision
+build/lift, and a separate run lifecycle while remaining an explicitly local
+runtime recipe.
 
 ## Evidence required before stability
 
-1. One CLI path and one second in-process consumer call the same service.
-2. Orka and an in-memory fake pass shared service conformance.
-3. Lift in one process and status, recovery, or retire in another use persisted
-   identities successfully.
-4. Same operation ID with different input returns a typed conflict.
-5. A registered target can be forgotten but not brought down.
-6. Retirement cannot invoke platform deprovisioning.
-7. Context cancellation cannot imply remote cancellation, retirement, or target
-   teardown.
-8. Ambiguous mutations recover by operation ID without blind retry.
-9. A second real runtime validates every claimed common semantic before the API
-   is stabilized.
+1. One CLI path and one second in-process consumer use the same interface.
+2. The current AgentSuite validator backs `AgentSuites.Validate` without changing
+   its closed-format guarantees.
+3. OCI packaging and sandbox derivation pass AgentSuite conformance.
+4. A sandbox image's suite/agent/platform/composition binding is reverified at
+   deployment.
+5. Orka and an in-memory fake pass shared environment/deployment conformance.
+6. Lift in one process and status/recovery/retire in another use persisted
+   identities.
+7. Same operation ID with different input returns a typed conflict.
+8. A registered target can be forgotten but not brought down.
+9. Retirement cannot invoke platform deprovisioning.
+10. A second real runtime validates every claimed common deployment semantic.

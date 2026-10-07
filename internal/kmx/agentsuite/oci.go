@@ -102,6 +102,9 @@ func validateOCILayout(root string) (*Report, error) {
 	if len(index.Manifests) > maxOCIIndexEntries {
 		return nil, fmt.Errorf("index.json has more than %d manifest descriptors", maxOCIIndexEntries)
 	}
+	if len(index.Manifests) != 1 {
+		return nil, fmt.Errorf("index.json must contain exactly one manifest descriptor, found %d", len(index.Manifests))
+	}
 	var candidates []ociDescriptor
 	var indexedBytes int64
 	for i, descriptor := range index.Manifests {

@@ -21,13 +21,21 @@ var (
 )
 
 type Report struct {
-	Name                     string          `json:"name"`
-	Agents                   int             `json:"agents"`
-	ToolProviders            int             `json:"toolProviders"`
-	ToolProviderCompositions int             `json:"toolProviderCompositions"`
-	Compositions             int             `json:"compositions"`
-	Capabilities             []string        `json:"capabilities"`
-	AgentPlatforms           []AgentPlatform `json:"agentPlatforms"`
+	Name                     string                 `json:"name"`
+	Agents                   int                    `json:"agents"`
+	ToolProviders            int                    `json:"toolProviders"`
+	ToolProviderCompositions int                    `json:"toolProviderCompositions"`
+	Compositions             int                    `json:"compositions"`
+	Capabilities             []string               `json:"capabilities"`
+	AgentPlatforms           []AgentPlatform        `json:"agentPlatforms"`
+	CompositionSelections    []CompositionSelection `json:"compositionSelections"`
+}
+
+type CompositionSelection struct {
+	Agent        string   `json:"agent"`
+	Platform     Platform `json:"platform"`
+	BuildProfile string   `json:"buildProfile"`
+	Digest       string   `json:"digest"`
 }
 
 type validator struct {
@@ -88,6 +96,24 @@ func validateContent(content *contentSet) (*Report, error) {
 	slices.SortFunc(agentPlatforms, func(a, b AgentPlatform) int {
 		return strings.Compare(a.ID, b.ID)
 	})
+	selections := make([]CompositionSelection, 0, len(v.suite.Compositions))
+	for _, ref := range v.suite.Compositions {
+		key := ref.Agent + "@" + ref.Platform.String()
+		composition, ok := v.compositions[key]
+		if !ok {
+			continue
+		}
+		selections = append(selections, CompositionSelection{
+			Agent: ref.Agent, Platform: ref.Platform,
+			BuildProfile: composition.BuildProfile, Digest: ref.Digest,
+		})
+	}
+	slices.SortFunc(selections, func(a, b CompositionSelection) int {
+		return strings.Compare(
+			a.Agent+"@"+a.Platform.String()+"@"+a.BuildProfile,
+			b.Agent+"@"+b.Platform.String()+"@"+b.BuildProfile,
+		)
+	})
 	return &Report{
 		Name:                     suite.Name,
 		Agents:                   len(v.agents),
@@ -96,6 +122,7 @@ func validateContent(content *contentSet) (*Report, error) {
 		Compositions:             len(v.compositions),
 		Capabilities:             capabilities,
 		AgentPlatforms:           agentPlatforms,
+		CompositionSelections:    selections,
 	}, nil
 }
 

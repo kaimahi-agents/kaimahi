@@ -208,6 +208,38 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 	if report.Agents != 2 || report.ToolProviders != 1 || report.ToolProviderCompositions != 1 || report.Compositions != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	if len(report.CompositionSelections) != 2 {
+		t.Fatalf("composition selections = %+v, want two", report.CompositionSelections)
+	}
+	for _, selection := range report.CompositionSelections {
+		if selection.BuildProfile != "default" || selection.Digest == "" {
+			t.Fatalf("incomplete composition selection: %+v", selection)
+		}
+	}
+}
+
+func TestValidatePathRejectsTwoCompositionsForOneAgentPlatform(t *testing.T) {
+	root := writeMinimalSuite(t)
+	raw, err := os.ReadFile(filepath.Join(root, "agentsuite.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var suite Suite
+	if err := json.Unmarshal(raw, &suite); err != nil {
+		t.Fatal(err)
+	}
+	duplicate := suite.Compositions[0]
+	duplicate.Path = "compositions/writer-linux-amd64-copy.json"
+	body, err := os.ReadFile(filepath.Join(root, suite.Compositions[0].Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, root, duplicate.Path, body)
+	suite.Compositions = append(suite.Compositions, duplicate)
+	mustWriteJSON(t, root, "agentsuite.json", suite)
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "duplicate composition") {
+		t.Fatalf("duplicate composition error = %v", err)
+	}
 }
 
 func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
@@ -1116,7 +1148,7 @@ func TestOCIContentRejectsDescriptorURLsAndMismatchedData(t *testing.T) {
 	}
 }
 
-func TestOCILayoutRejectsURLOnIgnoredIndexDescriptor(t *testing.T) {
+func TestOCILayoutRejectsAnExtraIndexDescriptor(t *testing.T) {
 	contentRoot := writeMinimalSuite(t)
 	tarBytes := tarDirectory(t, contentRoot)
 	var compressed bytes.Buffer
@@ -1147,8 +1179,8 @@ func TestOCILayoutRejectsURLOnIgnoredIndexDescriptor(t *testing.T) {
 	}
 	mustWrite(t, root, "oci-layout", []byte(`{"imageLayoutVersion":"1.0.0"}`))
 	mustWrite(t, root, "index.json", indexBytes)
-	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "urls") {
-		t.Fatalf("ignored descriptor URL error = %v", err)
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "exactly one manifest descriptor") {
+		t.Fatalf("extra index descriptor error = %v", err)
 	}
 }
 

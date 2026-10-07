@@ -101,20 +101,20 @@ func (*TargetBinding) UnmarshalJSON([]byte) error {
 	return fmt.Errorf("TargetBinding is an in-process value; read its source document")
 }
 
-// RuntimeBuildInput binds a revision and target binding to one runtime
+// RuntimeBuildInput binds a deployment source and target binding to one runtime
 // installation before runtime-native building begins.
 type RuntimeBuildInput struct {
 	operation OperationID
-	revision  AgentRevision
+	source    DeploymentSource
 	runtime   RuntimeRef
 	binding   TargetBinding
 }
 
-func NewRuntimeBuildInput(operation OperationID, revision AgentRevision, runtime RuntimeRef, binding TargetBinding) (RuntimeBuildInput, error) {
+func NewRuntimeBuildInput(operation OperationID, source DeploymentSource, runtime RuntimeRef, binding TargetBinding) (RuntimeBuildInput, error) {
 	if err := validateIdentity("operation ID", string(operation)); err != nil {
 		return RuntimeBuildInput{}, err
 	}
-	if err := revision.Ref().Validate(); err != nil {
+	if err := source.Ref().Validate(); err != nil {
 		return RuntimeBuildInput{}, err
 	}
 	if err := runtime.Validate(); err != nil {
@@ -126,13 +126,13 @@ func NewRuntimeBuildInput(operation OperationID, revision AgentRevision, runtime
 	if runtime.Target != binding.Target() {
 		return RuntimeBuildInput{}, fmt.Errorf("runtime installation and target binding identify different targets")
 	}
-	return RuntimeBuildInput{operation: operation, revision: revision, runtime: runtime, binding: binding}, nil
+	return RuntimeBuildInput{operation: operation, source: source, runtime: runtime, binding: binding}, nil
 }
 
-func (i RuntimeBuildInput) Operation() OperationID  { return i.operation }
-func (i RuntimeBuildInput) Revision() AgentRevision { return i.revision }
-func (i RuntimeBuildInput) Runtime() RuntimeRef     { return i.runtime }
-func (i RuntimeBuildInput) Binding() TargetBinding  { return i.binding }
+func (i RuntimeBuildInput) Operation() OperationID   { return i.operation }
+func (i RuntimeBuildInput) Source() DeploymentSource { return i.source }
+func (i RuntimeBuildInput) Runtime() RuntimeRef      { return i.runtime }
+func (i RuntimeBuildInput) Binding() TargetBinding   { return i.binding }
 
 func (RuntimeBuildInput) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("RuntimeBuildInput is an in-process command")
@@ -143,11 +143,11 @@ func (*RuntimeBuildInput) UnmarshalJSON([]byte) error {
 }
 
 // RuntimeBundle is immutable, opaque runtime-native output bound to the exact
-// revision, runtime installation, and target binding used to build it.
+// source, runtime installation, and target binding used to build it.
 type RuntimeBundle struct {
 	operation      OperationID
 	runtime        RuntimeRef
-	revision       AgentRevisionRef
+	source         DeploymentSourceRef
 	bindingDigest  Digest
 	renderedDigest Digest
 	documents      []RuntimeDocument
@@ -184,7 +184,7 @@ func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (Run
 	if err := input.runtime.Validate(); err != nil {
 		return RuntimeBundle{}, err
 	}
-	if err := input.revision.Ref().Validate(); err != nil {
+	if err := input.source.Ref().Validate(); err != nil {
 		return RuntimeBundle{}, err
 	}
 	if input.binding.Digest().IsZero() {
@@ -210,18 +210,18 @@ func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (Run
 	return RuntimeBundle{
 		operation:      input.operation,
 		runtime:        input.runtime,
-		revision:       input.revision.Ref(),
+		source:         input.source.Ref(),
 		bindingDigest:  input.binding.Digest(),
 		renderedDigest: framedDigest(entries...),
 		documents:      copied,
 	}, nil
 }
 
-func (b RuntimeBundle) Operation() OperationID     { return b.operation }
-func (b RuntimeBundle) Runtime() RuntimeRef        { return b.runtime }
-func (b RuntimeBundle) Revision() AgentRevisionRef { return b.revision }
-func (b RuntimeBundle) BindingDigest() Digest      { return b.bindingDigest }
-func (b RuntimeBundle) RenderedDigest() Digest     { return b.renderedDigest }
+func (b RuntimeBundle) Operation() OperationID      { return b.operation }
+func (b RuntimeBundle) Runtime() RuntimeRef         { return b.runtime }
+func (b RuntimeBundle) Source() DeploymentSourceRef { return b.source }
+func (b RuntimeBundle) BindingDigest() Digest       { return b.bindingDigest }
+func (b RuntimeBundle) RenderedDigest() Digest      { return b.renderedDigest }
 func (b RuntimeBundle) Documents() []RuntimeDocument {
 	documents := make([]RuntimeDocument, len(b.documents))
 	for i, document := range b.documents {
@@ -262,8 +262,10 @@ type RuntimeInstallRecoverer interface {
 	RecoverEnsure(context.Context, OperationID) (RuntimeReceipt, error)
 }
 
-// RuntimeBuilder parses and validates the exact revision source, refuses
-// behavior it cannot honor, and translates it into exact native output.
+// RuntimeBuilder validates one deployment source and translates it into exact
+// native output. For authored revisions it parses the exact source and refuses
+// behavior it cannot honor; for sandbox images it verifies the OCI identity and
+// AgentSuite binding required by the runtime.
 type RuntimeBuilder interface {
 	Build(context.Context, RuntimeBuildInput) (RuntimeBundle, error)
 }
