@@ -49,8 +49,53 @@ var forbiddenSerializedNames = []string{
 	"resourcekind",
 }
 
+var forbiddenImplementationNames = map[string]bool{
+	"AgentSuiteBuildRecoverer":     true,
+	"AgentSuiteBuilder":            true,
+	"AgentSuiteValidator":          true,
+	"ApplyDocument":                true,
+	"DeployOptions":                true,
+	"DeprovisionRequest":           true,
+	"EnsureRuntimeRequest":         true,
+	"NewDeploymentReceipt":         true,
+	"NewInfrastructureReceipt":     true,
+	"NewRetirementReceipt":         true,
+	"NewRuntimeBuildInput":         true,
+	"NewRuntimeBundle":             true,
+	"NewRuntimeReceipt":            true,
+	"NewTeardownReceipt":           true,
+	"OCIArtifactPublishRecoverer":  true,
+	"OCIArtifactPublisher":         true,
+	"Platform":                     true,
+	"PlatformDeprovisionRecoverer": true,
+	"PlatformDeprovisioner":        true,
+	"PlatformDescriptor":           true,
+	"PlatformInspector":            true,
+	"PlatformProvisionRecoverer":   true,
+	"PlatformProvisioner":          true,
+	"PlatformResolver":             true,
+	"ProvisionRequest":             true,
+	"ReviewDocument":               true,
+	"RevisionBuilder":              true,
+	"Runtime":                      true,
+	"RuntimeBuildInput":            true,
+	"RuntimeBuilder":               true,
+	"RuntimeBundle":                true,
+	"RuntimeDeployRecoverer":       true,
+	"RuntimeDeployer":              true,
+	"RuntimeDescriptor":            true,
+	"RuntimeDocument":              true,
+	"RuntimeInstallRecoverer":      true,
+	"RuntimeInstaller":             true,
+	"RuntimeObserver":              true,
+	"RuntimeRetireRecoverer":       true,
+	"RuntimeRetirer":               true,
+	"TargetObservation":            true,
+}
+
 func TestProductionSurfaceIsImplementationNeutral(t *testing.T) {
 	t.Parallel()
+	interfaces := map[string]bool{}
 	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -63,11 +108,19 @@ func TestProductionSurfaceIsImplementationNeutral(t *testing.T) {
 			return err
 		}
 		inspectImports(t, path, file)
-		inspectDeclarations(t, path, file)
+		inspectDeclarations(t, path, file, interfaces)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"AgentDeployments": true,
+		"AgentEnvironment": true,
+		"AgentSuites":      true,
+	}
+	if !reflect.DeepEqual(interfaces, want) {
+		t.Errorf("exported interfaces = %v, want exactly %v", interfaces, want)
 	}
 }
 
@@ -86,17 +139,22 @@ func inspectImports(t *testing.T, path string, file *ast.File) {
 	}
 }
 
-func inspectDeclarations(t *testing.T, path string, file *ast.File) {
+func inspectDeclarations(t *testing.T, path string, file *ast.File, interfaces map[string]bool) {
 	t.Helper()
 	for _, declaration := range file.Decls {
 		switch declaration := declaration.(type) {
 		case *ast.FuncDecl:
-			inspectExportedName(t, path, declaration.Name.Name)
+			inspectTopLevelName(t, path, declaration.Name.Name)
 		case *ast.GenDecl:
 			for _, raw := range declaration.Specs {
 				switch spec := raw.(type) {
 				case *ast.TypeSpec:
-					inspectExportedName(t, path, spec.Name.Name)
+					inspectTopLevelName(t, path, spec.Name.Name)
+					if ast.IsExported(spec.Name.Name) {
+						if _, ok := spec.Type.(*ast.InterfaceType); ok {
+							interfaces[spec.Name.Name] = true
+						}
+					}
 					ast.Inspect(spec.Type, func(node ast.Node) bool {
 						field, ok := node.(*ast.Field)
 						if !ok {
@@ -112,12 +170,20 @@ func inspectDeclarations(t *testing.T, path string, file *ast.File) {
 					})
 				case *ast.ValueSpec:
 					for _, name := range spec.Names {
-						inspectExportedName(t, path, name.Name)
+						inspectTopLevelName(t, path, name.Name)
 					}
 				}
 			}
 		}
 	}
+}
+
+func inspectTopLevelName(t *testing.T, path, name string) {
+	t.Helper()
+	if forbiddenImplementationNames[name] {
+		t.Errorf("%s exports implementation-only name %q", path, name)
+	}
+	inspectExportedName(t, path, name)
 }
 
 func inspectExportedName(t *testing.T, path, name string) {
@@ -162,12 +228,8 @@ func TestDestructiveWorkflowSignaturesKeepReceiptScopesSeparate(t *testing.T) {
 	assertMethodSet(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", "Forget", "Inspect", "RecoverDown", "RecoverUp", "Register", "Up")
 	assertMethodSet(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "BuildRevision", "Lift", "RecoverLift", "RecoverRetire", "Retire", "Status")
 	assertMethodSet(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "BuildSandbox", "Package", "Publish", "RecoverBuildSandbox", "RecoverPackage", "RecoverPublish", "Validate")
-	assertMethodSet(t, reflect.TypeOf((*kmx.PlatformDeprovisioner)(nil)).Elem(), "Deprovision")
-	assertMethodSet(t, reflect.TypeOf((*kmx.RuntimeRetirer)(nil)).Elem(), "Retire")
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", reflect.TypeOf(kmx.DownRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.PlatformDeprovisioner)(nil)).Elem(), "Deprovision", reflect.TypeOf(kmx.DeprovisionRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.RuntimeRetirer)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverUp", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.UpProgress{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverDown", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.TeardownReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "RecoverLift", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.DeploymentReceipt{}))

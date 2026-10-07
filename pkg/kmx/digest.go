@@ -10,13 +10,12 @@ import (
 )
 
 const (
-	agentSourcePath         = "portable-agent.yaml"
-	targetPlatformPath      = "target/platform"
-	targetIDPath            = "target/id"
-	bindingAPIVersionPath   = "binding/api-version"
-	bindingKindPath         = "binding/kind"
-	bindingDataPath         = "binding/data"
-	renderedDocumentPattern = "rendered/%03d.yaml"
+	agentSourcePath       = "portable-agent.yaml"
+	targetPlatformPath    = "target/platform"
+	targetIDPath          = "target/id"
+	bindingAPIVersionPath = "binding/api-version"
+	bindingKindPath       = "binding/kind"
+	bindingDataPath       = "binding/data"
 )
 
 // Digest is a canonical SHA-256 identity. Its zero value means unspecified.

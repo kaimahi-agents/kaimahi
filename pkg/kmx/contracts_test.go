@@ -1,7 +1,6 @@
 package kmx
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -78,114 +77,20 @@ func TestSourceRevisionAndBindingAreImmutable(t *testing.T) {
 	}
 }
 
-func TestRuntimeBundleIsBoundToRuntimeTargetAndImmutable(t *testing.T) {
-	source, _ := NewAgentSource([]byte("agent source"))
-	revision, err := NewAgentRevision(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := TargetRef{Platform: "example", ID: "target-1"}
-	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
-	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	sourceRef, _ := NewRevisionDeploymentSource(revision)
-	input, err := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
-	if err != nil {
-		t.Fatal(err)
-	}
-	artifact := []byte("native artifact")
-	bundle, err := NewRuntimeBundle(input, []RuntimeDocument{ReviewDocument([]byte("review")), ApplyDocument(artifact)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	artifact[0] = 'X'
-	copyOfArtifact := bundle.Documents()[1].Bytes()
-	copyOfArtifact[0] = 'Y'
-	if got := string(bundle.Documents()[1].Bytes()); got != "native artifact" {
-		t.Fatalf("runtime artifact changed through caller mutation: %q", got)
-	}
-	if got := bundle.DeployDocuments(); len(got) != 1 || string(got[0]) != "native artifact" {
-		t.Fatalf("DeployDocuments = %#v, want only native artifact", got)
-	}
-	if bundle.Operation() != "lift-1" || bundle.Runtime() != runtime || !reflect.DeepEqual(bundle.Source(), sourceRef.Ref()) || bundle.BindingDigest() != binding.Digest() {
-		t.Fatal("runtime bundle lost its build identity")
-	}
-
-	other := runtime
-	other.Target.ID = "target-2"
-	if _, err := NewRuntimeBuildInput("lift-1", sourceRef, other, binding); err == nil {
-		t.Fatal("runtime build accepted a binding for another target")
-	}
-}
-
-func TestRuntimeBundleCoversReviewDocumentsButDeploysOnlyApplyDocuments(t *testing.T) {
-	source, _ := NewAgentSource([]byte("agent source"))
-	revision, _ := NewAgentRevision(source)
-	target := TargetRef{Platform: "example", ID: "target-1"}
-	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
-	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	sourceRef, _ := NewRevisionDeploymentSource(revision)
-	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
-
-	first, err := NewRuntimeBundle(input, []RuntimeDocument{
-		ReviewDocument([]byte("review-a")), ApplyDocument([]byte("apply")),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := NewRuntimeBundle(input, []RuntimeDocument{
-		ReviewDocument([]byte("review-b")), ApplyDocument([]byte("apply")),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.RenderedDigest() == second.RenderedDigest() {
-		t.Fatal("rendered digest ignored review-only document bytes")
-	}
-	if got := first.DeployDocuments(); len(got) != 1 || string(got[0]) != "apply" {
-		t.Fatalf("DeployDocuments = %#v, want only apply", got)
-	}
-	if _, err := NewRuntimeBundle(input, []RuntimeDocument{ReviewDocument([]byte("review"))}); err == nil {
-		t.Fatal("runtime bundle accepted only review documents")
-	}
-}
-
-func TestReceiptsDeriveMutationSubjectsAndRoundTrip(t *testing.T) {
+func TestReceiptJSONRoundTrip(t *testing.T) {
 	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	target := TargetRef{Platform: "example", ID: "target-1"}
-	infrastructure, err := NewInfrastructureReceipt("infra-1", "up-1", target, at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	teardown, err := NewTeardownReceipt("down-1", "down-operation-1", infrastructure, MutationSucceeded, at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if teardown.Target != target {
-		t.Fatal("teardown did not derive its target from infrastructure evidence")
-	}
-
 	source, _ := NewAgentSource([]byte("agent source"))
-	revision, err := NewAgentRevision(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
+	revision, _ := NewAgentRevision(source)
+	sourceRef, _ := NewRevisionDeploymentSourceRef(revision.Ref())
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	sourceRef, _ := NewRevisionDeploymentSource(revision)
-	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
-	bundle, _ := NewRuntimeBundle(input, []RuntimeDocument{ApplyDocument([]byte("artifact"))})
-	deployment, err := NewDeploymentReceipt("receipt-1", "deployment-1", bundle, at)
-	if err != nil {
-		t.Fatal(err)
+	bindingDigest, _ := ParseDigest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	renderedDigest, _ := ParseDigest("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	deployment := DeploymentReceipt{
+		ID: "receipt-1", Operation: "lift-1",
+		Deployment:    DeploymentRef{ID: "deployment-1", Source: sourceRef, Runtime: runtime},
+		BindingDigest: bindingDigest, RenderedDigest: renderedDigest, RecordedAt: at,
 	}
-	retirement, err := NewRetirementReceipt("retire-1", "retire-operation-1", deployment, MutationSucceeded, at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if retirement.Deployment != deployment.Deployment {
-		t.Fatal("retirement did not derive its deployment from deployment evidence")
-	}
-
 	data, err := json.Marshal(deployment)
 	if err != nil {
 		t.Fatal(err)
@@ -233,8 +138,8 @@ func TestUpResultRejectsContradictoryEvidence(t *testing.T) {
 	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	runtime := RuntimeRef{Runtime: "runtime", Installation: "install-1", Target: target}
-	infrastructure, _ := NewInfrastructureReceipt("infra-1", "up-1", target, at)
-	runtimeReceipt, _ := NewRuntimeReceipt("runtime-1", "up-1", runtime, at)
+	infrastructure := InfrastructureReceipt{ID: "infra-1", Operation: "up-1", Target: target, RecordedAt: at}
+	runtimeReceipt := RuntimeReceipt{ID: "runtime-1", Operation: "up-1", Runtime: runtime, RecordedAt: at}
 	result := UpResult{
 		Operation: "up-1", Target: target, Runtime: runtime,
 		Infrastructure: &infrastructure, RuntimeReceipt: runtimeReceipt,
@@ -256,10 +161,7 @@ func TestInProcessValuesRefuseAccidentalJSON(t *testing.T) {
 	}
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
-	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
 	sourceRef, _ := NewRevisionDeploymentSource(revision)
-	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
-	bundle, _ := NewRuntimeBundle(input, []RuntimeDocument{ApplyDocument([]byte("artifact"))})
 	for name, values := range map[string]struct {
 		encode any
 		decode any
@@ -269,9 +171,6 @@ func TestInProcessValuesRefuseAccidentalJSON(t *testing.T) {
 		"binding":           {binding, new(TargetBinding)},
 		"deployment source": {sourceRef, new(DeploymentSource)},
 		"lift request":      {LiftRequest{Source: sourceRef, Binding: binding}, new(LiftRequest)},
-		"build input":       {input, new(RuntimeBuildInput)},
-		"document":          {ApplyDocument([]byte("artifact")), new(RuntimeDocument)},
-		"bundle":            {bundle, new(RuntimeBundle)},
 	} {
 		if _, err := json.Marshal(values.encode); err == nil {
 			t.Fatalf("%s silently serialized", name)
@@ -437,7 +336,7 @@ func TestSuiteReportRejectsDuplicateCompositionSelection(t *testing.T) {
 func TestUpProgressPreservesPartialInfrastructureEvidence(t *testing.T) {
 	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	target := TargetRef{Platform: "example", ID: "target-1"}
-	infrastructure, _ := NewInfrastructureReceipt("infra-1", "up-1", target, at)
+	infrastructure := InfrastructureReceipt{ID: "infra-1", Operation: "up-1", Target: target, RecordedAt: at}
 	progress := UpProgress{Operation: "up-1", Target: target, Infrastructure: &infrastructure}
 	if err := progress.Validate(); err != nil {
 		t.Fatal(err)
@@ -458,54 +357,3 @@ func TestUpProgressPreservesPartialInfrastructureEvidence(t *testing.T) {
 		t.Fatal("UpProgress accepted complete setup without a runtime receipt")
 	}
 }
-
-type managedPlatform struct{}
-
-func (managedPlatform) Describe() PlatformDescriptor { return PlatformDescriptor{ID: "managed"} }
-func (managedPlatform) Resolve(context.Context, TargetSpec) (TargetRef, error) {
-	return TargetRef{}, nil
-}
-func (managedPlatform) Provision(context.Context, ProvisionRequest) (InfrastructureReceipt, error) {
-	return InfrastructureReceipt{}, nil
-}
-func (managedPlatform) Inspect(context.Context, TargetRef) (TargetObservation, error) {
-	return TargetObservation{}, nil
-}
-func (managedPlatform) Deprovision(context.Context, DeprovisionRequest) (TeardownReceipt, error) {
-	return TeardownReceipt{}, nil
-}
-
-var (
-	_ Platform              = managedPlatform{}
-	_ PlatformResolver      = managedPlatform{}
-	_ PlatformProvisioner   = managedPlatform{}
-	_ PlatformInspector     = managedPlatform{}
-	_ PlatformDeprovisioner = managedPlatform{}
-)
-
-type createOnlyRuntime struct{}
-
-func (createOnlyRuntime) Describe() RuntimeDescriptor { return RuntimeDescriptor{ID: "create-only"} }
-func (createOnlyRuntime) Build(context.Context, RuntimeBuildInput) (RuntimeBundle, error) {
-	return RuntimeBundle{}, nil
-}
-func (createOnlyRuntime) Deploy(context.Context, RuntimeBundle, DeployOptions) (DeploymentReceipt, error) {
-	return DeploymentReceipt{}, nil
-}
-
-var (
-	_ Runtime         = createOnlyRuntime{}
-	_ RuntimeBuilder  = createOnlyRuntime{}
-	_ RuntimeDeployer = createOnlyRuntime{}
-)
-
-type suiteBuilder struct{}
-
-func (suiteBuilder) Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error) {
-	return PackageSuiteResult{}, nil
-}
-func (suiteBuilder) BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error) {
-	return AgentSandboxImage{}, nil
-}
-
-var _ AgentSuiteBuilder = suiteBuilder{}

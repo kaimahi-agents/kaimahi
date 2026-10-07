@@ -22,11 +22,6 @@ type InfrastructureReceipt struct {
 	RecordedAt time.Time   `json:"recordedAt"`
 }
 
-func NewInfrastructureReceipt(id ReceiptID, operation OperationID, target TargetRef, recordedAt time.Time) (InfrastructureReceipt, error) {
-	receipt := InfrastructureReceipt{ID: id, Operation: operation, Target: target, RecordedAt: recordedAt.UTC()}
-	return receipt, receipt.Validate()
-}
-
 func (r InfrastructureReceipt) Validate() error {
 	if err := validateIdentity("infrastructure receipt ID", string(r.ID)); err != nil {
 		return err
@@ -47,11 +42,6 @@ type RuntimeReceipt struct {
 	Operation  OperationID `json:"operation"`
 	Runtime    RuntimeRef  `json:"runtime"`
 	RecordedAt time.Time   `json:"recordedAt"`
-}
-
-func NewRuntimeReceipt(id ReceiptID, operation OperationID, runtime RuntimeRef, recordedAt time.Time) (RuntimeReceipt, error) {
-	receipt := RuntimeReceipt{ID: id, Operation: operation, Runtime: runtime, RecordedAt: recordedAt.UTC()}
-	return receipt, receipt.Validate()
 }
 
 func (r RuntimeReceipt) Validate() error {
@@ -78,18 +68,6 @@ type DeploymentReceipt struct {
 	BindingDigest  Digest        `json:"bindingDigest"`
 	RenderedDigest Digest        `json:"renderedDigest"`
 	RecordedAt     time.Time     `json:"recordedAt"`
-}
-
-func NewDeploymentReceipt(id ReceiptID, deploymentID DeploymentID, bundle RuntimeBundle, recordedAt time.Time) (DeploymentReceipt, error) {
-	receipt := DeploymentReceipt{
-		ID: id, Operation: bundle.Operation(),
-		Deployment: DeploymentRef{
-			ID: deploymentID, Source: bundle.Source(), Runtime: bundle.Runtime(),
-		},
-		BindingDigest: bundle.BindingDigest(), RenderedDigest: bundle.RenderedDigest(),
-		RecordedAt: recordedAt.UTC(),
-	}
-	return receipt, receipt.Validate()
 }
 
 func (r DeploymentReceipt) Validate() error {
@@ -119,14 +97,6 @@ type RetirementReceipt struct {
 	RecordedAt time.Time       `json:"recordedAt"`
 }
 
-func NewRetirementReceipt(id ReceiptID, operation OperationID, deployment DeploymentReceipt, outcome MutationOutcome, recordedAt time.Time) (RetirementReceipt, error) {
-	if err := deployment.Validate(); err != nil {
-		return RetirementReceipt{}, err
-	}
-	receipt := RetirementReceipt{ID: id, Operation: operation, Deployment: deployment.Deployment, Outcome: outcome, RecordedAt: recordedAt.UTC()}
-	return receipt, receipt.Validate()
-}
-
 func (r RetirementReceipt) Validate() error {
 	if err := validateIdentity("retirement receipt ID", string(r.ID)); err != nil {
 		return err
@@ -146,14 +116,6 @@ type TeardownReceipt struct {
 	Target     TargetRef       `json:"target"`
 	Outcome    MutationOutcome `json:"outcome"`
 	RecordedAt time.Time       `json:"recordedAt"`
-}
-
-func NewTeardownReceipt(id ReceiptID, operation OperationID, infrastructure InfrastructureReceipt, outcome MutationOutcome, recordedAt time.Time) (TeardownReceipt, error) {
-	if err := infrastructure.Validate(); err != nil {
-		return TeardownReceipt{}, err
-	}
-	receipt := TeardownReceipt{ID: id, Operation: operation, Target: infrastructure.Target, Outcome: outcome, RecordedAt: recordedAt.UTC()}
-	return receipt, receipt.Validate()
 }
 
 func (r TeardownReceipt) Validate() error {

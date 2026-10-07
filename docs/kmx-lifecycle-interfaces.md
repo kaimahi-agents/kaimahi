@@ -2,9 +2,9 @@
 
 **Status:** Experimental design evidence
 
-**Scope:** The alpha contracts in [`pkg/kmx`](../pkg/kmx). They are not wired to
-the CLI, do not replace `internal/kmx/runtime`, and make no compatibility
-commitment.
+**Scope:** The alpha northbound contracts in [`pkg/kmx`](../pkg/kmx) and their
+implementation-only ports in `internal/kmx/lifecycle`. They are not wired to the
+CLI, do not replace `internal/kmx/runtime`, and make no compatibility commitment.
 
 **Companion guide:** [KMX application API](kmx-application-api.md) describes how
 another Go layer can consume the northbound services and how KMX composes the
@@ -197,12 +197,12 @@ composition, and embedded sandbox-binding digest.
 keeps the current bundle path available while allowing OCI-shipped agents to be
 used at any compatible destination.
 
-### Runtime uses narrow capabilities
+### Internal implementations use narrow capabilities
 
 A runtime is not only a builder. Runtime-specific translation is one capability,
 followed by deployment, observation, and optional retirement.
 
-The SPI therefore uses narrow interfaces:
+The internal SPI therefore uses narrow interfaces in `internal/kmx/lifecycle`:
 
 ```text
 RuntimeInstaller
@@ -229,7 +229,7 @@ resolve target and runtime installation
     -> persist deployment evidence
 ```
 
-The runtime SPI exposes precise `Build` and `Deploy` capabilities. Observation
+The internal runtime SPI exposes precise `Build` and `Deploy` capabilities. Observation
 is the separate capability used by `Status`; create-only support does not imply
 status support. `AgentDeployments.Lift` supplies the sticky product operation.
 
@@ -354,6 +354,9 @@ Architecture tests enforce:
 - rejection of known concrete implementation names in exported and serialized
   surfaces;
 - exact destructive workflow method sets and receipt-scoped signatures.
+- no implementation ports or runtime-native artifact declarations in `pkg/kmx`;
+- an internal lifecycle dependency closure containing only `pkg/kmx` and the
+  standard library.
 
 The name checks are guardrails for known coupling risks, not proof that every
 future abstraction is neutral. Semantic review remains necessary.
