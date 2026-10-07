@@ -34,7 +34,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (17 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (18 packages), plus embedded schema fixtures | — | — |
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
@@ -51,7 +51,7 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is seventeen packages at the top level (eighteen Go packages
+`internal/kmx/` is eighteen packages at the top level (nineteen Go packages
 including nested `runview/orka`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
@@ -89,6 +89,7 @@ packages.
 | `kmx/runview` | 1 | Installed | In-memory, runtime-neutral run, Task, agent, hand-off and missing-evidence presentation types. |
 | `kmx/runview/orka` | 1 | Installed | Bounded Orka Task lineage, event and trace reader with caller-scoped reads and safe projection. |
 | `kmx/runtime` | 10 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings and evaluation cases. `prepared.go` checks behavior before target-bound rendering; `kagent_bindings.go` adds closed creation-target bindings. Only Orka is registered for chat/discovery. |
+| `kmx/lifecycle` | 4 | Scaffolding | Experimental internal platform, AgentSuite, OCI publication and runtime ports; runtime-native documents/bundles, deploy options, recovery interfaces and receipt factories behind the public `pkg/kmx` workflows. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 9 | Installed | Orka authoring, exact Kagent v0.10.2 review scaffolding in `kagent.go`, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
@@ -115,10 +116,11 @@ not evidence that the removed service or commands still exist.
 ## `pkg/` — experimental public contracts
 
 `pkg/kmx` is alpha design evidence for a wider KMX interface. It defines neutral
-agent revisions, AgentSuite and sandbox-image OCI identities, targets, runtime
-bundles, deployments, scoped receipts, `AgentEnvironment`, `AgentSuites`, and
-`AgentDeployments` workflows, and narrow platform/suite/runtime capabilities. It
-is not wired into the installed CLI and makes no compatibility commitment.
+agent revisions, AgentSuite and sandbox-image OCI identities, targets,
+deployments, scoped receipts, and the northbound `AgentEnvironment`,
+`AgentSuites`, and `AgentDeployments` workflows. Platform/suite/runtime ports and
+native build artifacts remain internal. It is not wired into the installed CLI
+and makes no compatibility commitment.
 Architecture tests keep its production dependency closure in the Go standard
 library and reject known concrete runtime, Kubernetes, cloud, subprocess, and
 terminal names from exported names or serialized fields.

@@ -200,13 +200,15 @@ surface. It is not wired to the CLI and does not replace the production
 `internal/kmx/runtime` contract yet. The complete rationale, alternatives, and
 maturity path are in the
 [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md). The package
-separates these scopes:
+exposes only northbound workflows and caller-facing values:
 
 - `AgentEnvironment.Up` and `Down` compose target and runtime setup;
 - `AgentSuites` validates/packages OCI definitions and derives sandbox images;
 - `AgentDeployments.BuildRevision`, `Lift`, `Status`, and `Retire` manage placements;
-- platform capabilities resolve, provision, inspect, and deprovision targets;
-- runtime capabilities install, build, deploy, observe, and retire workloads.
+
+The implementation capabilities, runtime-native documents/bundles, deploy
+options, recovery ports, and receipt factories live in
+`internal/kmx/lifecycle`; they are not part of the public package.
 
 The receipt types enforce the central ownership distinction in method
 signatures: target deprovisioning receives a `DownRequest` carrying an

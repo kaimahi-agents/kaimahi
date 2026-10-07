@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// AgentSource owns the exact authored bytes passed to a RevisionBuilder.
+// AgentSource owns the exact authored bytes passed to BuildRevision.
 type AgentSource struct {
 	data []byte
 }
@@ -32,8 +32,8 @@ func (*AgentSource) UnmarshalJSON([]byte) error {
 }
 
 // AgentRevision combines an immutable byte identity with its exact source. It
-// does not by itself prove schema or behavior validation; RevisionBuilder owns
-// that policy, and runtime builders must still reject behavior they cannot
+// does not by itself prove schema or behavior validation; BuildRevision owns
+// that policy, and runtime implementations must still reject behavior they cannot
 // honor. Persist Ref rather than serializing this value.
 type AgentRevision struct {
 	ref    AgentRevisionRef
@@ -244,12 +244,6 @@ type Diagnostic struct {
 
 type BuildReport struct {
 	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
-}
-
-// RevisionBuilder validates authored source and creates an immutable KMX
-// revision. It does not select a target or understand runtime-native resources.
-type RevisionBuilder interface {
-	Build(context.Context, AgentSource) (AgentRevision, BuildReport, error)
 }
 
 type BuildRequest struct {

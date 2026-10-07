@@ -5,8 +5,10 @@
 **Depends on:** [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md)
 and the [AgentSuite Artifact Specification](agentsuite-spec.md)
 
-**Implementation status:** `pkg/kmx` defines the interfaces and neutral values
-described here. The repository currently validates AgentSuite content and OCI
+**Implementation status:** `pkg/kmx` defines only the three northbound interfaces
+and their caller-facing values. `internal/kmx/lifecycle` defines the southbound
+ports, runtime-native intermediate artifacts, deploy options, recovery SPIs, and
+receipt factories. The repository currently validates AgentSuite content and OCI
 layouts offline. It does not yet implement lifecycle orchestration, AgentSuite
 OCI packaging, sandbox-image construction, registry publication, CLI wiring, or
 a production runtime adapter for these interfaces.
@@ -296,7 +298,7 @@ receipts are returned only after outcomes are established.
 
 ## Internal management ports
 
-The application services compose these southbound ports:
+`internal/kmx/lifecycle` owns these southbound ports and intermediate values:
 
 | Concern | Interfaces |
 |---|---|
@@ -328,8 +330,8 @@ SuiteSource                AgentSuiteArtifact OCI identity
 AgentSuiteArtifact         AgentSandboxImage OCI identity
 DeploymentSource           DeploymentSourceRef
 TargetBinding              binding source file
-RuntimeBuildInput          separate operation record
-RuntimeBundle              DeploymentReceipt plus native evidence
+RuntimeBuildInput          internal in-process value; separate operation record persists identity
+RuntimeBundle              internal runtime-native artifact; DeploymentReceipt persists identity
 ```
 
 Receipt IDs index implementation-owned evidence such as cloud resource IDs,

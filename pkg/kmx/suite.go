@@ -474,29 +474,3 @@ type AgentSuites interface {
 	Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
 	RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
 }
-
-type AgentSuiteValidator interface {
-	Validate(context.Context, ValidateSuiteRequest) (SuiteReport, error)
-}
-
-// AgentSuiteBuilder is the southbound, network-free construction port.
-type AgentSuiteBuilder interface {
-	Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error)
-	BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error)
-}
-
-type AgentSuiteBuildRecoverer interface {
-	RecoverPackage(context.Context, OperationID) (PackageSuiteResult, error)
-	RecoverBuildSandbox(context.Context, OperationID) (AgentSandboxImage, error)
-}
-
-// OCIArtifactPublisher is the separate networked distribution port.
-type OCIArtifactPublisher interface {
-	// Publish changes only Artifact.Location. Digest, MediaType, and
-	// ArtifactType remain identical to the validated input.
-	Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
-}
-
-type OCIArtifactPublishRecoverer interface {
-	RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
-}

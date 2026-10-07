@@ -200,15 +200,6 @@ const (
 	TargetRegistered TargetOwnership = "registered"
 )
 
-// TargetObservation contains only facts a platform implementation owns.
-// Absent is a successful observation; authentication, authorization, timeout,
-// malformed response, and network failures must return an error.
-type TargetObservation struct {
-	Target     TargetRef   `json:"target"`
-	State      TargetState `json:"state"`
-	ObservedAt time.Time   `json:"observedAt"`
-}
-
 // TargetSnapshot is the application-level view composed from platform facts,
 // local ownership records, and runtime discovery.
 type TargetSnapshot struct {
@@ -231,68 +222,4 @@ type AgentEnvironment interface {
 	Down(context.Context, DownRequest) (TeardownReceipt, error)
 	RecoverDown(context.Context, OperationID) (TeardownReceipt, error)
 	Forget(context.Context, TargetRef) error
-}
-
-type PlatformDescriptor struct {
-	ID          PlatformID `json:"id"`
-	DisplayName string     `json:"displayName"`
-}
-
-type Platform interface {
-	Describe() PlatformDescriptor
-}
-
-// PlatformResolver binds a TargetSpec to an existing destination. Resolution
-// does not establish infrastructure ownership.
-type PlatformResolver interface {
-	Resolve(context.Context, TargetSpec) (TargetRef, error)
-}
-
-type ProvisionRequest struct {
-	Operation OperationID
-	Target    TargetSpec
-}
-
-func (r ProvisionRequest) Validate() error {
-	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
-		return err
-	}
-	return r.Target.Validate()
-}
-
-// PlatformProvisioner creates or reconciles target infrastructure and returns
-// the evidence needed for later deprovisioning.
-type PlatformProvisioner interface {
-	Provision(context.Context, ProvisionRequest) (InfrastructureReceipt, error)
-}
-
-type PlatformProvisionRecoverer interface {
-	RecoverProvision(context.Context, OperationID) (InfrastructureReceipt, error)
-}
-
-type PlatformInspector interface {
-	Inspect(context.Context, TargetRef) (TargetObservation, error)
-}
-
-type DeprovisionRequest struct {
-	Operation      OperationID
-	Infrastructure InfrastructureReceipt
-}
-
-func (r DeprovisionRequest) Validate() error {
-	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
-		return err
-	}
-	return r.Infrastructure.Validate()
-}
-
-// PlatformDeprovisioner accepts only infrastructure evidence and derives the
-// target from it. Implementations must verify durable ownership rather than
-// trust the receipt or infer ownership from a target name.
-type PlatformDeprovisioner interface {
-	Deprovision(context.Context, DeprovisionRequest) (TeardownReceipt, error)
-}
-
-type PlatformDeprovisionRecoverer interface {
-	RecoverDeprovision(context.Context, OperationID) (TeardownReceipt, error)
 }
