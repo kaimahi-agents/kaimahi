@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,10 +87,12 @@ func TestReceiptJSONRoundTrip(t *testing.T) {
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
 	bindingDigest, _ := ParseDigest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	renderedDigest, _ := ParseDigest("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	deployDigest, _ := ParseDigest("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
 	deployment := DeploymentReceipt{
 		ID: "receipt-1", Operation: "lift-1",
 		Deployment:    DeploymentRef{ID: "deployment-1", Source: sourceRef, Runtime: runtime},
-		BindingDigest: bindingDigest, RenderedDigest: renderedDigest, RecordedAt: at,
+		BindingDigest: bindingDigest, RenderedDigest: renderedDigest,
+		DeployDigest: deployDigest, RecordedAt: at,
 	}
 	data, err := json.Marshal(deployment)
 	if err != nil {
@@ -233,7 +236,7 @@ func TestDeploymentSourceRequiresExactlyOneInput(t *testing.T) {
 		Binding:       "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 	}
 	revisionSource, _ := NewRevisionDeploymentSourceRef(revisionRef)
-	sandboxSource, _ := NewSandboxDeploymentSourceRef(image)
+	sandboxSource, _ := NewSandboxDeploymentSourceRef(image.Ref())
 	if revisionSource == sandboxSource {
 		t.Fatal("revision and sandbox deployment sources compare equal")
 	}
@@ -248,12 +251,24 @@ func TestDeploymentSourceRequiresExactlyOneInput(t *testing.T) {
 	if decoded != sandboxSource {
 		t.Fatalf("sandbox source round trip = %#v, want %#v", decoded, sandboxSource)
 	}
+	if strings.Contains(string(data), "location") || strings.Contains(string(data), "registry.example") {
+		t.Fatalf("sandbox deployment identity serialized retrieval location: %s", data)
+	}
 	invalidUnion := `{"kind":"revision","revision":{"digest":"` + revisionRef.Digest.String() + `"},"sandboxImage":{}}`
 	if err := json.Unmarshal([]byte(invalidUnion), &decoded); err == nil {
 		t.Fatal("deployment source JSON accepted both union arms")
 	}
 	if _, err := NewSandboxDeploymentSource(image); err != nil {
 		t.Fatal(err)
+	}
+	published := image
+	published.Image.Location = "another.registry.example/agents/writer"
+	publishedRef, err := NewSandboxDeploymentSourceRef(published.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publishedRef != sandboxSource {
+		t.Fatal("sandbox deployment identity changed with retrieval location")
 	}
 	image.Binding = ""
 	if _, err := NewSandboxDeploymentSource(image); err == nil {

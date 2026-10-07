@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
@@ -22,8 +23,25 @@ type Platform interface {
 }
 
 // PlatformResolver resolves an existing target without claiming ownership.
+type TargetResolution struct {
+	Found  bool
+	Target kmx.TargetRef
+}
+
+func (r TargetResolution) Validate() error {
+	if r.Found {
+		return r.Target.Validate()
+	}
+	if r.Target != (kmx.TargetRef{}) {
+		return fmt.Errorf("absent target resolution must not carry a target")
+	}
+	return nil
+}
+
 type PlatformResolver interface {
-	Resolve(context.Context, kmx.TargetSpec) (kmx.TargetRef, error)
+	// Resolve returns Found false only for an established absence. Authentication,
+	// authorization, timeout, malformed response, and network failures are errors.
+	Resolve(context.Context, kmx.TargetSpec) (TargetResolution, error)
 }
 
 type ProvisionRequest struct {
@@ -46,6 +64,76 @@ type PlatformProvisioner interface {
 
 type PlatformProvisionRecoverer interface {
 	RecoverProvision(context.Context, kmx.OperationID) (kmx.InfrastructureReceipt, error)
+}
+
+func validateResolution(request kmx.UpRequest, resolution TargetResolution) error {
+	if err := resolution.Validate(); err != nil {
+		return err
+	}
+	if resolution.Found && resolution.Target.Platform != request.Target.Platform {
+		return fmt.Errorf("resolved target platform %q does not match requested platform %q", resolution.Target.Platform, request.Target.Platform)
+	}
+	return nil
+}
+
+func validateProvisionReceipt(request kmx.UpRequest, receipt kmx.InfrastructureReceipt) error {
+	if err := receipt.Validate(); err != nil {
+		return err
+	}
+	if receipt.Operation != request.Operation {
+		return fmt.Errorf("infrastructure receipt operation does not match request")
+	}
+	if receipt.Target.Platform != request.Target.Platform {
+		return fmt.Errorf("provisioned target platform %q does not match requested platform %q", receipt.Target.Platform, request.Target.Platform)
+	}
+	return nil
+}
+
+// ResolveTarget applies explicit environment setup intent. In
+// resolve-or-provision mode it provisions only after an established absence;
+// resolver errors are returned unchanged and never treated as absence.
+func ResolveTarget(ctx context.Context, request kmx.UpRequest, resolver PlatformResolver, provisioner PlatformProvisioner) (TargetResolution, *kmx.InfrastructureReceipt, error) {
+	if err := request.Validate(); err != nil {
+		return TargetResolution{}, nil, err
+	}
+	switch request.Mode {
+	case kmx.EnvironmentResolve:
+		resolution, err := resolver.Resolve(ctx, request.Target)
+		if err != nil {
+			return TargetResolution{}, nil, err
+		}
+		return resolution, nil, validateResolution(request, resolution)
+	case kmx.EnvironmentProvision:
+		receipt, err := provisioner.Provision(ctx, ProvisionRequest{Operation: request.Operation, Target: request.Target})
+		if err != nil {
+			return TargetResolution{}, nil, err
+		}
+		if err := validateProvisionReceipt(request, receipt); err != nil {
+			return TargetResolution{}, nil, err
+		}
+		return TargetResolution{Found: true, Target: receipt.Target}, &receipt, nil
+	case kmx.EnvironmentResolveOrProvision:
+		resolution, err := resolver.Resolve(ctx, request.Target)
+		if err != nil {
+			return TargetResolution{}, nil, err
+		}
+		if err := validateResolution(request, resolution); err != nil {
+			return TargetResolution{}, nil, err
+		}
+		if resolution.Found {
+			return resolution, nil, nil
+		}
+		receipt, err := provisioner.Provision(ctx, ProvisionRequest{Operation: request.Operation, Target: request.Target})
+		if err != nil {
+			return TargetResolution{}, nil, err
+		}
+		if err := validateProvisionReceipt(request, receipt); err != nil {
+			return TargetResolution{}, nil, err
+		}
+		return TargetResolution{Found: true, Target: receipt.Target}, &receipt, nil
+	default:
+		return TargetResolution{}, nil, fmt.Errorf("unsupported environment mode %q", request.Mode)
+	}
 }
 
 type TargetObservation struct {

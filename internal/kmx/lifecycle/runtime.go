@@ -11,6 +11,7 @@ import (
 )
 
 const renderedDocumentPattern = "rendered/%03d.yaml"
+const deploymentDocumentPattern = "deployment/%03d-%s.yaml"
 
 type RuntimeBuildInput struct {
 	operation kmx.OperationID
@@ -81,6 +82,7 @@ type RuntimeBundle struct {
 	source         kmx.DeploymentSourceRef
 	bindingDigest  kmx.Digest
 	renderedDigest kmx.Digest
+	deployDigest   kmx.Digest
 	documents      []RuntimeDocument
 }
 
@@ -102,6 +104,7 @@ func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (Run
 	}
 	copied := make([]RuntimeDocument, len(documents))
 	rendered := make([][]byte, len(documents))
+	deployFrames := make([]digestFrame, len(documents))
 	deployable := false
 	for i, document := range documents {
 		if len(document.data) == 0 {
@@ -110,11 +113,22 @@ func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (Run
 		deployable = deployable || document.deployable
 		copied[i] = RuntimeDocument{data: append([]byte(nil), document.data...), deployable: document.deployable}
 		rendered[i] = document.data
+		disposition := "review"
+		if document.deployable {
+			disposition = "apply"
+		}
+		deployFrames[i] = digestFrame{
+			path: fmt.Sprintf(deploymentDocumentPattern, i, disposition), data: document.data,
+		}
 	}
 	if !deployable {
 		return RuntimeBundle{}, fmt.Errorf("runtime bundle has no deployable document")
 	}
 	digest, err := renderedDigest(rendered)
+	if err != nil {
+		return RuntimeBundle{}, err
+	}
+	deployDigest, err := framedDigest(deployFrames)
 	if err != nil {
 		return RuntimeBundle{}, err
 	}
@@ -124,15 +138,29 @@ func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (Run
 		source:         input.source.Ref(),
 		bindingDigest:  input.binding.Digest(),
 		renderedDigest: digest,
+		deployDigest:   deployDigest,
 		documents:      copied,
 	}, nil
 }
 
 func renderedDigest(documents [][]byte) (kmx.Digest, error) {
-	var frames bytes.Buffer
+	frames := make([]digestFrame, len(documents))
 	for i, document := range documents {
-		fmt.Fprintf(&frames, renderedDocumentPattern+" %d\n", i, len(document))
-		frames.Write(document)
+		frames[i] = digestFrame{path: fmt.Sprintf(renderedDocumentPattern, i), data: document}
+	}
+	return framedDigest(frames)
+}
+
+type digestFrame struct {
+	path string
+	data []byte
+}
+
+func framedDigest(entries []digestFrame) (kmx.Digest, error) {
+	var frames bytes.Buffer
+	for _, entry := range entries {
+		fmt.Fprintf(&frames, "%s %d\n", entry.path, len(entry.data))
+		frames.Write(entry.data)
 		frames.WriteByte('\n')
 	}
 	sum := sha256.Sum256(frames.Bytes())
@@ -144,6 +172,7 @@ func (b RuntimeBundle) Runtime() kmx.RuntimeRef         { return b.runtime }
 func (b RuntimeBundle) Source() kmx.DeploymentSourceRef { return b.source }
 func (b RuntimeBundle) BindingDigest() kmx.Digest       { return b.bindingDigest }
 func (b RuntimeBundle) RenderedDigest() kmx.Digest      { return b.renderedDigest }
+func (b RuntimeBundle) DeployDigest() kmx.Digest        { return b.deployDigest }
 
 func (b RuntimeBundle) Documents() []RuntimeDocument {
 	documents := make([]RuntimeDocument, len(b.documents))

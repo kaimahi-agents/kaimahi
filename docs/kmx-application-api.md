@@ -9,9 +9,10 @@ and the [AgentSuite Artifact Specification](agentsuite-spec.md)
 and their caller-facing values. `internal/kmx/lifecycle` defines the southbound
 ports, runtime-native intermediate artifacts, deploy options, recovery SPIs, and
 receipt factories. The repository currently validates AgentSuite content and OCI
-layouts offline. It does not yet implement lifecycle orchestration, AgentSuite
-OCI packaging, sandbox-image construction, registry publication, CLI wiring, or
-a production runtime adapter for these interfaces.
+layouts offline. It includes only a small internal target-selection helper, not
+end-to-end northbound service implementations. AgentSuite OCI packaging,
+sandbox-image construction, registry publication, CLI wiring, and production
+adapters for these interfaces remain unimplemented.
 
 ## Three northbound interfaces
 
@@ -72,6 +73,7 @@ type AgentEnvironment interface {
 ```go
 setup, err := controller.environment.Up(ctx, kmx.UpRequest{
     Operation: "setup-local-001",
+    Mode:      kmx.EnvironmentProvision,
     Target: kmx.TargetSpec{
         Name:     "local",
         Platform: "local-default",
@@ -84,6 +86,17 @@ setup, err := controller.environment.Up(ctx, kmx.UpRequest{
 `Up` composes target resolution or provisioning with runtime installation. A
 platform-qualified `TargetRef` is the durable destination identity; `local`,
 `staging`, and `production` remain friendly configuration names.
+
+`UpRequest.Mode` makes target intent explicit:
+
+- `EnvironmentResolve` resolves an existing target and never provisions;
+- `EnvironmentProvision` provisions without attempting resolution;
+- `EnvironmentResolveOrProvision` provisions only after the resolver returns
+  `TargetResolution{Found: false}`.
+
+At the internal boundary, resolver errors are not absence. Authentication,
+authorization, timeout, malformed-response, throttling, and network failures
+propagate unchanged and never trigger provisioning.
 
 If provisioning succeeds but runtime setup fails, `RecoverUp` returns durable
 `UpProgress` containing the infrastructure receipt. The caller can explicitly
@@ -103,6 +116,10 @@ receipt, err := controller.environment.Down(ctx, kmx.DownRequest{
     Infrastructure: *setup.Infrastructure,
 })
 ```
+
+This example uses `EnvironmentProvision`, so successful setup must carry the
+infrastructure evidence required by `Down`. A resolved or registered target has
+no such receipt and can only be forgotten, not deprovisioned.
 
 `Down` verifies platform-owned evidence before mutation. Workloads may disappear
 as a consequence of deleting an owned target, but `Down` does not fabricate
@@ -239,6 +256,11 @@ The sandbox image came from `AgentSuites.BuildSandbox` and can be used at any
 compatible destination. Direct suite artifacts cannot be lifted because they are
 definition data, not runnable images.
 
+`AgentSandboxImage` carries a retrieval location for build and publication. Its
+durable deployment identity is `AgentSandboxRef`, which includes immutable OCI
+and AgentSuite binding identities but excludes location. Relocating or publishing
+the same manifest therefore does not change `DeploymentSourceRef`.
+
 ### Lift
 
 ```go
@@ -292,9 +314,9 @@ if errors.As(err, &unknown) {
 ```
 
 Equivalent recovery exists for environment setup/teardown, suite packaging,
-sandbox construction, and retirement. Recovery reads durable operation/native
-evidence and does not blindly repeat a non-idempotent mutation. Successful
-receipts are returned only after outcomes are established.
+sandbox construction, registry publication, and retirement. Recovery reads
+durable operation/native evidence and does not blindly repeat a non-idempotent
+mutation. Successful receipts are returned only after outcomes are established.
 
 ## Internal management ports
 
@@ -302,6 +324,7 @@ receipts are returned only after outcomes are established.
 
 | Concern | Interfaces |
 |---|---|
+| Direct revision validation | `RevisionBuilder` |
 | Existing or provisioned target | `PlatformResolver`, `PlatformProvisioner`, `PlatformInspector`, `PlatformDeprovisioner` and recovery ports |
 | AgentSuite validation | `AgentSuiteValidator` |
 | Offline OCI package and sandbox construction | `AgentSuiteBuilder`, `AgentSuiteBuildRecoverer` |
@@ -328,6 +351,7 @@ AgentSource                authored source file
 AgentRevision              AgentRevisionRef
 SuiteSource                AgentSuiteArtifact OCI identity
 AgentSuiteArtifact         AgentSandboxImage OCI identity
+AgentSandboxImage          AgentSandboxRef (location-free, inside DeploymentSourceRef)
 DeploymentSource           DeploymentSourceRef
 TargetBinding              binding source file
 RuntimeBuildInput          internal in-process value; separate operation record persists identity
@@ -337,6 +361,18 @@ RuntimeBundle              internal runtime-native artifact; DeploymentReceipt p
 Receipt IDs index implementation-owned evidence such as cloud resource IDs,
 object UIDs, prior state, OCI descriptors, and ownership markers. Missing or
 mismatched evidence fails closed.
+
+Deployment evidence contains three independent hashes:
+
+- `BindingDigest` identifies target-qualified binding input;
+- `RenderedDigest` preserves the shipped framing over all rendered document
+  bytes in order, including review-only documents;
+- `DeployDigest` authenticates those ordered bytes together with each document's
+  `apply` or `review` disposition.
+
+Changing only a document's disposition leaves `RenderedDigest` unchanged but
+changes `DeployDigest`. Runtime deployers write only internal
+`RuntimeBundle.DeployDocuments()`.
 
 A future HTTP/gRPC layer needs separate wire DTOs; it cannot directly encode
 in-process source values or add independent destructive target/deployment IDs

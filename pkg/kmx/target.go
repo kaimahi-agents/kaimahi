@@ -17,6 +17,14 @@ type TargetSpec struct {
 	Profile  string     `json:"profile,omitempty"`
 }
 
+type EnvironmentMode string
+
+const (
+	EnvironmentResolve            EnvironmentMode = "resolve"
+	EnvironmentProvision          EnvironmentMode = "provision"
+	EnvironmentResolveOrProvision EnvironmentMode = "resolve-or-provision"
+)
+
 func (s TargetSpec) Validate() error {
 	if !utf8.ValidString(s.Name) || !utf8.ValidString(s.Profile) {
 		return fmt.Errorf("target name and profile must be valid UTF-8")
@@ -29,6 +37,7 @@ func (s TargetSpec) Validate() error {
 
 type UpRequest struct {
 	Operation OperationID
+	Mode      EnvironmentMode
 	Target    TargetSpec
 	Runtime   RuntimeID
 	Options   RuntimeOptions
@@ -37,6 +46,11 @@ type UpRequest struct {
 func (r UpRequest) Validate() error {
 	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
 		return err
+	}
+	switch r.Mode {
+	case EnvironmentResolve, EnvironmentProvision, EnvironmentResolveOrProvision:
+	default:
+		return fmt.Errorf("environment mode must be resolve, provision, or resolve-or-provision")
 	}
 	if err := r.Target.Validate(); err != nil {
 		return err

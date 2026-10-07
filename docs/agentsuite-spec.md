@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Version:** `1.0.0-draft`
-**Last updated:** October 6, 2026
+**Last updated:** October 7, 2026
 
 ## Abstract
 
@@ -785,7 +785,7 @@ not a runtime actor template, deployment object, or snapshot policy. Runtime
 systems MAY derive their own templates from the resulting image, but those
 templates and their lifecycle policies are outside this specification.
 
-The composition identity is the tuple:
+The suite-level composition selection key is the tuple:
 
 ```text
 (agent, platform)

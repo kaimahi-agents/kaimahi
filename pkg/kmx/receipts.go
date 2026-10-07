@@ -67,6 +67,7 @@ type DeploymentReceipt struct {
 	Deployment     DeploymentRef `json:"deployment"`
 	BindingDigest  Digest        `json:"bindingDigest"`
 	RenderedDigest Digest        `json:"renderedDigest"`
+	DeployDigest   Digest        `json:"deployDigest"`
 	RecordedAt     time.Time     `json:"recordedAt"`
 }
 
@@ -80,8 +81,8 @@ func (r DeploymentReceipt) Validate() error {
 	if err := r.Deployment.Validate(); err != nil {
 		return err
 	}
-	if r.BindingDigest.IsZero() || r.RenderedDigest.IsZero() {
-		return fmt.Errorf("deployment receipt binding and rendered digests are required")
+	if r.BindingDigest.IsZero() || r.RenderedDigest.IsZero() || r.DeployDigest.IsZero() {
+		return fmt.Errorf("deployment receipt binding, rendered, and deploy digests are required")
 	}
 	if r.RecordedAt.IsZero() {
 		return fmt.Errorf("receipt time is required")
