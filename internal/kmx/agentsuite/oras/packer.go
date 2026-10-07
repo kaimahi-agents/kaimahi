@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
@@ -35,7 +37,7 @@ func New(validator agentsuite.Validator) *Packer {
 func (p *Packer) Pack(
 	ctx context.Context,
 	src agentsuite.ReadOnlyStorage,
-	dst agentsuite.Pusher,
+	dst agentsuite.Storage,
 	contentDescriptor ocispec.Descriptor,
 ) (agentsuite.PackResult, error) {
 	if src == nil {
@@ -52,6 +54,7 @@ func (p *Packer) Pack(
 	}
 	if contentDescriptor.MediaType != agentsuite.MediaTypeContent ||
 		contentDescriptor.Digest.Validate() != nil ||
+		contentDescriptor.Digest.Algorithm() != godigest.SHA256 ||
 		contentDescriptor.Size < 0 {
 		return agentsuite.PackResult{}, errors.New("AgentSuite content descriptor is invalid")
 	}
@@ -110,7 +113,7 @@ func (p *Packer) Pack(
 func pushStagedContent(
 	ctx context.Context,
 	src agentsuite.Fetcher,
-	dst agentsuite.Pusher,
+	dst agentsuite.Storage,
 	descriptor ocispec.Descriptor,
 ) error {
 	reader, err := src.Fetch(ctx, descriptor)
@@ -119,11 +122,42 @@ func pushStagedContent(
 	}
 	pushErr := dst.Push(ctx, descriptor, reader)
 	closeErr := reader.Close()
-	if pushErr != nil && !errors.Is(pushErr, errdef.ErrAlreadyExists) {
+	if pushErr != nil &&
+		!errors.Is(pushErr, agentsuite.ErrAlreadyExists) &&
+		!errors.Is(pushErr, errdef.ErrAlreadyExists) {
 		return fmt.Errorf("push AgentSuite %s: %w", descriptor.MediaType, pushErr)
 	}
 	if closeErr != nil {
 		return fmt.Errorf("close staged %s: %w", descriptor.MediaType, closeErr)
+	}
+	if pushErr != nil {
+		if err := verifyExistingContent(ctx, dst, descriptor); err != nil {
+			return fmt.Errorf("verify existing AgentSuite %s: %w", descriptor.MediaType, err)
+		}
+	}
+	return ctx.Err()
+}
+
+func verifyExistingContent(
+	ctx context.Context,
+	src agentsuite.Fetcher,
+	descriptor ocispec.Descriptor,
+) error {
+	reader, err := src.Fetch(ctx, descriptor)
+	if err != nil {
+		return err
+	}
+	verifier := descriptor.Digest.Verifier()
+	written, copyErr := io.Copy(verifier, io.LimitReader(reader, descriptor.Size+1))
+	closeErr := reader.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if written != descriptor.Size || !verifier.Verified() {
+		return errors.New("existing content does not match descriptor")
 	}
 	return ctx.Err()
 }

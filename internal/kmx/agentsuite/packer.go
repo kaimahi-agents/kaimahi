@@ -34,7 +34,7 @@ type Packer interface {
 	Pack(
 		context.Context,
 		ReadOnlyStorage,
-		Pusher,
+		Storage,
 		ocispec.Descriptor,
 	) (PackResult, error)
 }

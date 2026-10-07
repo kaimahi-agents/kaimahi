@@ -2,10 +2,16 @@ package agentsuite
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+// ErrAlreadyExists reports that content is already present at its descriptor
+// address. Callers must verify the existing bytes before treating it as
+// successful idempotency.
+var ErrAlreadyExists = errors.New("content already exists")
 
 // These contracts intentionally contain no host-application, filesystem,
 // ORAS, registry, cloud-provider, authentication, or UI concepts.
@@ -25,4 +31,10 @@ type Pusher interface {
 type ReadOnlyStorage interface {
 	Fetcher
 	Exists(context.Context, ocispec.Descriptor) (bool, error)
+}
+
+// Storage is a readable and writable content-addressed store.
+type Storage interface {
+	ReadOnlyStorage
+	Pusher
 }
