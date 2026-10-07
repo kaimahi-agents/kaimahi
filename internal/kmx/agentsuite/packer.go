@@ -26,6 +26,10 @@ type PackResult struct {
 // Pack stages and validates a complete OCI image layout before pushing any
 // content to the destination. The destination must enforce the descriptors
 // passed to Pusher. Packing does not assign a tag or other reference.
+//
+// Packer is an AgentSuite domain contract. KMX orchestration, operation
+// recovery, user interaction, credentials, and provider selection belong in
+// adapters above or implementations below this boundary.
 type Packer interface {
 	Pack(
 		context.Context,

@@ -7,6 +7,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// These contracts intentionally contain no KMX, filesystem, ORAS, registry,
+// cloud-provider, authentication, or UI concepts. Implementations supply those
+// concerns without changing AgentSuite callers.
+
 // Fetcher retrieves descriptor-verified content from content-addressed storage.
 type Fetcher interface {
 	Fetch(context.Context, ocispec.Descriptor) (io.ReadCloser, error)
