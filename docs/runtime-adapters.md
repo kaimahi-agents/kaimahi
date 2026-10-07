@@ -216,3 +216,8 @@ Kubernetes, cloud, process, or terminal types, and architecture tests enforce
 its standard-library-only dependency closure. Concrete adapters and migration
 of existing commands remain follow-up work after this model has been reviewed
 against the shipped Orka behavior and another real runtime.
+
+The companion [KMX application workflow API](kmx-application-api.md) proposes a
+grouped facade for consumers that need `Up`, `Lift`, `Status`, `Retire`, or
+`Quickstart` without constructing platform and runtime implementations. That
+facade is not implemented by `pkg/kmx` today.

@@ -6,6 +6,11 @@
 the CLI, do not replace `internal/kmx/runtime`, and make no compatibility
 commitment.
 
+**Companion design:** [KMX application workflow API](kmx-application-api.md)
+describes how another Go layer, UI, controller, or transport could consume these
+contracts through grouped use-case services. That facade is proposed, not
+implemented.
+
 ## Context
 
 KMX needs one understandable developer lifecycle across more than one runtime
