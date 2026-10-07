@@ -192,3 +192,24 @@ protocol, cancellation, history, retention, and approval semantics.
 Moving implementations into standalone packages can happen without changing the
 contract. Catalogue digests and deployment receipts remain lifecycle concerns,
 not chat Session fields.
+
+## Experimental wider interface model
+
+`pkg/kmx` contains an alpha contract model for discussing a wider KMX
+surface. It is not wired to the CLI and does not replace the production
+`internal/kmx/runtime` contract yet. The package separates these scopes:
+
+- `TargetService.Up` and `TargetService.Down` compose target infrastructure;
+- `AgentService.Lift`, `Status`, and `Retire` manage agent deployments;
+- platform capabilities resolve, provision, inspect, and deprovision targets;
+- runtime capabilities install, build, deploy, observe, and retire workloads.
+
+The receipt types enforce the central ownership distinction in method
+signatures: target deprovisioning accepts an `InfrastructureReceipt`, while
+agent retirement accepts a `DeploymentReceipt`. Destructive operations derive
+their subject from that evidence rather than accepting another independently
+supplied target or deployment. The package contains no runtime-native,
+Kubernetes, cloud, process, or terminal types, and architecture tests enforce
+its standard-library-only dependency closure. Concrete adapters and migration
+of existing commands remain follow-up work after this model has been reviewed
+against the shipped Orka behavior and another real runtime.

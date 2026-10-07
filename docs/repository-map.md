@@ -35,6 +35,7 @@ checks.
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
 | `internal/` | `kmx/` (17 packages), plus embedded schema fixtures | — | — |
+| `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
@@ -110,6 +111,16 @@ fixtures or Orka tool names. Neither is the retired custom gateway. Migration
 keeps its original source/generator bytes so a repeated invocation can reuse its
 previously generated identity/patch files. Old generated tool-seam comments are
 not evidence that the removed service or commands still exist.
+
+## `pkg/` — experimental public contracts
+
+`pkg/kmx` is alpha design evidence for a wider KMX interface. It defines neutral
+agent revisions, targets, runtime bundles, deployments, scoped receipts,
+author-facing target and agent workflows, and narrow platform/runtime
+capabilities. It is not wired into the installed CLI and makes no compatibility
+commitment. Architecture tests keep its production dependency closure in the Go
+standard library and reject known concrete runtime, Kubernetes, cloud,
+subprocess, and terminal names from exported names or serialized fields.
 
 ## `ax-harness/` — preview activity source
 
