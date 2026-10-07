@@ -197,7 +197,10 @@ not chat Session fields.
 
 `pkg/kmx` contains an alpha contract model for discussing a wider KMX
 surface. It is not wired to the CLI and does not replace the production
-`internal/kmx/runtime` contract yet. The package separates these scopes:
+`internal/kmx/runtime` contract yet. The complete rationale, alternatives, and
+maturity path are in the
+[KMX lifecycle interface decision](kmx-lifecycle-interfaces.md). The package
+separates these scopes:
 
 - `TargetService.Up` and `TargetService.Down` compose target infrastructure;
 - `AgentService.Lift`, `Status`, and `Retire` manage agent deployments;
