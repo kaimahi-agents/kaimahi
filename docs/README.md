@@ -75,6 +75,7 @@ listener inventory, Orka architecture or the project's future shape.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
 - [KMX application API](kmx-application-api.md): how another Go layer uses AgentEnvironment, AgentSuites and AgentDeployments while management ports remain internal.
+- [KMX public interface summary](kmx-public-interface.md): the current layering, `kmx up` equivalent, recovery, teardown and CLI-to-Go mapping.
 - [Naming](NAMING.md): the name and publication constraints.
 
 ## Assessments that inform current work
