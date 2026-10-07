@@ -21,24 +21,24 @@ var (
 )
 
 type Report struct {
-	Name             string          `json:"name"`
-	Agents           int             `json:"agents"`
-	Tools            int             `json:"tools"`
-	ToolCompositions int             `json:"toolCompositions"`
-	Compositions     int             `json:"compositions"`
-	Capabilities     []string        `json:"capabilities"`
-	AgentPlatforms   []AgentPlatform `json:"agentPlatforms"`
+	Name                     string          `json:"name"`
+	Agents                   int             `json:"agents"`
+	ToolProviders            int             `json:"toolProviders"`
+	ToolProviderCompositions int             `json:"toolProviderCompositions"`
+	Compositions             int             `json:"compositions"`
+	Capabilities             []string        `json:"capabilities"`
+	AgentPlatforms           []AgentPlatform `json:"agentPlatforms"`
 }
 
 type validator struct {
-	content          *contentSet
-	suite            Suite
-	agents           map[string]Agent
-	tools            map[string]Tool
-	toolDigests      map[string]string
-	toolCompositions map[string]ToolComposition
-	compositions     map[string]Composition
-	builds           map[string]BuildProfile
+	content                  *contentSet
+	suite                    Suite
+	agents                   map[string]Agent
+	toolProviders            map[string]ToolProvider
+	toolProviderDigests      map[string]string
+	toolProviderCompositions map[string]ToolProviderComposition
+	compositions             map[string]Composition
+	builds                   map[string]BuildProfile
 }
 
 func validateContent(content *contentSet) (*Report, error) {
@@ -51,27 +51,27 @@ func validateContent(content *contentSet) (*Report, error) {
 		return nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	v := &validator{
-		content:          content,
-		suite:            suite,
-		agents:           map[string]Agent{},
-		tools:            map[string]Tool{},
-		toolDigests:      map[string]string{},
-		toolCompositions: map[string]ToolComposition{},
-		compositions:     map[string]Composition{},
-		builds:           map[string]BuildProfile{},
+		content:                  content,
+		suite:                    suite,
+		agents:                   map[string]Agent{},
+		toolProviders:            map[string]ToolProvider{},
+		toolProviderDigests:      map[string]string{},
+		toolProviderCompositions: map[string]ToolProviderComposition{},
+		compositions:             map[string]Composition{},
+		builds:                   map[string]BuildProfile{},
 	}
 	var errs []error
 	errs = append(errs, v.validateSuite())
 	errs = append(errs, v.loadAgents())
-	errs = append(errs, v.loadTools())
+	errs = append(errs, v.loadToolProviders())
 	errs = append(errs, v.loadBuildProfiles())
-	errs = append(errs, v.loadToolCompositions())
+	errs = append(errs, v.loadToolProviderCompositions())
 	errs = append(errs, v.loadCompositions())
 	errs = append(errs, v.validateReferences())
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	capabilities := derivedCapabilities(v.tools)
+	capabilities := derivedCapabilities(v.toolProviders)
 	agentPlatforms := make([]AgentPlatform, 0, len(v.agents))
 	for agentID := range v.agents {
 		var platforms []Platform
@@ -89,13 +89,13 @@ func validateContent(content *contentSet) (*Report, error) {
 		return strings.Compare(a.ID, b.ID)
 	})
 	return &Report{
-		Name:             suite.Name,
-		Agents:           len(v.agents),
-		Tools:            len(v.tools),
-		ToolCompositions: len(v.toolCompositions),
-		Compositions:     len(v.compositions),
-		Capabilities:     capabilities,
-		AgentPlatforms:   agentPlatforms,
+		Name:                     suite.Name,
+		Agents:                   len(v.agents),
+		ToolProviders:            len(v.toolProviders),
+		ToolProviderCompositions: len(v.toolProviderCompositions),
+		Compositions:             len(v.compositions),
+		Capabilities:             capabilities,
+		AgentPlatforms:           agentPlatforms,
 	}, nil
 }
 
@@ -209,121 +209,121 @@ func (v *validator) loadAgents() error {
 	return errors.Join(errs...)
 }
 
-func (v *validator) loadTools() error {
-	data, err := v.content.data(v.suite.ToolCatalog.Path)
+func (v *validator) loadToolProviders() error {
+	data, err := v.content.data(v.suite.ToolProviderCatalog.Path)
 	if err != nil {
-		return fmt.Errorf("tool catalog: %w", err)
+		return fmt.Errorf("tool provider catalog: %w", err)
 	}
 	digest, err := canonicalDigest(data)
-	if err != nil || digest != v.suite.ToolCatalog.Digest {
-		return errors.New("tool catalog digest mismatch")
+	if err != nil || digest != v.suite.ToolProviderCatalog.Digest {
+		return errors.New("tool provider catalog digest mismatch")
 	}
-	var catalog ToolCatalog
+	var catalog ToolProviderCatalog
 	if err := decodeStrict(data, &catalog); err != nil {
-		return fmt.Errorf("tool catalog: %w", err)
+		return fmt.Errorf("tool provider catalog: %w", err)
 	}
-	if catalog.SchemaVersion != SpecVersion || catalog.MediaType != MediaTypeToolCatalog {
-		return errors.New("tool catalog has unsupported schemaVersion or mediaType")
+	if catalog.SchemaVersion != SpecVersion || catalog.MediaType != MediaTypeToolProviderCatalog {
+		return errors.New("tool provider catalog has unsupported schemaVersion or mediaType")
 	}
 	var errs []error
-	for _, ref := range catalog.Tools {
+	for _, ref := range catalog.ToolProviders {
 		key := ref.ID + "@" + ref.Version
 		if !identifierPattern.MatchString(ref.ID) || !versionPattern.MatchString(ref.Version) {
-			errs = append(errs, fmt.Errorf("tool reference %q has invalid identity or exact version", key))
+			errs = append(errs, fmt.Errorf("tool provider reference %q has invalid identity or exact version", key))
 			continue
 		}
-		if _, exists := v.tools[key]; exists {
-			errs = append(errs, fmt.Errorf("duplicate tool %s", key))
+		if _, exists := v.toolProviders[key]; exists {
+			errs = append(errs, fmt.Errorf("duplicate tool provider %s", key))
 			continue
 		}
 		raw, err := v.content.data(ref.Path)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("tool %s: %w", key, err))
+			errs = append(errs, fmt.Errorf("tool provider %s: %w", key, err))
 			continue
 		}
 		actualDigest, err := canonicalDigest(raw)
 		if err != nil || actualDigest != ref.Digest {
-			errs = append(errs, fmt.Errorf("tool %s manifest digest mismatch", key))
+			errs = append(errs, fmt.Errorf("tool provider %s manifest digest mismatch", key))
 			continue
 		}
-		var tool Tool
-		if err := decodeStrict(raw, &tool); err != nil {
-			errs = append(errs, fmt.Errorf("tool %s: %w", key, err))
+		var provider ToolProvider
+		if err := decodeStrict(raw, &provider); err != nil {
+			errs = append(errs, fmt.Errorf("tool provider %s: %w", key, err))
 			continue
 		}
-		if err := validateTool(tool, raw, v.content); err != nil {
-			errs = append(errs, fmt.Errorf("tool %s: %w", key, err))
+		if err := validateToolProvider(provider, raw, v.content); err != nil {
+			errs = append(errs, fmt.Errorf("tool provider %s: %w", key, err))
 			continue
 		}
-		if tool.ID != ref.ID || tool.Version != ref.Version {
-			errs = append(errs, fmt.Errorf("tool reference %s points to %s@%s", key, tool.ID, tool.Version))
+		if provider.ID != ref.ID || provider.Version != ref.Version {
+			errs = append(errs, fmt.Errorf("tool provider reference %s points to %s@%s", key, provider.ID, provider.Version))
 			continue
 		}
-		v.tools[key] = tool
-		v.toolDigests[key] = actualDigest
+		v.toolProviders[key] = provider
+		v.toolProviderDigests[key] = actualDigest
 	}
 	return errors.Join(errs...)
 }
 
-func (v *validator) loadToolCompositions() error {
+func (v *validator) loadToolProviderCompositions() error {
 	var errs []error
-	for _, ref := range v.suite.ToolCompositions {
+	for _, ref := range v.suite.ToolProviderCompositions {
 		key := ref.ID + "@" + ref.Version + "@" + ref.Platform.String()
-		if _, exists := v.toolCompositions[key]; exists {
-			errs = append(errs, fmt.Errorf("duplicate tool composition %s", key))
+		if _, exists := v.toolProviderCompositions[key]; exists {
+			errs = append(errs, fmt.Errorf("duplicate tool provider composition %s", key))
 			continue
 		}
 		data, err := v.content.data(ref.Path)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			continue
 		}
 		digest, err := canonicalDigest(data)
 		if err != nil || digest != ref.Digest {
-			errs = append(errs, fmt.Errorf("tool composition %s digest mismatch", key))
+			errs = append(errs, fmt.Errorf("tool provider composition %s digest mismatch", key))
 			continue
 		}
-		var composition ToolComposition
+		var composition ToolProviderComposition
 		if err := decodeStrict(data, &composition); err != nil {
-			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			continue
 		}
-		if err := validateToolComposition(composition); err != nil {
-			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+		if err := validateToolProviderComposition(composition); err != nil {
+			errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			continue
 		}
 		if composition.ID != ref.ID || composition.Version != ref.Version || composition.Platform != ref.Platform {
-			errs = append(errs, fmt.Errorf("tool composition %s identity does not match its reference", key))
+			errs = append(errs, fmt.Errorf("tool provider composition %s identity does not match its reference", key))
 			continue
 		}
-		toolKey := composition.ID + "@" + composition.Version
-		tool, ok := v.tools[toolKey]
-		if !ok || composition.ManifestDigest != v.toolDigests[toolKey] {
-			errs = append(errs, fmt.Errorf("tool composition %s references a missing or stale Tool manifest", key))
+		providerKey := composition.ID + "@" + composition.Version
+		provider, ok := v.toolProviders[providerKey]
+		if !ok || composition.ManifestDigest != v.toolProviderDigests[providerKey] {
+			errs = append(errs, fmt.Errorf("tool provider composition %s references a missing or stale ToolProvider manifest", key))
 			continue
 		}
-		variant, matches := exactVariant(tool.Variants, composition.Platform)
+		variant, matches := exactVariant(provider.Variants, composition.Platform)
 		if matches != 1 || composition.VariantDigest != variant.VariantDigest {
-			errs = append(errs, fmt.Errorf("tool composition %s must select exactly one matching variant", key))
+			errs = append(errs, fmt.Errorf("tool provider composition %s must select exactly one matching variant", key))
 			continue
 		}
 		profile, ok := v.builds[composition.BuildProfile]
-		if !ok || !profileSupportsToolPlatform(profile, composition.Platform) {
-			errs = append(errs, fmt.Errorf("tool composition %s build profile %q does not support %s", key, composition.BuildProfile, composition.Platform))
+		if !ok || !profileSupportsToolProviderPlatform(profile, composition.Platform) {
+			errs = append(errs, fmt.Errorf("tool provider composition %s build profile %q does not support %s", key, composition.BuildProfile, composition.Platform))
 			continue
 		}
 		destinations := map[string]InventoryEntry{}
-		closure, err := bundleClosure(toolKey, variant, v.tools)
+		closure, err := bundleClosure(providerKey, variant, v.toolProviders)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+			errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			continue
 		}
 		for _, bundle := range closure {
 			if err := addVariantDestinations(destinations, bundle.variant); err != nil {
-				errs = append(errs, fmt.Errorf("tool composition %s: %w", key, err))
+				errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			}
 		}
-		v.toolCompositions[key] = composition
+		v.toolProviderCompositions[key] = composition
 	}
 	return errors.Join(errs...)
 }
@@ -371,9 +371,9 @@ func (v *validator) loadCompositions() error {
 
 func (v *validator) validateReferences() error {
 	var errs []error
-	for toolKey, tool := range v.tools {
-		for _, variant := range tool.Variants {
-			errs = append(errs, validateBundleDependencies(toolKey, variant, v.tools))
+	for providerKey, provider := range v.toolProviders {
+		for _, variant := range provider.Variants {
+			errs = append(errs, validateBundleDependencies(providerKey, variant, v.toolProviders))
 		}
 	}
 	for agentID, agent := range v.agents {
@@ -387,35 +387,35 @@ func (v *validator) validateReferences() error {
 				continue
 			}
 			destinations := map[string]InventoryEntry{}
-			requirements := map[string]ToolRequirement{}
-			for _, requirement := range agent.Tools {
+			requirements := map[string]ToolProviderRequirement{}
+			for _, requirement := range agent.ToolProviders {
 				requirements[requirement.ID+"@"+requirement.Version] = requirement
 			}
-			if len(requirements) != len(composition.Tools) {
+			if len(requirements) != len(composition.ToolProviders) {
 				errs = append(errs, fmt.Errorf("composition %s does not resolve every agent requirement exactly once", key))
 				continue
 			}
-			for _, resolved := range composition.Tools {
-				toolKey := resolved.ID + "@" + resolved.Version
-				requirement, ok := requirements[toolKey]
+			for _, resolved := range composition.ToolProviders {
+				providerKey := resolved.ID + "@" + resolved.Version
+				requirement, ok := requirements[providerKey]
 				if !ok {
-					errs = append(errs, fmt.Errorf("composition %s contains undeclared tool %s", key, toolKey))
+					errs = append(errs, fmt.Errorf("composition %s contains undeclared tool provider %s", key, providerKey))
 					continue
 				}
-				tool, exists := v.tools[toolKey]
+				provider, exists := v.toolProviders[providerKey]
 				if !exists {
-					errs = append(errs, fmt.Errorf("composition %s contains missing tool %s", key, toolKey))
+					errs = append(errs, fmt.Errorf("composition %s contains missing tool provider %s", key, providerKey))
 					continue
 				}
-				if resolved.ManifestDigest != v.toolDigests[toolKey] || resolved.ExecutionMode != requirement.ExecutionMode {
-					errs = append(errs, fmt.Errorf("composition %s has stale resolution for %s", key, toolKey))
+				if resolved.ManifestDigest != v.toolProviderDigests[providerKey] || resolved.ExecutionMode != requirement.ExecutionMode {
+					errs = append(errs, fmt.Errorf("composition %s has stale resolution for %s", key, providerKey))
 				}
-				variant, matches := exactVariant(tool.Variants, composition.Platform)
+				variant, matches := exactVariant(provider.Variants, composition.Platform)
 				if matches != 1 || resolved.VariantDigest != variant.VariantDigest {
-					errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, toolKey))
+					errs = append(errs, fmt.Errorf("composition %s must select exactly one matching variant for %s", key, providerKey))
 					continue
 				}
-				closure, err := bundleClosure(toolKey, variant, v.tools)
+				closure, err := bundleClosure(providerKey, variant, v.toolProviders)
 				if err != nil {
 					errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 					continue
@@ -442,25 +442,25 @@ func (v *validator) validateReferences() error {
 			errs = append(errs, fmt.Errorf("composition %s references unknown agent %s", key, composition.Agent))
 		}
 	}
-	errs = append(errs, validateToolInboundReferences(v.tools, v.agents, v.toolCompositions))
-	if !slices.Equal(v.suite.Capabilities, derivedCapabilities(v.tools)) {
-		errs = append(errs, errors.New("suite capabilities must exactly equal capabilities derived from its tool declarations"))
+	errs = append(errs, validateToolProviderInboundReferences(v.toolProviders, v.agents, v.toolProviderCompositions))
+	if !slices.Equal(v.suite.Capabilities, derivedCapabilities(v.toolProviders)) {
+		errs = append(errs, errors.New("suite capabilities must exactly equal capabilities derived from its tool provider declarations"))
 	}
 	return errors.Join(errs...)
 }
 
-func validateToolInboundReferences(tools map[string]Tool, agents map[string]Agent, compositions map[string]ToolComposition) error {
+func validateToolProviderInboundReferences(providers map[string]ToolProvider, agents map[string]Agent, compositions map[string]ToolProviderComposition) error {
 	referenced := map[string]bool{}
 	for _, agent := range agents {
-		for _, requirement := range agent.Tools {
+		for _, requirement := range agent.ToolProviders {
 			referenced[requirement.ID+"@"+requirement.Version] = true
 		}
 	}
 	for _, composition := range compositions {
 		referenced[composition.ID+"@"+composition.Version] = true
 	}
-	for _, tool := range tools {
-		for _, variant := range tool.Variants {
+	for _, provider := range providers {
+		for _, variant := range provider.Variants {
 			for _, dependency := range variant.Dependencies {
 				referenced[dependency.ID+"@"+dependency.Version] = true
 			}
@@ -468,12 +468,12 @@ func validateToolInboundReferences(tools map[string]Tool, agents map[string]Agen
 	}
 
 	var errs []error
-	for key, tool := range tools {
+	for key, provider := range providers {
 		if referenced[key] {
 			continue
 		}
-		if tool.Retained == nil || !*tool.Retained {
-			errs = append(errs, fmt.Errorf("tool %s has no inward reference and must declare retained true to remain in the catalog", key))
+		if provider.Retained == nil || !*provider.Retained {
+			errs = append(errs, fmt.Errorf("tool provider %s has no inward reference and must declare retained true to remain in the catalog", key))
 		}
 	}
 	return errors.Join(errs...)
@@ -498,17 +498,17 @@ func validateAgent(agent Agent) error {
 	}
 	errs = append(errs, validateIdentifierList("model secretRefs", agent.Model.SecretRefs))
 	seen := map[string]bool{}
-	for _, tool := range agent.Tools {
-		key := tool.ID + "@" + tool.Version
-		if !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) {
-			errs = append(errs, fmt.Errorf("tool requirement %s is not an exact identity", key))
+	for _, provider := range agent.ToolProviders {
+		key := provider.ID + "@" + provider.Version
+		if !identifierPattern.MatchString(provider.ID) || !versionPattern.MatchString(provider.Version) {
+			errs = append(errs, fmt.Errorf("tool provider requirement %s is not an exact identity", key))
 		}
 		if seen[key] {
-			errs = append(errs, fmt.Errorf("duplicate tool requirement %s", key))
+			errs = append(errs, fmt.Errorf("duplicate tool provider requirement %s", key))
 		}
 		seen[key] = true
-		if tool.ExecutionMode != ExecutionSharedSandbox {
-			errs = append(errs, fmt.Errorf("tool requirement %s executionMode must be %q", key, ExecutionSharedSandbox))
+		if provider.ExecutionMode != ExecutionSharedSandbox {
+			errs = append(errs, fmt.Errorf("tool provider requirement %s executionMode must be %q", key, ExecutionSharedSandbox))
 		}
 	}
 	invokes := map[string]bool{}
@@ -537,54 +537,54 @@ func validateIdentifierList(name string, values []string) error {
 	return errors.Join(errs...)
 }
 
-func validateTool(tool Tool, raw []byte, content *contentSet) error {
+func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet) error {
 	var errs []error
-	if tool.SchemaVersion != SpecVersion || tool.MediaType != MediaTypeTool {
+	if provider.SchemaVersion != SpecVersion || provider.MediaType != MediaTypeToolProvider {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}
-	if !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) {
-		errs = append(errs, errors.New("tool id or exact version is invalid"))
+	if !identifierPattern.MatchString(provider.ID) || !versionPattern.MatchString(provider.Version) {
+		errs = append(errs, errors.New("tool provider id or exact version is invalid"))
 	}
-	if tool.Retained != nil && !*tool.Retained {
+	if provider.Retained != nil && !*provider.Retained {
 		errs = append(errs, errors.New("retained, when present, must be true"))
 	}
-	if tool.Provider.Protocol != "mcp" || tool.Provider.Revision == "" || len(tool.Provider.Operations) == 0 {
-		errs = append(errs, errors.New("the draft tool provider must declare an MCP revision and at least one operation"))
+	if provider.Protocol != "mcp" || provider.Revision == "" || len(provider.Tools) == 0 {
+		errs = append(errs, errors.New("the draft tool provider must declare an MCP revision and at least one tool"))
 	}
-	operations := map[string]bool{}
-	for _, operation := range tool.Provider.Operations {
-		if !identifierPattern.MatchString(operation.Name) || operations[operation.Name] {
-			errs = append(errs, fmt.Errorf("operation %q is invalid or duplicated", operation.Name))
+	tools := map[string]bool{}
+	for _, tool := range provider.Tools {
+		if !identifierPattern.MatchString(tool.Name) || tools[tool.Name] {
+			errs = append(errs, fmt.Errorf("tool %q is invalid or duplicated", tool.Name))
 		}
-		operations[operation.Name] = true
-		if err := validateFileRef(operation.InputSchema, content); err != nil {
-			errs = append(errs, fmt.Errorf("operation %q input schema: %w", operation.Name, err))
+		tools[tool.Name] = true
+		if err := validateFileRef(tool.InputSchema, content); err != nil {
+			errs = append(errs, fmt.Errorf("tool %q input schema: %w", tool.Name, err))
 		}
-		if operation.OutputSchema != nil {
-			if err := validateFileRef(*operation.OutputSchema, content); err != nil {
-				errs = append(errs, fmt.Errorf("operation %q output schema: %w", operation.Name, err))
+		if tool.OutputSchema != nil {
+			if err := validateFileRef(*tool.OutputSchema, content); err != nil {
+				errs = append(errs, fmt.Errorf("tool %q output schema: %w", tool.Name, err))
 			}
 		}
 		effects := map[string]bool{}
-		for _, effect := range operation.Effects {
+		for _, effect := range tool.Effects {
 			if effect == "" || effects[effect] {
-				errs = append(errs, fmt.Errorf("operation %q has an empty or duplicate effect", operation.Name))
+				errs = append(errs, fmt.Errorf("tool %q has an empty or duplicate effect", tool.Name))
 			}
 			effects[effect] = true
 		}
 	}
-	if len(tool.Variants) == 0 && tool.Remote == nil {
-		errs = append(errs, errors.New("tool must declare bundled variants, remote MCP, or both"))
+	if len(provider.Variants) == 0 && provider.Remote == nil {
+		errs = append(errs, errors.New("tool provider must declare bundled variants, remote MCP, or both"))
 	}
 	platforms := map[string]bool{}
 	variantDigests, err := rawVariantDigests(raw)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("variant identities: %w", err))
 	}
-	if len(variantDigests) != len(tool.Variants) {
+	if len(variantDigests) != len(provider.Variants) {
 		errs = append(errs, errors.New("raw and decoded variant counts differ"))
 	}
-	for i, variant := range tool.Variants {
+	for i, variant := range provider.Variants {
 		key := variant.Platform.String()
 		if platforms[key] {
 			errs = append(errs, fmt.Errorf("duplicate platform variant %s", key))
@@ -596,14 +596,14 @@ func validateTool(tool Tool, raw []byte, content *contentSet) error {
 		}
 		errs = append(errs, validateVariant(variant, expectedDigest, content))
 	}
-	if tool.Remote != nil {
-		errs = append(errs, validateRemoteMCP(*tool.Remote))
+	if provider.Remote != nil {
+		errs = append(errs, validateRemoteToolProvider(*provider.Remote))
 	}
-	errs = append(errs, validateExtensions(tool.Extensions))
+	errs = append(errs, validateExtensions(provider.Extensions))
 	return errors.Join(errs...)
 }
 
-func validateRemoteMCP(remote RemoteMCP) error {
+func validateRemoteToolProvider(remote RemoteToolProvider) error {
 	var errs []error
 	if remote.Transport != "streamable-http" {
 		errs = append(errs, errors.New("remote transport must be streamable-http"))
@@ -670,7 +670,7 @@ func validateFileRef(ref FileRef, content *contentSet) error {
 	return nil
 }
 
-func validateVariant(variant ToolVariant, expectedDigest string, content *contentSet) error {
+func validateVariant(variant ToolProviderVariant, expectedDigest string, content *contentSet) error {
 	var errs []error
 	if err := validatePlatform(variant.Platform); err != nil {
 		errs = append(errs, err)
@@ -811,9 +811,9 @@ func validateAbsolutePathList(name string, values []string) error {
 	return errors.Join(errs...)
 }
 
-func rawVariantDigests(rawTool []byte) ([]string, error) {
+func rawVariantDigests(rawProvider []byte) ([]string, error) {
 	var document map[string]json.RawMessage
-	if err := json.Unmarshal(rawTool, &document); err != nil {
+	if err := json.Unmarshal(rawProvider, &document); err != nil {
 		return nil, err
 	}
 	rawVariants, ok := document["variants"]
@@ -842,17 +842,17 @@ func rawVariantDigests(rawTool []byte) ([]string, error) {
 	return digests, nil
 }
 
-func validateBundleDependencies(toolKey string, variant ToolVariant, tools map[string]Tool) error {
-	_, err := bundleClosure(toolKey, variant, tools)
+func validateBundleDependencies(providerKey string, variant ToolProviderVariant, providers map[string]ToolProvider) error {
+	_, err := bundleClosure(providerKey, variant, providers)
 	return err
 }
 
 type selectedBundle struct {
-	toolKey string
-	variant ToolVariant
+	providerKey string
+	variant     ToolProviderVariant
 }
 
-func bundleClosure(rootKey string, root ToolVariant, tools map[string]Tool) ([]selectedBundle, error) {
+func bundleClosure(rootKey string, root ToolProviderVariant, providers map[string]ToolProvider) ([]selectedBundle, error) {
 	var (
 		closure []selectedBundle
 		errs    []error
@@ -860,36 +860,36 @@ func bundleClosure(rootKey string, root ToolVariant, tools map[string]Tool) ([]s
 	visited := map[string]bool{}
 	active := map[string]bool{}
 
-	var visit func(string, ToolVariant)
-	visit = func(toolKey string, variant ToolVariant) {
-		identity := toolKey + "#" + variant.VariantDigest
+	var visit func(string, ToolProviderVariant)
+	visit = func(providerKey string, variant ToolProviderVariant) {
+		identity := providerKey + "#" + variant.VariantDigest
 		if active[identity] {
-			errs = append(errs, fmt.Errorf("tool %s has a dependency cycle through %s", rootKey, toolKey))
+			errs = append(errs, fmt.Errorf("tool provider %s has a dependency cycle through %s", rootKey, providerKey))
 			return
 		}
 		if visited[identity] {
 			return
 		}
 		active[identity] = true
-		closure = append(closure, selectedBundle{toolKey: toolKey, variant: variant})
+		closure = append(closure, selectedBundle{providerKey: providerKey, variant: variant})
 
 		seen := map[string]bool{}
 		for _, dependency := range variant.Dependencies {
 			key := dependency.ID + "@" + dependency.Version
-			if key == toolKey || seen[key] || !identifierPattern.MatchString(dependency.ID) ||
+			if key == providerKey || seen[key] || !identifierPattern.MatchString(dependency.ID) ||
 				!versionPattern.MatchString(dependency.Version) || !validDigest(dependency.VariantDigest) {
-				errs = append(errs, fmt.Errorf("tool %s has invalid or duplicate dependency %s", toolKey, key))
+				errs = append(errs, fmt.Errorf("tool provider %s has invalid or duplicate dependency %s", providerKey, key))
 				continue
 			}
 			seen[key] = true
-			dependencyTool, ok := tools[key]
+			dependencyProvider, ok := providers[key]
 			if !ok {
-				errs = append(errs, fmt.Errorf("tool %s depends on missing tool %s", toolKey, key))
+				errs = append(errs, fmt.Errorf("tool provider %s depends on missing tool provider %s", providerKey, key))
 				continue
 			}
-			selected, matches := exactVariant(dependencyTool.Variants, variant.Platform)
+			selected, matches := exactVariant(dependencyProvider.Variants, variant.Platform)
 			if matches != 1 || selected.VariantDigest != dependency.VariantDigest {
-				errs = append(errs, fmt.Errorf("tool %s dependency %s does not bind one %s variant", toolKey, key, variant.Platform))
+				errs = append(errs, fmt.Errorf("tool provider %s dependency %s does not bind one %s variant", providerKey, key, variant.Platform))
 				continue
 			}
 			visit(key, selected)
@@ -903,7 +903,7 @@ func bundleClosure(rootKey string, root ToolVariant, tools map[string]Tool) ([]s
 	return closure, errors.Join(errs...)
 }
 
-func addVariantDestinations(destinations map[string]InventoryEntry, variant ToolVariant) error {
+func addVariantDestinations(destinations map[string]InventoryEntry, variant ToolProviderVariant) error {
 	var errs []error
 	for _, entry := range variant.Files {
 		destination := path.Join(variant.InstallRoot, entry.Path)
@@ -939,32 +939,32 @@ func validateComposition(composition Composition) error {
 	errs = append(errs, validatePlatform(composition.Platform))
 	seen := map[string]bool{}
 	previousID, previousVersion := "", ""
-	for index, tool := range composition.Tools {
-		key := tool.ID + "@" + tool.Version
-		if index > 0 && (tool.ID < previousID || tool.ID == previousID && tool.Version <= previousVersion) {
-			errs = append(errs, errors.New("resolved tools must be sorted by id and version"))
+	for index, provider := range composition.ToolProviders {
+		key := provider.ID + "@" + provider.Version
+		if index > 0 && (provider.ID < previousID || provider.ID == previousID && provider.Version <= previousVersion) {
+			errs = append(errs, errors.New("resolved tool providers must be sorted by id and version"))
 		}
-		if seen[key] || !identifierPattern.MatchString(tool.ID) || !versionPattern.MatchString(tool.Version) ||
-			!validDigest(tool.ManifestDigest) || !validDigest(tool.VariantDigest) ||
-			tool.ExecutionMode != ExecutionSharedSandbox {
-			errs = append(errs, fmt.Errorf("resolved tool %s is invalid or duplicated", key))
+		if seen[key] || !identifierPattern.MatchString(provider.ID) || !versionPattern.MatchString(provider.Version) ||
+			!validDigest(provider.ManifestDigest) || !validDigest(provider.VariantDigest) ||
+			provider.ExecutionMode != ExecutionSharedSandbox {
+			errs = append(errs, fmt.Errorf("resolved tool provider %s is invalid or duplicated", key))
 		}
 		seen[key] = true
-		previousID, previousVersion = tool.ID, tool.Version
+		previousID, previousVersion = provider.ID, provider.Version
 	}
 	return errors.Join(errs...)
 }
 
-func validateToolComposition(composition ToolComposition) error {
+func validateToolProviderComposition(composition ToolProviderComposition) error {
 	var errs []error
-	if composition.SchemaVersion != SpecVersion || composition.MediaType != MediaTypeToolComposition {
+	if composition.SchemaVersion != SpecVersion || composition.MediaType != MediaTypeToolProviderComposition {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}
 	if !identifierPattern.MatchString(composition.ID) || !versionPattern.MatchString(composition.Version) {
-		errs = append(errs, errors.New("tool identity is invalid"))
+		errs = append(errs, errors.New("tool provider identity is invalid"))
 	}
 	if !validDigest(composition.ManifestDigest) || !validDigest(composition.VariantDigest) {
-		errs = append(errs, errors.New("tool manifest or variant digest is invalid"))
+		errs = append(errs, errors.New("tool provider manifest or variant digest is invalid"))
 	}
 	if !identifierPattern.MatchString(composition.BuildProfile) {
 		errs = append(errs, errors.New("buildProfile is invalid"))
@@ -1023,7 +1023,7 @@ func profileSupportsPlatform(profile BuildProfile, platform Platform) bool {
 	return base && harness
 }
 
-func profileSupportsToolPlatform(profile BuildProfile, platform Platform) bool {
+func profileSupportsToolProviderPlatform(profile BuildProfile, platform Platform) bool {
 	for _, image := range profile.RuntimeBase {
 		if image.Platform == platform {
 			return true
@@ -1034,10 +1034,10 @@ func profileSupportsToolPlatform(profile BuildProfile, platform Platform) bool {
 
 func validatePlatform(platform Platform) error {
 	if platform.OS != "linux" {
-		return fmt.Errorf("the draft supports exact Linux tool platforms only, got %s", platform.String())
+		return fmt.Errorf("the draft supports exact Linux tool provider platforms only, got %s", platform.String())
 	}
 	if platform.Architecture != "amd64" && platform.Architecture != "arm64" {
-		return fmt.Errorf("the draft supports linux/amd64 and linux/arm64 tools, got %s", platform.String())
+		return fmt.Errorf("the draft supports linux/amd64 and linux/arm64 tool providers, got %s", platform.String())
 	}
 	if platform.Variant != "" {
 		return fmt.Errorf("the draft requires an exact platform without OCI variant, got %s", platform.String())
@@ -1045,8 +1045,8 @@ func validatePlatform(platform Platform) error {
 	return nil
 }
 
-func exactVariant(variants []ToolVariant, platform Platform) (ToolVariant, int) {
-	var selected ToolVariant
+func exactVariant(variants []ToolProviderVariant, platform Platform) (ToolProviderVariant, int) {
+	var selected ToolProviderVariant
 	count := 0
 	for _, variant := range variants {
 		if variant.Platform == platform {
@@ -1075,10 +1075,10 @@ func validateExtensions(extensions []Extension) error {
 	return errors.Join(errs...)
 }
 
-func derivedCapabilities(tools map[string]Tool) []string {
+func derivedCapabilities(providers map[string]ToolProvider) []string {
 	set := map[string]bool{}
-	for _, tool := range tools {
-		if len(tool.Variants) > 0 {
+	for _, provider := range providers {
+		if len(provider.Variants) > 0 {
 			set["bundled-stdio-mcp"] = true
 		}
 	}

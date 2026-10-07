@@ -1,29 +1,27 @@
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.provider.v1+json",
   "id": "opa",
   "version": "1.0.0",
-  "provider": {
-    "protocol": "mcp",
-    "revision": "2025-06-18",
-    "operations": [
-      {
-        "name": "evaluate_document",
-        "description": "Evaluate a structured document against a supplied Rego policy.",
-        "inputSchema": {
-          "path": "schemas/opa/evaluate-document-input.json",
-          "digest": "sha256:3bd7aabe68029f2f2c999b7bac0f6f0f256fd770ac891172f7fa98a843fd04fd"
-        },
-        "outputSchema": {
-          "path": "schemas/opa/evaluate-document-output.json",
-          "digest": "sha256:bafe8750ab384f2a5e25404322ca5703b85b7f6704d89442d3e012ff5514b226"
-        },
-        "effects": [
-          "policy-evaluation"
-        ]
-      }
-    ]
-  },
+  "protocol": "mcp",
+  "revision": "2025-06-18",
+  "tools": [
+    {
+      "name": "evaluate_document",
+      "description": "Evaluate a structured document against a supplied Rego policy.",
+      "inputSchema": {
+        "path": "schemas/opa/evaluate-document-input.json",
+        "digest": "sha256:3bd7aabe68029f2f2c999b7bac0f6f0f256fd770ac891172f7fa98a843fd04fd"
+      },
+      "outputSchema": {
+        "path": "schemas/opa/evaluate-document-output.json",
+        "digest": "sha256:bafe8750ab384f2a5e25404322ca5703b85b7f6704d89442d3e012ff5514b226"
+      },
+      "effects": [
+        "policy-evaluation"
+      ]
+    }
+  ],
   "variants": [
     {
       "platform": {
@@ -31,15 +29,15 @@
         "architecture": "amd64"
       },
       "variantDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "installRoot": "/opt/agentsuite/tools/opa/1.0.0",
-      "payloadRoot": "tools/opa/1.0.0/linux-amd64",
-      "entrypoint": "/opt/agentsuite/tools/opa/1.0.0/bin/opa-mcp",
+      "installRoot": "/opt/agentsuite/tool-providers/opa/1.0.0",
+      "payloadRoot": "tool-providers/opa/1.0.0/linux-amd64",
+      "entrypoint": "/opt/agentsuite/tool-providers/opa/1.0.0/bin/opa-mcp",
       "arguments": [
         "--opa",
-        "/opt/agentsuite/tools/opa/1.0.0/bin/opa"
+        "/opt/agentsuite/tool-providers/opa/1.0.0/bin/opa"
       ],
       "searchPath": [
-        "/opt/agentsuite/tools/opa/1.0.0/bin"
+        "/opt/agentsuite/tool-providers/opa/1.0.0/bin"
       ],
       "environment": [],
       "writablePaths": [],

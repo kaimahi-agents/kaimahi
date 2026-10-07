@@ -30,7 +30,8 @@
         "secretRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
       }
     },
-    "tools": {
+    "toolProviders": {
+      "description": "Exact provider requirements; callable tools are declared by each referenced ToolProvider.",
       "type": "array",
       "uniqueItems": true,
       "items": {

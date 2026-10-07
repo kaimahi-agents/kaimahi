@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-composition.schema.json",
-  "title": "AgentSuite Tool composition manifest",
-  "description": "The closed, digest-pinned build input for one standalone Tool Sandbox Image.",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-provider-composition.schema.json",
+  "title": "AgentSuite ToolProvider composition manifest",
+  "description": "The closed, digest-pinned build input for one standalone ToolProvider Sandbox Image.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,27 +21,27 @@
       "const": "1.0.0-draft"
     },
     "mediaType": {
-      "description": "Media type identifying a Tool composition manifest.",
-      "const": "application/vnd.agentsuite.tool.composition.v1+json"
+      "description": "Media type identifying a ToolProvider composition manifest.",
+      "const": "application/vnd.agentsuite.tool.provider.composition.v1+json"
     },
     "id": {
-      "description": "Exact Tool identifier selected from the suite catalog.",
+      "description": "Exact ToolProvider identifier selected from the suite catalog.",
       "$ref": "#/$defs/id"
     },
     "version": {
-      "description": "Exact Tool semantic version selected from the suite catalog.",
+      "description": "Exact ToolProvider semantic version selected from the suite catalog.",
       "$ref": "#/$defs/version"
     },
     "manifestDigest": {
-      "description": "JCS SHA-256 digest of the selected Tool manifest.",
+      "description": "JCS SHA-256 digest of the selected ToolProvider manifest.",
       "$ref": "#/$defs/digest"
     },
     "platform": {
-      "description": "Exact platform of the selected bundled Tool variant.",
+      "description": "Exact platform of the selected bundled ToolProvider variant.",
       "$ref": "#/$defs/platform"
     },
     "variantDigest": {
-      "description": "Canonical digest selecting one same-platform Tool variant.",
+      "description": "Canonical digest selecting one same-platform ToolProvider variant.",
       "$ref": "#/$defs/digest"
     },
     "buildProfile": {

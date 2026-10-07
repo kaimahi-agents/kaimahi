@@ -5,17 +5,17 @@ const (
 
 	LayoutVersion = "1.0.0"
 
-	MediaTypeArtifact        = "application/vnd.agentsuite.suite.v1"
-	MediaTypeEmptyConfig     = "application/vnd.oci.empty.v1+json"
-	MediaTypeContent         = "application/vnd.agentsuite.content.v1.tar+gzip"
-	MediaTypeSuite           = "application/vnd.agentsuite.manifest.v1+json"
-	MediaTypeAgent           = "application/vnd.agentsuite.agent.v1+json"
-	MediaTypeToolCatalog     = "application/vnd.agentsuite.tool.catalog.v1+json"
-	MediaTypeTool            = "application/vnd.agentsuite.tool.v1+json"
-	MediaTypeToolComposition = "application/vnd.agentsuite.tool.composition.v1+json"
-	MediaTypeComposition     = "application/vnd.agentsuite.composition.v1+json"
-	MediaTypeBuildProfile    = "application/vnd.agentsuite.build.profile.v1+json"
-	MediaTypeSandboxBinding  = "application/vnd.agentsuite.sandbox.binding.v1+json"
+	MediaTypeArtifact                = "application/vnd.agentsuite.suite.v1"
+	MediaTypeEmptyConfig             = "application/vnd.oci.empty.v1+json"
+	MediaTypeContent                 = "application/vnd.agentsuite.content.v1.tar+gzip"
+	MediaTypeSuite                   = "application/vnd.agentsuite.manifest.v1+json"
+	MediaTypeAgent                   = "application/vnd.agentsuite.agent.v1+json"
+	MediaTypeToolProviderCatalog     = "application/vnd.agentsuite.tool.provider.catalog.v1+json"
+	MediaTypeToolProvider            = "application/vnd.agentsuite.tool.provider.v1+json"
+	MediaTypeToolProviderComposition = "application/vnd.agentsuite.tool.provider.composition.v1+json"
+	MediaTypeComposition             = "application/vnd.agentsuite.composition.v1+json"
+	MediaTypeBuildProfile            = "application/vnd.agentsuite.build.profile.v1+json"
+	MediaTypeSandboxBinding          = "application/vnd.agentsuite.sandbox.binding.v1+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )
@@ -51,16 +51,16 @@ type Extension struct {
 }
 
 type Suite struct {
-	SchemaVersion    string               `json:"schemaVersion"`
-	MediaType        string               `json:"mediaType"`
-	Name             string               `json:"name"`
-	Agents           []ManifestRef        `json:"agents"`
-	ToolCatalog      ManifestRef          `json:"toolCatalog"`
-	ToolCompositions []ToolCompositionRef `json:"toolCompositions,omitempty"`
-	Compositions     []CompositionRef     `json:"compositions"`
-	BuildProfiles    []ManifestRef        `json:"buildProfiles"`
-	Capabilities     []string             `json:"capabilities,omitempty"`
-	Extensions       []Extension          `json:"extensions,omitempty"`
+	SchemaVersion            string                       `json:"schemaVersion"`
+	MediaType                string                       `json:"mediaType"`
+	Name                     string                       `json:"name"`
+	Agents                   []ManifestRef                `json:"agents"`
+	ToolProviderCatalog      ManifestRef                  `json:"toolProviderCatalog"`
+	ToolProviderCompositions []ToolProviderCompositionRef `json:"toolProviderCompositions,omitempty"`
+	Compositions             []CompositionRef             `json:"compositions"`
+	BuildProfiles            []ManifestRef                `json:"buildProfiles"`
+	Capabilities             []string                     `json:"capabilities,omitempty"`
+	Extensions               []Extension                  `json:"extensions,omitempty"`
 }
 
 type ManifestRef struct {
@@ -77,7 +77,7 @@ type CompositionRef struct {
 	Digest   string   `json:"digest"`
 }
 
-type ToolCompositionRef struct {
+type ToolProviderCompositionRef struct {
 	ID       string   `json:"id"`
 	Version  string   `json:"version"`
 	Platform Platform `json:"platform"`
@@ -86,15 +86,15 @@ type ToolCompositionRef struct {
 }
 
 type Agent struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	MediaType     string            `json:"mediaType"`
-	ID            string            `json:"id"`
-	Description   string            `json:"description,omitempty"`
-	Instructions  FileRef           `json:"instructions"`
-	Model         ModelRequirement  `json:"model"`
-	Tools         []ToolRequirement `json:"tools,omitempty"`
-	Invokes       []AgentInvoke     `json:"invokes,omitempty"`
-	Extensions    []Extension       `json:"extensions,omitempty"`
+	SchemaVersion string                    `json:"schemaVersion"`
+	MediaType     string                    `json:"mediaType"`
+	ID            string                    `json:"id"`
+	Description   string                    `json:"description,omitempty"`
+	Instructions  FileRef                   `json:"instructions"`
+	Model         ModelRequirement          `json:"model"`
+	ToolProviders []ToolProviderRequirement `json:"toolProviders,omitempty"`
+	Invokes       []AgentInvoke             `json:"invokes,omitempty"`
+	Extensions    []Extension               `json:"extensions,omitempty"`
 }
 
 type FileRef struct {
@@ -109,7 +109,7 @@ type ModelRequirement struct {
 	SecretRefs  []string `json:"secretRefs,omitempty"`
 }
 
-type ToolRequirement struct {
+type ToolProviderRequirement struct {
 	ID            string `json:"id"`
 	Version       string `json:"version"`
 	ExecutionMode string `json:"executionMode"`
@@ -121,31 +121,30 @@ type AgentInvoke struct {
 	MaxDepth      int    `json:"maxDepth,omitempty"`
 }
 
-type ToolCatalog struct {
+type ToolProviderCatalog struct {
 	SchemaVersion string        `json:"schemaVersion"`
 	MediaType     string        `json:"mediaType"`
-	Tools         []ManifestRef `json:"tools"`
+	ToolProviders []ManifestRef `json:"toolProviders"`
 }
 
-type Tool struct {
-	SchemaVersion string        `json:"schemaVersion"`
-	MediaType     string        `json:"mediaType"`
-	ID            string        `json:"id"`
-	Version       string        `json:"version"`
-	Retained      *bool         `json:"retained,omitempty"`
-	Provider      ToolProvider  `json:"provider"`
-	Variants      []ToolVariant `json:"variants,omitempty"`
-	Remote        *RemoteMCP    `json:"remote,omitempty"`
-	Extensions    []Extension   `json:"extensions,omitempty"`
-}
-
+// ToolProvider is a versioned contract and its bundled or remote implementations.
+// The abstraction is protocol-neutral; the declared protocol contributes to identity.
 type ToolProvider struct {
-	Protocol   string          `json:"protocol"`
-	Revision   string          `json:"revision"`
-	Operations []ToolOperation `json:"operations"`
+	SchemaVersion string                `json:"schemaVersion"`
+	MediaType     string                `json:"mediaType"`
+	ID            string                `json:"id"`
+	Version       string                `json:"version"`
+	Retained      *bool                 `json:"retained,omitempty"`
+	Protocol      string                `json:"protocol"`
+	Revision      string                `json:"revision"`
+	Tools         []Tool                `json:"tools"`
+	Variants      []ToolProviderVariant `json:"variants,omitempty"`
+	Remote        *RemoteToolProvider   `json:"remote,omitempty"`
+	Extensions    []Extension           `json:"extensions,omitempty"`
 }
 
-type ToolOperation struct {
+// Tool is one model-callable function exposed by a ToolProvider.
+type Tool struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description,omitempty"`
 	InputSchema  FileRef  `json:"inputSchema"`
@@ -153,7 +152,7 @@ type ToolOperation struct {
 	Effects      []string `json:"effects,omitempty"`
 }
 
-type RemoteMCP struct {
+type RemoteToolProvider struct {
 	Transport    string                     `json:"transport"`
 	EndpointRef  string                     `json:"endpointRef"`
 	Headers      []RemoteHeader             `json:"headers,omitempty"`
@@ -182,23 +181,23 @@ type RemoteTimeouts struct {
 	RequestMilliseconds int `json:"requestMilliseconds"`
 }
 
-type ToolVariant struct {
-	Platform      Platform           `json:"platform"`
-	VariantDigest string             `json:"variantDigest"`
-	InstallRoot   string             `json:"installRoot"`
-	Relocatable   bool               `json:"relocatable,omitempty"`
-	PayloadRoot   string             `json:"payloadRoot"`
-	Entrypoint    string             `json:"entrypoint"`
-	Arguments     []string           `json:"arguments,omitempty"`
-	SearchPath    []string           `json:"searchPath,omitempty"`
-	Environment   []EnvironmentName  `json:"environment,omitempty"`
-	WritablePaths []string           `json:"writablePaths,omitempty"`
-	Network       []NetworkAccess    `json:"network,omitempty"`
-	Runtime       RuntimeRequirement `json:"runtime"`
-	Files         []InventoryEntry   `json:"files"`
-	Dependencies  []BundleDependency `json:"dependencies,omitempty"`
-	SBOM          *Descriptor        `json:"sbom,omitempty"`
-	Provenance    *Descriptor        `json:"provenance,omitempty"`
+type ToolProviderVariant struct {
+	Platform      Platform                 `json:"platform"`
+	VariantDigest string                   `json:"variantDigest"`
+	InstallRoot   string                   `json:"installRoot"`
+	Relocatable   bool                     `json:"relocatable,omitempty"`
+	PayloadRoot   string                   `json:"payloadRoot"`
+	Entrypoint    string                   `json:"entrypoint"`
+	Arguments     []string                 `json:"arguments,omitempty"`
+	SearchPath    []string                 `json:"searchPath,omitempty"`
+	Environment   []EnvironmentName        `json:"environment,omitempty"`
+	WritablePaths []string                 `json:"writablePaths,omitempty"`
+	Network       []NetworkAccess          `json:"network,omitempty"`
+	Runtime       RuntimeRequirement       `json:"runtime"`
+	Files         []InventoryEntry         `json:"files"`
+	Dependencies  []ToolProviderDependency `json:"dependencies,omitempty"`
+	SBOM          *Descriptor              `json:"sbom,omitempty"`
+	Provenance    *Descriptor              `json:"provenance,omitempty"`
 }
 
 type EnvironmentName struct {
@@ -233,7 +232,7 @@ type InventoryEntry struct {
 	Component  string `json:"component,omitempty"`
 }
 
-type BundleDependency struct {
+type ToolProviderDependency struct {
 	ID            string `json:"id"`
 	Version       string `json:"version"`
 	VariantDigest string `json:"variantDigest"`
@@ -245,15 +244,15 @@ type PlatformImage struct {
 }
 
 type Composition struct {
-	SchemaVersion string         `json:"schemaVersion"`
-	MediaType     string         `json:"mediaType"`
-	Agent         string         `json:"agent"`
-	Platform      Platform       `json:"platform"`
-	BuildProfile  string         `json:"buildProfile"`
-	Tools         []ResolvedTool `json:"tools"`
+	SchemaVersion string                 `json:"schemaVersion"`
+	MediaType     string                 `json:"mediaType"`
+	Agent         string                 `json:"agent"`
+	Platform      Platform               `json:"platform"`
+	BuildProfile  string                 `json:"buildProfile"`
+	ToolProviders []ResolvedToolProvider `json:"toolProviders"`
 }
 
-type ResolvedTool struct {
+type ResolvedToolProvider struct {
 	ID             string `json:"id"`
 	Version        string `json:"version"`
 	ManifestDigest string `json:"manifestDigest"`
@@ -261,7 +260,7 @@ type ResolvedTool struct {
 	ExecutionMode  string `json:"executionMode"`
 }
 
-type ToolComposition struct {
+type ToolProviderComposition struct {
 	SchemaVersion  string   `json:"schemaVersion"`
 	MediaType      string   `json:"mediaType"`
 	ID             string   `json:"id"`

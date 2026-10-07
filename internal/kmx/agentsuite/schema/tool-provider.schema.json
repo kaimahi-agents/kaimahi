@@ -1,21 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool.schema.json",
-  "title": "AgentSuite tool manifest",
-  "description": "An immutable MCP provider contract with bundled shared-sandbox variants, one remote Streamable HTTP declaration, or both.",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-provider.schema.json",
+  "title": "AgentSuite ToolProvider manifest",
+  "description": "An immutable tool provider contract exposing callable tools, with bundled shared-sandbox variants, one remote declaration, or both. This draft supports the MCP protocol.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "id", "version", "provider"],
+  "required": ["schemaVersion", "mediaType", "id", "version", "protocol", "revision", "tools"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
-    "mediaType": {"const": "application/vnd.agentsuite.tool.v1+json"},
+    "mediaType": {"const": "application/vnd.agentsuite.tool.provider.v1+json"},
     "id": {"$ref": "#/$defs/id"},
     "version": {"$ref": "#/$defs/version"},
     "retained": {
-      "description": "Explicitly permits this Tool to remain in the catalog without an inward reference. Presence does not authorize use or create a runtime binding.",
+      "description": "Explicitly permits this ToolProvider to remain in the catalog without an inward reference. Presence does not authorize use or create a runtime binding.",
       "const": true
     },
-    "provider": {"$ref": "#/$defs/provider"},
+    "protocol": {"const": "mcp"},
+    "revision": {"type": "string", "minLength": 1},
+    "tools": {
+      "description": "The complete set of model-callable tools exposed by this provider contract.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/tool"}
+    },
     "variants": {
       "type": "array",
       "minItems": 1,
@@ -106,7 +114,7 @@
         "digest": {"$ref": "#/$defs/digest"}
       }
     },
-    "operation": {
+    "tool": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "inputSchema"],
@@ -119,21 +127,6 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
-        }
-      }
-    },
-    "provider": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["protocol", "revision", "operations"],
-      "properties": {
-        "protocol": {"const": "mcp"},
-        "revision": {"type": "string", "minLength": 1},
-        "operations": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"$ref": "#/$defs/operation"}
         }
       }
     },
@@ -222,7 +215,7 @@
       }
     },
     "remote": {
-      "description": "Remote MCP transport requirements that remain unresolved in the portable Tool manifest.",
+      "description": "Remote MCP transport requirements that remain unresolved in the portable ToolProvider manifest.",
       "type": "object",
       "additionalProperties": false,
       "required": [

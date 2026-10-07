@@ -21,7 +21,7 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Name != "example" || report.Agents != 1 || report.Tools != 0 || report.Compositions != 1 {
+	if report.Name != "example" || report.Agents != 1 || report.ToolProviders != 0 || report.Compositions != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -32,7 +32,7 @@ func TestCoordinatorWorkersFixtureIsConformant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidatePath(%s) error = %v", root, err)
 	}
-	if report.Name != "coordinator-workers" || report.Agents != 3 || report.Tools != 0 || report.Compositions != 3 {
+	if report.Name != "coordinator-workers" || report.Agents != 3 || report.ToolProviders != 0 || report.Compositions != 3 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 
@@ -81,18 +81,18 @@ func TestValidateAgentRejectsSelfInvocation(t *testing.T) {
 	}
 }
 
-func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.T) {
+func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *testing.T) {
 	root := t.TempDir()
 	schemaBytes := []byte(`{"type":"object","additionalProperties":false}`)
 	mustWrite(t, root, "schemas/read.json", schemaBytes)
 	payload := []byte("#!/bin/sh\nprintf tool\n")
-	mustWriteMode(t, root, "tools/reader/1.2.3/linux-amd64/bin/reader", payload, 0o755)
+	mustWriteMode(t, root, "tool-providers/reader/1.2.3/linux-amd64/bin/reader", payload, 0o755)
 
-	variant := ToolVariant{
+	variant := ToolProviderVariant{
 		Platform:    Platform{OS: "linux", Architecture: "amd64"},
-		InstallRoot: "/opt/agentsuite/tools/reader",
-		PayloadRoot: "tools/reader/1.2.3/linux-amd64",
-		Entrypoint:  "/opt/agentsuite/tools/reader/bin/reader",
+		InstallRoot: "/opt/agentsuite/tool-providers/reader",
+		PayloadRoot: "tool-providers/reader/1.2.3/linux-amd64",
+		Entrypoint:  "/opt/agentsuite/tool-providers/reader/bin/reader",
 		Runtime:     RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
 		Files: []InventoryEntry{{
 			Path: "bin/reader", Type: "file", Mode: 0o755, UID: 0, GID: 0,
@@ -100,19 +100,17 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		}},
 	}
 	variant.VariantDigest = mustVariantDigest(t, variant)
-	tool := Tool{
+	provider := ToolProvider{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeTool,
+		MediaType:     MediaTypeToolProvider,
 		ID:            "reader",
 		Version:       "1.2.3",
-		Provider: ToolProvider{
-			Protocol: "mcp", Revision: "2025-06-18",
-			Operations: []ToolOperation{{
-				Name: "read", InputSchema: FileRef{Path: "schemas/read.json", Digest: digestBytes(schemaBytes)},
-			}},
-		},
-		Variants: []ToolVariant{variant},
-		Remote: &RemoteMCP{
+		Protocol:      "mcp", Revision: "2025-06-18",
+		Tools: []Tool{{
+			Name: "read", InputSchema: FileRef{Path: "schemas/read.json", Digest: digestBytes(schemaBytes)},
+		}},
+		Variants: []ToolProviderVariant{variant},
+		Remote: &RemoteToolProvider{
 			Transport:    "streamable-http",
 			EndpointRef:  "reader-mcp-endpoint",
 			Network:      []RemoteNetworkRequirement{{DestinationRef: "reader-mcp-egress"}},
@@ -122,15 +120,15 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		},
 		Extensions: []Extension{},
 	}
-	toolDigest := mustWriteJSON(t, root, "tools/reader/1.2.3/tool.json", tool)
-	catalog := ToolCatalog{
+	providerDigest := mustWriteJSON(t, root, "tool-providers/reader/1.2.3/tool-provider.json", provider)
+	catalog := ToolProviderCatalog{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeToolCatalog,
-		Tools: []ManifestRef{{
-			ID: "reader", Version: "1.2.3", Path: "tools/reader/1.2.3/tool.json", Digest: toolDigest,
+		MediaType:     MediaTypeToolProviderCatalog,
+		ToolProviders: []ManifestRef{{
+			ID: "reader", Version: "1.2.3", Path: "tool-providers/reader/1.2.3/tool-provider.json", Digest: providerDigest,
 		}},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
 
 	image := Descriptor{
 		MediaType: ociManifestMediaType,
@@ -144,30 +142,30 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		SourceEpoch: 1,
 	}
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
-	toolComposition := ToolComposition{
+	providerComposition := ToolProviderComposition{
 		SchemaVersion:  SpecVersion,
-		MediaType:      MediaTypeToolComposition,
+		MediaType:      MediaTypeToolProviderComposition,
 		ID:             "reader",
 		Version:        "1.2.3",
-		ManifestDigest: toolDigest,
+		ManifestDigest: providerDigest,
 		Platform:       Platform{OS: "linux", Architecture: "amd64"},
 		VariantDigest:  variant.VariantDigest,
 		BuildProfile:   "default",
 	}
-	toolCompositionPath := "tool-compositions/reader-linux-amd64.json"
-	toolCompositionDigest := mustWriteJSON(t, root, toolCompositionPath, toolComposition)
+	providerCompositionPath := "tool-provider-compositions/reader-linux-amd64.json"
+	providerCompositionDigest := mustWriteJSON(t, root, providerCompositionPath, providerComposition)
 
 	var agentRefs []ManifestRef
 	var compositionRefs []CompositionRef
 	for _, id := range []string{"writer", "reviewer"} {
-		instructions := []byte("Use the reader tool.\n")
+		instructions := []byte("Use the reader provider's read tool.\n")
 		instructionPath := "instructions/" + id + ".md"
 		mustWrite(t, root, instructionPath, instructions)
 		agent := Agent{
 			SchemaVersion: SpecVersion, MediaType: MediaTypeAgent, ID: id,
 			Instructions: FileRef{Path: instructionPath, Digest: digestBytes(instructions)},
 			Model:        ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
-			Tools: []ToolRequirement{{
+			ToolProviders: []ToolProviderRequirement{{
 				ID: "reader", Version: "1.2.3", ExecutionMode: ExecutionSharedSandbox,
 			}},
 			Invokes: []AgentInvoke{}, Extensions: []Extension{},
@@ -177,8 +175,8 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		composition := Composition{
 			SchemaVersion: SpecVersion, MediaType: MediaTypeComposition, Agent: id,
 			Platform: Platform{OS: "linux", Architecture: "amd64"}, BuildProfile: "default",
-			Tools: []ResolvedTool{{
-				ID: "reader", Version: "1.2.3", ManifestDigest: toolDigest,
+			ToolProviders: []ResolvedToolProvider{{
+				ID: "reader", Version: "1.2.3", ManifestDigest: providerDigest,
 				VariantDigest: variant.VariantDigest, ExecutionMode: ExecutionSharedSandbox,
 			}},
 		}
@@ -189,11 +187,11 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 		})
 	}
 	suite := Suite{
-		SchemaVersion: SpecVersion, MediaType: MediaTypeSuite, Name: "shared-tool",
-		Agents: agentRefs, ToolCatalog: ManifestRef{ID: "catalog", Path: "tools/catalog.json", Digest: catalogDigest},
-		ToolCompositions: []ToolCompositionRef{{
-			ID: "reader", Version: "1.2.3", Platform: toolComposition.Platform,
-			Path: toolCompositionPath, Digest: toolCompositionDigest,
+		SchemaVersion: SpecVersion, MediaType: MediaTypeSuite, Name: "shared-tool-provider",
+		Agents: agentRefs, ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Digest: catalogDigest},
+		ToolProviderCompositions: []ToolProviderCompositionRef{{
+			ID: "reader", Version: "1.2.3", Platform: providerComposition.Platform,
+			Path: providerCompositionPath, Digest: providerCompositionDigest,
 		}},
 		Compositions: compositionRefs,
 		BuildProfiles: []ManifestRef{{
@@ -207,99 +205,99 @@ func TestValidatePathAllowsOnePinnedToolVariantToBeReusedByTwoAgents(t *testing.
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Agents != 2 || report.Tools != 1 || report.ToolCompositions != 1 || report.Compositions != 2 {
+	if report.Agents != 2 || report.ToolProviders != 1 || report.ToolProviderCompositions != 1 || report.Compositions != 2 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
 
-func TestLoadToolCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
+func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
 	platform := Platform{OS: "linux", Architecture: "amd64"}
-	toolDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	providerDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	variantDigest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	image := Descriptor{
 		MediaType: ociManifestMediaType,
 		Digest:    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		Size:      1,
 	}
-	baseTool := Tool{
+	baseProvider := ToolProvider{
 		ID: "reader", Version: "1.2.3",
-		Variants: []ToolVariant{{
+		Variants: []ToolProviderVariant{{
 			Platform: platform, VariantDigest: variantDigest,
 			InstallRoot: "/opt/reader",
 		}},
 	}
-	baseComposition := ToolComposition{
-		SchemaVersion: SpecVersion, MediaType: MediaTypeToolComposition,
-		ID: "reader", Version: "1.2.3", ManifestDigest: toolDigest,
+	baseComposition := ToolProviderComposition{
+		SchemaVersion: SpecVersion, MediaType: MediaTypeToolProviderComposition,
+		ID: "reader", Version: "1.2.3", ManifestDigest: providerDigest,
 		Platform: platform, VariantDigest: variantDigest, BuildProfile: "default",
 	}
 	tests := []struct {
 		name   string
-		mutate func(*validator, *ToolComposition)
+		mutate func(*validator, *ToolProviderComposition)
 		want   string
 	}{
 		{
-			name: "missing tool",
-			mutate: func(v *validator, _ *ToolComposition) {
-				delete(v.tools, "reader@1.2.3")
+			name: "missing tool provider",
+			mutate: func(v *validator, _ *ToolProviderComposition) {
+				delete(v.toolProviders, "reader@1.2.3")
 			},
-			want: "missing or stale Tool manifest",
+			want: "missing or stale ToolProvider manifest",
 		},
 		{
 			name: "stale manifest digest",
-			mutate: func(v *validator, _ *ToolComposition) {
-				v.toolDigests["reader@1.2.3"] = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+			mutate: func(v *validator, _ *ToolProviderComposition) {
+				v.toolProviderDigests["reader@1.2.3"] = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 			},
-			want: "missing or stale Tool manifest",
+			want: "missing or stale ToolProvider manifest",
 		},
 		{
 			name: "wrong platform",
-			mutate: func(v *validator, _ *ToolComposition) {
-				tool := v.tools["reader@1.2.3"]
-				tool.Variants[0].Platform.Architecture = "arm64"
-				v.tools["reader@1.2.3"] = tool
+			mutate: func(v *validator, _ *ToolProviderComposition) {
+				provider := v.toolProviders["reader@1.2.3"]
+				provider.Variants[0].Platform.Architecture = "arm64"
+				v.toolProviders["reader@1.2.3"] = provider
 			},
 			want: "exactly one matching variant",
 		},
 		{
 			name: "stale variant digest",
-			mutate: func(_ *validator, composition *ToolComposition) {
+			mutate: func(_ *validator, composition *ToolProviderComposition) {
 				composition.VariantDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 			},
 			want: "exactly one matching variant",
 		},
 		{
-			name: "remote-only tool",
-			mutate: func(v *validator, _ *ToolComposition) {
-				tool := v.tools["reader@1.2.3"]
-				tool.Variants = nil
-				v.tools["reader@1.2.3"] = tool
+			name: "remote-only tool provider",
+			mutate: func(v *validator, _ *ToolProviderComposition) {
+				provider := v.toolProviders["reader@1.2.3"]
+				provider.Variants = nil
+				v.toolProviders["reader@1.2.3"] = provider
 			},
 			want: "exactly one matching variant",
 		},
 		{
 			name: "missing runtime base",
-			mutate: func(v *validator, _ *ToolComposition) {
+			mutate: func(v *validator, _ *ToolProviderComposition) {
 				v.builds["default"] = BuildProfile{ID: "default"}
 			},
 			want: "does not support linux/amd64",
 		},
 		{
 			name: "dependency collision",
-			mutate: func(v *validator, _ *ToolComposition) {
-				tool := v.tools["reader@1.2.3"]
-				tool.Variants[0].InstallRoot = "/opt/shared"
-				tool.Variants[0].Files = []InventoryEntry{{
-					Path: "bin/tool", Type: "file", Digest: toolDigest,
+			mutate: func(v *validator, _ *ToolProviderComposition) {
+				provider := v.toolProviders["reader@1.2.3"]
+				provider.Variants[0].InstallRoot = "/opt/shared"
+				provider.Variants[0].Files = []InventoryEntry{{
+					Path: "bin/tool", Type: "file", Digest: providerDigest,
 				}}
-				tool.Variants[0].Dependencies = []BundleDependency{{
+				provider.Variants[0].Dependencies = []ToolProviderDependency{{
 					ID: "runtime", Version: "1.0.0",
 					VariantDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 				}}
-				v.tools["reader@1.2.3"] = tool
-				v.tools["runtime@1.0.0"] = Tool{
+				v.toolProviders["reader@1.2.3"] = provider
+				v.toolProviders["runtime@1.0.0"] = ToolProvider{
 					ID: "runtime", Version: "1.0.0",
-					Variants: []ToolVariant{{
+					Variants: []ToolProviderVariant{{
 						Platform:      platform,
 						VariantDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 						InstallRoot:   "/opt/shared",
@@ -316,19 +314,19 @@ func TestLoadToolCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			composition := baseComposition
-			tool := baseTool
-			tool.Variants = append([]ToolVariant(nil), baseTool.Variants...)
+			provider := baseProvider
+			provider.Variants = append([]ToolProviderVariant(nil), baseProvider.Variants...)
 			v := &validator{
-				suite: Suite{ToolCompositions: []ToolCompositionRef{{
+				suite: Suite{ToolProviderCompositions: []ToolProviderCompositionRef{{
 					ID: composition.ID, Version: composition.Version, Platform: composition.Platform,
-					Path: "tool-compositions/reader.json",
+					Path: "tool-provider-compositions/reader.json",
 				}}},
 				content: &contentSet{entries: map[string]contentEntry{}},
-				tools: map[string]Tool{
-					"reader@1.2.3": tool,
+				toolProviders: map[string]ToolProvider{
+					"reader@1.2.3": provider,
 				},
-				toolDigests:      map[string]string{"reader@1.2.3": toolDigest},
-				toolCompositions: map[string]ToolComposition{},
+				toolProviderDigests:      map[string]string{"reader@1.2.3": providerDigest},
+				toolProviderCompositions: map[string]ToolProviderComposition{},
 				builds: map[string]BuildProfile{
 					"default": {
 						ID: "default",
@@ -347,13 +345,13 @@ func TestLoadToolCompositionsRejectsUnresolvedBuildInputs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			v.suite.ToolCompositions[0].Digest = digest
-			v.content.entries["tool-compositions/reader.json"] = contentEntry{
-				Path: "tool-compositions/reader.json", Type: "file",
+			v.suite.ToolProviderCompositions[0].Digest = digest
+			v.content.entries["tool-provider-compositions/reader.json"] = contentEntry{
+				Path: "tool-provider-compositions/reader.json", Type: "file",
 				Size: int64(len(data)), Digest: digestBytes(data), Data: data,
 			}
-			if err := v.loadToolCompositions(); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("loadToolCompositions() error = %v, want %q", err, test.want)
+			if err := v.loadToolProviderCompositions(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("loadToolProviderCompositions() error = %v, want %q", err, test.want)
 			}
 		})
 	}
@@ -365,16 +363,16 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := content.data("tool.json")
+	raw, err := content.data("tool-provider.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tool Tool
-	if err := decodeStrict(raw, &tool); err != nil {
+	var provider ToolProvider
+	if err := decodeStrict(raw, &provider); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateTool(tool, raw, content); err != nil {
-		t.Fatalf("validateTool() error = %v", err)
+	if err := validateToolProvider(provider, raw, content); err != nil {
+		t.Fatalf("validateToolProvider() error = %v", err)
 	}
 
 	root := writeMinimalSuite(t)
@@ -385,20 +383,20 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 		}
 		mustWrite(t, root, filepath.Join("schemas", name), data)
 	}
-	toolPath := "tools/search/1.0.0/tool.json"
-	mustWrite(t, root, toolPath, raw)
-	toolDigest, err := canonicalDigest(raw)
+	providerPath := "tool-providers/search/1.0.0/tool-provider.json"
+	mustWrite(t, root, providerPath, raw)
+	providerDigest, err := canonicalDigest(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog := ToolCatalog{
+	catalog := ToolProviderCatalog{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeToolCatalog,
-		Tools: []ManifestRef{{
-			ID: "search", Version: "1.0.0", Path: toolPath, Digest: toolDigest,
+		MediaType:     MediaTypeToolProviderCatalog,
+		ToolProviders: []ManifestRef{{
+			ID: "search", Version: "1.0.0", Path: providerPath, Digest: providerDigest,
 		}},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
 	suiteData, err := os.ReadFile(filepath.Join(root, "agentsuite.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -407,34 +405,34 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	if err := decodeStrict(suiteData, &suite); err != nil {
 		t.Fatal(err)
 	}
-	suite.ToolCatalog.Digest = catalogDigest
+	suite.ToolProviderCatalog.Digest = catalogDigest
 	mustWriteJSON(t, root, "agentsuite.json", suite)
 
 	report, err := ValidatePath(root)
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
-	if report.Tools != 1 || len(report.Capabilities) != 0 {
+	if report.ToolProviders != 1 || len(report.Capabilities) != 0 {
 		t.Fatalf("remote catalog report = %+v", report)
 	}
 
 	unretained := []byte(strings.Replace(string(raw), "  \"retained\": true,\n", "", 1))
-	mustWrite(t, root, toolPath, unretained)
+	mustWrite(t, root, providerPath, unretained)
 	unretainedDigest, err := canonicalDigest(unretained)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.Tools[0].Digest = unretainedDigest
-	suite.ToolCatalog.Digest = mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	catalog.ToolProviders[0].Digest = unretainedDigest
+	suite.ToolProviderCatalog.Digest = mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
 	mustWriteJSON(t, root, "agentsuite.json", suite)
 
 	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "has no inward reference") {
-		t.Fatalf("unreferenced catalog Tool error = %v", err)
+		t.Fatalf("unreferenced catalog ToolProvider error = %v", err)
 	}
 }
 
-func TestRemoteMCPMetadataContributesToToolIdentity(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool.json"))
+func TestRemoteMCPMetadataContributesToToolProviderIdentity(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool-provider.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +442,7 @@ func TestRemoteMCPMetadataContributesToToolIdentity(t *testing.T) {
 	}
 	for name, changedRaw := range map[string]string{
 		"remote metadata": strings.Replace(string(raw), `"requestMilliseconds": 60000`, `"requestMilliseconds": 60001`, 1),
-		"operation schema": strings.Replace(
+		"tool schema": strings.Replace(
 			string(raw),
 			"sha256:25f52652219a4e1e8581e76db1955df62b26a1174a2612eb12538b3efa9d8c84",
 			"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -457,56 +455,120 @@ func TestRemoteMCPMetadataContributesToToolIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 			if original == changed {
-				t.Fatalf("%s did not affect tool identity", name)
+				t.Fatalf("%s did not affect tool provider identity", name)
 			}
 		})
 	}
 }
 
-func TestValidateToolInboundReferencesRequiresExplicitRetention(t *testing.T) {
-	unreferenced := Tool{ID: "opa", Version: "1.0.0"}
-	tools := map[string]Tool{"opa@1.0.0": unreferenced}
-	if err := validateToolInboundReferences(tools, nil, nil); err == nil ||
+func TestToolProviderKeepsCallableToolsScopedToItsContract(t *testing.T) {
+	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool-provider.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provider ToolProvider
+	if err := decodeStrict(raw, &provider); err != nil {
+		t.Fatal(err)
+	}
+	// Different providers can expose the same tool name.
+	for _, id := range []string{"search-primary", "search-secondary"} {
+		provider.ID = id
+		if err := validateToolProvider(provider, raw, content); err != nil {
+			t.Fatalf("provider %s: %v", id, err)
+		}
+	}
+	provider.Tools = append(provider.Tools, provider.Tools[0])
+	if err := validateToolProvider(provider, raw, content); err == nil || !strings.Contains(err.Error(), `tool "search" is invalid or duplicated`) {
+		t.Fatalf("duplicate callable tool error = %v", err)
+	}
+	provider.Tools = nil
+	if err := validateToolProvider(provider, raw, content); err == nil || !strings.Contains(err.Error(), "at least one tool") {
+		t.Fatalf("empty callable tool contract error = %v", err)
+	}
+}
+
+func TestEarlierDraftProviderMediaTypesAreRejected(t *testing.T) {
+	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool-provider.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Replace(string(raw), MediaTypeToolProvider, "application/vnd.agentsuite.tool.v1+json", 1)
+	validateSchemaJSON(t, compileReferenceSchema(t, "tool-provider.schema.json"), legacy, false)
+	var provider ToolProvider
+	if err := decodeStrict([]byte(legacy), &provider); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateToolProvider(provider, []byte(legacy), content); err == nil || !strings.Contains(err.Error(), "mediaType") {
+		t.Fatalf("legacy provider media type error = %v", err)
+	}
+
+	raw, err = os.ReadFile(filepath.Join("testdata", "tool-providers", "opa-tool-provider-composition.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy = strings.Replace(string(raw), MediaTypeToolProviderComposition, "application/vnd.agentsuite.tool.composition.v1+json", 1)
+	validateSchemaJSON(t, compileReferenceSchema(t, "tool-provider-composition.schema.json"), legacy, false)
+	var composition ToolProviderComposition
+	if err := decodeStrict([]byte(legacy), &composition); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateToolProviderComposition(composition); err == nil || !strings.Contains(err.Error(), "mediaType") {
+		t.Fatalf("legacy provider composition media type error = %v", err)
+	}
+}
+
+func TestValidateToolProviderInboundReferencesRequiresExplicitRetention(t *testing.T) {
+	unreferenced := ToolProvider{ID: "opa", Version: "1.0.0"}
+	providers := map[string]ToolProvider{"opa@1.0.0": unreferenced}
+	if err := validateToolProviderInboundReferences(providers, nil, nil); err == nil ||
 		!strings.Contains(err.Error(), "has no inward reference") {
-		t.Fatalf("unreferenced Tool error = %v", err)
+		t.Fatalf("unreferenced ToolProvider error = %v", err)
 	}
 
 	retained := true
 	unreferenced.Retained = &retained
-	tools["opa@1.0.0"] = unreferenced
-	if err := validateToolInboundReferences(tools, nil, nil); err != nil {
-		t.Fatalf("retained Tool error = %v", err)
+	providers["opa@1.0.0"] = unreferenced
+	if err := validateToolProviderInboundReferences(providers, nil, nil); err != nil {
+		t.Fatalf("retained ToolProvider error = %v", err)
 	}
 }
 
-func TestValidateToolInboundReferencesAcceptsEveryInwardEdge(t *testing.T) {
+func TestValidateToolProviderInboundReferencesAcceptsEveryInwardEdge(t *testing.T) {
 	dependencyDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	tests := []struct {
 		name         string
-		tools        map[string]Tool
+		providers    map[string]ToolProvider
 		agents       map[string]Agent
-		compositions map[string]ToolComposition
+		compositions map[string]ToolProviderComposition
 	}{
 		{
-			name:  "agent requirement",
-			tools: map[string]Tool{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
+			name:      "agent requirement",
+			providers: map[string]ToolProvider{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
 			agents: map[string]Agent{"writer": {
-				Tools: []ToolRequirement{{ID: "opa", Version: "1.0.0"}},
+				ToolProviders: []ToolProviderRequirement{{ID: "opa", Version: "1.0.0"}},
 			}},
 		},
 		{
-			name:  "Tool composition",
-			tools: map[string]Tool{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
-			compositions: map[string]ToolComposition{"opa@1.0.0@linux/amd64": {
+			name:      "ToolProvider composition",
+			providers: map[string]ToolProvider{"opa@1.0.0": {ID: "opa", Version: "1.0.0"}},
+			compositions: map[string]ToolProviderComposition{"opa@1.0.0@linux/amd64": {
 				ID: "opa", Version: "1.0.0",
 			}},
 		},
 		{
 			name: "bundle dependency",
-			tools: map[string]Tool{
+			providers: map[string]ToolProvider{
 				"root@1.0.0": {
 					ID: "root", Version: "1.0.0", Retained: boolPointer(true),
-					Variants: []ToolVariant{{Dependencies: []BundleDependency{{
+					Variants: []ToolProviderVariant{{Dependencies: []ToolProviderDependency{{
 						ID: "opa", Version: "1.0.0", VariantDigest: dependencyDigest,
 					}}}},
 				},
@@ -516,27 +578,25 @@ func TestValidateToolInboundReferencesAcceptsEveryInwardEdge(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateToolInboundReferences(test.tools, test.agents, test.compositions); err != nil {
-				t.Fatalf("validateToolInboundReferences() error = %v", err)
+			if err := validateToolProviderInboundReferences(test.providers, test.agents, test.compositions); err != nil {
+				t.Fatalf("validateToolProviderInboundReferences() error = %v", err)
 			}
 		})
 	}
 }
 
-func TestValidateToolRequiresAnImplementation(t *testing.T) {
-	tool := Tool{
+func TestValidateToolProviderRequiresAnImplementation(t *testing.T) {
+	provider := ToolProvider{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeTool,
+		MediaType:     MediaTypeToolProvider,
 		ID:            "search",
 		Version:       "1.0.0",
-		Provider: ToolProvider{
-			Protocol: "mcp",
-			Revision: "2025-06-18",
-			Operations: []ToolOperation{{
-				Name:        "search",
-				InputSchema: FileRef{Path: "schemas/search-input.json", Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-			}},
-		},
+		Protocol:      "mcp",
+		Revision:      "2025-06-18",
+		Tools: []Tool{{
+			Name:        "search",
+			InputSchema: FileRef{Path: "schemas/search-input.json", Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		}},
 	}
 	content := &contentSet{entries: map[string]contentEntry{
 		"schemas/search-input.json": {
@@ -544,7 +604,7 @@ func TestValidateToolRequiresAnImplementation(t *testing.T) {
 			Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		},
 	}}
-	err := validateTool(tool, []byte(`{}`), content)
+	err := validateToolProvider(provider, []byte(`{}`), content)
 	if err == nil || !strings.Contains(err.Error(), "or both") {
 		t.Fatalf("expected missing implementation error, got %v", err)
 	}
@@ -554,8 +614,8 @@ func boolPointer(value bool) *bool {
 	return &value
 }
 
-func TestValidateRemoteMCPRejectsTransportManagedAndDuplicateHeaders(t *testing.T) {
-	remote := RemoteMCP{
+func TestValidateRemoteToolProviderRejectsTransportManagedAndDuplicateHeaders(t *testing.T) {
+	remote := RemoteToolProvider{
 		Transport:   "streamable-http",
 		EndpointRef: "search-mcp-endpoint",
 		Headers: []RemoteHeader{
@@ -568,7 +628,7 @@ func TestValidateRemoteMCPRejectsTransportManagedAndDuplicateHeaders(t *testing.
 		Cancellation: "propagate",
 		Connection:   "session-aware",
 	}
-	err := validateRemoteMCP(remote)
+	err := validateRemoteToolProvider(remote)
 	if err == nil || !strings.Contains(err.Error(), "transport-managed") || !strings.Contains(err.Error(), "duplicated") {
 		t.Fatalf("expected header validation errors, got %v", err)
 	}
@@ -634,14 +694,14 @@ func TestEmptyOCIConfigIsExact(t *testing.T) {
 	}
 }
 
-func TestCompositionToolsMustBeSortedByIdentity(t *testing.T) {
+func TestCompositionToolProvidersMustBeSortedByIdentity(t *testing.T) {
 	composition := Composition{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeComposition,
 		Agent:         "writer",
 		Platform:      Platform{OS: "linux", Architecture: "amd64"},
 		BuildProfile:  "default",
-		Tools: []ResolvedTool{
+		ToolProviders: []ResolvedToolProvider{
 			{
 				ID:             "source-control",
 				Version:        "1.0.0",
@@ -659,7 +719,7 @@ func TestCompositionToolsMustBeSortedByIdentity(t *testing.T) {
 		},
 	}
 	if err := validateComposition(composition); err == nil || !strings.Contains(err.Error(), "sorted by id and version") {
-		t.Fatalf("expected tool ordering error, got %v", err)
+		t.Fatalf("expected tool provider ordering error, got %v", err)
 	}
 }
 
@@ -860,7 +920,7 @@ func TestContentLayerRejectsInvalidGzipTrailer(t *testing.T) {
 func TestVariantAllowsWritableSymlinkMode(t *testing.T) {
 	payload := []byte("x")
 	digest := digestBytes(payload)
-	variant := ToolVariant{
+	variant := ToolProviderVariant{
 		Platform:      Platform{OS: "linux", Architecture: "amd64"},
 		VariantDigest: digest,
 		InstallRoot:   "/opt/tool",
@@ -884,8 +944,8 @@ func TestVariantAllowsWritableSymlinkMode(t *testing.T) {
 func TestVariantRejectsSchemaConstrainedFields(t *testing.T) {
 	payload := []byte("x")
 	digest := digestBytes(payload)
-	base := func() ToolVariant {
-		return ToolVariant{
+	base := func() ToolProviderVariant {
+		return ToolProviderVariant{
 			Platform:      Platform{OS: "linux", Architecture: "amd64"},
 			VariantDigest: digest,
 			InstallRoot:   "/opt/tool",
@@ -902,26 +962,26 @@ func TestVariantRejectsSchemaConstrainedFields(t *testing.T) {
 	}}
 	tests := []struct {
 		name    string
-		mutate  func(*ToolVariant)
+		mutate  func(*ToolProviderVariant)
 		message string
 	}{
 		{
 			name: "relative search path",
-			mutate: func(variant *ToolVariant) {
+			mutate: func(variant *ToolProviderVariant) {
 				variant.SearchPath = []string{"bin"}
 			},
 			message: "searchPath",
 		},
 		{
 			name: "invalid network port",
-			mutate: func(variant *ToolVariant) {
+			mutate: func(variant *ToolProviderVariant) {
 				variant.Network = []NetworkAccess{{Scheme: "https", Host: "example.com", Port: 0}}
 			},
 			message: "network access",
 		},
 		{
 			name: "invalid sbom descriptor",
-			mutate: func(variant *ToolVariant) {
+			mutate: func(variant *ToolProviderVariant) {
 				variant.SBOM = &Descriptor{MediaType: "application/spdx+json", Digest: "invalid", Size: 1}
 			},
 			message: "sbom descriptor",
@@ -941,7 +1001,7 @@ func TestVariantRejectsSchemaConstrainedFields(t *testing.T) {
 func TestVariantRejectsPayloadOwnerMismatch(t *testing.T) {
 	payload := []byte("x")
 	digest := digestBytes(payload)
-	variant := ToolVariant{
+	variant := ToolProviderVariant{
 		Platform:      Platform{OS: "linux", Architecture: "amd64"},
 		VariantDigest: digest,
 		InstallRoot:   "/opt/tool",
@@ -962,8 +1022,8 @@ func TestVariantRejectsPayloadOwnerMismatch(t *testing.T) {
 
 func TestBundleClosureTraversesDependenciesAndChecksTheirCollisions(t *testing.T) {
 	platform := Platform{OS: "linux", Architecture: "amd64"}
-	variant := func(digest, installRoot, fileDigest string, dependencies ...BundleDependency) ToolVariant {
-		return ToolVariant{
+	variant := func(digest, installRoot, fileDigest string, dependencies ...ToolProviderDependency) ToolProviderVariant {
+		return ToolProviderVariant{
 			Platform:      platform,
 			VariantDigest: digest,
 			InstallRoot:   installRoot,
@@ -982,24 +1042,24 @@ func TestBundleClosureTraversesDependenciesAndChecksTheirCollisions(t *testing.T
 		"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		"/opt/bridge",
 		"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-		BundleDependency{ID: "runtime", Version: "1.0.0", VariantDigest: runtimeVariant.VariantDigest},
+		ToolProviderDependency{ID: "runtime", Version: "1.0.0", VariantDigest: runtimeVariant.VariantDigest},
 	)
 	rootVariant := variant(
 		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"/opt/root",
 		"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-		BundleDependency{ID: "bridge", Version: "1.0.0", VariantDigest: bridgeVariant.VariantDigest},
+		ToolProviderDependency{ID: "bridge", Version: "1.0.0", VariantDigest: bridgeVariant.VariantDigest},
 	)
-	tools := map[string]Tool{
-		"bridge@1.0.0":  {ID: "bridge", Version: "1.0.0", Variants: []ToolVariant{bridgeVariant}},
-		"runtime@1.0.0": {ID: "runtime", Version: "1.0.0", Variants: []ToolVariant{runtimeVariant}},
+	providers := map[string]ToolProvider{
+		"bridge@1.0.0":  {ID: "bridge", Version: "1.0.0", Variants: []ToolProviderVariant{bridgeVariant}},
+		"runtime@1.0.0": {ID: "runtime", Version: "1.0.0", Variants: []ToolProviderVariant{runtimeVariant}},
 	}
 
-	closure, err := bundleClosure("root@1.0.0", rootVariant, tools)
+	closure, err := bundleClosure("root@1.0.0", rootVariant, providers)
 	if err != nil {
 		t.Fatalf("bundleClosure() error = %v", err)
 	}
-	if len(closure) != 3 || closure[1].toolKey != "bridge@1.0.0" || closure[2].toolKey != "runtime@1.0.0" {
+	if len(closure) != 3 || closure[1].providerKey != "bridge@1.0.0" || closure[2].providerKey != "runtime@1.0.0" {
 		t.Fatalf("bundleClosure() = %+v, want root and transitive dependencies", closure)
 	}
 
@@ -1024,19 +1084,19 @@ func TestBundleClosureRejectsTransitiveCycle(t *testing.T) {
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	aDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	bDigest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	a := ToolVariant{
+	a := ToolProviderVariant{
 		Platform: platform, VariantDigest: aDigest,
-		Dependencies: []BundleDependency{{ID: "b", Version: "1.0.0", VariantDigest: bDigest}},
+		Dependencies: []ToolProviderDependency{{ID: "b", Version: "1.0.0", VariantDigest: bDigest}},
 	}
-	b := ToolVariant{
+	b := ToolProviderVariant{
 		Platform: platform, VariantDigest: bDigest,
-		Dependencies: []BundleDependency{{ID: "a", Version: "1.0.0", VariantDigest: aDigest}},
+		Dependencies: []ToolProviderDependency{{ID: "a", Version: "1.0.0", VariantDigest: aDigest}},
 	}
-	tools := map[string]Tool{
-		"a@1.0.0": {ID: "a", Version: "1.0.0", Variants: []ToolVariant{a}},
-		"b@1.0.0": {ID: "b", Version: "1.0.0", Variants: []ToolVariant{b}},
+	providers := map[string]ToolProvider{
+		"a@1.0.0": {ID: "a", Version: "1.0.0", Variants: []ToolProviderVariant{a}},
+		"b@1.0.0": {ID: "b", Version: "1.0.0", Variants: []ToolProviderVariant{b}},
 	}
-	if _, err := bundleClosure("a@1.0.0", a, tools); err == nil ||
+	if _, err := bundleClosure("a@1.0.0", a, providers); err == nil ||
 		!strings.Contains(err.Error(), "dependency cycle") {
 		t.Fatalf("cycle error = %v", err)
 	}
@@ -1117,10 +1177,10 @@ func TestRawVariantDigestsPreserveExplicitZeroValues(t *testing.T) {
 
 func TestDeclaredCapabilitiesMustAlreadyBeSortedAndUnique(t *testing.T) {
 	v := &validator{
-		suite:        Suite{Capabilities: []string{"bundled-stdio-mcp", "bundled-stdio-mcp"}},
-		tools:        map[string]Tool{"reader@1.0.0": {Variants: []ToolVariant{{}}}},
-		agents:       map[string]Agent{},
-		compositions: map[string]Composition{},
+		suite:         Suite{Capabilities: []string{"bundled-stdio-mcp", "bundled-stdio-mcp"}},
+		toolProviders: map[string]ToolProvider{"reader@1.0.0": {Variants: []ToolProviderVariant{{}}}},
+		agents:        map[string]Agent{},
+		compositions:  map[string]Composition{},
 	}
 	if err := v.validateReferences(); err == nil || !strings.Contains(err.Error(), "capabilities") {
 		t.Fatalf("duplicate capabilities error = %v", err)
@@ -1195,18 +1255,18 @@ func writeMinimalSuite(t *testing.T) string {
 		ID:            "writer",
 		Instructions:  FileRef{Path: "instructions/writer.md", Digest: instructionDigest},
 		Model:         ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
-		Tools:         []ToolRequirement{},
+		ToolProviders: []ToolProviderRequirement{},
 		Invokes:       []AgentInvoke{},
 		Extensions:    []Extension{},
 	}
 	agentDigest := mustWriteJSON(t, root, "agents/writer.json", agent)
 
-	catalog := ToolCatalog{
+	catalog := ToolProviderCatalog{
 		SchemaVersion: SpecVersion,
-		MediaType:     MediaTypeToolCatalog,
-		Tools:         []ManifestRef{},
+		MediaType:     MediaTypeToolProviderCatalog,
+		ToolProviders: []ManifestRef{},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
 
 	image := Descriptor{
 		MediaType: ociManifestMediaType,
@@ -1229,7 +1289,7 @@ func writeMinimalSuite(t *testing.T) string {
 		Agent:         "writer",
 		Platform:      Platform{OS: "linux", Architecture: "amd64"},
 		BuildProfile:  "default",
-		Tools:         []ResolvedTool{},
+		ToolProviders: []ResolvedToolProvider{},
 	}
 	compositionDigest := mustWriteJSON(t, root, "compositions/writer-linux-amd64.json", composition)
 
@@ -1240,7 +1300,7 @@ func writeMinimalSuite(t *testing.T) string {
 		Agents: []ManifestRef{{
 			ID: "writer", Path: "agents/writer.json", Digest: agentDigest,
 		}},
-		ToolCatalog: ManifestRef{ID: "catalog", Path: "tools/catalog.json", Digest: catalogDigest},
+		ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Digest: catalogDigest},
 		Compositions: []CompositionRef{{
 			Agent: "writer", Platform: Platform{OS: "linux", Architecture: "amd64"},
 			Path: "compositions/writer-linux-amd64.json", Digest: compositionDigest,
@@ -1269,11 +1329,11 @@ func mustWriteJSON(t *testing.T, root, name string, value any) string {
 	return digest
 }
 
-func mustVariantDigest(t *testing.T, variant ToolVariant) string {
+func mustVariantDigest(t *testing.T, variant ToolProviderVariant) string {
 	t.Helper()
 	data, err := json.Marshal(struct {
-		Variants []ToolVariant `json:"variants"`
-	}{Variants: []ToolVariant{variant}})
+		Variants []ToolProviderVariant `json:"variants"`
+	}{Variants: []ToolProviderVariant{variant}})
 	if err != nil {
 		t.Fatal(err)
 	}

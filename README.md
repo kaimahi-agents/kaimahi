@@ -184,7 +184,7 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | Start here | Purpose |
 |---|---|
 | [Getting started](docs/getting-started.md) | Prerequisites and current local workflows |
-| [AgentSuite specification](docs/agentsuite-spec.md) | Portable OCI manifests, dotted media types, bundled and remote Tools, Tool Sandbox Images, and Agent sandbox bindings |
+| [AgentSuite specification](docs/agentsuite-spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
 | [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
 | [Runtime setup](docs/orka.md) | First-class default implementation setup, native creation, and first task |

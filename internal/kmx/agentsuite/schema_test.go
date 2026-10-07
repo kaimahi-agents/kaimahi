@@ -10,30 +10,28 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-func TestToolSchemaDefinesBundledImplementation(t *testing.T) {
-	schema := compileReferenceSchema(t, "tool.schema.json")
+func TestToolProviderSchemaDefinesBundledImplementation(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-provider.schema.json")
 	valid := `{
 	  "schemaVersion":"1.0.0-draft",
-	  "mediaType":"application/vnd.agentsuite.tool.v1+json",
+	  "mediaType":"application/vnd.agentsuite.tool.provider.v1+json",
 	  "id":"datetime",
 	  "version":"1.0.0",
-	  "provider":{
-	    "protocol":"mcp",
-	    "revision":"2025-06-18",
-	    "operations":[{
+	  "protocol":"mcp",
+	  "revision":"2025-06-18",
+	  "tools":[{
 	      "name":"current_time",
 	      "inputSchema":{"path":"schemas/input.json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 	      "outputSchema":{"path":"schemas/output.json","digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
 	      "effects":["reads-system-clock"]
-	    }]
-	  },
+	    }],
 	  "variants":[{
 	    "platform":{"os":"linux","architecture":"amd64"},
 	    "variantDigest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-	    "installRoot":"/opt/agentsuite/tools/datetime/1.0.0",
+	    "installRoot":"/opt/agentsuite/tool-providers/datetime/1.0.0",
 	    "relocatable":false,
-	    "payloadRoot":"tools/datetime/1.0.0/linux-amd64",
-	    "entrypoint":"/opt/agentsuite/tools/datetime/1.0.0/bin/datetime",
+	    "payloadRoot":"tool-providers/datetime/1.0.0/linux-amd64",
+	    "entrypoint":"/opt/agentsuite/tool-providers/datetime/1.0.0/bin/datetime",
 	    "arguments":[],
 	    "searchPath":[],
 	    "environment":[],
@@ -55,7 +53,7 @@ func TestToolSchemaDefinesBundledImplementation(t *testing.T) {
 	  "extensions":[]
 	}`
 	validateSchemaJSON(t, schema, valid, true)
-	retained := strings.Replace(valid, `"provider":`, `"retained":true,"provider":`, 1)
+	retained := strings.Replace(valid, `"protocol":`, `"retained":true,"protocol":`, 1)
 	validateSchemaJSON(t, schema, retained, true)
 	validateSchemaJSON(t, schema, strings.Replace(retained, `"retained":true`, `"retained":false`, 1), false)
 	withRemote := strings.Replace(valid, `"extensions":[]`, `"remote":{
@@ -77,11 +75,11 @@ func TestToolSchemaDefinesBundledImplementation(t *testing.T) {
 	validateSchemaJSON(t, schema, withoutFileDigest, false)
 }
 
-func TestToolSchemaAcceptsMultiFileCLIBundles(t *testing.T) {
-	schema := compileReferenceSchema(t, "tool.schema.json")
-	for _, name := range []string{"kubectl-tool.json", "azure-cli-tool.json", "opa-tool.json"} {
+func TestToolProviderSchemaAcceptsMultiFileCLIBundles(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-provider.schema.json")
+	for _, name := range []string{"kubectl-tool-provider.json", "azure-cli-tool-provider.json", "opa-tool-provider.json"} {
 		t.Run(name, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("testdata", "tools", name))
+			data, err := os.ReadFile(filepath.Join("testdata", "tool-providers", name))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,9 +88,9 @@ func TestToolSchemaAcceptsMultiFileCLIBundles(t *testing.T) {
 	}
 }
 
-func TestToolSchemaDefinesRemoteMCPImplementation(t *testing.T) {
-	schema := compileReferenceSchema(t, "tool.schema.json")
-	data, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool.json"))
+func TestToolProviderSchemaDefinesRemoteMCPImplementation(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-provider.schema.json")
+	data, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool-provider.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +126,7 @@ func TestAgentSchemaDefinesSharedSandboxMode(t *testing.T) {
 	    "digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	  },
 	  "model":{"protocol":"openai-compatible","model":"example"},
-	  "tools":[{
+	  "toolProviders":[{
 	    "id":"datetime",
 	    "version":"1.0.0",
 	    "executionMode":"shared-sandbox"
@@ -146,7 +144,7 @@ func TestCompositionSchemaDefinesSharedSandboxResolution(t *testing.T) {
 	  "agent":"writer",
 	  "platform":{"os":"linux","architecture":"amd64"},
 	  "buildProfile":"default",
-	  "tools":[%s]
+	  "toolProviders":[%s]
 	}`
 	resolved := `{
 	  "id":"datetime",
@@ -160,15 +158,65 @@ func TestCompositionSchemaDefinesSharedSandboxResolution(t *testing.T) {
 	validateSchemaJSON(t, schema, strings.Replace(base, "%s", strings.Replace(resolved, `"shared-sandbox"`, `"unsupported"`, 1), 1), false)
 }
 
-func TestToolCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T) {
-	schema := compileReferenceSchema(t, "tool-composition.schema.json")
-	data, err := os.ReadFile(filepath.Join("testdata", "tools", "opa-tool-composition.json"))
+func TestToolProviderCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-provider-composition.schema.json")
+	data, err := os.ReadFile(filepath.Join("testdata", "tool-providers", "opa-tool-provider-composition.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	valid := string(data)
 	validateSchemaJSON(t, schema, valid, true)
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"variantDigest"`, `"notVariantDigest"`, 1), false)
+}
+
+func TestProviderTerminologyRejectsEarlierDraftFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		schema  string
+		fixture string
+		current string
+		legacy  string
+		target  any
+	}{
+		{"suite catalog", "suite.schema.json", "minimal/agentsuite.json", "toolProviderCatalog", "toolCatalog", &Suite{}},
+		{"agent requirements", "agent.schema.json", "minimal/agents/writer.json", "toolProviders", "tools", &Agent{}},
+		{"composition resolutions", "composition.schema.json", "minimal/compositions/writer-linux-amd64.json", "toolProviders", "tools", &Composition{}},
+		{"callable tools", "tool-provider.schema.json", "remote-mcp/tool-provider.json", "tools", "operations", &ToolProvider{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("testdata", test.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			schema := compileReferenceSchema(t, test.schema)
+			validateSchemaJSON(t, schema, string(raw), true)
+			if err := decodeStrict(raw, test.target); err != nil {
+				t.Fatalf("current field rejected: %v", err)
+			}
+			legacy := strings.Replace(string(raw), `"`+test.current+`"`, `"`+test.legacy+`"`, 1)
+			validateSchemaJSON(t, schema, legacy, false)
+			if err := decodeStrict([]byte(legacy), test.target); err == nil || !strings.Contains(err.Error(), "unknown field") {
+				t.Fatalf("legacy field must fail closed, got %v", err)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name   string
+		raw    string
+		target any
+	}{
+		{"nested provider", `{"provider":{"protocol":"mcp","revision":"2025-06-18","operations":[]}}`, &ToolProvider{}},
+		{"catalog entries", `{"tools":[]}`, &ToolProviderCatalog{}},
+		{"suite compositions", `{"toolCompositions":[]}`, &Suite{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := decodeStrict([]byte(test.raw), test.target); err == nil || !strings.Contains(err.Error(), "unknown field") {
+				t.Fatalf("legacy field must fail closed, got %v", err)
+			}
+		})
+	}
 }
 
 func compileReferenceSchema(t *testing.T, name string) *jsonschema.Schema {

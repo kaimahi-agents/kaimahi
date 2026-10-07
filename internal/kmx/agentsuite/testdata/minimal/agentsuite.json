@@ -6,13 +6,13 @@
     {
       "id": "writer",
       "path": "agents/writer.json",
-      "digest": "sha256:722b2eab9ec38613f8d5598d99075a576c3bbecaef6695e5b244818e40a306d3"
+      "digest": "sha256:9597316f43967e8f7eddf5082c899b5590e9708416c4a47ef5a946a560cdad62"
     }
   ],
-  "toolCatalog": {
+  "toolProviderCatalog": {
     "id": "catalog",
-    "path": "tools/catalog.json",
-    "digest": "sha256:b8502547f2c7cc6ccc865f4179748e25b73f4d29c7b10c7ec1ff970d2f6eb6b0"
+    "path": "tool-providers/catalog.json",
+    "digest": "sha256:933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95"
   },
   "compositions": [
     {
@@ -22,7 +22,7 @@
         "architecture": "amd64"
       },
       "path": "compositions/writer-linux-amd64.json",
-      "digest": "sha256:d42dae10d5c1154ca9fbdde41cc70881690f1e54c29fa8a6ff0e9c0444f38a63"
+      "digest": "sha256:c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5"
     }
   ],
   "buildProfiles": [
