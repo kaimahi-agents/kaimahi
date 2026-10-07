@@ -5,7 +5,7 @@
 //
 // The packaging contracts declared in storage.go and packer.go are an
 // extraction boundary. Keep them portable enough to move into a standalone
-// AgentSuite module without changing callers. They must not depend on KMX
+// AgentSuite module without changing callers. They must not depend on host
 // lifecycle or CLI types, operating-system paths, ORAS interfaces, cloud
 // provider SDKs, authentication, UI state, or deployment policy.
 //

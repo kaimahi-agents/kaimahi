@@ -27,9 +27,9 @@ type PackResult struct {
 // content to the destination. The destination must enforce the descriptors
 // passed to Pusher. Packing does not assign a tag or other reference.
 //
-// Packer is an AgentSuite domain contract. KMX orchestration, operation
-// recovery, user interaction, credentials, and provider selection belong in
-// adapters above or implementations below this boundary.
+// Packer is an AgentSuite domain contract. Application orchestration,
+// operation recovery, user interaction, credentials, and provider selection
+// belong in adapters above or implementations below this boundary.
 type Packer interface {
 	Pack(
 		context.Context,
