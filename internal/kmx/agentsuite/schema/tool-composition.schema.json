@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-composition.schema.json",
   "title": "AgentSuite Tool composition manifest",
+  "description": "The closed, digest-pinned build input for one standalone Tool Sandbox Image.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,14 +16,38 @@
     "buildProfile"
   ],
   "properties": {
-    "schemaVersion": {"const": "1.0.0-draft"},
-    "mediaType": {"const": "application/vnd.agentsuite.tool-composition.v1+json"},
-    "id": {"$ref": "#/$defs/id"},
-    "version": {"$ref": "#/$defs/version"},
-    "manifestDigest": {"$ref": "#/$defs/digest"},
-    "platform": {"$ref": "#/$defs/platform"},
-    "variantDigest": {"$ref": "#/$defs/digest"},
-    "buildProfile": {"$ref": "#/$defs/id"}
+    "schemaVersion": {
+      "description": "AgentSuite specification version used by this manifest.",
+      "const": "1.0.0-draft"
+    },
+    "mediaType": {
+      "description": "Media type identifying a Tool composition manifest.",
+      "const": "application/vnd.agentsuite.tool-composition.v1+json"
+    },
+    "id": {
+      "description": "Exact Tool identifier selected from the suite catalog.",
+      "$ref": "#/$defs/id"
+    },
+    "version": {
+      "description": "Exact Tool semantic version selected from the suite catalog.",
+      "$ref": "#/$defs/version"
+    },
+    "manifestDigest": {
+      "description": "JCS SHA-256 digest of the selected Tool manifest.",
+      "$ref": "#/$defs/digest"
+    },
+    "platform": {
+      "description": "Exact platform of the selected bundled Tool variant.",
+      "$ref": "#/$defs/platform"
+    },
+    "variantDigest": {
+      "description": "Canonical digest selecting one same-platform Tool variant.",
+      "$ref": "#/$defs/digest"
+    },
+    "buildProfile": {
+      "description": "Suite-local build-profile identifier supplying the runtime base.",
+      "$ref": "#/$defs/id"
+    }
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},

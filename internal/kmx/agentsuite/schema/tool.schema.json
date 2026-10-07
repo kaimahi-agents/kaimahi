@@ -11,7 +11,10 @@
     "mediaType": {"const": "application/vnd.agentsuite.tool.v1+json"},
     "id": {"$ref": "#/$defs/id"},
     "version": {"$ref": "#/$defs/version"},
-    "retained": {"const": true},
+    "retained": {
+      "description": "Explicitly permits this Tool to remain in the catalog without an inward reference. Presence does not authorize use or create a runtime binding.",
+      "const": true
+    },
     "provider": {"$ref": "#/$defs/provider"},
     "variants": {
       "type": "array",
@@ -19,7 +22,10 @@
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/variant"}
     },
-    "remote": {"$ref": "#/$defs/remote"},
+    "remote": {
+      "description": "Unresolved Streamable HTTP MCP connection contract for a separately deployed provider.",
+      "$ref": "#/$defs/remote"
+    },
     "extensions": {
       "type": "array",
       "uniqueItems": true,
@@ -166,12 +172,17 @@
       }
     },
     "secretKeyRef": {
+      "description": "Reference to one key in a separately supplied Secret; it never contains a credential value.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "key"],
       "properties": {
-        "name": {"$ref": "#/$defs/id"},
+        "name": {
+          "description": "Name of the Secret supplied by the runtime binding.",
+          "$ref": "#/$defs/id"
+        },
         "key": {
+          "description": "Key within the named Secret.",
           "type": "string",
           "minLength": 1,
           "maxLength": 253,
@@ -180,28 +191,38 @@
       }
     },
     "remoteHeader": {
+      "description": "HTTP header whose value is sourced only from a Secret key reference.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "secretRef"],
       "properties": {
         "name": {
+          "description": "HTTP header name; transport-managed header names are prohibited.",
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
         },
-        "secretRef": {"$ref": "#/$defs/secretKeyRef"}
+        "secretRef": {
+          "description": "Secret key supplying the complete header value.",
+          "$ref": "#/$defs/secretKeyRef"
+        }
       }
     },
     "remoteNetworkRequirement": {
+      "description": "Unresolved outbound-network requirement supplied by runtime binding.",
       "type": "object",
       "additionalProperties": false,
       "required": ["destinationRef"],
       "properties": {
-        "destinationRef": {"$ref": "#/$defs/id"}
+        "destinationRef": {
+          "description": "Identifier of a separately bound network destination.",
+          "$ref": "#/$defs/id"
+        }
       }
     },
     "remote": {
+      "description": "Remote MCP transport requirements that remain unresolved in the portable Tool manifest.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -213,30 +234,55 @@
         "connection"
       ],
       "properties": {
-        "transport": {"const": "streamable-http"},
-        "endpointRef": {"$ref": "#/$defs/id"},
+        "transport": {
+          "description": "MCP transport used by the remote provider.",
+          "const": "streamable-http"
+        },
+        "endpointRef": {
+          "description": "Identifier of the endpoint supplied by runtime binding; it is not a URL.",
+          "$ref": "#/$defs/id"
+        },
         "headers": {
+          "description": "Optional Secret-backed HTTP headers sent to the remote provider.",
           "type": "array",
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/remoteHeader"}
         },
         "network": {
+          "description": "One or more network destinations that runtime policy must bind and permit.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/remoteNetworkRequirement"}
         },
         "timeouts": {
+          "description": "Positive connection and request deadlines enforced by the client.",
           "type": "object",
           "additionalProperties": false,
           "required": ["connectMilliseconds", "requestMilliseconds"],
           "properties": {
-            "connectMilliseconds": {"type": "integer", "minimum": 1, "maximum": 3600000},
-            "requestMilliseconds": {"type": "integer", "minimum": 1, "maximum": 86400000}
+            "connectMilliseconds": {
+              "description": "Maximum time in milliseconds to establish the connection.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "requestMilliseconds": {
+              "description": "Maximum time in milliseconds for one MCP request.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400000
+            }
           }
         },
-        "cancellation": {"const": "propagate"},
-        "connection": {"const": "session-aware"}
+        "cancellation": {
+          "description": "Requires client cancellation to propagate to the remote request.",
+          "const": "propagate"
+        },
+        "connection": {
+          "description": "Requires the client to honor protocol-managed MCP session state.",
+          "const": "session-aware"
+        }
       }
     },
     "runtime": {

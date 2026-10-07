@@ -16,17 +16,34 @@
     },
     "toolCatalog": {"$ref": "#/$defs/ref"},
     "toolCompositions": {
+      "description": "Digest-bound references to standalone Tool Sandbox Image build inputs.",
       "type": "array",
       "items": {
+        "description": "One exact Tool composition for a Tool version and platform.",
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "version", "platform", "path", "digest"],
         "properties": {
-          "id": {"$ref": "#/$defs/id"},
-          "version": {"$ref": "#/$defs/version"},
-          "platform": {"$ref": "#/$defs/platform"},
-          "path": {"$ref": "#/$defs/path"},
-          "digest": {"$ref": "#/$defs/digest"}
+          "id": {
+            "description": "Tool identifier selected by the referenced composition.",
+            "$ref": "#/$defs/id"
+          },
+          "version": {
+            "description": "Exact Tool version selected by the referenced composition.",
+            "$ref": "#/$defs/version"
+          },
+          "platform": {
+            "description": "Exact platform selected by the referenced composition.",
+            "$ref": "#/$defs/platform"
+          },
+          "path": {
+            "description": "Relative content path of the Tool composition manifest.",
+            "$ref": "#/$defs/path"
+          },
+          "digest": {
+            "description": "JCS SHA-256 digest of the Tool composition manifest.",
+            "$ref": "#/$defs/digest"
+          }
         }
       }
     },
