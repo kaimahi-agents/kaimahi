@@ -1,21 +1,19 @@
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.provider.v1+json",
   "id": "kubernetes",
   "version": "1.0.0",
-  "provider": {
-    "protocol": "mcp",
-    "revision": "2025-06-18",
-    "operations": [
-      {
-        "name": "get_resources",
-        "inputSchema": {
-          "path": "schemas/kubernetes/get-resources-input.json",
-          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        }
+  "protocol": "mcp",
+  "revision": "2025-06-18",
+  "tools": [
+    {
+      "name": "get_resources",
+      "inputSchema": {
+        "path": "schemas/kubernetes/get-resources-input.json",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
-    ]
-  },
+    }
+  ],
   "variants": [
     {
       "platform": {
@@ -23,12 +21,12 @@
         "architecture": "amd64"
       },
       "variantDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "installRoot": "/opt/agentsuite/tools/kubernetes/1.0.0",
-      "payloadRoot": "tools/kubernetes/1.0.0/linux-amd64",
-      "entrypoint": "/opt/agentsuite/tools/kubernetes/1.0.0/bin/kubernetes-mcp",
+      "installRoot": "/opt/agentsuite/tool-providers/kubernetes/1.0.0",
+      "payloadRoot": "tool-providers/kubernetes/1.0.0/linux-amd64",
+      "entrypoint": "/opt/agentsuite/tool-providers/kubernetes/1.0.0/bin/kubernetes-mcp",
       "arguments": [],
       "searchPath": [
-        "/opt/agentsuite/tools/kubernetes/1.0.0/bin"
+        "/opt/agentsuite/tool-providers/kubernetes/1.0.0/bin"
       ],
       "environment": [],
       "writablePaths": [],

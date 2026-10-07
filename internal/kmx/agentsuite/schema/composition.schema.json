@@ -4,21 +4,21 @@
   "title": "AgentSuite composition manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "agent", "platform", "buildProfile", "tools"],
+  "required": ["schemaVersion", "mediaType", "agent", "platform", "buildProfile", "toolProviders"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
     "mediaType": {"const": "application/vnd.agentsuite.composition.v1+json"},
     "agent": {"$ref": "#/$defs/id"},
     "platform": {"$ref": "#/$defs/platform"},
     "buildProfile": {"$ref": "#/$defs/id"},
-    "tools": {
+    "toolProviders": {
       "type": "array",
       "uniqueItems": true,
-      "items": {"$ref": "#/$defs/resolvedTool"}
+      "items": {"$ref": "#/$defs/resolvedToolProvider"}
     }
   },
   "$defs": {
-    "resolvedTool": {
+    "resolvedToolProvider": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "version", "manifestDigest", "variantDigest", "executionMode"],

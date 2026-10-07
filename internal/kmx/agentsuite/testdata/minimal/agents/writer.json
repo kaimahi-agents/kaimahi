@@ -10,7 +10,7 @@
     "protocol": "openai-compatible",
     "model": "example-model"
   },
-  "tools": [],
+  "toolProviders": [],
   "invokes": [],
   "extensions": []
 }

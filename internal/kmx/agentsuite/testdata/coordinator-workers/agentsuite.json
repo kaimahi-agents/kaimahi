@@ -6,23 +6,23 @@
     {
       "id": "coordinator",
       "path": "agents/coordinator.json",
-      "digest": "sha256:ca83fdd724b1fcdfad804b50f9e4d35d34172db4867bf73a49aa5a324102ae36"
+      "digest": "sha256:2732b82ab33dc2e48d7e1d500958a79f2a7e4cd9aecf7022d691fd1c14568415"
     },
     {
       "id": "writer",
       "path": "agents/writer.json",
-      "digest": "sha256:f5df7085ce99b352c3967366c8f3bb045c5e9db1357b320774de7b7704281fb4"
+      "digest": "sha256:94300f7fb6dc6fe4bdfed04d17e3e879fba72bda610fa1b6090d235766709774"
     },
     {
       "id": "reviewer",
       "path": "agents/reviewer.json",
-      "digest": "sha256:72bddbaaf6e1e0f2d965e651cdcabd3ead1922eec7988cb0e3e5e669a4448bbf"
+      "digest": "sha256:0e080fa0b66c9ea444fe818e11758547a1d4aa085b35ecc2672e1b56b8775d4a"
     }
   ],
-  "toolCatalog": {
+  "toolProviderCatalog": {
     "id": "catalog",
-    "path": "tools/catalog.json",
-    "digest": "sha256:b8502547f2c7cc6ccc865f4179748e25b73f4d29c7b10c7ec1ff970d2f6eb6b0"
+    "path": "tool-providers/catalog.json",
+    "digest": "sha256:933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95"
   },
   "compositions": [
     {
@@ -32,7 +32,7 @@
         "architecture": "amd64"
       },
       "path": "compositions/coordinator-linux-amd64.json",
-      "digest": "sha256:e343ab2416e0b4390a89466d055fb7bbe883499b4a7ecea7afa3a54530022223"
+      "digest": "sha256:1549ee400c89659c63257cd97963ad1e4f98cf1435f531196e41729f12205b29"
     },
     {
       "agent": "writer",
@@ -41,7 +41,7 @@
         "architecture": "amd64"
       },
       "path": "compositions/writer-linux-amd64.json",
-      "digest": "sha256:d42dae10d5c1154ca9fbdde41cc70881690f1e54c29fa8a6ff0e9c0444f38a63"
+      "digest": "sha256:c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5"
     },
     {
       "agent": "reviewer",
@@ -50,7 +50,7 @@
         "architecture": "amd64"
       },
       "path": "compositions/reviewer-linux-amd64.json",
-      "digest": "sha256:c37f6f5184b844ee1d23f9280b47aa9632f191f4b212b26f86bd2d4bb9a02e1e"
+      "digest": "sha256:7944749017eca10606dc5c02b48084943883ba94a769afdcdee8dc998f934544"
     }
   ],
   "buildProfiles": [

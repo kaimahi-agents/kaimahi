@@ -4,7 +4,7 @@
   "title": "AgentSuite manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "name", "agents", "toolCatalog", "compositions", "buildProfiles"],
+  "required": ["schemaVersion", "mediaType", "name", "agents", "toolProviderCatalog", "compositions", "buildProfiles"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
     "mediaType": {"const": "application/vnd.agentsuite.manifest.v1+json"},
@@ -14,22 +14,22 @@
       "minItems": 1,
       "items": {"$ref": "#/$defs/ref"}
     },
-    "toolCatalog": {"$ref": "#/$defs/ref"},
-    "toolCompositions": {
-      "description": "Digest-bound references to standalone Tool Sandbox Image build inputs.",
+    "toolProviderCatalog": {"$ref": "#/$defs/ref"},
+    "toolProviderCompositions": {
+      "description": "Digest-bound references to standalone ToolProvider Sandbox Image build inputs.",
       "type": "array",
       "items": {
-        "description": "One exact Tool composition for a Tool version and platform.",
+        "description": "One exact ToolProvider composition for a provider version and platform.",
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "version", "platform", "path", "digest"],
         "properties": {
           "id": {
-            "description": "Tool identifier selected by the referenced composition.",
+            "description": "ToolProvider identifier selected by the referenced composition.",
             "$ref": "#/$defs/id"
           },
           "version": {
-            "description": "Exact Tool version selected by the referenced composition.",
+            "description": "Exact ToolProvider version selected by the referenced composition.",
             "$ref": "#/$defs/version"
           },
           "platform": {
@@ -37,11 +37,11 @@
             "$ref": "#/$defs/platform"
           },
           "path": {
-            "description": "Relative content path of the Tool composition manifest.",
+            "description": "Relative content path of the ToolProvider composition manifest.",
             "$ref": "#/$defs/path"
           },
           "digest": {
-            "description": "JCS SHA-256 digest of the Tool composition manifest.",
+            "description": "JCS SHA-256 digest of the ToolProvider composition manifest.",
             "$ref": "#/$defs/digest"
           }
         }

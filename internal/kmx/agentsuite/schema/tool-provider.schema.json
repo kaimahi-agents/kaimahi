@@ -1,21 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool.schema.json",
-  "title": "AgentSuite tool manifest",
-  "description": "An immutable MCP provider contract with bundled shared-sandbox variants, one remote Streamable HTTP declaration, or both.",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/tool-provider.schema.json",
+  "title": "AgentSuite ToolProvider manifest",
+  "description": "An immutable tool provider contract exposing callable tools, with bundled shared-sandbox variants, one remote declaration, or both. This draft supports the MCP protocol.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "mediaType", "id", "version", "provider"],
+  "required": ["schemaVersion", "mediaType", "id", "version", "protocol", "revision", "tools"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
-    "mediaType": {"const": "application/vnd.agentsuite.tool.v1+json"},
+    "mediaType": {"const": "application/vnd.agentsuite.tool.provider.v1+json"},
     "id": {"$ref": "#/$defs/id"},
     "version": {"$ref": "#/$defs/version"},
     "retained": {
-      "description": "Explicitly permits this Tool to remain in the catalog without an inward reference. Presence does not authorize use or create a runtime binding.",
+      "description": "Explicitly permits this ToolProvider to remain in the catalog without an inward reference. Presence does not authorize use or create a runtime binding.",
       "const": true
     },
-    "provider": {"$ref": "#/$defs/provider"},
+    "protocol": {"const": "mcp"},
+    "revision": {"type": "string", "minLength": 1},
+    "tools": {
+      "description": "The complete set of model-callable tools exposed by this provider contract.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/tool"}
+    },
     "variants": {
       "type": "array",
       "minItems": 1,
@@ -106,7 +114,7 @@
         "digest": {"$ref": "#/$defs/digest"}
       }
     },
-    "operation": {
+    "tool": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "inputSchema"],
@@ -119,21 +127,45 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
-        }
+        },
+        "delegatedAuthorization": {"$ref": "#/$defs/delegatedAuthorization"}
       }
     },
-    "provider": {
+    "delegatedAuthorization": {
+      "description": "Declares that this callable Tool requires delegated-user authorization before it may be called. This object never contains an OAuth client secret, authorization callback or consent state, access or refresh token, token expiry/refresh/revocation state, a person's mutable Connection/account link, or a deployment-specific Connection identifier. The deployment/runtime resolves this portable requirement to a verified requester and a live user-owned connection.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocol", "revision", "operations"],
+      "required": ["service", "scope", "effect", "approval", "credential"],
       "properties": {
-        "protocol": {"const": "mcp"},
-        "revision": {"type": "string", "minLength": 1},
-        "operations": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"$ref": "#/$defs/operation"}
+        "service": {
+          "description": "Stable identifier of the external service or provider requirement this delegated-user authorization is scoped to (for example \"microsoft-graph\"). Not a deployment-specific Connection identifier.",
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "description": "Delegated-user authorization capability required to call this Tool (for example \"mail.send\"). Not a granted token, consent record, or account link.",
+          "$ref": "#/$defs/capability"
+        },
+        "effect": {
+          "description": "Whether the Tool call is read-only or has a consequential (state-changing) effect through the delegated-user connection.",
+          "enum": ["read-only", "consequential"]
+        },
+        "approval": {
+          "description": "Whether consequential execution requires approval before dispatch. MUST be false for a read-only Tool.",
+          "type": "boolean"
+        },
+        "credential": {"$ref": "#/$defs/brokeredCredential"}
+      }
+    },
+    "brokeredCredential": {
+      "description": "Declares that credential resolution and injection for this delegated-user authorization requirement are brokered entirely by the runtime. This object never contains a client secret, access token, refresh token, or token lifecycle state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "bindingRef"],
+      "properties": {
+        "resolution": {"const": "runtime-brokered"},
+        "bindingRef": {
+          "description": "Identifier naming an unresolved runtime/deployment binding slot for this authorization requirement. It is not a connection identifier, account identifier, or credential value.",
+          "$ref": "#/$defs/id"
         }
       }
     },
@@ -222,7 +254,7 @@
       }
     },
     "remote": {
-      "description": "Remote MCP transport requirements that remain unresolved in the portable Tool manifest.",
+      "description": "Remote MCP transport requirements that remain unresolved in the portable ToolProvider manifest.",
       "type": "object",
       "additionalProperties": false,
       "required": [

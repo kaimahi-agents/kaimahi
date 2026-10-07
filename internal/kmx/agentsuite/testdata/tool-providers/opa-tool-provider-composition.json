@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool.composition.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.provider.composition.v1+json",
   "id": "opa",
   "version": "1.0.0",
   "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
