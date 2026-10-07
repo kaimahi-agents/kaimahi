@@ -195,33 +195,23 @@ not chat Session fields.
 
 ## Experimental wider interface model
 
-`pkg/kmx` contains an alpha contract model for discussing a wider KMX
-surface. It is not wired to the CLI and does not replace the production
-`internal/kmx/runtime` contract yet. The complete rationale, alternatives, and
-maturity path are in the
-[KMX lifecycle interface decision](kmx-lifecycle-interfaces.md). The package
-exposes only northbound workflows and caller-facing values:
+`pkg/kmx` contains an alpha, unwired contract model. It does not replace the
+production `internal/kmx/runtime` contract. It exposes only northbound workflows
+and caller-facing values:
 
 - `AgentEnvironment.Up` and `Down` compose target and runtime setup;
 - `AgentSuites` validates/packages OCI definitions and derives sandbox images;
 - `AgentDeployments.BuildRevision`, `Lift`, `Status`, and `Retire` manage placements;
 
-The implementation capabilities, runtime-native documents/bundles, deploy
-options, recovery ports, and receipt factories live in
-`internal/kmx/lifecycle`; they are not part of the public package.
+Implementation ports, runtime-native artifacts, deploy options, recovery SPIs,
+and receipt factories live in `internal/kmx/lifecycle`. Public
+`AgentEnvironment.Down` accepts `DownRequest`; internal
+`PlatformDeprovisioner.Deprovision` accepts `DeprovisionRequest`. Both carry the
+same scoped `InfrastructureReceipt`. Retirement separately accepts
+`RetireRequest` carrying `DeploymentReceipt` and has no target teardown
+authority.
 
-The receipt types enforce the central ownership distinction in method
-signatures: target deprovisioning receives a `DownRequest` carrying an
-`InfrastructureReceipt`, while retirement receives a `RetireRequest` carrying a
-`DeploymentReceipt`. Destructive operations derive their subject from that
-evidence rather than accepting another independently supplied target or
-deployment. The package contains no runtime-native,
-Kubernetes, cloud, process, or terminal types, and architecture tests enforce
-its standard-library-only dependency closure. Concrete adapters and migration
-of existing commands remain follow-up work after this model has been reviewed
-against the shipped Orka behavior and another real runtime.
-
-The companion [KMX application API](kmx-application-api.md) shows how another Go
-layer receives `AgentEnvironment`, `AgentSuites`, and `AgentDeployments` without
-constructing platform, suite-builder, or runtime implementations. KMX
-orchestration over those interfaces is not implemented in this change.
+Read the [lifecycle decision](kmx-lifecycle-interfaces.md) for rationale and the
+[application API](kmx-application-api.md) for current signatures, examples,
+persistence boundaries, and internal port placement. Concrete orchestration and
+adapters remain follow-up work.

@@ -365,6 +365,55 @@ type AgentSandboxImage struct {
 	Binding       SandboxBindingDigest `json:"binding"`
 }
 
+// AgentSandboxRef is the immutable identity persisted in deployments. Retrieval
+// location is intentionally excluded because publication may change it without
+// changing image identity.
+type AgentSandboxRef struct {
+	ImageManifest OCIManifestDigest    `json:"imageManifest"`
+	MediaType     string               `json:"mediaType"`
+	SuiteManifest OCIManifestDigest    `json:"suiteManifest"`
+	Agent         string               `json:"agent"`
+	Platform      SandboxPlatform      `json:"platform"`
+	BuildProfile  string               `json:"buildProfile"`
+	Composition   CompositionDigest    `json:"composition"`
+	Binding       SandboxBindingDigest `json:"binding"`
+}
+
+func (r AgentSandboxRef) Validate() error {
+	if err := r.ImageManifest.Validate(); err != nil {
+		return err
+	}
+	if r.MediaType != MediaTypeOCIImageManifest {
+		return fmt.Errorf("agent sandbox must use OCI image manifest media type")
+	}
+	if err := r.SuiteManifest.Validate(); err != nil {
+		return err
+	}
+	if err := validateSuiteIdentifier("agent ID", r.Agent); err != nil {
+		return err
+	}
+	if err := r.Platform.Validate(); err != nil {
+		return err
+	}
+	if err := validateSuiteIdentifier("build profile", r.BuildProfile); err != nil {
+		return err
+	}
+	if err := r.Composition.Validate(); err != nil {
+		return err
+	}
+	return r.Binding.Validate()
+}
+
+func (i AgentSandboxImage) Ref() AgentSandboxRef {
+	return AgentSandboxRef{
+		ImageManifest: i.Image.Digest,
+		MediaType:     i.Image.MediaType,
+		SuiteManifest: i.SuiteManifest,
+		Agent:         i.Agent, Platform: i.Platform, BuildProfile: i.BuildProfile,
+		Composition: i.Composition, Binding: i.Binding,
+	}
+}
+
 func (i AgentSandboxImage) Validate() error {
 	if err := i.Image.Validate(); err != nil {
 		return err
@@ -372,22 +421,7 @@ func (i AgentSandboxImage) Validate() error {
 	if i.Image.MediaType != MediaTypeOCIImageManifest || i.Image.ArtifactType != "" {
 		return fmt.Errorf("agent sandbox image must identify a runnable OCI image manifest")
 	}
-	if err := i.SuiteManifest.Validate(); err != nil {
-		return err
-	}
-	if err := validateSuiteIdentifier("agent ID", i.Agent); err != nil {
-		return err
-	}
-	if err := i.Platform.Validate(); err != nil {
-		return err
-	}
-	if err := validateSuiteIdentifier("build profile", i.BuildProfile); err != nil {
-		return err
-	}
-	if err := i.Composition.Validate(); err != nil {
-		return err
-	}
-	return i.Binding.Validate()
+	return i.Ref().Validate()
 }
 
 type agentSandboxImageJSON AgentSandboxImage

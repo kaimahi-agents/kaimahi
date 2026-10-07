@@ -80,7 +80,7 @@ const (
 type DeploymentSourceRef struct {
 	kind     DeploymentSourceKind
 	revision AgentRevisionRef
-	sandbox  AgentSandboxImage
+	sandbox  AgentSandboxRef
 }
 
 func NewRevisionDeploymentSourceRef(revision AgentRevisionRef) (DeploymentSourceRef, error) {
@@ -90,7 +90,7 @@ func NewRevisionDeploymentSourceRef(revision AgentRevisionRef) (DeploymentSource
 	return DeploymentSourceRef{kind: DeploymentSourceRevision, revision: revision}, nil
 }
 
-func NewSandboxDeploymentSourceRef(image AgentSandboxImage) (DeploymentSourceRef, error) {
+func NewSandboxDeploymentSourceRef(image AgentSandboxRef) (DeploymentSourceRef, error) {
 	if err := image.Validate(); err != nil {
 		return DeploymentSourceRef{}, err
 	}
@@ -103,7 +103,7 @@ func (r DeploymentSourceRef) Revision() (AgentRevisionRef, bool) {
 	return r.revision, r.kind == DeploymentSourceRevision
 }
 
-func (r DeploymentSourceRef) SandboxImage() (AgentSandboxImage, bool) {
+func (r DeploymentSourceRef) SandboxImage() (AgentSandboxRef, bool) {
 	return r.sandbox, r.kind == DeploymentSourceSandboxImage
 }
 
@@ -131,7 +131,7 @@ func (r DeploymentSourceRef) MarshalJSON() ([]byte, error) {
 	case DeploymentSourceSandboxImage:
 		return json.Marshal(struct {
 			Kind         DeploymentSourceKind `json:"kind"`
-			SandboxImage AgentSandboxImage    `json:"sandboxImage"`
+			SandboxImage AgentSandboxRef      `json:"sandboxImage"`
 		}{Kind: r.kind, SandboxImage: r.sandbox})
 	default:
 		return nil, fmt.Errorf("invalid deployment source kind")
@@ -207,7 +207,7 @@ func (s DeploymentSource) Ref() DeploymentSourceRef {
 		ref, _ := NewRevisionDeploymentSourceRef(s.revision.Ref())
 		return ref
 	case DeploymentSourceSandboxImage:
-		ref, _ := NewSandboxDeploymentSourceRef(s.sandbox)
+		ref, _ := NewSandboxDeploymentSourceRef(s.sandbox.Ref())
 		return ref
 	}
 	return DeploymentSourceRef{}

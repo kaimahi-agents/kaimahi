@@ -6,10 +6,10 @@
 implementation-only ports in `internal/kmx/lifecycle`. They are not wired to the
 CLI, do not replace `internal/kmx/runtime`, and make no compatibility commitment.
 
-**Companion guide:** [KMX application API](kmx-application-api.md) describes how
-another Go layer can consume the northbound services and how KMX composes the
-southbound management interfaces. The orchestration implementation is not part
-of this change.
+**Companion guide:** [KMX application API](kmx-application-api.md) is the
+authoritative signature, example, persistence, and management-port reference.
+This decision records rationale and invariants instead of repeating those
+details.
 
 ## Context
 
@@ -136,38 +136,9 @@ are proven.
 
 ### Public workflows use product verbs
 
-The consumer-facing interfaces use KMX workflow language:
-
-```go
-type AgentEnvironment interface {
-    Up(context.Context, UpRequest) (UpResult, error)
-    RecoverUp(context.Context, OperationID) (UpProgress, error)
-    Register(context.Context, TargetSpec) (TargetRef, error)
-    Inspect(context.Context, TargetRef) (TargetSnapshot, error)
-    Down(context.Context, DownRequest) (TeardownReceipt, error)
-    RecoverDown(context.Context, OperationID) (TeardownReceipt, error)
-    Forget(context.Context, TargetRef) error
-}
-
-type AgentSuites interface {
-    Validate(context.Context, ValidateSuiteRequest) (SuiteReport, error)
-    Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error)
-    RecoverPackage(context.Context, OperationID) (PackageSuiteResult, error)
-    BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error)
-    RecoverBuildSandbox(context.Context, OperationID) (AgentSandboxImage, error)
-    Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
-    RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
-}
-
-type AgentDeployments interface {
-    BuildRevision(context.Context, BuildRequest) (BuildResult, error)
-    Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
-    RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
-    Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
-    Retire(context.Context, RetireRequest) (RetirementReceipt, error)
-    RecoverRetire(context.Context, OperationID) (RetirementReceipt, error)
-}
-```
+The public package exports exactly three interfaces: `AgentEnvironment`,
+`AgentSuites`, and `AgentDeployments`. The application guide contains their
+[current signatures](kmx-application-api.md#three-northbound-interfaces).
 
 The verbs form separate lifecycle pairs:
 
@@ -179,11 +150,13 @@ The verbs form separate lifecycle pairs:
 | Agent deployment | `Lift` | `Retire` |
 | Local target configuration | `Register` | `Forget` |
 
-`AgentEnvironment.Up` composes target resolution or provisioning with runtime
-installation. `AgentSuites` owns definition validation, OCI packaging, and
-sandbox-image derivation, but not deployment. `Forget` is deliberately not
-`Down`: forgetting a bring-your-own target removes local configuration and
-never mutates the target.
+`AgentEnvironment.Up` composes target setup with runtime installation, but its
+mode is explicit: resolve only, provision only, or resolve then provision after
+an established absence. Internal resolution returns `Found: false` as data;
+operational errors never become absence. `AgentSuites` owns definition
+validation, OCI packaging, and sandbox-image derivation, but not deployment.
+`Forget` is deliberately not `Down`: forgetting a bring-your-own target removes
+local configuration and never mutates the target.
 
 ### AgentSuite is part of the shipping lifecycle
 
@@ -238,9 +211,9 @@ status support. `AgentDeployments.Lift` supplies the sticky product operation.
 The model distinguishes:
 
 ```text
-RevisionBuilder: authored source -> validated AgentRevision
-AgentSuites:     suite source -> AgentSuiteArtifact -> AgentSandboxImage
-RuntimeBuilder:  DeploymentSource + RuntimeRef + TargetBinding -> RuntimeBundle
+AgentDeployments.BuildRevision -> validated AgentRevision
+AgentSuites                     -> AgentSuiteArtifact -> AgentSandboxImage
+internal RuntimeBuilder         -> DeploymentSource -> runtime-native bundle
 ```
 
 `AgentRevision` itself is an immutable byte identity; constructing one does not
@@ -301,32 +274,22 @@ The package computes domain-separated SHA-256 identities for:
 
 Portable and rendered identities use the shipped logical-path and length framing
 so an adapter can preserve existing ownership annotations and receipts. Callers
-cannot attach arbitrary digests to in-process values. A runtime bundle retains
-the exact deployment source, runtime installation, target binding digest, and
-rendered digest used to create it. A deployment receipt is derived from that
-bundle.
+cannot attach arbitrary digests to in-process values. Internal runtime bundles
+retain the exact deployment source, runtime installation, target binding digest,
+rendered digest, and disposition-aware deploy digest. `RenderedDigest` covers
+ordered document bytes; `DeployDigest` also authenticates whether each document
+is applied or review-only. A deployment receipt persists all three relevant
+binding/rendered/deploy identities.
 
 ### Persistence is explicit
 
-Values carrying source, binding, or native artifact bytes are in-process values
-and reject JSON encoding and decoding. Their durable counterparts are references
-and validated receipts.
-
-```text
-In process                 Persisted
-----------                 ---------
-AgentSource                authored source file
-AgentRevision              AgentRevisionRef
-SuiteSource                AgentSuiteArtifact (OCI)
-AgentSuiteArtifact         AgentSandboxImage (OCI, per agent/platform)
-DeploymentSource           DeploymentSourceRef
-TargetBinding              binding source file
-RuntimeBuildInput          not persisted; a separate operation record is
-RuntimeBundle              DeploymentReceipt
-```
-
-This prevents private fields from silently serializing as `{}` and makes the
-cross-command storage boundary explicit.
+Values carrying source, local paths, bindings, or native artifact bytes are
+in-process values and reject JSON encoding and decoding. Durable references and
+validated receipts cross processes. In particular, `AgentSandboxImage` carries a
+retrieval location, while location-free `AgentSandboxRef` is persisted inside
+`DeploymentSourceRef`; publication and relocation do not change deployment
+identity. The application guide contains the full
+[persistence matrix](kmx-application-api.md#persistence-boundary).
 
 ### Absence and unreadability are distinct
 

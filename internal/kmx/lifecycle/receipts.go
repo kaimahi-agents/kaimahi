@@ -23,7 +23,8 @@ func NewDeploymentReceipt(id kmx.ReceiptID, deploymentID kmx.DeploymentID, bundl
 			ID: deploymentID, Source: bundle.Source(), Runtime: bundle.Runtime(),
 		},
 		BindingDigest: bundle.BindingDigest(), RenderedDigest: bundle.RenderedDigest(),
-		RecordedAt: recordedAt.UTC(),
+		DeployDigest: bundle.DeployDigest(),
+		RecordedAt:   recordedAt.UTC(),
 	}
 	return receipt, receipt.Validate()
 }
