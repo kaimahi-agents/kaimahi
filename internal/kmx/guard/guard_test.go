@@ -188,7 +188,7 @@ func TestAContextNobodyChoseIsRefusedWhenThereAreClustersToConfuseItWith(t *test
 	if err == nil {
 		t.Fatal("acted on a cluster nobody chose")
 	}
-	for _, want := range []string{"nothing chose a cluster", "kmx ctx <name>", "kind-kaimahi-p1"} {
+	for _, want := range []string{"nothing chose a cluster", "kmx context use <name>", "kind-kaimahi-p1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not say %q:\n%s", want, err)
 		}

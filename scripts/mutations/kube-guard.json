@@ -37,8 +37,8 @@
     {
       "name": "the no-TTY case proceeds instead of refusing",
       "breaks": "A script or CI job that reaches a remote context proceeds with nobody having agreed to it, precisely because there was nobody there to ask.",
-      "find": "  echo \"  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>\" >&2\n  exit 1\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2",
-      "replace": "  echo \"  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>\" >&2\n  exit 0\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2"
+      "find": "  printf '  to proceed:  KUBE_CTX=%q KAIMAHI_CONFIRM=%q make <target>\\n' \"$CTX\" \"$CTX\" >&2\n  exit 1\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2",
+      "replace": "  printf '  to proceed:  KUBE_CTX=%q KAIMAHI_CONFIRM=%q make <target>\\n' \"$CTX\" \"$CTX\" >&2\n  exit 0\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2"
     },
     {
       "name": "the banner is not printed",

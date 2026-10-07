@@ -62,13 +62,15 @@ const (
 // panel and an empty log panel mean different things and point at different
 // fixes.
 func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func() error, work string) error {
-	if err := a.Guard("wire Azure-managed observability", "kmx aks up --step observability "+liftIdentityFlags(opt)); err != nil {
+	resume := opt
+	resume.Step = "observability"
+	if err := a.Guard("wire Azure-managed observability", a.liftCommand(resume, false)); err != nil {
 		return err
 	}
 
 	clusterID, state := a.resourceID("aks", "show", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup)
 	if state != lift.Present {
-		return fmt.Errorf("kmx lift: cannot resolve the cluster's resource id — refusing to wire monitoring to something that could not be identified")
+		return fmt.Errorf("kmx aks up: cannot resolve the cluster's resource id — refusing to wire monitoring to something that could not be identified")
 	}
 
 	// Everything created here goes INSIDE the resource group the cluster is
@@ -274,7 +276,7 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 	// (Pre.WeEnabledMetrics and its siblings); this is the same rule pointing
 	// the other way.
 	if !record.Before.Recorded {
-		return fmt.Errorf("kmx lift: what monitoring this cluster had before this run was never established, so whether this would be enabling it or taking it over is unknown — refusing rather than proceeding blind")
+		return fmt.Errorf("kmx aks up: what monitoring this cluster had before this run was never established, so whether this would be enabling it or taking it over is unknown — refusing rather than proceeding blind")
 	}
 
 	var already []string
@@ -287,6 +289,8 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 	if len(already) == 0 {
 		return nil
 	}
+	resume := opt
+	resume.Step, resume.Observability = "", false
 	return fmt.Errorf(`%s already enabled on this cluster before this run.
 
   This path will not repoint it: moving your telemetry into a workspace this
@@ -299,14 +303,14 @@ func (a *App) refuseIfMonitoringWasAlreadyOn(opt lift.Options, record *lift.Reco
 
   Either keep what you have and skip this phase:
 
-    kmx aks up --byo --payload %s --observability=false %s
+    %s
 
   or turn the add-on off first, if you meant this run to own it:
 
     az aks disable-addons --name %s --resource-group %s --addons monitoring
     az aks update --name %s --resource-group %s --disable-azure-monitor-metrics`,
-		strings.Join(already, " and "), opt.Payload, liftIdentityFlags(opt),
-		opt.Cluster, opt.ResourceGroup, opt.Cluster, opt.ResourceGroup)
+		strings.Join(already, " and "), a.liftCommand(resume, false),
+		shellArg(opt.Cluster), shellArg(opt.ResourceGroup), shellArg(opt.Cluster), shellArg(opt.ResourceGroup))
 }
 
 // enableMetricsAddon turns Managed Prometheus on, unless it is already on.

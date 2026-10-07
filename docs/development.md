@@ -92,13 +92,13 @@ guards and aggregator membership.
 make
 export KIND_CLUSTER=dev-local
 export KUBE_CTX=kind-dev-local
-bin/kmx up
+bin/kmx local up
 bin/kmx plane --source .
 bin/kmx migrate <deployment> --namespace <ns> --model local/qwen2.5:3b
-bin/kmx down
+bin/kmx local down
 ```
 
-A bare `bin/kmx up` is the Orka runtime: kind, Ollama, the model and the pinned
+A bare `bin/kmx local up` is the Orka runtime: kind, Ollama, the model and the pinned
 Orka with its keyless `local` Provider. It deploys no legacy Agent, so the
 model-traffic seam is reached with [`kmx migrate`](migrate.md) against an
 owner-managed application. Author an Orka Agent with `bin/kmx agent create`, or
@@ -111,7 +111,7 @@ live cluster and Orka runtime; the plane and credential steps require that
 preceding bare `up`:
 
 ```bash
-bin/kmx up
+bin/kmx local up
 bin/kmx plane --source .
 bin/kmx credential issue demo --secret kaimahi-governed-token --namespace demo
 bin/kmx ledger demo
@@ -139,7 +139,7 @@ Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.
 
 `e2e-orka-runtime` is the Orka boundary and runs on every pull request. It brings
-up kind, Ollama and the model with `kmx up --step` component steps only, installs
+up kind, Ollama and the model with compatibility `kmx up --step` component steps only, installs
 the pinned Orka and its keyless Provider, and requires a Provider → Agent → Task
 round trip to return an exact, non-empty local-model answer. It then applies the
 committed native Orka [Kubernetes Tool](orka-k8s-tool.md) and proves its boundary
@@ -260,7 +260,7 @@ routes workloads kmx cannot enumerate.
 
 `e2e-hosted-models` is the hosted-upstream boundary — the shard that used to be
 `e2e-runtime`. It uses no legacy runtime and no agent runtime at all. It brings up kind,
-Ollama and the model with `kmx up --step` component steps, creates the
+Ollama and the model with compatibility `kmx up --step` component steps, creates the
 hosted-model client's own namespace, deploys the plane, and issues its one
 credential into that namespace **by name**. Its governed caller is a direct
 authenticated TLS call to the seam

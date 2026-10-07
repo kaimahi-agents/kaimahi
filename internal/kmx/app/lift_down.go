@@ -50,10 +50,10 @@ func (a *App) LiftDown(opt lift.Options) error {
   you created it for this.`, err)
 	}
 	if record.Subscription != acct.ID {
-		return fmt.Errorf("kmx lift down: the record was written against a different subscription than the CLI is signed in to. Refusing to delete anything (az account set --subscription ...)")
+		return fmt.Errorf("kmx aks down: the record was written against a different subscription than the CLI is signed in to. Refusing to delete anything (az account set --subscription ...)")
 	}
 	if record.Branch != opt.Branch() {
-		return fmt.Errorf("kmx lift down: this lift was recorded as %q and you asked for %q teardown. These have opposite rules, so the difference is refused rather than reconciled", record.Branch, opt.Branch())
+		return fmt.Errorf("kmx aks down: this infrastructure was recorded as %q and you asked for %q teardown. These have opposite rules, so the difference is refused rather than reconciled", record.Branch, opt.Branch())
 	}
 
 	if record.Branch == lift.BringYourOwn {
@@ -68,7 +68,7 @@ func (a *App) LiftDown(opt lift.Options) error {
 // delete rather than reporting the request, and re-checks that the group is
 // gone before saying so.
 func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
-	fmt.Fprintf(a.Err, "\nkmx lift down: this will irreversibly delete resource group %q and its contents,\n"+
+	fmt.Fprintf(a.Err, "\nkmx aks down: this will irreversibly delete resource group %q and its contents,\n"+
 		"  plus any outside resources listed in this run's record.\n", opt.ResourceGroup)
 	if err := a.confirmLiftDown(opt); err != nil {
 		return err
@@ -83,7 +83,7 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 		// A group deletion proves cleanup only for what was inside it. If a
 		// resource landed elsewhere, say so before the group goes, while its
 		// id is still on screen.
-		fmt.Fprintln(a.Err, "\nkmx lift down: these were created OUTSIDE the resource group, so deleting")
+		fmt.Fprintln(a.Err, "\nkmx aks down: these were created OUTSIDE the resource group, so deleting")
 		fmt.Fprintln(a.Err, "  the group will not remove them. Each is removed and checked separately:")
 		for _, res := range outside {
 			fmt.Fprintf(a.Err, "    %s %s\n", res.Kind, res.Name)
@@ -99,6 +99,7 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 		// Go already verified consent for this group before ANY deletion.
 		// Runner does not forward stdin; the script must not prompt again.
 		"KAIMAHI_CONFIRM": opt.ResourceGroup,
+		"KMX_LIFT_DOWN":   "KAIMAHI_CONFIRM=" + shellArg(opt.ResourceGroup) + " " + a.liftCommand(opt, true),
 	}); err != nil {
 		return err
 	}
@@ -109,12 +110,12 @@ func (a *App) liftDownCreated(opt lift.Options, record *lift.Record) error {
 	state, err := a.groupExists(opt.ResourceGroup)
 	switch {
 	case err != nil, state == lift.Unusable:
-		return fmt.Errorf("kmx lift down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", shellArg(opt.ResourceGroup))
+		return fmt.Errorf("kmx aks down: the delete returned, but the resource group's state could not be re-checked — NOT claiming it is gone. If it is still there it is still billing:\n    az group exists --name %s", shellArg(opt.ResourceGroup))
 	case state == lift.Present:
-		return fmt.Errorf("kmx lift down: resource group %s still exists after the delete returned", opt.ResourceGroup)
+		return fmt.Errorf("kmx aks down: resource group %s still exists after the delete returned", opt.ResourceGroup)
 	}
 	a.forgetLiftRecord(opt)
-	fmt.Fprintf(a.Err, "\nkmx lift down: resource group %s is gone (az group exists says false).\n"+
+	fmt.Fprintf(a.Err, "\nkmx aks down: resource group %s is gone (az group exists says false).\n"+
 		"  Cleanup covers that group and the outside resources in this run's record; other resources and billing were not checked.\n", opt.ResourceGroup)
 	return nil
 }
@@ -152,7 +153,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	// had already done the work. Neither is this command doing what it says.
 	// Removed first, the deletion is ours and is observable.
 	if err := a.removeInClusterObservability(record); err != nil {
-		return fmt.Errorf("kmx lift down: in-cluster cleanup is incomplete; the run record has been kept.\n  Retry: %s\n%w", a.liftCommand(opt, true), err)
+		return fmt.Errorf("kmx aks down: in-cluster cleanup is incomplete; the run record has been kept.\n  Retry: %s\n%w", a.liftCommand(opt, true), err)
 	}
 
 	// Then the add-ons. They hold references to the workspaces, and a
@@ -300,7 +301,7 @@ func (a *App) removeInClusterObservability(record *lift.Record) error {
 // each one first, and reports everything it did not remove.
 func (a *App) removeRecorded(resources []lift.Resource) error {
 	if len(resources) == 0 {
-		fmt.Fprintln(a.Err, "\nkmx lift down: no Azure resource ids were recorded; no Azure resources were checked or removed.")
+		fmt.Fprintln(a.Err, "\nkmx aks down: no Azure resource ids were recorded; no Azure resources were checked or removed.")
 		return nil
 	}
 	var removals []lift.Removal
@@ -331,12 +332,12 @@ func (a *App) removeRecorded(resources []lift.Resource) error {
 
 	left := lift.LeftBehind(removals)
 	if len(left) == 0 {
-		fmt.Fprintf(a.Err, "\nkmx lift down: recorded Azure resources: %d delete operations completed, %d already gone. Unrecorded resources were not checked.\n",
+		fmt.Fprintf(a.Err, "\nkmx aks down: recorded Azure resources: %d delete operations completed, %d already gone. Unrecorded resources were not checked.\n",
 			deleted, alreadyGone)
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "kmx lift down: %d resource(s) were NOT removed, and they may still be billing.\n\n", len(left))
+	fmt.Fprintf(&b, "kmx aks down: %d resource(s) were NOT removed, and they may still be billing.\n\n", len(left))
 	for _, rm := range left {
 		// PlanRemoval's diagnostic contains a raw command; quote its id here.
 		rm.Reason = strings.ReplaceAll(rm.Reason, "az resource show --ids "+rm.Resource.ID, "az resource show --ids "+shellArg(rm.Resource.ID))
@@ -361,14 +362,14 @@ func (a *App) confirmLiftDown(opt lift.Options) error {
 		if c == name {
 			return nil
 		}
-		return fmt.Errorf("kmx lift down: KAIMAHI_CONFIRM does not name this %s — refusing.\n%s", kind, proceed)
+		return fmt.Errorf("kmx aks down: KAIMAHI_CONFIRM does not name this %s — refusing.\n%s", kind, proceed)
 	}
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) {
-		return fmt.Errorf("kmx lift down: no TTY and no KAIMAHI_CONFIRM — refusing to act unattended on a cloud subscription.\n%s", proceed)
+		return fmt.Errorf("kmx aks down: no TTY and no KAIMAHI_CONFIRM — refusing to act unattended on a cloud subscription.\n%s", proceed)
 	}
 	fmt.Fprintf(a.Err, "Type the %s name to confirm teardown (anything else aborts): ", kind)
 	if readTrimmedLine(a.Stdin) != name {
-		return errors.New("kmx lift down: not confirmed — nothing was deleted")
+		return errors.New("kmx aks down: not confirmed — nothing was deleted")
 	}
 	return nil
 }

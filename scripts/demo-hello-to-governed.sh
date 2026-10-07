@@ -78,9 +78,9 @@ prepare() {
   started=$(now)
   exec > >(tee "$RUN_DIR/setup.log") 2>&1
   (cd "$ROOT" && go build -o "$RUN_DIR/bin/kmx" ./cmd/kmx)
-  kmx up --step cluster
-  kmx up --step ollama
-  kmx up --step model
+  kmx local up --step cluster
+  kmx local up --step ollama
+  kmx local up --step model
   kmx plane --source "$ROOT"
   # Beat 1 installs Orka, its keyless Provider Secret and the result-reader
   # account. Do not pre-create an Orka namespace or legacy wrapper credential.
@@ -250,7 +250,7 @@ watch() {
 teardown() {
   local started
   started=$(now)
-  kmx down
+  kmx local down
   local clusters
   clusters=$(kind get clusters)
   ! grep -Fxq "$KIND_CLUSTER" <<<"$clusters" || fail 'dedicated cluster still exists'

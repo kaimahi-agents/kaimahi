@@ -127,7 +127,7 @@ func ValidPayload(payload string) error {
 	case PayloadOrka:
 		return nil
 	case PayloadKagent:
-		return errors.New("kmx lift: --payload kagent is retired — the legacy kagent runtime has been\n" +
+		return errors.New("kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\n" +
 			"  removed from kmx, and this command no longer installs it or its demo agents.\n" +
 			"  Use --payload orka, which lands Orka on the same provisioned cluster.\n" +
 			"  An existing kagent lift can still be inspected and torn down (`kmx aks down`);\n" +
@@ -139,7 +139,7 @@ func ValidPayload(payload string) error {
 			"  existing script quietly changed which one it deploys, so the choice is yours\n" +
 			"  to state rather than ours to assume.")
 	default:
-		return fmt.Errorf("kmx lift: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
+		return fmt.Errorf("kmx aks up: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
 	}
 }
 
@@ -276,7 +276,7 @@ func (o Options) Validate() error {
 	if len(problems) > 1 {
 		noun = "problems"
 	}
-	return fmt.Errorf("kmx lift: %d %s with what was asked for:\n\n- %s", len(problems), noun, strings.Join(problems, "\n- "))
+	return fmt.Errorf("kmx aks up: %d %s with what was asked for:\n\n- %s", len(problems), noun, strings.Join(problems, "\n- "))
 }
 
 // ValidateForTeardown checks the flags that say WHICH lift is being removed.
@@ -299,7 +299,7 @@ func (o Options) ValidateForTeardown() error {
 	if len(problems) == 0 {
 		return nil
 	}
-	return fmt.Errorf("kmx lift down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
+	return fmt.Errorf("kmx aks down: %s\n\n  Without both, there is no record to read, and this refuses to go looking\n  by name — on a subscription that is not ours, a name can belong to\n  somebody else.", strings.Join(problems, "\n  "))
 }
 
 func validStep(step, payload string) bool {
@@ -403,11 +403,11 @@ func (o Options) StepsToRun() []string { return o.steps() }
 // runs against a live boundary once there is one.
 func PolicyEngineVerdict(engine string, readable bool) error {
 	if !readable {
-		return errors.New("kmx lift: could not read this cluster's NetworkPolicy engine — refusing to install a model-traffic bridge whose boundary might be decorative. Not claiming it enforces, and not claiming it does not")
+		return errors.New("kmx aks up: could not read this cluster's NetworkPolicy engine — refusing to install a model-traffic bridge whose boundary might be decorative. Not claiming it enforces, and not claiming it does not")
 	}
 	switch e := strings.TrimSpace(strings.ToLower(engine)); {
 	case e == "" || e == "none":
-		return errors.New(`kmx lift: this cluster has NO NetworkPolicy engine.
+		return errors.New(`kmx aks up: this cluster has NO NetworkPolicy engine.
 
   AKS clusters created without one ACCEPT every NetworkPolicy and enforce
   none of them. The plane's boundary would be present and inert, which reads
@@ -420,6 +420,6 @@ func PolicyEngineVerdict(engine string, readable bool) error {
 	case enforcingEngines[e]:
 		return nil
 	default:
-		return fmt.Errorf("kmx lift: this cluster reports NetworkPolicy engine %q, which this path does not recognise as one that enforces. Refusing rather than assuming", engine)
+		return fmt.Errorf("kmx aks up: this cluster reports NetworkPolicy engine %q, which this path does not recognise as one that enforces. Refusing rather than assuming", engine)
 	}
 }

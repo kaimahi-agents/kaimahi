@@ -52,9 +52,9 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	named := 0
 	for _, child := range root.Commands() {
 		if child.Hidden {
-			// Retired spellings keep useful errors; aks keeps working as a
-			// compatibility route. Neither belongs in the public root help.
-			if child.Name() != "govern" && child.Name() != "use" && child.Name() != "aks" {
+			// Retirement stubs and compatibility routes remain parseable but
+			// are not advertised alongside canonical commands.
+			if child.Name() != "govern" && child.Name() != "use" && child.Name() != "aks" && child.Name() != "ctx" && child.Name() != "up" && child.Name() != "down" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
@@ -55,10 +56,12 @@ func TestBYORegistryRetryKeepsTheRecordedPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	a := &App{Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
+	a := &App{Cfg: &config.Config{KubeContext: "unrelated"}, Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
 	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345"}
-	err := a.refuseWithoutRegistryPullRights(opt, opt.Payload)
-	if err == nil || !strings.Contains(err.Error(), "kmx aks up --byo --payload orka --step plane") {
+	err := a.refuseWithoutRegistryPullRights(opt)
+	resume := opt
+	resume.Step = "plane"
+	if err == nil || !strings.Contains(err.Error(), a.liftCommand(resume, false)) {
 		t.Fatalf("BYO retry lost the recorded payload: %v", err)
 	}
 }
@@ -69,14 +72,14 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
-	for _, want := range []string{"KMX_LIFT_CONTINUE", "KMX_LIFT_DOWN", "continue:  $KMX_LIFT_CONTINUE", "teardown:  $KMX_LIFT_DOWN"} {
+	for _, want := range []string{"KMX_LIFT_CONTINUE", "KMX_LIFT_DOWN", "continue:  $KMX_LIFT_CONTINUE", "teardown:  $teardown"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("embedded aks-up.sh does not carry %q", want)
 		}
 	}
 	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
 		!strings.Contains(text, "make netpol-verify") ||
-		!strings.Contains(text, "kmx aks up --byo --resource-group $RG") {
+		!strings.Contains(text, "This standalone script does not create a KMX ownership record") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
 	}
 }
@@ -466,7 +469,7 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 // An add-on this run itself enabled reads as "on" the second time through, and
 // re-running a phase must not turn into a refusal.
 func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
-	a := &App{}
+	a := &App{Cfg: &config.Config{KubeContext: "unrelated"}}
 	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
 
 	for _, tc := range []struct {

@@ -48,7 +48,7 @@ func (a *App) liftVerify(opt lift.Options) error {
 		return err
 	}
 	a.notef("Orka is installed and its controllers are ready. No model call was made:\n" +
-		"  this lift creates no Provider, so there is nothing yet that could answer.")
+		"  this AKS setup creates no Provider, so there is nothing yet that could answer.")
 	if !opt.Observability {
 		a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
 		return nil
@@ -194,7 +194,7 @@ func (a *App) readLiftRecord(group, cluster string) (*lift.Record, error) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("no record of a lift onto %s/%s (looked in %s): %w", group, cluster, filepath.Dir(path), err)
+		return nil, fmt.Errorf("no AKS infrastructure record for %s/%s (looked in %s): %w", group, cluster, filepath.Dir(path), err)
 	}
 	defer f.Close()
 	return lift.ReadRecord(f)
@@ -310,7 +310,7 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
 
 	if opt.BringYourOwn {
 		fmt.Fprintf(a.Err, `  Your existing cluster and registry continue to cost money; they are not
-  ours to delete. Any monitoring resources recorded by this lift can also
+  ours to delete. Any monitoring resources recorded by this AKS setup can also
   incur charges until removed. Remove only the recorded monitoring with
 
     KAIMAHI_CONFIRM=%s %s
@@ -323,7 +323,7 @@ func (a *App) liftNextSteps(opt lift.Options, record *lift.Record) {
 		return
 	}
 	fmt.Fprintf(a.Err, `  THIS COSTS MONEY UNTIL YOU REMOVE IT — the node, the load balancer, the
-  registry, and any monitoring resources this lift created. Teardown removes
+  registry, and any monitoring resources this AKS setup created. Teardown removes
   the resource group and separately handles recorded resources outside it:
 
     KAIMAHI_CONFIRM=%s %s

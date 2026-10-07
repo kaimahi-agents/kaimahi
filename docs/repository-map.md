@@ -39,14 +39,14 @@ checks.
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
 | `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 45 (checkers, release packaging, probes, CI fixtures, mutation specs) |
-| `docs/` | 47 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `docs/` | 48 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (33 files) | **Installed** | CLI and tests: top-level offline AgentSuite validation, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (34 files) | **Installed** | CLI and tests: explicit context/local entry points and compatibility routes, top-level offline AgentSuite validation, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
@@ -266,7 +266,7 @@ throwaway CA and a documentation-range address routed over kind's network,
 so a public-looking hosted upstream can be dialed without a hosted account.
 CI holds no hosted credential.
 
-## `docs/` — 47 tracked files, guides and retirement records
+## `docs/` — 48 tracked files, guides and retirement records
 
 **Guides and index (23):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `spend.md`,
@@ -282,13 +282,13 @@ operating instructions for deleted code.
 
 **Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
-**Maintainer and process (16):** `development.md`, `repository-map.md`,
+**Maintainer and process (17):** `development.md`, `repository-map.md`,
 `reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
 `cli-ux-plan.md`, `charm-ux-followup-plan.md`, `interactive-agent-tui-plan.md`, `NAMING.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
-`chat-performance-profile.md` and `agent-lift.md`.
+`chat-performance-profile.md`, `agent-lift.md` and `command-semantics.md`.
 
 **Assets (2):** `docs/assets/architecture.mmd` and `docs/assets/architecture.svg`.
 These depict the pre-retirement platform, not the current model bridge. The
@@ -311,6 +311,7 @@ and the separately located historical architecture SVG.
 | `README.md` | **Documentation** | Repository entry point and current direction. |
 | `CHANGELOG.md` | **Build input and history** | Release notes are extracted by the release-notes script. |
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
+| `AGENTS.md` | **Documentation** | Repository guidance for consistent command changes and verification. |
 | `embed.go` | **Installed tooling** | Root-module embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Build/check targets plus plane-image, AKS-credential, network-policy and egress helpers. |

@@ -114,8 +114,9 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
-		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
-		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
+		newVersionCommand(state), newCompletionCommand(root), newContextCommand(state), newLocalCommand(state),
+		compatibilityCommand(newCtxCommand(state), "kmx context show or kmx context use <context>"),
+		newQuickstartCommand(state), newQuickstartWizardCommand(state), compatibilityCommand(newUpCommand(state), "kmx local up"), newLiftCommand(state), newAKSCommand(state),
 		newPlaneCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newFlowCommand(state),
 		newWatchCommand(state),
@@ -123,12 +124,24 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newBudgetCommand(state), newModelsCommand(state), newMigrateCommand(state),
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
-		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
+		newMetricsCommand(state), newStatusCommand(state), compatibilityCommand(newDownCommand(state), "kmx local down"), newAgentCommand(state), newTaskCommand(state),
 		newSuiteCommand(),
 		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
 		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 	)
 	return root
+}
+
+// Compatibility routes reuse the canonical operations. Emit notices on stderr
+// rather than Cobra's output writer, which also carries requested data.
+func compatibilityCommand(cmd *cobra.Command, replacement string) *cobra.Command {
+	cmd.Hidden = true
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s is deprecated; use %s\n", cmd.CommandPath(), replacement)
+		return run(cmd, args)
+	}
+	return cmd
 }
 
 // Keep retired spellings parseable but absent from help and completion.

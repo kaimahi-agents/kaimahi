@@ -62,7 +62,7 @@ hello phases: their existing result listener still uses port 19180.
 
 Repeat with a fresh run directory and cluster suffix for the second cold run.
 Preparation checks `agg` before cluster setup; recording checks it again.
-Preparation refuses an existing cluster or directory. It reuses `kmx up --step`
+Preparation refuses an existing cluster or directory. It reuses `kmx local up --step`
 for cluster/Ollama/model and `kmx plane`; bare `up` and `quickstart` include a
 different first-answer journey, so they are not duplicated or run in this demo.
 Preparation also builds the unchanged application's Dockerfile and installs its
@@ -128,6 +128,6 @@ Model ledger rows prove traffic crossed the model seam, not governance of tools
 or ownership of the application Deployment.
 
 Existing deployments need [explicit retirement cleanup](operations.md#upgrading-after-gateway-retirement).
-For disposable kind clusters, `kmx down` destroys the cluster and ledger;
+For disposable kind clusters, `kmx local down` destroys the cluster and ledger;
 managed-cluster cleanup follows the [AKS ownership rules](aks.md#teardown).
 No new live kind or cloud proof is claimed by this documentation update.

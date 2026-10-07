@@ -85,7 +85,7 @@ sys.stdout.write(urlparse(sys.stdin.read().strip()).hostname or "")
 fi
 
 # Classify. Order matters: an ABSENT context is not automatically unsafe —
-# `make up` on an empty machine legitimately names a kind context that
+# `kmx local up` on an empty machine legitimately names a kind context that
 # does not exist yet, and CI depends on that. Absent + kind-named is
 # "about to be created"; absent + anything else is a typo, which is
 # exactly what this guard exists to catch.
@@ -106,7 +106,7 @@ if [ -z "$server" ]; then
     echo "kube-guard: context '$CTX' is not in the kubeconfig." >&2
     echo "  Nothing was applied. Check the name with: kubectl config get-contexts" >&2
     echo "  (Only a kind-* context may be named before it exists — that is" >&2
-    echo "   'make up' creating it. Any other name here is a typo.)" >&2
+    echo "   'kmx local up' creating it. Any other name here is a typo.)" >&2
     exit 1
   fi
 elif [ "$named_kind" = yes ] && [ "$loopback" = yes ]; then
@@ -136,7 +136,7 @@ if [ -n "${KAIMAHI_CONFIRM:-}" ]; then
     exit 0
   fi
   echo "kube-guard: KAIMAHI_CONFIRM does not name this context — refusing." >&2
-  echo "  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>" >&2
+  printf '  to proceed:  KUBE_CTX=%q KAIMAHI_CONFIRM=%q make <target>\n' "$CTX" "$CTX" >&2
   exit 1
 fi
 
@@ -144,7 +144,7 @@ fi
 # a script or CI job reaching here must fail rather than hang or assume.
 if [ ! -t 0 ]; then
   echo "kube-guard: '$CTX' is not a local kind cluster and there is no TTY to ask." >&2
-  echo "  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>" >&2
+  printf '  to proceed:  KUBE_CTX=%q KAIMAHI_CONFIRM=%q make <target>\n' "$CTX" "$CTX" >&2
   exit 1
 fi
 

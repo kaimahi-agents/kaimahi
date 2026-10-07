@@ -91,7 +91,7 @@ Orka v0.2.0 does not require an LLM API key to install; model calls need a
 Provider and an endpoint the cluster can reach. Its `Provider` type accepts
 `baseURL` — "an optional custom API endpoint (for proxies or self-hosted)" —
 so kmx creates one of `type: openai` pointing at the keyless in-cluster model
-server `kmx up` already deployed:
+server `kmx local up` already deployed:
 
 ```yaml
 spec:
@@ -113,7 +113,7 @@ an adopter should learn that here, not at their first model call.
 `agent create` defaults to Orka resources; it does not install Orka. The
 separate explicit Kagent create path is documented in the
 [CLI contract](kmx.md#explicit-kagent-v0102-create) and does not change this
-guide. On the local kind path the runtime is already there: `kmx up` and `kmx quickstart` both
+guide. On the local kind path the runtime is already there: `kmx local up` and `kmx quickstart` both
 install the pinned release and leave the Ollama model in place, so author
 against that **same** context. On a cluster kmx did not bring up, install it
 first:
@@ -129,8 +129,8 @@ new Agent/Task example, not a continuation command for an Agent you already
 created. Choose unused names and output paths; creation refuses collisions.
 
 Task execution requires an existing result account, and the runtime step owns
-it. `kmx up --step orka` provisions exactly this account, Role and
-RoleBinding, and so does every run that includes that step — a bare `kmx up`
+it. `kmx local up --step orka` provisions exactly this account, Role and
+RoleBinding, and so does every run that includes that step — a bare `kmx local up`
 and `kmx quickstart`. A standalone `kmx orka install` does **not**: it
 installs the release and wires the keyless Provider, and nothing more.
 `agent create` never does either: it only NAMES an account, so authoring an
@@ -198,13 +198,13 @@ or governance is added here.
 ## The whole journey, from nothing
 
 ```console
-$ kmx up                                    # a cluster, a model, and the Orka runtime
+$ kmx local up                              # a cluster, a model, and the Orka runtime
 $ kmx plane                                 # the model-traffic bridge
 $ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 ```
 
 The third command is the one that governs anything. The first two are the
-front door — `kmx up` installs Orka itself, so there is no separate
+front door — `kmx local up` installs Orka itself, so there is no separate
 `kmx orka install` on this path.
 
 ## Authoring an agent for Orka
@@ -261,7 +261,7 @@ Agent conversion.
   read-only Task result account. An existing namespace alone is not an Orka
   installation; kmx refuses a legacy controller/CRD or foreign Helm release,
   not a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts.
-  On an existing kind cluster, `kmx up` performs this refusal and checks a
+  On an existing kind cluster, `kmx local up` performs this refusal and checks a
   recognized controller's readiness before starting the long model pull.
 - **Partial installs require operator review.** Applying CRDs or creating a
   failed Helm release can leave cluster state even if installation times out.
@@ -271,7 +271,7 @@ Agent conversion.
   SHA-256-verified chart with
   `helm --kube-context <ctx> -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`
   (never `--force`), or clean the failed target before retrying kmx. On a
-  disposable local kind cluster you created, `kmx down` then `kmx up` replaces
+  disposable local kind cluster you created, `kmx local down` then `kmx local up` replaces
   it, losing its data. On AKS, stop and use the verified backup/recovery plan.
 - **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new
   installations](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
@@ -279,9 +279,9 @@ Agent conversion.
   release that publishes a tested procedure*, not instructions to upgrade
   v0.1.3 to v0.2.0. Do not use `helm upgrade --force`.
 - **Local kind replacement loses data.** If replacing an old local install,
-  first export anything you need; `kmx down` deletes the named kind cluster,
+  first export anything you need; `kmx local down` deletes the named kind cluster,
   including Orka Tasks, custom resources, Secrets, SQLite volumes, snapshots,
-  model data and the plane ledger. Only then run `kmx up` for a new v0.2.0
+  model data and the plane ledger. Only then run `kmx local up` for a new v0.2.0
   installation. This is not a migration and does not restore the deleted data.
 - **AKS replacement is operator-managed.** Before retiring v0.1.3, make and
   verify backups of the existing controller data volumes, Orka resources/Secrets

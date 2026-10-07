@@ -71,6 +71,42 @@
   "lines": [
     {
       "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --context kind-x local up --step=tools-agent\",",
+      "category": "negative",
+      "why": "Negative control proving the canonical local group cannot bypass the retired-step tripwire."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\"}, {\"context\", \"show\", \"--help\"}, {\"context\", \"use\", \"--help\"},",
+      "category": "negative",
+      "why": "Asserts context-use help is non-operational; the use token is not the retired root preset-switch command."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\", \"show\", \"extra\"}, {\"context\", \"use\"}, {\"context\", \"use\", \"\"},",
+      "category": "negative",
+      "why": "Invalid context-selection inputs must refuse before configuration; no preset switching."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\", \"use\", \" \"}, {\"context\", \"use\", \"one\", \"two\"}, {\"context\", \"unknown\"},",
+      "category": "negative",
+      "why": "Invalid context-selection inputs must refuse before configuration; no preset switching."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "for _, args := range [][]string{{\"ctx\", \"kind-demo\"}, {\"context\", \"use\", \"kind-demo\"}} {",
+      "category": "negative",
+      "why": "Pins saved-context compatibility without invoking the retired root preset-switch operation."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "err := execute([]string{\"context\", \"use\", \"remote team\"}, deps)",
+      "category": "negative",
+      "why": "Remote context selection without consent must refuse, preserving saved state and quoted recovery."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
       "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir \"$charts/crds\"",
       "category": "fixture",
       "why": "External official CRD chart is pulled by immutable OCI digest before its unpacked chart name and version are checked."
@@ -401,13 +437,13 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
+      "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+(?:local\\s+)?up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
       "category": "negative",
       "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
+      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:local\\s+)?up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
       "category": "negative",
       "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
     },
@@ -581,7 +617,7 @@
     },
     {
       "path": "internal/kmx/app/lift.go",
-      "text": "return nil, nil, fmt.Errorf(\"kmx lift: %s/%s was lifted onto with --payload kagent, which is retired.\\n\"+",
+      "text": "return nil, nil, fmt.Errorf(\"kmx aks up: %s/%s was provisioned with --payload kagent, which is retired.\\n\"+",
       "category": "retirement",
       "why": "The resume refusal for a record that landed the retired payload, naming the payload the operator's script still passes."
     },
@@ -1031,7 +1067,7 @@
     },
     {
       "path": "internal/kmx/lift/plan.go",
-      "text": "return errors.New(\"kmx lift: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
+      "text": "return errors.New(\"kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
       "category": "retirement",
       "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
     },

@@ -24,6 +24,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx context show` and `kmx context use <context>` make context inspection
+  and saved selection explicit. `kmx local up/down` scope the existing local
+  kind setup and deletion operations. These unreleased names use the same
+  settings, guards and operation handlers as their compatibility routes.
+
 - AX preview activity source includes a bounded, allowlisted OpenCode child-event projector with synthetic failure and replay tests. It does not include a command wrapper, signed image or AX lifting yet.
 
 - Portable agents can declare `spec.coordination.allowedAgents` as a nonempty, explicit helper allowlist. Orka renders it as enabled named delegation; Kagent refuses unsupported core delegation. Legacy Orka coordination and existing bundle digests/rendering remain unchanged. Older kmx readers refuse the new field; upgrade before reading migrated bundles. This does not add an AX adapter.
@@ -64,6 +69,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Changed
 
 - `kmx aks` is hidden from root help and shell completion as a temporary compatibility route; direct `kmx aks up` and `kmx aks down` invocation keeps unchanged flags and behavior.
+- `kmx ctx`, `kmx up` and `kmx down` remain callable compatibility routes,
+  with notices only on stderr. Root help and completion advertise `context`
+  and `local`. Existing operation arguments, saved selection, stdout and exit
+  contracts remain; the context report retains the `kmx ctx` source label.
+  Generated selection and local teardown hints use canonical names. No removal
+  release is scheduled; v0.4.1 users should keep using the old spellings.
+
 - Kagent bundles are explicitly refused by the currently Orka-only lift,
   status, evaluate, console bundle, and interactive `/lift` paths. No Kagent
   chat, list, show, status, lift, evaluate, console, quickstart, `up`, installer,
@@ -78,6 +90,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]` inspects cross-namespace Agent dependents before retiring a bundle's owned Agent and rendered Provider. Lift now records each object's original `created` or `adopted` origin on the live object; retire deletes created objects and releases adopted or legacy objects by default (`--delete-adopted` opts into deletion). Retirement writes a per-target receipt and forgets its remembered destination; status reports released Agents as not deployed. The selected Provider, its Secret and existing Tasks remain untouched.
 
 ### Fixed
+
+- Generated local setup/teardown commands preserve the context, kind cluster
+  and container engine under the `local` group. AKS recovery uses `aks up/down`
+  with the effective phase, payload, configuration and ownership selectors;
+  AKS diagnostics now name infrastructure preparation/teardown rather than
+  agent Lift. Embedded scripts no longer suggest deleted `make aks-down` or
+  `make up` targets. Standalone AKS scripts retain shell-quoted script recovery
+  because they do not create KMX ownership records. Teardown behavior is unchanged.
 
 - The quickstart Orka Kubernetes Tool now grants named-policy `get` only to the AI worker configured by the installed v0.2.0 chart, including stock Helm `orka` releases. Installation and Agent lift refuse missing or ambiguous worker identity and ineffective policy authorization even when a Tool reports Available. Console Prepare can reapply the scoped grant; see [repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant). CI proves both chart variants with a succeeded health Task and metadata-only Tool-call events instead of worker logs or printed answers.
 

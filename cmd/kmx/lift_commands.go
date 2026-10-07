@@ -80,7 +80,7 @@ func newManagedDownCommand(state *commandState, deprecated bool) *cobra.Command 
 	var opt lift.Options
 	cmd := &cobra.Command{
 		Use:   "down",
-		Short: "Remove what the lift created (and on a cluster you own, only that)",
+		Short: "Tear down created AKS infrastructure, or clean up recorded BYO monitoring",
 		Args:  cobra.NoArgs,
 	}
 	if deprecated {

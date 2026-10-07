@@ -46,7 +46,7 @@ func (a *App) Down() error {
 		a.notef("no kind cluster named %q — nothing to delete.", a.Cfg.KindCluster)
 		return nil
 	}
-	if err := a.GuardKnown(fmt.Sprintf("DELETE the kind cluster %q", a.Cfg.KindCluster), "kmx down"); err != nil {
+	if err := a.GuardKnown(fmt.Sprintf("DELETE the kind cluster %q", a.Cfg.KindCluster), a.operationCommand("local", "down")); err != nil {
 		return err
 	}
 	return a.Run.Run("kind", "delete", "cluster", "--name", a.Cfg.KindCluster)

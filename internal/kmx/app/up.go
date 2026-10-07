@@ -66,9 +66,9 @@ func (a *App) Up(step string) error {
 	}
 
 	action := "bring up the kmx runtime (kind, Ollama, Orka)"
-	command := "kmx up"
+	command := a.operationCommand("local", "up")
 	if step != "" {
-		action, command = "run the '"+step+"' step", "kmx up --step "+step
+		action, command = "run the '"+step+"' step", a.operationCommand("local", "up", "--step", step)
 	}
 	// Every step writes to the Orka path's two namespaces, so the banner
 	// names them exactly — for a bare run and for a single step alike. The
@@ -224,12 +224,12 @@ func (a *App) rememberInventedContext() {
 	if err != nil {
 		// Not fatal: the cluster is up, and the cost of failing here is one
 		// `kmx ctx` the operator types themselves.
-		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx ctx %s",
+		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx context use %s",
 			a.Cfg.KubeContext, err, shellArg(a.Cfg.KubeContext))
 		return
 	}
 	a.Cfg.ContextSource = config.SourceSelected
-	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx ctx <name>",
+	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx context use <name>",
 		a.Cfg.KubeContext, path)
 }
 

@@ -18,7 +18,7 @@ cross-runtime authoring/lifecycle surface remains open and unsupported.
 
 - A v0.2.0 or newer kmx and matching plane build. See
   [installation](kmx.md#install) and the [plane upgrade procedure](releases.md#upgrading-the-plane).
-- An explicitly selected cluster: `kmx ctx <context>` or `kmx --context <context>`.
+- An explicitly selected cluster: `kmx context use <context>` or `kmx --context <context>`.
   Non-local mutations require confirmation naming that context; see
   [target safety](kmx.md#where-the-command-will-land).
 - Orka installed, with a ready Provider for the requested model. Start with
@@ -44,7 +44,7 @@ Use an existing Deployment and Provider/model name appropriate to your cluster;
 `concierge`, `demo`, and `local/qwen2.5:3b` below are example workload values.
 
 ```bash
-kmx ctx <context>
+kmx context use <context>
 kmx orka status
 kmx migrate concierge --namespace demo --model local/qwen2.5:3b
 ```
@@ -369,7 +369,7 @@ For an owner-managed workload, restore its release configuration deliberately;
 there is no `kmx migrate down` command. Do not delete shared plane or Orka
 resources as though they belonged only to this application.
 
-For disposable kind clusters, `kmx down` deletes everything, including the ledger.
+For disposable kind clusters, `kmx local down` deletes everything, including the ledger.
 For AKS, follow [teardown](aks.md#teardown): confirm the resource group only for
 created-cluster deletion, or the cluster for BYO monitoring cleanup. Cloud
 absence checks cover named/recorded resources, not all subscription billing.

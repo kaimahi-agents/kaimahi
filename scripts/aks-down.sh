@@ -27,6 +27,15 @@ CLUSTER="${AKS_CLUSTER:-kaimahi}"
 OWNER_TAG_KEY=kaimahi-ephemeral
 OWNER_TAG_VALUE=p5b
 
+# KMX supplies the complete, ownership-aware command for a recorded run.
+# Direct script callers have no KMX receipt, so retry this script instead.
+if [ -n "${KMX_LIFT_DOWN:-}" ]; then
+  recovery="$KMX_LIFT_DOWN"
+else
+  printf -v recovery 'AKS_RESOURCE_GROUP=%q AKS_CLUSTER=%q KAIMAHI_CONFIRM=%q bash %q' \
+    "$RG" "$CLUSTER" "$RG" "$0"
+fi
+
 [ -n "$RG" ] || {
   echo "aks-down: AKS_RESOURCE_GROUP is required" >&2
   echo "usage: AKS_RESOURCE_GROUP=<rg> [AKS_CLUSTER=<name>] $0" >&2
@@ -91,7 +100,7 @@ echo "----------------------------------------------------------------" >&2
 if [ -n "${KAIMAHI_CONFIRM:-}" ]; then
   if [ "$KAIMAHI_CONFIRM" != "$RG" ]; then
     echo "aks-down: KAIMAHI_CONFIRM does not name this resource group — refusing." >&2
-    echo "  to proceed:  KAIMAHI_CONFIRM=$RG make aks-down" >&2
+    printf '  to proceed:  %s\n' "$recovery" >&2
     # The likeliest cause, called out by name: the runbook has you export
     # KAIMAHI_CONFIRM=<cluster> once for the session, which is what the
     # context guard wants. Deleting a whole resource group is a bigger act
@@ -114,7 +123,7 @@ elif [ -t 0 ]; then
   fi
 else
   echo "aks-down: no TTY and no KAIMAHI_CONFIRM — refusing to delete unattended." >&2
-  echo "  to proceed:  KAIMAHI_CONFIRM=$RG make aks-down" >&2
+  printf '  to proceed:  %s\n' "$recovery" >&2
   exit 1
 fi
 

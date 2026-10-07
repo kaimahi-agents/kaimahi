@@ -83,6 +83,12 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
+**Unreleased entry-point alignment:** `context show/use` and `local up/down`
+are the canonical grouped commands below. Tagged v0.4.1 uses `ctx [context]`
+and root `up/down`; those routes remain callable in newer builds with notices
+only on stderr. No removal release is scheduled. See the
+[alignment record](command-semantics.md) for current versus proposed names.
+
 ### Current Orka path and explicit Kagent create
 
 | Command | Contract / reference |
@@ -98,7 +104,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx agent run <bundle-dir> --prompt <text>` / `kmx agent run --agent <name> --prompt-file <path>` | execute one Task against an already-deployed Agent without changing the bundle; stdout is answer-only. Supports `--prompt-file -` for stdin and `--wait` (default 5m, maximum 9m). [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
 | `kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]` | inspect an AI Task's phase once by default and open a result session only for a readable terminal answer; `--wait <duration>` waits 10s–9m and reports phase changes. Pending or not-yet-readable results exit 2; failed or cancelled Tasks exit 1. [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
-| `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
+| `kmx context show` / `kmx context use <context>` | read effective context/source/posture or remember KMX's guarded access selection; never change kubectl current-context |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; Kagent inventory and bundles are unsupported. `b` compares the selected Orka agent with its local bundle using the same report as `kmx agent status`; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
 
 ### Existing plane and operator commands
@@ -136,13 +142,13 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
+| `kmx local up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
 | `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Direct invocation keeps unchanged flags and behavior: provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; Kagent chat is not restored by its create capability |
 | `kmx status` | Starts with the unchanged `kmx orka status` report (running version, deployments, CRDs, Provider readiness), then reports the separate model plane's readiness and seam certificate expiry with the same pinned context. An absent, unreadable, or scaled-zero plane is reported distinctly. `-o table` only |
-| `kmx down` | delete named kind cluster, **including its ledger** |
+| `kmx local down` | delete named kind cluster, **including its ledger** |
 
 `quickstart` reuses an **exact** live match of the Provider and Agent it would
 write, and nothing else: a differing spec is somebody's deliberate change, so
@@ -158,7 +164,7 @@ access.
 
 | Setting | Meaning / default |
 |---|---|
-| `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
+| `--context`, `KUBE_CTX`, `kmx context use` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
 | `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
 | `--container-engine`, `CONTAINER_ENGINE` | `docker` (default) or `podman`; the flag overrides the environment; keep consistent for every operation on a cluster |
 | `MODEL` | model the runtime pulls and resolves, default `qwen2.5:3b` |
@@ -187,7 +193,7 @@ that the fallback is already current, permits first setup. Current-context is
 never substituted as kmx's target. Kind creation/image loading also require
 context `kind-$KIND_CLUSTER`; confirmation cannot override that mismatch.
 
-`kmx down` checks the container engine because kind deletes by container name,
+`kmx local down` checks the container engine because kind deletes by container name,
 not kubeconfig. A listed kind cluster missing from kubeconfig requires explicit
 named confirmation; no matching container cluster is a no-op. An absent context
 is not proof there is nothing to delete.
@@ -347,7 +353,7 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   nothing is rolled back; the error says so, and a rerun reuses what it wrote.
 - `--task` authorizes a model call and requires an existing
   `--result-service-account` in the selected namespace; `agent create` creates no
-  account or RBAC. (`kmx up --step orka` provisions `orka-result-reader`, whose
+  account or RBAC. (`kmx local up --step orka` provisions `orka-result-reader`, whose
   grant is one verb on `tasks.core.orka.ai` in `orka-system`.) It creates the
   Task once and waits for Succeeded plus an actual nonblank
   answer. **Without `--task`, no model response was tested.**

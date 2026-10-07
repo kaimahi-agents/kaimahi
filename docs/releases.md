@@ -169,6 +169,11 @@ from:
 
 ## Upgrading kmx
 
+Development builds introduce `kmx context show/use` and `kmx local up/down`.
+The v0.4.1 examples below retain `ctx` and root `up/down`, which remain callable
+compatibility routes in newer builds. See [command alignment](command-semantics.md)
+for the transition policy.
+
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash

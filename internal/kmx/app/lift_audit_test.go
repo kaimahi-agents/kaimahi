@@ -247,6 +247,88 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	}
 }
 
+func TestAKSDownScriptRecoveryPreservesRecordedAndStandaloneOwnership(t *testing.T) {
+	for _, recorded := range []bool{false, true} {
+		t.Run(map[bool]string{false: "standalone", true: "recorded"}[recorded], func(t *testing.T) {
+			a, _, _ := liftAuditApp(t)
+			work, cleanup, err := a.liftWorkspace()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			opt := lift.Options{ResourceGroup: "rg '$(false)", Cluster: "cluster '$(false)", Registry: "reg12345"}
+			t.Setenv("AKS_RESOURCE_GROUP", opt.ResourceGroup)
+			t.Setenv("AKS_CLUSTER", opt.Cluster)
+			recovery := "KAIMAHI_CONFIRM=" + shellArg(opt.ResourceGroup) + " " + a.liftCommand(opt, true)
+			t.Setenv("KMX_LIFT_DOWN", "")
+			if recorded {
+				t.Setenv("KMX_LIFT_DOWN", recovery)
+			}
+			out, err := exec.Command("bash", filepath.Join(work, "scripts/aks-down.sh")).CombinedOutput()
+			if err == nil {
+				t.Fatal("wrong inherited confirmation accepted")
+			}
+			_, printed, ok := strings.Cut(string(out), "  to proceed:  ")
+			if !ok {
+				t.Fatalf("no recovery: %s", out)
+			}
+			printed = strings.SplitN(printed, "\n", 2)[0]
+			if recorded && printed != recovery {
+				t.Fatalf("lost KMX options: %s", printed)
+			}
+			// Stub the printed executable: parsing the instruction must neither
+			// evaluate embedded shell syntax nor change ownership mode.
+			probe := `kmx() { printf '%s\000' "$KAIMAHI_CONFIRM" "$@"; }; bash() { printf '%s\000' "$AKS_RESOURCE_GROUP" "$AKS_CLUSTER" "$KAIMAHI_CONFIRM" "$@"; }; `
+			parsed, err := exec.Command("bash", "-c", probe+printed).Output()
+			if err != nil {
+				t.Fatalf("unsafe recovery %s: %v", printed, err)
+			}
+			var want []string
+			if recorded {
+				want = []string{opt.ResourceGroup, "--context", opt.Cluster, "aks", "down", "--resource-group", opt.ResourceGroup, "--cluster", opt.Cluster, "--registry", opt.Registry}
+			} else {
+				want = []string{opt.ResourceGroup, opt.Cluster, opt.ResourceGroup, filepath.Join(work, "scripts/aks-down.sh")}
+			}
+			if got := strings.Split(strings.TrimSuffix(string(parsed), "\x00"), "\x00"); !reflect.DeepEqual(got, want) {
+				t.Fatalf("recovery argv/env=%q want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestAKSMonitoringRecoveryPreservesOwnershipAndQuoting(t *testing.T) {
+	a := &App{Cfg: &config.Config{KubeContext: "unrelated"}}
+	for _, byo := range []bool{false, true} {
+		opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: byo, ResourceGroup: "rg '$(false)",
+			Cluster: "cluster '$(false)", Registry: "reg12345", Step: "observability", Observability: true}
+		err := a.refuseIfMonitoringWasAlreadyOn(opt, &lift.Record{Before: lift.Pre{Recorded: true, MetricsAddonEnabled: true}})
+		if err == nil {
+			t.Fatal("pre-existing monitoring accepted")
+		}
+		resume := opt
+		resume.Step, resume.Observability = "", false
+		if !strings.Contains(err.Error(), a.liftCommand(resume, false)) {
+			t.Fatalf("recovery lost effective options: %v", err)
+		}
+		if strings.Contains(err.Error(), "--byo") != byo || strings.Count(err.Error(), "--byo") > 1 {
+			t.Fatalf("recovery changed ownership branch: %v", err)
+		}
+		for _, line := range strings.Split(err.Error(), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "az aks ") {
+				continue
+			}
+			out, parseErr := exec.Command("/bin/sh", "-c", `az() { printf '%s\000' "$@"; }; `+line).Output()
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			args := strings.Split(string(out), "\x00")
+			if len(args) < 6 || args[3] != opt.Cluster || args[5] != opt.ResourceGroup {
+				t.Fatalf("Azure instructions lost argument boundaries: %q", args)
+			}
+		}
+	}
+}
+
 func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
 	for _, failure := range []string{"", "credential"} {
 		t.Run(failure, func(t *testing.T) {

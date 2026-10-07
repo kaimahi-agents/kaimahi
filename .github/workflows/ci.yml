@@ -586,7 +586,7 @@ jobs:
           # forbidden because supported create must render it; these controls
           # instead name the unsupported operations.
           forbidden = [
-              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
                "the legacy governance command repoints a legacy Agent"),
@@ -606,6 +606,7 @@ jobs:
           must_match = [
               "kmx up --step kagent",
               "kmx --context kind-x up --step=tools-agent",
+              "kmx --context kind-x local up --step=tools-agent",
               "kmx --context kind-x govern hello-world",
               "kmx --container-engine=podman use kagent",
               "kmx --context=kind-x agent edit hello-world",
@@ -622,6 +623,7 @@ jobs:
               "kmx agent create orka-hello --namespace orka-system",
               "kmx agent create kagent-hello --runtime kagent --namespace agents",
               "kmx up",
+              "kmx local up",
               "kmx migrate demo --namespace demo --model local/qwen2.5:3b",
               "kubectl get ns kagent",
               "kubectl -n agents get agents.kagent.dev",
@@ -659,7 +661,7 @@ jobs:
           EOF
       # `kmx-clone-free` is the only proof that the published binary works
       # with no checkout anywhere, so it must set up the way a reader is told
-      # to: a BARE `kmx up`, which is the Orka runtime and which provisions
+      # to: a BARE `kmx local up`, which is the Orka runtime and which provisions
       # the `orka-result-reader` account its Task proof reads a result
       # through. An `orka install` step or a hand-made ServiceAccount beside
       # it would make that proof a statement about the job's own fixture
@@ -667,7 +669,7 @@ jobs:
       #
       # Reject explicit legacy install steps and retired commands: the
       # clone-free journey must remain an Orka-only setup.
-      - name: The clone-free journey sets up with a bare `kmx up`, and runs no retired command
+      - name: The clone-free journey sets up with a bare `kmx local up`, and runs no retired command
         run: |
           python3 - <<'EOF'
           import re, sys, yaml
@@ -681,13 +683,13 @@ jobs:
           bodies = [commands(s) for s in wf["jobs"]["kmx-clone-free"]["steps"]]
           joined = "\n".join(bodies)
           problems = []
-          if not any(re.search(r"^\s*kmx up\s*$", b, re.M) for b in bodies):
-              problems.append("no bare `kmx up`: the job must set the runtime up the way the docs say to")
-          # A separate Orka install would bypass the bare `kmx up` proof.
+          if not any(re.search(r"^\s*kmx local up\s*$", b, re.M) for b in bodies):
+              problems.append("no bare `kmx local up`: the job must set the runtime up the way the docs say to")
+          # A separate Orka install would bypass the bare `kmx local up` proof.
           if re.search(r"kmx (?:--\S+[ =]\S+ )*orka install\b", joined):
-              problems.append("a standalone `orka install`: the bare `kmx up` already installs Orka")
+              problems.append("a standalone `orka install`: the bare `kmx local up` already installs Orka")
           if "create serviceaccount orka-result-reader" in joined:
-              problems.append("the result account is made by hand: `kmx up --step orka` provisions it")
+              problems.append("the result account is made by hand: `kmx local up --step orka` provisions it")
           if "--result-service-account orka-result-reader" not in joined:
               problems.append("no Orka Task proof reading its result through orka-result-reader")
           # Retired operations, forbidden by name. Supported create/API
@@ -695,7 +697,7 @@ jobs:
           # not install the alternate runtime, select it for another command,
           # or use its retired AKS payload.
           for pattern, why in [
-                  (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
+                  (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
                    "an explicit legacy install step"),
                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b",
                    "the retired governance command"),
@@ -713,7 +715,7 @@ jobs:
           if problems:
               print("kmx-clone-free no longer proves the supported setup:", *problems, sep="\n  ")
               sys.exit(1)
-          print("kmx-clone-free: bare `kmx up` for Orka, its result account unmade by hand, "
+          print("kmx-clone-free: bare `kmx local up` for Orka, its result account unmade by hand, "
                 "no retired command anywhere in the job")
           EOF
       # Every cluster job short-circuits docs-only changes at STEP level (the
@@ -3884,7 +3886,7 @@ jobs:
           # above this directory, `kmx plane` would build from it and the
           # job would prove nothing.
           test ! -e ./go.mod && test ! -e /home/runner/go.mod && test ! -e /home/runner/k8s
-      # The setup a reader is told to run, run verbatim: a bare `kmx up` IS
+      # The setup a reader is told to run, run verbatim: a bare `kmx local up` IS
       # the Orka runtime — kind, Ollama, the model, the pinned Orka release
       # with its Provider and its `orka-result-reader` account. Nothing here
       # installs Orka a second time, and nothing creates that account by
@@ -3895,7 +3897,7 @@ jobs:
         working-directory: /home/runner/journey
         env:
           KIND_CLUSTER: kmx-clone-free
-        run: kmx up
+        run: kmx local up
       - name: agent create — native Orka Task returns an actual local-model answer
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey

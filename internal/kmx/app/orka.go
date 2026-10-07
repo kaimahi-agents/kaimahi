@@ -462,8 +462,8 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		if _, err := a.kubectlCapture("-n", orkaModelNamespace, "get", "svc", "ollama", "-o", "name"); err != nil {
 			if isNotFound(err) {
 				return fmt.Errorf("no in-cluster model server at %s, so Provider %q would resolve nothing.\n"+
-					"  `kmx up` deploys one. To install Orka without a Provider: --provider -",
-					opt.ModelURL, opt.Provider)
+					"  `%s` deploys one on the selected local kind target. To install Orka without a Provider: --provider -",
+					opt.ModelURL, opt.Provider, a.operationCommand("local", "up"))
 			}
 			return fmt.Errorf("cannot tell whether an in-cluster model server exists (refusing to guess): %w", err)
 		}

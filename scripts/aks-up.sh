@@ -82,6 +82,15 @@ usage() {
 [ -n "$RG" ] || { echo "aks-up: AKS_RESOURCE_GROUP is required" >&2; usage; exit 1; }
 [ -n "$ACR" ] || { echo "aks-up: ACR_NAME is required" >&2; usage; exit 1; }
 
+# Standalone use does not write KMX's ownership record. Its recovery stays with
+# the scripts; a KMX invocation supplies native commands with its full options.
+if [ -n "${KMX_LIFT_DOWN:-}" ]; then
+  teardown="$KMX_LIFT_DOWN"
+else
+  printf -v teardown 'AKS_RESOURCE_GROUP=%q AKS_CLUSTER=%q KAIMAHI_CONFIRM=%q bash %q' \
+    "$RG" "$CLUSTER" "$RG" "$(dirname "$0")/aks-down.sh"
+fi
+
 # ACR names are globally unique, alphanumeric only, 5-50 chars. Check
 # locally so a bad name fails in a second rather than after the group and
 # cluster already exist.
@@ -232,7 +241,8 @@ if [ "$cluster_state" = true ]; then
     echo "  '${have:-none}', not '$NETWORK_POLICY'. Existing clusters are NOT migrated." >&2
     if [ -z "$have" ] || [ "$have" = none ]; then
       echo "  With no engine, AKS ignores NetworkPolicy: the plane's boundary would" >&2
-      echo "  be present and inert. Tear it down (make aks-down) and re-create." >&2
+      echo "  be present and inert. Re-creation requires destructive infrastructure teardown:" >&2
+      printf '    %s\n' "$teardown" >&2
     else
       echo "  Re-run with AKS_NETWORK_POLICY=$have to keep it, or re-create it." >&2
     fi
@@ -381,9 +391,9 @@ aks-up: ready.
 
   context:   $CLUSTER   (NOT a kind context — kmx aks up already confirmed it)
   registry:  $ACR.azurecr.io
-  netpol:    $NETWORK_POLICY engine (present; the next lift phase proves enforcement)
+  netpol:    $NETWORK_POLICY engine (present; the next AKS preparation phase proves enforcement)
   continue:  $KMX_LIFT_CONTINUE
-  teardown:  $KMX_LIFT_DOWN
+  teardown:  $teardown
 
 The invoking kmx aks up continues automatically. Use the commands above only
 to resume after interruption or to tear the billed resources down.
@@ -397,14 +407,13 @@ aks-up: ready.
   registry:  $ACR.azurecr.io
   netpol:    $NETWORK_POLICY engine (present ≠ enforced: prove it with
              TARGET=aks make netpol-verify once the plane is deployed)
-  teardown:  AKS_RESOURCE_GROUP=$RG KAIMAHI_CONFIRM=$RG make aks-down
+  teardown:  $teardown
              ^ do not skip this. The confirmation names the RESOURCE
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
-Next (see docs/aks.md):
-  kmx aks up --byo --resource-group $RG --cluster $CLUSTER --registry $ACR
-
-  The managed path captures the model credential before deploying the plane
-  and proves the network boundary. Use 'kmx aks up --help' for individual phases.
+This standalone script does not create a KMX ownership record. Continue runtime
+setup using an explicitly selected context (see docs/aks.md); do not change this
+created environment to --byo merely to resume. Use the script teardown above for
+this standalone run. For KMX-managed setup and recovery, start with kmx aks up.
 EOF
 fi

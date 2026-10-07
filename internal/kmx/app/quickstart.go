@@ -299,7 +299,7 @@ func (a *App) quickstartFollowups() []string {
 }
 
 func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
-	down := a.operationCommand("down")
+	down := a.operationCommand("local", "down")
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
@@ -328,7 +328,7 @@ func shellArg(value string) string {
 // operationCommand pins follow-up actions to the context this operation used.
 func (a *App) operationCommand(args ...string) string {
 	parts := []string{"kmx", "--context", shellArg(a.Cfg.KubeContext)}
-	if len(args) > 0 && (args[0] == "up" || args[0] == "plane" || args[0] == "down") {
+	if len(args) > 0 && (args[0] == "local" || args[0] == "up" || args[0] == "plane" || args[0] == "down") {
 		parts = append([]string{"KIND_CLUSTER=" + shellArg(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + shellArg(a.Cfg.ContainerEngine)}, parts...)
 	}
 	for _, arg := range args {

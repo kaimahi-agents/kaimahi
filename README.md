@@ -42,7 +42,8 @@ kmx quickstart
 ```
 
 `kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
-`kmx up` provisions the local runtime without creating an Agent.
+`kmx local up` provisions the local runtime without creating an Agent
+(`kmx up` on tagged v0.4.1; the grouped command is unreleased).
 `kmx quickstart-wizard` is the custom interactive path:
 
 ```bash
@@ -112,7 +113,7 @@ boundaries between KMX and runtimes.
 | Goal | Current interface | Boundary |
 |---|---|---|
 | Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
-| Provision the local runtime only | `kmx up` | Does not create an agent |
+| Provision the local runtime only | `kmx local up` | Does not create an agent; v0.4.1 uses `kmx up` |
 | Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
 | Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
 | Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |

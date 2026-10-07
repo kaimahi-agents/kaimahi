@@ -31,7 +31,7 @@ var depAz = dependency{"az", "to reach Azure: the cluster, the registry and the 
 // registry and a cluster already exist.
 func (a *App) preflightManifestRenderer() error {
 	if _, err := a.Run.Capture("python3", "-c", "import yaml"); err != nil {
-		return fmt.Errorf(`kmx lift: python3 with PyYAML is required on the managed path.
+		return fmt.Errorf(`kmx aks up: python3 with PyYAML is required on the managed path.
 
   The plane's manifest is rendered for your registry by parsing it rather
   than by pattern-matching it, and that parser is PyYAML. The local path
@@ -59,13 +59,13 @@ func (a *App) azAccount() (account, error) {
 	var acct account
 	out, err := a.Run.Capture("az", "account", "show", "-o", "json")
 	if err != nil {
-		return acct, fmt.Errorf("kmx lift: the Azure CLI is not signed in — run: az login")
+		return acct, fmt.Errorf("kmx aks: the Azure CLI is not signed in — run: az login")
 	}
 	if err := json.Unmarshal([]byte(out), &acct); err != nil {
-		return acct, fmt.Errorf("kmx lift: could not read the signed-in account: %w", err)
+		return acct, fmt.Errorf("kmx aks: could not read the signed-in account: %w", err)
 	}
 	if strings.TrimSpace(acct.ID) == "" {
-		return acct, fmt.Errorf("kmx lift: the Azure CLI reported no subscription — refusing to act without knowing where")
+		return acct, fmt.Errorf("kmx aks: the Azure CLI reported no subscription — refusing to act without knowing where")
 	}
 	return acct, nil
 }
@@ -158,14 +158,14 @@ func (a *App) confirmRecordedResource(id string) (lift.Existence, string) {
 // answer that could not be obtained. Proceeding on an unknown here produces
 // ImagePullBackOff several minutes later, which is the least informative
 // possible way to learn this.
-func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity, payload string) error {
+func (a *App) refuseWithoutRegistryPullRights(opt lift.Options) error {
 	acrID, err := a.Run.Capture("az", "acr", "show", "--name", opt.RegistryName(), "--query", "id", "-o", "tsv")
 	if err != nil || strings.TrimSpace(acrID) == "" {
 		return fmt.Errorf(`cannot find the registry %q, or cannot read it.
 
   On your own cluster the registry has to exist already and your cluster has
   to be able to pull from it — this path does not create either. Check the
-  name, and that you can see it: az acr show --name %s`, opt.RegistryName(), opt.RegistryName())
+  name, and that you can see it: az acr show --name %s`, opt.RegistryName(), shellArg(opt.RegistryName()))
 	}
 	kubelet, err := a.Run.Capture("az", "aks", "show", "--name", opt.ClusterName(),
 		"--resource-group", opt.GroupName(), "--query", "identityProfile.kubeletidentity.objectId", "-o", "tsv")
@@ -198,6 +198,8 @@ func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity, payload string) 
 		return fmt.Errorf("the role-assignment count for %s came back as %q, which is not a number — refusing to decide whether your cluster can pull from it on an answer that cannot be read", opt.RegistryName(), strings.TrimSpace(count))
 	}
 	if held == 0 {
+		resume := opt
+		resume.Step = "plane"
 		return fmt.Errorf(`your cluster cannot pull from %s, and this will not grant it.
 
   Granting AcrPull creates a role assignment on YOUR subscription against
@@ -208,21 +210,12 @@ func (a *App) refuseWithoutRegistryPullRights(opt liftIdentity, payload string) 
 
   Then resume — nothing before this is undone:
 
-    kmx aks up --byo --payload %s --step plane --resource-group %s --cluster %s --registry %s`,
-			opt.RegistryName(), opt.ClusterName(), opt.GroupName(), opt.RegistryName(),
-			payload, opt.GroupName(), opt.ClusterName(), opt.RegistryName())
+    %s`,
+			opt.RegistryName(), shellArg(opt.ClusterName()), shellArg(opt.GroupName()), shellArg(opt.RegistryName()),
+			a.liftCommand(resume, false))
 	}
 	a.notef("your cluster's kubelet identity holds AcrPull on %s.", opt.RegistryName())
 	return nil
-}
-
-// liftIdentity is the three names that say which lift this is. Taking an
-// interface rather than the options struct keeps this file free of a
-// dependency on the command layer's shape.
-type liftIdentity interface {
-	GroupName() string
-	ClusterName() string
-	RegistryName() string
 }
 
 // isAzureNotFound is deliberately narrow. Every other failure — an expired
