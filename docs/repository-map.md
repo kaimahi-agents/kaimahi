@@ -114,12 +114,13 @@ not evidence that the removed service or commands still exist.
 ## `pkg/` — experimental public contracts
 
 `pkg/kmx` is alpha design evidence for a wider KMX interface. It defines neutral
-agent revisions, targets, runtime bundles, deployments, scoped receipts,
-author-facing target and agent workflows, and narrow platform/runtime
-capabilities. It is not wired into the installed CLI and makes no compatibility
-commitment. Architecture tests keep its production dependency closure in the Go
-standard library and reject known concrete runtime, Kubernetes, cloud,
-subprocess, and terminal names from exported names or serialized fields.
+agent revisions, AgentSuite and sandbox-image OCI identities, targets, runtime
+bundles, deployments, scoped receipts, `AgentEnvironment`, `AgentSuites`, and
+`AgentDeployments` workflows, and narrow platform/suite/runtime capabilities. It
+is not wired into the installed CLI and makes no compatibility commitment.
+Architecture tests keep its production dependency closure in the Go standard
+library and reject known concrete runtime, Kubernetes, cloud, subprocess, and
+terminal names from exported names or serialized fields.
 
 ## `ax-harness/` — preview activity source
 

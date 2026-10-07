@@ -220,10 +220,10 @@ type TargetSnapshot struct {
 	ObservedAt time.Time       `json:"observedAt"`
 }
 
-// EnvironmentService is the consumer-facing setup workflow. Up composes target
-// resolution or provisioning with runtime installation. Down derives its target
-// from infrastructure evidence; Forget removes only local registration.
-type EnvironmentService interface {
+// AgentEnvironment is the consumer-facing destination workflow. Up composes
+// target resolution or provisioning with runtime installation. Down derives its
+// target from infrastructure evidence; Forget removes only local registration.
+type AgentEnvironment interface {
 	Up(context.Context, UpRequest) (UpResult, error)
 	RecoverUp(context.Context, OperationID) (UpProgress, error)
 	Register(context.Context, TargetSpec) (TargetRef, error)

@@ -21,7 +21,10 @@ The production code already demonstrates useful parts of this boundary:
 
 - a strict portable agent document and exact source digest;
 - immutable rendered output with a separate rendered digest;
-- an internal lifecycle adapter used by Orka and narrow Kagent create support;
+- an internal lifecycle adapter used by the default runtime and one narrow
+  create-only integration;
+- a draft AgentSuite specification for OCI-distributed definitions and derived
+  runnable sandbox images;
 - explicit target pinning and ownership checks;
 - separate workload retirement and cloud teardown paths.
 
@@ -33,24 +36,32 @@ without pretending every runtime has identical behavior.
 
 ## Decision
 
-The initial model has four concepts:
+The initial model includes definition, shipping, destination, and deployment:
 
 ```text
-Agent revision -> Target -> Runtime -> Deployment
+Agent source -> Agent revision ------------------------+
+                                                        |
+AgentSuite source -> AgentSuite OCI artifact            |
+                    -> Agent Sandbox Image --------------+-> Deployment
+                                                        |
+AgentEnvironment -> Target -> Runtime ------------------+
 ```
 
 | Concept | Responsibility |
 |---|---|
 | Agent revision | Immutable authored bytes identified by the portable digest |
+| AgentSuite | OCI-distributed definition of agents, tools, compositions, and build profiles |
+| Agent Sandbox Image | Runnable OCI image derived for one suite agent and platform |
 | Target | Durable destination identity supplied or resolved by a platform |
 | Runtime | Builds, deploys, observes, and retires runtime-native workloads |
-| Deployment | One revision bound to one runtime installation on one target |
+| Deployment | One revision or sandbox image bound to one runtime installation on one target |
 
 The guiding relationship is:
 
-> A platform provides a target. A runtime turns an agent revision into a
-> deployment on that target. KMX composes those operations without transferring
-> ownership authority between them.
+> `AgentSuites` ships portable definitions and derives runnable sandbox images.
+> `AgentEnvironment` prepares a target and runtime. `AgentDeployments` places an
+> authored revision or sandbox image there without transferring ownership
+> authority between those concerns.
 
 ## Naming choices
 
@@ -60,6 +71,8 @@ The package name already establishes ownership, so exported names remain concise
 
 ```go
 kmx.AgentRevision
+kmx.AgentSuiteArtifact
+kmx.AgentSandboxImage
 kmx.TargetRef
 kmx.RuntimeRef
 kmx.DeploymentRef
@@ -112,8 +125,9 @@ platform or runtime selector.
 
 ### Deployment is not a run
 
-A deployment is a durable agent revision installed through a runtime on a
-target. A run is one invocation, task, or conversation against that deployment.
+A deployment is one durable deployment source installed through a runtime on a
+target. The source is either an authored revision or a derived sandbox image. A
+run is one invocation, task, or conversation against that deployment.
 The first interface version models deployment lifecycle only. Run start,
 observation, and cancellation should be added separately when common semantics
 are proven.
@@ -125,7 +139,7 @@ are proven.
 The consumer-facing interfaces use KMX workflow language:
 
 ```go
-type EnvironmentService interface {
+type AgentEnvironment interface {
     Up(context.Context, UpRequest) (UpResult, error)
     RecoverUp(context.Context, OperationID) (UpProgress, error)
     Register(context.Context, TargetSpec) (TargetRef, error)
@@ -135,8 +149,18 @@ type EnvironmentService interface {
     Forget(context.Context, TargetRef) error
 }
 
-type AgentService interface {
-    Build(context.Context, BuildRequest) (BuildResult, error)
+type AgentSuites interface {
+    Validate(context.Context, ValidateSuiteRequest) (SuiteReport, error)
+    Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error)
+    RecoverPackage(context.Context, OperationID) (PackageSuiteResult, error)
+    BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error)
+    RecoverBuildSandbox(context.Context, OperationID) (AgentSandboxImage, error)
+    Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
+    RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
+}
+
+type AgentDeployments interface {
+    BuildRevision(context.Context, BuildRequest) (BuildResult, error)
     Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
     RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
     Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
@@ -149,13 +173,29 @@ The verbs form separate lifecycle pairs:
 
 | Scope | Establish | Remove |
 |---|---|---|
-| Target infrastructure | `Up` | `Down` |
+| Agent environment | `Up` | `Down` |
+| AgentSuite artifact | `Package` | Registry retention policy |
+| Agent sandbox image | `BuildSandbox` | Registry retention policy |
 | Agent deployment | `Lift` | `Retire` |
 | Local target configuration | `Register` | `Forget` |
 
-`EnvironmentService.Up` composes target resolution or provisioning with runtime
-installation. `Forget` is deliberately not `Down`: forgetting a bring-your-own
-target removes local configuration and never mutates the target.
+`AgentEnvironment.Up` composes target resolution or provisioning with runtime
+installation. `AgentSuites` owns definition validation, OCI packaging, and
+sandbox-image derivation, but not deployment. `Forget` is deliberately not
+`Down`: forgetting a bring-your-own target removes local configuration and
+never mutates the target.
+
+### AgentSuite is part of the shipping lifecycle
+
+An AgentSuite Artifact is immutable definition and packaging data. It is an OCI
+artifact but is not directly runnable. `AgentSuites.BuildSandbox` derives a
+runnable OCI image for exactly one suite digest, agent, platform, build profile,
+composition, and embedded sandbox-binding digest.
+
+`AgentDeployments.Lift` accepts one `DeploymentSource`: either an authored
+`AgentRevision` or a derived `AgentSandboxImage`. The mutually exclusive union
+keeps the current bundle path available while allowing OCI-shipped agents to be
+used at any compatible destination.
 
 ### Runtime uses narrow capabilities
 
@@ -191,22 +231,30 @@ resolve target and runtime installation
 
 The runtime SPI exposes precise `Build` and `Deploy` capabilities. Observation
 is the separate capability used by `Status`; create-only support does not imply
-status support. `AgentService.Lift` supplies the sticky product operation.
+status support. `AgentDeployments.Lift` supplies the sticky product operation.
 
-### Build has two levels
+### Build and shipping have three stages
 
 The model distinguishes:
 
 ```text
 RevisionBuilder: authored source -> validated AgentRevision
-RuntimeBuilder:  AgentRevision + RuntimeRef + TargetBinding -> RuntimeBundle
+AgentSuites:     suite source -> AgentSuiteArtifact -> AgentSandboxImage
+RuntimeBuilder:  DeploymentSource + RuntimeRef + TargetBinding -> RuntimeBundle
 ```
 
 `AgentRevision` itself is an immutable byte identity; constructing one does not
 prove schema or behavior validation. The northbound build workflow owns authoring
-validation. The runtime builder parses the exact source again and refuses
-behavior it cannot honor. `RuntimeBuildInput` requires the runtime installation
-and target binding to identify the same exact target before native building.
+validation. AgentSuite validation owns its closed content graph and OCI binding.
+The runtime builder parses a revision or verifies a sandbox image and refuses
+behavior or bindings it cannot honor. `RuntimeBuildInput` requires the runtime
+installation and target binding to identify the same exact target before native
+building.
+
+Validation reports expose one exact composition selection per `(agent,
+platform)`, including the selected build profile and composition digest. Sandbox
+construction consumes that selection instead of asking callers to guess a
+digest.
 
 ## Ownership and safety
 
@@ -218,7 +266,7 @@ Receipts are separated by responsibility:
 |---|---|---|
 | `InfrastructureReceipt` | Target infrastructure provisioned by a platform | Target `Down` |
 | `RuntimeReceipt` | Runtime installation or reconciliation | Runtime recovery evidence; uninstall is deferred |
-| `DeploymentReceipt` | Agent revision, binding, artifact, and deployment identity | Agent `Retire` |
+| `DeploymentReceipt` | Deployable source, binding, artifact, and deployment identity | Agent `Retire` |
 | `RetirementReceipt` | Established workload retirement | Evidence consumers |
 | `TeardownReceipt` | Established target teardown | Evidence consumers |
 
@@ -254,8 +302,9 @@ The package computes domain-separated SHA-256 identities for:
 Portable and rendered identities use the shipped logical-path and length framing
 so an adapter can preserve existing ownership annotations and receipts. Callers
 cannot attach arbitrary digests to in-process values. A runtime bundle retains
-the exact revision, runtime installation, target binding digest, and rendered
-digest used to create it. A deployment receipt is derived from that bundle.
+the exact deployment source, runtime installation, target binding digest, and
+rendered digest used to create it. A deployment receipt is derived from that
+bundle.
 
 ### Persistence is explicit
 
@@ -268,6 +317,9 @@ In process                 Persisted
 ----------                 ---------
 AgentSource                authored source file
 AgentRevision              AgentRevisionRef
+SuiteSource                AgentSuiteArtifact (OCI)
+AgentSuiteArtifact         AgentSandboxImage (OCI, per agent/platform)
+DeploymentSource           DeploymentSourceRef
 TargetBinding              binding source file
 RuntimeBuildInput          not persisted; a separate operation record is
 RuntimeBundle              DeploymentReceipt
@@ -283,10 +335,11 @@ deployment that cannot be read because of authentication, authorization,
 timeout, malformed response, throttling, or network failure returns an error.
 It must not be reported as absent.
 
-Every remotely mutating northbound request has a caller-known `OperationID`. A mutation
-that may have reached the remote system but whose result cannot be established
-returns `OutcomeUnknownError` carrying that ID. Callers use the corresponding
-recovery method; they do not assume failure or repeat a non-idempotent operation.
+Every remotely mutating northbound request has a caller-known `OperationID`. A
+mutation that may have reached the remote system but whose result cannot be
+established returns `OutcomeUnknownError` carrying that ID. Callers use the
+corresponding recovery method; they do not assume failure or repeat a
+non-idempotent operation.
 
 ## Neutrality boundary
 
@@ -309,16 +362,20 @@ future abstraction is neutral. Semantic review remains necessary.
 
 The first production proof should remain smaller than the full model:
 
-1. Implement one environment and agent orchestration service over the ports.
+1. Implement one AgentEnvironment, AgentSuites, and AgentDeployments service over
+   the ports.
 2. Adapt one real Orka build, deploy, status, and retire path.
 3. Add one in-memory platform/runtime fake and a shared base conformance suite.
-4. Persist operation and deployment evidence for recovery from another process.
-5. Prove retirement cannot invoke target or cloud teardown.
-6. Validate common semantics against another real runtime before declaring them
+4. Adapt the current AgentSuite validator, then implement OCI packaging and one
+   sandbox-image derivation path.
+5. Persist operation and deployment evidence for recovery from another process.
+6. Prove retirement cannot invoke target or cloud teardown.
+7. Validate common semantics against another real runtime before declaring them
    stable.
 
-The package does not currently add CLI commands, provision AKS, install Kagent,
-or widen Kagent beyond its documented create-only support.
+The package does not currently add CLI commands, provision managed cloud
+infrastructure, install alternate runtimes, publish OCI artifacts, or widen any
+create-only integration.
 
 ## Deferred choices
 

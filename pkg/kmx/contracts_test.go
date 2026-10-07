@@ -87,7 +87,8 @@ func TestRuntimeBundleIsBoundToRuntimeTargetAndImmutable(t *testing.T) {
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	input, err := NewRuntimeBuildInput("lift-1", revision, runtime, binding)
+	sourceRef, _ := NewRevisionDeploymentSource(revision)
+	input, err := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,13 +106,13 @@ func TestRuntimeBundleIsBoundToRuntimeTargetAndImmutable(t *testing.T) {
 	if got := bundle.DeployDocuments(); len(got) != 1 || string(got[0]) != "native artifact" {
 		t.Fatalf("DeployDocuments = %#v, want only native artifact", got)
 	}
-	if bundle.Operation() != "lift-1" || bundle.Runtime() != runtime || bundle.Revision() != revision.Ref() || bundle.BindingDigest() != binding.Digest() {
+	if bundle.Operation() != "lift-1" || bundle.Runtime() != runtime || !reflect.DeepEqual(bundle.Source(), sourceRef.Ref()) || bundle.BindingDigest() != binding.Digest() {
 		t.Fatal("runtime bundle lost its build identity")
 	}
 
 	other := runtime
 	other.Target.ID = "target-2"
-	if _, err := NewRuntimeBuildInput("lift-1", revision, other, binding); err == nil {
+	if _, err := NewRuntimeBuildInput("lift-1", sourceRef, other, binding); err == nil {
 		t.Fatal("runtime build accepted a binding for another target")
 	}
 }
@@ -122,7 +123,8 @@ func TestRuntimeBundleCoversReviewDocumentsButDeploysOnlyApplyDocuments(t *testi
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	input, _ := NewRuntimeBuildInput("lift-1", revision, runtime, binding)
+	sourceRef, _ := NewRevisionDeploymentSource(revision)
+	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
 
 	first, err := NewRuntimeBundle(input, []RuntimeDocument{
 		ReviewDocument([]byte("review-a")), ApplyDocument([]byte("apply")),
@@ -169,7 +171,8 @@ func TestReceiptsDeriveMutationSubjectsAndRoundTrip(t *testing.T) {
 	}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	input, _ := NewRuntimeBuildInput("lift-1", revision, runtime, binding)
+	sourceRef, _ := NewRevisionDeploymentSource(revision)
+	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
 	bundle, _ := NewRuntimeBundle(input, []RuntimeDocument{ApplyDocument([]byte("artifact"))})
 	deployment, err := NewDeploymentReceipt("receipt-1", "deployment-1", bundle, at)
 	if err != nil {
@@ -254,19 +257,21 @@ func TestInProcessValuesRefuseAccidentalJSON(t *testing.T) {
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	input, _ := NewRuntimeBuildInput("lift-1", revision, runtime, binding)
+	sourceRef, _ := NewRevisionDeploymentSource(revision)
+	input, _ := NewRuntimeBuildInput("lift-1", sourceRef, runtime, binding)
 	bundle, _ := NewRuntimeBundle(input, []RuntimeDocument{ApplyDocument([]byte("artifact"))})
 	for name, values := range map[string]struct {
 		encode any
 		decode any
 	}{
-		"source":       {source, new(AgentSource)},
-		"revision":     {revision, new(AgentRevision)},
-		"binding":      {binding, new(TargetBinding)},
-		"lift request": {LiftRequest{Revision: revision, Binding: binding}, new(LiftRequest)},
-		"build input":  {input, new(RuntimeBuildInput)},
-		"document":     {ApplyDocument([]byte("artifact")), new(RuntimeDocument)},
-		"bundle":       {bundle, new(RuntimeBundle)},
+		"source":            {source, new(AgentSource)},
+		"revision":          {revision, new(AgentRevision)},
+		"binding":           {binding, new(TargetBinding)},
+		"deployment source": {sourceRef, new(DeploymentSource)},
+		"lift request":      {LiftRequest{Source: sourceRef, Binding: binding}, new(LiftRequest)},
+		"build input":       {input, new(RuntimeBuildInput)},
+		"document":          {ApplyDocument([]byte("artifact")), new(RuntimeDocument)},
+		"bundle":            {bundle, new(RuntimeBundle)},
 	} {
 		if _, err := json.Marshal(values.encode); err == nil {
 			t.Fatalf("%s silently serialized", name)
@@ -305,6 +310,127 @@ func TestTargetBindingRejectsInvalidMetadata(t *testing.T) {
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	if _, err := NewTargetBinding(target, string([]byte{0xff}), "Binding", []byte("data")); err == nil {
 		t.Fatal("NewTargetBinding accepted invalid UTF-8 API version")
+	}
+}
+
+func TestDeploymentSourceRequiresExactlyOneInput(t *testing.T) {
+	if err := (DeploymentSourceRef{}).Validate(); err == nil {
+		t.Fatal("empty deployment source was accepted")
+	}
+	source, _ := NewAgentSource([]byte("agent source"))
+	revision, _ := NewAgentRevision(source)
+	revisionRef := revision.Ref()
+	image := AgentSandboxImage{
+		Image: OCIArtifactRef{
+			Location:  "registry.example/agents/writer",
+			Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			MediaType: MediaTypeOCIImageManifest,
+		},
+		SuiteManifest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Agent:         "writer",
+		Platform:      SandboxPlatform{OS: "linux", Architecture: "amd64"},
+		BuildProfile:  "default",
+		Composition:   "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Binding:       "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}
+	revisionSource, _ := NewRevisionDeploymentSourceRef(revisionRef)
+	sandboxSource, _ := NewSandboxDeploymentSourceRef(image)
+	if revisionSource == sandboxSource {
+		t.Fatal("revision and sandbox deployment sources compare equal")
+	}
+	data, err := json.Marshal(sandboxSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded DeploymentSourceRef
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded != sandboxSource {
+		t.Fatalf("sandbox source round trip = %#v, want %#v", decoded, sandboxSource)
+	}
+	invalidUnion := `{"kind":"revision","revision":{"digest":"` + revisionRef.Digest.String() + `"},"sandboxImage":{}}`
+	if err := json.Unmarshal([]byte(invalidUnion), &decoded); err == nil {
+		t.Fatal("deployment source JSON accepted both union arms")
+	}
+	if _, err := NewSandboxDeploymentSource(image); err != nil {
+		t.Fatal(err)
+	}
+	image.Binding = ""
+	if _, err := NewSandboxDeploymentSource(image); err == nil {
+		t.Fatal("sandbox deployment source accepted no binding digest")
+	}
+}
+
+func TestAgentSuiteArtifactAndSandboxImageValidation(t *testing.T) {
+	suite := AgentSuiteArtifact{
+		Manifest: OCIArtifactRef{
+			Location:     "/tmp/team-suite-layout",
+			Digest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			MediaType:    MediaTypeOCIImageManifest,
+			ArtifactType: ArtifactTypeAgentSuite,
+		},
+	}
+	if err := suite.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	report := SuiteReport{
+		Name: "team", Agents: 2, Compositions: 1,
+		CompositionSelections: []SuiteCompositionSelection{{
+			Agent: "writer", Platform: SandboxPlatform{OS: "linux", Architecture: "amd64"},
+			BuildProfile: "default",
+			Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		}},
+	}
+	selection, err := report.Composition("writer", SandboxPlatform{OS: "linux", Architecture: "amd64"})
+	if err != nil || selection.BuildProfile != "default" {
+		t.Fatalf("Composition selection = %+v, %v", selection, err)
+	}
+	request := BuildSandboxRequest{
+		Operation: "sandbox-1", Suite: suite, Agent: "writer",
+		Platform:     SandboxPlatform{OS: "linux", Architecture: "amd64"},
+		BuildProfile: selection.BuildProfile,
+		Composition:  selection.Digest,
+		Output:       "/tmp/writer-image-layout",
+	}
+	if err := request.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	result := PackageSuiteResult{Artifact: suite, Report: report}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decodedResult PackageSuiteResult
+	if err := json.Unmarshal(data, &decodedResult); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decodedResult, result) {
+		t.Fatalf("package result round trip = %#v, want %#v", decodedResult, result)
+	}
+	bad := suite
+	bad.Manifest.Digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := bad.Validate(); err == nil {
+		t.Fatal("AgentSuite artifact accepted a non-OCI digest")
+	}
+	request.Platform.Architecture = "riscv64"
+	if err := request.Validate(); err == nil {
+		t.Fatal("sandbox build accepted a platform outside the AgentSuite draft")
+	}
+}
+
+func TestSuiteReportRejectsDuplicateCompositionSelection(t *testing.T) {
+	selection := SuiteCompositionSelection{
+		Agent: "writer", Platform: SandboxPlatform{OS: "linux", Architecture: "amd64"},
+		BuildProfile: "default",
+		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+	report := SuiteReport{
+		Name: "team", Agents: 1, Compositions: 2,
+		CompositionSelections: []SuiteCompositionSelection{selection, selection},
+	}
+	if err := report.Validate(); err == nil {
+		t.Fatal("SuiteReport accepted duplicate agent/platform selections")
 	}
 }
 
@@ -372,3 +498,14 @@ var (
 	_ RuntimeBuilder  = createOnlyRuntime{}
 	_ RuntimeDeployer = createOnlyRuntime{}
 )
+
+type suiteBuilder struct{}
+
+func (suiteBuilder) Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error) {
+	return PackageSuiteResult{}, nil
+}
+func (suiteBuilder) BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error) {
+	return AgentSandboxImage{}, nil
+}
+
+var _ AgentSuiteBuilder = suiteBuilder{}

@@ -159,18 +159,18 @@ func (r *RuntimeRef) UnmarshalJSON(data []byte) error {
 }
 
 // DeploymentRef is the durable identity shared by lift, status, and retire.
-// Runtime identity is deployment provenance, not part of the agent revision.
+// Runtime identity is deployment provenance, not part of the deployment source.
 type DeploymentRef struct {
-	ID       DeploymentID     `json:"id"`
-	Revision AgentRevisionRef `json:"revision"`
-	Runtime  RuntimeRef       `json:"runtime"`
+	ID      DeploymentID        `json:"id"`
+	Source  DeploymentSourceRef `json:"source"`
+	Runtime RuntimeRef          `json:"runtime"`
 }
 
 func (r DeploymentRef) Validate() error {
 	if err := validateIdentity("deployment ID", string(r.ID)); err != nil {
 		return err
 	}
-	if err := r.Revision.Validate(); err != nil {
+	if err := r.Source.Validate(); err != nil {
 		return err
 	}
 	return r.Runtime.Validate()

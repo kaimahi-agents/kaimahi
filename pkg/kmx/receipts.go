@@ -67,8 +67,8 @@ func (r RuntimeReceipt) Validate() error {
 	return validateReceiptTime(r.RecordedAt)
 }
 
-// DeploymentReceipt binds the deployed identity to the exact target binding
-// and runtime artifact. It is local evidence, not authentication; retirement
+// DeploymentReceipt binds the deployed source identity to the exact target
+// binding and runtime artifact. It is local evidence, not authentication; retirement
 // must verify it against implementation-owned resource identity and ownership
 // evidence before mutation.
 type DeploymentReceipt struct {
@@ -84,7 +84,7 @@ func NewDeploymentReceipt(id ReceiptID, deploymentID DeploymentID, bundle Runtim
 	receipt := DeploymentReceipt{
 		ID: id, Operation: bundle.Operation(),
 		Deployment: DeploymentRef{
-			ID: deploymentID, Revision: bundle.Revision(), Runtime: bundle.Runtime(),
+			ID: deploymentID, Source: bundle.Source(), Runtime: bundle.Runtime(),
 		},
 		BindingDigest: bundle.BindingDigest(), RenderedDigest: bundle.RenderedDigest(),
 		RecordedAt: recordedAt.UTC(),
