@@ -52,11 +52,8 @@ func (p *Packer) Pack(
 	if err := ctx.Err(); err != nil {
 		return agentsuite.PackResult{}, err
 	}
-	if contentDescriptor.MediaType != agentsuite.MediaTypeContent ||
-		contentDescriptor.Digest.Validate() != nil ||
-		contentDescriptor.Digest.Algorithm() != godigest.SHA256 ||
-		contentDescriptor.Size < 0 {
-		return agentsuite.PackResult{}, errors.New("AgentSuite content descriptor is invalid")
+	if err := validateContentDescriptor(contentDescriptor); err != nil {
+		return agentsuite.PackResult{}, fmt.Errorf("validate AgentSuite content descriptor: %w", err)
 	}
 
 	stageRoot, err := os.MkdirTemp("", "agentsuite-layout-*")
@@ -108,6 +105,24 @@ func (p *Packer) Pack(
 		}
 	}
 	return agentsuite.PackResult{Descriptor: manifestDescriptor, Report: report}, nil
+}
+
+func validateContentDescriptor(descriptor ocispec.Descriptor) error {
+	if descriptor.MediaType != agentsuite.MediaTypeContent ||
+		descriptor.Digest.Validate() != nil ||
+		descriptor.Digest.Algorithm() != godigest.SHA256 ||
+		descriptor.Size < 0 {
+		return errors.New("media type, digest, or size is invalid")
+	}
+	if len(descriptor.URLs) != 0 {
+		return errors.New("urls are not allowed")
+	}
+	if descriptor.Data != nil &&
+		(int64(len(descriptor.Data)) != descriptor.Size ||
+			godigest.FromBytes(descriptor.Data) != descriptor.Digest) {
+		return errors.New("embedded data does not match descriptor")
+	}
+	return nil
 }
 
 func pushStagedContent(

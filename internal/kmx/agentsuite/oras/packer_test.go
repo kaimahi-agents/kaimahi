@@ -168,6 +168,53 @@ func TestPackerRejectsNonSHA256ContentDescriptor(t *testing.T) {
 	}
 }
 
+func TestPackerRejectsContentDescriptorURLs(t *testing.T) {
+	src, descriptor := newContentSource(t)
+	descriptor.URLs = []string{"https://example.invalid/content"}
+	dst := &recordingStorage{}
+	validator := &acceptingValidator{}
+
+	if _, err := oraspack.New(validator).Pack(context.Background(), src, dst, descriptor); err == nil {
+		t.Fatal("content descriptor with urls succeeded")
+	}
+	if validator.calls != 0 {
+		t.Fatalf("validator calls = %d, want 0", validator.calls)
+	}
+	if dst.pushes != 0 {
+		t.Fatalf("destination received %d pushes for invalid content", dst.pushes)
+	}
+}
+
+func TestPackerRejectsMismatchedEmbeddedContent(t *testing.T) {
+	src, descriptor := newContentSource(t)
+	descriptor.Data = []byte("not the content layer")
+	dst := &recordingStorage{}
+	validator := &acceptingValidator{}
+
+	if _, err := oraspack.New(validator).Pack(context.Background(), src, dst, descriptor); err == nil {
+		t.Fatal("content descriptor with mismatched embedded data succeeded")
+	}
+	if validator.calls != 0 {
+		t.Fatalf("validator calls = %d, want 0", validator.calls)
+	}
+	if dst.pushes != 0 {
+		t.Fatalf("destination received %d pushes for invalid content", dst.pushes)
+	}
+}
+
+func TestPackerAcceptsMatchingEmbeddedContent(t *testing.T) {
+	src, descriptor := newContentSource(t)
+	data, err := content.FetchAll(context.Background(), src, descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor.Data = data
+
+	if _, err := oraspack.New(nil).Pack(context.Background(), src, memory.New(), descriptor); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPackerRejectsMissingCASContent(t *testing.T) {
 	dst := &recordingStorage{}
 	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("missing"))
@@ -386,6 +433,19 @@ func (failingValidator) Validate(
 	ocispec.Descriptor,
 ) (*agentsuite.Report, error) {
 	return nil, errRejectedSuite
+}
+
+type acceptingValidator struct {
+	calls int
+}
+
+func (v *acceptingValidator) Validate(
+	context.Context,
+	agentsuite.ReadOnlyStorage,
+	ocispec.Descriptor,
+) (*agentsuite.Report, error) {
+	v.calls++
+	return &agentsuite.Report{Name: "accepted"}, nil
 }
 
 type recordingStorage struct {
