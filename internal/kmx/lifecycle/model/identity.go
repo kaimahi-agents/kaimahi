@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"encoding/json"
@@ -159,18 +159,18 @@ func (r *RuntimeRef) UnmarshalJSON(data []byte) error {
 }
 
 // DeploymentRef is the durable identity shared by lift, status, and retire.
-// Runtime identity is deployment provenance, not part of the deployment source.
+// Runtime identity is deployment provenance, not part of the deployable input.
 type DeploymentRef struct {
-	ID      DeploymentID        `json:"id"`
-	Source  DeploymentSourceRef `json:"source"`
-	Runtime RuntimeRef          `json:"runtime"`
+	ID         DeploymentID  `json:"id"`
+	Deployable DeployableRef `json:"source"`
+	Runtime    RuntimeRef    `json:"runtime"`
 }
 
 func (r DeploymentRef) Validate() error {
 	if err := validateIdentity("deployment ID", string(r.ID)); err != nil {
 		return err
 	}
-	if err := r.Source.Validate(); err != nil {
+	if err := r.Deployable.Validate(); err != nil {
 		return err
 	}
 	return r.Runtime.Validate()

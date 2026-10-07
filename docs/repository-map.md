@@ -35,12 +35,11 @@ checks.
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
 | `internal/` | `kmx/` (18 packages), plus embedded schema fixtures | — | — |
-| `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
 | `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 45 (checkers, release packaging, probes, CI fixtures, mutation specs) |
-| `docs/` | 50 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
+| `docs/` | 49 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -51,8 +50,8 @@ checks.
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is eighteen packages at the top level (nineteen Go packages
-including nested `runview/orka`). The short version counts top-level directories.
+`internal/kmx/` is eighteen packages at the top level (twenty Go packages
+including nested `runview/orka` and `lifecycle/model`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data; versioned fixtures are not additional Go
@@ -88,7 +87,8 @@ packages.
 | `kmx/runview` | 1 | Installed | In-memory, runtime-neutral run, Task, agent, hand-off and missing-evidence presentation types. |
 | `kmx/runview/orka` | 1 | Installed | Bounded Orka Task lineage, event and trace reader with caller-scoped reads and safe projection. |
 | `kmx/runtime` | 10 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings and evaluation cases. `prepared.go` checks behavior before target-bound rendering; `kagent_bindings.go` adds closed creation-target bindings. Only Orka is registered for chat/discovery. |
-| `kmx/lifecycle` | 4 | Scaffolding | Experimental internal platform, AgentSuite, OCI publication and runtime ports; runtime-native documents/bundles, deploy options, recovery interfaces and receipt factories behind the public `pkg/kmx` workflows. |
+| `kmx/lifecycle` | 4 | Scaffolding | Experimental internal platform, AgentSuite, OCI publication and runtime capability interfaces; runtime-native artifacts, deploy options, recovery interfaces and receipt factories. Not wired to the CLI. |
+| `kmx/lifecycle/model` | 9 | Scaffolding | Provisional internal lifecycle values, identities, requests, errors and scoped receipts. Standard-library-only RFC evidence with no public compatibility commitment. |
 | `kmx/admin` | 6 | Installed | Model-plane admin client, ordinary caps, credentials and model ledger views. |
 | `kmx/scaffold` | 9 | Installed | Orka authoring, exact Kagent v0.10.2 review scaffolding in `kagent.go`, model/migration artifacts and shared YAML/name helpers. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
@@ -111,18 +111,6 @@ fixtures or Orka tool names. Neither is the retired custom gateway. Migration
 keeps its original source/generator bytes so a repeated invocation can reuse its
 previously generated identity/patch files. Old generated tool-seam comments are
 not evidence that the removed service or commands still exist.
-
-## `pkg/` — experimental public contracts
-
-`pkg/kmx` is alpha design evidence for a wider KMX interface. It defines neutral
-agent revisions, AgentSuite and sandbox-image OCI identities, targets,
-deployments, scoped receipts, and the northbound `AgentEnvironment`,
-`AgentSuites`, and `AgentDeployments` workflows. Platform/suite/runtime ports and
-native build artifacts remain internal. It is not wired into the installed CLI
-and makes no compatibility commitment.
-Architecture tests keep its production dependency closure in the Go standard
-library and reject known concrete runtime, Kubernetes, cloud, subprocess, and
-terminal names from exported names or serialized fields.
 
 ## `ax-harness/` — preview activity source
 
@@ -279,7 +267,7 @@ throwaway CA and a documentation-range address routed over kind's network,
 so a public-looking hosted upstream can be dialed without a hosted account.
 CI holds no hosted credential.
 
-## `docs/` — 50 tracked files, guides and retirement records
+## `docs/` — 49 tracked files, guides and retirement records
 
 **Guides and index (23):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `spend.md`,
@@ -295,11 +283,11 @@ operating instructions for deleted code.
 
 **Demonstration reference (1):** `demo.md` (the hello-to-governed model journey and other demo paths).
 
-**Maintainer and process (19):** `development.md`, `repository-map.md`,
+**Maintainer and process (18):** `development.md`, `repository-map.md`,
 `reviews/2026-09-09-orka-composition.md`,
 `reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
 `cli-ux-plan.md`, `charm-ux-followup-plan.md`, `interactive-agent-tui-plan.md`, `NAMING.md`,
-`kmx-lifecycle-interfaces.md`, `kmx-application-api.md`, `kmx-public-interface.md`,
+`kmx-lifecycle-interfaces.md`, `kmx-lifecycle-model.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
 `chat-performance-profile.md` and `agent-lift.md`.

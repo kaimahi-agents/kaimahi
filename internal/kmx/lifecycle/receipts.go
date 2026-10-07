@@ -3,7 +3,7 @@ package lifecycle
 import (
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	kmx "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 )
 
 func NewInfrastructureReceipt(id kmx.ReceiptID, operation kmx.OperationID, target kmx.TargetRef, recordedAt time.Time) (kmx.InfrastructureReceipt, error) {
@@ -16,14 +16,14 @@ func NewRuntimeReceipt(id kmx.ReceiptID, operation kmx.OperationID, runtime kmx.
 	return receipt, receipt.Validate()
 }
 
-func NewDeploymentReceipt(id kmx.ReceiptID, deploymentID kmx.DeploymentID, bundle RuntimeBundle, recordedAt time.Time) (kmx.DeploymentReceipt, error) {
+func NewDeploymentReceipt(id kmx.ReceiptID, deploymentID kmx.DeploymentID, artifact RuntimeArtifact, recordedAt time.Time) (kmx.DeploymentReceipt, error) {
 	receipt := kmx.DeploymentReceipt{
-		ID: id, Operation: bundle.Operation(),
+		ID: id, Operation: artifact.Operation(),
 		Deployment: kmx.DeploymentRef{
-			ID: deploymentID, Source: bundle.Source(), Runtime: bundle.Runtime(),
+			ID: deploymentID, Deployable: artifact.Deployable(), Runtime: artifact.Runtime(),
 		},
-		BindingDigest: bundle.BindingDigest(), RenderedDigest: bundle.RenderedDigest(),
-		DeployDigest: bundle.DeployDigest(),
+		BindingDigest: artifact.BindingDigest(), RenderedDigest: artifact.RenderedDigest(),
+		DeployDigest: artifact.DeployDigest(),
 		RecordedAt:   recordedAt.UTC(),
 	}
 	return receipt, receipt.Validate()

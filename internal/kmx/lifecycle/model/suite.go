@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"context"
@@ -157,22 +157,22 @@ func (r *OCIArtifactRef) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// SuiteSource points to an extracted AgentSuite content directory or OCI image
+// AgentSuiteInput points to an extracted AgentSuite content directory or OCI image
 // layout. It is an in-process input, not a wire format.
-type SuiteSource struct {
+type AgentSuiteInput struct {
 	Path string
 }
 
-func (s SuiteSource) Validate() error {
-	return validateIdentity("AgentSuite source path", s.Path)
+func (s AgentSuiteInput) Validate() error {
+	return validateIdentity("AgentSuite input path", s.Path)
 }
 
-func (SuiteSource) MarshalJSON() ([]byte, error) {
-	return nil, fmt.Errorf("SuiteSource is an in-process value; persist its OCI artifact identity")
+func (AgentSuiteInput) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("AgentSuiteInput is an in-process value; persist its OCI artifact identity")
 }
 
-func (*SuiteSource) UnmarshalJSON([]byte) error {
-	return fmt.Errorf("SuiteSource is an in-process value; reopen its source path")
+func (*AgentSuiteInput) UnmarshalJSON([]byte) error {
+	return fmt.Errorf("AgentSuiteInput is an in-process value; reopen its input path")
 }
 
 type SandboxPlatform struct {
@@ -334,12 +334,12 @@ func (r *PackageSuiteResult) UnmarshalJSON(data []byte) error {
 }
 
 type ValidateSuiteRequest struct {
-	Source SuiteSource
+	Input AgentSuiteInput
 }
 
 type PackageSuiteRequest struct {
 	Operation OperationID
-	Source    SuiteSource
+	Input     AgentSuiteInput
 	Output    string
 }
 
@@ -347,7 +347,7 @@ func (r PackageSuiteRequest) Validate() error {
 	if err := r.Operation.Validate(); err != nil {
 		return err
 	}
-	if err := r.Source.Validate(); err != nil {
+	if err := r.Input.Validate(); err != nil {
 		return err
 	}
 	return validateIdentity("AgentSuite OCI layout output", r.Output)

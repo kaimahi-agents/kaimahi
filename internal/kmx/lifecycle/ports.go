@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	kmx "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 )
 
 // RevisionBuilder validates authored source and creates an immutable revision.
@@ -226,20 +226,20 @@ type RuntimeInstallRecoverer interface {
 	RecoverEnsure(context.Context, kmx.OperationID) (kmx.RuntimeReceipt, error)
 }
 
-// RuntimeBuilder validates one direct revision or sandbox-image source and
+// RuntimeBuilder validates one direct revision or sandbox image and
 // renders exact runtime-native documents, refusing behavior it cannot honor.
 type RuntimeBuilder interface {
-	Build(context.Context, RuntimeBuildInput) (RuntimeBundle, error)
+	Build(context.Context, RuntimeBuildInput) (RuntimeArtifact, error)
 }
 
 type DeployOptions struct {
 	Reconcile bool
 }
 
-// RuntimeDeployer writes only RuntimeBundle.DeployDocuments and returns durable
+// RuntimeDeployer writes only RuntimeArtifact.DeployDocuments and returns durable
 // deployment evidence.
 type RuntimeDeployer interface {
-	Deploy(context.Context, RuntimeBundle, DeployOptions) (kmx.DeploymentReceipt, error)
+	Deploy(context.Context, RuntimeArtifact, DeployOptions) (kmx.DeploymentReceipt, error)
 }
 
 type RuntimeDeployRecoverer interface {

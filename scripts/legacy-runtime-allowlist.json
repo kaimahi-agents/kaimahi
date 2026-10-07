@@ -868,6 +868,12 @@
       "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
     },
     {
+      "path": "internal/kmx/lifecycle/model/architecture_test.go",
+      "text": "\"kagent\",",
+      "category": "negative",
+      "why": "Architecture guard that rejects a known concrete runtime name from the provisional runtime-neutral lifecycle model."
+    },
+    {
       "path": "internal/kmx/lift/payload_test.go",
       "text": "// A record of a kagent lift must still DECODE. Teardown is the whole reason",
       "category": "negative",

@@ -193,25 +193,16 @@ Moving implementations into standalone packages can happen without changing the
 contract. Catalogue digests and deployment receipts remain lifecycle concerns,
 not chat Session fields.
 
-## Experimental wider interface model
+## Experimental internal lifecycle model
 
-`pkg/kmx` contains an alpha, unwired contract model. It does not replace the
-production `internal/kmx/runtime` contract. It exposes only northbound workflows
-and caller-facing values:
+`internal/kmx/lifecycle/model` and `internal/kmx/lifecycle` contain an unwired
+RFC experiment. They do not replace the production `internal/kmx/runtime`
+contract and establish no public Go API. The model keeps environment teardown
+and workload retirement in separate ownership domains; internal platform,
+AgentSuite, OCI and runtime capabilities consume only their scoped evidence.
 
-- `AgentEnvironment.Up` and `Down` compose target and runtime setup;
-- `AgentSuites` validates/packages OCI definitions and derives sandbox images;
-- `AgentDeployments.BuildRevision`, `Lift`, `Status`, and `Retire` manage placements;
-
-Implementation ports, runtime-native artifacts, deploy options, recovery SPIs,
-and receipt factories live in `internal/kmx/lifecycle`. Public
-`AgentEnvironment.Down` accepts `DownRequest`; internal
-`PlatformDeprovisioner.Deprovision` accepts `DeprovisionRequest`. Both carry the
-same scoped `InfrastructureReceipt`. Retirement separately accepts
-`RetireRequest` carrying `DeploymentReceipt` and has no target teardown
-authority.
-
-Read the [lifecycle decision](kmx-lifecycle-interfaces.md) for rationale and the
-[application API](kmx-application-api.md) for current signatures, examples,
-persistence boundaries, and internal port placement. Concrete orchestration and
-adapters remain follow-up work.
+Evaluation, AgentSessions semantics, authored-bundle versus AgentSuite ownership
+and public package placement remain unresolved. Read the
+[lifecycle interface RFC](kmx-lifecycle-interfaces.md) for the decision and
+promotion criteria, and the [internal lifecycle model](kmx-lifecycle-model.md)
+for current values, capabilities and persistence boundaries.

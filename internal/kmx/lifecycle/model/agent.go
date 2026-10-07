@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"context"
@@ -67,109 +67,109 @@ func (*AgentRevision) UnmarshalJSON([]byte) error {
 	return fmt.Errorf("AgentRevision is an in-process value; rebuild it from AgentSource")
 }
 
-type DeploymentSourceKind string
+type DeployableKind string
 
 const (
-	DeploymentSourceRevision     DeploymentSourceKind = "revision"
-	DeploymentSourceSandboxImage DeploymentSourceKind = "sandbox-image"
+	DeployableRevision     DeployableKind = "revision"
+	DeployableSandboxImage DeployableKind = "sandbox-image"
 )
 
-// DeploymentSourceRef is the durable identity of exactly one deployable input:
+// DeployableRef is the durable identity of exactly one deployable input:
 // authored revision bytes or a runnable sandbox image derived from an
 // AgentSuite. It is a value union so copied receipts cannot alias source state.
-type DeploymentSourceRef struct {
-	kind     DeploymentSourceKind
+type DeployableRef struct {
+	kind     DeployableKind
 	revision AgentRevisionRef
 	sandbox  AgentSandboxRef
 }
 
-func NewRevisionDeploymentSourceRef(revision AgentRevisionRef) (DeploymentSourceRef, error) {
+func NewRevisionDeployableRef(revision AgentRevisionRef) (DeployableRef, error) {
 	if err := revision.Validate(); err != nil {
-		return DeploymentSourceRef{}, err
+		return DeployableRef{}, err
 	}
-	return DeploymentSourceRef{kind: DeploymentSourceRevision, revision: revision}, nil
+	return DeployableRef{kind: DeployableRevision, revision: revision}, nil
 }
 
-func NewSandboxDeploymentSourceRef(image AgentSandboxRef) (DeploymentSourceRef, error) {
+func NewSandboxDeployableRef(image AgentSandboxRef) (DeployableRef, error) {
 	if err := image.Validate(); err != nil {
-		return DeploymentSourceRef{}, err
+		return DeployableRef{}, err
 	}
-	return DeploymentSourceRef{kind: DeploymentSourceSandboxImage, sandbox: image}, nil
+	return DeployableRef{kind: DeployableSandboxImage, sandbox: image}, nil
 }
 
-func (r DeploymentSourceRef) Kind() DeploymentSourceKind { return r.kind }
+func (r DeployableRef) Kind() DeployableKind { return r.kind }
 
-func (r DeploymentSourceRef) Revision() (AgentRevisionRef, bool) {
-	return r.revision, r.kind == DeploymentSourceRevision
+func (r DeployableRef) Revision() (AgentRevisionRef, bool) {
+	return r.revision, r.kind == DeployableRevision
 }
 
-func (r DeploymentSourceRef) SandboxImage() (AgentSandboxRef, bool) {
-	return r.sandbox, r.kind == DeploymentSourceSandboxImage
+func (r DeployableRef) SandboxImage() (AgentSandboxRef, bool) {
+	return r.sandbox, r.kind == DeployableSandboxImage
 }
 
-func (r DeploymentSourceRef) Validate() error {
+func (r DeployableRef) Validate() error {
 	switch r.kind {
-	case DeploymentSourceRevision:
+	case DeployableRevision:
 		return r.revision.Validate()
-	case DeploymentSourceSandboxImage:
+	case DeployableSandboxImage:
 		return r.sandbox.Validate()
 	default:
-		return fmt.Errorf("deployment source kind must be revision or sandbox-image")
+		return fmt.Errorf("deployable kind must be revision or sandbox-image")
 	}
 }
 
-func (r DeploymentSourceRef) MarshalJSON() ([]byte, error) {
+func (r DeployableRef) MarshalJSON() ([]byte, error) {
 	if err := r.Validate(); err != nil {
 		return nil, err
 	}
 	switch r.kind {
-	case DeploymentSourceRevision:
+	case DeployableRevision:
 		return json.Marshal(struct {
-			Kind     DeploymentSourceKind `json:"kind"`
-			Revision AgentRevisionRef     `json:"revision"`
+			Kind     DeployableKind   `json:"kind"`
+			Revision AgentRevisionRef `json:"revision"`
 		}{Kind: r.kind, Revision: r.revision})
-	case DeploymentSourceSandboxImage:
+	case DeployableSandboxImage:
 		return json.Marshal(struct {
-			Kind         DeploymentSourceKind `json:"kind"`
-			SandboxImage AgentSandboxRef      `json:"sandboxImage"`
+			Kind         DeployableKind  `json:"kind"`
+			SandboxImage AgentSandboxRef `json:"sandboxImage"`
 		}{Kind: r.kind, SandboxImage: r.sandbox})
 	default:
-		return nil, fmt.Errorf("invalid deployment source kind")
+		return nil, fmt.Errorf("invalid deployable kind")
 	}
 }
 
-func (r *DeploymentSourceRef) UnmarshalJSON(data []byte) error {
+func (r *DeployableRef) UnmarshalJSON(data []byte) error {
 	if err := validateJSONInput(data); err != nil {
 		return err
 	}
 	var envelope struct {
-		Kind         DeploymentSourceKind `json:"kind"`
-		Revision     json.RawMessage      `json:"revision"`
-		SandboxImage json.RawMessage      `json:"sandboxImage"`
+		Kind         DeployableKind  `json:"kind"`
+		Revision     json.RawMessage `json:"revision"`
+		SandboxImage json.RawMessage `json:"sandboxImage"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return err
 	}
-	var value DeploymentSourceRef
+	var value DeployableRef
 	switch envelope.Kind {
-	case DeploymentSourceRevision:
+	case DeployableRevision:
 		if len(envelope.Revision) == 0 || len(envelope.SandboxImage) != 0 {
-			return fmt.Errorf("revision deployment source requires only revision")
+			return fmt.Errorf("revision deployable requires only revision")
 		}
 		if err := json.Unmarshal(envelope.Revision, &value.revision); err != nil {
 			return err
 		}
 		value.kind = envelope.Kind
-	case DeploymentSourceSandboxImage:
+	case DeployableSandboxImage:
 		if len(envelope.SandboxImage) == 0 || len(envelope.Revision) != 0 {
-			return fmt.Errorf("sandbox deployment source requires only sandboxImage")
+			return fmt.Errorf("sandbox deployable requires only sandboxImage")
 		}
 		if err := json.Unmarshal(envelope.SandboxImage, &value.sandbox); err != nil {
 			return err
 		}
 		value.kind = envelope.Kind
 	default:
-		return fmt.Errorf("unknown deployment source kind %q", envelope.Kind)
+		return fmt.Errorf("unknown deployable kind %q", envelope.Kind)
 	}
 	if err := value.Validate(); err != nil {
 		return err
@@ -178,55 +178,55 @@ func (r *DeploymentSourceRef) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// DeploymentSource is an in-process deployable input. A revision retains its
-// exact authored bytes; a sandbox source retains its exact OCI identity and
+// Deployable is an in-process deployment input. A revision retains its exact
+// authored bytes; a sandbox image retains its exact OCI identity and
 // AgentSuite binding.
-type DeploymentSource struct {
-	kind     DeploymentSourceKind
+type Deployable struct {
+	kind     DeployableKind
 	revision AgentRevision
 	sandbox  AgentSandboxImage
 }
 
-func NewRevisionDeploymentSource(revision AgentRevision) (DeploymentSource, error) {
+func NewRevisionDeployable(revision AgentRevision) (Deployable, error) {
 	if err := revision.Ref().Validate(); err != nil {
-		return DeploymentSource{}, err
+		return Deployable{}, err
 	}
-	return DeploymentSource{kind: DeploymentSourceRevision, revision: revision}, nil
+	return Deployable{kind: DeployableRevision, revision: revision}, nil
 }
 
-func NewSandboxDeploymentSource(image AgentSandboxImage) (DeploymentSource, error) {
+func NewSandboxDeployable(image AgentSandboxImage) (Deployable, error) {
 	if err := image.Validate(); err != nil {
-		return DeploymentSource{}, err
+		return Deployable{}, err
 	}
-	return DeploymentSource{kind: DeploymentSourceSandboxImage, sandbox: image}, nil
+	return Deployable{kind: DeployableSandboxImage, sandbox: image}, nil
 }
 
-func (s DeploymentSource) Ref() DeploymentSourceRef {
+func (s Deployable) Ref() DeployableRef {
 	switch s.kind {
-	case DeploymentSourceRevision:
-		ref, _ := NewRevisionDeploymentSourceRef(s.revision.Ref())
+	case DeployableRevision:
+		ref, _ := NewRevisionDeployableRef(s.revision.Ref())
 		return ref
-	case DeploymentSourceSandboxImage:
-		ref, _ := NewSandboxDeploymentSourceRef(s.sandbox.Ref())
+	case DeployableSandboxImage:
+		ref, _ := NewSandboxDeployableRef(s.sandbox.Ref())
 		return ref
 	}
-	return DeploymentSourceRef{}
+	return DeployableRef{}
 }
 
-func (s DeploymentSource) Revision() (AgentRevision, bool) {
-	return s.revision, s.kind == DeploymentSourceRevision
+func (s Deployable) Revision() (AgentRevision, bool) {
+	return s.revision, s.kind == DeployableRevision
 }
 
-func (s DeploymentSource) SandboxImage() (AgentSandboxImage, bool) {
-	return s.sandbox, s.kind == DeploymentSourceSandboxImage
+func (s Deployable) SandboxImage() (AgentSandboxImage, bool) {
+	return s.sandbox, s.kind == DeployableSandboxImage
 }
 
-func (DeploymentSource) MarshalJSON() ([]byte, error) {
-	return nil, fmt.Errorf("DeploymentSource is an in-process value; persist DeploymentSourceRef")
+func (Deployable) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("Deployable is an in-process value; persist DeployableRef")
 }
 
-func (*DeploymentSource) UnmarshalJSON([]byte) error {
-	return fmt.Errorf("DeploymentSource is an in-process value; rebuild it from source")
+func (*Deployable) UnmarshalJSON([]byte) error {
+	return fmt.Errorf("Deployable is an in-process value; rebuild it from authored source or a sandbox image")
 }
 
 type DiagnosticLevel string
@@ -281,22 +281,22 @@ type DeploymentSnapshot struct {
 	Conditions []Condition     `json:"conditions,omitempty"`
 }
 
-// LiftRequest binds one immutable deployment source to a target-specific
+// LiftRequest binds one immutable deployable to a target-specific
 // binding. An empty Runtime asks application policy to select the configured default.
 // LiftRequest is an in-process command and is not a persistence format.
 type LiftRequest struct {
-	Operation OperationID
-	Source    DeploymentSource
-	Binding   TargetBinding
-	Runtime   RuntimeID
-	Options   LiftOptions
+	Operation  OperationID
+	Deployable Deployable
+	Binding    TargetBinding
+	Runtime    RuntimeID
+	Options    LiftOptions
 }
 
 func (r LiftRequest) Validate() error {
 	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
 		return err
 	}
-	if err := r.Source.Ref().Validate(); err != nil {
+	if err := r.Deployable.Ref().Validate(); err != nil {
 		return err
 	}
 	if err := r.Binding.Validate(); err != nil {

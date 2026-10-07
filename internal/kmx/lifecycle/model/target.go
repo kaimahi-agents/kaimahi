@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"context"
@@ -225,9 +225,9 @@ type TargetSnapshot struct {
 	ObservedAt time.Time       `json:"observedAt"`
 }
 
-// AgentEnvironment is the consumer-facing destination workflow. Up composes
-// target resolution or provisioning with runtime installation. Down derives its
-// target from infrastructure evidence; Forget removes only local registration.
+// AgentEnvironment is a provisional destination workflow. Up composes target
+// resolution or provisioning with runtime installation. Down derives its target
+// from infrastructure evidence; Forget removes only local registration.
 type AgentEnvironment interface {
 	Up(context.Context, UpRequest) (UpResult, error)
 	RecoverUp(context.Context, OperationID) (UpProgress, error)

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	kmx "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 )
 
-func revisionSource(t *testing.T) kmx.DeploymentSource {
+func revisionDeployable(t *testing.T) kmx.Deployable {
 	t.Helper()
 	source, err := kmx.NewAgentSource([]byte("agent source"))
 	if err != nil {
@@ -21,7 +21,7 @@ func revisionSource(t *testing.T) kmx.DeploymentSource {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := kmx.NewRevisionDeploymentSource(revision)
+	result, err := kmx.NewRevisionDeployable(revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,46 +36,46 @@ func runtimeInput(t *testing.T) RuntimeBuildInput {
 		t.Fatal(err)
 	}
 	runtime := kmx.RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
-	input, err := NewRuntimeBuildInput("lift-1", revisionSource(t), runtime, binding)
+	input, err := NewRuntimeBuildInput("lift-1", revisionDeployable(t), runtime, binding)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return input
 }
 
-func TestRuntimeBundleIsBoundAndImmutable(t *testing.T) {
+func TestRuntimeArtifactIsBoundAndImmutable(t *testing.T) {
 	input := runtimeInput(t)
 	artifact := []byte("native artifact")
-	bundle, err := NewRuntimeBundle(input, []RuntimeDocument{
+	artifactValue, err := NewRuntimeArtifact(input, []RuntimeDocument{
 		ReviewDocument([]byte("review")), ApplyDocument(artifact),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	artifact[0] = 'X'
-	copyOfArtifact := bundle.Documents()[1].Bytes()
+	copyOfArtifact := artifactValue.Documents()[1].Bytes()
 	copyOfArtifact[0] = 'Y'
-	if got := string(bundle.Documents()[1].Bytes()); got != "native artifact" {
+	if got := string(artifactValue.Documents()[1].Bytes()); got != "native artifact" {
 		t.Fatalf("runtime artifact changed through caller mutation: %q", got)
 	}
-	if got := bundle.DeployDocuments(); len(got) != 1 || string(got[0]) != "native artifact" {
+	if got := artifactValue.DeployDocuments(); len(got) != 1 || string(got[0]) != "native artifact" {
 		t.Fatalf("DeployDocuments = %#v, want only native artifact", got)
 	}
-	if bundle.Operation() != input.Operation() || bundle.Runtime() != input.Runtime() ||
-		!reflect.DeepEqual(bundle.Source(), input.Source().Ref()) || bundle.BindingDigest() != input.Binding().Digest() {
-		t.Fatal("runtime bundle lost its build identity")
+	if artifactValue.Operation() != input.Operation() || artifactValue.Runtime() != input.Runtime() ||
+		!reflect.DeepEqual(artifactValue.Deployable(), input.Deployable().Ref()) || artifactValue.BindingDigest() != input.Binding().Digest() {
+		t.Fatal("runtime artifact lost its build identity")
 	}
 }
 
-func TestRuntimeBundleHashesReviewDocumentsAndRequiresApplyDocument(t *testing.T) {
+func TestRuntimeArtifactHashesReviewDocumentsAndRequiresApplyDocument(t *testing.T) {
 	input := runtimeInput(t)
-	first, err := NewRuntimeBundle(input, []RuntimeDocument{
+	first, err := NewRuntimeArtifact(input, []RuntimeDocument{
 		ReviewDocument([]byte("review-a")), ApplyDocument([]byte("apply")),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewRuntimeBundle(input, []RuntimeDocument{
+	second, err := NewRuntimeArtifact(input, []RuntimeDocument{
 		ReviewDocument([]byte("review-b")), ApplyDocument([]byte("apply")),
 	})
 	if err != nil {
@@ -84,20 +84,20 @@ func TestRuntimeBundleHashesReviewDocumentsAndRequiresApplyDocument(t *testing.T
 	if first.RenderedDigest() == second.RenderedDigest() {
 		t.Fatal("rendered digest ignored review-only document bytes")
 	}
-	if _, err := NewRuntimeBundle(input, []RuntimeDocument{ReviewDocument([]byte("review"))}); err == nil {
-		t.Fatal("runtime bundle accepted only review documents")
+	if _, err := NewRuntimeArtifact(input, []RuntimeDocument{ReviewDocument([]byte("review"))}); err == nil {
+		t.Fatal("runtime artifact accepted only review documents")
 	}
 }
 
 func TestDeployDigestIncludesDocumentDisposition(t *testing.T) {
 	input := runtimeInput(t)
-	review, err := NewRuntimeBundle(input, []RuntimeDocument{
+	review, err := NewRuntimeArtifact(input, []RuntimeDocument{
 		ReviewDocument([]byte("same")), ApplyDocument([]byte("apply")),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	apply, err := NewRuntimeBundle(input, []RuntimeDocument{
+	apply, err := NewRuntimeArtifact(input, []RuntimeDocument{
 		ApplyDocument([]byte("same")), ApplyDocument([]byte("apply")),
 	})
 	if err != nil {
@@ -111,8 +111,8 @@ func TestDeployDigestIncludesDocumentDisposition(t *testing.T) {
 	}
 }
 
-func TestRuntimeBundleRenderedDigestMatchesShippedFraming(t *testing.T) {
-	bundle, err := NewRuntimeBundle(runtimeInput(t), []RuntimeDocument{
+func TestRuntimeArtifactRenderedDigestMatchesShippedFraming(t *testing.T) {
+	artifactValue, err := NewRuntimeArtifact(runtimeInput(t), []RuntimeDocument{
 		ReviewDocument([]byte("review")),
 		ApplyDocument([]byte("apply")),
 	})
@@ -120,7 +120,7 @@ func TestRuntimeBundleRenderedDigestMatchesShippedFraming(t *testing.T) {
 		t.Fatal(err)
 	}
 	const want = "ab73d97cdf085ad6cb286dbe514c4532b7c2100a0eed8e6700abf315e3c607c8"
-	if got := bundle.RenderedDigest().String(); got != want {
+	if got := artifactValue.RenderedDigest().String(); got != want {
 		t.Fatalf("RenderedDigest = %q, want %q", got, want)
 	}
 }
@@ -129,14 +129,14 @@ func TestRuntimeBuildInputRejectsDifferentTarget(t *testing.T) {
 	input := runtimeInput(t)
 	runtime := input.Runtime()
 	runtime.Target.ID = "another-target"
-	if _, err := NewRuntimeBuildInput(input.Operation(), input.Source(), runtime, input.Binding()); err == nil {
+	if _, err := NewRuntimeBuildInput(input.Operation(), input.Deployable(), runtime, input.Binding()); err == nil {
 		t.Fatal("runtime build accepted a binding for another target")
 	}
 }
 
 func TestRuntimeIntermediatesRefuseJSON(t *testing.T) {
 	input := runtimeInput(t)
-	bundle, err := NewRuntimeBundle(input, []RuntimeDocument{ApplyDocument([]byte("apply"))})
+	artifactValue, err := NewRuntimeArtifact(input, []RuntimeDocument{ApplyDocument([]byte("apply"))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRuntimeIntermediatesRefuseJSON(t *testing.T) {
 	}{
 		"build input": {input, new(RuntimeBuildInput)},
 		"document":    {ApplyDocument([]byte("apply")), new(RuntimeDocument)},
-		"bundle":      {bundle, new(RuntimeBundle)},
+		"artifact":    {artifactValue, new(RuntimeArtifact)},
 	} {
 		if _, err := json.Marshal(values.encode); err == nil {
 			t.Fatalf("%s silently serialized", name)
@@ -171,11 +171,11 @@ func TestReceiptFactoriesDeriveMutationSubjects(t *testing.T) {
 	if teardown.Target != target {
 		t.Fatal("teardown did not derive its target from infrastructure evidence")
 	}
-	bundle, err := NewRuntimeBundle(runtimeInput(t), []RuntimeDocument{ApplyDocument([]byte("artifact"))})
+	artifactValue, err := NewRuntimeArtifact(runtimeInput(t), []RuntimeDocument{ApplyDocument([]byte("artifact"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	deployment, err := NewDeploymentReceipt("receipt-1", "deployment-1", bundle, at)
+	deployment, err := NewDeploymentReceipt("receipt-1", "deployment-1", artifactValue, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,10 +295,10 @@ func timeForTest() time.Time {
 type createOnlyRuntime struct{}
 
 func (createOnlyRuntime) Describe() RuntimeDescriptor { return RuntimeDescriptor{ID: "create-only"} }
-func (createOnlyRuntime) Build(context.Context, RuntimeBuildInput) (RuntimeBundle, error) {
-	return RuntimeBundle{}, nil
+func (createOnlyRuntime) Build(context.Context, RuntimeBuildInput) (RuntimeArtifact, error) {
+	return RuntimeArtifact{}, nil
 }
-func (createOnlyRuntime) Deploy(context.Context, RuntimeBundle, DeployOptions) (kmx.DeploymentReceipt, error) {
+func (createOnlyRuntime) Deploy(context.Context, RuntimeArtifact, DeployOptions) (kmx.DeploymentReceipt, error) {
 	return kmx.DeploymentReceipt{}, nil
 }
 

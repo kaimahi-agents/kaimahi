@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"fmt"

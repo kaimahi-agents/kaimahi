@@ -1,4 +1,4 @@
-package kmx
+package model
 
 import (
 	"encoding/json"
@@ -83,20 +83,23 @@ func TestReceiptJSONRoundTrip(t *testing.T) {
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	source, _ := NewAgentSource([]byte("agent source"))
 	revision, _ := NewAgentRevision(source)
-	sourceRef, _ := NewRevisionDeploymentSourceRef(revision.Ref())
+	deployableRef, _ := NewRevisionDeployableRef(revision.Ref())
 	runtime := RuntimeRef{Runtime: "example", Installation: "install-1", Target: target}
 	bindingDigest, _ := ParseDigest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	renderedDigest, _ := ParseDigest("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	deployDigest, _ := ParseDigest("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
 	deployment := DeploymentReceipt{
 		ID: "receipt-1", Operation: "lift-1",
-		Deployment:    DeploymentRef{ID: "deployment-1", Source: sourceRef, Runtime: runtime},
+		Deployment:    DeploymentRef{ID: "deployment-1", Deployable: deployableRef, Runtime: runtime},
 		BindingDigest: bindingDigest, RenderedDigest: renderedDigest,
 		DeployDigest: deployDigest, RecordedAt: at,
 	}
 	data, err := json.Marshal(deployment)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"source"`) || strings.Contains(string(data), `"deployable"`) {
+		t.Fatalf("deployment receipt changed its persisted source field: %s", data)
 	}
 	var decoded DeploymentReceipt
 	if err := json.Unmarshal(data, &decoded); err != nil {
@@ -164,16 +167,16 @@ func TestInProcessValuesRefuseAccidentalJSON(t *testing.T) {
 	}
 	target := TargetRef{Platform: "example", ID: "target-1"}
 	binding, _ := NewTargetBinding(target, "example.dev/v1alpha1", "ExampleBinding", []byte("binding"))
-	sourceRef, _ := NewRevisionDeploymentSource(revision)
+	deployable, _ := NewRevisionDeployable(revision)
 	for name, values := range map[string]struct {
 		encode any
 		decode any
 	}{
-		"source":            {source, new(AgentSource)},
-		"revision":          {revision, new(AgentRevision)},
-		"binding":           {binding, new(TargetBinding)},
-		"deployment source": {sourceRef, new(DeploymentSource)},
-		"lift request":      {LiftRequest{Source: sourceRef, Binding: binding}, new(LiftRequest)},
+		"source":       {source, new(AgentSource)},
+		"revision":     {revision, new(AgentRevision)},
+		"binding":      {binding, new(TargetBinding)},
+		"deployable":   {deployable, new(Deployable)},
+		"lift request": {LiftRequest{Deployable: deployable, Binding: binding}, new(LiftRequest)},
 	} {
 		if _, err := json.Marshal(values.encode); err == nil {
 			t.Fatalf("%s silently serialized", name)
@@ -215,9 +218,9 @@ func TestTargetBindingRejectsInvalidMetadata(t *testing.T) {
 	}
 }
 
-func TestDeploymentSourceRequiresExactlyOneInput(t *testing.T) {
-	if err := (DeploymentSourceRef{}).Validate(); err == nil {
-		t.Fatal("empty deployment source was accepted")
+func TestDeployableRequiresExactlyOneInput(t *testing.T) {
+	if err := (DeployableRef{}).Validate(); err == nil {
+		t.Fatal("empty deployable was accepted")
 	}
 	source, _ := NewAgentSource([]byte("agent source"))
 	revision, _ := NewAgentRevision(source)
@@ -235,44 +238,44 @@ func TestDeploymentSourceRequiresExactlyOneInput(t *testing.T) {
 		Composition:   "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		Binding:       "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 	}
-	revisionSource, _ := NewRevisionDeploymentSourceRef(revisionRef)
-	sandboxSource, _ := NewSandboxDeploymentSourceRef(image.Ref())
-	if revisionSource == sandboxSource {
-		t.Fatal("revision and sandbox deployment sources compare equal")
+	revisionDeployable, _ := NewRevisionDeployableRef(revisionRef)
+	sandboxDeployable, _ := NewSandboxDeployableRef(image.Ref())
+	if revisionDeployable == sandboxDeployable {
+		t.Fatal("revision and sandbox deployables compare equal")
 	}
-	data, err := json.Marshal(sandboxSource)
+	data, err := json.Marshal(sandboxDeployable)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded DeploymentSourceRef
+	var decoded DeployableRef
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded != sandboxSource {
-		t.Fatalf("sandbox source round trip = %#v, want %#v", decoded, sandboxSource)
+	if decoded != sandboxDeployable {
+		t.Fatalf("sandbox deployable round trip = %#v, want %#v", decoded, sandboxDeployable)
 	}
 	if strings.Contains(string(data), "location") || strings.Contains(string(data), "registry.example") {
-		t.Fatalf("sandbox deployment identity serialized retrieval location: %s", data)
+		t.Fatalf("sandbox deployable identity serialized retrieval location: %s", data)
 	}
 	invalidUnion := `{"kind":"revision","revision":{"digest":"` + revisionRef.Digest.String() + `"},"sandboxImage":{}}`
 	if err := json.Unmarshal([]byte(invalidUnion), &decoded); err == nil {
-		t.Fatal("deployment source JSON accepted both union arms")
+		t.Fatal("deployable JSON accepted both union arms")
 	}
-	if _, err := NewSandboxDeploymentSource(image); err != nil {
+	if _, err := NewSandboxDeployable(image); err != nil {
 		t.Fatal(err)
 	}
 	published := image
 	published.Image.Location = "another.registry.example/agents/writer"
-	publishedRef, err := NewSandboxDeploymentSourceRef(published.Ref())
+	publishedRef, err := NewSandboxDeployableRef(published.Ref())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if publishedRef != sandboxSource {
-		t.Fatal("sandbox deployment identity changed with retrieval location")
+	if publishedRef != sandboxDeployable {
+		t.Fatal("sandbox deployable identity changed with retrieval location")
 	}
 	image.Binding = ""
-	if _, err := NewSandboxDeploymentSource(image); err == nil {
-		t.Fatal("sandbox deployment source accepted no binding digest")
+	if _, err := NewSandboxDeployable(image); err == nil {
+		t.Fatal("sandbox deployable accepted no binding digest")
 	}
 }
 

@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle"
-	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	kmx "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 )
 
-func TestDependencyClosureContainsOnlyPublicContractAndStandardLibrary(t *testing.T) {
+func TestDependencyClosureContainsOnlyInternalModelAndStandardLibrary(t *testing.T) {
 	t.Parallel()
 	command := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", ".")
 	output, err := command.CombinedOutput()
@@ -19,11 +19,11 @@ func TestDependencyClosureContainsOnlyPublicContractAndStandardLibrary(t *testin
 		t.Fatalf("go list failed: %v\n%s", err, output)
 	}
 	const (
-		ownPackage    = "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle"
-		publicPackage = "github.com/kaimahi-agents/kaimahi/pkg/kmx"
+		ownPackage   = "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle"
+		modelPackage = "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 	)
 	for _, dependency := range strings.Fields(string(output)) {
-		if dependency != ownPackage && dependency != publicPackage {
+		if dependency != ownPackage && dependency != modelPackage {
 			t.Errorf("internal lifecycle contract depends on %q", dependency)
 		}
 	}

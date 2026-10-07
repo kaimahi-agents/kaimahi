@@ -1,4 +1,4 @@
-package kmx_test
+package model_test
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 )
 
 var forbiddenImports = []string{
@@ -62,6 +62,7 @@ var forbiddenImplementationNames = map[string]bool{
 	"NewRetirementReceipt":         true,
 	"NewRuntimeBuildInput":         true,
 	"NewRuntimeBundle":             true,
+	"NewRuntimeArtifact":           true,
 	"NewRuntimeReceipt":            true,
 	"NewTeardownReceipt":           true,
 	"OCIArtifactPublishRecoverer":  true,
@@ -81,6 +82,7 @@ var forbiddenImplementationNames = map[string]bool{
 	"RuntimeBuildInput":            true,
 	"RuntimeBuilder":               true,
 	"RuntimeBundle":                true,
+	"RuntimeArtifact":              true,
 	"RuntimeDeployRecoverer":       true,
 	"RuntimeDeployer":              true,
 	"RuntimeDescriptor":            true,
@@ -93,9 +95,8 @@ var forbiddenImplementationNames = map[string]bool{
 	"TargetObservation":            true,
 }
 
-func TestProductionSurfaceIsImplementationNeutral(t *testing.T) {
+func TestInternalModelIsImplementationNeutral(t *testing.T) {
 	t.Parallel()
-	interfaces := map[string]bool{}
 	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -108,19 +109,11 @@ func TestProductionSurfaceIsImplementationNeutral(t *testing.T) {
 			return err
 		}
 		inspectImports(t, path, file)
-		inspectDeclarations(t, path, file, interfaces)
+		inspectDeclarations(t, path, file)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	want := map[string]bool{
-		"AgentDeployments": true,
-		"AgentEnvironment": true,
-		"AgentSuites":      true,
-	}
-	if !reflect.DeepEqual(interfaces, want) {
-		t.Errorf("exported interfaces = %v, want exactly %v", interfaces, want)
 	}
 }
 
@@ -139,7 +132,7 @@ func inspectImports(t *testing.T, path string, file *ast.File) {
 	}
 }
 
-func inspectDeclarations(t *testing.T, path string, file *ast.File, interfaces map[string]bool) {
+func inspectDeclarations(t *testing.T, path string, file *ast.File) {
 	t.Helper()
 	for _, declaration := range file.Decls {
 		switch declaration := declaration.(type) {
@@ -150,11 +143,6 @@ func inspectDeclarations(t *testing.T, path string, file *ast.File, interfaces m
 				switch spec := raw.(type) {
 				case *ast.TypeSpec:
 					inspectTopLevelName(t, path, spec.Name.Name)
-					if ast.IsExported(spec.Name.Name) {
-						if _, ok := spec.Type.(*ast.InterfaceType); ok {
-							interfaces[spec.Name.Name] = true
-						}
-					}
 					ast.Inspect(spec.Type, func(node ast.Node) bool {
 						field, ok := node.(*ast.Field)
 						if !ok {
@@ -223,29 +211,10 @@ func inspectSerializedName(t *testing.T, path, rawTag string) {
 	}
 }
 
-func TestDestructiveWorkflowSignaturesKeepReceiptScopesSeparate(t *testing.T) {
+func TestProvisionalDestructiveWorkflowSignaturesKeepReceiptScopesSeparate(t *testing.T) {
 	t.Parallel()
-	assertMethodSet(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", "Forget", "Inspect", "RecoverDown", "RecoverUp", "Register", "Up")
-	assertMethodSet(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "BuildRevision", "Lift", "RecoverLift", "RecoverRetire", "Retire", "Status")
-	assertMethodSet(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "BuildSandbox", "Package", "Publish", "RecoverBuildSandbox", "RecoverPackage", "RecoverPublish", "Validate")
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", reflect.TypeOf(kmx.DownRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverUp", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.UpProgress{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverDown", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.TeardownReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "RecoverLift", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.DeploymentReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "RecoverRetire", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.RetirementReceipt{}))
-}
-
-func assertMethodSet(t *testing.T, contract reflect.Type, want ...string) {
-	t.Helper()
-	if contract.NumMethod() != len(want) {
-		t.Fatalf("%s has %d methods, want %d", contract, contract.NumMethod(), len(want))
-	}
-	for _, name := range want {
-		if _, ok := contract.MethodByName(name); !ok {
-			t.Errorf("%s has no %s method", contract, name)
-		}
-	}
+	assertMethodSignature(t, reflect.TypeOf((*model.AgentEnvironment)(nil)).Elem(), "Down", reflect.TypeOf(model.DownRequest{}), reflect.TypeOf(model.TeardownReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*model.AgentDeployments)(nil)).Elem(), "Retire", reflect.TypeOf(model.RetireRequest{}), reflect.TypeOf(model.RetirementReceipt{}))
 }
 
 func assertMethodSignature(t *testing.T, contract reflect.Type, methodName string, input, output reflect.Type) {
@@ -269,10 +238,10 @@ func TestDependencyClosureUsesOnlyStandardLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list failed: %v\n%s", err, output)
 	}
-	const ownPackage = "github.com/kaimahi-agents/kaimahi/pkg/kmx"
+	const ownPackage = "github.com/kaimahi-agents/kaimahi/internal/kmx/lifecycle/model"
 	for _, dependency := range strings.Fields(string(output)) {
 		if dependency != ownPackage && !strings.HasPrefix(dependency, ownPackage+"/") {
-			t.Errorf("public contract depends on non-standard package %q", dependency)
+			t.Errorf("internal lifecycle model depends on non-standard package %q", dependency)
 		}
 	}
 }
