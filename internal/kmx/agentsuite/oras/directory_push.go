@@ -49,9 +49,6 @@ func Push(
 	if err != nil {
 		return PushResult{}, err
 	}
-	if pathWithin(sourcePath, destinationPath) {
-		return PushResult{}, errors.New("AgentSuite target must be outside the source directory")
-	}
 	destinationParent := filepath.Dir(destinationPath)
 	parentInfo, err := os.Stat(destinationParent)
 	if err != nil {
@@ -59,6 +56,18 @@ func Push(
 	}
 	if !parentInfo.IsDir() {
 		return PushResult{}, fmt.Errorf("AgentSuite target parent %s is not a directory", destinationParent)
+	}
+	canonicalSource, err := filepath.EvalSymlinks(sourcePath)
+	if err != nil {
+		return PushResult{}, fmt.Errorf("resolve AgentSuite directory: %w", err)
+	}
+	canonicalParent, err := filepath.EvalSymlinks(destinationParent)
+	if err != nil {
+		return PushResult{}, fmt.Errorf("resolve AgentSuite target parent: %w", err)
+	}
+	canonicalDestination := filepath.Join(canonicalParent, filepath.Base(destinationPath))
+	if pathWithin(canonicalSource, canonicalDestination) {
+		return PushResult{}, errors.New("AgentSuite target must be outside the source directory")
 	}
 
 	sourceRoot, err := os.MkdirTemp("", "agentsuite-source-cas-*")

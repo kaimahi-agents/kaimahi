@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -34,6 +35,15 @@ func TestPullExtractsReferencedAgentSuite(t *testing.T) {
 		}
 	}
 	assertDirectoryFilesEqual(t, source, output)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := info.Mode().Perm(); mode != 0o755 {
+			t.Fatalf("pull output mode = %#o, want 0755", mode)
+		}
+	}
 }
 
 func TestPullRefusesExistingOutput(t *testing.T) {

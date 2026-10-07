@@ -115,6 +115,9 @@ func Pull(
 	if closeErr != nil {
 		return PullResult{}, fmt.Errorf("close AgentSuite content layer: %w", closeErr)
 	}
+	if err := os.Chmod(stageRoot, 0o755); err != nil {
+		return PullResult{}, fmt.Errorf("set AgentSuite output mode: %w", err)
+	}
 	if err := os.Rename(stageRoot, outputPath); err != nil {
 		return PullResult{}, fmt.Errorf("publish extracted AgentSuite: %w", err)
 	}

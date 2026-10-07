@@ -3,6 +3,8 @@ package oras
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,6 +58,52 @@ func TestPushRejectsNonDirectorySource(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "layout")
 	if _, err := Push(context.Background(), path, target, "agentsuites/example:v1"); err == nil {
 		t.Fatal("non-directory source succeeded")
+	}
+}
+
+func TestPushRejectsNestedTargetThroughSymlinks(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		source func(t *testing.T, realSource, link string) string
+		target func(t *testing.T, realSource, link string) string
+	}{
+		{
+			name: "source",
+			source: func(t *testing.T, realSource, link string) string {
+				t.Helper()
+				mustSymlink(t, realSource, link)
+				return link
+			},
+			target: func(_ *testing.T, realSource, _ string) string {
+				return filepath.Join(realSource, "layout")
+			},
+		},
+		{
+			name: "target parent",
+			source: func(_ *testing.T, realSource, _ string) string {
+				return realSource
+			},
+			target: func(t *testing.T, realSource, link string) string {
+				t.Helper()
+				mustSymlink(t, realSource, link)
+				return filepath.Join(link, "layout")
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			realSource := filepath.Join(root, "suite")
+			copyDirectory(t, filepath.Join("..", "testdata", "minimal"), realSource)
+			link := filepath.Join(root, "suite-link")
+			source := test.source(t, realSource, link)
+			target := test.target(t, realSource, link)
+			if _, err := Push(context.Background(), source, target, "agentsuites/minimal:v1"); err == nil {
+				t.Fatal("push to symlinked nested target succeeded")
+			}
+			if _, err := os.Stat(filepath.Join(realSource, "layout")); !os.IsNotExist(err) {
+				t.Fatalf("nested target exists after refusal: %v", err)
+			}
+		})
 	}
 }
 
@@ -153,6 +201,40 @@ func mustWrite(t *testing.T, root, name string, data []byte, mode os.FileMode) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, data, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustSymlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+}
+
+func copyDirectory(t *testing.T, source, destination string) {
+	t.Helper()
+	if err := filepath.WalkDir(source, func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, name)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
