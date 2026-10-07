@@ -10,13 +10,13 @@ const (
 	MediaTypeContent            = "application/vnd.agentsuite.content.v1.tar+gzip"
 	MediaTypeSuite              = "application/vnd.agentsuite.manifest.v1+json"
 	MediaTypeAgent              = "application/vnd.agentsuite.agent.v1+json"
-	MediaTypeToolCatalog        = "application/vnd.agentsuite.tool-catalog.v1+json"
+	MediaTypeToolCatalog        = "application/vnd.agentsuite.tool.catalog.v1+json"
 	MediaTypeTool               = "application/vnd.agentsuite.tool.v1+json"
-	MediaTypeToolComposition    = "application/vnd.agentsuite.tool-composition.v1+json"
+	MediaTypeToolComposition    = "application/vnd.agentsuite.tool.composition.v1+json"
 	MediaTypeComposition        = "application/vnd.agentsuite.composition.v1+json"
-	MediaTypeBuildProfile       = "application/vnd.agentsuite.build-profile.v1+json"
-	MediaTypeSandboxBinding     = "application/vnd.agentsuite.sandbox-binding.v1+json"
-	MediaTypeToolSandboxBinding = "application/vnd.agentsuite.tool-sandbox-binding.v1+json"
+	MediaTypeBuildProfile       = "application/vnd.agentsuite.build.profile.v1+json"
+	MediaTypeSandboxBinding     = "application/vnd.agentsuite.sandbox.binding.v1+json"
+	MediaTypeToolSandboxBinding = "application/vnd.agentsuite.tool.sandbox.binding.v1+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )

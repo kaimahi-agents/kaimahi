@@ -7,7 +7,7 @@
   "required": ["schemaVersion", "mediaType", "suiteDigest", "agent", "platform", "buildProfile", "composition", "inventory"],
   "properties": {
     "schemaVersion": {"const": "1.0.0-draft"},
-    "mediaType": {"const": "application/vnd.agentsuite.sandbox-binding.v1+json"},
+    "mediaType": {"const": "application/vnd.agentsuite.sandbox.binding.v1+json"},
     "suiteDigest": {"$ref": "#/$defs/digest"},
     "agent": {"$ref": "#/$defs/id"},
     "platform": {"$ref": "#/$defs/platform"},

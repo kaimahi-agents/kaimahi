@@ -81,13 +81,13 @@ change the image-local closure.
 | [Content layer](#5-content-layer) | `application/vnd.agentsuite.content.v1.tar+gzip` |
 | [Suite manifest](#7-suite-manifest) | `application/vnd.agentsuite.manifest.v1+json` |
 | [Agent manifest](#8-agents) | `application/vnd.agentsuite.agent.v1+json` |
-| [Tool catalog](#91-tool-catalog) | `application/vnd.agentsuite.tool-catalog.v1+json` |
+| [Tool catalog](#91-tool-catalog) | `application/vnd.agentsuite.tool.catalog.v1+json` |
 | [Tool manifest](#9-tools) | `application/vnd.agentsuite.tool.v1+json` |
 | [Composition manifest](#10-composition-manifests) | `application/vnd.agentsuite.composition.v1+json` |
-| [Tool composition](#101-tool-compositions) | `application/vnd.agentsuite.tool-composition.v1+json` |
-| [Build profile](#11-build-profiles) | `application/vnd.agentsuite.build-profile.v1+json` |
-| [Sandbox binding](#13-sandbox-binding) | `application/vnd.agentsuite.sandbox-binding.v1+json` |
-| [Tool sandbox binding](#132-tool-sandbox-binding) | `application/vnd.agentsuite.tool-sandbox-binding.v1+json` |
+| [Tool composition](#101-tool-compositions) | `application/vnd.agentsuite.tool.composition.v1+json` |
+| [Build profile](#11-build-profiles) | `application/vnd.agentsuite.build.profile.v1+json` |
+| [Sandbox binding](#13-sandbox-binding) | `application/vnd.agentsuite.sandbox.binding.v1+json` |
+| [Tool sandbox binding](#132-tool-sandbox-binding) | `application/vnd.agentsuite.tool.sandbox.binding.v1+json` |
 
 ### 4.2 OCI image layout
 
@@ -473,7 +473,7 @@ Example:
 ```json
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool-catalog.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.catalog.v1+json",
   "tools": [
     {
       "id": "datetime",
@@ -887,7 +887,7 @@ selection.
 ```json
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool-composition.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.composition.v1+json",
   "id": "search",
   "version": "1.0.0",
   "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1025,10 +1025,10 @@ The binding contains only:
 ```json
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.sandbox.binding.v1+json",
   "suiteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "composition": {
-    "mediaType": "application/vnd.agentsuite.tool-composition.v1+json",
+    "mediaType": "application/vnd.agentsuite.tool.composition.v1+json",
     "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "size": 512
   },

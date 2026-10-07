@@ -12,7 +12,7 @@
   "toolCatalog": {
     "id": "catalog",
     "path": "tools/catalog.json",
-    "digest": "sha256:98aefca0842f347cca9b9143f0b39f7d1edf8c6a5f0d091afcc805ecfb507a1c"
+    "digest": "sha256:b8502547f2c7cc6ccc865f4179748e25b73f4d29c7b10c7ec1ff970d2f6eb6b0"
   },
   "compositions": [
     {
@@ -29,7 +29,7 @@
     {
       "id": "default",
       "path": "build-profiles/default.json",
-      "digest": "sha256:83201c5185d01b9099e5c74eae58460f613c4a41e27375c8b1d9051325a01084"
+      "digest": "sha256:35db18be63bbd06f3cf404d7c05428628b7711a8d30f3930bfcc8af55f83a080"
     }
   ],
   "capabilities": [],

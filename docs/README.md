@@ -12,7 +12,7 @@ or comparing implementations.
 | Understand runtime, context, session, inference, lifecycle, and enforcement boundaries | [Runtime contract](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
-| Define or validate a portable OCI AgentSuite with statically bound tools | [AgentSuite Artifact Specification](agentsuite-spec.md) |
+| Define or validate a portable OCI AgentSuite with bundled or remote Tools and standalone Tool Sandbox Images | [AgentSuite Artifact Specification](agentsuite-spec.md) |
 | Route an existing application's model traffic through Orka | [Migration](migrate.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |

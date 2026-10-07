@@ -19,7 +19,7 @@
     },
     "mediaType": {
       "description": "Media type identifying a Tool Sandbox Image binding.",
-      "const": "application/vnd.agentsuite.tool-sandbox-binding.v1+json"
+      "const": "application/vnd.agentsuite.tool.sandbox.binding.v1+json"
     },
     "suiteDigest": {
       "description": "Digest of the AgentSuite OCI manifest supplying the build inputs.",
@@ -62,7 +62,7 @@
         {"$ref": "#/$defs/descriptor"},
         {
           "properties": {
-            "mediaType": {"const": "application/vnd.agentsuite.tool-composition.v1+json"}
+            "mediaType": {"const": "application/vnd.agentsuite.tool.composition.v1+json"}
           }
         }
       ]

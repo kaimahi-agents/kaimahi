@@ -1132,7 +1132,7 @@ func TestValidatePathRejectsUnknownFields(t *testing.T) {
 func TestValidateSandboxBindingRejectsUnpinnedIdentity(t *testing.T) {
 	data := []byte(`{
 	  "schemaVersion":"1.0.0-draft",
-	  "mediaType":"application/vnd.agentsuite.sandbox-binding.v1+json",
+	  "mediaType":"application/vnd.agentsuite.sandbox.binding.v1+json",
 	  "suiteDigest":"latest",
 	  "agent":"writer",
 	  "platform":{"os":"linux","architecture":"amd64"},
@@ -1148,7 +1148,7 @@ func TestValidateSandboxBindingRejectsUnpinnedIdentity(t *testing.T) {
 func TestValidateSandboxBindingRejectsWrongCompositionMediaType(t *testing.T) {
 	data := []byte(`{
 	  "schemaVersion":"1.0.0-draft",
-	  "mediaType":"application/vnd.agentsuite.sandbox-binding.v1+json",
+	  "mediaType":"application/vnd.agentsuite.sandbox.binding.v1+json",
 	  "suiteDigest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	  "agent":"writer",
 	  "platform":{"os":"linux","architecture":"amd64"},
@@ -1164,9 +1164,9 @@ func TestValidateSandboxBindingRejectsWrongCompositionMediaType(t *testing.T) {
 func TestValidateToolSandboxBindingAcceptsPinnedComposition(t *testing.T) {
 	data := []byte(`{
 		  "schemaVersion":"1.0.0-draft",
-		  "mediaType":"application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+		  "mediaType":"application/vnd.agentsuite.tool.sandbox.binding.v1+json",
 		  "suiteDigest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-		  "composition":{"mediaType":"application/vnd.agentsuite.tool-composition.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
+		  "composition":{"mediaType":"application/vnd.agentsuite.tool.composition.v1+json","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1},
 		  "inventory":{"mediaType":"application/json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":1}
 		}`)
 	if _, err := ValidateToolSandboxBinding(data); err != nil {

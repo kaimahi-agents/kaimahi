@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool-sandbox-binding.v1+json",
+  "mediaType": "application/vnd.agentsuite.tool.sandbox.binding.v1+json",
   "suiteDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "composition": {
-    "mediaType": "application/vnd.agentsuite.tool-composition.v1+json",
+    "mediaType": "application/vnd.agentsuite.tool.composition.v1+json",
     "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     "size": 512
   },

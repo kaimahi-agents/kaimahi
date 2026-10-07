@@ -22,7 +22,7 @@
     },
     "mediaType": {
       "description": "Media type identifying a Tool composition manifest.",
-      "const": "application/vnd.agentsuite.tool-composition.v1+json"
+      "const": "application/vnd.agentsuite.tool.composition.v1+json"
     },
     "id": {
       "description": "Exact Tool identifier selected from the suite catalog.",
