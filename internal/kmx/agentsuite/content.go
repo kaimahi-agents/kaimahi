@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -168,6 +169,9 @@ func loadContentLayer(reader io.Reader) (*contentSet, error) {
 		return nil, fmt.Errorf("content layer is not gzip: %w", err)
 	}
 	defer gzipReader.Close()
+	if !gzipReader.ModTime.IsZero() {
+		return nil, errors.New("content gzip modification time must be unset")
+	}
 	tarReader := tar.NewReader(gzipReader)
 	set := &contentSet{entries: map[string]contentEntry{}, folded: map[string]string{}}
 	regular := map[string]bool{}
@@ -180,6 +184,12 @@ func loadContentLayer(reader io.Reader) (*contentSet, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read content tar: %w", err)
+		}
+		if !header.ModTime.Equal(time.Unix(0, 0).UTC()) {
+			return nil, fmt.Errorf("%s tar modification time must be the Unix epoch", header.Name)
+		}
+		if !header.AccessTime.IsZero() || !header.ChangeTime.IsZero() {
+			return nil, fmt.Errorf("%s tar access and change times must be unset", header.Name)
 		}
 		count++
 		if count > maxContentEntries {

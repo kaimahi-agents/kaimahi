@@ -228,6 +228,9 @@ A conforming validator MUST reject:
 
 - absolute, non-clean, backslash-containing, or traversal paths;
 - duplicate paths and Unicode case-folding collisions;
+- a gzip modification time other than zero;
+- tar entries whose modification time is not the Unix epoch or whose access or
+  change time is set;
 - device nodes, FIFOs, sockets, and unknown tar entry types;
 - set-id or sticky bits;
 - group- or world-writable regular files;

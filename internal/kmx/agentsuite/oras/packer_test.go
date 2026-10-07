@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,6 +179,51 @@ func TestPackerRejectsMissingCASContent(t *testing.T) {
 	}
 }
 
+func TestPackerRejectsNonCanonicalContentTimestamps(t *testing.T) {
+	tests := []struct {
+		name          string
+		gzipTimestamp time.Time
+		tarTimestamp  time.Time
+		want          string
+	}{
+		{
+			name:          "gzip",
+			gzipTimestamp: time.Unix(1, 0).UTC(),
+			tarTimestamp:  time.Unix(0, 0).UTC(),
+			want:          "content gzip modification time must be unset",
+		},
+		{
+			name:         "tar",
+			tarTimestamp: time.Unix(1, 0).UTC(),
+			want:         "tar modification time must be the Unix epoch",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data := buildContentLayerWithTimestamps(
+				t,
+				filepath.Join("..", "testdata", "minimal"),
+				test.gzipTimestamp,
+				test.tarTimestamp,
+			)
+			descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, data)
+			src := memory.New()
+			if err := src.Push(context.Background(), descriptor, bytes.NewReader(data)); err != nil {
+				t.Fatal(err)
+			}
+			dst := &recordingStorage{}
+
+			_, err := oraspack.New(nil).Pack(context.Background(), src, dst, descriptor)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Pack() error = %v, want %q", err, test.want)
+			}
+			if dst.pushes != 0 {
+				t.Fatalf("destination received %d pushes for non-canonical content", dst.pushes)
+			}
+		})
+	}
+}
+
 func TestORASStoreRejectsMismatchedContent(t *testing.T) {
 	target := memory.New()
 	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("expected"))
@@ -227,6 +273,20 @@ func newContentSource(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 }
 
 func buildContentLayer(t *testing.T, root string) []byte {
+	return buildContentLayerWithTimestamps(
+		t,
+		root,
+		time.Time{},
+		time.Unix(0, 0).UTC(),
+	)
+}
+
+func buildContentLayerWithTimestamps(
+	t *testing.T,
+	root string,
+	gzipTimestamp time.Time,
+	tarTimestamp time.Time,
+) []byte {
 	t.Helper()
 	var names []string
 	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -249,7 +309,7 @@ func buildContentLayer(t *testing.T, root string) []byte {
 
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
-	gzipWriter.Header.ModTime = time.Unix(0, 0).UTC()
+	gzipWriter.ModTime = gzipTimestamp
 	gzipWriter.Header.OS = 255
 	tarWriter := tar.NewWriter(gzipWriter)
 	for _, name := range names {
@@ -261,7 +321,7 @@ func buildContentLayer(t *testing.T, root string) []byte {
 		header := &tar.Header{
 			Name:    name,
 			Mode:    0o644,
-			ModTime: time.Unix(0, 0).UTC(),
+			ModTime: tarTimestamp,
 			Format:  tar.FormatPAX,
 		}
 		if info.IsDir() {

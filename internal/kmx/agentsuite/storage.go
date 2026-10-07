@@ -27,7 +27,7 @@ type Pusher interface {
 	Push(context.Context, ocispec.Descriptor, io.Reader) error
 }
 
-// ReadOnlyStorage is the source-side CAS contract used while packing.
+// ReadOnlyStorage is descriptor-addressed, read-only content storage.
 type ReadOnlyStorage interface {
 	Fetcher
 	Exists(context.Context, ocispec.Descriptor) (bool, error)
@@ -37,4 +37,27 @@ type ReadOnlyStorage interface {
 type Storage interface {
 	ReadOnlyStorage
 	Pusher
+}
+
+// Resolver resolves a reference to its root descriptor.
+type Resolver interface {
+	Resolve(context.Context, string) (ocispec.Descriptor, error)
+}
+
+// Tagger associates a reference with a root descriptor.
+type Tagger interface {
+	Tag(context.Context, ocispec.Descriptor, string) error
+}
+
+// ReadOnlyTarget is read-only content storage with reference resolution.
+type ReadOnlyTarget interface {
+	ReadOnlyStorage
+	Resolver
+}
+
+// Target is content storage with reference resolution and tagging.
+type Target interface {
+	Storage
+	Resolver
+	Tagger
 }
