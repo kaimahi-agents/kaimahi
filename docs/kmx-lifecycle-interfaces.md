@@ -6,10 +6,10 @@
 the CLI, do not replace `internal/kmx/runtime`, and make no compatibility
 commitment.
 
-**Companion design:** [KMX application workflow API](kmx-application-api.md)
-describes how another Go layer, UI, controller, or transport could consume these
-contracts through grouped use-case services. That facade is proposed, not
-implemented.
+**Companion guide:** [KMX application API](kmx-application-api.md) describes how
+another Go layer can consume the northbound services and how KMX composes the
+southbound management interfaces. The orchestration implementation is not part
+of this change.
 
 ## Context
 
@@ -41,7 +41,7 @@ Agent revision -> Target -> Runtime -> Deployment
 
 | Concept | Responsibility |
 |---|---|
-| Agent revision | Immutable authored behavior identified by a digest |
+| Agent revision | Immutable authored bytes identified by the portable digest |
 | Target | Durable destination identity supplied or resolved by a platform |
 | Runtime | Builds, deploys, observes, and retires runtime-native workloads |
 | Deployment | One revision bound to one runtime installation on one target |
@@ -122,21 +122,26 @@ are proven.
 
 ### Public workflows use product verbs
 
-The author-facing interfaces use KMX workflow language:
+The consumer-facing interfaces use KMX workflow language:
 
 ```go
-type TargetService interface {
-    Up(context.Context, TargetSpec) (InfrastructureReceipt, error)
+type EnvironmentService interface {
+    Up(context.Context, UpRequest) (UpResult, error)
+    RecoverUp(context.Context, OperationID) (UpProgress, error)
     Register(context.Context, TargetSpec) (TargetRef, error)
     Inspect(context.Context, TargetRef) (TargetSnapshot, error)
-    Down(context.Context, InfrastructureReceipt) (TeardownReceipt, error)
+    Down(context.Context, DownRequest) (TeardownReceipt, error)
+    RecoverDown(context.Context, OperationID) (TeardownReceipt, error)
     Forget(context.Context, TargetRef) error
 }
 
 type AgentService interface {
+    Build(context.Context, BuildRequest) (BuildResult, error)
     Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
+    RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
     Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
-    Retire(context.Context, DeploymentReceipt) (RetirementReceipt, error)
+    Retire(context.Context, RetireRequest) (RetirementReceipt, error)
+    RecoverRetire(context.Context, OperationID) (RetirementReceipt, error)
 }
 ```
 
@@ -148,8 +153,9 @@ The verbs form separate lifecycle pairs:
 | Agent deployment | `Lift` | `Retire` |
 | Local target configuration | `Register` | `Forget` |
 
-`Forget` is deliberately not `Down`: forgetting a bring-your-own target removes
-local configuration and never mutates the target.
+`EnvironmentService.Up` composes target resolution or provisioning with runtime
+installation. `Forget` is deliberately not `Down`: forgetting a bring-your-own
+target removes local configuration and never mutates the target.
 
 ### Runtime uses narrow capabilities
 
@@ -174,32 +180,33 @@ method set.
 
 ### Lift is a workflow, not one runtime primitive
 
-Lift composes several operations:
+Lift composes runtime-native building and deployment:
 
 ```text
 resolve target and runtime installation
     -> build runtime-native artifact
     -> deploy or reconcile it
-    -> observe the result
     -> persist deployment evidence
 ```
 
-The runtime SPI exposes precise `Build`, `Deploy`, and `Observe` capabilities.
-`AgentService.Lift` supplies the sticky product operation.
+The runtime SPI exposes precise `Build` and `Deploy` capabilities. Observation
+is the separate capability used by `Status`; create-only support does not imply
+status support. `AgentService.Lift` supplies the sticky product operation.
 
 ### Build has two levels
 
 The model distinguishes:
 
 ```text
-RevisionBuilder: authored source -> immutable AgentRevision
+RevisionBuilder: authored source -> validated AgentRevision
 RuntimeBuilder:  AgentRevision + RuntimeRef + TargetBinding -> RuntimeBundle
 ```
 
-The first operation is runtime-neutral. The second is implemented by the
-selected runtime and may understand its native schema. `RuntimeBuildInput`
-requires the runtime installation and target binding to identify the same exact
-target before native building begins.
+`AgentRevision` itself is an immutable byte identity; constructing one does not
+prove schema or behavior validation. The northbound build workflow owns authoring
+validation. The runtime builder parses the exact source again and refuses
+behavior it cannot honor. `RuntimeBuildInput` requires the runtime installation
+and target binding to identify the same exact target before native building.
 
 ## Ownership and safety
 
@@ -210,40 +217,45 @@ Receipts are separated by responsibility:
 | Receipt | Records | Accepted by |
 |---|---|---|
 | `InfrastructureReceipt` | Target infrastructure provisioned by a platform | Target `Down` |
-| `RuntimeReceipt` | Runtime installation or reconciliation | Runtime recovery or removal work |
+| `RuntimeReceipt` | Runtime installation or reconciliation | Runtime recovery evidence; uninstall is deferred |
 | `DeploymentReceipt` | Agent revision, binding, artifact, and deployment identity | Agent `Retire` |
-| `RetirementReceipt` | Result of workload retirement | Evidence consumers |
-| `TeardownReceipt` | Result of target teardown | Evidence consumers |
+| `RetirementReceipt` | Established workload retirement | Evidence consumers |
+| `TeardownReceipt` | Established target teardown | Evidence consumers |
 
 The destructive signatures encode the primary safety rule:
 
 ```go
-Down(context.Context, InfrastructureReceipt) (TeardownReceipt, error)
-Retire(context.Context, DeploymentReceipt) (RetirementReceipt, error)
+Down(context.Context, DownRequest) (TeardownReceipt, error)
+Retire(context.Context, RetireRequest) (RetirementReceipt, error)
 ```
 
 Neither operation accepts another independently supplied target or deployment
-that could disagree with its receipt. The subject is derived from evidence in
-the correct ownership domain. A deployment receipt cannot be passed to target
-teardown.
+that could disagree with its scoped receipt. `DownRequest` contains an
+`InfrastructureReceipt`; `RetireRequest` contains a `DeploymentReceipt`. A
+deployment receipt cannot be passed to target teardown.
 
 Receipts are local evidence, not authentication or cryptographic attestation.
 Before mutation, implementations must verify receipt identity and native
 ownership against durable external state. Type separation prevents accidental
 authority crossover; it does not make an edited local file trustworthy.
 
+Unknown outcomes do not produce successful receipts. They return
+`OutcomeUnknownError` and are resolved through operation recovery before a
+receipt can claim an established result.
+
 ### Identity is computed, not asserted
 
-The package computes canonical SHA-256 identities for:
+The package computes domain-separated SHA-256 identities for:
 
 - exact authored agent bytes;
 - target-qualified, versioned binding bytes;
 - exact runtime-native artifact bytes.
 
-Callers cannot attach an arbitrary digest to these in-process values. A runtime
-bundle retains the exact revision, runtime installation, target binding digest,
-and rendered digest used to create it. A deployment receipt is derived from
-that bundle rather than assembled from unrelated identity fields.
+Portable and rendered identities use the shipped logical-path and length framing
+so an adapter can preserve existing ownership annotations and receipts. Callers
+cannot attach arbitrary digests to in-process values. A runtime bundle retains
+the exact revision, runtime installation, target binding digest, and rendered
+digest used to create it. A deployment receipt is derived from that bundle.
 
 ### Persistence is explicit
 
@@ -257,7 +269,7 @@ In process                 Persisted
 AgentSource                authored source file
 AgentRevision              AgentRevisionRef
 TargetBinding              binding source file
-RuntimeBuildInput          not persisted
+RuntimeBuildInput          not persisted; a separate operation record is
 RuntimeBundle              DeploymentReceipt
 ```
 
@@ -271,9 +283,10 @@ deployment that cannot be read because of authentication, authorization,
 timeout, malformed response, throttling, or network failure returns an error.
 It must not be reported as absent.
 
-A mutation that may have reached the remote system but whose result cannot be
-established returns `OutcomeUnknownError`. Callers inspect or reconcile; they do
-not assume failure or automatically repeat a non-idempotent operation.
+Every remotely mutating northbound request has a caller-known `OperationID`. A mutation
+that may have reached the remote system but whose result cannot be established
+returns `OutcomeUnknownError` carrying that ID. Callers use the corresponding
+recovery method; they do not assume failure or repeat a non-idempotent operation.
 
 ## Neutrality boundary
 
@@ -296,11 +309,12 @@ future abstraction is neutral. Semantic review remains necessary.
 
 The first production proof should remain smaller than the full model:
 
-1. Adapt one real Orka build, deploy, status, and retire path.
-2. Add one in-memory platform/runtime fake and a shared base conformance suite.
-3. Persist a deployment receipt and consume it from a later CLI process.
-4. Prove retirement cannot invoke target or cloud teardown.
-5. Validate common semantics against another real runtime before declaring them
+1. Implement one environment and agent orchestration service over the ports.
+2. Adapt one real Orka build, deploy, status, and retire path.
+3. Add one in-memory platform/runtime fake and a shared base conformance suite.
+4. Persist operation and deployment evidence for recovery from another process.
+5. Prove retirement cannot invoke target or cloud teardown.
+6. Validate common semantics against another real runtime before declaring them
    stable.
 
 The package does not currently add CLI commands, provision AKS, install Kagent,
@@ -346,8 +360,9 @@ chat-plus-lifecycle adapter.
 ### Make Lifter a runtime interface
 
 Rejected because lift is a KMX workflow that composes target resolution,
-runtime-native building, deployment, observation, and receipt persistence. The
-runtime supplies capabilities used by that workflow.
+runtime-native building, deployment, and receipt persistence. Observation is a
+separate status capability. The runtime supplies capabilities used by those
+workflows.
 
 ### Use Provider as the implementation term
 

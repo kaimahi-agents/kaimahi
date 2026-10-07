@@ -31,8 +31,10 @@ func (*AgentSource) UnmarshalJSON([]byte) error {
 	return fmt.Errorf("AgentSource is an in-process value; read its authored file")
 }
 
-// AgentRevision combines an immutable reference with the exact source accepted
-// by the revision builder. Persist Ref rather than serializing this value.
+// AgentRevision combines an immutable byte identity with its exact source. It
+// does not by itself prove schema or behavior validation; RevisionBuilder owns
+// that policy, and runtime builders must still reject behavior they cannot
+// honor. Persist Ref rather than serializing this value.
 type AgentRevision struct {
 	ref    AgentRevisionRef
 	source []byte
@@ -44,7 +46,7 @@ func NewAgentRevision(source AgentSource) (AgentRevision, error) {
 		return AgentRevision{}, fmt.Errorf("agent source is required")
 	}
 	return AgentRevision{
-		ref:    AgentRevisionRef{Digest: NewDigest(data)},
+		ref:    AgentRevisionRef{Digest: agentSourceDigest(data)},
 		source: data,
 	}, nil
 }
@@ -88,6 +90,15 @@ type RevisionBuilder interface {
 	Build(context.Context, AgentSource) (AgentRevision, BuildReport, error)
 }
 
+type BuildRequest struct {
+	Source AgentSource
+}
+
+type BuildResult struct {
+	Revision AgentRevision
+	Report   BuildReport
+}
+
 type DeploymentState string
 
 const (
@@ -118,10 +129,27 @@ type DeploymentSnapshot struct {
 // empty Runtime asks application policy to select the configured default.
 // LiftRequest is an in-process command and is not a persistence format.
 type LiftRequest struct {
-	Revision AgentRevision
-	Binding  TargetBinding
-	Runtime  RuntimeID
-	Options  LiftOptions
+	Operation OperationID
+	Revision  AgentRevision
+	Binding   TargetBinding
+	Runtime   RuntimeID
+	Options   LiftOptions
+}
+
+func (r LiftRequest) Validate() error {
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
+	}
+	if err := r.Revision.Ref().Validate(); err != nil {
+		return err
+	}
+	if err := r.Binding.Validate(); err != nil {
+		return err
+	}
+	if r.Runtime != "" {
+		return validateIdentity("runtime ID", string(r.Runtime))
+	}
+	return nil
 }
 
 func (LiftRequest) MarshalJSON() ([]byte, error) {
@@ -136,14 +164,29 @@ type LiftOptions struct {
 	Reconcile bool
 }
 
+type RetireRequest struct {
+	Operation  OperationID
+	Deployment DeploymentReceipt
+}
+
+func (r RetireRequest) Validate() error {
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
+	}
+	return r.Deployment.Validate()
+}
+
 // AgentService is the author-facing workload workflow. It has no operation
 // capable of provisioning or deprovisioning target infrastructure. Retire
 // derives its subject from deployment evidence instead of accepting another
 // independently supplied deployment reference.
 type AgentService interface {
+	Build(context.Context, BuildRequest) (BuildResult, error)
 	Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
+	RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
 	Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
-	Retire(context.Context, DeploymentReceipt) (RetirementReceipt, error)
+	Retire(context.Context, RetireRequest) (RetirementReceipt, error)
+	RecoverRetire(context.Context, OperationID) (RetirementReceipt, error)
 }
 
 var _ json.Marshaler = AgentSource{}

@@ -1,15 +1,23 @@
 package kmx
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
-const digestPrefix = "sha256:"
+const (
+	agentSourcePath         = "portable-agent.yaml"
+	targetPlatformPath      = "target/platform"
+	targetIDPath            = "target/id"
+	bindingAPIVersionPath   = "binding/api-version"
+	bindingKindPath         = "binding/kind"
+	bindingDataPath         = "binding/data"
+	renderedDocumentPattern = "rendered/%03d.yaml"
+)
 
 // Digest is a canonical SHA-256 identity. Its zero value means unspecified.
 type Digest struct {
@@ -21,21 +29,13 @@ var (
 	_ encoding.TextUnmarshaler = (*Digest)(nil)
 )
 
-// NewDigest returns the SHA-256 identity of the exact bytes supplied.
-func NewDigest(data []byte) Digest {
-	return Digest{sum: sha256.Sum256(data)}
-}
-
-// ParseDigest accepts the canonical lowercase sha256:<hex> representation.
+// ParseDigest accepts the canonical lowercase 64-hex representation used by
+// the existing portable and rendered bundle identities.
 func ParseDigest(value string) (Digest, error) {
-	if !strings.HasPrefix(value, digestPrefix) {
-		return Digest{}, fmt.Errorf("digest must start with %q", digestPrefix)
-	}
-	hexValue := strings.TrimPrefix(value, digestPrefix)
-	if len(hexValue) != sha256.Size*2 || strings.ToLower(hexValue) != hexValue {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
 		return Digest{}, fmt.Errorf("digest must contain %d lowercase hexadecimal characters", sha256.Size*2)
 	}
-	decoded, err := hex.DecodeString(hexValue)
+	decoded, err := hex.DecodeString(value)
 	if err != nil {
 		return Digest{}, fmt.Errorf("invalid digest: %w", err)
 	}
@@ -55,7 +55,7 @@ func (d Digest) String() string {
 	if d.IsZero() {
 		return ""
 	}
-	return digestPrefix + hex.EncodeToString(d.sum[:])
+	return hex.EncodeToString(d.sum[:])
 }
 
 func (d Digest) MarshalText() ([]byte, error) {
@@ -75,15 +75,24 @@ func (d *Digest) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func digestParts(parts ...[]byte) Digest {
-	h := sha256.New()
-	for _, part := range parts {
-		h.Write([]byte(strconv.Itoa(len(part))))
-		h.Write([]byte{'\n'})
-		h.Write(part)
-		h.Write([]byte{'\n'})
+type digestEntry struct {
+	path string
+	data []byte
+}
+
+func framedDigest(entries ...digestEntry) Digest {
+	var frames bytes.Buffer
+	for _, entry := range entries {
+		fmt.Fprintf(&frames, "%s %d\n", entry.path, len(entry.data))
+		frames.Write(entry.data)
+		frames.WriteByte('\n')
 	}
+	sum := sha256.Sum256(frames.Bytes())
 	var digest Digest
-	copy(digest.sum[:], h.Sum(nil))
+	copy(digest.sum[:], sum[:])
 	return digest
+}
+
+func agentSourceDigest(data []byte) Digest {
+	return framedDigest(digestEntry{path: agentSourcePath, data: data})
 }

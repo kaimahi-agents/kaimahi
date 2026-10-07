@@ -14,18 +14,31 @@ func (e *UnsupportedCapabilityError) Error() string {
 }
 
 // OutcomeUnknownError reports that an operation may have changed remote state
-// but its result could not be established. Callers must inspect or reconcile;
-// they must not assume absence or automatically repeat a non-idempotent action.
+// but its result could not be established. Callers recover by OperationID;
+// they must not assume absence or repeat a non-idempotent action.
 type OutcomeUnknownError struct {
-	Operation string
-	Err       error
+	operation string
+	id        OperationID
+	err       error
+}
+
+func NewOutcomeUnknownError(operation string, id OperationID, err error) (*OutcomeUnknownError, error) {
+	if err := validateIdentity("operation", operation); err != nil {
+		return nil, err
+	}
+	if err := id.Validate(); err != nil {
+		return nil, err
+	}
+	return &OutcomeUnknownError{operation: operation, id: id, err: err}, nil
 }
 
 func (e *OutcomeUnknownError) Error() string {
-	if e.Err == nil {
-		return fmt.Sprintf("%s outcome is unknown", e.Operation)
+	if e.err == nil {
+		return fmt.Sprintf("%s %q outcome is unknown", e.operation, e.id)
 	}
-	return fmt.Sprintf("%s outcome is unknown: %v", e.Operation, e.Err)
+	return fmt.Sprintf("%s %q outcome is unknown: %v", e.operation, e.id, e.err)
 }
 
-func (e *OutcomeUnknownError) Unwrap() error { return e.Err }
+func (e *OutcomeUnknownError) Operation() string        { return e.operation }
+func (e *OutcomeUnknownError) OperationID() OperationID { return e.id }
+func (e *OutcomeUnknownError) Unwrap() error            { return e.err }

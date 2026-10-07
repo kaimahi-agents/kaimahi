@@ -159,14 +159,18 @@ func inspectSerializedName(t *testing.T, path, rawTag string) {
 
 func TestDestructiveWorkflowSignaturesKeepReceiptScopesSeparate(t *testing.T) {
 	t.Parallel()
-	assertMethodSet(t, reflect.TypeOf((*kmx.TargetService)(nil)).Elem(), "Down", "Forget", "Inspect", "Register", "Up")
-	assertMethodSet(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "Lift", "Retire", "Status")
+	assertMethodSet(t, reflect.TypeOf((*kmx.EnvironmentService)(nil)).Elem(), "Down", "Forget", "Inspect", "RecoverDown", "RecoverUp", "Register", "Up")
+	assertMethodSet(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "Build", "Lift", "RecoverLift", "RecoverRetire", "Retire", "Status")
 	assertMethodSet(t, reflect.TypeOf((*kmx.PlatformDeprovisioner)(nil)).Elem(), "Deprovision")
 	assertMethodSet(t, reflect.TypeOf((*kmx.RuntimeRetirer)(nil)).Elem(), "Retire")
-	assertMethodSignature(t, reflect.TypeOf((*kmx.TargetService)(nil)).Elem(), "Down", reflect.TypeOf(kmx.InfrastructureReceipt{}), reflect.TypeOf(kmx.TeardownReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.PlatformDeprovisioner)(nil)).Elem(), "Deprovision", reflect.TypeOf(kmx.InfrastructureReceipt{}), reflect.TypeOf(kmx.TeardownReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.DeploymentReceipt{}), reflect.TypeOf(kmx.RetirementReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.RuntimeRetirer)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.DeploymentReceipt{}), reflect.TypeOf(kmx.RetirementReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.EnvironmentService)(nil)).Elem(), "Down", reflect.TypeOf(kmx.DownRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.PlatformDeprovisioner)(nil)).Elem(), "Deprovision", reflect.TypeOf(kmx.DeprovisionRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.RuntimeRetirer)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.EnvironmentService)(nil)).Elem(), "RecoverUp", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.UpProgress{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.EnvironmentService)(nil)).Elem(), "RecoverDown", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.TeardownReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "RecoverLift", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.DeploymentReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentService)(nil)).Elem(), "RecoverRetire", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.RetirementReceipt{}))
 }
 
 func assertMethodSet(t *testing.T, contract reflect.Type, want ...string) {

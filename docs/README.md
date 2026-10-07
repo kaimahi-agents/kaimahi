@@ -74,7 +74,7 @@ listener inventory, Orka architecture or the project's future shape.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
-- [KMX application workflow API](kmx-application-api.md): proposed grouped facade for another Go layer, UI, controller or transport to call KMX use cases.
+- [KMX application API](kmx-application-api.md): how another Go layer consumes KMX workflows while internal management ports remain behind orchestration.
 - [Naming](NAMING.md): the name and publication constraints.
 
 ## Assessments that inform current work
