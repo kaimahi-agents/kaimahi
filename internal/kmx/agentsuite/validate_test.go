@@ -376,7 +376,7 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	}
 
 	root := writeMinimalSuite(t)
-	for _, name := range []string{"search-input.json", "search-output.json"} {
+	for _, name := range []string{"search-input.json", "search-output.json", "flag-result-input.json", "flag-result-output.json"} {
 		data, err := os.ReadFile(filepath.Join(fixture, "schemas", name))
 		if err != nil {
 			t.Fatal(err)
@@ -488,6 +488,95 @@ func TestToolProviderKeepsCallableToolsScopedToItsContract(t *testing.T) {
 	provider.Tools = nil
 	if err := validateToolProvider(provider, raw, content); err == nil || !strings.Contains(err.Error(), "at least one tool") {
 		t.Fatalf("empty callable tool contract error = %v", err)
+	}
+}
+
+func TestValidateDelegatedAuthorization(t *testing.T) {
+	valid := func() DelegatedAuthorization {
+		return DelegatedAuthorization{
+			Service:  "search",
+			Scope:    "results.read",
+			Effect:   "read-only",
+			Approval: false,
+			Credential: BrokeredCredential{
+				Resolution: "runtime-brokered",
+				BindingRef: "search-delegated-connection",
+			},
+		}
+	}
+
+	if err := validateDelegatedAuthorization(valid()); err != nil {
+		t.Fatalf("valid delegated authorization rejected: %v", err)
+	}
+
+	consequential := valid()
+	consequential.Effect = "consequential"
+	consequential.Approval = true
+	if err := validateDelegatedAuthorization(consequential); err != nil {
+		t.Fatalf("valid consequential delegated authorization rejected: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(DelegatedAuthorization) DelegatedAuthorization
+		wantErr string
+	}{
+		{
+			name: "read-only tool requiring approval fails closed",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Approval = true
+				return a
+			},
+			wantErr: "read-only tool must not require approval",
+		},
+		{
+			name: "unknown effect",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Effect = "best-effort"
+				return a
+			},
+			wantErr: "effect must be read-only or consequential",
+		},
+		{
+			name: "invalid service identifier",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Service = "Search Provider"
+				return a
+			},
+			wantErr: "service is invalid",
+		},
+		{
+			name: "invalid scope",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Scope = ""
+				return a
+			},
+			wantErr: "scope is invalid",
+		},
+		{
+			name: "credential resolution must be brokered",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Credential.Resolution = "client-managed"
+				return a
+			},
+			wantErr: "resolution must be runtime-brokered",
+		},
+		{
+			name: "missing binding slot",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Credential.BindingRef = ""
+				return a
+			},
+			wantErr: "bindingRef is invalid",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDelegatedAuthorization(test.mutate(valid()))
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateDelegatedAuthorization() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
 	}
 }
 

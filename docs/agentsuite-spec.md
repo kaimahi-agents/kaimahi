@@ -90,6 +90,8 @@ This draft specifies:
 - bundled stdio MCP providers statically installed into an agent sandbox;
 - remote Streamable HTTP tool provider authoring and cataloging without agent
   composition or runtime binding;
+- portable delegated-user authorization requirements on a callable Tool,
+  without packaging a person's credential, consent state, or Connection;
 - exact Linux platform selection;
 - pinned runtime-base and harness images;
 - deterministic, network-free Agent Sandbox Image construction;
@@ -539,14 +541,20 @@ ordering.
 
 A ToolProvider manifest separates the provider process or endpoint from the
 model-callable tools it offers. Each entry in `tools` defines `name`, optional
-`description`, digest-bound `inputSchema`, optional `outputSchema`, and optional
-`effects`. Tool names MUST be unique within a provider; different providers MAY
+`description`, digest-bound `inputSchema`, optional `outputSchema`, optional
+`effects`, and optional `delegatedAuthorization`. Tool names MUST be unique within a provider; different providers MAY
 expose the same tool name. A tool is identified in the context of its exact
 provider contract, not by a separate provider-level version or platform variant.
 
 The runtime MUST expose only declared tools to the model. The presence of
 other executables or protocol methods in the filesystem does not authorize
 their use as model tools.
+
+A Tool whose call requires a specific person's delegated authorization
+declares that requirement through `delegatedAuthorization`
+([Section 9.9](#99-delegated-user-connector-authorization)). A connector-backed
+capability remains an ordinary callable Tool exposed by its ToolProvider; this
+draft does not define a second, connector-specific Tool hierarchy.
 
 ### 9.3 Execution modes
 
@@ -820,6 +828,104 @@ size.
 Reading the clock makes the tool result runtime-dependent; it does not
 make the provider artifact mutable. The manifest, schemas, executable, variant,
 and composition remain immutable and digest-bound.
+
+### 9.9 Delegated-user connector authorization
+
+A connector-backed capability remains an ordinary callable Tool exposed by a
+ToolProvider. A Tool that requires a specific person's authorization before it
+may be called declares that requirement through the Tool's optional
+`delegatedAuthorization` object:
+
+| Field | Meaning |
+|---|---|
+| `service` | Stable identifier of the external service or provider requirement (for example `microsoft-graph`), not a deployment-specific Connection. |
+| `scope` | The delegated-user authorization capability required to call this Tool (for example `mail.send`), not a granted token or consent record. |
+| `effect` | `read-only` or `consequential`. |
+| `approval` | Whether consequential execution requires approval before dispatch. MUST be `false` for a `read-only` Tool. |
+| `credential` | Declares that credential resolution and injection are brokered by the runtime; see below. |
+
+`credential` is itself closed:
+
+| Field | Meaning |
+|---|---|
+| `resolution` | MUST be `runtime-brokered`; the artifact never performs or packages credential resolution. |
+| `bindingRef` | Identifier naming an unresolved runtime/deployment binding slot for this requirement. It is not a connection identifier, account identifier, or credential value. |
+
+The portable AgentSuite artifact MUST NOT contain, and the schema's closed
+`additionalProperties: false` objects reject:
+
+- OAuth client secrets;
+- authorization callback or consent state;
+- access or refresh tokens;
+- token expiry, refresh, or revocation state;
+- a person's mutable Connection/account link; or
+- a deployment-specific Connection identifier.
+
+`delegatedAuthorization` names a portable, person-agnostic requirement. It
+authorizes nothing by itself: cataloging a connector-backed ToolProvider or
+including it in a composition does not grant any requester access, and it does
+not resolve `bindingRef` to a live connection.
+
+The deployment/runtime is responsible for resolving the portable requirement
+named by `service`, `scope`, and `bindingRef` to a verified requester and a
+live, person-owned connection at dispatch time, and for brokering credential
+resolution and injection so that the live credential is never exposed to the
+model or the agent harness. A runtime MUST fail closed — refuse the tool call —
+when the requester cannot be verified, when no connection is bound to
+`bindingRef` for that requester, or when the bound connection has drifted
+(for example, relinked, revoked, or stale) since it was granted.
+
+`effect` and `approval` are normative for execution, not merely descriptive.
+A `read-only` Tool MUST NOT require approval. A `consequential` Tool's `approval`
+value states whether the runtime MUST obtain approval before dispatching that
+call; a runtime MUST NOT dispatch a `consequential` call declaring
+`"approval": true` without first obtaining approval.
+
+### 9.10 Delegated-user connector example
+
+The complete fixture is
+[`internal/kmx/agentsuite/testdata/remote-mcp/`](../internal/kmx/agentsuite/testdata/remote-mcp/).
+Its ToolProvider manifest exposes a read-only `search` Tool and a
+consequential `flag_result` Tool against the same external `search` service and
+the same unresolved binding slot:
+
+```json
+{
+  "name": "search",
+  "effects": ["remote-read"],
+  "delegatedAuthorization": {
+    "service": "search",
+    "scope": "results.read",
+    "effect": "read-only",
+    "approval": false,
+    "credential": {
+      "resolution": "runtime-brokered",
+      "bindingRef": "search-delegated-connection"
+    }
+  }
+},
+{
+  "name": "flag_result",
+  "effects": ["remote-write"],
+  "delegatedAuthorization": {
+    "service": "search",
+    "scope": "results.flag",
+    "effect": "consequential",
+    "approval": true,
+    "credential": {
+      "resolution": "runtime-brokered",
+      "bindingRef": "search-delegated-connection"
+    }
+  }
+}
+```
+
+Neither declaration names a token, a consent record, or a particular person's
+connection. `bindingRef` is the same unresolved slot for both tools because a
+runtime binds one person's connection to the ToolProvider once and reuses it
+across the provider's tools; the runtime remains responsible for verifying
+that the calling requester matches the requester the connection was granted
+to, for every call.
 
 ## 10. Composition manifests
 
@@ -1123,6 +1229,7 @@ A conforming runtime test asserts:
 | `ASR-NET-001` | Effective egress is no broader than the union required by the resolved tool providers and model endpoint. |
 | `ASR-SEC-001` | Secret values are injected only at runtime and are not persisted into image or suite content. |
 | `ASR-PROC-001` | The process executes non-root with no added capabilities and `no_new_privs`. |
+| `ASR-AUTH-001` | A Tool declaring `delegatedAuthorization` fails closed: the runtime refuses the call when the requester is unverified, no connection is bound to `bindingRef` for that requester, or the bound connection has drifted since it was granted. |
 
 Passing suite validation does not imply sandbox-image or runtime conformance.
 
@@ -1165,12 +1272,24 @@ properties.
 SBOM and provenance descriptors are evidence references, not trust decisions.
 Consumers choose trusted issuers and policies outside this specification.
 
+A Tool's `delegatedAuthorization` names a portable authorization requirement,
+not a granted authorization. Binding that requirement to a live connection,
+verifying requester identity, and brokering credential injection are runtime
+responsibilities outside the artifact. A runtime that dispatches a
+`delegatedAuthorization` call without verifying the requester, without a
+connection bound to `bindingRef` for that requester, or after that binding has
+drifted (relinked, revoked, or stale) has failed open rather than closed; this
+specification requires such calls to be refused.
+
 ## Appendix A. Draft exclusions
 
 This draft does not specify:
 
 - session transcripts, checkpoints, snapshots, or mutable memory;
 - plaintext credentials or resolved secret values;
+- OAuth flows, consent UX, token issuance, refresh, or revocation;
+- a deployment's Connection or account-link storage and identity verification
+  mechanism;
 - dependency solving inside a packaged suite;
 - generic shell tools, OpenAPI tools, or arbitrary HTTP connectors;
 - agent composition and deploy-time binding for remote MCP providers;

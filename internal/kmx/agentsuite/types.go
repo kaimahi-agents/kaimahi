@@ -145,11 +145,33 @@ type ToolProvider struct {
 
 // Tool is one model-callable function exposed by a ToolProvider.
 type Tool struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	InputSchema  FileRef  `json:"inputSchema"`
-	OutputSchema *FileRef `json:"outputSchema,omitempty"`
-	Effects      []string `json:"effects,omitempty"`
+	Name                   string                  `json:"name"`
+	Description            string                  `json:"description,omitempty"`
+	InputSchema            FileRef                 `json:"inputSchema"`
+	OutputSchema           *FileRef                `json:"outputSchema,omitempty"`
+	Effects                []string                `json:"effects,omitempty"`
+	DelegatedAuthorization *DelegatedAuthorization `json:"delegatedAuthorization,omitempty"`
+}
+
+// DelegatedAuthorization declares that a Tool requires delegated-user
+// authorization before it may be called. It never contains a credential
+// value, consent state, token lifecycle state, or a deployment-specific
+// Connection identifier; the deployment/runtime resolves the requirement to
+// a verified requester and a live user-owned connection.
+type DelegatedAuthorization struct {
+	Service    string             `json:"service"`
+	Scope      string             `json:"scope"`
+	Effect     string             `json:"effect"`
+	Approval   bool               `json:"approval"`
+	Credential BrokeredCredential `json:"credential"`
+}
+
+// BrokeredCredential declares that credential resolution and injection for a
+// delegated-user authorization requirement are brokered entirely by the
+// runtime. It never contains a credential value.
+type BrokeredCredential struct {
+	Resolution string `json:"resolution"`
+	BindingRef string `json:"bindingRef"`
 }
 
 type RemoteToolProvider struct {

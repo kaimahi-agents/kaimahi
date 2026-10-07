@@ -20,7 +20,42 @@
       },
       "effects": [
         "remote-read"
-      ]
+      ],
+      "delegatedAuthorization": {
+        "service": "search",
+        "scope": "results.read",
+        "effect": "read-only",
+        "approval": false,
+        "credential": {
+          "resolution": "runtime-brokered",
+          "bindingRef": "search-delegated-connection"
+        }
+      }
+    },
+    {
+      "name": "flag_result",
+      "description": "Flag a search result for moderation review in the connected account.",
+      "inputSchema": {
+        "path": "schemas/flag-result-input.json",
+        "digest": "sha256:3f1da568747f47b3011a2eb49b2bde3148742b9ee44032e9194cc214fc7ba89a"
+      },
+      "outputSchema": {
+        "path": "schemas/flag-result-output.json",
+        "digest": "sha256:65f08e7039785f328c92220872280718765b558cdebdbfa880e152b9896db7be"
+      },
+      "effects": [
+        "remote-write"
+      ],
+      "delegatedAuthorization": {
+        "service": "search",
+        "scope": "results.flag",
+        "effect": "consequential",
+        "approval": true,
+        "credential": {
+          "resolution": "runtime-brokered",
+          "bindingRef": "search-delegated-connection"
+        }
+      }
     }
   ],
   "remote": {

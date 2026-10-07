@@ -127,6 +127,45 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
+        },
+        "delegatedAuthorization": {"$ref": "#/$defs/delegatedAuthorization"}
+      }
+    },
+    "delegatedAuthorization": {
+      "description": "Declares that this callable Tool requires delegated-user authorization before it may be called. This object never contains an OAuth client secret, authorization callback or consent state, access or refresh token, token expiry/refresh/revocation state, a person's mutable Connection/account link, or a deployment-specific Connection identifier. The deployment/runtime resolves this portable requirement to a verified requester and a live user-owned connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "scope", "effect", "approval", "credential"],
+      "properties": {
+        "service": {
+          "description": "Stable identifier of the external service or provider requirement this delegated-user authorization is scoped to (for example \"microsoft-graph\"). Not a deployment-specific Connection identifier.",
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "description": "Delegated-user authorization capability required to call this Tool (for example \"mail.send\"). Not a granted token, consent record, or account link.",
+          "$ref": "#/$defs/capability"
+        },
+        "effect": {
+          "description": "Whether the Tool call is read-only or has a consequential (state-changing) effect through the delegated-user connection.",
+          "enum": ["read-only", "consequential"]
+        },
+        "approval": {
+          "description": "Whether consequential execution requires approval before dispatch. MUST be false for a read-only Tool.",
+          "type": "boolean"
+        },
+        "credential": {"$ref": "#/$defs/brokeredCredential"}
+      }
+    },
+    "brokeredCredential": {
+      "description": "Declares that credential resolution and injection for this delegated-user authorization requirement are brokered entirely by the runtime. This object never contains a client secret, access token, refresh token, or token lifecycle state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "bindingRef"],
+      "properties": {
+        "resolution": {"const": "runtime-brokered"},
+        "bindingRef": {
+          "description": "Identifier naming an unresolved runtime/deployment binding slot for this authorization requirement. It is not a connection identifier, account identifier, or credential value.",
+          "$ref": "#/$defs/id"
         }
       }
     },

@@ -572,6 +572,11 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 			}
 			effects[effect] = true
 		}
+		if tool.DelegatedAuthorization != nil {
+			if err := validateDelegatedAuthorization(*tool.DelegatedAuthorization); err != nil {
+				errs = append(errs, fmt.Errorf("tool %q delegated authorization: %w", tool.Name, err))
+			}
+		}
 	}
 	if len(provider.Variants) == 0 && provider.Remote == nil {
 		errs = append(errs, errors.New("tool provider must declare bundled variants, remote MCP, or both"))
@@ -645,6 +650,33 @@ func validateRemoteToolProvider(remote RemoteToolProvider) error {
 			errs = append(errs, fmt.Errorf("remote network destination %q is invalid or duplicated", network.DestinationRef))
 		}
 		destinations[network.DestinationRef] = true
+	}
+	return errors.Join(errs...)
+}
+
+func validateDelegatedAuthorization(auth DelegatedAuthorization) error {
+	var errs []error
+	if !identifierPattern.MatchString(auth.Service) {
+		errs = append(errs, errors.New("delegated authorization service is invalid"))
+	}
+	if !capabilityPattern.MatchString(auth.Scope) {
+		errs = append(errs, errors.New("delegated authorization scope is invalid"))
+	}
+	switch auth.Effect {
+	case "read-only":
+		if auth.Approval {
+			errs = append(errs, errors.New("a read-only tool must not require approval"))
+		}
+	case "consequential":
+		// Approval MAY be true or false; the declaration is normative either way.
+	default:
+		errs = append(errs, errors.New("delegated authorization effect must be read-only or consequential"))
+	}
+	if auth.Credential.Resolution != "runtime-brokered" {
+		errs = append(errs, errors.New("delegated authorization credential resolution must be runtime-brokered"))
+	}
+	if !identifierPattern.MatchString(auth.Credential.BindingRef) {
+		errs = append(errs, errors.New("delegated authorization credential bindingRef is invalid"))
 	}
 	return errors.Join(errs...)
 }
