@@ -417,6 +417,20 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	if report.Tools != 1 || len(report.Capabilities) != 0 {
 		t.Fatalf("remote catalog report = %+v", report)
 	}
+
+	unretained := []byte(strings.Replace(string(raw), "  \"retained\": true,\n", "", 1))
+	mustWrite(t, root, toolPath, unretained)
+	unretainedDigest, err := canonicalDigest(unretained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.Tools[0].Digest = unretainedDigest
+	suite.ToolCatalog.Digest = mustWriteJSON(t, root, "tools/catalog.json", catalog)
+	mustWriteJSON(t, root, "agentsuite.json", suite)
+
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "has no inward reference") {
+		t.Fatalf("unreferenced catalog Tool error = %v", err)
+	}
 }
 
 func TestRemoteMCPMetadataContributesToToolIdentity(t *testing.T) {
