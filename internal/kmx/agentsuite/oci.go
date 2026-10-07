@@ -342,22 +342,6 @@ func ValidateSandboxBinding(data []byte) (*SandboxBinding, error) {
 	return &binding, nil
 }
 
-func ValidateToolSandboxBinding(data []byte) (*ToolSandboxBinding, error) {
-	var binding ToolSandboxBinding
-	if err := decodeStrict(data, &binding); err != nil {
-		return nil, err
-	}
-	if binding.SchemaVersion != SpecVersion || binding.MediaType != MediaTypeToolSandboxBinding {
-		return nil, errors.New("Tool sandbox binding has unsupported schemaVersion or mediaType")
-	}
-	if !validDigest(binding.SuiteDigest) ||
-		!validDescriptor(binding.Composition) || binding.Composition.MediaType != MediaTypeToolComposition ||
-		!validDescriptor(binding.Inventory) {
-		return nil, errors.New("Tool sandbox binding digests or descriptors are invalid")
-	}
-	return &binding, nil
-}
-
 func validDescriptor(descriptor Descriptor) bool {
 	return descriptor.MediaType != "" && validDigest(descriptor.Digest) && descriptor.Size >= 0
 }

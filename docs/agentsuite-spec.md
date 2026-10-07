@@ -49,7 +49,8 @@ This draft specifies:
 - exact Linux platform selection;
 - pinned runtime-base and harness images;
 - deterministic, network-free Agent Sandbox Image construction;
-- a binding record embedded in each derived sandbox image;
+- an Agent binding or exact Tool composition embedded in each derived sandbox
+  image;
 - suite, sandbox-image, and runtime conformance classes.
 
 ## 3. Artifact model
@@ -86,8 +87,7 @@ change the image-local closure.
 | [Composition manifest](#10-composition-manifests) | `application/vnd.agentsuite.composition.v1+json` |
 | [Tool composition](#101-tool-compositions) | `application/vnd.agentsuite.tool.composition.v1+json` |
 | [Build profile](#11-build-profiles) | `application/vnd.agentsuite.build.profile.v1+json` |
-| [Sandbox binding](#13-sandbox-binding) | `application/vnd.agentsuite.sandbox.binding.v1+json` |
-| [Tool sandbox binding](#132-tool-sandbox-binding) | `application/vnd.agentsuite.tool.sandbox.binding.v1+json` |
+| [Agent sandbox binding](#13-agent-sandbox-binding) | `application/vnd.agentsuite.sandbox.binding.v1+json` |
 
 ### 4.2 OCI image layout
 
@@ -668,18 +668,17 @@ variant can participate in an Agent Sandbox Image or a standalone Tool Sandbox
 Image. The remote declaration catalogs the connection contract for a deployed
 instance without defining agent binding.
 
-The complete three-stage example is:
+The complete example is:
 
 1. [`opa-tool.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool.json)
    defines the Tool contract and available implementation;
 2. [`opa-tool-composition.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool-composition.json)
-   selects the exact Tool manifest, variant, platform, and build profile;
-3. [`opa-tool-sandbox-binding.json`](../internal/kmx/agentsuite/testdata/tools/opa-tool-sandbox-binding.json)
-   shows the binding embedded in the resulting image.
+   selects the exact Tool manifest, variant, platform, and build profile and is
+   embedded unchanged in the resulting image.
 
-The repeated hexadecimal digests and descriptor sizes in these examples are
-illustrative. A producer MUST replace them with values computed from the
-concrete Tool manifest, composition, suite artifact, and final inventory.
+The repeated hexadecimal digests in these examples are illustrative. A
+producer MUST replace them with values computed from the concrete Tool
+manifest and composition.
 
 ### 9.8 UTC datetime example
 
@@ -873,16 +872,13 @@ Tool composition
     v
 Tool Sandbox Image
     |-- selected Tool variant and dependencies
-    |-- final inventory
-    `-- /.agentsuite/tool-binding.json
+    `-- /.agentsuite/tool-composition.json
 ```
 
 The Tool manifest defines the available implementations. The Tool composition
 selects one exact manifest, platform variant, and build profile. Construction
-materializes that selection into an image and embeds the resulting inventory
-and Tool sandbox binding. The binding points back to the Tool composition by
-descriptor; it does not repeat the composition's Tool identity or build
-selection.
+materializes that selection into an image and embeds the exact Tool
+composition unchanged.
 
 ```json
 {
@@ -968,7 +964,8 @@ Tool Sandbox Image construction MUST:
 4. reject non-identical destination collisions;
 5. set the variant entrypoint and fixed arguments as the image process;
 6. create no writable content paths;
-7. embed the Tool sandbox binding and complete final inventory;
+7. embed the exact Tool composition at
+   `/.agentsuite/tool-composition.json`;
 8. emit an OCI image or multi-platform image index.
 
 Construction is subject to the same offline, deterministic, non-root, and
@@ -976,9 +973,18 @@ no-installer requirements as Agent Sandbox Image construction. It does not
 deploy the image or resolve the Tool's remote endpoint, network, or Secret
 references.
 
-## 13. Sandbox binding
+The image config MUST contain:
 
-### 13.1 Agent sandbox binding
+```text
+org.agentsuite.tool-composition.digest=sha256:<JCS digest of tool-composition.json>
+```
+
+The label, embedded composition, and selected image platform MUST agree. The
+OCI image manifest commits to the resulting image contents. Producers that
+need a verifiable relationship to the complete AgentSuite SHOULD publish a
+signed provenance attestation or OCI referrer.
+
+## 13. Agent sandbox binding
 
 Each platform image MUST embed a binding record at:
 
@@ -1005,45 +1011,6 @@ For a multi-platform image index, each selected platform manifest has its own
 binding. An OCI `subject` relationship alone is not an authenticity proof.
 Producers SHOULD publish signed attestations or OCI referrers binding the suite
 manifest, build inputs, and resulting image manifests.
-
-### 13.2 Tool sandbox binding
-
-Each Tool Sandbox Image MUST embed:
-
-```text
-/.agentsuite/tool-binding.json
-```
-
-The image config MUST contain:
-
-```text
-org.agentsuite.tool-binding.digest=sha256:<JCS digest of tool-binding.json>
-```
-
-The binding contains only:
-
-```json
-{
-  "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.tool.sandbox.binding.v1+json",
-  "suiteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "composition": {
-    "mediaType": "application/vnd.agentsuite.tool.composition.v1+json",
-    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "size": 512
-  },
-  "inventory": {
-    "mediaType": "application/vnd.agentsuite.inventory.v1+json",
-    "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "size": 4096
-  }
-}
-```
-
-The Tool composition is the single source of Tool identity, Tool manifest
-digest, variant digest, platform, and build-profile identifier. The binding
-does not repeat those fields. Its composition descriptor commits to those
-inputs, and its inventory descriptor commits to the resulting filesystem.
 
 ## 14. Distribution
 
@@ -1090,7 +1057,8 @@ A conforming sandbox image validator asserts:
 
 | ID | Requirement |
 |---|---|
-| `ASI-BIND-001` | The label, embedded binding, binding digest, and selected image platform agree. |
+| `ASI-BIND-001` | An Agent image's label, embedded binding, binding digest, and selected platform agree. |
+| `ASI-TOOL-001` | A Tool image's label, embedded Tool composition, composition digest, and selected platform agree. |
 | `ASI-SRC-001` | Suite, agent, composition, and build inputs match binding identities. |
 | `ASI-FS-001` | Final inventory, ownership, modes, links, collision rules, and writable-path rules hold. |
 | `ASI-ABI-001` | Native loaders, libraries, interpreters, CPU baseline, and required base paths resolve in the final filesystem. |

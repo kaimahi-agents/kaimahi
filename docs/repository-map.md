@@ -61,7 +61,7 @@ packages.
 |---|---|---|---|
 | `kmx/app` | 99 | Installed | Command orchestration, the offline AgentSuite validator entry point, the read-only Orka run source and console run view, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, safe retirement, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
 | `kmx/agentsuite` | 7 | Installed | Strict JSON and JCS identities, OCI image-layout and content-layer validation, closed agent/tool/composition/build-profile graph validation, sandbox binding validation and conformance tests for portable AgentSuite artifacts. |
-| `kmx/agentsuite/schema` | 8 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, tool and Tool composition, build-profile, and Agent and Tool sandbox-binding records; published with the source checkout, not embedded in or loaded by the binary. |
+| `kmx/agentsuite/schema` | 7 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, tool and Tool composition, build-profile, and Agent sandbox-binding records; published with the source checkout, not embedded in or loaded by the binary. |
 | `kmx/agentsuite/testdata/minimal` | 1 | Scaffolding | Root manifest for the checked-in minimal conformant AgentSuite layout used by package and CLI validation tests. |
 | `kmx/agentsuite/testdata/minimal/agents` | 1 | Scaffolding | Minimal writer agent manifest. |
 | `kmx/agentsuite/testdata/minimal/build-profiles` | 1 | Scaffolding | Minimal exact Linux build profile with pinned example descriptors. |
@@ -74,7 +74,7 @@ packages.
 | `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
 | `kmx/agentsuite/testdata/coordinator-workers/compositions` | 3 | Scaffolding | Empty composition manifests for all three agents on Linux amd64. |
 | `kmx/agentsuite/testdata/coordinator-workers/tools` | 1 | Scaffolding | Empty closed tool catalog for the coordinator-workers suite. |
-| `kmx/agentsuite/testdata/tools` | 5 | Scaffolding | `kubectl` and Azure CLI Tool manifests plus the OPA Tool, Tool composition, and expected Tool Sandbox binding examples. |
+| `kmx/agentsuite/testdata/tools` | 4 | Scaffolding | `kubectl` and Azure CLI Tool manifests plus the OPA Tool and Tool composition examples. |
 | `kmx/agentsuite/testdata/remote-mcp` | 1 | Scaffolding | Remote Streamable HTTP MCP Tool manifest used by schema and semantic validation tests. |
 | `kmx/agentsuite/testdata/remote-mcp/schemas` | 2 | Scaffolding | Digest-bound input and output schemas for the remote MCP Tool fixture. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |

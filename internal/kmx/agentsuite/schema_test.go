@@ -171,18 +171,6 @@ func TestToolCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T) {
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"variantDigest"`, `"notVariantDigest"`, 1), false)
 }
 
-func TestToolSandboxBindingSchemaPinsCompositionAndInventory(t *testing.T) {
-	schema := compileReferenceSchema(t, "tool-sandbox-binding.schema.json")
-	data, err := os.ReadFile(filepath.Join("testdata", "tools", "opa-tool-sandbox-binding.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	valid := string(data)
-	validateSchemaJSON(t, schema, valid, true)
-	validateSchemaJSON(t, schema, strings.Replace(valid, MediaTypeToolComposition, MediaTypeComposition, 1), false)
-	validateSchemaJSON(t, schema, strings.Replace(valid, `"suiteDigest"`, `"id":"search","suiteDigest"`, 1), false)
-}
-
 func compileReferenceSchema(t *testing.T, name string) *jsonschema.Schema {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("schema", name))

@@ -5,18 +5,17 @@ const (
 
 	LayoutVersion = "1.0.0"
 
-	MediaTypeArtifact           = "application/vnd.agentsuite.suite.v1"
-	MediaTypeEmptyConfig        = "application/vnd.oci.empty.v1+json"
-	MediaTypeContent            = "application/vnd.agentsuite.content.v1.tar+gzip"
-	MediaTypeSuite              = "application/vnd.agentsuite.manifest.v1+json"
-	MediaTypeAgent              = "application/vnd.agentsuite.agent.v1+json"
-	MediaTypeToolCatalog        = "application/vnd.agentsuite.tool.catalog.v1+json"
-	MediaTypeTool               = "application/vnd.agentsuite.tool.v1+json"
-	MediaTypeToolComposition    = "application/vnd.agentsuite.tool.composition.v1+json"
-	MediaTypeComposition        = "application/vnd.agentsuite.composition.v1+json"
-	MediaTypeBuildProfile       = "application/vnd.agentsuite.build.profile.v1+json"
-	MediaTypeSandboxBinding     = "application/vnd.agentsuite.sandbox.binding.v1+json"
-	MediaTypeToolSandboxBinding = "application/vnd.agentsuite.tool.sandbox.binding.v1+json"
+	MediaTypeArtifact        = "application/vnd.agentsuite.suite.v1"
+	MediaTypeEmptyConfig     = "application/vnd.oci.empty.v1+json"
+	MediaTypeContent         = "application/vnd.agentsuite.content.v1.tar+gzip"
+	MediaTypeSuite           = "application/vnd.agentsuite.manifest.v1+json"
+	MediaTypeAgent           = "application/vnd.agentsuite.agent.v1+json"
+	MediaTypeToolCatalog     = "application/vnd.agentsuite.tool.catalog.v1+json"
+	MediaTypeTool            = "application/vnd.agentsuite.tool.v1+json"
+	MediaTypeToolComposition = "application/vnd.agentsuite.tool.composition.v1+json"
+	MediaTypeComposition     = "application/vnd.agentsuite.composition.v1+json"
+	MediaTypeBuildProfile    = "application/vnd.agentsuite.build.profile.v1+json"
+	MediaTypeSandboxBinding  = "application/vnd.agentsuite.sandbox.binding.v1+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )
@@ -289,14 +288,6 @@ type SandboxBinding struct {
 	Agent         string     `json:"agent"`
 	Platform      Platform   `json:"platform"`
 	BuildProfile  string     `json:"buildProfile"`
-	Composition   Descriptor `json:"composition"`
-	Inventory     Descriptor `json:"inventory"`
-}
-
-type ToolSandboxBinding struct {
-	SchemaVersion string     `json:"schemaVersion"`
-	MediaType     string     `json:"mediaType"`
-	SuiteDigest   string     `json:"suiteDigest"`
 	Composition   Descriptor `json:"composition"`
 	Inventory     Descriptor `json:"inventory"`
 }
