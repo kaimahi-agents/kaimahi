@@ -1,0 +1,332 @@
+package oras_test
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	oraspack "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/content"
+	"oras.land/oras-go/v2/content/memory"
+	"oras.land/oras-go/v2/content/oci"
+	"oras.land/oras-go/v2/errdef"
+)
+
+func TestPackerProducesValidOCILayout(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	validator := &recordingValidator{delegate: oraspack.LayoutValidator{}}
+	packer := oraspack.New(validator)
+	layout := t.TempDir()
+	dst, err := oci.New(layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := packer.Pack(context.Background(), src, dst, contentDescriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validator.calls != 1 || !validator.validatedCAS {
+		t.Fatalf("validator calls = %d, validated CAS = %t", validator.calls, validator.validatedCAS)
+	}
+	if result.Descriptor.MediaType != ocispec.MediaTypeImageManifest ||
+		result.Descriptor.Digest.Validate() != nil ||
+		result.Descriptor.Size <= 0 {
+		t.Fatalf("invalid manifest descriptor: %+v", result.Descriptor)
+	}
+	if result.Report == nil || result.Report.Name != "minimal" {
+		t.Fatalf("pack report = %+v, want suite minimal", result.Report)
+	}
+	report, err := agentsuite.ValidatePath(layout)
+	if err != nil {
+		t.Fatalf("packed layout is invalid: %v", err)
+	}
+	if report.Name != "minimal" {
+		t.Fatalf("suite name = %q, want minimal", report.Name)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(layout, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index ocispec.Index
+	if err := json.Unmarshal(indexBytes, &index); err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Manifests) != 1 || index.Manifests[0].Digest != result.Descriptor.Digest {
+		t.Fatalf("index manifests = %+v, want packed root %s", index.Manifests, result.Descriptor.Digest)
+	}
+	if _, tagged := index.Manifests[0].Annotations[ocispec.AnnotationRefName]; tagged {
+		t.Fatal("packing assigned a tag")
+	}
+}
+
+func TestPackerProducesExpectedManifest(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	dst := memory.New()
+	result, err := oraspack.New(nil).Pack(context.Background(), src, dst, contentDescriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := content.FetchAll(context.Background(), dst, result.Descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.ArtifactType != agentsuite.MediaTypeArtifact || manifest.Subject != nil {
+		t.Fatalf("unexpected AgentSuite manifest: %+v", manifest)
+	}
+	if manifest.Config.MediaType != agentsuite.MediaTypeEmptyConfig {
+		t.Fatalf("config media type = %q, want %q", manifest.Config.MediaType, agentsuite.MediaTypeEmptyConfig)
+	}
+	if len(manifest.Layers) != 1 ||
+		manifest.Layers[0].MediaType != contentDescriptor.MediaType ||
+		manifest.Layers[0].Digest != contentDescriptor.Digest ||
+		manifest.Layers[0].Size != contentDescriptor.Size {
+		t.Fatalf("layers = %+v, want content descriptor %+v", manifest.Layers, contentDescriptor)
+	}
+	config, err := content.FetchAll(context.Background(), dst, manifest.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(config, []byte("{}")) {
+		t.Fatalf("config = %q, want {}", config)
+	}
+}
+
+func TestPackerIsDeterministic(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	packer := oraspack.New(nil)
+	var descriptors []ocispec.Descriptor
+	for range 2 {
+		result, err := packer.Pack(context.Background(), src, memory.New(), contentDescriptor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		descriptors = append(descriptors, result.Descriptor)
+	}
+	if descriptors[0].MediaType != descriptors[1].MediaType ||
+		descriptors[0].Digest != descriptors[1].Digest ||
+		descriptors[0].Size != descriptors[1].Size {
+		t.Fatalf("pack descriptors differ: %+v != %+v", descriptors[0], descriptors[1])
+	}
+}
+
+func TestPackerStopsWhenValidationFails(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	dst := &recordingPusher{}
+	packer := oraspack.New(failingValidator{})
+	if _, err := packer.Pack(context.Background(), src, dst, contentDescriptor); err == nil ||
+		!errors.Is(err, errRejectedSuite) {
+		t.Fatalf("Pack() error = %v, want validation failure", err)
+	}
+	if dst.pushes != 0 {
+		t.Fatalf("destination received %d pushes after validation failure", dst.pushes)
+	}
+}
+
+func TestPackerRejectsInvalidContentDescriptor(t *testing.T) {
+	dst := &recordingPusher{}
+	descriptor := content.NewDescriptorFromBytes("application/octet-stream", []byte("invalid"))
+	if _, err := oraspack.New(nil).Pack(context.Background(), memory.New(), dst, descriptor); err == nil {
+		t.Fatal("invalid content descriptor succeeded")
+	}
+	if dst.pushes != 0 {
+		t.Fatalf("destination received %d pushes for invalid content", dst.pushes)
+	}
+}
+
+func TestPackerRejectsMissingCASContent(t *testing.T) {
+	dst := &recordingPusher{}
+	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("missing"))
+	if _, err := oraspack.New(nil).Pack(context.Background(), memory.New(), dst, descriptor); err == nil {
+		t.Fatal("missing source content succeeded")
+	}
+	if dst.pushes != 0 {
+		t.Fatalf("destination received %d pushes for missing content", dst.pushes)
+	}
+}
+
+func TestORASStoreRejectsMismatchedContent(t *testing.T) {
+	target := memory.New()
+	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("expected"))
+	err := target.Push(context.Background(), descriptor, bytes.NewReader([]byte("different")))
+	if err == nil {
+		t.Fatal("mismatched content succeeded")
+	}
+}
+
+func TestPackerPropagatesDestinationFailure(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	dst := &failingPusher{err: errDestinationRejected}
+	_, err := oraspack.New(nil).Pack(context.Background(), src, dst, contentDescriptor)
+	if !errors.Is(err, errDestinationRejected) {
+		t.Fatalf("Pack() error = %v, want destination failure", err)
+	}
+}
+
+func TestPackerAcceptsExistingCASContent(t *testing.T) {
+	src, contentDescriptor := newContentSource(t)
+	dst := &existingPusher{}
+	if _, err := oraspack.New(nil).Pack(context.Background(), src, dst, contentDescriptor); err != nil {
+		t.Fatal(err)
+	}
+	if dst.pushes != 3 {
+		t.Fatalf("pushes = %d, want 3", dst.pushes)
+	}
+}
+
+func newContentSource(t *testing.T) (*memory.Store, ocispec.Descriptor) {
+	t.Helper()
+	data := buildContentLayer(t, filepath.Join("..", "testdata", "minimal"))
+	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, data)
+	store := memory.New()
+	if err := store.Push(context.Background(), descriptor, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	return store, descriptor
+}
+
+func buildContentLayer(t *testing.T, root string) []byte {
+	t.Helper()
+	var names []string
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		name, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		names = append(names, filepath.ToSlash(name))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(names)
+
+	var buffer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buffer)
+	gzipWriter.Header.ModTime = time.Unix(0, 0).UTC()
+	gzipWriter.Header.OS = 255
+	tarWriter := tar.NewWriter(gzipWriter)
+	for _, name := range names {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		header := &tar.Header{
+			Name:    name,
+			Mode:    0o644,
+			ModTime: time.Unix(0, 0).UTC(),
+			Format:  tar.FormatPAX,
+		}
+		if info.IsDir() {
+			header.Name += "/"
+			header.Typeflag = tar.TypeDir
+			header.Mode = 0o755
+		} else {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			header.Typeflag = tar.TypeReg
+			header.Size = int64(len(data))
+			if err := tarWriter.WriteHeader(header); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tarWriter.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+type recordingValidator struct {
+	delegate     agentsuite.Validator
+	calls        int
+	validatedCAS bool
+}
+
+func (v *recordingValidator) Validate(
+	ctx context.Context,
+	src agentsuite.ReadOnlyStorage,
+	root ocispec.Descriptor,
+) (*agentsuite.Report, error) {
+	v.calls++
+	exists, err := src.Exists(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	v.validatedCAS = exists
+	return v.delegate.Validate(ctx, src, root)
+}
+
+var errRejectedSuite = errors.New("rejected suite")
+
+type failingValidator struct{}
+
+func (failingValidator) Validate(
+	context.Context,
+	agentsuite.ReadOnlyStorage,
+	ocispec.Descriptor,
+) (*agentsuite.Report, error) {
+	return nil, errRejectedSuite
+}
+
+type recordingPusher struct {
+	pushes int
+}
+
+func (t *recordingPusher) Push(context.Context, ocispec.Descriptor, io.Reader) error {
+	t.pushes++
+	return nil
+}
+
+var errDestinationRejected = errors.New("destination rejected content")
+
+type failingPusher struct {
+	err error
+}
+
+func (p *failingPusher) Push(context.Context, ocispec.Descriptor, io.Reader) error {
+	return p.err
+}
+
+type existingPusher struct {
+	pushes int
+}
+
+func (p *existingPusher) Push(context.Context, ocispec.Descriptor, io.Reader) error {
+	p.pushes++
+	return errdef.ErrAlreadyExists
+}
