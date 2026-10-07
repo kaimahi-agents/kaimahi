@@ -10,56 +10,61 @@ type MutationOutcome string
 
 const (
 	MutationSucceeded MutationOutcome = "succeeded"
-	MutationUnknown   MutationOutcome = "unknown"
 )
 
 // InfrastructureReceipt records platform-owned target infrastructure. It is
 // local evidence, not authentication; a deprovisioner must verify it against
 // durable ownership state before mutating anything.
 type InfrastructureReceipt struct {
-	ID         ReceiptID `json:"id"`
-	Target     TargetRef `json:"target"`
-	SpecDigest Digest    `json:"specDigest"`
-	RecordedAt time.Time `json:"recordedAt"`
+	ID         ReceiptID   `json:"id"`
+	Operation  OperationID `json:"operation"`
+	Target     TargetRef   `json:"target"`
+	RecordedAt time.Time   `json:"recordedAt"`
 }
 
-func NewInfrastructureReceipt(id ReceiptID, target TargetRef, spec []byte, recordedAt time.Time) (InfrastructureReceipt, error) {
-	receipt := InfrastructureReceipt{ID: id, Target: target, SpecDigest: NewDigest(spec), RecordedAt: recordedAt.UTC()}
+func NewInfrastructureReceipt(id ReceiptID, operation OperationID, target TargetRef, recordedAt time.Time) (InfrastructureReceipt, error) {
+	receipt := InfrastructureReceipt{ID: id, Operation: operation, Target: target, RecordedAt: recordedAt.UTC()}
 	return receipt, receipt.Validate()
 }
 
 func (r InfrastructureReceipt) Validate() error {
-	if r.ID == "" {
-		return fmt.Errorf("infrastructure receipt ID is required")
+	if err := validateIdentity("infrastructure receipt ID", string(r.ID)); err != nil {
+		return err
+	}
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
 	}
 	if err := r.Target.Validate(); err != nil {
 		return err
 	}
-	return validateReceiptIdentity(r.SpecDigest, r.RecordedAt)
+	return validateReceiptTime(r.RecordedAt)
 }
 
 // RuntimeReceipt records installation or reconciliation of a runtime on a
 // target. It grants no authority over target infrastructure.
 type RuntimeReceipt struct {
-	ID                  ReceiptID  `json:"id"`
-	Runtime             RuntimeRef `json:"runtime"`
-	ConfigurationDigest Digest     `json:"configurationDigest"`
-	RecordedAt          time.Time  `json:"recordedAt"`
+	ID         ReceiptID   `json:"id"`
+	Operation  OperationID `json:"operation"`
+	Runtime    RuntimeRef  `json:"runtime"`
+	RecordedAt time.Time   `json:"recordedAt"`
 }
 
-func NewRuntimeReceipt(id ReceiptID, runtime RuntimeRef, configuration []byte, recordedAt time.Time) (RuntimeReceipt, error) {
-	receipt := RuntimeReceipt{ID: id, Runtime: runtime, ConfigurationDigest: NewDigest(configuration), RecordedAt: recordedAt.UTC()}
+func NewRuntimeReceipt(id ReceiptID, operation OperationID, runtime RuntimeRef, recordedAt time.Time) (RuntimeReceipt, error) {
+	receipt := RuntimeReceipt{ID: id, Operation: operation, Runtime: runtime, RecordedAt: recordedAt.UTC()}
 	return receipt, receipt.Validate()
 }
 
 func (r RuntimeReceipt) Validate() error {
-	if r.ID == "" {
-		return fmt.Errorf("runtime receipt ID is required")
+	if err := validateIdentity("runtime receipt ID", string(r.ID)); err != nil {
+		return err
+	}
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
 	}
 	if err := r.Runtime.Validate(); err != nil {
 		return err
 	}
-	return validateReceiptIdentity(r.ConfigurationDigest, r.RecordedAt)
+	return validateReceiptTime(r.RecordedAt)
 }
 
 // DeploymentReceipt binds the deployed identity to the exact target binding
@@ -68,6 +73,7 @@ func (r RuntimeReceipt) Validate() error {
 // evidence before mutation.
 type DeploymentReceipt struct {
 	ID             ReceiptID     `json:"id"`
+	Operation      OperationID   `json:"operation"`
 	Deployment     DeploymentRef `json:"deployment"`
 	BindingDigest  Digest        `json:"bindingDigest"`
 	RenderedDigest Digest        `json:"renderedDigest"`
@@ -76,7 +82,7 @@ type DeploymentReceipt struct {
 
 func NewDeploymentReceipt(id ReceiptID, deploymentID DeploymentID, bundle RuntimeBundle, recordedAt time.Time) (DeploymentReceipt, error) {
 	receipt := DeploymentReceipt{
-		ID: id,
+		ID: id, Operation: bundle.Operation(),
 		Deployment: DeploymentRef{
 			ID: deploymentID, Revision: bundle.Revision(), Runtime: bundle.Runtime(),
 		},
@@ -87,8 +93,11 @@ func NewDeploymentReceipt(id ReceiptID, deploymentID DeploymentID, bundle Runtim
 }
 
 func (r DeploymentReceipt) Validate() error {
-	if r.ID == "" {
-		return fmt.Errorf("deployment receipt ID is required")
+	if err := validateIdentity("deployment receipt ID", string(r.ID)); err != nil {
+		return err
+	}
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
 	}
 	if err := r.Deployment.Validate(); err != nil {
 		return err
@@ -104,22 +113,26 @@ func (r DeploymentReceipt) Validate() error {
 
 type RetirementReceipt struct {
 	ID         ReceiptID       `json:"id"`
+	Operation  OperationID     `json:"operation"`
 	Deployment DeploymentRef   `json:"deployment"`
 	Outcome    MutationOutcome `json:"outcome"`
 	RecordedAt time.Time       `json:"recordedAt"`
 }
 
-func NewRetirementReceipt(id ReceiptID, deployment DeploymentReceipt, outcome MutationOutcome, recordedAt time.Time) (RetirementReceipt, error) {
+func NewRetirementReceipt(id ReceiptID, operation OperationID, deployment DeploymentReceipt, outcome MutationOutcome, recordedAt time.Time) (RetirementReceipt, error) {
 	if err := deployment.Validate(); err != nil {
 		return RetirementReceipt{}, err
 	}
-	receipt := RetirementReceipt{ID: id, Deployment: deployment.Deployment, Outcome: outcome, RecordedAt: recordedAt.UTC()}
+	receipt := RetirementReceipt{ID: id, Operation: operation, Deployment: deployment.Deployment, Outcome: outcome, RecordedAt: recordedAt.UTC()}
 	return receipt, receipt.Validate()
 }
 
 func (r RetirementReceipt) Validate() error {
-	if r.ID == "" {
-		return fmt.Errorf("retirement receipt ID is required")
+	if err := validateIdentity("retirement receipt ID", string(r.ID)); err != nil {
+		return err
+	}
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
 	}
 	if err := r.Deployment.Validate(); err != nil {
 		return err
@@ -129,22 +142,26 @@ func (r RetirementReceipt) Validate() error {
 
 type TeardownReceipt struct {
 	ID         ReceiptID       `json:"id"`
+	Operation  OperationID     `json:"operation"`
 	Target     TargetRef       `json:"target"`
 	Outcome    MutationOutcome `json:"outcome"`
 	RecordedAt time.Time       `json:"recordedAt"`
 }
 
-func NewTeardownReceipt(id ReceiptID, infrastructure InfrastructureReceipt, outcome MutationOutcome, recordedAt time.Time) (TeardownReceipt, error) {
+func NewTeardownReceipt(id ReceiptID, operation OperationID, infrastructure InfrastructureReceipt, outcome MutationOutcome, recordedAt time.Time) (TeardownReceipt, error) {
 	if err := infrastructure.Validate(); err != nil {
 		return TeardownReceipt{}, err
 	}
-	receipt := TeardownReceipt{ID: id, Target: infrastructure.Target, Outcome: outcome, RecordedAt: recordedAt.UTC()}
+	receipt := TeardownReceipt{ID: id, Operation: operation, Target: infrastructure.Target, Outcome: outcome, RecordedAt: recordedAt.UTC()}
 	return receipt, receipt.Validate()
 }
 
 func (r TeardownReceipt) Validate() error {
-	if r.ID == "" {
-		return fmt.Errorf("teardown receipt ID is required")
+	if err := validateIdentity("teardown receipt ID", string(r.ID)); err != nil {
+		return err
+	}
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
 	}
 	if err := r.Target.Validate(); err != nil {
 		return err
@@ -152,10 +169,7 @@ func (r TeardownReceipt) Validate() error {
 	return validateMutationReceipt(r.Outcome, r.RecordedAt)
 }
 
-func validateReceiptIdentity(digest Digest, recordedAt time.Time) error {
-	if digest.IsZero() {
-		return fmt.Errorf("receipt digest is required")
-	}
+func validateReceiptTime(recordedAt time.Time) error {
 	if recordedAt.IsZero() {
 		return fmt.Errorf("receipt time is required")
 	}
@@ -163,8 +177,8 @@ func validateReceiptIdentity(digest Digest, recordedAt time.Time) error {
 }
 
 func validateMutationReceipt(outcome MutationOutcome, recordedAt time.Time) error {
-	if outcome != MutationSucceeded && outcome != MutationUnknown {
-		return fmt.Errorf("receipt outcome must be %q or %q", MutationSucceeded, MutationUnknown)
+	if outcome != MutationSucceeded {
+		return fmt.Errorf("receipt outcome must be %q", MutationSucceeded)
 	}
 	if recordedAt.IsZero() {
 		return fmt.Errorf("receipt time is required")
@@ -191,6 +205,9 @@ func (r InfrastructureReceipt) MarshalJSON() ([]byte, error) {
 	return marshalReceipt(infrastructureReceiptJSON(r), r.Validate)
 }
 func (r *InfrastructureReceipt) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
 	var decoded infrastructureReceiptJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -207,6 +224,9 @@ func (r RuntimeReceipt) MarshalJSON() ([]byte, error) {
 	return marshalReceipt(runtimeReceiptJSON(r), r.Validate)
 }
 func (r *RuntimeReceipt) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
 	var decoded runtimeReceiptJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -223,6 +243,9 @@ func (r DeploymentReceipt) MarshalJSON() ([]byte, error) {
 	return marshalReceipt(deploymentReceiptJSON(r), r.Validate)
 }
 func (r *DeploymentReceipt) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
 	var decoded deploymentReceiptJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -239,6 +262,9 @@ func (r RetirementReceipt) MarshalJSON() ([]byte, error) {
 	return marshalReceipt(retirementReceiptJSON(r), r.Validate)
 }
 func (r *RetirementReceipt) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
 	var decoded retirementReceiptJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
@@ -255,6 +281,9 @@ func (r TeardownReceipt) MarshalJSON() ([]byte, error) {
 	return marshalReceipt(teardownReceiptJSON(r), r.Validate)
 }
 func (r *TeardownReceipt) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
 	var decoded teardownReceiptJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err

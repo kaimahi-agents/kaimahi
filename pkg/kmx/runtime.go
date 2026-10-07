@@ -18,6 +18,19 @@ type RuntimeOptions struct {
 	Profile string `json:"profile,omitempty"`
 }
 
+type EnsureRuntimeRequest struct {
+	Operation OperationID
+	Target    TargetRef
+	Options   RuntimeOptions
+}
+
+func (r EnsureRuntimeRequest) Validate() error {
+	if err := validateIdentity("operation ID", string(r.Operation)); err != nil {
+		return err
+	}
+	return r.Target.Validate()
+}
+
 // TargetBinding is versioned, opaque deployment input for one exact target.
 // Generic KMX workflows include it in identity and pass it unchanged; only the
 // selected runtime interprets its bytes.
@@ -33,11 +46,11 @@ func NewTargetBinding(target TargetRef, apiVersion, kind string, data []byte) (T
 	if err := target.Validate(); err != nil {
 		return TargetBinding{}, err
 	}
-	if apiVersion == "" {
-		return TargetBinding{}, fmt.Errorf("target binding API version is required")
+	if err := validateIdentity("target binding API version", apiVersion); err != nil {
+		return TargetBinding{}, err
 	}
-	if kind == "" {
-		return TargetBinding{}, fmt.Errorf("target binding kind is required")
+	if err := validateIdentity("target binding kind", kind); err != nil {
+		return TargetBinding{}, err
 	}
 	if len(data) == 0 {
 		return TargetBinding{}, fmt.Errorf("target binding data is required")
@@ -47,9 +60,12 @@ func NewTargetBinding(target TargetRef, apiVersion, kind string, data []byte) (T
 		target:     target,
 		apiVersion: apiVersion,
 		kind:       kind,
-		digest: digestParts(
-			[]byte(target.Platform), []byte(target.ID),
-			[]byte(apiVersion), []byte(kind), copied,
+		digest: framedDigest(
+			digestEntry{path: targetPlatformPath, data: []byte(target.Platform)},
+			digestEntry{path: targetIDPath, data: []byte(target.ID)},
+			digestEntry{path: bindingAPIVersionPath, data: []byte(apiVersion)},
+			digestEntry{path: bindingKindPath, data: []byte(kind)},
+			digestEntry{path: bindingDataPath, data: copied},
 		),
 		data: copied,
 	}, nil
@@ -60,6 +76,22 @@ func (b TargetBinding) APIVersion() string { return b.apiVersion }
 func (b TargetBinding) Kind() string       { return b.kind }
 func (b TargetBinding) Digest() Digest     { return b.digest }
 func (b TargetBinding) Bytes() []byte      { return append([]byte(nil), b.data...) }
+
+func (b TargetBinding) Validate() error {
+	if err := b.target.Validate(); err != nil {
+		return err
+	}
+	if err := validateIdentity("target binding API version", b.apiVersion); err != nil {
+		return err
+	}
+	if err := validateIdentity("target binding kind", b.kind); err != nil {
+		return err
+	}
+	if len(b.data) == 0 || b.digest.IsZero() {
+		return fmt.Errorf("target binding data and digest are required")
+	}
+	return nil
+}
 
 func (TargetBinding) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("TargetBinding is an in-process value; persist its source document")
@@ -72,24 +104,32 @@ func (*TargetBinding) UnmarshalJSON([]byte) error {
 // RuntimeBuildInput binds a revision and target binding to one runtime
 // installation before runtime-native building begins.
 type RuntimeBuildInput struct {
-	revision AgentRevision
-	runtime  RuntimeRef
-	binding  TargetBinding
+	operation OperationID
+	revision  AgentRevision
+	runtime   RuntimeRef
+	binding   TargetBinding
 }
 
-func NewRuntimeBuildInput(revision AgentRevision, runtime RuntimeRef, binding TargetBinding) (RuntimeBuildInput, error) {
+func NewRuntimeBuildInput(operation OperationID, revision AgentRevision, runtime RuntimeRef, binding TargetBinding) (RuntimeBuildInput, error) {
+	if err := validateIdentity("operation ID", string(operation)); err != nil {
+		return RuntimeBuildInput{}, err
+	}
 	if err := revision.Ref().Validate(); err != nil {
 		return RuntimeBuildInput{}, err
 	}
 	if err := runtime.Validate(); err != nil {
 		return RuntimeBuildInput{}, err
 	}
+	if err := binding.Validate(); err != nil {
+		return RuntimeBuildInput{}, err
+	}
 	if runtime.Target != binding.Target() {
 		return RuntimeBuildInput{}, fmt.Errorf("runtime installation and target binding identify different targets")
 	}
-	return RuntimeBuildInput{revision: revision, runtime: runtime, binding: binding}, nil
+	return RuntimeBuildInput{operation: operation, revision: revision, runtime: runtime, binding: binding}, nil
 }
 
+func (i RuntimeBuildInput) Operation() OperationID  { return i.operation }
 func (i RuntimeBuildInput) Revision() AgentRevision { return i.revision }
 func (i RuntimeBuildInput) Runtime() RuntimeRef     { return i.runtime }
 func (i RuntimeBuildInput) Binding() TargetBinding  { return i.binding }
@@ -105,34 +145,100 @@ func (*RuntimeBuildInput) UnmarshalJSON([]byte) error {
 // RuntimeBundle is immutable, opaque runtime-native output bound to the exact
 // revision, runtime installation, and target binding used to build it.
 type RuntimeBundle struct {
+	operation      OperationID
 	runtime        RuntimeRef
 	revision       AgentRevisionRef
 	bindingDigest  Digest
 	renderedDigest Digest
-	artifact       []byte
+	documents      []RuntimeDocument
 }
 
-func NewRuntimeBundle(input RuntimeBuildInput, artifact []byte) (RuntimeBundle, error) {
+type RuntimeDocument struct {
+	data       []byte
+	deployable bool
+}
+
+func ApplyDocument(data []byte) RuntimeDocument {
+	return RuntimeDocument{data: append([]byte(nil), data...), deployable: true}
+}
+
+func ReviewDocument(data []byte) RuntimeDocument {
+	return RuntimeDocument{data: append([]byte(nil), data...)}
+}
+
+func (d RuntimeDocument) Bytes() []byte    { return append([]byte(nil), d.data...) }
+func (d RuntimeDocument) Deployable() bool { return d.deployable }
+
+func (RuntimeDocument) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("RuntimeDocument is an in-process value; persist DeploymentReceipt")
+}
+
+func (*RuntimeDocument) UnmarshalJSON([]byte) error {
+	return fmt.Errorf("RuntimeDocument is an in-process value; rebuild it from source")
+}
+
+func NewRuntimeBundle(input RuntimeBuildInput, documents []RuntimeDocument) (RuntimeBundle, error) {
+	if err := validateIdentity("operation ID", string(input.operation)); err != nil {
+		return RuntimeBundle{}, err
+	}
 	if err := input.runtime.Validate(); err != nil {
 		return RuntimeBundle{}, err
 	}
-	if len(artifact) == 0 {
-		return RuntimeBundle{}, fmt.Errorf("runtime bundle artifact is required")
+	if err := input.revision.Ref().Validate(); err != nil {
+		return RuntimeBundle{}, err
+	}
+	if input.binding.Digest().IsZero() {
+		return RuntimeBundle{}, fmt.Errorf("runtime bundle binding digest is required")
+	}
+	if len(documents) == 0 {
+		return RuntimeBundle{}, fmt.Errorf("runtime bundle requires at least one document")
+	}
+	copied := make([]RuntimeDocument, len(documents))
+	entries := make([]digestEntry, len(documents))
+	deployable := false
+	for i, document := range documents {
+		if len(document.data) == 0 {
+			return RuntimeBundle{}, fmt.Errorf("runtime bundle document %d is empty", i)
+		}
+		deployable = deployable || document.deployable
+		copied[i] = RuntimeDocument{data: append([]byte(nil), document.data...), deployable: document.deployable}
+		entries[i] = digestEntry{path: fmt.Sprintf(renderedDocumentPattern, i), data: document.data}
+	}
+	if !deployable {
+		return RuntimeBundle{}, fmt.Errorf("runtime bundle has no deployable document")
 	}
 	return RuntimeBundle{
+		operation:      input.operation,
 		runtime:        input.runtime,
 		revision:       input.revision.Ref(),
 		bindingDigest:  input.binding.Digest(),
-		renderedDigest: NewDigest(artifact),
-		artifact:       append([]byte(nil), artifact...),
+		renderedDigest: framedDigest(entries...),
+		documents:      copied,
 	}, nil
 }
 
+func (b RuntimeBundle) Operation() OperationID     { return b.operation }
 func (b RuntimeBundle) Runtime() RuntimeRef        { return b.runtime }
 func (b RuntimeBundle) Revision() AgentRevisionRef { return b.revision }
 func (b RuntimeBundle) BindingDigest() Digest      { return b.bindingDigest }
 func (b RuntimeBundle) RenderedDigest() Digest     { return b.renderedDigest }
-func (b RuntimeBundle) Artifact() []byte           { return append([]byte(nil), b.artifact...) }
+func (b RuntimeBundle) Documents() []RuntimeDocument {
+	documents := make([]RuntimeDocument, len(b.documents))
+	for i, document := range b.documents {
+		documents[i] = RuntimeDocument{data: append([]byte(nil), document.data...), deployable: document.deployable}
+	}
+	return documents
+}
+
+func (b RuntimeBundle) DeployDocuments() [][]byte {
+	var documents [][]byte
+	for _, document := range b.documents {
+		if document.deployable {
+			documents = append(documents, append([]byte(nil), document.data...))
+		}
+	}
+	return documents
+}
 
 func (RuntimeBundle) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("RuntimeBundle is an in-process value; persist DeploymentReceipt")
@@ -149,16 +255,25 @@ type DeployOptions struct {
 // RuntimeInstaller ensures a runtime exists on a target. Runtime installation
 // remains separate from both target provisioning and agent deployment.
 type RuntimeInstaller interface {
-	Ensure(context.Context, TargetRef, RuntimeOptions) (RuntimeReceipt, error)
+	Ensure(context.Context, EnsureRuntimeRequest) (RuntimeReceipt, error)
 }
 
-// RuntimeBuilder translates an immutable KMX revision into exact native output.
+type RuntimeInstallRecoverer interface {
+	RecoverEnsure(context.Context, OperationID) (RuntimeReceipt, error)
+}
+
+// RuntimeBuilder parses and validates the exact revision source, refuses
+// behavior it cannot honor, and translates it into exact native output.
 type RuntimeBuilder interface {
 	Build(context.Context, RuntimeBuildInput) (RuntimeBundle, error)
 }
 
 type RuntimeDeployer interface {
 	Deploy(context.Context, RuntimeBundle, DeployOptions) (DeploymentReceipt, error)
+}
+
+type RuntimeDeployRecoverer interface {
+	RecoverDeploy(context.Context, OperationID) (DeploymentReceipt, error)
 }
 
 type RuntimeObserver interface {
@@ -170,5 +285,9 @@ type RuntimeObserver interface {
 // implementation must verify its ID, complete deployment identity, and native
 // ownership evidence before mutation. It has no infrastructure authority.
 type RuntimeRetirer interface {
-	Retire(context.Context, DeploymentReceipt) (RetirementReceipt, error)
+	Retire(context.Context, RetireRequest) (RetirementReceipt, error)
+}
+
+type RuntimeRetireRecoverer interface {
+	RecoverRetire(context.Context, OperationID) (RetirementReceipt, error)
 }

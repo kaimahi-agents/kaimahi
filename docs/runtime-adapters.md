@@ -202,8 +202,8 @@ maturity path are in the
 [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md). The package
 separates these scopes:
 
-- `TargetService.Up` and `TargetService.Down` compose target infrastructure;
-- `AgentService.Lift`, `Status`, and `Retire` manage agent deployments;
+- `EnvironmentService.Up` and `Down` compose target and runtime setup;
+- `AgentService.Build`, `Lift`, `Status`, and `Retire` manage deployments;
 - platform capabilities resolve, provision, inspect, and deprovision targets;
 - runtime capabilities install, build, deploy, observe, and retire workloads.
 
@@ -217,7 +217,7 @@ its standard-library-only dependency closure. Concrete adapters and migration
 of existing commands remain follow-up work after this model has been reviewed
 against the shipped Orka behavior and another real runtime.
 
-The companion [KMX application workflow API](kmx-application-api.md) proposes a
-grouped facade for consumers that need `Up`, `Lift`, `Status`, `Retire`, or
-`Quickstart` without constructing platform and runtime implementations. That
-facade is not implemented by `pkg/kmx` today.
+The companion [KMX application API](kmx-application-api.md) shows how another Go
+layer receives the northbound services without constructing platform and runtime
+implementations. KMX orchestration over those interfaces is not implemented in
+this change.
