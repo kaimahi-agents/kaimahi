@@ -42,6 +42,7 @@ import (
 // an optional single case.
 type EvaluateAgentBundleOptions struct {
 	BundleDir, ToContext, Case string
+	Sessions, SessionsCA       string
 	// CaseTimeout bounds each case from Task creation to a readable terminal
 	// result. The result session's token lasts ten minutes, so it is capped
 	// below that.
@@ -97,6 +98,18 @@ type bundleEvaluationCase struct {
 // EvaluateAgentBundle runs the bundle's cases against its deployed revision,
 // prints every answer, writes a receipt and fails unless every case passed.
 func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
+	if opt.SessionsCA != "" && opt.Sessions == "" {
+		return fmt.Errorf("--sessions-ca requires --sessions")
+	}
+	if opt.Sessions != "" {
+		if opt.ToContext != "" {
+			return fmt.Errorf("--sessions cannot be combined with --to-context")
+		}
+		if opt.ResultPort != "" {
+			return fmt.Errorf("--result-port is only for Orka evaluation")
+		}
+		return a.evaluateAgentBundleSessions(opt)
+	}
 	if a.Cfg == nil || a.Run == nil {
 		return fmt.Errorf("evaluate requires configured kubectl and streams")
 	}
@@ -260,42 +273,83 @@ func (a *App) bundleEvaluationRef(ctx context.Context, name, namespace, portable
 // agent.yaml, returning its name, exact bytes and portable digest. Bundle
 // commands using this helper have not implemented Kagent lifecycle operations.
 func readBundlePortableAgent(bundle string) (string, []byte, string, error) {
+	portable, source, digest, err := readBundlePortableDocument(bundle)
+	if err != nil {
+		return "", nil, "", err
+	}
+	// Keep the Orka-only lifecycle callers closed to Kagent bundles.
+	if portable.Extensions.Kagent != nil {
+		return "", nil, "", fmt.Errorf("runtime %s bundle is not supported by this Orka-only command", agentruntime.Kagent)
+	}
+	return portable.Metadata.Name, source, digest, nil
+}
+
+// readBundlePortableDocument performs shared source validation without choosing
+// a runtime. Each caller must refuse behavior its target cannot honor.
+func readBundlePortableDocument(bundle string) (*agentruntime.PortableAgent, []byte, string, error) {
 	if err := scaffold.RefuseKeyShapes(bundle); err != nil {
-		return "", nil, "", fmt.Errorf("refusing credential-shaped bundle path")
+		return nil, nil, "", fmt.Errorf("refusing credential-shaped bundle path")
 	}
 	info, err := os.Stat(bundle)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("read bundle directory: %w", err)
+		return nil, nil, "", fmt.Errorf("read bundle directory: %w", err)
 	}
 	if !info.IsDir() {
-		return "", nil, "", fmt.Errorf("bundle must be a directory")
+		return nil, nil, "", fmt.Errorf("bundle must be a directory")
 	}
 	agentFile := filepath.Join(bundle, "agent.yaml")
 	info, err = os.Lstat(agentFile)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("read portable agent: %w", err)
+		return nil, nil, "", fmt.Errorf("read portable agent: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", nil, "", fmt.Errorf("agent.yaml must be a regular file")
+		return nil, nil, "", fmt.Errorf("agent.yaml must be a regular file")
 	}
 	source, err := os.ReadFile(agentFile)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("read portable agent: %w", err)
+		return nil, nil, "", fmt.Errorf("read portable agent: %w", err)
 	}
 	portable, err := agentruntime.ParsePortableAgent(source)
 	if err != nil {
-		return "", nil, "", fmt.Errorf("invalid portable agent: %w", err)
+		return nil, nil, "", fmt.Errorf("invalid portable agent: %w", err)
 	}
-	// A Kagent arm identifies a bundle these Orka-only callers cannot handle;
-	// an absent extension is a core-only bundle Orka can render.
-	if portable.Extensions.Kagent != nil {
-		return "", nil, "", fmt.Errorf("runtime %s bundle is not supported by this Orka-only command", agentruntime.Kagent)
+	return portable, source, agentruntime.PortableBundleDigest(source), nil
+}
+
+// readSessionsEvaluationSource accepts only behavior the text-only chat harness
+// can honor. Other runtime extensions remain refusals, not sessions adapters.
+func readSessionsEvaluationSource(bundle string) (*agentruntime.PortableAgent, []byte, string, error) {
+	portable, source, digest, err := readBundlePortableDocument(bundle)
+	if err != nil {
+		return nil, nil, "", err
 	}
-	name := strings.TrimSpace(portable.Metadata.Name)
-	if name == "" {
-		return "", nil, "", fmt.Errorf("invalid portable agent: metadata.name is required")
+	var unsupported string
+	switch {
+	case portable.Extensions.Kagent != nil:
+		unsupported = "extensions.kagent"
+	case portable.Spec.Coordination != nil:
+		unsupported = "spec.coordination"
+	case portable.Extensions.Orka != nil:
+		ext := portable.Extensions.Orka
+		if ext.Provider.RateLimit != nil {
+			unsupported = "extensions.orka.provider.rateLimit"
+		} else if agent := ext.Agent; agent != nil {
+			switch {
+			case len(agent.Tools) > 0:
+				unsupported = "extensions.orka.agent.tools"
+			case len(agent.Skills) > 0:
+				unsupported = "extensions.orka.agent.skills"
+			case agent.RateLimit != nil:
+				unsupported = "extensions.orka.agent.rateLimit"
+			case agent.Coordination != nil:
+				unsupported = "extensions.orka.agent.coordination"
+			}
+		}
 	}
-	return name, source, agentruntime.PortableBundleDigest(source), nil
+	if unsupported != "" {
+		return nil, nil, "", fmt.Errorf("agentsessions chat cannot honor %s", unsupported)
+	}
+	return portable, source, digest, nil
 }
 
 // loadBundleEvaluationCases reads every eval/*.yaml case, in file-name order.

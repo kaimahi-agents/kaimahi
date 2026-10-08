@@ -34,7 +34,7 @@ checks.
 | Area | Installed / checkout, including legacy | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (18 packages), plus embedded schema fixtures | — | — |
+| `internal/` | `kmx/` (19 packages), plus embedded schema fixtures | — | — |
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
@@ -47,12 +47,12 @@ checks.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (34 files) | **Installed** | CLI and tests: top-level offline AgentSuite validation, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
+| `cmd/kmx` (35 files) | **Installed** | CLI and tests: top-level offline AgentSuite validation, default Orka operations including native Azure OpenAI Providers and coordination, explicit exact Kagent v0.10.2 create, agentsessions bundle evaluation, Orka bundle lift/status/evaluation gates, safe retirement and one-shot Task execution, interactive agent dashboard, migration, model routing, credentials, budgets, ledger and model flow/watch. |
 
 ## `internal/` — packages in the CLI
 
-`internal/kmx/` is eighteen packages at the top level (nineteen Go packages
-including nested `runview/orka`). The short version counts top-level directories.
+`internal/kmx/` is nineteen packages at the top level (twenty-one Go packages
+including nested `runview/orka` and `agentsuite/oras`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
 Go test files but include non-Go data. The test-only kubectl executable under
@@ -60,7 +60,8 @@ Go test files but include non-Go data. The test-only kubectl executable under
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 100 | Installed | Command orchestration, the offline AgentSuite validator entry point, the read-only Orka run source and console run view, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, safe retirement, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
+| `kmx/app` | 102 | Installed | Command orchestration, agentsessions evaluation and private session evidence, the offline AgentSuite validator entry point, the read-only Orka run source and console run view, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, safe retirement, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
+| `kmx/agentsessions` | 2 | Installed | Sessions gRPC evaluation adapter, verified remote TLS transport, per-case chat execution and journal evidence projection. No daemon startup, replay-verification command, descriptor discovery or lift-gate integration. |
 | `kmx/agentsuite` | 10 | Installed | Strict JSON and JCS identities, OCI image-layout and content-layer validation, closed agent/tool-provider/composition/build-profile graph validation, callable Tool contracts, sandbox binding validation, and provider-neutral packing, CAS, and artifact push/pull contracts. |
 | `kmx/agentsuite/oras` | 6 | Installed | ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
 | `kmx/agentsuite/schema` | 7 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, and Agent sandbox-binding records; published with the source checkout, not embedded in or loaded by the binary. |

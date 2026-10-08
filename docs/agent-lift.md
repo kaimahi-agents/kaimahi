@@ -430,6 +430,67 @@ case set.
 Evaluate is a gate: it exits non-zero unless every case passed, including when
 any case is `unknown`.
 
+## Evaluating on agentsessions
+
+```console
+kmx agent evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m]
+```
+
+This selects an agentsessions host instead of a deployed Orka target. No
+Kubernetes reads, lift, or remembered cluster selection are needed. Start the
+host yourself with the **chat** harness and a model matching `spec.model.name`.
+The reference daemon registers chat when `-model` is set, but still defaults
+to echo; kmx explicitly selects chat. The host must support execution config
+`system_prompt` ([agentsessions #78](https://github.com/aramase/agentsessions/pull/78)).
+For example, with an already-running local OpenAI-compatible Ollama endpoint:
+
+```console
+agentsessionsd -addr 127.0.0.1:8080 -journal ./evaluation.db -model qwen2.5:3b -model-base-url http://127.0.0.1:11434/v1
+kmx agent evaluate agents/my-agent --sessions 127.0.0.1:8080
+```
+
+Each case creates one new session, labeled with the portable and case-set
+digests, and executes its input with the bundle's exact decoded instructions
+as `system_prompt`. Cases never share history or retry a mutation. The model
+comes from the host, not creation bindings or session metadata. kmx observes
+model-call records and refuses to pass a missing, mixed, or different model;
+it does not switch models or infer equivalent aliases. `pass` requires a
+completed execution and all exact, case-sensitive `expectContains` strings;
+a missing expectation is `fail`, while an unproven execution is `unknown`.
+Any non-passing case makes the command exit non-zero.
+
+The text-only chat harness accepts core-only sources and Orka sources without
+runtime-specific behavior. Kagent extensions, coordination, tools, skills and
+rate limits are refused before sessions are created, rather than silently
+ignored. `--sessions` cannot be combined with `--to-context` or `--result-port`.
+The per-case timeout has the same 10s–9m bounds as Orka evaluation.
+
+Only literal loopback IPs may use plaintext. Other addresses use verified TLS
+with system roots; `--sessions-ca <pem-file>` adds a private trust root and also
+selects TLS for loopback. There is no unverified fallback. The reference daemon
+has no TLS listener or access controls: remote use requires operator-managed
+TLS termination and appropriate authentication/authorization at the boundary.
+Do not expose the daemon itself to an untrusted network.
+
+The private `receipts/eval-<key>.json` records runtime `agentsessions`, digests,
+Git provenance and full-case-set status. Each case records its session UID,
+journal sequence/hash head, verdict, observed model and output SHA-256. The
+version-1 `target.identity` labels its address, returned harness name and
+journal-observed model as **`host-reported`**, not a verified descriptor or
+attestation. Per-case identities remain available when observations differ.
+Identity versioning leaves room for future descriptor discovery. Prompts,
+answers, expectation strings, tool payloads and arbitrary server errors stay
+out of this receipt; conversation content remains in the host's journal.
+New receipt directories are mode 0700 and receipt files are mode 0600. Each
+endpoint/chat selection replaces its prior receipt; model changes therefore
+cannot leave an old passing receipt at that same filename. Keep receipts local,
+not in Git, and protect the journal separately.
+
+Sessions receipts currently do **not** satisfy lift-policy or status gates.
+Receipt replay verification is not available yet. The journal head and output
+digest support later read-only integrity/output checks, not a claim of
+deterministic re-execution. Orka receipt and gate behavior is unchanged.
+
 ## Running an existing Agent
 
 ```console
