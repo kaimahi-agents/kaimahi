@@ -17,6 +17,7 @@ import (
 	"github.com/aramase/agentsessions/canon"
 	"github.com/aramase/agentsessions/wire"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,12 +28,13 @@ import (
 // journal has the same execution-start/input/model/output/end shape as chat.
 type sessionsEvalServer struct {
 	v1.UnimplementedSessionsServer
-	mu      sync.Mutex
-	creates []*v1.CreateSessionRequest
-	execs   []*v1.ExecRequest
-	answers map[string]string
-	model   string
-	fail    bool
+	mu                sync.Mutex
+	creates           []*v1.CreateSessionRequest
+	execs             []*v1.ExecRequest
+	answers           map[string]string
+	model             string
+	fail              bool
+	mixed, errorAfter bool
 }
 
 func (s *sessionsEvalServer) CreateSession(_ context.Context, req *v1.CreateSessionRequest) (*v1.Session, error) {
@@ -60,6 +62,10 @@ func (s *sessionsEvalServer) Exec(req *v1.ExecRequest, stream grpc.ServerStreami
 		{Kind: v1.EventKind_EVENT_OUTPUT, Body: &v1.Event_Message{Message: &v1.Message{Role: "assistant", Parts: []*v1.Part{{Part: &v1.Part_Text{Text: &v1.TextPart{Text: s.answers[req.GetInputs()[0].GetParts()[0].GetText().GetText()]}}}}}}},
 		{Kind: v1.EventKind_EVENT_END, Body: &v1.Event_End{End: &v1.HarnessEnd{State: "COMPLETED"}}},
 	}
+	if s.mixed {
+		other := &v1.Event{Kind: v1.EventKind_EVENT_MODEL_CALL, Body: &v1.Event_Model{Model: &v1.ModelCall{Model: "other-model", Id: "call-2", InputHash: strings.Repeat("b", 64)}}}
+		events = append(events[:3], append([]*v1.Event{other}, events[3:]...)...)
+	}
 	prev := ""
 	for i, ev := range events {
 		ev.ExecutionId, ev.SchemaVersion, ev.Ts = req.GetSession()+"-exec", 1, timestamppb.New(time.Unix(100, 0))
@@ -73,6 +79,9 @@ func (s *sessionsEvalServer) Exec(req *v1.ExecRequest, stream grpc.ServerStreami
 			return err
 		}
 		prev = hash
+	}
+	if s.errorAfter {
+		return status.Error(codes.Unavailable, "private-remote-error-canary")
 	}
 	return nil
 }
@@ -220,6 +229,61 @@ func TestSessionsSingleCaseReceiptCannotSatisfyOrkaGate(t *testing.T) {
 	required, condition := evaluateBundleLiftGate(opt.BundleDir, "sample", r.PortableDigest, bundleGateTarget{ClusterUID: "production", Namespace: "orka-system"}, opt.Sessions)
 	if !required || !strings.Contains(condition, "no evaluation receipt for context label") {
 		t.Fatalf("sessions evidence satisfied Orka gate: %v %s", required, condition)
+	}
+}
+
+func TestSessionsCredentialShapedAddressNeverEntersReceipt(t *testing.T) {
+	s := &sessionsEvalServer{model: "test-model"}
+	a, opt, _ := newSessionsAppFixture(t, s)
+	var host string
+	for _, shape := range secretshapes.All() {
+		if shape.Name == "azure-openai-key-hex" {
+			host = shape.Example
+			break
+		}
+	}
+	if host == "" {
+		t.Fatal("credential-shaped hostname fixture missing")
+	}
+	opt.Sessions = host + ":8080"
+	err := a.EvaluateAgentBundle(opt)
+	if err == nil || !strings.Contains(err.Error(), "credential-shaped") || strings.Contains(err.Error(), host) {
+		t.Fatalf("unsafe address diagnostic: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(opt.BundleDir, "receipts")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe address recorded: %v", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.creates) != 0 || len(s.execs) != 0 {
+		t.Fatal("unsafe address caused host mutation")
+	}
+}
+
+func TestSessionsMixedModelsAreNotRecordedAsOneModel(t *testing.T) {
+	for _, afterError := range []bool{false, true} {
+		t.Run(fmt.Sprint(afterError), func(t *testing.T) {
+			s := &sessionsEvalServer{model: "test-model", mixed: true, errorAfter: afterError, answers: map[string]string{"private-input-one": "private-assertion-canary", "private-input-two": "private-assertion-canary"}}
+			a, opt, _ := newSessionsAppFixture(t, s)
+			if err := a.EvaluateAgentBundle(opt); err == nil {
+				t.Fatal("mixed models passed")
+			}
+			r, raw := readSessionsAppReceipt(t, opt.BundleDir)
+			if r.Result != "unknown" || r.Target.Identity.Model != "" {
+				t.Fatalf("mixed models promoted as common model: %+v", r)
+			}
+			var fields struct {
+				Cases []map[string]any `json:"cases"`
+			}
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			for i, c := range r.Cases {
+				if c.Model != "" || fields.Cases[i]["modelMixed"] != true || c.JournalHead.Seq != 6 {
+					t.Fatalf("ambiguity lost: %+v JSON=%v", c, fields.Cases[i])
+				}
+			}
+		})
 	}
 }
 

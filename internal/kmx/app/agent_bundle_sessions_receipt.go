@@ -49,6 +49,7 @@ type sessionsEvaluationResult struct {
 	SessionUID   string              `json:"sessionUID,omitempty"`
 	Harness      string              `json:"harness,omitempty"`
 	Model        string              `json:"model,omitempty"`
+	ModelMixed   bool                `json:"modelMixed,omitempty"`
 	JournalHead  sessionsJournalHead `json:"journalHead"`
 	AnswerSHA256 string              `json:"answerSHA256,omitempty"`
 	Detail       string              `json:"detail,omitempty"`

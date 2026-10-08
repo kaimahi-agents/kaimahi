@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 func TestAgentEvaluateSessionsFlagValidation(t *testing.T) {
@@ -30,6 +32,34 @@ func TestAgentEvaluateSessionsFlagValidation(t *testing.T) {
 			err := cmd.Execute()
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestAgentEvaluateSessionsBypassesClusterConfiguration(t *testing.T) {
+	for _, sessions := range []bool{true, false} {
+		t.Run(map[bool]string{true: "sessions", false: "Orka"}[sessions], func(t *testing.T) {
+			out := &bytes.Buffer{}
+			deps := productionDependencies()
+			deps.stdout, deps.stderr = out, out
+			calls := 0
+			configErr := errors.New("unreadable cluster context configuration")
+			deps.loadConfig = func(string, string) (*config.Config, error) {
+				calls++
+				return nil, configErr
+			}
+			args := []string{"agent", "evaluate", filepath.Join(t.TempDir(), "absent")}
+			if sessions {
+				args = append(args, "--sessions", "127.0.0.1:8080")
+			}
+			err := execute(args, deps)
+			if sessions {
+				if calls != 0 || err == nil || !strings.Contains(err.Error(), "read bundle directory") {
+					t.Fatalf("sessions required cluster config: calls=%d err=%v", calls, err)
+				}
+			} else if calls != 1 || !errors.Is(err, configErr) {
+				t.Fatalf("Orka no longer uses its config: calls=%d err=%v", calls, err)
 			}
 		})
 	}

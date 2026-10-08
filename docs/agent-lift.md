@@ -457,7 +457,10 @@ model-call records and refuses to pass a missing, mixed, or different model;
 it does not switch models or infer equivalent aliases. `pass` requires a
 completed execution and all exact, case-sensitive `expectContains` strings;
 a missing expectation is `fail`, while an unproven execution is `unknown`.
-Any non-passing case makes the command exit non-zero.
+The returned journal must record the exact invocation config and input before
+its effects. Committed answer text is limited to 1 MiB in total; an oversized
+answer is `unknown` and has no output digest. Any non-passing case makes the
+command exit non-zero.
 
 The text-only chat harness accepts core-only sources and Orka sources without
 runtime-specific behavior. Kagent extensions, coordination, tools, skills and
@@ -478,6 +481,8 @@ journal sequence/hash head, verdict, observed model and output SHA-256. The
 version-1 `target.identity` labels its address, returned harness name and
 journal-observed model as **`host-reported`**, not a verified descriptor or
 attestation. Per-case identities remain available when observations differ.
+Distinct model names within one execution set `modelMixed: true` and suppress
+its singular model identity, even if a later stream error masks the mismatch.
 Identity versioning leaves room for future descriptor discovery. Prompts,
 answers, expectation strings, tool payloads and arbitrary server errors stay
 out of this receipt; conversation content remains in the host's journal.

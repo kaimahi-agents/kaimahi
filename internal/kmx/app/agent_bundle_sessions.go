@@ -80,7 +80,7 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		cancel()
 		entry := sessionsEvaluationResult{
 			ID: c.Case.ID, Verdict: "unknown", SessionUID: result.SessionUID,
-			Harness: result.Harness, Model: result.Model,
+			Harness: result.Harness, Model: result.Model, ModelMixed: result.ModelMixed,
 			JournalHead: sessionsJournalHead{Seq: result.Head.Seq, Hash: result.Head.Hash},
 		}
 		if result.Output != "" {

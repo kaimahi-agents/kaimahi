@@ -7,13 +7,55 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	v1 "github.com/aramase/agentsessions/api/genpb"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 )
+
+func TestDialRejectsCredentialShapedHostnames(t *testing.T) {
+	var bare, wrapped int
+	for _, shape := range secretshapes.All() {
+		if !validHost(shape.Example) {
+			continue
+		}
+		for _, tc := range []struct{ name, host string }{
+			{"bare", shape.Example},
+			{"wrapped", "sessions." + shape.Example + ".invalid"},
+		} {
+			if secretshapes.Match(tc.host) == nil {
+				continue
+			}
+			if !validHost(tc.host) {
+				t.Fatal("credential fixture is not a valid DNS hostname")
+			}
+			if tc.name == "bare" {
+				bare++
+			} else {
+				wrapped++
+			}
+			t.Run(shape.Name+"/"+tc.name, func(t *testing.T) {
+				c, err := Dial(Options{Address: net.JoinHostPort(tc.host, "443")})
+				if c != nil {
+					_ = c.Close()
+					t.Error("credential-shaped hostname produced a client")
+				}
+				assertSafeError(t, err, codes.InvalidArgument)
+				if strings.Contains(err.Error(), shape.Example) || secretshapes.Match(err.Error()) != nil {
+					t.Fatal("credential-shaped hostname escaped in diagnostic")
+				}
+			})
+		}
+	}
+	if bare == 0 || wrapped == 0 {
+		t.Fatal("no DNS-compatible bare/wrapped credential fixtures exercised")
+	}
+}
 
 func TestDialCAOnLoopbackNeverFallsBackToPlaintext(t *testing.T) {
 	_, ca := certificate(t, "", net.ParseIP("127.0.0.1"))

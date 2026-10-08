@@ -2,6 +2,7 @@
 package agentsessions
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const maxAnswerBytes = 1 << 20
+
 type Options struct{ Address, CAFile string }
 type CaseRequest struct{ PortableDigest, CasesDigest, Instructions, Model, Input string }
 type JournalHead struct {
@@ -28,8 +31,10 @@ type JournalHead struct {
 }
 type CaseResult struct {
 	SessionUID, Harness, Model string
-	Head                       JournalHead
-	Output                     string
+	// ModelMixed is sticky and clears Model when distinct safe models are observed.
+	ModelMixed bool
+	Head       JournalHead
+	Output     string
 }
 type Client struct{ sdk *sdk.Client }
 
@@ -74,11 +79,12 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	}
 
 	// The SDK's ExecOptions does not expose config or deadline; use its official stub.
+	input := wire.MessageToProto(api.TextMessage("user", request.Input))
 	zero := int64(0)
 	stream, err := c.sdk.Sessions().Exec(ctx, &v1.ExecRequest{
 		Session:         result.SessionUID,
 		Harness:         "chat",
-		Inputs:          []*v1.Message{wire.MessageToProto(api.TextMessage("user", request.Input))},
+		Inputs:          []*v1.Message{input},
 		Config:          config,
 		ExpectedLastSeq: &zero,
 		DeadlineUnix:    deadline.Unix(),
@@ -93,9 +99,10 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 			evidenceErr = status.Error(code, diagnostic)
 		}
 	}
-	var seenSession, chainValid, ended, seenModel bool
-	var executionID string
+	var seenSession, chainValid, ended, seenStart, seenInput bool
+	var executionID, firstModel string
 	var output strings.Builder
+	var outputOverflow bool
 	for {
 		update, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -140,22 +147,50 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 			}
 			result.Head = JournalHead{Seq: record.Seq, Hash: hash}
 			executionID = event.ExecutionId
+			if event.Kind != v1.EventKind_EVENT_EXECUTION_START && event.Kind != v1.EventKind_EVENT_INPUT && (!seenStart || !seenInput) {
+				fail(codes.DataLoss, "agentsessions: incomplete invocation prefix")
+			}
 			switch event.Kind {
+			case v1.EventKind_EVENT_EXECUTION_START:
+				start := event.GetExecutionStart()
+				if seenStart || record.Seq != 1 || !bytes.Equal(start.GetConfig(), config) || start.GetResumeFromSeq() != 0 || start.InputCount == nil || start.GetInputCount() != 1 {
+					fail(codes.DataLoss, "agentsessions: invocation start mismatch")
+				}
+				seenStart = true
+			case v1.EventKind_EVENT_INPUT:
+				if !seenStart || seenInput || record.Seq != 2 || !proto.Equal(event.GetMessage(), input) {
+					fail(codes.DataLoss, "agentsessions: invocation input mismatch")
+				}
+				seenInput = true
 			case v1.EventKind_EVENT_MODEL_CALL:
 				model := event.GetModel().GetModel()
 				if !safeIdentity(model) {
 					fail(codes.FailedPrecondition, "agentsessions: missing or invalid observed model")
 					continue
 				}
-				if !seenModel {
+				if firstModel == "" {
+					firstModel = model
 					result.Model = model
+				} else if model != firstModel {
+					result.ModelMixed = true
+					result.Model = ""
 				}
-				seenModel = true
-				if model != request.Model || model != result.Model {
+				if model != request.Model || result.ModelMixed {
 					fail(codes.FailedPrecondition, "agentsessions: observed model mismatch")
 				}
 			case v1.EventKind_EVENT_OUTPUT:
-				output.WriteString(wire.MessageFromProto(event.GetMessage()).Text())
+				if outputOverflow {
+					continue
+				}
+				text := wire.MessageFromProto(event.GetMessage()).Text()
+				if len(text) > maxAnswerBytes-output.Len() {
+					outputOverflow = true
+					result.Output = ""
+					output.Reset()
+					fail(codes.ResourceExhausted, "agentsessions: committed answer exceeds 1 MiB")
+					continue
+				}
+				output.WriteString(text)
 				result.Output = output.String()
 			case v1.EventKind_EVENT_ERROR:
 				fail(remoteCode(event.GetError().GetCode()), "agentsessions: execution reported an error")
@@ -181,7 +216,10 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	if !seenSession {
 		fail(codes.DataLoss, "agentsessions: missing execution session")
 	}
-	if !seenModel {
+	if !seenStart || !seenInput {
+		fail(codes.DataLoss, "agentsessions: missing invocation prefix")
+	}
+	if firstModel == "" {
 		fail(codes.FailedPrecondition, "agentsessions: missing observed model")
 	}
 	if !ended {

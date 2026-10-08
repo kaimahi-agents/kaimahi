@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
 func newAgentEvaluateCommand(state *commandState) *cobra.Command {
@@ -30,7 +31,7 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Case, "case", "", "run only the case with this id")
 	cmd.Flags().DurationVar(&opt.CaseTimeout, "case-timeout", 0, "time each case may take to reach a readable terminal result (default 5m, max 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
-	run := appRun(state, func(a *app.App) error {
+	runOrka := appRun(state, func(a *app.App) error {
 		opt.BundleDir = cmd.Flags().Arg(0)
 		return a.EvaluateAgentBundle(opt)
 	})
@@ -55,7 +56,14 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 		if opt.SessionsCA != "" && opt.Sessions == "" {
 			return fmt.Errorf("--sessions-ca requires --sessions")
 		}
-		return run(cmd, args)
+		if opt.Sessions != "" {
+			// Cluster configuration is irrelevant to this explicit sessions host.
+			// Preserve command cancellation without loading kubeconfig preferences.
+			opt.BundleDir = cmd.Flags().Arg(0)
+			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), Run: &run.Runner{Context: cmd.Context()}}
+			return a.EvaluateAgentBundle(opt)
+		}
+		return runOrka(cmd, args)
 	}
 	return cmd
 }

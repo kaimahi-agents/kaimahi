@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	sdk "github.com/aramase/agentsessions/client"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -24,6 +25,9 @@ func Dial(options Options) (*Client, error) {
 	host, port, err := net.SplitHostPort(options.Address)
 	if err != nil || !validHost(host) || strings.Contains(options.Address, "[") && !strings.Contains(host, ":") {
 		return nil, status.Error(codes.InvalidArgument, "agentsessions: address must be host:port")
+	}
+	if secretshapes.Match(host) != nil {
+		return nil, status.Error(codes.InvalidArgument, "agentsessions: credential-shaped host refused")
 	}
 	for _, c := range port {
 		if c < '0' || c > '9' {

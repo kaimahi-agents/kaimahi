@@ -85,8 +85,8 @@ func sessionFrame(s *v1.Session) *v1.ExecUpdate {
 func fixtureEvents() []api.Event {
 	count := int64(1)
 	return []api.Event{
-		{Kind: api.EventExecutionStart, ExecutionStart: &api.ExecutionStart{Config: []byte(`{"system_prompt":"instructions"}`), InputCount: &count}},
-		{Kind: api.EventInput, Message: api.TextMessage("user", "input")},
+		{Kind: api.EventExecutionStart, ExecutionStart: &api.ExecutionStart{Config: []byte(`{"system_prompt":"  exact\n\"instructions\" \u003c\u0026\u003e 世界\n"}`), InputCount: &count}},
+		{Kind: api.EventInput, Message: api.TextMessage("user", "exact input\n")},
 		{Kind: api.EventModelCall, ModelCall: &api.ModelCall{Model: "host-model", InputHash: "input-hash", ID: "call-1"}},
 		{Kind: api.EventOutput, Message: api.TextMessage("assistant", "answer")},
 		{Kind: api.EventEnd, End: &api.HarnessEnd{State: "COMPLETED"}},
@@ -330,6 +330,9 @@ func TestRunCaseRequiresModelEvidenceAndCompletion(t *testing.T) {
 			}
 			if tc.name == "wrong model" && got.Model != canary {
 				t.Fatalf("lost safely observed mismatched model: %#v", got)
+			}
+			if got.ModelMixed != (tc.name == "mixed models") || got.ModelMixed && got.Model != "" {
+				t.Fatalf("incorrect model ambiguity: %#v", got)
 			}
 		})
 	}
