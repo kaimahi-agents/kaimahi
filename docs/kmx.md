@@ -90,6 +90,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
+| `kmx suite build <directory> --builder agentkit-experimental ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit and BuildKit. This backend is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
 | `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. Prints the pushed digest. See [registry safety](#registry-authentication). |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
 | `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
@@ -104,6 +105,98 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; Kagent inventory and bundles are unsupported. `b` compares the selected Orka agent with its local bundle using the same report as `kmx agent status`; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
+
+#### Experimental AgentSuite image build
+
+The first image-build backend is intentionally narrow:
+
+```zsh
+SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
+
+kmx suite validate "$SUITE"
+
+read "AZURE_OPENAI_RESOURCE?Azure OpenAI resource name: "
+AZURE_OPENAI_BASE_URL="https://${AZURE_OPENAI_RESOURCE}.openai.azure.com/openai/v1/"
+
+kmx suite build "$SUITE" \
+  --agent incident-analyst \
+  --platform linux/amd64 \
+  --model-base-url "$AZURE_OPENAI_BASE_URL" \
+  --model-api-key-env AZURE_OPENAI_API_KEY \
+  --verbose \
+  --output incident-analyst.oci.tar
+
+tar -tf incident-analyst.oci.tar
+```
+
+`--verbose` exposes builder lifecycle, progress, and implementation-specific
+warnings. Without it, the command prints only the provider-neutral build result.
+An existing output archive is replaced only after the new build completes
+successfully; a failed build preserves the previous archive.
+
+Create an Azure OpenAI deployment named `gpt-5-mini` in Azure AI Foundry. Then
+load the image and inject its API key only when the container starts:
+
+```zsh
+docker load -i incident-analyst.oci.tar
+
+read -s "AZURE_OPENAI_API_KEY?Azure OpenAI API key: "
+echo
+export AZURE_OPENAI_API_KEY
+
+docker run --rm \
+  --platform linux/amd64 \
+  --name incident-analyst \
+  -p 127.0.0.1:8080:8080 \
+  -e AGENTKIT_BIND=0.0.0.0 \
+  -e AGENTKIT_AUTH_TOKEN=local-test-token \
+  -e AZURE_OPENAI_API_KEY \
+  incident-analyst:latest
+```
+
+From another terminal:
+
+```bash
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'authorization: Bearer local-test-token' \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5-mini",
+    "messages": [{
+      "role": "user",
+      "content": "At 14:03 UTC checkout latency rose from 200 ms to 8 s. Pods report database connection pool exhaustion. Produce an incident triage report."
+    }]
+  }'
+```
+
+The checked-in incident analyst is a realistic, tool-free example: it turns
+pasted alerts, logs and operator notes into an evidence-based triage report. Its
+Linux amd64 Python runtime base and AgentKit v0.1.0 Pydantic AI harness are real,
+platform-specific, digest-pinned OCI manifests. The example targets an Azure
+OpenAI deployment named `gpt-5-mini` through the OpenAI-compatible v1 endpoint.
+The build records only the environment variable name `AZURE_OPENAI_API_KEY`; it
+never reads or embeds the key. Supply the key in that environment variable when
+running or deploying the resulting image.
+
+The command validates the suite, resolves one immutable sandbox build plan and
+publishes a new output atomically. It supports only agents without ToolProviders,
+invocation edges, endpoint environment bindings or model secret references.
+KMX uses AgentKit's Go packages directly to produce the LLB graph and OCI image
+configuration, then asks BuildKit to export the result as an OCI tar. It connects
+to `--buildkit-address` or `BUILDKIT_HOST` when either is set. Otherwise KMX
+creates or starts its digest-pinned `kmx-buildkitd` Docker container and reuses
+its content-addressed cache; BuildKit garbage collection bounds unused cache
+content. Unix, TCP, and `docker-container://<container>` override addresses are
+supported.
+
+The provider-neutral build-plan and builder contracts do not import AgentKit or
+BuildKit. The `agentkit-experimental` adapter uses the selected harness image as
+AgentKit's monolithic adapter.
+It emits a warning because the runtime-base image, AgentSuite binding, final
+inventory and provider payload composition are not yet represented. The harness
+image must therefore currently be a complete AgentKit adapter image. A future
+conformant AgentKit adapter or another builder can replace it without changing
+AgentSuite resolution.
 
 #### Registry authentication
 
