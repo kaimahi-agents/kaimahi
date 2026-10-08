@@ -57,7 +57,7 @@
     {
       "id": "default",
       "path": "build-profiles/default.json",
-      "digest": "sha256:35db18be63bbd06f3cf404d7c05428628b7711a8d30f3930bfcc8af55f83a080"
+      "digest": "sha256:a7e6136d7e7daf2fcd7e61a149000382032dcbf140f2dda1076d2ee85d0a62cd"
     }
   ],
   "capabilities": [],

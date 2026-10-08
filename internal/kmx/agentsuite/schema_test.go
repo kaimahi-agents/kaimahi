@@ -180,7 +180,7 @@ func TestBuildProfileSchemaRequiresDigestAddressedImageReferences(t *testing.T) 
 			valid := string(data)
 			validateSchemaJSON(t, schema, valid, true)
 			validateSchemaJSON(t, schema, strings.Replace(valid, `"imageRef": `, `"notImageRef": `, 1), false)
-			validateSchemaJSON(t, schema, strings.Replace(valid, `"@sha256:`, `":latest@sha256:`, 1), false)
+			validateSchemaJSON(t, schema, strings.Replace(valid, `@sha256:`, `:latest@sha256:`, 1), false)
 		})
 	}
 }
