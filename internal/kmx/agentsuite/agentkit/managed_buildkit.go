@@ -10,11 +10,10 @@ import (
 )
 
 const (
-	managedBuildkitAddress     = "docker-container://kmx-buildkitd"
-	managedBuildkitContainer   = "kmx-buildkitd"
-	managedBuildkitImage       = "moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f"
-	managedBuildkitLegacyImage = "moby/buildkit:v0.30.0"
-	managedBuildkitLabel       = "dev.kaimahi.managed"
+	managedBuildkitAddress   = "docker-container://kmx-buildkitd"
+	managedBuildkitContainer = "kmx-buildkitd"
+	managedBuildkitImage     = "moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f"
+	managedBuildkitLabel     = "dev.kaimahi.managed"
 )
 
 type buildkitManager interface {
@@ -51,6 +50,10 @@ func (m managedBuildkitManager) Ensure(ctx context.Context) error {
 		managedBuildkitContainer, managedBuildkitImage); err != nil {
 		return err
 	}
+	if err := m.noticef("Warning: creating privileged KMX-managed BuildKit container %s; remove it and its cache with `docker rm -f -v %s`\n",
+		managedBuildkitContainer, managedBuildkitContainer); err != nil {
+		return err
+	}
 	if err := runner.Run(ctx, "docker", "run", "-d",
 		"--name", managedBuildkitContainer,
 		"--label", managedBuildkitLabel+"=true",
@@ -76,6 +79,16 @@ func (m managedBuildkitManager) progressf(format string, args ...any) error {
 	return nil
 }
 
+func (m managedBuildkitManager) noticef(format string, args ...any) error {
+	if m.diagnostics == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintf(m.diagnostics, format, args...); err != nil {
+		return fmt.Errorf("write managed BuildKit notice: %w", err)
+	}
+	return nil
+}
+
 func inspectManagedBuildkit(ctx context.Context, runner managedBuildkitRunner) (string, error) {
 	return runner.Capture(ctx, "docker", "container", "inspect",
 		"--format", `{{.State.Running}}|{{index .Config.Labels "`+managedBuildkitLabel+`"}}|{{.Config.Image}}`,
@@ -87,14 +100,19 @@ func (m managedBuildkitManager) ensureRunning(ctx context.Context, runner manage
 	if len(fields) != 3 {
 		return fmt.Errorf("inspect container %s returned an unexpected state", managedBuildkitContainer)
 	}
-	managed := fields[1] == "true" ||
-		(fields[1] == "" || fields[1] == "<no value>") &&
-			(fields[2] == managedBuildkitImage || fields[2] == managedBuildkitLegacyImage)
-	if !managed {
+	if fields[1] != "true" {
 		return fmt.Errorf("container %s exists but is not managed by KMX", managedBuildkitContainer)
+	}
+	if fields[2] != managedBuildkitImage {
+		return fmt.Errorf("container %s uses unexpected image %q; expected %q",
+			managedBuildkitContainer, fields[2], managedBuildkitImage)
 	}
 	if fields[0] == "true" {
 		return nil
+	}
+	if err := m.noticef("Warning: starting privileged KMX-managed BuildKit container %s; remove it and its cache with `docker rm -f -v %s`\n",
+		managedBuildkitContainer, managedBuildkitContainer); err != nil {
+		return err
 	}
 	if err := m.progressf("BuildKit: starting managed daemon %s\n", managedBuildkitContainer); err != nil {
 		return err

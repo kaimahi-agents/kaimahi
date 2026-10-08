@@ -61,9 +61,18 @@ func TestManagedBuildkitRefusesUnmanagedContainer(t *testing.T) {
 	}
 }
 
-func TestManagedBuildkitAdoptsDocumentedLegacyContainer(t *testing.T) {
-	runner := &fakeManagedBuildkitRunner{captureOutput: "true|<no value>|" + managedBuildkitLegacyImage}
-	if err := (managedBuildkitManager{runner: runner}).Ensure(t.Context()); err != nil {
+func TestManagedBuildkitRefusesUnlabelledBuildkitContainer(t *testing.T) {
+	runner := &fakeManagedBuildkitRunner{captureOutput: "true|<no value>|moby/buildkit:v0.30.0"}
+	err := (managedBuildkitManager{runner: runner}).Ensure(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "not managed by KMX") {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+}
+
+func TestManagedBuildkitRefusesManagedContainerWithUnexpectedImage(t *testing.T) {
+	runner := &fakeManagedBuildkitRunner{captureOutput: "true|true|moby/buildkit:v0.30.0"}
+	err := (managedBuildkitManager{runner: runner}).Ensure(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "uses unexpected image") {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 }
@@ -141,6 +150,20 @@ func TestManagedBuildkitVerboseCreationProgress(t *testing.T) {
 	}
 }
 
+func TestManagedBuildkitNoticesPrivilegedCreationWithoutVerbose(t *testing.T) {
+	runner := &fakeManagedBuildkitRunner{captureErr: errors.New("No such container")}
+	var diagnostics bytes.Buffer
+	manager := managedBuildkitManager{runner: runner, diagnostics: &diagnostics}
+	if err := manager.Ensure(t.Context()); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+	for _, want := range []string{"privileged", "docker rm -f -v kmx-buildkitd"} {
+		if !strings.Contains(diagnostics.String(), want) {
+			t.Fatalf("diagnostics = %q, want %q", diagnostics.String(), want)
+		}
+	}
+}
+
 func TestManagedBuildkitVerboseExistingContainerProgress(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -186,6 +209,17 @@ func TestManagedBuildkitProgressWriteFailure(t *testing.T) {
 	}
 	err := manager.Ensure(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "write managed BuildKit progress") {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+}
+
+func TestManagedBuildkitNoticeWriteFailure(t *testing.T) {
+	manager := managedBuildkitManager{
+		runner:      &fakeManagedBuildkitRunner{captureErr: errors.New("No such container")},
+		diagnostics: failingWriter{},
+	}
+	err := manager.Ensure(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "write managed BuildKit notice") {
 		t.Fatalf("Ensure() error = %v", err)
 	}
 }
