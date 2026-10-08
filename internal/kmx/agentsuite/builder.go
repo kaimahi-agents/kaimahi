@@ -28,8 +28,9 @@ type SelectedToolProvider struct {
 	Root           bool
 }
 
-// SandboxPlan is the provider-neutral, fully resolved input to a sandbox image
-// builder. It contains no BuildKit, AgentKit, registry, CLI, or output concepts.
+// SandboxPlan is the provider-neutral, validated metadata selected for a
+// sandbox image builder. The current experimental contract does not yet expose
+// verified image blobs or ToolProvider payload content.
 type SandboxPlan struct {
 	Suite             Suite
 	SuiteManifestHash string

@@ -90,7 +90,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
-| `kmx suite build <directory> --builder agentkit-experimental ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit and BuildKit. This backend is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
+| `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit and BuildKit. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
 | `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. Prints the pushed digest. See [registry safety](#registry-authentication). |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
 | `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
@@ -129,8 +129,8 @@ kmx suite build "$SUITE" \
 tar -tf incident-analyst.oci.tar
 ```
 
-`--verbose` exposes builder lifecycle, progress, and implementation-specific
-warnings. Without it, the command prints only the provider-neutral build result.
+`--verbose` exposes builder lifecycle and solve progress. Correctness warnings,
+including the current non-conformance warning, are always written to stderr.
 An existing output archive is replaced only after the new build completes
 successfully; a failed build preserves the previous archive.
 
@@ -154,9 +154,17 @@ docker run --rm \
   incident-analyst:latest
 ```
 
+The image is not build-locked to the OpenAI-compatible server surface.
+AgentKit selects its protocol at runtime with `AGENTKIT_PROTOCOL`; the command
+above uses the default `openai` protocol for local testing. Supported AgentKit
+versions can instead select `foundry`, `orka`, or `acp` without rebuilding the
+image.
+
 From another terminal:
 
 ```bash
+curl --fail http://127.0.0.1:8080/healthz
+
 curl http://127.0.0.1:8080/v1/chat/completions \
   -H 'authorization: Bearer local-test-token' \
   -H 'content-type: application/json' \
@@ -181,17 +189,25 @@ running or deploying the resulting image.
 The command validates the suite, resolves one immutable sandbox build plan and
 publishes a new output atomically. It supports only agents without ToolProviders,
 invocation edges, endpoint environment bindings or model secret references.
+AgentKit v0.1 requires a literal model `baseURL`, so this adapter currently
+embeds `--model-base-url` and rejects `model.endpointEnv`; a future AgentKit
+release needs runtime model-endpoint environment resolution before KMX can
+preserve that portable binding.
 KMX uses AgentKit's Go packages directly to produce the LLB graph and OCI image
 configuration, then asks BuildKit to export the result as an OCI tar. It connects
 to `--buildkit-address` or `BUILDKIT_HOST` when either is set. Otherwise KMX
 creates or starts its digest-pinned `kmx-buildkitd` Docker container and reuses
 its content-addressed cache; BuildKit garbage collection bounds unused cache
 content. Unix, TCP, and `docker-container://<container>` override addresses are
-supported.
+supported. Before creating or starting this privileged container, KMX prints a
+warning. Remove the managed daemon and its cache with
+`docker rm -f -v kmx-buildkitd`.
 
 The provider-neutral build-plan and builder contracts do not import AgentKit or
-BuildKit. The `agentkit-experimental` adapter uses the selected harness image as
-AgentKit's monolithic adapter.
+BuildKit. The current adapter uses the selected harness image as AgentKit's
+monolithic adapter. The experimental plan currently carries validated metadata,
+not verified image blobs or ToolProvider payload bytes; a conformant offline
+builder will require a provider-neutral verified content source.
 It emits a warning because the runtime-base image, AgentSuite binding, final
 inventory and provider payload composition are not yet represented. The harness
 image must therefore currently be a complete AgentKit adapter image. A future

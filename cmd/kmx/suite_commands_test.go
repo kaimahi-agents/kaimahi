@@ -58,7 +58,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 	}
 }
 
-func TestSuiteBuildUsesExplicitExperimentalAgentKitBackend(t *testing.T) {
+func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
 	var out, diagnostics bytes.Buffer
@@ -108,7 +108,7 @@ func TestSuiteBuildUsesExplicitExperimentalAgentKitBackend(t *testing.T) {
 	}
 }
 
-func TestSuiteBuildHidesBuilderWarningsWithoutVerbose(t *testing.T) {
+func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
 	var out, diagnostics bytes.Buffer
@@ -132,32 +132,11 @@ func TestSuiteBuildHidesBuilderWarningsWithoutVerbose(t *testing.T) {
 	}, deps); err != nil {
 		t.Fatalf("suite build error = %v", err)
 	}
-	if diagnostics.Len() != 0 {
+	if !strings.Contains(diagnostics.String(), "builder implementation detail") {
 		t.Fatalf("stderr = %q", diagnostics.String())
 	}
 	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
 		t.Fatalf("stdout = %q", out.String())
-	}
-}
-
-func TestSuiteBuildRejectsUnknownBackendWithoutCreatingOutput(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "writer.oci.tar")
-	var out, diagnostics bytes.Buffer
-	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{
-		"suite", "build", "suite",
-		"--builder", "unknown",
-		"--model-base-url", "https://models.example/v1",
-		"--output", output,
-	}, deps)
-	if err == nil || !strings.Contains(err.Error(), "unsupported sandbox builder") {
-		t.Fatalf("suite build error = %v", err)
-	}
-	if *loads != 0 {
-		t.Fatalf("failed suite build loaded operational config %d time(s)", *loads)
-	}
-	if _, statErr := os.Stat(output); !os.IsNotExist(statErr) {
-		t.Fatalf("output exists after refusal: %v", statErr)
 	}
 }
 

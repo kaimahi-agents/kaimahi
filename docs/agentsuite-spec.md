@@ -943,7 +943,9 @@ one positive, profile-wide `sourceEpoch`. Each array contains one image entry
 per platform:
 
 - `runtimeBase` contains the OCI runtime-base image;
-- `harness` contains the OCI harness image.
+- `harness` contains the OCI harness image;
+- `sourceEpoch` is a Unix timestamp used as `SOURCE_DATE_EPOCH` (or equivalent)
+  to normalize generated image and layer timestamps for reproducible builds.
 
 Each runtime-base and harness entry MUST contain `platform`, `imageRef`, and
 `image`. `image` MUST be an OCI image manifest descriptor containing its media
@@ -1238,6 +1240,6 @@ This draft does not specify:
 [rfc8785]: https://www.rfc-editor.org/rfc/rfc8785
 [json-schema-2020-12]: https://json-schema.org/draft/2020-12
 [helm-oci]: https://helm.sh/docs/topics/registries/
-[agentkit]: https://github.com/sozercan/agentkit
+[agentkit]: https://github.com/orka-agents/agentkit
 [dalec-homebrew]: https://github.com/sozercan/dalec-homebrew
 [agentsessions]: https://github.com/aramase/agentsessions
