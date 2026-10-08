@@ -25,6 +25,25 @@ func TestResolveSandboxPlanSelectsMinimalComposition(t *testing.T) {
 	}
 }
 
+func TestResolveSandboxPlanSelectsBuildableIncidentAnalystExample(t *testing.T) {
+	plan, err := ResolveSandboxPlan(filepath.Join("testdata", "incident-analyst"), BuildSelection{})
+	if err != nil {
+		t.Fatalf("ResolveSandboxPlan() error = %v", err)
+	}
+	if plan.Agent.ID != "incident-analyst" || plan.Agent.Model.Model != "gpt-5-mini" {
+		t.Fatalf("unexpected agent: %+v", plan.Agent)
+	}
+	if got := plan.RuntimeBase.ImageRef; !strings.HasPrefix(got, "docker.io/library/python@sha256:") {
+		t.Fatalf("runtime base = %q", got)
+	}
+	if got := plan.Harness.ImageRef; !strings.HasPrefix(got, "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@sha256:") {
+		t.Fatalf("harness = %q", got)
+	}
+	if !strings.Contains(string(plan.Instructions), "incident response analyst") {
+		t.Fatalf("unexpected instructions: %q", plan.Instructions)
+	}
+}
+
 func TestResolveSandboxPlanRequiresAgentForMultiAgentSuite(t *testing.T) {
 	_, err := ResolveSandboxPlan(filepath.Join("testdata", "coordinator-workers"), BuildSelection{})
 	if err == nil || !strings.Contains(err.Error(), "--agent is required") {

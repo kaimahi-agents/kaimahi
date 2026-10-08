@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.agent.v1+json",
+  "id": "incident-analyst",
+  "description": "Turns alerts, logs, and operator notes into an evidence-based incident triage report.",
+  "instructions": {
+    "path": "instructions/incident-analyst.md",
+    "digest": "sha256:93cebe9eaa775c432441c5d5c1aff4985ce08cdf718ec3772424f591e67762e5"
+  },
+  "model": {
+    "protocol": "openai-compatible",
+    "model": "gpt-5-mini"
+  },
+  "toolProviders": [],
+  "invokes": [],
+  "extensions": []
+}
