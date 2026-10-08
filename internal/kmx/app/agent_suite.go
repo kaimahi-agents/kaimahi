@@ -4,11 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
+
+// SuiteBuildResult identifies one built sandbox image archive.
+type SuiteBuildResult struct {
+	Path      string
+	Agent     string
+	Platform  string
+	MediaType string
+	Warnings  []string
+}
 
 // ValidateSuite validates an extracted AgentSuite or OCI image layout
 // entirely offline.
@@ -74,4 +85,77 @@ func (a *App) PullSuiteRegistry(
 	plainHTTP bool,
 ) (agentsuite.PullResult, error) {
 	return agentsuite.PullRegistry(ctx, reference, output, plainHTTP)
+}
+
+// BuildSuite resolves one AgentSuite composition and atomically publishes the
+// image archive emitted by the selected provider-neutral builder.
+func (a *App) BuildSuite(
+	ctx context.Context,
+	source string,
+	output string,
+	selection agentsuitecore.BuildSelection,
+	builder agentsuitecore.SandboxBuilder,
+) (SuiteBuildResult, error) {
+	if builder == nil {
+		return SuiteBuildResult{}, fmt.Errorf("AgentSuite sandbox builder is required")
+	}
+	plan, err := agentsuitecore.ResolveSandboxPlan(source, selection)
+	if err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("resolve AgentSuite sandbox plan: %w", err)
+	}
+	outputPath, err := filepath.Abs(output)
+	if err != nil {
+		return SuiteBuildResult{}, err
+	}
+	if info, err := os.Lstat(outputPath); err == nil && info.IsDir() {
+		return SuiteBuildResult{}, fmt.Errorf("AgentSuite build output %s is a directory", outputPath)
+	} else if err != nil && !os.IsNotExist(err) {
+		return SuiteBuildResult{}, fmt.Errorf("inspect AgentSuite build output: %w", err)
+	}
+	parent := filepath.Dir(outputPath)
+	info, err := os.Stat(parent)
+	if err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("stat AgentSuite build output parent: %w", err)
+	}
+	if !info.IsDir() {
+		return SuiteBuildResult{}, fmt.Errorf("AgentSuite build output parent %s is not a directory", parent)
+	}
+
+	stage, err := os.CreateTemp(parent, "."+filepath.Base(outputPath)+"-*")
+	if err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("create staged AgentSuite build output: %w", err)
+	}
+	stagePath := stage.Name()
+	publish := true
+	defer func() {
+		if publish {
+			_ = os.Remove(stagePath)
+		}
+	}()
+	result, buildErr := builder.Build(ctx, *plan, stage)
+	if buildErr != nil {
+		_ = stage.Close()
+		return SuiteBuildResult{}, buildErr
+	}
+	if err := stage.Sync(); err != nil {
+		_ = stage.Close()
+		return SuiteBuildResult{}, fmt.Errorf("sync AgentSuite build output: %w", err)
+	}
+	if err := stage.Close(); err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("close AgentSuite build output: %w", err)
+	}
+	if err := os.Chmod(stagePath, 0o644); err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("set AgentSuite build output mode: %w", err)
+	}
+	if err := os.Rename(stagePath, outputPath); err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("publish AgentSuite build output: %w", err)
+	}
+	publish = false
+	return SuiteBuildResult{
+		Path:      outputPath,
+		Agent:     plan.Agent.ID,
+		Platform:  plan.Composition.Platform.String(),
+		MediaType: result.MediaType,
+		Warnings:  result.Warnings,
+	}, nil
 }
