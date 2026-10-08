@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2/content"
@@ -88,6 +89,65 @@ func TestTargetPushPullPreservesDescriptorAndExtracts(t *testing.T) {
 	}
 	if len(manifest) == 0 || pulled.Report.Name != "minimal" {
 		t.Fatalf("manifest bytes = %d, report = %+v", len(manifest), pulled.Report)
+	}
+}
+
+func TestRegistryPushPullOverHTTP(t *testing.T) {
+	ctx := context.Background()
+	server, registry := newTestRegistryServer("agent", "secret")
+	t.Cleanup(server.Close)
+	registryHost := strings.TrimPrefix(server.URL, "http://")
+
+	configRoot := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(configRoot, "config.json"),
+		[]byte(`{"auths":{"`+registryHost+`":{"auth":"YWdlbnQ6c2VjcmV0"}}}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_CONFIG", configRoot)
+
+	source := filepath.Join(t.TempDir(), "source")
+	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
+	layout := filepath.Join(t.TempDir(), "layout")
+	local, err := Push(ctx, source, layout, "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reference := registryHost + "/team/suite:v1"
+	if _, err := PushRegistry(ctx, source, reference, false); err == nil {
+		t.Fatal("PushRegistry() to an HTTP registry without plain HTTP opt-in succeeded")
+	}
+	pushed, err := PushRegistry(ctx, source, reference, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !content.Equal(pushed.Descriptor, local.Descriptor) {
+		t.Fatalf("registry descriptor = %+v, want local layout descriptor %+v", pushed.Descriptor, local.Descriptor)
+	}
+
+	if _, err := PullRegistry(ctx, reference, filepath.Join(t.TempDir(), "https-output"), false); err == nil {
+		t.Fatal("PullRegistry() from an HTTP registry without plain HTTP opt-in succeeded")
+	}
+	output := filepath.Join(t.TempDir(), "output")
+	pulled, err := PullRegistry(ctx, reference, output, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !content.Equal(pulled.Descriptor, pushed.Descriptor) {
+		t.Fatalf("pulled descriptor = %+v, want %+v", pulled.Descriptor, pushed.Descriptor)
+	}
+	localOutput := filepath.Join(t.TempDir(), "local-output")
+	if _, err := Pull(ctx, layout, "v1", localOutput); err != nil {
+		t.Fatal(err)
+	}
+	assertDirectoryFilesEqual(t, localOutput, output)
+
+	challenges, authenticated := registry.authenticationCounts()
+	if challenges == 0 || authenticated == 0 {
+		t.Fatalf("authentication challenges = %d, authenticated requests = %d", challenges, authenticated)
 	}
 }
 
