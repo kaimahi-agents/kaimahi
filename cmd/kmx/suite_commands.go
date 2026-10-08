@@ -6,11 +6,13 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry"
 
+	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
-func newSuiteCommand() *cobra.Command {
+func newSuiteCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "suite",
 		Short: "Work with portable AgentSuite artifacts",
@@ -28,6 +30,69 @@ func newSuiteCommand() *cobra.Command {
 	validate.RunE = func(cmd *cobra.Command, args []string) error {
 		a := &app.App{Out: cmd.OutOrStdout()}
 		return a.ValidateSuite(args[0], output)
+	}
+
+	var (
+		buildAgent       string
+		buildPlatform    string
+		buildOutput      string
+		buildBackend     string
+		buildModelURL    string
+		buildModelKeyEnv string
+		buildRuntime     string
+		buildkitAddress  string
+		buildVerbose     bool
+	)
+	build := &cobra.Command{
+		Use:   "build <directory>",
+		Short: "Build one AgentSuite agent as an OCI image-layout tar",
+		Long: "Build one AgentSuite agent as an OCI image-layout tar.\n\n" +
+			"The only current backend is agentkit-experimental. It treats the build profile's harness image as a monolithic AgentKit adapter and does not yet compose the runtime-base image, so its output is not AgentSuite-conformant.",
+		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --model-base-url <url> --output <file>"),
+	}
+	build.Flags().StringVar(&buildAgent, "agent", "", "agent id (optional only when the suite contains one agent)")
+	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the agent has one composition)")
+	build.Flags().StringVar(&buildOutput, "output", "", "new OCI image-layout tar path")
+	build.Flags().StringVar(&buildBackend, "builder", "agentkit-experimental", "sandbox builder backend (advanced)")
+	build.Flags().StringVar(&buildModelURL, "model-base-url", "", "OpenAI-compatible model endpoint embedded by the experimental AgentKit adapter")
+	build.Flags().StringVar(&buildModelKeyEnv, "model-api-key-env", "", "runtime environment variable containing the model API key (the value is never read or embedded)")
+	build.Flags().StringVar(&buildRuntime, "agentkit-runtime", "pydantic-ai", "AgentKit runtime adapter name")
+	build.Flags().StringVar(&buildkitAddress, "buildkit-address", "", "BuildKit daemon address (advanced; defaults to BUILDKIT_HOST or a KMX-managed daemon)")
+	build.Flags().BoolVar(&buildVerbose, "verbose", false, "show managed builder lifecycle and BuildKit solve progress")
+	_ = build.MarkFlagRequired("output")
+	_ = build.MarkFlagRequired("model-base-url")
+	_ = build.MarkFlagFilename("output")
+	_ = build.RegisterFlagCompletionFunc("builder", staticCompletion([]string{"agentkit-experimental"}))
+	_ = build.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
+	build.RunE = func(cmd *cobra.Command, args []string) error {
+		if buildBackend != "agentkit-experimental" {
+			return fmt.Errorf("unsupported sandbox builder %q; use agentkit-experimental", buildBackend)
+		}
+		builder := state.deps.newAgentKitBuilder(agentkitbuilder.Options{
+			ModelBaseURL:    buildModelURL,
+			ModelAPIKeyEnv:  buildModelKeyEnv,
+			Runtime:         buildRuntime,
+			BuildkitAddress: buildkitAddress,
+			Verbose:         buildVerbose,
+			Progress:        cmd.ErrOrStderr(),
+		})
+		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+		result, err := a.BuildSuite(cmd.Context(), args[0], buildOutput, agentsuitecore.BuildSelection{
+			Agent: buildAgent, Platform: buildPlatform,
+		}, builder)
+		if err != nil {
+			return err
+		}
+		if buildVerbose {
+			for _, warning := range result.Warnings {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Built AgentSuite agent %s for %s to %s (%s)\n",
+			result.Agent, result.Platform, result.Path, result.MediaType)
+		return err
 	}
 
 	var target string
@@ -167,6 +232,6 @@ func newSuiteCommand() *cobra.Command {
 		}
 		return nil
 	}
-	group.AddCommand(pull, push, validate)
+	group.AddCommand(build, pull, push, validate)
 	return group
 }

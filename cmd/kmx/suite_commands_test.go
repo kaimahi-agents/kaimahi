@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/oci"
 )
@@ -31,6 +33,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 			if err := execute(tc.args, deps); err != nil {
 				t.Fatalf("execute(%v) error = %v\n%s", tc.args, err, diagnostics.String())
 			}
+
 			if *loads != 0 {
 				t.Fatalf("offline suite validation loaded operational config %d time(s)", *loads)
 			}
@@ -52,6 +55,109 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 				t.Fatalf("unexpected diagnostics: %s", diagnostics.String())
 			}
 		})
+	}
+}
+
+func TestSuiteBuildUsesExplicitExperimentalAgentKitBackend(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	output := filepath.Join(t.TempDir(), "writer.oci.tar")
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
+		if options.ModelBaseURL != "https://models.example/v1" {
+			t.Fatalf("ModelBaseURL = %q", options.ModelBaseURL)
+		}
+		if options.ModelAPIKeyEnv != "AZURE_OPENAI_API_KEY" {
+			t.Fatalf("ModelAPIKeyEnv = %q", options.ModelAPIKeyEnv)
+		}
+		if !options.Verbose || options.Progress != &diagnostics {
+			t.Fatalf("verbose=%v progress=%T", options.Verbose, options.Progress)
+		}
+		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+			_, err := io.WriteString(dst, "oci archive")
+			return agentsuite.BuildResult{
+				MediaType: agentkitbuilder.OCIArchiveMediaType,
+				Warnings:  []string{"not AgentSuite-conformant"},
+			}, err
+		})
+	}
+	if err := execute([]string{
+		"suite", "build", fixture,
+		"--model-base-url", "https://models.example/v1",
+		"--model-api-key-env", "AZURE_OPENAI_API_KEY",
+		"--verbose",
+		"--output", output,
+	}, deps); err != nil {
+		t.Fatalf("suite build error = %v\n%s", err, diagnostics.String())
+	}
+	if *loads != 0 {
+		t.Fatalf("offline suite build loaded operational config %d time(s)", *loads)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "oci archive" {
+		t.Fatalf("output = %q", data)
+	}
+	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	if !strings.Contains(diagnostics.String(), "not AgentSuite-conformant") {
+		t.Fatalf("stderr = %q", diagnostics.String())
+	}
+}
+
+func TestSuiteBuildHidesBuilderWarningsWithoutVerbose(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	output := filepath.Join(t.TempDir(), "writer.oci.tar")
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
+		if options.Verbose {
+			t.Fatal("verbose unexpectedly enabled")
+		}
+		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+			_, err := io.WriteString(dst, "oci archive")
+			return agentsuite.BuildResult{
+				MediaType: agentkitbuilder.OCIArchiveMediaType,
+				Warnings:  []string{"builder implementation detail"},
+			}, err
+		})
+	}
+	if err := execute([]string{
+		"suite", "build", fixture,
+		"--model-base-url", "https://models.example/v1",
+		"--output", output,
+	}, deps); err != nil {
+		t.Fatalf("suite build error = %v", err)
+	}
+	if diagnostics.Len() != 0 {
+		t.Fatalf("stderr = %q", diagnostics.String())
+	}
+	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestSuiteBuildRejectsUnknownBackendWithoutCreatingOutput(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "writer.oci.tar")
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	err := execute([]string{
+		"suite", "build", "suite",
+		"--builder", "unknown",
+		"--model-base-url", "https://models.example/v1",
+		"--output", output,
+	}, deps)
+	if err == nil || !strings.Contains(err.Error(), "unsupported sandbox builder") {
+		t.Fatalf("suite build error = %v", err)
+	}
+	if *loads != 0 {
+		t.Fatalf("failed suite build loaded operational config %d time(s)", *loads)
+	}
+	if _, statErr := os.Stat(output); !os.IsNotExist(statErr) {
+		t.Fatalf("output exists after refusal: %v", statErr)
 	}
 }
 
@@ -257,7 +363,7 @@ func TestSuiteTransferHelpCoversLayoutsAndRegistries(t *testing.T) {
 }
 
 func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
-	group := newSuiteCommand()
+	group := newSuiteCommand(&commandState{deps: productionDependencies()})
 	tests := []struct {
 		command string
 		flags   []string
@@ -265,6 +371,7 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 		{command: "push", flags: []string{"to-layout", "plain-http", "force"}},
 		{command: "pull", flags: []string{"from-layout", "output", "plain-http"}},
 	}
+
 	for _, test := range tests {
 		command, _, err := group.Find([]string{test.command})
 		if err != nil {
@@ -285,6 +392,16 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 			}
 		}
 	}
+}
+
+type sandboxBuilderFunc func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error)
+
+func (fn sandboxBuilderFunc) Build(
+	ctx context.Context,
+	plan agentsuite.SandboxPlan,
+	dst io.Writer,
+) (agentsuite.BuildResult, error) {
+	return fn(ctx, plan, dst)
 }
 
 func TestSuiteTransferRejectsInvalidLayoutFlags(t *testing.T) {

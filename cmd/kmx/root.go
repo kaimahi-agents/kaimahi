@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/planebuild"
@@ -17,16 +19,23 @@ import (
 )
 
 type dependencies struct {
-	stdin      *os.File
-	stdout     io.Writer
-	stderr     io.Writer
-	loadConfig func(string, string) (*config.Config, error)
-	newApp     func(*config.Config) *app.App
-	buildInfo  func() (*debug.BuildInfo, bool)
+	stdin              *os.File
+	stdout             io.Writer
+	stderr             io.Writer
+	loadConfig         func(string, string) (*config.Config, error)
+	newApp             func(*config.Config) *app.App
+	buildInfo          func() (*debug.BuildInfo, bool)
+	newAgentKitBuilder func(agentkitbuilder.Options) agentsuitecore.SandboxBuilder
 }
 
 func productionDependencies() dependencies {
-	return dependencies{os.Stdin, os.Stdout, os.Stderr, config.LoadWithOverrides, app.New, debug.ReadBuildInfo}
+	return dependencies{
+		stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
+		newAgentKitBuilder: func(options agentkitbuilder.Options) agentsuitecore.SandboxBuilder {
+			return agentkitbuilder.New(options)
+		},
+	}
 }
 
 type commandState struct {
@@ -124,7 +133,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
 		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
-		newSuiteCommand(),
+		newSuiteCommand(state),
 		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
 		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 	)
