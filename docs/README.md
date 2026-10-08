@@ -71,6 +71,7 @@ listener inventory, Orka architecture or the project's future shape.
 - [Repository map](repository-map.md): where the retained files belong.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
+- [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
