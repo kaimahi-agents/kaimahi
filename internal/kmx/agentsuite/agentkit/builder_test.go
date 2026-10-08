@@ -34,7 +34,7 @@ func TestBuildEmitsArchiveThroughExporter(t *testing.T) {
 		t.Fatalf("unexpected result: output=%q result=%+v", output.String(), result)
 	}
 	if exported.AdapterRef != "registry.example/harness@"+testDigest ||
-		exported.OS != "linux" || exported.Architecture != "amd64" {
+		exported.OS != "linux" || exported.Architecture != "amd64" || exported.SourceEpoch != 1 {
 		t.Fatalf("exported image = %+v", exported)
 	}
 	if exported.Agent.Metadata.Name != "writer" ||
@@ -239,6 +239,24 @@ func TestBuildRequiresModelURL(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsUnsafeModelURLs(t *testing.T) {
+	for _, value := range []string{
+		"https://models.example/v1?api-key=secret",
+		"https://models.example/v1?",
+		"https://user:secret@models.example/v1",
+		"https://:443/v1",
+		"https://models.example/v1#fragment",
+	} {
+		t.Run(value, func(t *testing.T) {
+			builder := New(Options{ModelBaseURL: value})
+			err := buildError(builder, minimalPlan())
+			if !strings.Contains(err, "--model-base-url") {
+				t.Fatalf("Build() error = %q", err)
+			}
+		})
+	}
+}
+
 func TestBuildRejectsInvalidModelAPIKeyEnvironmentName(t *testing.T) {
 	builder := New(Options{
 		ModelBaseURL:   "https://example.openai.azure.com/openai/v1/",
@@ -273,6 +291,7 @@ func minimalPlan() agentsuite.SandboxPlan {
 		Composition: agentsuite.Composition{
 			Agent: "writer", Platform: platform, BuildProfile: "default",
 		},
+		BuildProfile: agentsuite.BuildProfile{SourceEpoch: 1},
 		RuntimeBase: agentsuite.PlatformImage{
 			Platform: platform, ImageRef: "registry.example/runtime@" + testDigest,
 		},

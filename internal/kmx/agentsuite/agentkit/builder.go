@@ -8,10 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"regexp"
-	"strings"
 
-	"github.com/opencontainers/go-digest"
 	agentkitconfig "github.com/sozercan/agentkit/pkg/agentkit/config"
 	"github.com/sozercan/agentkit/pkg/agentkit/effective"
 	"github.com/sozercan/agentkit/pkg/utils"
@@ -20,8 +17,6 @@ import (
 )
 
 const OCIArchiveMediaType = "application/vnd.oci.image.layout.v1.tar"
-
-var imageReferencePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]+)?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$`)
 
 // Options bind the provider-neutral build plan to AgentKit and BuildKit.
 type Options struct {
@@ -92,6 +87,7 @@ func (b *Builder) Build(
 		AdapterRef:   plan.Harness.ImageRef,
 		OS:           platform.OS,
 		Architecture: platform.Architecture,
+		SourceEpoch:  plan.BuildProfile.SourceEpoch,
 	}, dst); err != nil {
 		return agentsuite.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
 	}
@@ -107,8 +103,9 @@ func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 	var errs []error
 	parsedURL, err := url.Parse(b.options.ModelBaseURL)
 	if err != nil || parsedURL.Scheme != "http" && parsedURL.Scheme != "https" ||
-		parsedURL.Host == "" || parsedURL.User != nil || parsedURL.Fragment != "" {
-		errs = append(errs, errors.New("experimental AgentKit builder requires an absolute http(s) --model-base-url without credentials or fragment"))
+		parsedURL.Hostname() == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
+		parsedURL.ForceQuery || parsedURL.Fragment != "" {
+		errs = append(errs, errors.New("experimental AgentKit builder requires an absolute http(s) --model-base-url without credentials, query, or fragment"))
 	}
 	if plan.Agent.Model.Protocol != "openai-compatible" {
 		errs = append(errs, fmt.Errorf("experimental AgentKit builder does not support model protocol %q", plan.Agent.Model.Protocol))
@@ -142,16 +139,8 @@ func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 }
 
 func validateDigestReference(name, value string) error {
-	if !imageReferencePattern.MatchString(value) {
-		return fmt.Errorf("%s must be a registry-qualified, digest-addressed image reference", name)
-	}
-	before, encoded, ok := strings.Cut(value, "@")
-	if !ok || before == "" {
-		return fmt.Errorf("%s must be a registry-qualified, digest-addressed image reference", name)
-	}
-	parsed, err := digest.Parse(encoded)
-	if err != nil || parsed.Algorithm() != digest.SHA256 {
-		return fmt.Errorf("%s must use a valid sha256 digest", name)
+	if err := agentsuite.ValidateImageReference(value); err != nil {
+		return fmt.Errorf("%s must be a registry-qualified, digest-addressed image reference: %w", name, err)
 	}
 	return nil
 }

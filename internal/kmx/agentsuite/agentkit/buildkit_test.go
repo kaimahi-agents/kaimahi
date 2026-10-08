@@ -37,6 +37,7 @@ func TestBuildkitExporterWritesNamedOCIArchive(t *testing.T) {
 		},
 		AdapterRef: "registry.example/harness@sha256:" + strings.Repeat("a", 64),
 		OS:         "linux", Architecture: "amd64",
+		SourceEpoch: 1790388400,
 	}, &output)
 	if err != nil {
 		t.Fatalf("ExportOCI() error = %v", err)
@@ -49,7 +50,9 @@ func TestBuildkitExporterWritesNamedOCIArchive(t *testing.T) {
 	}
 	if len(client.solveOpt.Exports) != 1 ||
 		client.solveOpt.Exports[0].Type != buildkitclient.ExporterOCI ||
-		client.solveOpt.Exports[0].Attrs["name"] != "incident-analyst:latest" {
+		client.solveOpt.Exports[0].Attrs["name"] != "incident-analyst:latest" ||
+		client.solveOpt.Exports[0].Attrs["source-date-epoch"] != "1790388400" ||
+		client.solveOpt.Exports[0].Attrs["rewrite-timestamp"] != "true" {
 		t.Fatalf("exports = %+v", client.solveOpt.Exports)
 	}
 	if client.product != "kaimahi-agentkit" || client.buildFunc == nil {

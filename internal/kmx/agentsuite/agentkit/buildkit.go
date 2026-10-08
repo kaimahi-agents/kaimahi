@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	buildkitclient "github.com/moby/buildkit/client"
@@ -23,6 +24,7 @@ type agentImage struct {
 	AdapterRef   string
 	OS           string
 	Architecture string
+	SourceEpoch  int64
 }
 
 type ociExporter interface {
@@ -94,8 +96,12 @@ func (e buildkitExporter) ExportOCI(ctx context.Context, image agentImage, dst i
 	}
 	_, err = client.Build(ctx, buildkitclient.SolveOpt{
 		Exports: []buildkitclient.ExportEntry{{
-			Type:  buildkitclient.ExporterOCI,
-			Attrs: map[string]string{"name": image.Agent.Metadata.Name + ":latest"},
+			Type: buildkitclient.ExporterOCI,
+			Attrs: map[string]string{
+				"name":              image.Agent.Metadata.Name + ":latest",
+				"source-date-epoch": strconv.FormatInt(image.SourceEpoch, 10),
+				"rewrite-timestamp": "true",
+			},
 			Output: func(map[string]string) (io.WriteCloser, error) {
 				return nopWriteCloser{Writer: dst}, nil
 			},
