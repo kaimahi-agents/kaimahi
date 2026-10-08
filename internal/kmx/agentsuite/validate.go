@@ -51,13 +51,18 @@ type validator struct {
 }
 
 func validateContent(content *contentSet) (*Report, error) {
+	_, report, err := validateContentGraph(content)
+	return report, err
+}
+
+func validateContentGraph(content *contentSet) (*validator, *Report, error) {
 	rawSuite, err := content.data("agentsuite.json")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var suite Suite
 	if err := decodeStrict(rawSuite, &suite); err != nil {
-		return nil, fmt.Errorf("agentsuite.json: %w", err)
+		return nil, nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	v := &validator{
 		content:                  content,
@@ -78,7 +83,7 @@ func validateContent(content *contentSet) (*Report, error) {
 	errs = append(errs, v.loadCompositions())
 	errs = append(errs, v.validateReferences())
 	if err := errors.Join(errs...); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	capabilities := derivedCapabilities(v.toolProviders)
 	agentPlatforms := make([]AgentPlatform, 0, len(v.agents))
@@ -115,7 +120,7 @@ func validateContent(content *contentSet) (*Report, error) {
 			b.Agent+"@"+b.Platform.String()+"@"+b.BuildProfile,
 		)
 	})
-	return &Report{
+	report := &Report{
 		Name:                     suite.Name,
 		Agents:                   len(v.agents),
 		ToolProviders:            len(v.toolProviders),
@@ -124,7 +129,8 @@ func validateContent(content *contentSet) (*Report, error) {
 		Capabilities:             capabilities,
 		AgentPlatforms:           agentPlatforms,
 		CompositionSelections:    selections,
-	}, nil
+	}
+	return v, report, nil
 }
 
 func (v *validator) validateSuite() error {
