@@ -240,6 +240,7 @@ type ToolProviderDependency struct {
 
 type PlatformImage struct {
 	Platform Platform   `json:"platform"`
+	ImageRef string     `json:"imageRef"`
 	Image    Descriptor `json:"image"`
 }
 

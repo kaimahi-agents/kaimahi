@@ -21,6 +21,62 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidatePath() error = %v", err)
 	}
+
+	func TestValidateBuildProfileRequiresDigestMatchedImageReferences(t *testing.T) {
+		digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		profile := BuildProfile{
+			SchemaVersion: SpecVersion,
+			MediaType:     MediaTypeBuildProfile,
+			ID:            "default",
+			RuntimeBase: []PlatformImage{{
+				Platform: Platform{OS: "linux", Architecture: "amd64"},
+				ImageRef: "registry.example/agentsuite/runtime-base@" + digest,
+				Image:    Descriptor{MediaType: ociManifestMediaType, Digest: digest, Size: 1},
+			}},
+			Harness: []PlatformImage{{
+				Platform: Platform{OS: "linux", Architecture: "amd64"},
+				ImageRef: "registry.example/agentsuite/harness@" + digest,
+				Image:    Descriptor{MediaType: ociManifestMediaType, Digest: digest, Size: 1},
+			}},
+			SourceEpoch: 1,
+		}
+		if err := validateBuildProfile(profile); err != nil {
+			t.Fatalf("valid build profile rejected: %v", err)
+		}
+
+		tests := []struct {
+			name   string
+			mutate func(*BuildProfile)
+			want   string
+		}{
+			{
+				name: "tag reference",
+				mutate: func(profile *BuildProfile) {
+					profile.RuntimeBase[0].ImageRef = "registry.example/agentsuite/runtime-base:latest"
+				},
+				want: "imageRef must be a registry-qualified",
+			},
+			{
+				name: "reference descriptor digest mismatch",
+				mutate: func(profile *BuildProfile) {
+					profile.Harness[0].ImageRef = "registry.example/agentsuite/harness@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+				},
+				want: "imageRef digest must match image descriptor",
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				candidate := profile
+				candidate.RuntimeBase = append([]PlatformImage(nil), profile.RuntimeBase...)
+				candidate.Harness = append([]PlatformImage(nil), profile.Harness...)
+				test.mutate(&candidate)
+				err := validateBuildProfile(candidate)
+				if err == nil || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("validateBuildProfile() error = %v, want substring %q", err, test.want)
+				}
+			})
+		}
+	}
 	if report.Name != "example" || report.Agents != 1 || report.ToolProviders != 0 || report.Compositions != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
@@ -137,8 +193,8 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 	}
 	profile := BuildProfile{
 		SchemaVersion: SpecVersion, MediaType: MediaTypeBuildProfile, ID: "default",
-		RuntimeBase: []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, Image: image}},
-		Harness:     []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, Image: image}},
+		RuntimeBase: []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/runtime-base@" + image.Digest, Image: image}},
+		Harness:     []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/harness@" + image.Digest, Image: image}},
 		SourceEpoch: 1,
 	}
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
@@ -363,7 +419,7 @@ func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) 
 					"default": {
 						ID: "default",
 						RuntimeBase: []PlatformImage{{
-							Platform: platform, Image: image,
+							Platform: platform, ImageRef: "registry.example/agentsuite/runtime-base@" + image.Digest, Image: image,
 						}},
 					},
 				},
@@ -1309,8 +1365,8 @@ func writeMinimalSuite(t *testing.T) string {
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeBuildProfile,
 		ID:            "default",
-		RuntimeBase:   []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, Image: image}},
-		Harness:       []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, Image: image}},
+		RuntimeBase:   []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/runtime-base@" + image.Digest, Image: image}},
+		Harness:       []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/harness@" + image.Digest, Image: image}},
 		SourceEpoch:   1,
 	}
 	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
