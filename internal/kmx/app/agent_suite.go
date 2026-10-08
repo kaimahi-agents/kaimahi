@@ -43,6 +43,16 @@ func (a *App) PushSuite(
 	return agentsuite.Push(ctx, source, target, reference)
 }
 
+// PushSuiteRegistry pushes one extracted AgentSuite directory to a registry.
+func (a *App) PushSuiteRegistry(
+	ctx context.Context,
+	source string,
+	reference string,
+	plainHTTP bool,
+) (agentsuite.PushResult, error) {
+	return agentsuite.PushRegistry(ctx, source, reference, plainHTTP)
+}
+
 // PullSuite pulls one referenced AgentSuite from an OCI image layout and
 // extracts it into a new directory.
 func (a *App) PullSuite(
@@ -52,4 +62,15 @@ func (a *App) PullSuite(
 	output string,
 ) (agentsuite.PullResult, error) {
 	return agentsuite.Pull(ctx, source, reference, output)
+}
+
+// PullSuiteRegistry pulls one referenced AgentSuite from a registry and
+// extracts it into a new directory.
+func (a *App) PullSuiteRegistry(
+	ctx context.Context,
+	reference string,
+	output string,
+	plainHTTP bool,
+) (agentsuite.PullResult, error) {
+	return agentsuite.PullRegistry(ctx, reference, output, plainHTTP)
 }

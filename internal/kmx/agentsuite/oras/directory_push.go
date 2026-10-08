@@ -70,33 +70,11 @@ func Push(
 		return PushResult{}, errors.New("AgentSuite target must be outside the source directory")
 	}
 
-	sourceRoot, err := os.MkdirTemp("", "agentsuite-source-cas-*")
+	packedRoot, packedStore, packed, err := packDirectory(ctx, sourcePath)
 	if err != nil {
 		return PushResult{}, err
-	}
-	defer os.RemoveAll(sourceRoot)
-	sourceStore, err := oci.New(sourceRoot)
-	if err != nil {
-		return PushResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
-	}
-	contentDescriptor, err := pushDirectory(ctx, sourcePath, sourceStore)
-	if err != nil {
-		return PushResult{}, fmt.Errorf("archive AgentSuite directory: %w", err)
-	}
-
-	packedRoot, err := os.MkdirTemp("", "agentsuite-packed-*")
-	if err != nil {
-		return PushResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
 	}
 	defer os.RemoveAll(packedRoot)
-	packedStore, err := oci.New(packedRoot)
-	if err != nil {
-		return PushResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
-	}
-	packed, err := New(nil).Pack(ctx, sourceStore, packedStore, contentDescriptor)
-	if err != nil {
-		return PushResult{}, err
-	}
 
 	targetPath := destinationPath
 	publishTarget := false
@@ -142,6 +120,41 @@ func Push(
 		Descriptor: packed.Descriptor,
 		Report:     packed.Report,
 	}, nil
+}
+
+func packDirectory(
+	ctx context.Context,
+	source string,
+) (string, *oci.Store, agentsuite.PackResult, error) {
+	sourceRoot, err := os.MkdirTemp("", "agentsuite-source-cas-*")
+	if err != nil {
+		return "", nil, agentsuite.PackResult{}, err
+	}
+	defer os.RemoveAll(sourceRoot)
+	sourceStore, err := oci.New(sourceRoot)
+	if err != nil {
+		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
+	}
+	contentDescriptor, err := pushDirectory(ctx, source, sourceStore)
+	if err != nil {
+		return "", nil, agentsuite.PackResult{}, fmt.Errorf("archive AgentSuite directory: %w", err)
+	}
+
+	packedRoot, err := os.MkdirTemp("", "agentsuite-packed-*")
+	if err != nil {
+		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
+	}
+	packedStore, err := oci.New(packedRoot)
+	if err != nil {
+		_ = os.RemoveAll(packedRoot)
+		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
+	}
+	packed, err := New(nil).Pack(ctx, sourceStore, packedStore, contentDescriptor)
+	if err != nil {
+		_ = os.RemoveAll(packedRoot)
+		return "", nil, agentsuite.PackResult{}, err
+	}
+	return packedRoot, packedStore, packed, nil
 }
 
 func requireOCILayout(root, subject string) error {

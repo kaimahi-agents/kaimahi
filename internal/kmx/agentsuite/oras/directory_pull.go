@@ -53,8 +53,27 @@ func Pull(
 	if err := requireOCILayout(sourcePath, "AgentSuite source"); err != nil {
 		return PullResult{}, err
 	}
+	sourceStore, err := oci.New(sourcePath)
+	if err != nil {
+		return PullResult{}, fmt.Errorf("open AgentSuite OCI source: %w", err)
+	}
+	return pullToDirectory(ctx, sourceStore, reference, outputPath)
+}
+
+func pullToDirectory(
+	ctx context.Context,
+	source agentsuite.ReadOnlyTarget,
+	reference string,
+	outputPath string,
+) (PullResult, error) {
+	if source == nil {
+		return PullResult{}, errors.New("AgentSuite pull source is required")
+	}
+	if reference == "" {
+		return PullResult{}, errors.New("AgentSuite pull reference is required")
+	}
 	if _, err := os.Lstat(outputPath); err == nil {
-		return PullResult{}, fmt.Errorf("AgentSuite output already exists: %s", output)
+		return PullResult{}, fmt.Errorf("AgentSuite output already exists: %s", outputPath)
 	} else if !os.IsNotExist(err) {
 		return PullResult{}, fmt.Errorf("inspect AgentSuite output: %w", err)
 	}
@@ -67,10 +86,6 @@ func Pull(
 		return PullResult{}, fmt.Errorf("AgentSuite output parent %s is not a directory", outputParent)
 	}
 
-	sourceStore, err := oci.New(sourcePath)
-	if err != nil {
-		return PullResult{}, fmt.Errorf("open AgentSuite OCI source: %w", err)
-	}
 	pulledRoot, err := os.MkdirTemp("", "agentsuite-pulled-*")
 	if err != nil {
 		return PullResult{}, err
@@ -80,7 +95,7 @@ func Pull(
 	if err != nil {
 		return PullResult{}, fmt.Errorf("create AgentSuite pull CAS: %w", err)
 	}
-	root, err := NewPuller(sourceStore).Pull(ctx, reference, pulledStore)
+	root, err := NewPuller(source).Pull(ctx, reference, pulledStore)
 	if err != nil {
 		return PullResult{}, err
 	}

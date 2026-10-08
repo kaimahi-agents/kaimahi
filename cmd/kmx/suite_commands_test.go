@@ -226,18 +226,18 @@ func TestSuitePullExtractsDirectory(t *testing.T) {
 	assertDirectoryContentsEqual(t, fixture, output)
 }
 
-func TestSuiteTransferHelpIsLocalOCILayoutOnly(t *testing.T) {
+func TestSuiteTransferHelpCoversLayoutsAndRegistries(t *testing.T) {
 	for _, test := range []struct {
 		args    []string
 		example string
 	}{
 		{
 			args:    []string{"suite", "push", "--help"},
-			example: "kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
+			example: "kmx suite push ./suite registry.example.com/team:v1",
 		},
 		{
 			args:    []string{"suite", "pull", "--help"},
-			example: "kmx suite pull agentsuites/team:v1 --from-layout ./layout --output ./suite",
+			example: "kmx suite pull registry.example.com/team:v1 --output ./suite",
 		},
 	} {
 		var out, diagnostics bytes.Buffer
@@ -248,7 +248,7 @@ func TestSuiteTransferHelpIsLocalOCILayoutOnly(t *testing.T) {
 		if *loads != 0 {
 			t.Fatalf("help loaded operational config %d time(s)", *loads)
 		}
-		for _, want := range []string{"local OCI image layout", "filesystem directory", "Registry", test.example} {
+		for _, want := range []string{"local OCI image layout", "OCI registry", "Docker credential store", "--plain-http", test.example} {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("help for %v does not contain %q:\n%s", test.args, want, out.String())
 			}
@@ -262,8 +262,8 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 		command string
 		flags   []string
 	}{
-		{command: "push", flags: []string{"to-layout"}},
-		{command: "pull", flags: []string{"from-layout", "output"}},
+		{command: "push", flags: []string{"to-layout", "plain-http"}},
+		{command: "pull", flags: []string{"from-layout", "output", "plain-http"}},
 	}
 	for _, test := range tests {
 		command, _, err := group.Find([]string{test.command})
@@ -279,10 +279,41 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 				t.Fatalf("suite %s --%s has undocumented shorthand -%s", test.command, name, flag.Shorthand)
 			}
 		}
-		for _, name := range []string{"reference", "registry", "plain-http", "username", "password"} {
+		for _, name := range []string{"reference", "registry", "username", "password"} {
 			if command.Flags().Lookup(name) != nil {
 				t.Fatalf("suite %s unexpectedly exposes --%s", test.command, name)
 			}
+		}
+	}
+}
+
+func TestSuiteTransferRejectsInvalidLayoutFlags(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{
+			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--plain-http", "suite:v1"},
+			"--plain-http cannot be used with --to-layout",
+		},
+		{
+			[]string{"suite", "pull", "suite:v1", "--from-layout", t.TempDir(), "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")},
+			"--plain-http cannot be used with --from-layout",
+		},
+		{
+			[]string{"suite", "push", t.TempDir(), "--to-layout=", "registry.example.com/team:v1"},
+			"--to-layout cannot be empty",
+		},
+		{
+			[]string{"suite", "pull", "registry.example.com/team:v1", "--from-layout=", "--output", filepath.Join(t.TempDir(), "suite")},
+			"--from-layout cannot be empty",
+		},
+	} {
+		var out, diagnostics bytes.Buffer
+		deps, _ := testDependencies(&out, &diagnostics)
+		err := execute(test.args, deps)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("execute(%v) error = %v, want %q", test.args, err, test.want)
 		}
 	}
 }

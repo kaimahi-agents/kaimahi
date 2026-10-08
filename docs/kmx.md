@@ -90,7 +90,9 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
+| `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry using credentials from the standard Docker credential store. `--plain-http` is an explicit development-only opt-in. |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
+| `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry using credentials from the standard Docker credential store, then atomically extract it into a new directory. |
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](agentsuite-spec.md) |
 | `kmx agent lift <bundle-dir>` | reconcile an existing Orka portable bundle on a prepared destination; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
@@ -102,6 +104,28 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
 | `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; Kagent inventory and bundles are unsupported. `b` compares the selected Orka agent with its local bundle using the same report as `kmx agent status`; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
+
+#### Registry authentication
+
+Registry push and pull do not add a Kaimahi login contract or accept credentials
+on command arguments. They use the Docker-compatible config and credential
+helpers selected by `DOCKER_CONFIG` or the standard `~/.docker/config.json`.
+Authenticate before invoking `kmx`, for example:
+
+```bash
+ACR_NAME=<registry-name>
+ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
+az acr login --name "$ACR_NAME"
+kmx suite push ./suite "$ACR_LOGIN_SERVER/agentsuites/team:v1"
+kmx suite pull "$ACR_LOGIN_SERVER/agentsuites/team:v1" --output ./suite-copy
+```
+
+`docker login` and `oras login` work when they populate the same credential
+store. `az acr login --expose-token` only returns a token; by itself it does not
+persist credentials for `kmx` to read. Kaimahi never prints credentials and
+does not expose username, password, or token flags. HTTPS is the default;
+`--plain-http` must be supplied explicitly for a development registry and
+cannot be combined with `--to-layout` or `--from-layout`.
 
 ### Existing plane and operator commands
 
