@@ -52,7 +52,7 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	a.chatVerbose = opt.Verbose
 	started := a.timeNow()
 	if a.Stdin == nil || !isInteractiveTerminal(a.Stdin) || !isInteractiveTerminal(a.Err) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx quickstart-wizard requires an interactive terminal; use `kmx quickstart` for automation")
+		return fmt.Errorf("kmx quickstart --interactive requires an interactive terminal; use `kmx quickstart` for automation")
 	}
 	if err := a.validateKindTarget(); err != nil {
 		return err
@@ -167,7 +167,7 @@ func (a *App) quickstartWizardTarget() (quickstartTarget, error) {
 	// Only the already-safe local path moves its banner into the TUI. A remote
 	// or unverified target retains GuardCreate's visible confirmation flow.
 	if !posture.Local {
-		if err := a.GuardCreateIn(action, "kmx quickstart-wizard", OrkaPathNamespaces); err != nil {
+		if err := a.GuardCreateIn(action, "kmx quickstart --interactive", OrkaPathNamespaces); err != nil {
 			return quickstartTarget{}, err
 		}
 	} else {
@@ -1307,7 +1307,7 @@ func runQuickstartReadyScreen(in io.Reader, out io.Writer, name string, location
 }
 
 func (a *App) quickstartOrkaChat(agent, namespace string) error {
-	return a.ChatWithOptions(ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Interactive: true, Verbose: a.chatVerbose, AzureDiscovery: a.azureDiscoveryMode})
+	return a.ChatWithOptions(ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Verbose: a.chatVerbose, AzureDiscovery: a.azureDiscoveryMode})
 }
 
 type orkaChatBackend struct {

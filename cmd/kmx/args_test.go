@@ -54,7 +54,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 		if child.Hidden {
 			// Retired spellings keep useful errors; aks keeps working as a
 			// compatibility route. Neither belongs in the public root help.
-			if child.Name() != "govern" && child.Name() != "use" && child.Name() != "aks" {
+			if child.Name() != "govern" && child.Name() != "use" && child.Name() != "quickstart-wizard" && child.Name() != "aks" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue

@@ -85,6 +85,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - The quickstart Orka Kubernetes Tool now grants named-policy `get` only to the AI worker configured by the installed v0.2.0 chart, including stock Helm `orka` releases. Installation and Agent lift refuse missing or ambiguous worker identity and ineffective policy authorization even when a Tool reports Available. Console Prepare can reapply the scoped grant; see [repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant). CI proves both chart variants with a succeeded health Task and metadata-only Tool-call events instead of worker logs or printed answers.
 
+### Breaking
+
+- `kmx quickstart --interactive` (short form `-i`) replaces `kmx quickstart-wizard`, with the same wizard flags and behavior. `kmx quickstart-wizard` is now a hidden retirement stub: it refuses before loading configuration and names `kmx quickstart --interactive`. Bare `kmx quickstart`, its `--task` default and its text and `-o json` output are unchanged. Flags that belong to the other mode are refused before configuration loads: `-o/--output` with `--interactive`, and `--instructions`, `--tools`, `--skills`, `--result-service-account`, `--out`, `--verbose`, `--azure-discovery` or `--inference` without it. With `--interactive`, `--task` runs a first Task only when given. ([#336](https://github.com/kaimahi-agents/kaimahi/issues/336))
+- `kmx agent chat <name> [message]` opens the interactive session without a mode flag, and `--interactive` is removed: passing it fails as an unknown flag. A message after the name is still the first turn, not a one-shot; `kmx agent run` remains the one-shot Task. `--session` and `--json` remain refused. Generated quickstart follow-ups no longer print `--interactive`.
+
+### Upgrading
+
+- Replace `kmx quickstart-wizard [flags]` with `kmx quickstart --interactive [flags]` in scripts and notes. Drop `--interactive` from `kmx agent chat` invocations. Tagged v0.4.1 and earlier only understand `kmx quickstart-wizard` and require `kmx agent chat --interactive`.
+
 ## v0.4.1 — 2026-09-30
 
 ### Changed

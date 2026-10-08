@@ -98,14 +98,13 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 		{[]string{"agent", "chat", "hello-world", "--json"}, "--json"},
 		{[]string{"agent", "chat", "--session", "abc"}, "--session"},
 		{[]string{"agent", "chat", "--json"}, "--json"},
-		{[]string{"agent", "chat", "hello-world", "--interactive", "--session", "abc"}, "--session"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
 			err := execute(tc.args, deps)
-			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "--interactive") {
-				t.Fatalf("retired flag must name interactive replacement: %v: %v", tc.args, err)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "kmx agent chat --namespace") {
+				t.Fatalf("retired flag must name the chat replacement: %v: %v", tc.args, err)
 			}
 			if *loads != 0 {
 				t.Fatalf("retired flag loaded operational configuration: %v", tc.args)

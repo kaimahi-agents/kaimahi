@@ -97,7 +97,7 @@ These warm-cache results do not claim to eliminate a first uncached request.
 
 ## Rechecking a slow request
 
-Enable `--verbose` on `kmx quickstart-wizard`, or enter `/verbose-on` in chat,
+Enable `--verbose` on `kmx quickstart --interactive`, or enter `/verbose-on` in chat,
 to show `WORKING` progress and the `TIMING` section. `/verbose-off` hides those
 details again and skips the timing lookup. The responding animation with elapsed
 seconds and the brief total response time remain visible in either mode.

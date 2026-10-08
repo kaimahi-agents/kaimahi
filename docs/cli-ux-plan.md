@@ -206,7 +206,7 @@ The existing chat state machine remains authoritative for:
 Those indentation levels are not DIY decoration to replace with a snapshot
 tree: they stop model-authored text from occupying renderer-owned provenance
 positions. Lip Gloss styling is applied only after dynamic text is sanitized.
-Orka chat requires `--interactive`, including with scanner input. Retired `--json`
+Orka chat is always a session, including with scanner input. Retired `--json`
 is refused before application loading; there is no raw A2A JSON equivalent for
 an existing Agent.
 

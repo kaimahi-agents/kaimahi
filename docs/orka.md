@@ -185,10 +185,10 @@ authentication. Dry-run does not test access or execution.
 used through the interactive chat:
 
 ```bash
-kmx agent chat --interactive --namespace <ns> <name>
+kmx agent chat --namespace <ns> <name>
 ```
 
-Orka chat is a session, so a non-interactive invocation is refused. Use
+Orka chat is always a session; a message after the name is its first turn. Use
 `kmx agent run --agent <name> --prompt-file -` for a one-shot Task, and
 `kmx task result <task> --wait 5m` to retrieve a later answer. A live Agent is
 edited with `kubectl edit agents.core.orka.ai` and read back with

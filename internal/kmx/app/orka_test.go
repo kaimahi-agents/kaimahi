@@ -1287,7 +1287,7 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 
 // Every path that needs the Task result identity writes the SAME grant.
 //
-// `kmx up --step orka`, `kmx quickstart-wizard` and the lift deployment all
+// `kmx up --step orka`, `kmx quickstart --interactive` and the lift deployment all
 // provision the account results are read with, and a copy per path is free to
 // drift: a Role whose extent depends on which command wrote it is a grant
 // nobody reviews as one. The wizard used to carry its own literal; both

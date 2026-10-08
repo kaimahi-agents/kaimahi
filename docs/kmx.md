@@ -337,12 +337,12 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | Command | Current behavior |
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
-| `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
+| `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
 | `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
 | `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Direct invocation keeps unchanged flags and behavior: provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
-| `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; Kagent chat is not restored by its create capability |
+| `kmx agent chat <name> [message]` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Chat is always a session: an optional message is its first turn, and the one-shot Task is `kmx agent run`. The former `--interactive` flag is removed; Kagent chat is not restored by its create capability |
 | `kmx status` | Starts with the unchanged `kmx orka status` report (running version, deployments, CRDs, Provider readiness), then reports the separate model plane's readiness and seam certificate expiry with the same pinned context. An absent, unreadable, or scaled-zero plane is reported distinctly. `-o table` only |
 | `kmx down` | delete named kind cluster, **including its ledger** |
 
@@ -410,9 +410,10 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
 - Redirected admin reports retain fixed-width/truncated compatibility output.
   Progress/diagnostics go to stderr. JSON/YAML, manifests, metrics, completion,
   SQL and raw chat bypass styling. Admin JSON/YAML is not implemented.
-- Chat is a session and has no one-shot form: a non-interactive invocation is
-  refused and names the command that works, so there are no task bytes to pipe
-  and no `--json` chat output. `--interactive --json` is refused too.
+- Chat is a session and has no one-shot form: a message after the Agent name
+  is the first turn of that session, and there is no `--json` chat output.
+  `--json` and `--session` are refused before configuration loads. Use
+  `kmx agent run` for answer-only stdout.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
   null when none were provisioned. `governed: false` means **this invocation did
@@ -700,7 +701,7 @@ depends on.
 ## Interactive chat
 
 ```bash
-kmx agent chat --interactive --namespace orka-system hello-world-agent
+kmx agent chat --namespace orka-system hello-world-agent
 ```
 
 `/help`, `/agent`, `/tools`, `/lift`, `/inference`, `/inference-local`,

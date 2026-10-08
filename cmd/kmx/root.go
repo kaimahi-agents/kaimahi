@@ -124,7 +124,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
-		newQuickstartCommand(state), newQuickstartWizardCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
+		newQuickstartCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
 		newPlaneCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
 		newLedgerCommand(state), newFlowCommand(state),
 		newWatchCommand(state),
@@ -136,6 +136,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newSuiteCommand(state),
 		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
 		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
+		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)
 	return root
 }

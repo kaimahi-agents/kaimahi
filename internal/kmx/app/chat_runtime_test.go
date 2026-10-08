@@ -53,7 +53,7 @@ esac`)
 	_, _ = in.Seek(0, 0)
 	var out bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}, Stdin: in, Out: &out, Err: &out}
-	err = a.ChatWithOptions(ChatOptions{Agent: "demo", Runtime: "orka", Interactive: true})
+	err = a.ChatWithOptions(ChatOptions{Agent: "demo", Runtime: "orka"})
 	if err != nil {
 		t.Fatal(err)
 	}

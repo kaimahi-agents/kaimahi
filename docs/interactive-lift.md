@@ -6,7 +6,7 @@ From a live Orka chat, `/lift` opens the target picker. The lift action in
 both are interactive front ends to [`kmx agent lift`](agent-lift.md), not a
 copy of the live Agent. They look for `agents/<name>/agent.yaml` under the
 working directory, or `<root>/<name>/agent.yaml` with `--bundles <root>` on
-`kmx console` or `kmx agent chat --interactive`. The bundle must name the
+`kmx console` or `kmx agent chat`. The bundle must name the
 selected Agent. An invalid or incomplete bundle stops the operation instead
 of falling back to a live copy.
 
@@ -53,7 +53,7 @@ The target picker offers:
   include resource group and region; both are searchable. The selected cluster's
   resource group is carried into credential retrieval and the Foundry default.
 
-For faster AKS listing, start with `kmx quickstart-wizard --azure-discovery sdk`.
+For faster AKS listing, start with `kmx quickstart --interactive --azure-discovery sdk`.
 It uses the Go ARM SDK with `DefaultAzureCredential` (including Azure CLI login).
 The `cli` default remains selectable; see `azure-discovery-performance.md` for
 the measured comparison and scope of the alternative implementation.

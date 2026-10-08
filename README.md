@@ -43,10 +43,11 @@ kmx quickstart
 
 `kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
 `kmx up` provisions the local runtime without creating an Agent.
-`kmx quickstart-wizard` is the custom interactive path:
+`kmx quickstart --interactive` is the custom interactive path
+(`kmx quickstart-wizard` on tagged v0.4.1; the flag is unreleased):
 
 ```bash
-kmx quickstart-wizard
+kmx quickstart --interactive
 ```
 
 Create an agent, choose **Chat with agent**, get a local answer, then enter
@@ -91,7 +92,7 @@ Completed setup can remain after cancellation. Read
 Use Podman explicitly with:
 
 ```bash
-kmx --container-engine podman quickstart-wizard
+kmx --container-engine podman quickstart --interactive
 ```
 
 `@main` remains the moving development option; use `@v0.4.1` for this release.
@@ -113,7 +114,7 @@ boundaries between KMX and runtimes.
 |---|---|---|
 | Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
 | Provision the local runtime only | `kmx up` | Does not create an agent |
-| Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
+| Create your own local agent interactively | `kmx quickstart --interactive` | Wizard with model and agent choices; v0.4.1 uses `kmx quickstart-wizard` |
 | Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
 | Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |
 | Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Orka bundles only; reconciles on an existing target and `--plan` writes nothing |

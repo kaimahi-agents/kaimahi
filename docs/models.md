@@ -136,7 +136,7 @@ command on the same machine produces the same fixed Agent bundle. It does
 not read, write or replace the `local` Provider: the bundle has its own
 in-cluster endpoint and only shares the placeholder `local-provider-key`
 Secret. Choosing a host model while the runtime starts is
-`kmx quickstart-wizard`.
+`kmx quickstart --interactive`.
 
 Before reusing host Ollama, KMX verifies the selected tag through an endpoint
 reachable from the kind node, trying the engine host alias and kind bridge

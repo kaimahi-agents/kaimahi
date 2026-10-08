@@ -34,44 +34,81 @@ func newCtxCommand(state *commandState) *cobra.Command {
 // leaves out: a fixed Orka Agent and a question put to it. Folding them
 // together would mean one command with two contracts and a flag deciding
 // which you got.
+//
+// --interactive is a mode of the same promise, not a second contract: a
+// person steers the agent and model choices instead of taking the fixed
+// ones. Each mode owns its flags, and a flag from the other mode is refused
+// before configuration loads so it can never be silently ignored.
 func newQuickstartCommand(state *commandState) *cobra.Command {
 	var opt app.QuickstartOptions
+	var wizard app.QuickstartWizardOptions
+	var interactive bool
 	cmd := &cobra.Command{
 		Use:   "quickstart",
 		Short: "From nothing to an agent answering a question",
-		Args:  cobra.NoArgs,
+		Long: "From nothing to an agent answering a question.\n\n" +
+			"Without --interactive, deploys the fixed hello-world agent, asks it one question and prints the answer; repeatable and safe for automation.\n" +
+			"With --interactive, opens a guided terminal UI to author your own Orka agent and choose its model while the local runtime starts.",
 	}
-	cmd.Flags().StringVarP(&opt.Output, "output", "o", "text", "output: text|json")
+	flags := cmd.Flags()
+	flags.BoolVarP(&interactive, "interactive", "i", false, "author your own Orka agent in a guided terminal UI")
+	flags.StringVarP(&opt.Output, "output", "o", "text", "output: text|json (not with --interactive)")
 	// No --agent flag: quickstart deploys the hello-world manifest kmx
 	// carries, so a flag naming a different agent would deploy one thing and
-	// question another. Your own agent is `kmx agent create`, and asking any
-	// agent anything is `kmx agent chat`.
-	cmd.Flags().StringVar(&opt.Task, "task", config.DefaultTask, "the question to ask it")
+	// question another. Your own agent is --interactive or `kmx agent create`,
+	// and asking any agent anything is `kmx agent chat`.
+	flags.StringVar(&opt.Task, "task", config.DefaultTask, "the question to ask; with --interactive, an optional first Orka Task prompt that ignores this default")
+	flags.StringVar(&wizard.Create.Instructions, "instructions", "", "file containing the system message (--interactive only)")
+	flags.StringVar(&wizard.Create.Tools, "tools", "", "comma-separated Orka tool names (--interactive only; default: k8s-get-resources)")
+	flags.StringVar(&wizard.Create.Skills, "skills", "", "comma-separated explicit Orka skill names (--interactive only)")
+	flags.StringVar(&wizard.Create.ResultServiceAccount, "result-service-account", "", "existing ServiceAccount for Task result access (--interactive only)")
+	flags.StringVar(&wizard.Create.Out, "out", "", "manifest output path (--interactive only)")
+	flags.BoolVar(&wizard.Verbose, "verbose", false, "show chat WORKING and TIMING details (--interactive only)")
+	flags.StringVar(&wizard.AzureDiscovery, "azure-discovery", "cli", "AKS cluster listing: cli or sdk (DefaultAzureCredential) (--interactive only)")
+	flags.StringVar(&wizard.Inference, "inference", "auto", "legacy discovery hint; the guided setup always requires an explicit source/model selection (--interactive only)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.Quickstart(opt) })
+	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
+	_ = cmd.RegisterFlagCompletionFunc("inference", staticCompletion([]string{"auto", "copilot", "local", "foundry"}))
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+		return quickstartModeFlags(cmd, interactive)
+	}
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		if !interactive {
+			return a.Quickstart(opt)
+		}
+		// The fixed question is the non-interactive default; the guided
+		// setup runs a first Task only when one was asked for.
+		if cmd.Flags().Changed("task") {
+			wizard.Create.Task = opt.Task
+		}
+		return a.QuickstartWizard(wizard)
+	})
 	return cmd
 }
 
-func newQuickstartWizardCommand(state *commandState) *cobra.Command {
-	var opt app.QuickstartWizardOptions
-	cmd := &cobra.Command{
-		Use:   "quickstart-wizard",
-		Short: "Create your first Orka agent while its local runtime starts",
-		Args:  cobra.NoArgs,
+// quickstartInteractiveOnly are the flags that shape the guided setup. They
+// mean nothing to the fixed hello-world run.
+var quickstartInteractiveOnly = []string{"instructions", "tools", "skills", "result-service-account", "out", "verbose", "azure-discovery", "inference"}
+
+// quickstartModeFlags refuses a flag that belongs to the other quickstart
+// mode. It runs as argument validation, before any configuration is loaded.
+func quickstartModeFlags(cmd *cobra.Command, interactive bool) error {
+	flags := cmd.Flags()
+	if interactive {
+		if flags.Changed("output") {
+			return fmt.Errorf("--output does not apply to kmx quickstart --interactive: the guided setup has no machine-readable output; use kmx quickstart -o json for automation")
+		}
+		return nil
 	}
-	cmd.Flags().StringVar(&opt.Create.Instructions, "instructions", "", "file containing the system message")
-	cmd.Flags().StringVar(&opt.Create.Tools, "tools", "", "comma-separated Orka tool names (default: k8s-get-resources)")
-	cmd.Flags().StringVar(&opt.Create.Skills, "skills", "", "comma-separated explicit Orka skill names")
-	cmd.Flags().StringVar(&opt.Create.Task, "task", "", "optional first Orka Task prompt")
-	cmd.Flags().StringVar(&opt.Create.ResultServiceAccount, "result-service-account", "", "existing ServiceAccount for Task result access")
-	cmd.Flags().StringVar(&opt.Create.Out, "out", "", "manifest output path")
-	cmd.Flags().BoolVar(&opt.Verbose, "verbose", false, "show chat WORKING and TIMING details")
-	cmd.Flags().StringVar(&opt.AzureDiscovery, "azure-discovery", "cli", "AKS cluster listing: cli or sdk (DefaultAzureCredential)")
-	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
-	cmd.Flags().StringVar(&opt.Inference, "inference", "auto", "legacy discovery hint; wizard always requires an explicit source/model selection")
-	_ = cmd.RegisterFlagCompletionFunc("inference", staticCompletion([]string{"auto", "copilot", "local", "foundry"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.QuickstartWizard(opt) })
-	return cmd
+	for _, name := range quickstartInteractiveOnly {
+		if flags.Changed(name) {
+			return fmt.Errorf("--%s requires --interactive: use kmx quickstart --interactive --%s ...", name, name)
+		}
+	}
+	return nil
 }
 
 func newUpCommand(state *commandState) *cobra.Command {

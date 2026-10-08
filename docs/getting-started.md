@@ -6,8 +6,11 @@ With `kmx` installed and Docker or Podman available, follow this path for your
 own agent (not the fixed `kmx quickstart` demonstration):
 
 ```bash
-kmx quickstart-wizard
+kmx quickstart --interactive
 ```
+
+On tagged v0.4.1 and earlier, run `kmx quickstart-wizard` instead; newer builds
+retire that spelling and name the replacement.
 
 1. Describe your agent, choose **Chat with agent**, and send a message. Wait for
    a local answer.
@@ -119,7 +122,7 @@ kmx quickstart --output json --task 'Who are you?'
 ```
 
 To author your own Orka agent instead of deploying the fixed demonstration,
-run the experimental `kmx quickstart-wizard`. Its TUI keeps kind, model, and
+run the experimental `kmx quickstart --interactive`. Its TUI keeps kind, model, and
 Orka setup progress visible while you describe the agent. It offers bundled
 and detected host models with their source and reported size, can continue
 with an existing local Orka agent, and ends by offering a native Task chat.
@@ -157,7 +160,7 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 ```bash
 kmx up
 kmx orka status
-kmx agent chat --interactive --namespace orka-system hello-world-agent
+kmx agent chat --namespace orka-system hello-world-agent
 ```
 
 A bare `up` brings up the **runtime**: kind, the keyless Ollama model server and
@@ -165,8 +168,9 @@ the pinned Orka release with its Provider and Task result-reader account. It
 deploys no agent — `kmx quickstart` is the command that ends with one
 answering, and `kmx agent create` is the one that authors your own. The chat
 line above therefore needs an Agent from one of those two commands first. Orka
-chat is a session: `--interactive` is required, and a one-shot invocation is
-refused with the command that works.
+chat is always a session; a message after the Agent name is its first turn, not
+a one-shot. v0.4.1 and earlier require `--interactive`, which newer builds
+no longer accept.
 
 KMX no longer installs Kagent or its two demonstration agents. Its three old
 `kmx up --step` names are unknown steps, their manifests are no longer shipped
@@ -212,7 +216,7 @@ the bundle**. Online creation uses installed schemas and ordered readiness waits
 existing result ServiceAccount tests a real model answer. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
 and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
-No-name terminal invocation offers a wizard. `agent chat --interactive` and
+No-name terminal invocation offers a wizard. `agent chat` and
 `agent list --namespace <ns>` are Orka-only; a live Agent is edited with
 `kubectl edit agents.core.orka.ai`. BYO images, model-preset and MCP conversion
 are not provided.

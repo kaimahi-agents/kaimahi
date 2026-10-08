@@ -143,7 +143,7 @@ func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 }
 
 func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
-	for _, path := range [][]string{{"quickstart-wizard"}, {"agent", "chat"}} {
+	for _, path := range [][]string{{"quickstart"}, {"agent", "chat"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		root := newRootCommand(&commandState{deps: deps})
@@ -168,7 +168,7 @@ func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"quickstart-wizard"})
+	cmd, _, err := root.Find([]string{"quickstart"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,5 +566,153 @@ func TestCredentialIssueToASecretRequiresItsNamespace(t *testing.T) {
 	if err := execute([]string{"credential", "issue", "inbound-demo", "--discard"}, deps); err != nil &&
 		strings.Contains(err.Error(), "--namespace") {
 		t.Errorf("--discard was asked for a namespace it does not use: %v", err)
+	}
+}
+
+// nonTerminalStdin is a real file, so a mode that needs a terminal refuses it
+// the way it would refuse a pipe.
+func nonTerminalStdin(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.Create(filepath.Join(t.TempDir(), "stdin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return f
+}
+
+// A flag from the other quickstart mode would otherwise be silently ignored,
+// so it is refused before configuration loads or a cluster is touched.
+func TestQuickstartRejectsFlagsFromTheOtherModeBeforeConfiguration(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"quickstart", "--interactive", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
+		{[]string{"quickstart", "--interactive", "--output", "text"}, "--output does not apply to kmx quickstart --interactive"},
+		{[]string{"quickstart", "-i", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
+	}
+	for _, name := range quickstartInteractiveOnly {
+		value := "x"
+		if name == "verbose" {
+			value = "true"
+		}
+		cases = append(cases, struct {
+			args []string
+			want string
+		}{[]string{"quickstart", "--" + name + "=" + value}, "--" + name + " requires --interactive"})
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if *loads != 0 {
+				t.Fatalf("mode conflict loaded configuration %d times", *loads)
+			}
+			if out.Len() != 0 {
+				t.Fatalf("mode conflict wrote stdout: %q", out.String())
+			}
+		})
+	}
+}
+
+// Each mode reaches its own operation: the guided setup refuses a
+// non-terminal by its canonical name, and the fixed run validates its own
+// output contract.
+func TestQuickstartRoutesEachMode(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
+		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, _ := testDependencies(&out, &errOut)
+			deps.stdin = nonTerminalStdin(t)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestQuickstartWizardIsRetiredToQuickstartInteractive(t *testing.T) {
+	for _, args := range [][]string{
+		{"quickstart-wizard"},
+		{"quickstart-wizard", "--tools", "k8s-get-resources", "--verbose"},
+		{"--context", "kind-x", "quickstart-wizard", "--azure-discovery", "sdk"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "kmx quickstart-wizard is retired; use kmx quickstart --interactive") {
+				t.Fatalf("error = %v", err)
+			}
+			if *loads != 0 {
+				t.Fatalf("retired command loaded configuration %d times", *loads)
+			}
+		})
+	}
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	if err := execute([]string{"quickstart-wizard", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "use kmx quickstart --interactive") {
+		t.Fatalf("help did not name the replacement: %q", out.String())
+	}
+	root := newRootCommand(&commandState{deps: deps})
+	if cmd, _, err := root.Find([]string{"quickstart-wizard"}); err != nil || !cmd.Hidden {
+		t.Fatalf("quickstart-wizard must exist but be hidden: %v", err)
+	}
+}
+
+// Chat is always a session, so it needs no mode flag: it passes the command
+// layer and reaches the operation, which here stops at its first local
+// dependency. The removed --interactive flag is an unknown flag.
+func TestAgentChatIsInteractiveWithoutAModeFlag(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("KMX_TOOLCHAIN", "off")
+	for _, args := range [][]string{
+		{"agent", "chat", "hello-world-agent"},
+		{"agent", "chat", "hello-world-agent", "what", "pods", "run?"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, _ := testDependencies(&out, &errOut)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "kubectl is not on PATH") {
+				t.Fatalf("chat did not reach its session preflight: %v", err)
+			}
+		})
+	}
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	err := execute([]string{"agent", "chat", "--interactive", "hello-world-agent"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --interactive") {
+		t.Fatalf("removed --interactive was accepted: %v", err)
+	}
+	if *loads != 0 {
+		t.Fatalf("unknown flag loaded configuration %d times", *loads)
+	}
+	root := newRootCommand(&commandState{deps: deps})
+	cmd, _, err := root.Find([]string{"agent", "chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cmd.UseLine(), "--interactive") || strings.Contains(cmd.Long, "--interactive") {
+		t.Fatalf("chat help still teaches --interactive: %q %q", cmd.UseLine(), cmd.Long)
 	}
 }

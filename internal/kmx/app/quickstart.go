@@ -75,7 +75,7 @@ type quickstartStep struct {
 // picker and no prompt: the same command on the same machine produces the
 // same cluster, the same Provider and the same Agent, which is what lets an
 // unattended caller rerun it and compare. Choosing your own model and
-// authoring your own agent is `kmx quickstart-wizard`.
+// authoring your own agent is `kmx quickstart --interactive`.
 //
 // This command does not enable governance; existing governance may survive
 // a rerun and is not assessed here.
@@ -283,14 +283,9 @@ func (a *App) quickstartAnswer(task string) (string, error) {
 }
 
 // quickstartFollowups are the commands this cluster can actually run next.
-//
-// The chat follow-up carries --interactive because Orka chat has no one-shot:
-// `kmx agent chat --runtime orka` without it is refused by name, so printing
-// the shorter command would end the first answer with an instruction that
-// fails.
 func (a *App) quickstartFollowups() []string {
 	return []string{
-		a.operationCommand("agent", "chat", QuickstartAgent, "--interactive", "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
+		a.operationCommand("agent", "chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
 		a.operationCommand("plane"),

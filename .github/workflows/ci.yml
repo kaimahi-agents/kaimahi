@@ -627,8 +627,8 @@ jobs:
               "helm install -f kagent-values.yaml kagent",
           ]
           must_not_match = [
-              "kmx agent chat --interactive --namespace orka-system hello-world-agent",
-              "kmx agent chat --interactive --runtime orka hello-world-agent",
+              "kmx agent chat --namespace orka-system hello-world-agent",
+              "kmx agent chat --runtime orka hello-world-agent",
               "kmx agent list --namespace orka-system",
               "kmx agent create orka-hello --namespace orka-system",
               "kmx agent create kagent-hello --runtime kagent --namespace agents",
