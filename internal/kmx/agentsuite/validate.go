@@ -18,7 +18,6 @@ var (
 	schemePattern     = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 	headerNamePattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 	secretKeyPattern  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,253}$`)
-	imageRefPattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]+)?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$`)
 )
 
 type Report struct {
@@ -1038,7 +1037,7 @@ func validatePlatformImages(name string, images []PlatformImage) error {
 			errs = append(errs, fmt.Errorf("%s contains duplicate platform %s", name, key))
 		}
 		seen[key] = true
-		if !imageRefPattern.MatchString(image.ImageRef) {
+		if err := ValidateImageReference(image.ImageRef); err != nil {
 			errs = append(errs, fmt.Errorf("%s %s imageRef must be a registry-qualified, digest-addressed OCI image reference", name, key))
 		} else if !strings.HasSuffix(image.ImageRef, "@"+image.Image.Digest) {
 			errs = append(errs, fmt.Errorf("%s %s imageRef digest must match image descriptor", name, key))
