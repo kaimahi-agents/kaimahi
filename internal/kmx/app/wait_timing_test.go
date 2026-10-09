@@ -11,8 +11,9 @@ import (
 
 // fastWaitTiming changes retry pacing only. Tests that exercise expiry inject
 // a deadline at the specific phase, leaving preflight and subprocess setup alone.
+// Allow real subprocess reads to settle instead of busy-spawning fake kubectl.
 func fastWaitTiming() *waitTiming {
-	return &waitTiming{pollInterval: time.Millisecond}
+	return &waitTiming{pollInterval: 10 * time.Millisecond}
 }
 
 func TestWaitTimingPreservesProductionDeadlines(t *testing.T) {
