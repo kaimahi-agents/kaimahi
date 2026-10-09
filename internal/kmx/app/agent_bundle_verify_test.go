@@ -239,6 +239,35 @@ func TestVerifySessionsUnsupportedHarnessNeverPasses(t *testing.T) {
 	}
 }
 
+// Catch the Go decoder's last-key-wins behavior hiding cases or nested evidence.
+func TestVerifySessionsRejectsDuplicateMembers(t *testing.T) {
+	for _, tc := range []struct{ name, original, replacement string }{
+		{"hidden case", `"cases":`, `"cases":[{"id":"hidden","verdict":"fail"}],"cases":`},
+		{"case-folded hidden case", `"cases":`, `"CASES":[{"id":"hidden","verdict":"fail"}],"cases":`},
+		{"nested digest", `"answerSHA256":`, `"answerSHA256":"bad","answerSHA256":`},
+		{"escaped member", `"answerSHA256":`, `"answer\u0053HA256":"bad","answerSHA256":`},
+		{"nested address", `"address":`, `"address":"unacknowledged.invalid:8080","address":`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, o, _, s := verifyAppFixture(t)
+			raw, err := os.ReadFile(o.ReceiptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ambiguous := strings.Replace(string(raw), tc.original, tc.replacement, 1)
+			if err := os.WriteFile(o.ReceiptPath, []byte(ambiguous), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.VerifyAgentSessions(o); err == nil || !strings.Contains(err.Error(), "invalid sessions receipt JSON") {
+				t.Fatalf("ambiguous receipt: %v", err)
+			}
+			if s.reads.Load() != 0 {
+				t.Fatal("ambiguous receipt connected")
+			}
+		})
+	}
+}
+
 func TestVerifySessionsRejectsMalformedReceipt(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
 		{"invalid JSON", `{`, "invalid sessions receipt JSON"},

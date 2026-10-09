@@ -546,7 +546,9 @@ sibling `verify-<receipt-basename>.json` (for example,
 source receipt's SHA-256, the local reference revision, per-case session/head,
 config and reconstructed-answer SHA-256, model-call count and verification
 status. Host implementation remains `unknown`. Linked/non-regular input files
-or a linked receipt directory are refused. Every invocation recomputes the
+or a linked receipt directory are refused. Duplicate JSON members (including
+case-folded spellings) and unknown fields are refused before connecting.
+Every invocation recomputes the
 proof, replacing any prior report. Only `equivalent` for every case exits zero;
 `mismatch`, `unsupported` and `unknown` never count as passing evidence.
 

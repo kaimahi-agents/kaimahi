@@ -144,7 +144,7 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if !utf8.Valid(raw) || decoder.Decode(&receipt) != nil {
+	if !utf8.Valid(raw) || !unambiguousSessionsReceiptJSON(raw) || decoder.Decode(&receipt) != nil {
 		return receipt, nil, fmt.Errorf("invalid sessions receipt JSON")
 	}
 	var extra any
@@ -169,6 +169,53 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 		seen[c.ID], sessions[c.SessionUID] = true, true
 	}
 	return receipt, raw, nil
+}
+
+// encoding/json accepts duplicate keys, including case-folded struct fields.
+// Refuse ambiguity before decoding so no later member can silently hide evidence.
+func unambiguousSessionsReceiptJSON(raw []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var scan func(int) bool
+	scan = func(depth int) bool {
+		token, err := decoder.Token()
+		if err != nil || depth > 32 {
+			return false
+		}
+		delimiter, container := token.(json.Delim)
+		if !container {
+			return true
+		}
+		if delimiter != '{' && delimiter != '[' {
+			return false
+		}
+		var keys []string
+		for decoder.More() {
+			if delimiter == '{' {
+				token, err := decoder.Token()
+				key, ok := token.(string)
+				if err != nil || !ok || len(keys) >= 64 {
+					return false
+				}
+				for _, seen := range keys {
+					if strings.EqualFold(key, seen) {
+						return false
+					}
+				}
+				keys = append(keys, key)
+			}
+			if !scan(depth + 1) {
+				return false
+			}
+		}
+		closing, err := decoder.Token()
+		return err == nil && (delimiter == '{' && closing == json.Delim('}') || delimiter == '[' && closing == json.Delim(']'))
+	}
+	if !scan(0) {
+		return false
+	}
+	_, err := decoder.Token()
+	return err == io.EOF
 }
 
 func verificationDigest(value string) bool {
