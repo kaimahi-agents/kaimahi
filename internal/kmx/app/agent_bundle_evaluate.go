@@ -200,7 +200,7 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	ui := cliui.New(a.Out)
 	for _, c := range cases {
 		fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID))
-		caseCtx, cancel := context.WithTimeout(ctx, timeout)
+		caseCtx, cancel := worker.waitContext(ctx, "orka-evaluation-case", timeout)
 		result, err := adapter.Evaluate(caseCtx, ref, agentruntime.EvaluationRequest{
 			CaseID: c.Case.ID, Input: c.Case.Input, ExpectContains: c.Case.ExpectContains, PortableDigest: portableDigest,
 		})

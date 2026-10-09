@@ -72,6 +72,20 @@ bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
 ```
 
+### App test timing
+
+`internal/kmx/app` fixtures inject invocation-local polling intervals and phase
+deadlines. Keep setup budgets intact and shorten only the wait under test;
+assert that the intended readiness, admission, or result boundary was reached.
+An unset timing hook must retain the production intervals and deadlines.
+
+The fake kubectl handlers live in `internal/kmx/app/testdata/kubectl`. App tests
+compile this lightweight executable once per package run instead of launching
+the full UI-bearing App test binary for every CLI call. It still runs as a real
+subprocess with the fixture's environment and call log. A `go test -race` App
+run also compiles the helper with `-race`; the build directory is removed when
+the package run finishes. Keep helper imports independent of App and UI code.
+
 **Store tests skip without PostgreSQL.** A green module test run without
 `KAIMAHI_TEST_PG_DSN` does not verify durable concurrency/SQL behavior. Against a
 throwaway database (never a valuable database), run:

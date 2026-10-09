@@ -47,17 +47,19 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	defer stop()
 	// The wait cap is below the session token's lifetime even when polling the
 	// Task consumes most of it. Without --wait, bound the single inspection.
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := a.waitContext(ctx, "task-result", timeout)
 	defer cancel()
 	worker := a.withRunContext(ctx)
 	if err := worker.preflight(depKubectl); err != nil {
 		return err
 	}
-	raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", orkaPlural("Task"), opt.Task, "--ignore-not-found=true", "-o", "json")
+	inspectCtx, stopInspect := worker.waitContext(ctx, "task-result-inspect", 0)
+	raw, err := worker.orkaCapture(inspectCtx, nil, "-n", namespace, "get", orkaPlural("Task"), opt.Task, "--ignore-not-found=true", "-o", "json")
+	stopInspect()
 	if err != nil {
 		inspected := fmt.Errorf("cannot inspect Task %s/%s: %w", namespace, opt.Task, err)
 		if follow {
-			return runTaskWaitError(ctx, inspected, opt.Task, a.Cfg.KubeContext, namespace)
+			return runTaskWaitError(inspectCtx, inspected, opt.Task, a.Cfg.KubeContext, namespace)
 		}
 		return inspected
 	}
@@ -84,6 +86,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	id := orkaIdentity{Kind: "Task", Name: opt.Task, UID: object.Metadata.UID, Generation: object.Metadata.Generation}
 	// Re-read with the pinned identity rather than trusting an old phase
 	// observation. A replaced Task cannot lend its result to this invocation.
+	statusStarted := false
 	var lastPhase string
 	reportedPhase := false
 	for {
@@ -109,7 +112,13 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 		if !follow {
 			return pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
 		}
-		if err := orkaPause(ctx); err != nil {
+		if !statusStarted {
+			var stopStatus context.CancelFunc
+			ctx, stopStatus = worker.waitContext(ctx, "task-result-status", 0)
+			defer stopStatus()
+			statusStarted = true
+		}
+		if err := worker.pause(ctx, time.Second); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				return pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
 			}

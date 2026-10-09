@@ -215,7 +215,7 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		return result, err
 	}
 	operationCtx := ctx
-	ctx, cancelPreflight := kagentPhaseContext(operationCtx, kagentPreflightTimeout)
+	ctx, cancelPreflight := a.waitContext(operationCtx, "kagent-preflight", kagentPreflightTimeout)
 	defer cancelPreflight()
 	service, err := a.preflightKagentInstallation(ctx, opt.KagentRuntime, opt.Namespace)
 	if err != nil {
@@ -270,7 +270,9 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		if err != nil {
 			return result, err
 		}
-		raw, err := a.kagentCapture(ctx, body, "-n", opt.Namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+		admissionCtx, cancelAdmission := a.waitContext(ctx, "kagent-admission", 0)
+		raw, err := a.kagentCapture(admissionCtx, body, "-n", opt.Namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+		cancelAdmission()
 		if err != nil {
 			return result, fmt.Errorf("%s strict server create preflight failed; no Kubernetes resources were changed: %w", doc["kind"], err)
 		}
@@ -364,7 +366,7 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
 		identities = append(identities, id)
 		a.notef("Created %s/%s (UID %s); waiting for current-generation conditions.", id.Kind, id.Name, id.UID)
-		readyCtx, cancelReady := kagentPhaseContext(ctx, kagentReadinessTimeout)
+		readyCtx, cancelReady := a.waitContext(ctx, "kagent-readiness-"+id.Kind, kagentReadinessTimeout)
 		readyErr := a.waitKagentReady(readyCtx, opt.Namespace, id)
 		cancelReady()
 		if readyErr != nil {
@@ -393,7 +395,7 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
 			return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 immediately before task send: %w", err)
 		}
-		cardCtx, cancelCard := kagentPhaseContext(ctx, kagentAgentCardTimeout)
+		cardCtx, cancelCard := a.waitContext(ctx, "kagent-agent-card", kagentAgentCardTimeout)
 		cardErr := a.waitKagentAgentCard(cardCtx, service, opt.Namespace, opt.Name)
 		cancelCard()
 		if cardErr != nil {
@@ -414,7 +416,7 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
 			return result, fmt.Errorf("Kagent tool dependency changed immediately before task send: %w", err)
 		}
-		taskCtx, cancelTask := kagentPhaseContext(ctx, kagentTaskTimeout)
+		taskCtx, cancelTask := a.waitContext(ctx, "kagent-task", kagentTaskTimeout)
 		answer, err := a.sendKagentTask(taskCtx, service, opt.Namespace, opt.Name, opt.Task)
 		cancelTask()
 		if err != nil {
@@ -475,10 +477,6 @@ func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle 
 		return agentruntime.DeployResult{}, fmt.Errorf("persist Kagent create receipt after deployment success: %w", err)
 	}
 	return result, nil
-}
-
-func kagentPhaseContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, timeout)
 }
 
 func kagentWriteDocuments(bundle *scaffold.KagentBundle, rendered agentruntime.RenderedBundle) ([]map[string]any, error) {
@@ -1496,7 +1494,7 @@ func (a *App) waitKagentReady(ctx context.Context, namespace string, id kagentId
 				return fmt.Errorf("%s/%s UID %s was refused at its current generation: %s=False", id.Kind, id.Name, id.UID, condition.Type)
 			}
 		}
-		if err := orkaPause(ctx); err != nil {
+		if err := a.pause(ctx, time.Second); err != nil {
 			return fmt.Errorf("waiting for %s/%s UID %s current-generation readiness: %w", id.Kind, id.Name, id.UID, err)
 		}
 	}
@@ -1599,7 +1597,7 @@ func (a *App) waitKagentAgentCard(ctx context.Context, service kagentControllerS
 		if err := a.verifyKagentAgentCard(ctx, service, namespace, agent); err == nil {
 			return nil
 		}
-		if err := kagentPause(ctx); err != nil {
+		if err := a.pause(ctx, kagentPollInterval); err != nil {
 			return fmt.Errorf("waiting for the controller-proxied A2A agent card for Agent/%s: %w", agent, err)
 		}
 	}
@@ -1624,17 +1622,6 @@ func (a *App) verifyKagentAgentCard(ctx context.Context, service kagentControlle
 		return fmt.Errorf("controller-proxied A2A agent card is invalid or did not name the expected Agent")
 	}
 	return nil
-}
-
-func kagentPause(ctx context.Context) error {
-	timer := time.NewTimer(kagentPollInterval)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 // v0.10.2 stamps Agent conditions individually. Its ModelConfig controller

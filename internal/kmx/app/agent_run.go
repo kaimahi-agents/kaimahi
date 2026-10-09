@@ -59,8 +59,27 @@ func pendingTask(name, contextName, namespace string) error {
 	return fmt.Errorf("%w: Task %s may still be running or its result is not yet available; recover with: %s", ErrTaskPending, name, taskRecovery(name, contextName, namespace))
 }
 
+// orkaPhaseDeadlineError identifies expiry of a bounded Orka phase, even when
+// its caller's larger execution budget is still live. Unrelated request errors
+// must not acquire pending/recovery semantics just by wrapping a deadline.
+type orkaPhaseDeadlineError struct{ err error }
+
+func (e *orkaPhaseDeadlineError) Error() string { return e.err.Error() }
+func (e *orkaPhaseDeadlineError) Unwrap() error { return e.err }
+
+func orkaPhaseError(parent, phase context.Context, err error) error {
+	deadline, bounded := phase.Deadline()
+	parentDeadline, parentBounded := parent.Deadline()
+	if bounded && (!parentBounded || deadline.Before(parentDeadline)) && phase.Err() == context.DeadlineExceeded && errors.Is(err, context.DeadlineExceeded) {
+		return &orkaPhaseDeadlineError{err: err}
+	}
+	// Default phases inherit the parent's exact deadline and error semantics.
+	return err
+}
+
 func runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
-	if err != nil && ctx.Err() == context.DeadlineExceeded && errors.Is(err, context.DeadlineExceeded) {
+	var phaseDeadline *orkaPhaseDeadlineError
+	if err != nil && errors.Is(err, context.DeadlineExceeded) && (ctx.Err() == context.DeadlineExceeded || errors.As(err, &phaseDeadline)) {
 		return pendingTask(name, contextName, namespace)
 	}
 	return err
@@ -270,7 +289,7 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		return err
 	}
 	taskName := strings.TrimRight(name[:min(len(name), 40)], "-.") + "-run-" + suffix
-	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	execCtx, cancel := worker.waitContext(ctx, "orka-execution", timeout)
 	defer cancel()
 	session, err := worker.openOrkaResultSession(execCtx, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {

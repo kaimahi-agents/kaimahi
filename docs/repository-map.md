@@ -55,12 +55,12 @@ checks.
 including nested `runview/orka`). The short version counts top-level directories.
 Cluster-independent decisions live in packages; shell-out orchestration lives in `app`. `lift` holds cloud-independent
 rules, while the seven `lift*.go` files in `app` run cloud orchestration, preferences and reuse checks. Interactive lift panes use `chat_lift*.go`. Counts exclude
-Go test files but include non-Go data; versioned fixtures are not additional Go
-packages.
+Go test files but include non-Go data. The test-only kubectl executable under
+`app/testdata/kubectl` is built separately by App tests, not installed with kmx.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 99 | Installed | Command orchestration, the offline AgentSuite validator entry point, the read-only Orka run source and console run view, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, safe retirement, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
+| `kmx/app` | 100 | Installed | Command orchestration, the offline AgentSuite validator entry point, the read-only Orka run source and console run view, the Orka lifecycle adapter, exact Kagent v0.10.2 create-only lifecycle adapter and online proof, agent bundle persistence, Orka lift/status/evaluation gates, safe retirement, Task execution and result retrieval, interactive Orka console, shared chat UI, host inference and native platform operations. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`; app also contains Kagent create and Orka-only bundle-refusal tests. |
 | `kmx/agentsuite` | 10 | Installed | Strict JSON and JCS identities, OCI image-layout and content-layer validation, closed agent/tool-provider/composition/build-profile graph validation, callable Tool contracts, sandbox binding validation, and provider-neutral packing, CAS, and artifact push/pull contracts. |
 | `kmx/agentsuite/oras` | 6 | Installed | ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
 | `kmx/agentsuite/schema` | 7 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, and Agent sandbox-binding records; published with the source checkout, not embedded in or loaded by the binary. |
@@ -80,6 +80,7 @@ packages.
 | `kmx/agentsuite/testdata/remote-mcp` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest used by schema and semantic validation tests. |
 | `kmx/agentsuite/testdata/remote-mcp/schemas` | 2 | Scaffolding | Digest-bound input and output schemas for the remote provider's callable Tool. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
+| `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/kagent` | 2 | Scaffolding | Kagent portable agent and creation bindings; the parser and portable digest are pinned in compatibility tests. |
 | `kmx/app/testdata/bundle-format/main` | 2 | Scaffolding | Current-writer portable agent and creation bindings. |

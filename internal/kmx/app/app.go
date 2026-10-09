@@ -59,6 +59,9 @@ type App struct {
 	Stdin              *os.File
 	// now is injectable so progress timing can be tested without sleeping.
 	now func() time.Time
+	// waitTiming overrides retry pacing and phase deadlines in tests only.
+	// Nil preserves every production interval and timeout.
+	waitTiming *waitTiming
 	// progressUI replaces destination detection in tests only. Production uses
 	// cliui.New against Err so styling follows the actual output stream.
 	progressUI progressPresenter

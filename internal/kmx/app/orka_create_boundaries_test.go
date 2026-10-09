@@ -214,14 +214,14 @@ func TestOrkaStaleReadinessStopsAtDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Include the real executable-boundary preflight: race-instrumented
-	// helper startup alone can exceed a second before the Ready poll begins.
+	// Keep the full setup budget; start expiry at the Provider's Ready wait.
+	deadline := orkaTestDeadline(t, a, "orka-ready-provider")
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	err = a.createOrkaOnline(ctx, opt, bundle)
 	// The deadline can interrupt either the poll delay or its kubectl read.
 	// Assert the reached boundary and timeout, not one path's diagnostic text.
-	if err == nil || ctx.Err() != context.DeadlineExceeded {
+	if err == nil || deadline().Err() != context.DeadlineExceeded {
 		t.Fatalf("stale readiness did not stop at the deadline: %v", err)
 	}
 	writes, reads := 0, 0
@@ -265,6 +265,11 @@ func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 			orkaResultServer(t, &opt, func(http.ResponseWriter, *http.Request) {
 				t.Error("opening a session sent HTTP before its explicit access probe")
 			})
+			// Keep the original setup cap; expire the hang at the bind boundary.
+			var deadline func() context.Context
+			if scenario == "forward-hang" {
+				deadline = orkaTestDeadline(t, a, "orka-result-forward")
+			}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			started := time.Now()
@@ -278,9 +283,14 @@ func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 				if session.token != "" {
 					t.Fatal("closed session retained token")
 				}
-			} else if err == nil {
-				session.close()
-				t.Fatal("unproven bind admitted")
+			} else {
+				if err == nil {
+					session.close()
+					t.Fatal("unproven bind admitted")
+				}
+				if deadline().Err() != context.DeadlineExceeded {
+					t.Fatalf("unproven bind did not reach its phase deadline: %v", err)
+				}
 			}
 			if time.Since(started) > 2*time.Second {
 				t.Fatal("cancelled forward waited for full bind timeout")
@@ -441,12 +451,16 @@ func TestOrkaUnreadyAgentAndUnavailableResultBlockLaterSteps(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// The budget includes schema/preflight subprocesses, not only the
-			// blocked wait. Keep room for instrumented helper startup under -race.
+			// Shorten only the blocked phase, after all schema/session setup.
+			phase := "orka-ready-agent"
+			if scenario == "unavailable-task" {
+				phase = "orka-task-status"
+			}
+			deadline := orkaTestDeadline(t, a, phase)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
-			if err := a.createOrkaOnline(ctx, opt, bundle); err == nil {
-				t.Fatal("unready dependency or unavailable result accepted")
+			if err := a.createOrkaOnline(ctx, opt, bundle); err == nil || deadline().Err() != context.DeadlineExceeded {
+				t.Fatalf("unready dependency or unavailable result did not expire at %s: %v", phase, err)
 			}
 			writes := 0
 			for _, call := range orkaCalls(t, dir) {

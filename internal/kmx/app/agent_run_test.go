@@ -322,12 +322,13 @@ func TestRunAgentTimeoutReturnsPendingRecoveryWithoutRetry(t *testing.T) {
 	t.Setenv("KMX_EVAL_PHASE", "Running")
 	opt := runOption(f)
 	opt.Wait = 10 * time.Second
-	// A caller-owned deadline simulates expiry without sleeping ten seconds.
+	// Expire only after the one Task was created, not during session setup.
+	deadline := orkaTestDeadline(t, f.app, "orka-task-status")
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	err := f.app.RunAgent(opt)
-	if !errors.Is(err, ErrTaskPending) {
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded {
 		t.Fatalf("err=%v", err)
 	}
 	if f.taskCreates(t) != 1 || f.out.Len() != 0 {
@@ -357,6 +358,55 @@ func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
 	}
 	if got := runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
 		t.Fatalf("expired wait not pending: %v", got)
+	}
+}
+
+func TestRunWaitErrorRecognizesOnlyExpiredOrkaPhases(t *testing.T) {
+	phase, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	for _, tc := range []struct {
+		name    string
+		err     error
+		pending bool
+	}{
+		{"expired phase", orkaPhaseError(t.Context(), phase, fmt.Errorf("waiting: %w", context.DeadlineExceeded)), true},
+		{"unrelated deadline", fmt.Errorf("request: %w", context.DeadlineExceeded), false},
+		{"unexpired phase", orkaPhaseError(t.Context(), t.Context(), fmt.Errorf("request: %w", context.DeadlineExceeded)), false},
+		{"failed Task", orkaPhaseError(t.Context(), phase, &orkaTaskEndedError{Phase: "Failed"}), false},
+		{"result refusal", orkaPhaseError(t.Context(), phase, errors.New("Orka result read refused (HTTP 403)")), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runTaskWaitError(t.Context(), tc.err, "task", "kind-test", "orka-system")
+			if errors.Is(got, ErrTaskPending) != tc.pending {
+				t.Fatalf("pending=%t: %v", tc.pending, got)
+			}
+			if !tc.pending && !errors.Is(got, tc.err) {
+				t.Fatalf("phase classification discarded the original error: %v", got)
+			}
+		})
+	}
+}
+
+func TestOrkaDefaultPhaseDeadlinePreservesOriginalError(t *testing.T) {
+	parent, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	original := fmt.Errorf("request: %w", context.DeadlineExceeded)
+	for _, timing := range []*waitTiming{nil, {}, fastWaitTiming()} {
+		a := &App{waitTiming: timing}
+		phase, stop := a.waitContext(parent, "orka-task-result", 0)
+		got := orkaPhaseError(parent, phase, original)
+		stop()
+		if got != original {
+			t.Fatalf("default phase changed the error: %v", got)
+		}
+		// A live caller cannot turn a default phase's independent request
+		// deadline into pending; an expired caller still can, as before.
+		if live := runTaskWaitError(t.Context(), got, "task", "kind-test", "orka-system"); live != original {
+			t.Fatalf("default phase changed live-parent classification: %v", live)
+		}
+		if expired := runTaskWaitError(parent, got, "task", "kind-test", "orka-system"); !errors.Is(expired, ErrTaskPending) {
+			t.Fatalf("default phase lost expired-parent classification: %v", expired)
+		}
 	}
 }
 
@@ -537,14 +587,17 @@ func TestTaskRecoveryWaitHasExplicitDuration(t *testing.T) {
 func TestRunAgentBodyReadDeadlineIsPending(t *testing.T) {
 	f := runFixture(t)
 	f.resultHoldBody = true
+	// Retain the caller's setup cap and expire during result retrieval. The
+	// held-body count proves the handler flushed headers before cancellation.
+	deadline := orkaTestDeadline(t, f.app, "orka-task-result")
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	opt := runOption(f)
 	opt.Wait = 10 * time.Second
 	err := f.app.RunAgent(opt)
-	if !errors.Is(err, ErrTaskPending) || f.taskCreates(t) != 1 || f.out.Len() != 0 {
-		t.Fatalf("body-read deadline: err=%v creates=%d stdout=%q", err, f.taskCreates(t), f.out)
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.taskCreates(t) != 1 || f.resultHeldBodies.Load() != 1 || f.out.Len() != 0 {
+		t.Fatalf("body-read deadline: err=%v creates=%d heldBodies=%d stdout=%q", err, f.taskCreates(t), f.resultHeldBodies.Load(), f.out)
 	}
 }
 

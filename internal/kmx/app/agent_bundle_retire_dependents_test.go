@@ -2,59 +2,21 @@ package app
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"text/template"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-func TestRetireDependentsKubectl(t *testing.T) {
-	if os.Getenv("KMX_DEPENDENTS_DIR") == "" {
-		return
-	}
-	args := os.Args[slices.Index(os.Args, "--")+1:]
-	if len(args) != 7 || args[0] != "--context" || args[1] != "kind-test" || args[2] != "--request-timeout=10s" || args[3] != "get" || args[5] != "--all-namespaces" || !strings.HasPrefix(args[6], "-o=go-template=") {
-		os.Exit(2)
-	}
-	if args[4] == os.Getenv("KMX_DEPENDENTS_DENIED") {
-		fmt.Fprint(os.Stderr, os.Getenv("KMX_DEPENDENTS_ERROR"))
-		os.Exit(1)
-	}
-	if args[4] == os.Getenv("KMX_DEPENDENTS_OVERSIZE") {
-		_, _ = os.Stdout.Write([]byte(strings.Repeat("X", 5<<20)))
-		os.Exit(0)
-	}
-	raw, err := os.ReadFile(filepath.Join(os.Getenv("KMX_DEPENDENTS_DIR"), args[4]+".json"))
-	if err != nil {
-		os.Exit(2)
-	}
-	var data map[string]any
-	if json.Unmarshal(raw, &data) != nil {
-		os.Exit(2)
-	}
-	project, err := template.New("projection").Parse(strings.TrimPrefix(args[6], "-o=go-template="))
-	if err != nil || project.Execute(os.Stdout, data) != nil {
-		os.Exit(2)
-	}
-	os.Exit(0)
-}
-
 func dependentsFixture(t *testing.T, lists map[string]string) *App {
 	t.Helper()
 	dir := t.TempDir()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestRetireDependentsKubectl$ -- \"$@\"")
+	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestRetireDependentsKubectl"))
 	for _, kind := range []string{"tasks.core.orka.ai", "gatewaybindings.gateway.orka.ai", "repositoryscans.core.orka.ai", "repositorymonitors.core.orka.ai", "agents.core.orka.ai"} {
 		raw := lists[kind]
 		if raw == "" {
@@ -66,6 +28,7 @@ func dependentsFixture(t *testing.T, lists map[string]string) *App {
 	}
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_DEPENDENTS_DIR", dir)
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	return &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: io.Discard}
 }
 

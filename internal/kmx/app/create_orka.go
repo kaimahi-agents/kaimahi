@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -96,7 +95,7 @@ func (a *App) createOrkaAgent(opt CreateOptions) error {
 		}
 		ctx, stop := signal.NotifyContext(a.operationContext(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		ctx, cancel := a.waitContext(ctx, "orka-create", 5*time.Minute)
 		defer cancel()
 		_, err := adapter.Deploy(ctx, rendered, agentruntime.DeployOptions{Reconcile: reconcile})
 		return err

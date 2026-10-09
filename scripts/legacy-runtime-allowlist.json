@@ -33,6 +33,7 @@
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
         "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
+        "internal/kmx/app/testdata/kubectl/kagent_test.go",
         "internal/kmx/runtime/kagent_bindings_test.go",
         "internal/kmx/runtime/lifecycle_test.go",
         "internal/kmx/runtime/portable_secretshapes_test.go",

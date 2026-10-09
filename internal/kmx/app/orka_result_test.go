@@ -488,14 +488,20 @@ func TestOrkaResultReadFailuresAreBoundedAndDoNotResubmit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Reach the actual result boundary even when the real preflight
-			// subprocesses are race-instrumented. The Task-write assertion below
-			// still refuses a timeout that happened before execution.
+			// Keep setup intact and expire only after successful Task status,
+			// at the HTTP result boundary. Numeric results still fail immediately.
+			deadline := orkaTestDeadline(t, a, "orka-task-result")
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			err = a.createOrkaOnline(ctx, opt, bundle)
 			if err == nil {
 				t.Fatal("invalid result accepted")
+			}
+			if body != `{"result":42}` && deadline().Err() != context.DeadlineExceeded {
+				t.Fatalf("unavailable result did not reach its deadline: %v", err)
+			}
+			if calls.Load() < 2 {
+				t.Fatal("never attempted the result read after its preflight probe")
 			}
 			writes := 0
 			for _, c := range orkaCalls(t, dir) {
