@@ -62,14 +62,16 @@ func decodeStrict(data []byte, out any) error {
 }
 
 func validateJSONTokens(data []byte) error {
-	return validateJSONTokensWithLimits(data, maxJSONObjectMembers, maxJSONDocumentMembers)
+	return validateJSONTokensWithLimits(data, maxJSONObjectMembers, maxJSONDocumentMembers, 0)
 }
 
-func validateJSONTokensWithLimits(data []byte, objectLimit, documentLimit int) error {
+// rootArrayLimit bounds arrays directly inside the root object before typed
+// decoding; zero leaves array counts unrestricted for Suite documents.
+func validateJSONTokensWithLimits(data []byte, objectLimit, documentLimit, rootArrayLimit int) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	members := 0
-	if err := scanJSONValue(decoder, 0, &members, objectLimit, documentLimit); err != nil {
+	if err := scanJSONValue(decoder, 0, &members, objectLimit, documentLimit, rootArrayLimit); err != nil {
 		return err
 	}
 	if token, err := decoder.Token(); err == nil {
@@ -80,7 +82,7 @@ func validateJSONTokensWithLimits(data []byte, objectLimit, documentLimit int) e
 	return nil
 }
 
-func scanJSONValue(decoder *json.Decoder, depth int, documentMembers *int, objectLimit, documentLimit int) error {
+func scanJSONValue(decoder *json.Decoder, depth int, documentMembers *int, objectLimit, documentLimit, rootArrayLimit int) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -118,7 +120,7 @@ func scanJSONValue(decoder *json.Decoder, depth int, documentMembers *int, objec
 			}
 			seen[key] = true
 			*documentMembers++
-			if err := scanJSONValue(decoder, depth+1, documentMembers, objectLimit, documentLimit); err != nil {
+			if err := scanJSONValue(decoder, depth+1, documentMembers, objectLimit, documentLimit, rootArrayLimit); err != nil {
 				return err
 			}
 		}
@@ -130,8 +132,13 @@ func scanJSONValue(decoder *json.Decoder, depth int, documentMembers *int, objec
 			return errors.New("JSON object is not closed")
 		}
 	case '[':
+		entries := 0
 		for decoder.More() {
-			if err := scanJSONValue(decoder, depth+1, documentMembers, objectLimit, documentLimit); err != nil {
+			if depth == 1 && rootArrayLimit > 0 && entries >= rootArrayLimit {
+				return errors.New("JSON array entry limit exceeded")
+			}
+			entries++
+			if err := scanJSONValue(decoder, depth+1, documentMembers, objectLimit, documentLimit, rootArrayLimit); err != nil {
 				return err
 			}
 		}

@@ -160,7 +160,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 				} `json:"subject"`
 				Predicate json.RawMessage `json:"predicate"`
 			}
-			if err := decodeArchiveJSON(body, &statement); err != nil {
+			if err := decodeArchiveJSONWithLimits(body, &statement, maxArchiveJSONBytes, maxArchiveObjectMembers, maxArchiveDocumentMembers); err != nil {
 				return BuildResult{}, fmt.Errorf("attestation statement: %w", err)
 			}
 			if statement.Type != "https://in-toto.io/Statement/v0.1" && statement.Type != "https://in-toto.io/Statement/v1" {
@@ -324,13 +324,18 @@ func (a *imageArchive) manifest(d ociDescriptor) (ociManifest, error) {
 	return m, nil
 }
 func decodeArchiveJSON(data []byte, out any) error {
+	return decodeArchiveJSONWithLimits(data, out, maxJSONBytes, maxJSONObjectMembers, maxJSONDocumentMembers)
+}
+
+func decodeArchiveJSONWithLimits(data []byte, out any, byteLimit int64, objectLimit, documentLimit int) error {
 	// OCI and in-toto may add fields independently of the AgentSuite schema.
-	// Large inventories need a larger member budget than fixed Suite manifests;
-	// bytes, nesting, and duplicate-key checks still bound external metadata.
-	if int64(len(data)) > maxArchiveJSONBytes {
-		return fmt.Errorf("OCI JSON metadata exceeds %d bytes", maxArchiveJSONBytes)
+	// Statements need larger inventories, but root arrays (manifests, layers,
+	// subjects) must be bounded before typed allocation. Nested predicate arrays
+	// remain governed by the byte, member, nesting, and duplicate-key budgets.
+	if int64(len(data)) > byteLimit {
+		return fmt.Errorf("OCI JSON metadata exceeds %d bytes", byteLimit)
 	}
-	if err := validateJSONTokensWithLimits(data, maxArchiveObjectMembers, maxArchiveDocumentMembers); err != nil {
+	if err := validateJSONTokensWithLimits(data, objectLimit, documentLimit, maxOCIIndexEntries); err != nil {
 		return err
 	}
 	return json.Unmarshal(data, out)
