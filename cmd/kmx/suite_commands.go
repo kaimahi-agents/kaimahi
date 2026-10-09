@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"oras.land/oras-go/v2/registry"
 
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -30,18 +31,23 @@ func newSuiteCommand() *cobra.Command {
 	}
 
 	var target string
-	var pushPlainHTTP bool
+	var pushPlainHTTP, pushForce bool
 	push := &cobra.Command{
 		Use:   "push <directory> <reference>",
 		Short: "Push an extracted AgentSuite to an OCI layout or registry",
 		Long: "Push an extracted AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
-			"Registry authentication is read from the standard Docker credential store.",
+			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
+			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
+			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.\n\n" +
+			"An existing registry tag with the same digest is a no-op; replacing a different digest requires --force.\n" +
+			"The tag preflight check is NOT ATOMIC against concurrent pushers.",
 		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
 			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
-		Args: usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] <reference>"),
+		Args: usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] <reference>"),
 	}
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
 	push.Flags().BoolVar(&pushPlainHTTP, "plain-http", false, "use HTTP instead of HTTPS for a registry target")
+	push.Flags().BoolVar(&pushForce, "force", false, "allow replacing a registry tag with a different digest (non-atomic preflight)")
 	_ = push.MarkFlagDirname("to-layout")
 	push.RunE = func(cmd *cobra.Command, args []string) error {
 		a := &app.App{Out: cmd.OutOrStdout()}
@@ -54,9 +60,12 @@ func newSuiteCommand() *cobra.Command {
 			if pushPlainHTTP {
 				return fmt.Errorf("--plain-http cannot be used with --to-layout")
 			}
+			if pushForce {
+				return fmt.Errorf("--force cannot be used with --to-layout")
+			}
 			result, err = a.PushSuite(cmd.Context(), args[0], target, args[1])
 		} else {
-			result, err = a.PushSuiteRegistry(cmd.Context(), args[0], args[1], pushPlainHTTP)
+			result, err = a.PushSuiteRegistry(cmd.Context(), args[0], args[1], pushPlainHTTP, pushForce)
 		}
 		if err != nil {
 			return err
@@ -101,7 +110,9 @@ func newSuiteCommand() *cobra.Command {
 		Use:   "pull <reference>",
 		Short: "Pull and extract an AgentSuite from an OCI layout or registry",
 		Long: "Pull and extract an AgentSuite from an OCI registry, or use --from-layout for a local OCI image layout.\n\n" +
-			"Registry authentication is read from the standard Docker credential store.",
+			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
+			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
+			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.",
 		Example: "  kmx suite pull registry.example.com/team:v1 --output ./suite\n" +
 			"  kmx suite pull agentsuites/team:v1 --from-layout ./layout --output ./suite",
 		Args: usageArgs(1, 1, "kmx suite pull <reference> [--from-layout <layout>] [--plain-http] --output <directory>"),
@@ -141,7 +152,20 @@ func newSuiteCommand() *cobra.Command {
 			result.Path,
 			result.Descriptor.Digest,
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("from-layout") {
+			parsed, err := registry.ParseReference(args[0])
+			if err != nil {
+				return err
+			}
+			if parsed.ValidateReferenceAsTag() == nil {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Pin this AgentSuite: %s/%s@%s\n", parsed.Registry, parsed.Repository, result.Descriptor.Digest)
+				return err
+			}
+		}
+		return nil
 	}
 	group.AddCommand(pull, push, validate)
 	return group

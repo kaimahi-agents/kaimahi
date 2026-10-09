@@ -28,7 +28,7 @@ func TestRegistryRepositoryUsesDockerCompatibleCredentials(t *testing.T) {
 
 	repository, reference, err := newRegistryRepository(
 		"registry.example.com/team/suite:v1",
-		true,
+		false,
 		nil,
 	)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestRegistryRepositoryUsesDockerCompatibleCredentials(t *testing.T) {
 	if repository.Reference.Registry != "registry.example.com" ||
 		repository.Reference.Repository != "team/suite" ||
 		reference != "v1" ||
-		!repository.PlainHTTP {
+		repository.PlainHTTP {
 		t.Fatalf("repository = %+v, reference = %q", repository, reference)
 	}
 	client, ok := repository.Client.(*auth.Client)
@@ -117,10 +117,10 @@ func TestRegistryPushPullOverHTTP(t *testing.T) {
 	}
 
 	reference := registryHost + "/team/suite:v1"
-	if _, err := PushRegistry(ctx, source, reference, false); err == nil {
+	if _, err := PushRegistry(ctx, source, reference, false, false); err == nil {
 		t.Fatal("PushRegistry() to an HTTP registry without plain HTTP opt-in succeeded")
 	}
-	pushed, err := PushRegistry(ctx, source, reference, true)
+	pushed, err := PushRegistry(ctx, source, reference, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

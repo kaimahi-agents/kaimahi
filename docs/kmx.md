@@ -90,9 +90,9 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
-| `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry using credentials from the standard Docker credential store. `--plain-http` is an explicit development-only opt-in. |
+| `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. Prints the pushed digest. See [registry safety](#registry-authentication). |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
-| `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry using credentials from the standard Docker credential store, then atomically extract it into a new directory. |
+| `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](agentsuite-spec.md) |
 | `kmx agent lift <bundle-dir>` | reconcile an existing Orka portable bundle on a prepared destination; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
@@ -125,7 +125,27 @@ store. `az acr login --expose-token` only returns a token; by itself it does not
 persist credentials for `kmx` to read. Kaimahi never prints credentials and
 does not expose username, password, or token flags. HTTPS is the default;
 `--plain-http` must be supplied explicitly for a development registry and
-cannot be combined with `--to-layout` or `--from-layout`.
+cannot be combined with `--to-layout` or `--from-layout`. Credentials never go
+over plain HTTP to a non-loopback host, including a token endpoint advertised
+by a registry or a redirect destination. Only `localhost`, addresses in
+`127.0.0.0/8`, and `::1` qualify as loopback; arbitrary hostnames resolving to
+loopback do not. A non-loopback plain-HTTP registry is accessed anonymously,
+without an `Authorization` header; if it requests authentication, `kmx` refuses
+and requires HTTPS. Loopback development registries may use stored credentials.
+
+Registry push checks the existing tag's digest before writing. A new tag is
+created; re-pushing the same digest succeeds without writing; replacing a
+different digest is refused unless `--force` is supplied. This is a preflight
+check, **not atomic against concurrent pushers**: another writer can change the
+tag between the check and the push. Use distinct tags or registry-enforced
+immutability when concurrent writers must not overwrite each other. `--force`
+is registry-only and cannot be combined with `--to-layout`; local-layout
+reference replacement is unchanged.
+
+Push prints the artifact digest on success. Pull prints the resolved digest,
+and a pull by tag also prints a reference such as
+`registry.example.com/agentsuites/team@sha256:…` to pin subsequent pulls to that
+artifact rather than a mutable tag.
 
 ### Existing plane and operator commands
 

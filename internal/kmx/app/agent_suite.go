@@ -49,8 +49,9 @@ func (a *App) PushSuiteRegistry(
 	source string,
 	reference string,
 	plainHTTP bool,
+	force bool,
 ) (agentsuite.PushResult, error) {
-	return agentsuite.PushRegistry(ctx, source, reference, plainHTTP)
+	return agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force)
 }
 
 // PullSuite pulls one referenced AgentSuite from an OCI image layout and

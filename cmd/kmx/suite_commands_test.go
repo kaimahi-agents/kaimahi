@@ -248,7 +248,7 @@ func TestSuiteTransferHelpCoversLayoutsAndRegistries(t *testing.T) {
 		if *loads != 0 {
 			t.Fatalf("help loaded operational config %d time(s)", *loads)
 		}
-		for _, want := range []string{"local OCI image layout", "OCI registry", "Docker credential store", "--plain-http", test.example} {
+		for _, want := range []string{"local OCI image layout", "OCI registry", "Docker credential store", "--plain-http", "non-loopback", "Credentials are never", test.example} {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("help for %v does not contain %q:\n%s", test.args, want, out.String())
 			}
@@ -262,7 +262,7 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 		command string
 		flags   []string
 	}{
-		{command: "push", flags: []string{"to-layout", "plain-http"}},
+		{command: "push", flags: []string{"to-layout", "plain-http", "force"}},
 		{command: "pull", flags: []string{"from-layout", "output", "plain-http"}},
 	}
 	for _, test := range tests {
@@ -299,6 +299,10 @@ func TestSuiteTransferRejectsInvalidLayoutFlags(t *testing.T) {
 		{
 			[]string{"suite", "pull", "suite:v1", "--from-layout", t.TempDir(), "--plain-http", "--output", filepath.Join(t.TempDir(), "suite")},
 			"--plain-http cannot be used with --from-layout",
+		},
+		{
+			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--force", "suite:v1"},
+			"--force cannot be used with --to-layout",
 		},
 		{
 			[]string{"suite", "push", t.TempDir(), "--to-layout=", "registry.example.com/team:v1"},
