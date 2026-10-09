@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	orasbinding "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -118,12 +119,12 @@ func newArtifact(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 	ctx := context.Background()
 	store := memory.New()
 	config := []byte("{}")
-	configDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeEmptyConfig, config)
+	configDescriptor := content.NewDescriptorFromBytes(spec.MediaTypeEmptyConfig, config)
 	if err := store.Push(ctx, configDescriptor, bytes.NewReader(config)); err != nil {
 		t.Fatal(err)
 	}
 	layer := []byte("AgentSuite content")
-	layerDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, layer)
+	layerDescriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, layer)
 	if err := store.Push(ctx, layerDescriptor, bytes.NewReader(layer)); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +132,7 @@ func newArtifact(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 		ctx,
 		store,
 		oraslib.PackManifestVersion1_1,
-		agentsuite.MediaTypeArtifact,
+		spec.MediaTypeArtifact,
 		oraslib.PackManifestOptions{
 			Layers:           []ocispec.Descriptor{layerDescriptor},
 			ConfigDescriptor: &configDescriptor,

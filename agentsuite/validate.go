@@ -514,7 +514,7 @@ func validateAgent(agent Agent) error {
 	if !identifierPattern.MatchString(agent.ID) {
 		errs = append(errs, errors.New("id is invalid"))
 	}
-	if _, err := validateContentPath(agent.Instructions.Path); err != nil || !validDigest(agent.Instructions.Digest) {
+	if _, err := validateContentPath(agent.Instructions.Path); err != nil || !IsValidDigest(agent.Instructions.Digest) {
 		errs = append(errs, errors.New("instructions reference is invalid"))
 	}
 	if agent.Model.Protocol == "" || agent.Model.Model == "" {
@@ -687,7 +687,7 @@ func reservedRemoteHeader(name string) bool {
 }
 
 func validateFileRef(ref FileRef, content *contentSet) error {
-	if _, err := validateContentPath(ref.Path); err != nil || !validDigest(ref.Digest) {
+	if _, err := validateContentPath(ref.Path); err != nil || !IsValidDigest(ref.Digest) {
 		return errors.New("reference is invalid")
 	}
 	entry, ok := content.entries[ref.Path]
@@ -770,7 +770,7 @@ func validateVariant(variant ToolProviderVariant, expectedDigest string, content
 		}
 		switch entry.Type {
 		case "file":
-			if entry.Size < 0 || !validDigest(entry.Digest) || entry.LinkTarget != "" {
+			if entry.Size < 0 || !IsValidDigest(entry.Digest) || entry.LinkTarget != "" {
 				errs = append(errs, fmt.Errorf("inventory file %s has invalid size, digest, or link target", entry.Path))
 			}
 		case "directory":
@@ -904,7 +904,7 @@ func bundleClosure(rootKey string, root ToolProviderVariant, providers map[strin
 		for _, dependency := range variant.Dependencies {
 			key := dependency.ID + "@" + dependency.Version
 			if key == providerKey || seen[key] || !identifierPattern.MatchString(dependency.ID) ||
-				!versionPattern.MatchString(dependency.Version) || !validDigest(dependency.VariantDigest) {
+				!versionPattern.MatchString(dependency.Version) || !IsValidDigest(dependency.VariantDigest) {
 				errs = append(errs, fmt.Errorf("tool provider %s has invalid or duplicate dependency %s", providerKey, key))
 				continue
 			}
@@ -972,7 +972,7 @@ func validateComposition(composition Composition) error {
 			errs = append(errs, errors.New("resolved tool providers must be sorted by id and version"))
 		}
 		if seen[key] || !identifierPattern.MatchString(provider.ID) || !versionPattern.MatchString(provider.Version) ||
-			!validDigest(provider.ManifestDigest) || !validDigest(provider.VariantDigest) ||
+			!IsValidDigest(provider.ManifestDigest) || !IsValidDigest(provider.VariantDigest) ||
 			provider.ExecutionMode != ExecutionSharedSandbox {
 			errs = append(errs, fmt.Errorf("resolved tool provider %s is invalid or duplicated", key))
 		}
@@ -990,7 +990,7 @@ func validateToolProviderComposition(composition ToolProviderComposition) error 
 	if !identifierPattern.MatchString(composition.ID) || !versionPattern.MatchString(composition.Version) {
 		errs = append(errs, errors.New("tool provider identity is invalid"))
 	}
-	if !validDigest(composition.ManifestDigest) || !validDigest(composition.VariantDigest) {
+	if !IsValidDigest(composition.ManifestDigest) || !IsValidDigest(composition.VariantDigest) {
 		errs = append(errs, errors.New("tool provider manifest or variant digest is invalid"))
 	}
 	if !identifierPattern.MatchString(composition.BuildProfile) {
@@ -1031,7 +1031,7 @@ func validatePlatformImages(name string, images []PlatformImage) error {
 			errs = append(errs, fmt.Errorf("%s contains duplicate platform %s", name, key))
 		}
 		seen[key] = true
-		if image.Image.MediaType != ociManifestMediaType || !validDigest(image.Image.Digest) || image.Image.Size <= 0 {
+		if image.Image.MediaType != ociManifestMediaType || !IsValidDigest(image.Image.Digest) || image.Image.Size <= 0 {
 			errs = append(errs, fmt.Errorf("%s %s image descriptor must pin an OCI image manifest", name, key))
 		}
 	}
@@ -1095,7 +1095,7 @@ func validateExtensions(extensions []Extension) error {
 		if extension.Critical {
 			errs = append(errs, fmt.Errorf("unknown critical extension %q is unsupported", extension.Name))
 		}
-		if extension.Digest != "" && !validDigest(extension.Digest) {
+		if extension.Digest != "" && !IsValidDigest(extension.Digest) {
 			errs = append(errs, fmt.Errorf("extension %q digest is invalid", extension.Name))
 		}
 	}

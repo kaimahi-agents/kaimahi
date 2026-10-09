@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuitecore "github.com/kaimahi-agents/kaimahi/agentsuite"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 

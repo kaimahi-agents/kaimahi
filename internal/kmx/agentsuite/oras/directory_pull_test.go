@@ -10,7 +10,7 @@ import (
 )
 
 func TestPullExtractsReferencedAgentSuite(t *testing.T) {
-	source := filepath.Join("..", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	layout := filepath.Join(t.TempDir(), "layout")
 	reference := "agentsuites/minimal:v1"
 	pushed, err := Push(context.Background(), source, layout, reference)
@@ -47,7 +47,7 @@ func TestPullExtractsReferencedAgentSuite(t *testing.T) {
 }
 
 func TestPullRefusesExistingOutput(t *testing.T) {
-	source := filepath.Join("..", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	layout := filepath.Join(t.TempDir(), "layout")
 	reference := "agentsuites/minimal:v1"
 	if _, err := Push(context.Background(), source, layout, reference); err != nil {
@@ -68,7 +68,7 @@ func TestPullRefusesExistingOutput(t *testing.T) {
 }
 
 func TestPullFailureLeavesNoOutput(t *testing.T) {
-	source := filepath.Join("..", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	layout := filepath.Join(t.TempDir(), "layout")
 	if _, err := Push(context.Background(), source, layout, "agentsuites/minimal:v1"); err != nil {
 		t.Fatal(err)

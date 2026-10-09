@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 func TestToolProviderSchemaDefinesBundledImplementation(t *testing.T) {
@@ -219,28 +219,24 @@ func TestProviderTerminologyRejectsEarlierDraftFields(t *testing.T) {
 	}
 }
 
-func compileReferenceSchema(t *testing.T, name string) *jsonschema.Schema {
+func compileReferenceSchema(t *testing.T, name string) *jsonschema.Resolved {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("schema", name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var resource any
-	if err := json.Unmarshal(data, &resource); err != nil {
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(data, &schema); err != nil {
 		t.Fatal(err)
 	}
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(name, resource); err != nil {
-		t.Fatal(err)
-	}
-	schema, err := compiler.Compile(name)
+	resolved, err := schema.Resolve(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return schema
+	return resolved
 }
 
-func validateSchemaJSON(t *testing.T, schema *jsonschema.Schema, document string, valid bool) {
+func validateSchemaJSON(t *testing.T, schema *jsonschema.Resolved, document string, valid bool) {
 	t.Helper()
 	var value any
 	if err := json.Unmarshal([]byte(document), &value); err != nil {
