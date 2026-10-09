@@ -26,6 +26,11 @@ type PullResult struct {
 	Reference  string
 	Descriptor ocispec.Descriptor
 	Report     *agentsuite.Report
+	// Provenance is informational and never blocks a pull.
+	Provenance []Provenance
+	// ProvenanceChecked is false if referrers could not be listed.
+	ProvenanceChecked bool
+	Warnings          []string
 }
 
 // Pull resolves and validates an AgentSuite from an OCI image layout, then
@@ -107,6 +112,10 @@ func pullToDirectory(
 	if err != nil {
 		return PullResult{}, err
 	}
+	provenance, warnings, listErr := provenanceFor(ctx, source, root)
+	if listErr != nil {
+		warnings = append(warnings, listErr.Error())
+	}
 
 	stageRoot, err := os.MkdirTemp(outputParent, "."+filepath.Base(outputPath)+"-*")
 	if err != nil {
@@ -138,10 +147,13 @@ func pullToDirectory(
 	}
 	publishOutput = false
 	return PullResult{
-		Path:       outputPath,
-		Reference:  reference,
-		Descriptor: root,
-		Report:     report,
+		Path:              outputPath,
+		Reference:         reference,
+		Descriptor:        root,
+		Report:            report,
+		Provenance:        provenance,
+		ProvenanceChecked: listErr == nil,
+		Warnings:          warnings,
 	}, nil
 }
 

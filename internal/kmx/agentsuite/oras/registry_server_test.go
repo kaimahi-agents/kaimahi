@@ -22,6 +22,10 @@ type testRegistry struct {
 	uploads               int
 	authChallenges        int
 	authenticatedRequests int
+	referrersAPI          bool
+	// rejectManifest fails matching manifest PUTs.
+	rejectManifest func([]byte) bool
+	manifestPuts   int
 }
 
 type testManifest struct {
@@ -73,6 +77,13 @@ func (r *testRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.serveBlob(w, req, path)
 	case strings.Contains(path, "/manifests/"):
 		r.serveManifest(w, req, path)
+	case strings.Contains(path, "/referrers/"):
+		if r.referrersAPI {
+			r.serveReferrers(w, req, path)
+			return
+		}
+		// A bare 404 makes clients use the referrers tag schema.
+		w.WriteHeader(http.StatusNotFound)
 	default:
 		r.writeError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
 	}
@@ -170,6 +181,14 @@ func (r *testRegistry) serveManifest(w http.ResponseWriter, req *http.Request, p
 			r.writeError(w, http.StatusInternalServerError, "UNKNOWN", err.Error())
 			return
 		}
+		r.mu.Lock()
+		r.manifestPuts++
+		reject := r.rejectManifest != nil && r.rejectManifest(content)
+		r.mu.Unlock()
+		if reject {
+			r.writeError(w, http.StatusBadRequest, "MANIFEST_INVALID", "manifest rejected by test")
+			return
+		}
 		digest := contentDigest(content)
 		if strings.Contains(reference, ":") && reference != digest {
 			r.writeError(w, http.StatusBadRequest, "DIGEST_INVALID", "manifest digest does not match")
@@ -184,6 +203,14 @@ func (r *testRegistry) serveManifest(w http.ResponseWriter, req *http.Request, p
 		r.manifests[key] = manifest
 		r.manifests[registryKey(repository, digest)] = manifest
 		r.mu.Unlock()
+		var subject struct {
+			Subject *struct {
+				Digest string `json:"digest"`
+			} `json:"subject"`
+		}
+		if r.referrersAPI && json.Unmarshal(content, &subject) == nil && subject.Subject != nil {
+			w.Header().Set("OCI-Subject", subject.Subject.Digest)
+		}
 		w.Header().Set("Docker-Content-Digest", digest)
 		w.Header().Set("Location", "/v2/"+repository+"/manifests/"+reference)
 		w.WriteHeader(http.StatusCreated)
@@ -209,6 +236,54 @@ func (r *testRegistry) serveManifest(w http.ResponseWriter, req *http.Request, p
 	default:
 		r.writeUnsupported(w, req)
 	}
+}
+
+func (r *testRegistry) serveReferrers(w http.ResponseWriter, req *http.Request, path string) {
+	repository, subject, ok := splitRegistryPath(path, "/referrers/")
+	if !ok || req.Method != http.MethodGet {
+		r.writeUnsupported(w, req)
+		return
+	}
+	artifactType := req.URL.Query().Get("artifactType")
+	index := map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json", "manifests": []map[string]any{}}
+	seen := map[string]bool{}
+	r.mu.RLock()
+	for key, manifest := range r.manifests {
+		if !strings.HasPrefix(key, repository+"\x00") || seen[manifest.digest] {
+			continue
+		}
+		var parsed struct {
+			ArtifactType string `json:"artifactType"`
+			Subject      *struct {
+				Digest string `json:"digest"`
+			} `json:"subject"`
+		}
+		if json.Unmarshal(manifest.content, &parsed) != nil || parsed.Subject == nil || parsed.Subject.Digest != subject {
+			continue
+		}
+		if artifactType != "" && parsed.ArtifactType != artifactType {
+			continue
+		}
+		seen[manifest.digest] = true
+		index["manifests"] = append(index["manifests"].([]map[string]any), map[string]any{
+			"mediaType":    manifest.contentType,
+			"artifactType": parsed.ArtifactType,
+			"digest":       manifest.digest,
+			"size":         len(manifest.content),
+		})
+	}
+	r.mu.RUnlock()
+	if artifactType != "" {
+		w.Header().Set("OCI-Filters-Applied", "artifactType")
+	}
+	w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
+	_ = json.NewEncoder(w).Encode(index)
+}
+
+func (r *testRegistry) counts() (uploads, manifestPuts int) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.uploads, r.manifestPuts
 }
 
 func (r *testRegistry) writeUnsupported(w http.ResponseWriter, req *http.Request) {
