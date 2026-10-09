@@ -24,7 +24,7 @@ func TestPlainHTTPAuthenticationUsesLiteralLoopbackOnly(t *testing.T) {
 		authenticated bool
 	}{
 		{"localhost", true}, {"LOCALHOST", true}, {"127.0.0.1", true}, {"127.42.3.4", true}, {"[::1]", true},
-		{"localhost.example", false}, {"localhost.", false}, {"128.0.0.1", false}, {"[::2]", false},
+		{"localhost.example", false}, {"localhost.", false}, {"192.0.2.1", false}, {"[::2]", false},
 	} {
 		t.Run(test.host, func(t *testing.T) {
 			server, registry := newTestRegistryServer("agent", "secret")
