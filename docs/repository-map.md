@@ -39,7 +39,7 @@ checks.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
-| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 46 (checkers, release packaging, probes, CI fixtures, mutation specs) |
+| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 51 (checkers, release packaging, probes, CI fixtures, mutation specs) |
 | `docs/` | 51 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -90,6 +90,8 @@ Go test files but include non-Go data. The test-only kubectl executable under
 | `kmx/agentsuite/testdata/remote-mcp/schemas` | 2 | Scaffolding | Digest-bound input and output schemas for the remote provider's callable Tool. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
+| `kmx/app/testdata/live-eval-loop` | 1 | Scaffolding | Portable agent for the clusterless, secret-free real-inference CI fixture and App bundle-loading test. |
+| `kmx/app/testdata/live-eval-loop/eval` | 2 | Scaffolding | Public capital and arithmetic cases requiring literal `Paris` and `4` substrings, not exact answers. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
 | `kmx/app/testdata/bundle-format/kagent` | 2 | Scaffolding | Kagent portable agent and creation bindings; the parser and portable digest are pinned in compatibility tests. |
 | `kmx/app/testdata/bundle-format/main` | 2 | Scaffolding | Current-writer portable agent and creation bindings. |
@@ -247,9 +249,9 @@ manifests, and the nine model presets. All were objects of the legacy runtime
 applied by the retired installer; nothing left in kmx reads or applies one. Plane and
 observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 54 tracked files, three different jobs
+## `scripts/` — 59 tracked files, three different jobs
 
-**Reference coverage:** 44 of the 54 are named by something outside themselves,
+**Reference coverage:** 49 of the 59 are named by something outside themselves,
 and the ten `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -259,18 +261,18 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 1 | `plane-pods.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers, self-tests and release packaging | 21 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 22 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py`, `test_eval_loop.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
-| **Scaffolding** — CI fixtures | 7 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml` |
+| **Scaffolding** — CI fixtures | 11 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — legacy-runtime scanner's approved exemptions | 1 | `legacy-runtime-allowlist.json` |
 
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 `kube-guard.sh` is counted once as embedded, and is one of the ten checkers
-the mutation harness breaks on purpose. Model fixtures are synthetic test
-systems, not providers deployed for users. `scripts/test_check_mutations.py`
-checks the mutation runner and is invoked by CONTRIBUTING's local verification
-commands and CI's hygiene job.
+the mutation harness breaks on purpose. Model fixtures are test scaffolding,
+not providers deployed for users; the live evaluation fixture uses real inference.
+`scripts/test_check_mutations.py` checks the mutation runner and is invoked by
+CONTRIBUTING's local verification commands and CI's hygiene job.
 
 `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload the
 `e2e-resilience` and `e2e-spend` shards migrate with `kmx migrate`. The Python half is a
@@ -286,6 +288,13 @@ shard's only governed callers, and `model-seam-probe.sh` alone is
 meters is a direct TLS call under a credential in the caller's own
 namespace. `SECRET_NAMESPACE` has no default, so both shards must pass the
 credential's destination at each call site.
+
+`scripts/ci/live-eval-loop.sh` is called by CI's required `e2e-eval-loop`
+shard. It loads `eval-loop-model.yaml` and `eval-loop-warmup.json`, then calls
+`eval-loop.py` to gate real-inference evaluation and zero-call local-reference
+replay. CI's hygiene job calls `scripts/test_eval_loop.py` to check the gates
+and public-toy failure diagnostics. The fixture installs no cluster and uses
+no hosted credential.
 
 `scripts/ci/synthetic-model.sh` is the `e2e-hosted-models` fixture: a
 throwaway CA and a documentation-range address routed over kind's network,
@@ -341,7 +350,7 @@ and the separately located historical architecture SVG.
 | `embed.go` | **Installed tooling** | Root-module embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Build/check targets plus plane-image, AKS-credential, network-policy and egress helpers. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. CI includes a required live exact-v0.10.2 Kagent create shard; its official charts are external test preconditions that KMX does not install. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven releases. CI includes required clusterless live evaluation/replay and live exact-v0.10.2 Kagent create shards; the Kagent charts are external test preconditions that KMX does not install. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the `release` workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
 | `staticcheck.conf` | **Scaffolding** | Lint configuration for both modules. |

@@ -90,6 +90,8 @@ jobs:
       # not prove the checker would notice tomorrow's wrong answer, and
       # every gap this closes was found by editing a checker until it was
       # worthless and watching its own self-test stay green.
+      - name: Live eval gate and failure diagnostics self-tests
+        run: python3 scripts/test_eval_loop.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -3797,9 +3799,44 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
+  e2e-eval-loop:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Classify the change (docs-only short-circuit, fail closed)
+        id: changes
+        uses: ./.github/actions/classify-change
+      - uses: actions/setup-go@v5
+        if: steps.changes.outputs.docs_only != 'true'
+        with:
+          go-version-file: go.mod
+      - name: Build kmx
+        if: steps.changes.outputs.docs_only != 'true'
+        run: go build -o bin/kmx ./cmd/kmx
+      - name: Live AIKit evaluation and zero-call replay
+        if: steps.changes.outputs.docs_only != 'true'
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/eval-loop-evidence
+        run: bash scripts/ci/live-eval-loop.sh
+      - name: Upload payload-free receipt and verify report
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-loop-evidence
+          path: ${{ runner.temp }}/eval-loop-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Documentation-only summary
+        id: docs-only-summary
+        if: steps.changes.outputs.docs_only == 'true'
+        run: echo "every changed file is documentation; no live evaluation run"
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-hosted-models, e2e-kagent-create, e2e-models, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart, e2e-resilience, e2e-spend]
+    needs: [e2e-eval-loop, e2e-hosted-models, e2e-kagent-create, e2e-models, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart, e2e-resilience, e2e-spend]
     if: always() && github.event_name != 'schedule'
     steps:
       - name: Every e2e shard succeeded

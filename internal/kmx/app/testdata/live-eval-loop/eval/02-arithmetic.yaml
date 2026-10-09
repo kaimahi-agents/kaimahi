@@ -1,0 +1,4 @@
+id: arithmetic
+input: What is 2 + 2? Answer using a digit.
+expectContains:
+  - "4"
