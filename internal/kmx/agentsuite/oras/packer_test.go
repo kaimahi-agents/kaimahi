@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	oraspack "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	godigest "github.com/opencontainers/go-digest"
@@ -51,7 +52,7 @@ func TestPackerProducesValidOCILayout(t *testing.T) {
 	if result.Report == nil || result.Report.Name != "minimal" {
 		t.Fatalf("pack report = %+v, want suite minimal", result.Report)
 	}
-	report, err := agentsuite.ValidatePath(layout)
+	report, err := spec.ValidatePath(layout)
 	if err != nil {
 		t.Fatalf("packed layout is invalid: %v", err)
 	}
@@ -89,11 +90,11 @@ func TestPackerProducesExpectedManifest(t *testing.T) {
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.ArtifactType != agentsuite.MediaTypeArtifact || manifest.Subject != nil {
+	if manifest.ArtifactType != spec.MediaTypeArtifact || manifest.Subject != nil {
 		t.Fatalf("unexpected AgentSuite manifest: %+v", manifest)
 	}
-	if manifest.Config.MediaType != agentsuite.MediaTypeEmptyConfig {
-		t.Fatalf("config media type = %q, want %q", manifest.Config.MediaType, agentsuite.MediaTypeEmptyConfig)
+	if manifest.Config.MediaType != spec.MediaTypeEmptyConfig {
+		t.Fatalf("config media type = %q, want %q", manifest.Config.MediaType, spec.MediaTypeEmptyConfig)
 	}
 	if len(manifest.Layers) != 1 ||
 		manifest.Layers[0].MediaType != contentDescriptor.MediaType ||
@@ -156,7 +157,7 @@ func TestPackerRejectsNonSHA256ContentDescriptor(t *testing.T) {
 	dst := &recordingStorage{}
 	data := []byte("content")
 	descriptor := ocispec.Descriptor{
-		MediaType: agentsuite.MediaTypeContent,
+		MediaType: spec.MediaTypeContent,
 		Digest:    godigest.NewDigestFromBytes(godigest.SHA512, data),
 		Size:      int64(len(data)),
 	}
@@ -217,7 +218,7 @@ func TestPackerAcceptsMatchingEmbeddedContent(t *testing.T) {
 
 func TestPackerRejectsMissingCASContent(t *testing.T) {
 	dst := &recordingStorage{}
-	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("missing"))
+	descriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, []byte("missing"))
 	if _, err := oraspack.New(nil).Pack(context.Background(), memory.New(), dst, descriptor); err == nil {
 		t.Fatal("missing source content succeeded")
 	}
@@ -249,11 +250,11 @@ func TestPackerRejectsNonCanonicalContentTimestamps(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			data := buildContentLayerWithTimestamps(
 				t,
-				filepath.Join("..", "testdata", "minimal"),
+				filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"),
 				test.gzipTimestamp,
 				test.tarTimestamp,
 			)
-			descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, data)
+			descriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, data)
 			src := memory.New()
 			if err := src.Push(context.Background(), descriptor, bytes.NewReader(data)); err != nil {
 				t.Fatal(err)
@@ -273,7 +274,7 @@ func TestPackerRejectsNonCanonicalContentTimestamps(t *testing.T) {
 
 func TestORASStoreRejectsMismatchedContent(t *testing.T) {
 	target := memory.New()
-	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("expected"))
+	descriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, []byte("expected"))
 	err := target.Push(context.Background(), descriptor, bytes.NewReader([]byte("different")))
 	if err == nil {
 		t.Fatal("mismatched content succeeded")
@@ -310,8 +311,8 @@ func TestPackerRejectsCorruptExistingCASContent(t *testing.T) {
 
 func newContentSource(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 	t.Helper()
-	data := buildContentLayer(t, filepath.Join("..", "testdata", "minimal"))
-	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, data)
+	data := buildContentLayer(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"))
+	descriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, data)
 	store := memory.New()
 	if err := store.Push(context.Background(), descriptor, bytes.NewReader(data)); err != nil {
 		t.Fatal(err)
@@ -413,7 +414,7 @@ func (v *recordingValidator) Validate(
 	ctx context.Context,
 	src agentsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
-) (*agentsuite.Report, error) {
+) (*spec.Report, error) {
 	v.calls++
 	exists, err := src.Exists(ctx, root)
 	if err != nil {
@@ -431,7 +432,7 @@ func (failingValidator) Validate(
 	context.Context,
 	agentsuite.ReadOnlyStorage,
 	ocispec.Descriptor,
-) (*agentsuite.Report, error) {
+) (*spec.Report, error) {
 	return nil, errRejectedSuite
 }
 
@@ -443,9 +444,9 @@ func (v *acceptingValidator) Validate(
 	context.Context,
 	agentsuite.ReadOnlyStorage,
 	ocispec.Descriptor,
-) (*agentsuite.Report, error) {
+) (*spec.Report, error) {
 	v.calls++
-	return &agentsuite.Report{Name: "accepted"}, nil
+	return &spec.Report{Name: "accepted"}, nil
 }
 
 type recordingStorage struct {

@@ -22,7 +22,28 @@ const (
 	maxJSONDocumentMembers = 100_000
 )
 
-func decodeStrict(data []byte, out any) error {
+// Marshal serializes value as JSON Canonicalization Scheme (JCS) JSON.
+func Marshal(value any) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize JSON: %w", err)
+	}
+	if err := validateCanonicalEquivalence(data, canonical); err != nil {
+		return nil, err
+	}
+	return canonical, nil
+}
+
+// Unmarshal decodes one strict AgentSuite JSON document.
+//
+// It rejects duplicate or unknown fields, invalid UTF-8, lossy JCS number
+// representations, trailing values, and documents exceeding the format's
+// declared implementation limits.
+func Unmarshal(data []byte, out any) error {
 	if len(data) == 0 {
 		return errors.New("document is empty")
 	}
@@ -59,6 +80,10 @@ func decodeStrict(data []byte, out any) error {
 		return fmt.Errorf("document has invalid trailing data: %w", err)
 	}
 	return nil
+}
+
+func decodeStrict(data []byte, out any) error {
+	return Unmarshal(data, out)
 }
 
 func validateJSONTokens(data []byte) error {
@@ -306,7 +331,8 @@ func validateJSONType(raw json.RawMessage, target reflect.Type) error {
 	return nil
 }
 
-func canonicalDigest(data []byte) (string, error) {
+// Digest returns the SHA-256 digest of the JCS representation of data.
+func Digest(data []byte) (string, error) {
 	canonical, err := jcs.Transform(data)
 	if err != nil {
 		return "", fmt.Errorf("canonicalize JSON: %w", err)
@@ -315,12 +341,17 @@ func canonicalDigest(data []byte) (string, error) {
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
+func canonicalDigest(data []byte) (string, error) {
+	return Digest(data)
+}
+
 func digestBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func validDigest(value string) bool {
+// IsValidDigest reports whether value is a canonical AgentSuite SHA-256 digest.
+func IsValidDigest(value string) bool {
 	if !strings.HasPrefix(value, "sha256:") || len(value) != len("sha256:")+64 {
 		return false
 	}

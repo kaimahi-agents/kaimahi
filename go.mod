@@ -10,6 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v6 v6.6.0
 	github.com/charmbracelet/x/ansi v0.11.8
+	github.com/google/jsonschema-go v0.4.3
 	github.com/gowebpki/jcs v1.0.1
 	github.com/muesli/cancelreader v0.2.2
 	github.com/opencontainers/image-spec v1.1.1

@@ -64,7 +64,7 @@ func TestRegistryReferenceRequiresRepositoryAndTagOrDigest(t *testing.T) {
 func TestTargetPushPullPreservesDescriptorAndExtracts(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
 	packedRoot, packedStore, packed, err := packDirectory(ctx, source)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestRegistryPushPullOverHTTP(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", configRoot)
 
 	source := filepath.Join(t.TempDir(), "source")
-	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
 	layout := filepath.Join(t.TempDir(), "layout")
 	local, err := Push(ctx, source, layout, "v1")
 	if err != nil {

@@ -93,7 +93,7 @@ func TestPushRejectsNestedTargetThroughSymlinks(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			realSource := filepath.Join(root, "suite")
-			copyDirectory(t, filepath.Join("..", "testdata", "minimal"), realSource)
+			copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), realSource)
 			link := filepath.Join(root, "suite-link")
 			source := test.source(t, realSource, link)
 			target := test.target(t, realSource, link)
@@ -108,7 +108,7 @@ func TestPushRejectsNestedTargetThroughSymlinks(t *testing.T) {
 }
 
 func TestPushAddsReferencesToExistingLayout(t *testing.T) {
-	source := filepath.Join("..", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	target := filepath.Join(t.TempDir(), "layout")
 	references := []string{"agentsuites/alpha:v1", "agentsuites/beta:v1"}
 	var first ocispec.Descriptor
@@ -170,7 +170,7 @@ func TestPushFailureLeavesNoNewTarget(t *testing.T) {
 }
 
 func TestPushRefusesArbitraryExistingDirectory(t *testing.T) {
-	source := filepath.Join("..", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	target := t.TempDir()
 	keep := filepath.Join(target, "keep")
 	if err := os.WriteFile(keep, []byte("keep"), 0o644); err != nil {

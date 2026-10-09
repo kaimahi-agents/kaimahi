@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 
-[Getting started](docs/getting-started.md) · [AgentSuite specification](docs/agentsuite-spec.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
+[Getting started](docs/getting-started.md) · [AgentSuite specification](agentsuite/spec.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
 
 <sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
 
@@ -184,7 +184,7 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | Start here | Purpose |
 |---|---|
 | [Getting started](docs/getting-started.md) | Prerequisites and current local workflows |
-| [AgentSuite specification](docs/agentsuite-spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
+| [AgentSuite specification](agentsuite/spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
 | [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
 | [Runtime setup](docs/orka.md) | First-class default implementation setup, native creation, and first task |

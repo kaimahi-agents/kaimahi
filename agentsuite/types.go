@@ -15,7 +15,6 @@ const (
 	MediaTypeToolProviderComposition = "application/vnd.agentsuite.tool.provider.composition.v1+json"
 	MediaTypeComposition             = "application/vnd.agentsuite.composition.v1+json"
 	MediaTypeBuildProfile            = "application/vnd.agentsuite.build.profile.v1+json"
-	MediaTypeSandboxBinding          = "application/vnd.agentsuite.sandbox.binding.v1+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )
@@ -278,15 +277,4 @@ type BuildProfile struct {
 	RuntimeBase   []PlatformImage `json:"runtimeBase"`
 	Harness       []PlatformImage `json:"harness"`
 	SourceEpoch   int64           `json:"sourceEpoch"`
-}
-
-type SandboxBinding struct {
-	SchemaVersion string     `json:"schemaVersion"`
-	MediaType     string     `json:"mediaType"`
-	SuiteDigest   string     `json:"suiteDigest"`
-	Agent         string     `json:"agent"`
-	Platform      Platform   `json:"platform"`
-	BuildProfile  string     `json:"buildProfile"`
-	Composition   Descriptor `json:"composition"`
-	Inventory     Descriptor `json:"inventory"`
 }

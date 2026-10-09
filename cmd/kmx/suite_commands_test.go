@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/oci"
 )
 
 func TestSuiteValidateMinimalLayout(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -56,7 +56,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 }
 
 func TestSuitePushMinimalDirectory(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	outputRoot := t.TempDir()
 	firstOutput := filepath.Join(outputRoot, "first")
 	secondOutput := filepath.Join(outputRoot, "second")
@@ -105,7 +105,7 @@ func TestSuitePushMinimalDirectory(t *testing.T) {
 }
 
 func TestSuitePushAddsReferencesToExistingLayout(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	target := filepath.Join(t.TempDir(), "layout")
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
@@ -144,7 +144,7 @@ func TestSuitePushAddsReferencesToExistingLayout(t *testing.T) {
 }
 
 func TestSuitePushRefusesNestedTarget(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	target := filepath.Join(fixture, "layout")
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
@@ -181,7 +181,7 @@ func TestSuitePushFailureLeavesNoNewTarget(t *testing.T) {
 }
 
 func TestSuitePullExtractsDirectory(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	layout := filepath.Join(t.TempDir(), "layout")
 	output := filepath.Join(t.TempDir(), "suite")
 	reference := "agentsuites/minimal:v1"
