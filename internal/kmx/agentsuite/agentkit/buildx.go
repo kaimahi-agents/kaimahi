@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type agentImage struct {
@@ -106,6 +107,10 @@ func (localBuildxRunner) Run(
 	args ...string,
 ) error {
 	command := exec.CommandContext(ctx, name, args...)
+	command.Cancel = func() error {
+		return command.Process.Signal(os.Interrupt)
+	}
+	command.WaitDelay = 10 * time.Second
 	command.Stdout = stdout
 	command.Stderr = stderr
 	return command.Run()

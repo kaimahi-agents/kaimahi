@@ -63,6 +63,9 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	_ = build.MarkFlagFilename("output")
 	_ = build.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
 	build.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := agentkitbuilder.ValidateModelAPIKeyEnv(buildModelKeyEnv); err != nil {
+			return err
+		}
 		builder := state.deps.newAgentKitBuilder(agentkitbuilder.Options{
 			ModelBaseURL:   buildModelURL,
 			ModelAPIKeyEnv: buildModelKeyEnv,

@@ -108,6 +108,50 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 	}
 }
 
+func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
+	for _, verbose := range []bool{false, true} {
+		t.Run(map[bool]string{false: "quiet", true: "verbose"}[verbose], func(t *testing.T) {
+			const invalid = "sk-test-only-invalid-env"
+			root := t.TempDir()
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			createdBuilder := false
+			deps.newAgentKitBuilder = func(agentkitbuilder.Options) agentsuite.SandboxBuilder {
+				createdBuilder = true
+				return sandboxBuilderFunc(func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error) {
+					t.Fatal("invalid environment name reached builder")
+					return agentsuite.BuildResult{}, nil
+				})
+			}
+			// Missing input and output parent prove validation precedes suite reads
+			// and staging, not just that a failed build removes its staged file.
+			args := []string{
+				"suite", "build", filepath.Join(root, "missing-suite"),
+				"--model-base-url", "https://models.example/v1",
+				"--model-api-key-env", invalid,
+				"--output", filepath.Join(root, "missing-output-parent", "writer.oci.tar"),
+			}
+			if verbose {
+				args = append(args, "--verbose")
+			}
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "--model-api-key-env") {
+				t.Fatalf("invalid environment name: error=%v", err)
+			}
+			if strings.Contains(err.Error(), invalid) || strings.Contains(out.String(), invalid) || strings.Contains(diagnostics.String(), invalid) {
+				t.Fatal("invalid environment name leaked into error, stdout or stderr")
+			}
+			if createdBuilder || *loads != 0 {
+				t.Fatalf("invalid environment name reached builder/config: builder=%v loads=%d", createdBuilder, *loads)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("invalid environment name created files: entries=%v error=%v", entries, err)
+			}
+		})
+	}
+}
+
 func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")

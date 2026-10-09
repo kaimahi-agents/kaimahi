@@ -35,7 +35,7 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 		t.Fatalf("unexpected result: output=%q result=%+v", output.String(), result)
 	}
 	if exported.Name != "writer" ||
-		exported.AdapterRef != "registry.example/harness@"+testDigest ||
+		exported.AdapterRef != "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@"+testDigest ||
 		exported.Platform != "linux/amd64" || exported.SourceEpoch != 1 {
 		t.Fatalf("exported image = %+v", exported)
 	}
@@ -80,6 +80,59 @@ func TestAgentkitFileMapsResolvedPlan(t *testing.T) {
 	}
 }
 
+func TestBuildValidatesModelAPIKeyEnvironmentName(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		valid bool
+	}{
+		{name: "", valid: true},
+		{name: "_", valid: true},
+		{name: "AZURE_OPENAI_API_KEY", valid: true},
+		{name: "sk_model_api_key", valid: true},
+		{name: "model_key2", valid: true},
+		{name: "sk-test-only-invalid-env"},
+		{name: "2MODEL_KEY"},
+		{name: "MODEL_KEY=value"},
+		{name: " MODEL_KEY"},
+		{name: "MODEL_KEY\n"},
+		{name: "MODEL_Clé"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output, progress bytes.Buffer
+			exported := false
+			builder := New(Options{
+				ModelBaseURL:   "https://models.example/v1",
+				ModelAPIKeyEnv: tc.name,
+				Progress:       &progress,
+				exporter: ociExporterFunc(func(_ context.Context, image agentImage, dst io.Writer) error {
+					exported = true
+					if got := decodeAgentkitFile(t, image.AgentkitFile).Model.APIKeyEnv; got != tc.name {
+						t.Errorf("apiKeyEnv = %q, want environment name %q", got, tc.name)
+					}
+					_, err := io.WriteString(dst, "oci archive")
+					return err
+				}),
+			})
+			_, err := builder.Build(t.Context(), minimalPlan(), &output)
+			if tc.valid {
+				if err != nil || !exported || output.String() != "oci archive" {
+					t.Fatalf("valid environment name: error=%v exported=%v output=%q", err, exported, output.String())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "--model-api-key-env") {
+				t.Fatalf("invalid environment name: error=%v", err)
+			}
+			if strings.Contains(err.Error(), tc.name) || strings.Contains(output.String(), tc.name) || strings.Contains(progress.String(), tc.name) {
+				t.Fatal("invalid environment name leaked into error or output")
+			}
+			if exported || output.Len() != 0 || progress.Len() != 0 {
+				t.Fatalf("invalid environment name caused export/output: exported=%v output bytes=%d progress bytes=%d", exported, output.Len(), progress.Len())
+			}
+		})
+	}
+}
+
 func TestBuildRejectsUnsupportedAgentSuiteFeatures(t *testing.T) {
 	plan := minimalPlan()
 	plan.Agent.Invokes = []agentsuite.AgentInvoke{{Agent: "reviewer", MaxConcurrent: 1, MaxDepth: 1}}
@@ -89,6 +142,53 @@ func TestBuildRejectsUnsupportedAgentSuiteFeatures(t *testing.T) {
 		if !strings.Contains(err, want) {
 			t.Fatalf("Build() error = %q, want %q", err, want)
 		}
+	}
+}
+
+func TestBuildRequiresPydanticAIHarnessRepository(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		image string
+		valid bool
+	}{
+		{name: "pydantic-ai", image: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@" + testDigest, valid: true},
+		{name: "another digest", image: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@sha256:" + strings.Repeat("b", 64), valid: true},
+		{name: "langgraph", image: "ghcr.io/orka-agents/agentkit/serve-langgraph@" + testDigest},
+		{name: "another registry", image: "registry.example/orka-agents/agentkit/serve-pydantic-ai@" + testDigest},
+		{name: "another path", image: "ghcr.io/other/agentkit/serve-pydantic-ai@" + testDigest},
+		{name: "suffix lookalike", image: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai-extra@" + testDigest},
+		{name: "nested lookalike", image: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai/nested@" + testDigest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := minimalPlan()
+			plan.Harness.ImageRef = tc.image
+			exported := false
+			builder := New(Options{
+				ModelBaseURL: "https://models.example/v1",
+				exporter: ociExporterFunc(func(_ context.Context, image agentImage, dst io.Writer) error {
+					exported = true
+					if image.AdapterRef != tc.image {
+						t.Errorf("adapter reference changed: %q", image.AdapterRef)
+					}
+					_, err := io.WriteString(dst, "oci archive")
+					return err
+				}),
+			})
+			var output bytes.Buffer
+			_, err := builder.Build(t.Context(), plan, &output)
+			if tc.valid {
+				if err != nil || !exported || output.String() != "oci archive" {
+					t.Fatalf("supported harness: error=%v exported=%v output=%q", err, exported, output.String())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "harness") || !strings.Contains(err.Error(), "pydantic-ai") {
+				t.Fatalf("unsupported harness: error=%v", err)
+			}
+			if exported || output.Len() != 0 {
+				t.Fatalf("unsupported harness exported: exported=%v output=%q", exported, output.String())
+			}
+		})
 	}
 }
 
@@ -266,7 +366,7 @@ func minimalPlan() agentsuite.SandboxPlan {
 			Platform: platform, ImageRef: "registry.example/runtime@" + testDigest,
 		},
 		Harness: agentsuite.PlatformImage{
-			Platform: platform, ImageRef: "registry.example/harness@" + testDigest,
+			Platform: platform, ImageRef: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@" + testDigest,
 		},
 	}
 }

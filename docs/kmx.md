@@ -113,6 +113,12 @@ The first image-build backend is intentionally narrow:
 It requires Docker with the buildx plugin. Authenticate Docker to any private
 registry containing the selected harness image before building.
 
+With the classic Docker image store, the default `docker` builder can reject
+`--output type=oci` with `OCI exporter is not supported for the docker driver.`,
+even with attestations disabled. If you see this error, enable Docker's containerd
+image store, or create and select a `docker-container` builder with
+`docker buildx create --driver docker-container --use` before retrying.
+
 ```zsh
 SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
 
@@ -187,8 +193,10 @@ Linux amd64 Python runtime base and AgentKit v0.1.0 Pydantic AI harness are real
 platform-specific, digest-pinned OCI manifests. The example targets an Azure
 OpenAI deployment named `gpt-5-mini` through the OpenAI-compatible v1 endpoint.
 The build records only the environment variable name `AZURE_OPENAI_API_KEY`; it
-never reads or embeds the key. Supply the key in that environment variable when
-running or deploying the resulting image.
+never reads or embeds the key. `--model-api-key-env` accepts only names matching
+`[A-Za-z_][A-Za-z0-9_]*`; invalid names are rejected before any build files are
+written. Supply the key in that environment variable when running or deploying
+the resulting image.
 
 The command validates the suite, resolves one immutable sandbox build plan and
 publishes a new output atomically. It supports only agents without ToolProviders,
@@ -212,7 +220,9 @@ not verified image blobs or ToolProvider payload bytes; a conformant offline
 builder will require a provider-neutral verified content source.
 It emits a warning because the runtime-base image, AgentSuite binding, final
 inventory and provider payload composition are not yet represented. The harness
-image must therefore currently be a complete AgentKit adapter image. A future
+image must therefore currently be a complete AgentKit adapter image from the
+`ghcr.io/orka-agents/agentkit/serve-pydantic-ai` repository, matching the fixed
+`pydantic-ai` runtime; other harness repositories are refused. A future
 conformant AgentKit adapter or another builder can replace it without changing
 AgentSuite resolution.
 

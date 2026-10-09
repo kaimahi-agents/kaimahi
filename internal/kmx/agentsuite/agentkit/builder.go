@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"regexp"
 
+	"github.com/distribution/reference"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
@@ -17,7 +19,19 @@ const (
 	agentKitFrontend    = "ghcr.io/orka-agents/agentkit/agentkit@sha256:8899d3ab38bdd8020b4ab21de128002bbc66ffd65111d7097daa8f8fd21805d9"
 	// TODO: Source the harness runtime from AgentSuite once its portable contract represents it.
 	agentKitRuntime = "pydantic-ai"
+	agentKitHarness = "ghcr.io/orka-agents/agentkit/serve-pydantic-ai"
 )
+
+var modelAPIKeyEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ValidateModelAPIKeyEnv accepts an optional environment variable name, never a
+// key value. Errors omit the input so a pasted credential cannot reach output.
+func ValidateModelAPIKeyEnv(value string) error {
+	if value != "" && !modelAPIKeyEnvName.MatchString(value) {
+		return errors.New("--model-api-key-env must be an environment variable name matching [A-Za-z_][A-Za-z0-9_]*")
+	}
+	return nil
+}
 
 // Options bind the provider-neutral build plan to AgentKit and Docker buildx.
 type Options struct {
@@ -87,6 +101,9 @@ func (b *Builder) Build(
 
 func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 	var errs []error
+	if err := ValidateModelAPIKeyEnv(b.options.ModelAPIKeyEnv); err != nil {
+		errs = append(errs, err)
+	}
 	parsedURL, err := url.Parse(b.options.ModelBaseURL)
 	if err != nil || parsedURL.Scheme != "http" && parsedURL.Scheme != "https" ||
 		parsedURL.Hostname() == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
@@ -113,6 +130,12 @@ func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 	}
 	if err := validateDigestReference("resolved harness", plan.Harness.ImageRef); err != nil {
 		errs = append(errs, err)
+	} else {
+		// Digest validation has already parsed the reference successfully.
+		harness, _ := reference.ParseNormalizedNamed(plan.Harness.ImageRef)
+		if reference.TrimNamed(harness).Name() != agentKitHarness {
+			errs = append(errs, fmt.Errorf("experimental AgentKit builder requires harness repository %s for runtime %s", agentKitHarness, agentKitRuntime))
+		}
 	}
 	if plan.Composition.Platform.String() != "linux/amd64" && plan.Composition.Platform.String() != "linux/arm64" {
 		errs = append(errs, fmt.Errorf("experimental AgentKit builder does not support platform %s", plan.Composition.Platform))
