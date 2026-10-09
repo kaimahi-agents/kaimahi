@@ -85,6 +85,13 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
 ### Current Orka path and explicit Kagent create
 
+For the experimental model-independent suite workflow, see
+[AgentSuite image lift](agentsuite-image-lift.md): `suite create`, `suite publish`,
+`suite deploy`, `suite run` and `console --workspace`. Publication uses Docker
+buildx with `--builder`, `--attestations` and `--require-attestations`; deployment
+selects inference through an explicit environment file. Registry publication
+retains the image index/attestations while workloads pin the platform image.
+
 | Command | Contract / reference |
 |---|---|
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |

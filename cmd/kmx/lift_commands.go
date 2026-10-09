@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -9,24 +10,48 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
-// newLiftCommand retains the original managed-cluster entry point. Both it
-// and aks up use the same provisioning implementation and run records.
-//
-// It is a sibling of `quickstart` rather than a flag on `up`, because it is a
-// different journey with different consequences. `up` builds a local cluster
-// that costs nothing and is deleted by removing a container; this one acts on
-// a cloud subscription, bills money for as long as it exists, and has a
-// teardown that has to be run. A flag would put those two behind the same
-// word.
-//
-// Two branches, and which one is running is always explicit. `--byo` lifts
-// onto a cluster that already exists; without it, the cluster is created here
-// along with everything around it. The branch is never inferred from whether
-// a cluster happens to be there: the two have opposite teardown rules, and a
-// typo in a cluster name must not be what decides which of them applies.
+// newLiftCommand selects image deployment only with an explicit positional
+// image reference. No-argument infrastructure invocations retain the managed
+// up implementation; mixing their flags into image deployment is refused.
 func newLiftCommand(state *commandState) *cobra.Command {
 	cmd := newManagedUpCommand(state, "lift", "", "required, and never defaulted")
-	cmd.Deprecated = "use kmx aks up instead"
+	legacyRun := cmd.RunE
+	cmd.Use = "lift [image-reference]"
+	cmd.Short = "Lift a built AgentSuite image to a prepared Kubernetes target"
+	cmd.Long = "Lift a built AgentSuite image from an OCI registry, using an explicit deployment environment.\n\nWith no image reference, the deprecated managed-cluster route is retained; use kmx aks up for infrastructure preparation."
+	cmd.Example = "  kmx lift registry.example/hello-world:v1 --environment ./production.json --plan"
+	var environment string
+	cmd.Flags().StringVar(&environment, "environment", "", "deployment environment JSON file for image lift")
+	_ = cmd.MarkFlagFilename("environment", "json")
+	cmd.Args = usageArgs(0, 1, "kmx lift <image-reference> --environment <file> [--plan]")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			if cmd.Flags().Changed("environment") {
+				return fmt.Errorf("--environment requires an image reference")
+			}
+			fmt.Fprintln(cmd.ErrOrStderr(), "The managed-cluster lift route is deprecated; use kmx aks up instead")
+			return legacyRun(cmd, args)
+		}
+		if environment == "" {
+			return fmt.Errorf("image lift requires --environment")
+		}
+		for _, name := range []string{"byo", "resource-group", "cluster", "registry", "payload", "location", "node-size", "node-count", "network-policy", "observability", "step"} {
+			if cmd.Flags().Changed(name) {
+				return fmt.Errorf("--%s is an infrastructure flag and cannot be used with image lift", name)
+			}
+		}
+		a, err := state.operationApplication(cmd)
+		if err != nil {
+			return err
+		}
+		// The target is explicitly selected by the environment, not ambient config.
+		a.InvocationCommand = ""
+		plan, err := cmd.Flags().GetBool("plan")
+		if err != nil {
+			return err
+		}
+		return a.LiftAgentImage(cmd.Context(), args[0], environment, plan)
+	}
 	cmd.AddCommand(newManagedDownCommand(state, true))
 	return cmd
 }

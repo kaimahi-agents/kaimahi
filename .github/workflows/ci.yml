@@ -1490,7 +1490,8 @@ jobs:
           for pod in $pods; do
             KUBE_CTX=kind-kaimahi-p1 bin/kmx metrics --pod "$pod" > "metrics-$pod.out"
             grep -q '^kaimahi_build_info{' "metrics-$pod.out"
-            kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" | grep -qE 'migrations: (nothing to apply|applied)'
+            kubectl --context kind-kaimahi-p1 -n kaimahi logs "$pod" > "migration-$pod.log"
+            grep -qE 'migrations: (nothing to apply|applied)' "migration-$pod.log"
           done
           kubectl --context kind-kaimahi-p1 -n kaimahi exec deploy/kaimahi-postgres -- \
             psql -U kaimahi -d kaimahi -tAc 'SELECT count(*), count(DISTINCT version_id) FROM goose_db_version WHERE version_id > 0' | tee versions.out

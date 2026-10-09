@@ -16,11 +16,13 @@ import (
 )
 
 type agentImage struct {
-	AgentkitFile []byte
-	Name         string
-	AdapterRef   string
-	Platform     string
-	SourceEpoch  int64
+	MountedConfig bool
+	Instructions  []byte
+	AgentkitFile  []byte
+	Name          string
+	AdapterRef    string
+	Platform      string
+	SourceEpoch   int64
 }
 
 type exportResult struct {
@@ -71,6 +73,12 @@ func (e buildxExporter) ExportOCI(ctx context.Context, image agentImage, dst io.
 	}
 	defer os.RemoveAll(workDir)
 	agentkitFile := filepath.Join(workDir, "agentkitfile.yaml")
+	if image.MountedConfig {
+		agentkitFile = filepath.Join(workDir, "Dockerfile")
+		if err := os.WriteFile(filepath.Join(workDir, "instructions.txt"), image.Instructions, 0600); err != nil {
+			return result, err
+		}
+	}
 	if err := os.WriteFile(agentkitFile, image.AgentkitFile, 0o600); err != nil {
 		return result, fmt.Errorf("write AgentKit build input: %w", err)
 	}

@@ -523,8 +523,14 @@ func validateAgent(agent Agent) error {
 	if _, err := validateContentPath(agent.Instructions.Path); err != nil || !validDigest(agent.Instructions.Digest) {
 		errs = append(errs, errors.New("instructions reference is invalid"))
 	}
-	if agent.Model.Protocol == "" || agent.Model.Model == "" {
-		errs = append(errs, errors.New("model protocol and model are required"))
+	if agent.Model.Protocol == "" || (agent.Model.Model == "") == (agent.Model.Capabilities == nil) {
+		errs = append(errs, errors.New("model requires a protocol and exactly one of model or capabilities"))
+	}
+	if agent.Model.Capabilities != nil {
+		errs = append(errs, agent.Model.Capabilities.Validate())
+		if agent.Model.Protocol != "openai-compatible" || agent.Model.EndpointEnv != "" || len(agent.Model.SecretRefs) != 0 {
+			errs = append(errs, errors.New("capability-based inference uses openai-compatible and deployment-owned connection bindings"))
+		}
 	}
 	if agent.Model.EndpointEnv != "" && (!envPattern.MatchString(agent.Model.EndpointEnv) || unsafeInjectionEnv(agent.Model.EndpointEnv)) {
 		errs = append(errs, errors.New("model endpointEnv is invalid"))
@@ -1008,6 +1014,9 @@ func validateToolProviderComposition(composition ToolProviderComposition) error 
 
 func validateBuildProfile(profile BuildProfile) error {
 	var errs []error
+	if profile.Execution != nil {
+		errs = append(errs, ValidateExecutionContract(*profile.Execution))
+	}
 	if profile.SchemaVersion != SpecVersion || profile.MediaType != MediaTypeBuildProfile {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}

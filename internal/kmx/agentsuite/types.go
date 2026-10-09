@@ -103,10 +103,11 @@ type FileRef struct {
 }
 
 type ModelRequirement struct {
-	Protocol    string   `json:"protocol"`
-	Model       string   `json:"model"`
-	EndpointEnv string   `json:"endpointEnv,omitempty"`
-	SecretRefs  []string `json:"secretRefs,omitempty"`
+	Protocol     string                 `json:"protocol"`
+	Model        string                 `json:"model,omitempty"`
+	Capabilities *InferenceRequirements `json:"capabilities,omitempty"`
+	EndpointEnv  string                 `json:"endpointEnv,omitempty"`
+	SecretRefs   []string               `json:"secretRefs,omitempty"`
 }
 
 type ToolProviderRequirement struct {
@@ -273,12 +274,13 @@ type ToolProviderComposition struct {
 }
 
 type BuildProfile struct {
-	SchemaVersion string          `json:"schemaVersion"`
-	MediaType     string          `json:"mediaType"`
-	ID            string          `json:"id"`
-	RuntimeBase   []PlatformImage `json:"runtimeBase"`
-	Harness       []PlatformImage `json:"harness"`
-	SourceEpoch   int64           `json:"sourceEpoch"`
+	Execution     *ExecutionContract `json:"execution,omitempty"`
+	SchemaVersion string             `json:"schemaVersion"`
+	MediaType     string             `json:"mediaType"`
+	ID            string             `json:"id"`
+	RuntimeBase   []PlatformImage    `json:"runtimeBase"`
+	Harness       []PlatformImage    `json:"harness"`
+	SourceEpoch   int64              `json:"sourceEpoch"`
 }
 
 type SandboxBinding struct {

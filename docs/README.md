@@ -13,6 +13,8 @@ or comparing implementations.
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](agentsuite-spec.md) |
+| Review proposed internal contracts connecting suite builds and deployment adapters | [Full-suite deployment contracts](suite-deployment-contracts.md) |
+| Create, publish and lift model-independent agent images through CLI/TUI and container registries | [AgentSuite image lift](agentsuite-image-lift.md) |
 | Route an existing application's model traffic through Orka | [Migration](migrate.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |

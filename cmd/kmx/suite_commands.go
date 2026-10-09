@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -23,6 +24,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
+	addSuiteWorkspaceCommands(group, state)
 	var output string
 	validate := &cobra.Command{
 		Use:   "validate <path>",
@@ -46,6 +48,8 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		buildBuilder             string
 		buildAttestations        bool
 		buildRequireAttestations bool
+		buildSuiteRef            string
+		buildPlainHTTP           bool
 	)
 	build := &cobra.Command{
 		Use:   "build <directory>",
@@ -59,6 +63,8 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --model-base-url <url> --output <file>"),
 	}
 	build.Flags().StringVar(&buildAgent, "agent", "", "agent id (optional only when the suite contains one agent)")
+	build.Flags().StringVar(&buildSuiteRef, "suite-ref", "", "digest-pinned published source suite for liftable image metadata")
+	build.Flags().BoolVar(&buildPlainHTTP, "plain-http", false, "anonymous development registry HTTP")
 	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the agent has one composition)")
 	build.Flags().StringVar(&buildOutput, "output", "", "new OCI image-layout tar path")
 	build.Flags().StringVar(&buildModelURL, "model-base-url", "", "OpenAI-compatible model endpoint embedded by the experimental AgentKit adapter")
@@ -68,10 +74,11 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	build.Flags().BoolVar(&buildAttestations, "attestations", true, "request SBOM and max-mode provenance; use --attestations=false to opt out")
 	build.Flags().BoolVar(&buildRequireAttestations, "require-attestations", false, "fail if the builder cannot attest or the archive lacks verified SBOM and provenance")
 	_ = build.MarkFlagRequired("output")
-	_ = build.MarkFlagRequired("model-base-url")
 	_ = build.MarkFlagFilename("output")
 	_ = build.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
 	build.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
 		if err := agentkitbuilder.ValidateModelAPIKeyEnv(buildModelKeyEnv); err != nil {
 			return err
 		}
@@ -81,7 +88,40 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		if buildRequireAttestations && !buildAttestations {
 			return fmt.Errorf("--require-attestations cannot be used with --attestations=false")
 		}
+		source, suiteDigest := args[0], ""
+		if buildSuiteRef != "" {
+			_, suiteDigest, _ = strings.Cut(buildSuiteRef, "@")
+			if suiteDigest == "" {
+				return fmt.Errorf("--suite-ref requires an immutable digest reference")
+			}
+			root, err := os.MkdirTemp("", "kmx-build-source-*")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(root)
+			pulled, err := agentsuite.PullRegistry(ctx, buildSuiteRef, filepath.Join(root, "suite"), buildPlainHTTP)
+			if err != nil {
+				return err
+			}
+			if pulled.Descriptor.Digest.String() != suiteDigest {
+				return fmt.Errorf("published suite identity differs")
+			}
+			selection := agentsuitecore.BuildSelection{Agent: buildAgent, Platform: buildPlatform}
+			local, err := agentsuitecore.ResolveSandboxPlan(source, selection)
+			if err != nil {
+				return err
+			}
+			remote, err := agentsuitecore.ResolveSandboxPlan(pulled.Path, selection)
+			if err != nil {
+				return err
+			}
+			if local.SuiteManifestHash != remote.SuiteManifestHash {
+				return fmt.Errorf("local suite differs from --suite-ref; publish current source first")
+			}
+			source = pulled.Path
+		}
 		builder := state.deps.newAgentKitBuilder(agentkitbuilder.Options{
+			SuiteReference: buildSuiteRef, SuiteDigest: suiteDigest,
 			ModelBaseURL:        buildModelURL,
 			ModelAPIKeyEnv:      buildModelKeyEnv,
 			Verbose:             buildVerbose,
@@ -91,9 +131,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			RequireAttestations: buildRequireAttestations,
 		})
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		result, err := a.BuildSuite(ctx, args[0], buildOutput, agentsuitecore.BuildSelection{
+		result, err := a.BuildSuite(ctx, source, buildOutput, agentsuitecore.BuildSelection{
 			Agent: buildAgent, Platform: buildPlatform,
 		}, builder)
 		if err != nil {
@@ -119,6 +157,24 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		}
 		return err
 	}
+	var imagePlatform string
+	var imagePlainHTTP bool
+	imagePush := &cobra.Command{Use: "push-image <archive> <registry-reference>", Short: "Publish a built image and its attestation index", Args: cobra.ExactArgs(2)}
+	imagePush.Flags().StringVar(&imagePlatform, "platform", "linux/amd64", "exact platform")
+	imagePush.Flags().BoolVar(&imagePlainHTTP, "plain-http", false, "anonymous development registry HTTP")
+	imagePush.RunE = func(cmd *cobra.Command, args []string) error {
+		osName, arch, ok := strings.Cut(imagePlatform, "/")
+		if !ok {
+			return fmt.Errorf("platform must be os/architecture")
+		}
+		ref, err := agentsuite.PushImage(cmd.Context(), args[0], args[1], agentsuitecore.Platform{OS: osName, Architecture: arch}, imagePlainHTTP)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), ref)
+		return err
+	}
+	group.AddCommand(imagePush)
 
 	var target string
 	var pushPlainHTTP, pushForce bool

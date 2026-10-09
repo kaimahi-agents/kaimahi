@@ -130,6 +130,7 @@ func TestAKSCommandsShareLiftFlagsAndPreserveLegacyPayloadRequirement(t *testing
 		}
 		oldFlags := map[string]bool{}
 		oldCmd.Flags().VisitAll(func(f *pflag.Flag) { oldFlags[f.Name] = true })
+		delete(oldFlags, "environment")
 		newCmd.Flags().VisitAll(func(f *pflag.Flag) {
 			if !oldFlags[f.Name] {
 				t.Errorf("%v has extra flag %s", pair[1], f.Name)
@@ -139,7 +140,7 @@ func TestAKSCommandsShareLiftFlagsAndPreserveLegacyPayloadRequirement(t *testing
 		if len(oldFlags) != 0 {
 			t.Errorf("%v missing flags: %v", pair[1], oldFlags)
 		}
-		if oldCmd.Deprecated == "" || !strings.Contains(oldCmd.Deprecated, strings.Join(pair[1], " ")) {
+		if pair[0][len(pair[0])-1] == "down" && (oldCmd.Deprecated == "" || !strings.Contains(oldCmd.Deprecated, strings.Join(pair[1], " "))) {
 			t.Errorf("%v should point to %v in its deprecation", pair[0], pair[1])
 		}
 	}
@@ -191,6 +192,24 @@ func TestTheLocalBringUpHasNoCloudFlag(t *testing.T) {
 	for _, flag := range []string{"resource-group", "registry", "byo", "cluster"} {
 		if up.Flags().Lookup(flag) != nil {
 			t.Errorf("`kmx up` grew a --%s; the managed path is its own command for a reason", flag)
+		}
+	}
+}
+
+func TestImageLiftRejectsMixedRoutesBeforeConfiguration(t *testing.T) {
+	for _, args := range [][]string{
+		{"lift", "registry.example/hello-world:v1"},
+		{"lift", "registry.example/hello-world:v1", "--environment", "prod.json", "--byo"},
+		{"lift", "registry.example/hello-world:v1", "--environment", "prod.json", "--payload", "orka"},
+		{"lift", "--environment", "prod.json"},
+	} {
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		if err := execute(args, deps); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+		if *loads != 0 {
+			t.Fatalf("invalid image route loaded config: %v", args)
 		}
 	}
 }

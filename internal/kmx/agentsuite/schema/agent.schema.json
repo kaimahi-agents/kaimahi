@@ -22,10 +22,12 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocol", "model"],
+      "required": ["protocol"],
+      "oneOf": [{"required": ["model"], "not": {"required": ["capabilities"]}}, {"required": ["capabilities"], "not": {"anyOf": [{"required": ["model"]}, {"required": ["endpointEnv"]}, {"required": ["secretRefs"]}]}}],
       "properties": {
         "protocol": {"type": "string", "minLength": 1},
         "model": {"type": "string", "minLength": 1},
+        "capabilities": {"$ref": "inference.schema.json"},
         "endpointEnv": {"$ref": "#/$defs/env"},
         "secretRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
       }

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/image-deployment.schema.json",
+  "title": "Agent image deployment declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "mediaType", "suiteReference", "suiteDigest", "agent", "platform", "compositionDigest", "buildProfile", "execution"],
+  "properties": {
+    "inference": {"$ref": "inference.schema.json"},
+    "schemaVersion": {"const": "1.0.0-draft"},
+    "mediaType": {"const": "application/vnd.agentsuite.image.deployment.v1+json"},
+    "suiteReference": {"type": "string", "pattern": "^[^@]+@sha256:[a-f0-9]{64}$"},
+    "suiteDigest": {"$ref": "#/$defs/digest"},
+    "compositionDigest": {"$ref": "#/$defs/digest"},
+    "agent": {"$ref": "#/$defs/id"},
+    "buildProfile": {"$ref": "#/$defs/id"},
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {"os": {"const": "linux"}, "architecture": {"enum": ["amd64", "arm64"]}}
+    },
+    "execution": {"$ref": "execution.schema.json"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"}
+  }
+}
