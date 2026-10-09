@@ -64,7 +64,8 @@ intentionally drops some unique mutation coverage; checker self-tests and
 ordinary tree checks still run. Checkers run in parallel with a worker count
 that defaults to the CPU count (or one if unavailable). Set
 `KMX_MUTATION_JOBS` or pass `--jobs N` to limit it; `--jobs` takes precedence.
-Keep the checkout unchanged while the harness runs.
+Keep the checkout unchanged while the harness runs. Runner self-tests also
+exercise change classification.
 
 On pull requests, CI runs the mutation harness when `scripts/` changes or
 change classification is uncertain. It runs the harness in full on main pushes
