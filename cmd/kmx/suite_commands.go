@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry"
@@ -38,14 +41,14 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		buildOutput      string
 		buildModelURL    string
 		buildModelKeyEnv string
-		buildRuntime     string
-		buildkitAddress  string
 		buildVerbose     bool
 	)
 	build := &cobra.Command{
 		Use:   "build <directory>",
 		Short: "Build one AgentSuite agent as an OCI image-layout tar",
 		Long: "Build one AgentSuite agent as an OCI image-layout tar.\n\n" +
+			"Docker with the buildx plugin is required.\n\n" +
+			"WARNING: --model-api-key-env accepts the environment variable name, never the API key value.\n\n" +
 			"The current implementation treats the build profile's harness image as a monolithic AgentKit adapter and does not yet compose the runtime-base image, so its output is not AgentSuite-conformant.",
 		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --model-base-url <url> --output <file>"),
 	}
@@ -53,25 +56,23 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the agent has one composition)")
 	build.Flags().StringVar(&buildOutput, "output", "", "new OCI image-layout tar path")
 	build.Flags().StringVar(&buildModelURL, "model-base-url", "", "OpenAI-compatible model endpoint embedded by the experimental AgentKit adapter")
-	build.Flags().StringVar(&buildModelKeyEnv, "model-api-key-env", "", "runtime environment variable containing the model API key (the value is never read or embedded)")
-	build.Flags().StringVar(&buildRuntime, "agentkit-runtime", "pydantic-ai", "AgentKit runtime adapter name")
-	build.Flags().StringVar(&buildkitAddress, "buildkit-address", "", "BuildKit daemon address (advanced; defaults to BUILDKIT_HOST or a KMX-managed daemon)")
-	build.Flags().BoolVar(&buildVerbose, "verbose", false, "show managed builder lifecycle and BuildKit solve progress")
+	build.Flags().StringVar(&buildModelKeyEnv, "model-api-key-env", "", "environment variable name containing the model API key; never pass the key value")
+	build.Flags().BoolVar(&buildVerbose, "verbose", false, "show Docker buildx progress")
 	_ = build.MarkFlagRequired("output")
 	_ = build.MarkFlagRequired("model-base-url")
 	_ = build.MarkFlagFilename("output")
 	_ = build.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
 	build.RunE = func(cmd *cobra.Command, args []string) error {
 		builder := state.deps.newAgentKitBuilder(agentkitbuilder.Options{
-			ModelBaseURL:    buildModelURL,
-			ModelAPIKeyEnv:  buildModelKeyEnv,
-			Runtime:         buildRuntime,
-			BuildkitAddress: buildkitAddress,
-			Verbose:         buildVerbose,
-			Progress:        cmd.ErrOrStderr(),
+			ModelBaseURL:   buildModelURL,
+			ModelAPIKeyEnv: buildModelKeyEnv,
+			Verbose:        buildVerbose,
+			Progress:       cmd.ErrOrStderr(),
 		})
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-		result, err := a.BuildSuite(cmd.Context(), args[0], buildOutput, agentsuitecore.BuildSelection{
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := a.BuildSuite(ctx, args[0], buildOutput, agentsuitecore.BuildSelection{
 			Agent: buildAgent, Platform: buildPlatform,
 		}, builder)
 		if err != nil {

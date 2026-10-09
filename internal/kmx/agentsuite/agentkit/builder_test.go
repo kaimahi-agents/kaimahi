@@ -3,6 +3,7 @@ package agentkit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-func TestBuildEmitsArchiveThroughExporter(t *testing.T) {
+func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	var exported agentImage
 	exporter := ociExporterFunc(func(_ context.Context, image agentImage, dst io.Writer) error {
 		exported = image
@@ -26,58 +27,56 @@ func TestBuildEmitsArchiveThroughExporter(t *testing.T) {
 		exporter:       exporter,
 	})
 	var output bytes.Buffer
-	result, err := builder.Build(context.Background(), minimalPlan(), &output)
+	result, err := builder.Build(t.Context(), minimalPlan(), &output)
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
 	if output.String() != "oci archive" || result.MediaType != OCIArchiveMediaType {
 		t.Fatalf("unexpected result: output=%q result=%+v", output.String(), result)
 	}
-	if exported.AdapterRef != "registry.example/harness@"+testDigest ||
-		exported.OS != "linux" || exported.Architecture != "amd64" || exported.SourceEpoch != 1 {
+	if exported.Name != "writer" ||
+		exported.AdapterRef != "registry.example/harness@"+testDigest ||
+		exported.Platform != "linux/amd64" || exported.SourceEpoch != 1 {
 		t.Fatalf("exported image = %+v", exported)
 	}
-	if exported.Agent.Metadata.Name != "writer" ||
-		exported.Agent.Instructions != "Write clearly.\n" ||
-		exported.Agent.Model.BaseURL != "https://models.example/v1" ||
-		exported.Agent.Model.APIKeyEnv != "AZURE_OPENAI_API_KEY" {
-		t.Fatalf("effective AgentKit agent = %+v", exported.Agent)
+	config := decodeAgentkitFile(t, exported.AgentkitFile)
+	if config.Metadata.Name != "writer" ||
+		config.Instructions != "Write clearly.\n" ||
+		config.Model.BaseURL != "https://models.example/v1" ||
+		config.Model.APIKeyEnv != "AZURE_OPENAI_API_KEY" {
+		t.Fatalf("AgentKit config = %+v", config)
 	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "not AgentSuite-conformant") {
 		t.Fatalf("warnings = %v", result.Warnings)
 	}
 }
 
-func TestAgentConfigMapsResolvedPlan(t *testing.T) {
+func TestAgentkitFileMapsResolvedPlan(t *testing.T) {
 	plan := minimalPlan()
 	builder := New(Options{
 		ModelBaseURL:   "https://example.openai.azure.com/openai/v1/",
 		ModelAPIKeyEnv: "AZURE_OPENAI_API_KEY",
-		Runtime:        "pydantic-ai",
 	})
-
-	cfg := builder.agentConfig(plan)
-
-	if cfg.APIVersion != "v1alpha1" || cfg.Kind != "Agent" {
-		t.Fatalf("type metadata = apiVersion %q kind %q", cfg.APIVersion, cfg.Kind)
+	data, err := builder.agentkitFile(plan)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.Metadata.Name != plan.Agent.ID || cfg.Runtime != "pydantic-ai" {
-		t.Fatalf("identity/runtime = metadata %+v runtime %q", cfg.Metadata, cfg.Runtime)
+	if !bytes.HasPrefix(data, []byte("#syntax="+agentKitFrontend+"\n")) {
+		t.Fatalf("AgentKit file header = %q", data)
 	}
-	if cfg.Model.Provider != plan.Agent.Model.Protocol ||
-		cfg.Model.Name != plan.Agent.Model.Model ||
-		cfg.Model.BaseURL != "https://example.openai.azure.com/openai/v1/" ||
-		cfg.Model.APIKeyEnv != "AZURE_OPENAI_API_KEY" {
-		t.Fatalf("model = %+v", cfg.Model)
+	config := decodeAgentkitFile(t, data)
+	if config.APIVersion != "v1alpha1" || config.Kind != "Agent" ||
+		config.Metadata.Name != plan.Agent.ID || config.Runtime != agentKitRuntime {
+		t.Fatalf("identity/runtime = %+v", config)
 	}
-	if cfg.Instructions.Inline != string(plan.Instructions) || cfg.Instructions.File != "" {
-		t.Fatalf("instructions = %+v", cfg.Instructions)
+	if config.Model.Provider != plan.Agent.Model.Protocol ||
+		config.Model.Name != plan.Agent.Model.Model ||
+		config.Model.BaseURL != "https://example.openai.azure.com/openai/v1/" ||
+		config.Model.APIKeyEnv != "AZURE_OPENAI_API_KEY" {
+		t.Fatalf("model = %+v", config.Model)
 	}
-	if !cfg.Expose.OpenAI || cfg.Expose.Port != 0 {
-		t.Fatalf("expose = %+v", cfg.Expose)
-	}
-	if len(cfg.Tools) != 0 || len(cfg.BrokeredTools) != 0 || len(cfg.Env) != 0 || len(cfg.Context.Providers) != 0 {
-		t.Fatalf("unexpected unsupported AgentKit fields: %+v", cfg)
+	if config.Instructions != string(plan.Instructions) || !config.Expose.OpenAI {
+		t.Fatalf("instructions/expose = %+v", config)
 	}
 }
 
@@ -85,10 +84,7 @@ func TestBuildRejectsUnsupportedAgentSuiteFeatures(t *testing.T) {
 	plan := minimalPlan()
 	plan.Agent.Invokes = []agentsuite.AgentInvoke{{Agent: "reviewer", MaxConcurrent: 1, MaxDepth: 1}}
 	plan.ToolProviders = []agentsuite.SelectedToolProvider{{ID: "search"}}
-	builder := New(Options{
-		ModelBaseURL: "https://models.example/v1",
-	})
-	err := buildError(builder, plan)
+	err := buildError(New(Options{ModelBaseURL: "https://models.example/v1"}), plan)
 	for _, want := range []string{"invocation edges", "ToolProviders"} {
 		if !strings.Contains(err, want) {
 			t.Fatalf("Build() error = %q, want %q", err, want)
@@ -149,12 +145,42 @@ func TestBuildRejectsInvalidPlanMappings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			plan := minimalPlan()
 			test.mutate(&plan)
-			builder := New(Options{ModelBaseURL: "https://models.example/v1"})
-			err := buildError(builder, plan)
+			err := buildError(New(Options{ModelBaseURL: "https://models.example/v1"}), plan)
 			if !strings.Contains(err, test.want) {
 				t.Fatalf("Build() error = %q, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestBuildRejectsUnsafeModelURLs(t *testing.T) {
+	for _, value := range []string{
+		"https://models.example/v1?api-key=secret",
+		"https://models.example/v1?",
+		"******models.example/v1",
+		"https://:443/v1",
+		"https://models.example/v1#fragment",
+	} {
+		t.Run(value, func(t *testing.T) {
+			err := buildError(New(Options{ModelBaseURL: value}), minimalPlan())
+			if !strings.Contains(err, "--model-base-url") {
+				t.Fatalf("Build() error = %q", err)
+			}
+		})
+	}
+}
+
+func TestAgentkitFilePreservesModelAPIKeyEnvironmentName(t *testing.T) {
+	builder := New(Options{
+		ModelBaseURL:   "https://models.example/v1",
+		ModelAPIKeyEnv: "sk_model_api_key",
+	})
+	data, err := builder.agentkitFile(minimalPlan())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decodeAgentkitFile(t, data).Model.APIKeyEnv; got != "sk_model_api_key" {
+		t.Fatalf("model apiKeyEnv = %q", got)
 	}
 }
 
@@ -164,13 +190,11 @@ func TestBuildRejectsInvalidInputsAndExporterFailure(t *testing.T) {
 		!strings.Contains(err.Error(), "builder is required") {
 		t.Fatalf("nil Build() error = %v", err)
 	}
-
 	builder := New(Options{ModelBaseURL: "https://models.example/v1"})
 	if _, err := builder.Build(t.Context(), minimalPlan(), nil); err == nil ||
 		!strings.Contains(err.Error(), "output is required") {
 		t.Fatalf("nil output Build() error = %v", err)
 	}
-
 	builder = New(Options{
 		ModelBaseURL: "https://models.example/v1",
 		exporter: ociExporterFunc(func(context.Context, agentImage, io.Writer) error {
@@ -184,108 +208,54 @@ func TestBuildRejectsInvalidInputsAndExporterFailure(t *testing.T) {
 }
 
 func TestValidateDigestReferenceRejectsInvalidReferences(t *testing.T) {
-	tests := []struct {
-		value string
-		want  string
-	}{
-		{"registry.example/harness:latest", "digest-addressed"},
-		{"registry.example/harness@sha256:" + strings.Repeat("g", 64), "digest-addressed"},
-	}
-	for _, test := range tests {
-		if err := validateDigestReference("harness", test.value); err == nil ||
-			!strings.Contains(err.Error(), test.want) {
-			t.Fatalf("validateDigestReference(%q) error = %v", test.value, err)
+	for _, value := range []string{
+		"registry.example/harness:latest",
+		"registry.example/harness@sha256:" + strings.Repeat("g", 64),
+	} {
+		if err := validateDigestReference("harness", value); err == nil ||
+			!strings.Contains(err.Error(), "digest-addressed") {
+			t.Fatalf("validateDigestReference(%q) error = %v", value, err)
 		}
 	}
 }
 
-func TestNewUsesBuildkitHost(t *testing.T) {
-	t.Setenv("BUILDKIT_HOST", "tcp://buildkit.example:1234")
-	builder := New(Options{})
-	if builder.options.BuildkitAddress != "tcp://buildkit.example:1234" {
-		t.Fatalf("BuildkitAddress = %q", builder.options.BuildkitAddress)
-	}
-}
-
-func TestNewUsesManagedBuildkitByDefault(t *testing.T) {
-	t.Setenv("BUILDKIT_HOST", "")
-	builder := New(Options{})
-	exporter, ok := builder.options.exporter.(buildkitExporter)
-	if !ok {
-		t.Fatalf("exporter = %T", builder.options.exporter)
-	}
-	if exporter.address != managedBuildkitAddress || exporter.manager == nil {
-		t.Fatalf("managed exporter = %+v", exporter)
-	}
-}
-
-func TestNewManagesConfiguredKMXBuildkitAddress(t *testing.T) {
-	t.Setenv("BUILDKIT_HOST", managedBuildkitAddress)
-	builder := New(Options{})
-	exporter, ok := builder.options.exporter.(buildkitExporter)
-	if !ok {
-		t.Fatalf("exporter = %T", builder.options.exporter)
-	}
-	if exporter.address != managedBuildkitAddress || exporter.manager == nil {
-		t.Fatalf("managed exporter = %+v", exporter)
-	}
-}
-
 func TestBuildRequiresModelURL(t *testing.T) {
-	builder := New(Options{})
-	err := buildError(builder, minimalPlan())
+	err := buildError(New(Options{}), minimalPlan())
 	if !strings.Contains(err, "--model-base-url") {
 		t.Fatalf("Build() error = %q", err)
 	}
 }
 
-func TestBuildRejectsUnsafeModelURLs(t *testing.T) {
-	for _, value := range []string{
-		"https://models.example/v1?api-key=secret",
-		"https://models.example/v1?",
-		"https://user:secret@models.example/v1",
-		"https://:443/v1",
-		"https://models.example/v1#fragment",
-	} {
-		t.Run(value, func(t *testing.T) {
-			builder := New(Options{ModelBaseURL: value})
-			err := buildError(builder, minimalPlan())
-			if !strings.Contains(err, "--model-base-url") {
-				t.Fatalf("Build() error = %q", err)
-			}
-		})
+func decodeAgentkitFile(t *testing.T, data []byte) agentConfig {
+	t.Helper()
+	_, body, ok := bytes.Cut(data, []byte{'\n'})
+	if !ok {
+		t.Fatalf("AgentKit file has no body: %q", data)
 	}
+	var config agentConfig
+	if err := json.Unmarshal(body, &config); err != nil {
+		t.Fatalf("decode AgentKit file: %v\n%s", err, data)
+	}
+	return config
 }
 
-func TestBuildRejectsInvalidModelAPIKeyEnvironmentName(t *testing.T) {
-	builder := New(Options{
-		ModelBaseURL:   "https://example.openai.azure.com/openai/v1/",
-		ModelAPIKeyEnv: "not-valid",
-	})
-	err := buildError(builder, minimalPlan())
-	if !strings.Contains(err, "apiKeyEnv") {
-		t.Fatalf("Build() error = %q", err)
+func buildError(builder *Builder, plan agentsuite.SandboxPlan) string {
+	_, err := builder.Build(context.Background(), plan, io.Discard)
+	if err == nil {
+		return ""
 	}
-}
-
-func TestBuildRejectsUnknownAgentKitRuntime(t *testing.T) {
-	builder := New(Options{
-		Runtime:      "unknown",
-		ModelBaseURL: "https://models.example/v1",
-	})
-	err := buildError(builder, minimalPlan())
-	if !strings.Contains(err, "runtime \"unknown\" is not supported") {
-		t.Fatalf("Build() error = %q", err)
-	}
+	return err.Error()
 }
 
 func minimalPlan() agentsuite.SandboxPlan {
 	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
 	return agentsuite.SandboxPlan{
 		Agent: agentsuite.Agent{
-			ID:           "writer",
-			Instructions: agentsuite.FileRef{Path: "instructions/writer.md", Digest: testDigest},
-			Model:        agentsuite.ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
+			ID: "writer",
+			Model: agentsuite.ModelRequirement{
+				Protocol: "openai-compatible",
+				Model:    "example-model",
+			},
 		},
 		Instructions: []byte("Write clearly.\n"),
 		Composition: agentsuite.Composition{
@@ -301,17 +271,8 @@ func minimalPlan() agentsuite.SandboxPlan {
 	}
 }
 
-func buildError(builder *Builder, plan agentsuite.SandboxPlan) string {
-	var output bytes.Buffer
-	_, err := builder.Build(context.Background(), plan, &output)
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 type ociExporterFunc func(context.Context, agentImage, io.Writer) error
 
-func (fn ociExporterFunc) ExportOCI(ctx context.Context, image agentImage, dst io.Writer) error {
-	return fn(ctx, image, dst)
+func (f ociExporterFunc) ExportOCI(ctx context.Context, image agentImage, dst io.Writer) error {
+	return f(ctx, image, dst)
 }

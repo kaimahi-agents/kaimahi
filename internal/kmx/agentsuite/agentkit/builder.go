@@ -3,30 +3,29 @@ package agentkit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
-	"os"
-
-	agentkitconfig "github.com/sozercan/agentkit/pkg/agentkit/config"
-	"github.com/sozercan/agentkit/pkg/agentkit/effective"
-	"github.com/sozercan/agentkit/pkg/utils"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
-const OCIArchiveMediaType = "application/vnd.oci.image.layout.v1.tar"
+const (
+	OCIArchiveMediaType = "application/vnd.oci.image.layout.v1.tar"
+	agentKitFrontend    = "ghcr.io/orka-agents/agentkit/agentkit@sha256:8899d3ab38bdd8020b4ab21de128002bbc66ffd65111d7097daa8f8fd21805d9"
+	// TODO: Source the harness runtime from AgentSuite once its portable contract represents it.
+	agentKitRuntime = "pydantic-ai"
+)
 
-// Options bind the provider-neutral build plan to AgentKit and BuildKit.
+// Options bind the provider-neutral build plan to AgentKit and Docker buildx.
 type Options struct {
-	ModelBaseURL    string
-	ModelAPIKeyEnv  string
-	Runtime         string
-	BuildkitAddress string
-	Verbose         bool
-	Progress        io.Writer
-	exporter        ociExporter
+	ModelBaseURL   string
+	ModelAPIKeyEnv string
+	Verbose        bool
+	Progress       io.Writer
+	exporter       ociExporter
 }
 
 // Builder uses AgentKit's current monolithic adapter image. It is explicitly
@@ -40,26 +39,11 @@ var _ agentsuite.SandboxBuilder = (*Builder)(nil)
 
 // New returns an experimental AgentKit builder.
 func New(options Options) *Builder {
-	if options.Runtime == "" {
-		options.Runtime = "pydantic-ai"
-	}
-	if options.BuildkitAddress == "" {
-		options.BuildkitAddress = os.Getenv("BUILDKIT_HOST")
-	}
 	if options.exporter == nil {
-		exporter := buildkitExporter{
-			address:  options.BuildkitAddress,
+		options.exporter = buildxExporter{
 			verbose:  options.Verbose,
 			progress: options.Progress,
 		}
-		if options.BuildkitAddress == "" || options.BuildkitAddress == managedBuildkitAddress {
-			exporter.address = managedBuildkitAddress
-			exporter.manager = managedBuildkitManager{
-				verbose:     options.Verbose,
-				diagnostics: options.Progress,
-			}
-		}
-		options.exporter = exporter
 	}
 	return &Builder{options: options}
 }
@@ -79,14 +63,16 @@ func (b *Builder) Build(
 		return agentsuite.BuildResult{}, err
 	}
 
-	cfg := b.agentConfig(plan)
-	agent := effective.FromConfig(&cfg, string(plan.Instructions))
+	agentkitFile, err := b.agentkitFile(plan)
+	if err != nil {
+		return agentsuite.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
+	}
 	platform := plan.Composition.Platform
 	if err := b.options.exporter.ExportOCI(ctx, agentImage{
-		Agent:        agent,
+		AgentkitFile: agentkitFile,
+		Name:         plan.Agent.ID,
 		AdapterRef:   plan.Harness.ImageRef,
-		OS:           platform.OS,
-		Architecture: platform.Architecture,
+		Platform:     platform.String(),
 		SourceEpoch:  plan.BuildProfile.SourceEpoch,
 	}, dst); err != nil {
 		return agentsuite.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
@@ -131,10 +117,6 @@ func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 	if plan.Composition.Platform.String() != "linux/amd64" && plan.Composition.Platform.String() != "linux/arm64" {
 		errs = append(errs, fmt.Errorf("experimental AgentKit builder does not support platform %s", plan.Composition.Platform))
 	}
-	cfg := b.agentConfig(plan)
-	if err := cfg.Validate(); err != nil {
-		errs = append(errs, fmt.Errorf("AgentKit configuration is invalid: %w", err))
-	}
 	return errors.Join(errs...)
 }
 
@@ -145,21 +127,57 @@ func validateDigestReference(name, value string) error {
 	return nil
 }
 
-func (b *Builder) agentConfig(plan agentsuite.SandboxPlan) agentkitconfig.AgentConfig {
-	return agentkitconfig.AgentConfig{
-		APIVersion: utils.APIv1alpha1,
-		Kind:       utils.KindAgent,
-		Metadata: agentkitconfig.Metadata{
+func (b *Builder) agentkitFile(plan agentsuite.SandboxPlan) ([]byte, error) {
+	config := agentConfig{
+		APIVersion: "v1alpha1",
+		Kind:       "Agent",
+		Metadata: agentMetadata{
 			Name: plan.Agent.ID,
 		},
-		Runtime: b.options.Runtime,
-		Model: agentkitconfig.Model{
+		Runtime: agentKitRuntime,
+		Model: agentModel{
 			Provider:  plan.Agent.Model.Protocol,
 			BaseURL:   b.options.ModelBaseURL,
 			Name:      plan.Agent.Model.Model,
 			APIKeyEnv: b.options.ModelAPIKeyEnv,
 		},
-		Instructions: agentkitconfig.Source{Inline: string(plan.Instructions)},
-		Expose:       agentkitconfig.Expose{OpenAI: true},
+		Instructions: string(plan.Instructions),
+		Expose:       agentExpose{OpenAI: true},
 	}
+	body, err := json.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, 0, len(agentKitFrontend)+len(body)+11)
+	result = append(result, "#syntax="...)
+	result = append(result, agentKitFrontend...)
+	result = append(result, '\n')
+	result = append(result, body...)
+	result = append(result, '\n')
+	return result, nil
+}
+
+type agentConfig struct {
+	APIVersion   string        `json:"apiVersion"`
+	Kind         string        `json:"kind"`
+	Metadata     agentMetadata `json:"metadata"`
+	Runtime      string        `json:"runtime"`
+	Model        agentModel    `json:"model"`
+	Instructions string        `json:"instructions"`
+	Expose       agentExpose   `json:"expose"`
+}
+
+type agentMetadata struct {
+	Name string `json:"name"`
+}
+
+type agentModel struct {
+	Provider  string `json:"provider"`
+	BaseURL   string `json:"baseURL"`
+	Name      string `json:"name"`
+	APIKeyEnv string `json:"apiKeyEnv,omitempty"`
+}
+
+type agentExpose struct {
+	OpenAI bool `json:"openai"`
 }

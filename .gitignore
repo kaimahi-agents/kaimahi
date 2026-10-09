@@ -16,6 +16,7 @@ dist/
 
 # `kmx suite build` output is a generated OCI image-layout archive.
 *.oci.tar
+.*.oci.tar-*
 
 # Python bytecode caches: two .pyc files once landed on main because this
 # rule was missing.
