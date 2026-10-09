@@ -1028,7 +1028,7 @@ jobs:
     # passes on a laptop with no database.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_USER: kaimahi
           POSTGRES_PASSWORD: ci-throwaway
@@ -1098,7 +1098,7 @@ jobs:
         shell: bash
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_USER: kaimahi
           POSTGRES_PASSWORD: ci-throwaway
