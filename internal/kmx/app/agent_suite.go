@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
@@ -18,7 +19,12 @@ type SuiteBuildResult struct {
 	Agent     string
 	Platform  string
 	MediaType string
-	Warnings  []string
+	// Digest is the runnable image manifest, not the attestation-inclusive index.
+	Digest          string
+	IndexDigest     string
+	SBOMDigest      string
+	HasAttestations bool
+	Warnings        []string
 }
 
 // ValidateSuite validates an extracted AgentSuite or OCI image layout
@@ -137,6 +143,21 @@ func (a *App) BuildSuite(
 		_ = stage.Close()
 		return SuiteBuildResult{}, buildErr
 	}
+	info, err = stage.Stat()
+	if err != nil {
+		_ = stage.Close()
+		return SuiteBuildResult{}, fmt.Errorf("stat staged AgentSuite build output: %w", err)
+	}
+	verified, err := agentsuitecore.InspectImageArchive(ctx, stage, info.Size(), plan.Composition.Platform, result.AttestationsRequested, result.RequireAttestations)
+	if err != nil {
+		_ = stage.Close()
+		return SuiteBuildResult{}, fmt.Errorf("inspect AgentSuite image archive: %w", err)
+	}
+	for _, warning := range verified.Warnings {
+		if !slices.Contains(result.Warnings, warning) {
+			result.Warnings = append(result.Warnings, warning)
+		}
+	}
 	if err := stage.Sync(); err != nil {
 		_ = stage.Close()
 		return SuiteBuildResult{}, fmt.Errorf("sync AgentSuite build output: %w", err)
@@ -147,15 +168,22 @@ func (a *App) BuildSuite(
 	if err := os.Chmod(stagePath, 0o644); err != nil {
 		return SuiteBuildResult{}, fmt.Errorf("set AgentSuite build output mode: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return SuiteBuildResult{}, fmt.Errorf("publish AgentSuite build output canceled: %w", err)
+	}
 	if err := os.Rename(stagePath, outputPath); err != nil {
 		return SuiteBuildResult{}, fmt.Errorf("publish AgentSuite build output: %w", err)
 	}
 	publish = false
 	return SuiteBuildResult{
-		Path:      outputPath,
-		Agent:     plan.Agent.ID,
-		Platform:  plan.Composition.Platform.String(),
-		MediaType: result.MediaType,
-		Warnings:  result.Warnings,
+		Path:            outputPath,
+		Agent:           plan.Agent.ID,
+		Platform:        plan.Composition.Platform.String(),
+		MediaType:       verified.MediaType,
+		Digest:          verified.Digest,
+		IndexDigest:     verified.IndexDigest,
+		SBOMDigest:      verified.SBOMDigest,
+		HasAttestations: verified.HasAttestations,
+		Warnings:        result.Warnings,
 	}, nil
 }

@@ -116,8 +116,16 @@ registry containing the selected harness image before building.
 With the classic Docker image store, the default `docker` builder can reject
 `--output type=oci` with `OCI exporter is not supported for the docker driver.`,
 even with attestations disabled. If you see this error, enable Docker's containerd
-image store, or create and select a `docker-container` builder with
-`docker buildx create --driver docker-container --use` before retrying.
+image store, or create a `docker-container` builder and pass its name to KMX:
+
+```sh
+docker buildx create --name kmx-builder --driver docker-container
+# Add --builder kmx-builder to the kmx suite build command below.
+```
+
+`--builder` selects an existing Buildx builder for this build without changing
+Docker's default builder. When omitted, Docker Buildx uses its existing builder
+selection. Disabling attestations does not fix an unsupported OCI exporter.
 
 ```zsh
 SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
@@ -132,6 +140,8 @@ kmx suite build "$SUITE" \
   --platform linux/amd64 \
   --model-base-url "$AZURE_OPENAI_BASE_URL" \
   --model-api-key-env AZURE_OPENAI_API_KEY \
+  --builder kmx-builder \
+  --require-attestations \
   --verbose \
   --output incident-analyst.oci.tar
 
@@ -143,6 +153,31 @@ including the current non-conformance warning, are always written to stderr.
 An existing output archive is replaced only after the new build completes
 successfully; a failed or canceled build preserves the previous archive and
 removes its staged partial output.
+
+SBOM and maximum-mode provenance attestations are requested by default
+(`--sbom=true --provenance=mode=max`). If the selected builder explicitly rejects
+attestation support, KMX warns and retries without either attestation.
+`--require-attestations` fails instead of downgrading and refuses an archive
+missing the required statements. Use `--attestations=false` to opt out explicitly;
+it cannot be combined with `--require-attestations`. Authentication, scanner,
+network, cancellation, and unrelated build failures are not grounds to downgrade.
+
+Attestations are stored inside the OCI archive: `index.json` can reference a
+nested image index containing the runnable platform manifest and an
+`unknown/unknown` attestation manifest. The latter contains in-toto SBOM and
+provenance statements bound to the runnable image. KMX prints the runnable image
+manifest digest as **the image digest** and reports the index digest separately
+as including attestations and varying per build. `SOURCE_DATE_EPOCH` and
+`rewrite-timestamp=true` normalize image timestamps; provenance still records
+per-build timestamps, invocation identifiers, and BuildKit metadata. Do not
+expect byte-identical attested archives. An unchanged runnable-image digest was
+demonstrated across two cached builds of a scratch-image probe; this is not a
+clean-room reproducibility guarantee for every agent.
+
+When an SBOM is present, KMX prints a `tar -xOf` command with the archive path and
+SBOM blob path. Run that command to read the complete in-toto SPDX statement
+without a registry or network access. These BuildKit attestations are not signed
+identity evidence; KMX does not sign user-built images.
 
 Create an Azure OpenAI deployment named `gpt-5-mini` in Azure AI Foundry. Then
 load the image and inject its API key only when the container starts:

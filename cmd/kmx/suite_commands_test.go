@@ -61,6 +61,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
+	archive, _, _, _ := suiteCommandArchive(t, false)
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
 	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
@@ -74,7 +75,7 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 			t.Fatalf("verbose=%v progress=%T", options.Verbose, options.Progress)
 		}
 		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
-			_, err := io.WriteString(dst, "oci archive")
+			_, err := dst.Write(archive)
 			return agentsuite.BuildResult{
 				MediaType: agentkitbuilder.OCIArchiveMediaType,
 				Warnings:  []string{"not AgentSuite-conformant"},
@@ -97,7 +98,7 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "oci archive" {
+	if !bytes.Equal(data, archive) {
 		t.Fatalf("output = %q", data)
 	}
 	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
@@ -155,6 +156,7 @@ func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
 func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
+	archive, _, _, _ := suiteCommandArchive(t, false)
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
@@ -162,7 +164,7 @@ func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 			t.Fatal("verbose unexpectedly enabled")
 		}
 		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
-			_, err := io.WriteString(dst, "oci archive")
+			_, err := dst.Write(archive)
 			return agentsuite.BuildResult{
 				MediaType: agentkitbuilder.OCIArchiveMediaType,
 				Warnings:  []string{"builder implementation detail"},

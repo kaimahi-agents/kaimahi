@@ -21,7 +21,7 @@ func TestBuildxExporterWritesOCIArchive(t *testing.T) {
 	runner := &fakeBuildxRunner{stdout: "oci archive"}
 	exporter := buildxExporter{runner: runner}
 	var output bytes.Buffer
-	err := exporter.ExportOCI(t.Context(), agentImage{
+	_, err := exporter.ExportOCI(t.Context(), agentImage{
 		AgentkitFile: []byte("#syntax=frontend\n{}"),
 		Name:         "writer",
 		AdapterRef:   "registry.example/harness@" + testDigest,
@@ -41,7 +41,8 @@ func TestBuildxExporterWritesOCIArchive(t *testing.T) {
 		"--build-arg adapter=registry.example/harness@" + testDigest,
 		"--build-arg SOURCE_DATE_EPOCH=1790388400",
 		"--output type=oci,dest=-,rewrite-timestamp=true",
-		"--provenance=false",
+		"--sbom=true",
+		"--provenance=mode=max",
 		"--progress quiet",
 		"--tag writer:latest",
 	} {
@@ -62,7 +63,7 @@ func TestBuildxExporterReportsDockerErrors(t *testing.T) {
 		stderr: "pull access denied for private.example/harness",
 		err:    errors.New("exit status 1"),
 	}
-	err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{
+	_, err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{
 		AgentkitFile: []byte("{}"), Name: "writer", AdapterRef: "private.example/harness@" + testDigest,
 		Platform: "linux/amd64", SourceEpoch: 1,
 	}, io.Discard)
@@ -76,7 +77,7 @@ func TestBuildxExporterRequiresDockerBuildx(t *testing.T) {
 		versionStderr: "docker: 'buildx' is not a docker command",
 		versionErr:    errors.New("exit status 1"),
 	}
-	err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{}, io.Discard)
+	_, err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{}, io.Discard)
 	if err == nil ||
 		!strings.Contains(err.Error(), "Docker with the buildx plugin is required") ||
 		!strings.Contains(err.Error(), "not a docker command") {
@@ -90,7 +91,7 @@ func TestBuildxExporterRequiresDockerBuildx(t *testing.T) {
 func TestBuildxExporterStreamsVerboseProgress(t *testing.T) {
 	runner := &fakeBuildxRunner{stderr: "build progress"}
 	var progress bytes.Buffer
-	err := (buildxExporter{runner: runner, verbose: true, progress: &progress}).ExportOCI(
+	_, err := (buildxExporter{runner: runner, verbose: true, progress: &progress}).ExportOCI(
 		t.Context(),
 		agentImage{
 			AgentkitFile: []byte("{}"), Name: "writer",
@@ -112,7 +113,7 @@ func TestBuildxExporterReportsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	runner := &fakeBuildxRunner{err: context.Canceled}
-	err := (buildxExporter{runner: runner}).ExportOCI(ctx, agentImage{
+	_, err := (buildxExporter{runner: runner}).ExportOCI(ctx, agentImage{
 		AgentkitFile: []byte("{}"), Name: "writer",
 		AdapterRef: "registry.example/harness@" + testDigest,
 		Platform:   "linux/amd64", SourceEpoch: 1,

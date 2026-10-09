@@ -47,7 +47,15 @@ type SandboxPlan struct {
 // BuildResult describes the image archive emitted by a SandboxBuilder.
 type BuildResult struct {
 	MediaType string
-	Warnings  []string
+	// Digest is the runnable image manifest, never the attestation-inclusive index.
+	Digest string
+	// IndexDigest includes attestations when present and can vary between builds.
+	IndexDigest           string
+	SBOMDigest            string
+	HasAttestations       bool
+	AttestationsRequested bool
+	RequireAttestations   bool
+	Warnings              []string
 }
 
 // SandboxBuilder turns one resolved plan into an image archive.

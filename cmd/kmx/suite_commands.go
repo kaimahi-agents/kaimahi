@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -36,18 +37,23 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	}
 
 	var (
-		buildAgent       string
-		buildPlatform    string
-		buildOutput      string
-		buildModelURL    string
-		buildModelKeyEnv string
-		buildVerbose     bool
+		buildAgent               string
+		buildPlatform            string
+		buildOutput              string
+		buildModelURL            string
+		buildModelKeyEnv         string
+		buildVerbose             bool
+		buildBuilder             string
+		buildAttestations        bool
+		buildRequireAttestations bool
 	)
 	build := &cobra.Command{
 		Use:   "build <directory>",
 		Short: "Build one AgentSuite agent as an OCI image-layout tar",
 		Long: "Build one AgentSuite agent as an OCI image-layout tar.\n\n" +
-			"Docker with the buildx plugin is required.\n\n" +
+			"Docker with the buildx plugin and an OCI-export-capable builder are required. Select a builder with --builder (for example, a docker-container builder); kmx does not create or manage builders. The classic Docker image store does not support OCI export, and disabling attestations does not enable it.\n\n" +
+			"SBOM and max-mode provenance attestations are requested by default. A confirmed unsupported-attestation rejection retries without either attestation and warns. Use --require-attestations to fail instead, or --attestations=false to opt out. Missing requested attestations in a successful archive warn; required attestations must be present and bind to the image.\n\n" +
+			"The canonical image digest identifies the runnable image manifest. The separate index digest includes attestations when present and may vary per build. SBOM inspection reads directly from the local archive.\n\n" +
 			"WARNING: --model-api-key-env accepts the environment variable name, never the API key value.\n\n" +
 			"The current implementation treats the build profile's harness image as a monolithic AgentKit adapter and does not yet compose the runtime-base image, so its output is not AgentSuite-conformant.",
 		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --model-base-url <url> --output <file>"),
@@ -58,6 +64,9 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	build.Flags().StringVar(&buildModelURL, "model-base-url", "", "OpenAI-compatible model endpoint embedded by the experimental AgentKit adapter")
 	build.Flags().StringVar(&buildModelKeyEnv, "model-api-key-env", "", "environment variable name containing the model API key; never pass the key value")
 	build.Flags().BoolVar(&buildVerbose, "verbose", false, "show Docker buildx progress")
+	build.Flags().StringVar(&buildBuilder, "builder", "", "Docker buildx builder name (otherwise preserve buildx selection)")
+	build.Flags().BoolVar(&buildAttestations, "attestations", true, "request SBOM and max-mode provenance; use --attestations=false to opt out")
+	build.Flags().BoolVar(&buildRequireAttestations, "require-attestations", false, "fail if the builder cannot attest or the archive lacks verified SBOM and provenance")
 	_ = build.MarkFlagRequired("output")
 	_ = build.MarkFlagRequired("model-base-url")
 	_ = build.MarkFlagFilename("output")
@@ -66,11 +75,20 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		if err := agentkitbuilder.ValidateModelAPIKeyEnv(buildModelKeyEnv); err != nil {
 			return err
 		}
+		if cmd.Flags().Changed("builder") && strings.TrimSpace(buildBuilder) == "" {
+			return fmt.Errorf("--builder cannot be empty")
+		}
+		if buildRequireAttestations && !buildAttestations {
+			return fmt.Errorf("--require-attestations cannot be used with --attestations=false")
+		}
 		builder := state.deps.newAgentKitBuilder(agentkitbuilder.Options{
-			ModelBaseURL:   buildModelURL,
-			ModelAPIKeyEnv: buildModelKeyEnv,
-			Verbose:        buildVerbose,
-			Progress:       cmd.ErrOrStderr(),
+			ModelBaseURL:        buildModelURL,
+			ModelAPIKeyEnv:      buildModelKeyEnv,
+			Verbose:             buildVerbose,
+			Progress:            cmd.ErrOrStderr(),
+			Builder:             buildBuilder,
+			DisableAttestations: !buildAttestations,
+			RequireAttestations: buildRequireAttestations,
 		})
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -86,8 +104,19 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 				return err
 			}
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Built AgentSuite agent %s for %s to %s (%s)\n",
-			result.Agent, result.Platform, result.Path, result.MediaType)
+		indexLabel := "Index digest (no attestations)"
+		if result.HasAttestations {
+			indexLabel = "Index digest (includes attestations; may vary per build)"
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Built AgentSuite agent %s for %s to %s (%s)\nImage digest: %s\n%s: %s\n",
+			result.Agent, result.Platform, result.Path, result.MediaType, result.Digest, indexLabel, result.IndexDigest); err != nil {
+			return err
+		}
+		if result.SBOMDigest != "" {
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Read SBOM statement: tar -xOf %s blobs/sha256/%s\n", quoteShell(result.Path), strings.TrimPrefix(result.SBOMDigest, "sha256:"))
+		} else {
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "SBOM: not present in archive")
+		}
 		return err
 	}
 

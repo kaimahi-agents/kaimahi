@@ -17,10 +17,11 @@ func TestBuildSuiteAtomicallyReplacesExistingOutput(t *testing.T) {
 	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	archive, _, _, _ := buildSuiteArchive(t, false)
 	called := false
 	builder := sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
 		called = true
-		_, err := dst.Write([]byte("replacement"))
+		_, err := dst.Write(archive)
 		return agentsuite.BuildResult{}, err
 	})
 	if _, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder); err != nil {
@@ -33,7 +34,7 @@ func TestBuildSuiteAtomicallyReplacesExistingOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "replacement" {
+	if string(content) != string(archive) {
 		t.Fatalf("output = %q", content)
 	}
 }
