@@ -11,7 +11,7 @@ import (
 
 func newAgentCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Create agents; inspect and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentRunCommand(state), newAgentChatCommand(state),
+	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentVerifyCommand(), newAgentRunCommand(state), newAgentChatCommand(state),
 		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx agent show <name> --namespace <namespace>"))
 	return group
 }

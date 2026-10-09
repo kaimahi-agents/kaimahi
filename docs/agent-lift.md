@@ -491,10 +491,64 @@ endpoint/chat selection replaces its prior receipt; model changes therefore
 cannot leave an old passing receipt at that same filename. Keep receipts local,
 not in Git, and protect the journal separately.
 
-Sessions receipts currently do **not** satisfy lift-policy or status gates.
-Receipt replay verification is not available yet. The journal head and output
-digest support later read-only integrity/output checks, not a claim of
-deterministic re-execution. Orka receipt and gate behavior is unchanged.
+Sessions receipts do **not** satisfy lift-policy or status gates, including
+when replay verification succeeds. Orka receipt and gate behavior is unchanged.
+
+### Verifying a sessions receipt
+
+```console
+kmx agent verify <sessions-receipt.json> --sessions 127.0.0.1:8080 [--sessions-ca ca.pem] [--timeout 5m]
+```
+
+Verification reads each case's journal prefix through the receipt's recorded
+sequence, checks the contiguous hash chain and exact sequence/hash head, then
+runs agentsessions' pinned built-in **chat** harness locally with the recorded
+config, input and model completions. It checks model-request fingerprints,
+complete consumption of the recorded effects and the exact answer SHA-256.
+There is no model endpoint configured; both the independent fail-on-call counter
+and the replay controller's live-model count must remain zero. No new session,
+Exec, Resume, or live journal/fence mutation occurs. Later records beyond the
+receipt's head are outside this check.
+
+`--sessions` is required: the operator always names the destination. kmx refuses
+**before connecting** unless it matches the receipt's recorded address after
+syntactic normalization: canonical literal IPs (including IPv4-mapped IPv6),
+lowercase DNS names without a trailing dot, and decimal ports. No DNS lookup or
+alias equivalence is used for comparison; `localhost` does not match
+`127.0.0.1`. Only the operator-supplied address is dialed, retaining its original
+spelling so normalization cannot relax transport security. Connection
+security is the same as evaluation: verified TLS except for literal loopback,
+with `--sessions-ca` also enabling TLS there. The deadline covers the whole
+verification and must be between 10s and 9m (default 5m).
+
+This proves **local reference replay equivalence**, not the original host
+implementation/version, provider-side behavior, or a new evaluation result.
+The reference includes `system_prompt` support; config-ignoring older journals
+may be non-equivalent without being corrupt. Other harness names, forks,
+tools, incomplete/extra executions and unsupported journal shapes never pass.
+A lookalike custom `chat` harness can only be shown reference-equivalent; host
+implementation/version stays unknown until
+[agentsessions #87](https://github.com/aramase/agentsessions/issues/87) exposes
+provenance. The locally trusted receipt anchors integrity; replacing both it
+and the journal is outside this guarantee.
+
+Existing version-1 sessions receipts need no migration. Each case must have a
+completed `pass` or `fail` evaluation verdict and full session/head/model/answer
+evidence; `unknown` outcomes are refused. A failed expectation can replay
+equivalently without becoming a passing evaluation. Receipts are limited to
+1 MiB and 1,000 cases; journal prefixes to 20,000 records and 64 MiB, with the
+same 1 MiB committed-answer bound as evaluation. Conversation content stays in
+memory during verification and is never printed or written into the report.
+
+kmx leaves the source receipt unchanged and atomically writes a mode-0600
+sibling `verify-<receipt-basename>.json` (for example,
+`verify-eval-abc.json.json`), outside the `eval-*` gate namespace. It binds the
+source receipt's SHA-256, the local reference revision, per-case session/head,
+config and reconstructed-answer SHA-256, model-call count and verification
+status. Host implementation remains `unknown`. Linked/non-regular input files
+or a linked receipt directory are refused. Every invocation recomputes the
+proof, replacing any prior report. Only `equivalent` for every case exits zero;
+`mismatch`, `unsupported` and `unknown` never count as passing evidence.
 
 ## Running an existing Agent
 

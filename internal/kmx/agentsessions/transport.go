@@ -22,21 +22,9 @@ import (
 // establishment is lazy; RunCase verifies TLS before sending either mutation.
 // Only literal loopback without a CA file permits plaintext.
 func Dial(options Options) (*Client, error) {
-	host, port, err := net.SplitHostPort(options.Address)
-	if err != nil || !validHost(host) || strings.Contains(options.Address, "[") && !strings.Contains(host, ":") {
-		return nil, status.Error(codes.InvalidArgument, "agentsessions: address must be host:port")
-	}
-	if secretshapes.Match(host) != nil {
-		return nil, status.Error(codes.InvalidArgument, "agentsessions: credential-shaped host refused")
-	}
-	for _, c := range port {
-		if c < '0' || c > '9' {
-			return nil, status.Error(codes.InvalidArgument, "agentsessions: invalid address port")
-		}
-	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
-		return nil, status.Error(codes.InvalidArgument, "agentsessions: invalid address port")
+	host, _, err := addressParts(options.Address)
+	if err != nil {
+		return nil, err
 	}
 	ip, _ := netip.ParseAddr(host)
 	var transport credentials.TransportCredentials = insecure.NewCredentials()
@@ -65,6 +53,41 @@ func Dial(options Options) (*Client, error) {
 		return nil, safeRPCError(err, "agentsessions: transport initialization failed")
 	}
 	return &Client{sdk: client}, nil
+}
+
+// NormalizeAddress compares operator and receipt destinations syntactically, without
+// DNS lookup or treating aliases (including localhost) as the same destination.
+func NormalizeAddress(address string) (string, error) {
+	host, port, err := addressParts(address)
+	if err != nil {
+		return "", err
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		host = ip.Unmap().String()
+	} else {
+		host = strings.ToLower(strings.TrimSuffix(host, "."))
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
+}
+
+func addressParts(address string) (string, int, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || !validHost(host) || strings.Contains(address, "[") && !strings.Contains(host, ":") {
+		return "", 0, status.Error(codes.InvalidArgument, "agentsessions: address must be host:port")
+	}
+	if secretshapes.Match(host) != nil {
+		return "", 0, status.Error(codes.InvalidArgument, "agentsessions: credential-shaped host refused")
+	}
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return "", 0, status.Error(codes.InvalidArgument, "agentsessions: invalid address port")
+		}
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return "", 0, status.Error(codes.InvalidArgument, "agentsessions: invalid address port")
+	}
+	return host, n, nil
 }
 
 func validHost(host string) bool {
