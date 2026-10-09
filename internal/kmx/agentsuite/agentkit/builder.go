@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"regexp"
 
 	"github.com/distribution/reference"
@@ -88,14 +87,7 @@ func (b *Builder) Build(
 	if err != nil {
 		return agentsuite.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
 	}
-	// Keep the io.Writer contract while verifying the exported graph before
-	// returning identities or copying an archive to the caller.
-	archive, err := os.CreateTemp("", "kmx-agentkit-archive-*")
-	if err != nil {
-		return agentsuite.BuildResult{}, fmt.Errorf("stage AgentKit image archive: %w", err)
-	}
-	defer os.Remove(archive.Name())
-	defer archive.Close()
+	// The caller owns staging and inspection before publishing identities.
 	platform := plan.Composition.Platform
 	exported, err := b.options.exporter.ExportOCI(ctx, agentImage{
 		AgentkitFile: agentkitFile,
@@ -103,25 +95,16 @@ func (b *Builder) Build(
 		AdapterRef:   plan.Harness.ImageRef,
 		Platform:     platform.String(),
 		SourceEpoch:  plan.BuildProfile.SourceEpoch,
-	}, archive)
+	}, dst)
 	if err != nil {
 		return agentsuite.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
 	}
-	info, err := archive.Stat()
-	if err != nil {
-		return agentsuite.BuildResult{}, err
+	result := agentsuite.BuildResult{
+		MediaType:             OCIArchiveMediaType,
+		AttestationsRequested: exported.AttestationsRequested,
+		RequireAttestations:   b.options.RequireAttestations,
+		Warnings:              exported.Warnings,
 	}
-	result, err := agentsuite.InspectImageArchive(ctx, archive, info.Size(), platform, exported.AttestationsRequested, b.options.RequireAttestations)
-	if err != nil {
-		return agentsuite.BuildResult{}, fmt.Errorf("inspect AgentKit image archive: %w", err)
-	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		return agentsuite.BuildResult{}, err
-	}
-	if _, err := io.Copy(dst, &contextReader{ctx: ctx, reader: archive}); err != nil {
-		return agentsuite.BuildResult{}, fmt.Errorf("write AgentKit image archive: %w", err)
-	}
-	result.Warnings = append(result.Warnings, exported.Warnings...)
 	result.Warnings = append(result.Warnings, "experimental AgentKit output is not AgentSuite-conformant: the harness image is treated as a monolithic AgentKit adapter and the runtime-base image is not composed")
 	return result, nil
 }
@@ -208,18 +191,6 @@ func (b *Builder) agentkitFile(plan agentsuite.SandboxPlan) ([]byte, error) {
 	result = append(result, body...)
 	result = append(result, '\n')
 	return result, nil
-}
-
-type contextReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r *contextReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(p)
 }
 
 type agentConfig struct {

@@ -58,12 +58,12 @@ func (e buildxExporter) ExportOCI(ctx context.Context, image agentImage, dst io.
 	if runner == nil {
 		runner = localBuildxRunner{}
 	}
-	var diagnostics bytes.Buffer
+	var diagnostics buildxDiagnosticTail
 	if err := runner.Run(ctx, io.Discard, &diagnostics, "docker", "buildx", "version"); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return result, fmt.Errorf("check Docker buildx availability: %w", ctxErr)
 		}
-		return result, fmt.Errorf("Docker with the buildx plugin is required: %w\n%s", err, strings.TrimSpace(diagnostics.String()))
+		return result, fmt.Errorf("Docker with the buildx plugin is required: %w\n%s", err, diagnostics.detail())
 	}
 	workDir, err := os.MkdirTemp("", "kmx-agentkit-build-*")
 	if err != nil {
@@ -122,8 +122,8 @@ func (e buildxExporter) ExportOCI(ctx context.Context, image agentImage, dst io.
 		if err == nil {
 			return result, nil
 		}
-		detail := strings.TrimSpace(diagnostics.String())
-		if result.AttestationsRequested && output.written == 0 && unsupportedAttestations.MatchString(detail) {
+		detail := diagnostics.detail()
+		if result.AttestationsRequested && output.written == 0 && diagnostics.matches(unsupportedAttestations) {
 			if e.requireAttestations {
 				return result, fmt.Errorf("--require-attestations: selected builder does not support attestations; select an attestation-capable --builder: %w\n%s", err, detail)
 			}
@@ -131,12 +131,77 @@ func (e buildxExporter) ExportOCI(ctx context.Context, image agentImage, dst io.
 			result.Warnings = append(result.Warnings, "selected builder does not support attestations; output has neither SBOM nor provenance; select an attestation-capable --builder")
 			continue
 		}
-		if unsupportedOCIExporter.MatchString(detail) {
+		if diagnostics.matches(unsupportedOCIExporter) {
 			detail += "\nSelect an OCI-export-capable --builder (for example, a docker-container builder); disabling attestations does not enable OCI export with the classic Docker image store."
 		}
 		return result, fmt.Errorf("docker buildx build: %w\n%s", err, detail)
 	}
 	return result, fmt.Errorf("docker buildx build: %w", err)
+}
+
+// Final Buildx errors are small; retain 64 KiB of stderr for failure diagnostics
+// and capability checks without retaining an entire verbose build log.
+const buildxDiagnosticLimit = 64 * 1024
+
+type buildxDiagnosticTail struct {
+	data          [buildxDiagnosticLimit]byte
+	size          int
+	truncated     bool
+	startsMidLine bool
+}
+
+func (w *buildxDiagnosticTail) Write(p []byte) (int, error) {
+	n := len(p)
+	if n >= len(w.data) {
+		if n > len(w.data) {
+			w.truncated = true
+			w.startsMidLine = p[n-len(w.data)-1] != '\n'
+		} else if w.size > 0 {
+			w.truncated = true
+			w.startsMidLine = w.data[w.size-1] != '\n'
+		}
+		// Copy only the suffix, even for a single input larger than the limit.
+		w.size = copy(w.data[:], p[n-len(w.data):])
+		return n, nil
+	}
+	if drop := w.size + n - len(w.data); drop > 0 {
+		w.truncated = true
+		w.startsMidLine = w.data[drop-1] != '\n'
+		w.size = copy(w.data[:], w.data[drop:w.size])
+	}
+	w.size += copy(w.data[w.size:], p)
+	return n, nil
+}
+
+func (w *buildxDiagnosticTail) Reset() {
+	w.size = 0
+	w.truncated = false
+	w.startsMidLine = false
+}
+
+func (w *buildxDiagnosticTail) String() string {
+	return string(w.data[:w.size])
+}
+
+func (w *buildxDiagnosticTail) detail() string {
+	detail := strings.TrimSpace(w.String())
+	if w.truncated {
+		return "[earlier diagnostics truncated; showing final 64 KiB]\n" + detail
+	}
+	return detail
+}
+
+func (w *buildxDiagnosticTail) matches(pattern *regexp.Regexp) bool {
+	tail := w.data[:w.size]
+	if w.startsMidLine {
+		// A cutoff must not turn a prefixed lookalike into a capability error.
+		lineEnd := bytes.IndexByte(tail, '\n')
+		if lineEnd < 0 {
+			return false
+		}
+		tail = tail[lineEnd+1:]
+	}
+	return pattern.Match(tail)
 }
 
 // A failed output write is not a capability failure, even if it wrote no bytes.

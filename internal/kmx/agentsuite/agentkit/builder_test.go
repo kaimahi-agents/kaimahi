@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -31,7 +33,7 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if !bytes.Equal(output.Bytes(), testOCIArchive(t)) || result.MediaType != OCIArchiveMediaType || result.Digest == "" {
+	if !bytes.Equal(output.Bytes(), testOCIArchive(t)) || result.MediaType != OCIArchiveMediaType {
 		t.Fatalf("unexpected result: output=%q result=%+v", output.String(), result)
 	}
 	if exported.Name != "writer" ||
@@ -49,6 +51,51 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "not AgentSuite-conformant") {
 		t.Fatalf("warnings = %v", result.Warnings)
 	}
+}
+
+func TestBuildStreamsIntoCallerStage(t *testing.T) {
+	archive := testOCIArchive(t)
+	stage, err := os.Create(filepath.Join(t.TempDir(), "stage.oci.tar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := stage.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	builder := New(Options{
+		ModelBaseURL:        "https://models.example/v1",
+		RequireAttestations: true,
+		exporter: policyExporterFunc(func(_ context.Context, _ agentImage, dst io.Writer) (exportResult, error) {
+			if _, err := dst.Write(archive); err != nil {
+				return exportResult{}, err
+			}
+			// The destination must receive bytes during export, not through a
+			// second full-size archive copied after export finishes.
+			got := make([]byte, len(archive))
+			if _, err := stage.ReadAt(got, 0); err != nil || !bytes.Equal(got, archive) {
+				t.Fatalf("caller stage not populated during export: %v", err)
+			}
+			return exportResult{AttestationsRequested: true, Warnings: []string{"export warning"}}, nil
+		}),
+	})
+	result, err := builder.Build(t.Context(), minimalPlan(), stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.AttestationsRequested || !result.RequireAttestations {
+		t.Fatalf("inspection policy not propagated: %+v", result)
+	}
+	if len(result.Warnings) != 2 || result.Warnings[0] != "export warning" {
+		t.Fatalf("warnings = %v", result.Warnings)
+	}
+}
+
+type policyExporterFunc func(context.Context, agentImage, io.Writer) (exportResult, error)
+
+func (f policyExporterFunc) ExportOCI(ctx context.Context, image agentImage, dst io.Writer) (exportResult, error) {
+	return f(ctx, image, dst)
 }
 
 func TestAgentkitFileMapsResolvedPlan(t *testing.T) {

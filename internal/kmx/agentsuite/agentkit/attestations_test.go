@@ -13,6 +13,7 @@ const unsupportedDriver = "ERROR: failed to build: Attestation is not supported 
 
 type buildxAttempt struct {
 	stdout, stderr string
+	stderrChunks   []string
 	err            error
 }
 type sequenceBuildxRunner struct {
@@ -31,6 +32,11 @@ func (r *sequenceBuildxRunner) Run(_ context.Context, stdout, stderr io.Writer, 
 	}
 	if _, err := io.WriteString(stderr, a.stderr); err != nil {
 		return err
+	}
+	for _, chunk := range a.stderrChunks {
+		if _, err := io.WriteString(stderr, chunk); err != nil {
+			return err
+		}
 	}
 	return a.err
 }
@@ -107,6 +113,127 @@ func TestBuildxAttestationPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildxAttestationDiagnosticTail(t *testing.T) {
+	progress := strings.Repeat("#1 build progress\n", 32*1024)
+	const unrelated = "ERROR: failed to build: network timeout\n"
+	for _, tc := range []struct {
+		name     string
+		first    buildxAttempt
+		required bool
+		retry    bool
+		wantErr  string
+	}{
+		{name: "final multiline rejection", first: buildxAttempt{stderr: progress + unsupportedDriver}, retry: true},
+		{name: "rejection across writes", first: buildxAttempt{stderrChunks: []string{progress, unsupportedDriver[:70], unsupportedDriver[70:]}}, retry: true},
+		{name: "final required rejection", first: buildxAttempt{stderr: progress + unsupportedDriver}, required: true, wantErr: "--require-attestations"},
+		{name: "unrelated final error", first: buildxAttempt{stderr: progress + unrelated}, wantErr: "network timeout"},
+		{name: "rejection lost from tail", first: buildxAttempt{stderr: unsupportedDriver + progress + unrelated}, wantErr: "network timeout"},
+		{name: "incomplete rejection at cutoff", first: buildxAttempt{stderr: unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver)+1)}, wantErr: "docker buildx build"},
+		{name: "scanner prefix lost at cutoff", first: buildxAttempt{stderr: "scanner: " + unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver))}, wantErr: "docker buildx build"},
+		{name: "complete line at cutoff", first: buildxAttempt{stderr: progress + unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver))}, retry: true},
+		{name: "complete line after full replacement", first: buildxAttempt{stderr: progress, stderrChunks: []string{unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver))}}, retry: true},
+		{name: "scanner prefix lost after full replacement", first: buildxAttempt{stderr: "scanner: ", stderrChunks: []string{unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver))}}, wantErr: "docker buildx build"},
+		{name: "scanner prefix lost across small writes", first: buildxAttempt{stderr: "scanner: " + unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver)-len("scanner: ")), stderrChunks: []string{"xxxxxxxxx"}}, wantErr: "docker buildx build"},
+		{name: "complete line across small writes", first: buildxAttempt{stderr: "prefix\n" + unsupportedDriver + strings.Repeat("x", testBuildxDiagnosticLimit-len(unsupportedDriver)-len("prefix\n")), stderrChunks: []string{"xxxxxxx"}}, retry: true},
+		{name: "partial stdout after large progress", first: buildxAttempt{stdout: "partial", stderr: progress + unsupportedDriver}, wantErr: "Attestation is not supported"},
+		{name: "canceled after large progress", first: buildxAttempt{stderr: progress + unsupportedDriver, err: context.Canceled}, wantErr: "canceled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.first.err == nil {
+				tc.first.err = errors.New("exit status 1")
+			}
+			runner := &sequenceBuildxRunner{attempts: []buildxAttempt{tc.first, {stdout: "archive"}}}
+			var output, streamed bytes.Buffer
+			result, err := (buildxExporter{runner: runner, requireAttestations: tc.required, verbose: true, progress: &streamed}).ExportOCI(
+				t.Context(), agentImage{}, &output,
+			)
+			wantBuilds := 1
+			if tc.retry {
+				wantBuilds = 2
+				if err != nil || result.AttestationsRequested || output.String() != "archive" || len(result.Warnings) != 1 {
+					t.Errorf("result=%+v error=%v output=%q, want un-attested retry archive", result, err, output.String())
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error=%v, want %q", err, tc.wantErr)
+			}
+			if len(runner.builds) != wantBuilds {
+				t.Errorf("build attempts=%d, want %d", len(runner.builds), wantBuilds)
+			}
+			if want := tc.first.stderr + strings.Join(tc.first.stderrChunks, ""); streamed.String() != want {
+				t.Errorf("streamed progress length=%d, want %d", streamed.Len(), len(want))
+			}
+			if err != nil && tc.wantErr != "canceled" && !strings.Contains(err.Error(), "earlier diagnostics truncated") {
+				t.Error("error omits diagnostic truncation notice")
+			}
+		})
+	}
+}
+
+func TestBuildxDiagnosticTailResetBetweenAttempts(t *testing.T) {
+	runner := &sequenceBuildxRunner{attempts: []buildxAttempt{
+		{stderr: strings.Repeat("#1 progress\n", 32*1024) + unsupportedDriver, err: errors.New("exit status 1")},
+		{stderr: "pull access denied", err: errors.New("exit status 1")},
+	}}
+	_, err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "pull access denied") {
+		t.Fatalf("error=%v, want retry failure", err)
+	}
+	if strings.Contains(err.Error(), "earlier diagnostics truncated") || strings.Contains(err.Error(), "Attestation is not supported") {
+		t.Fatal("retry failure retains earlier attempt diagnostics or truncation state")
+	}
+	if len(runner.builds) != 2 {
+		t.Fatalf("build attempts=%d, want 2", len(runner.builds))
+	}
+}
+
+func TestBuildxOCIExporterDiagnosticTail(t *testing.T) {
+	runner := &sequenceBuildxRunner{attempts: []buildxAttempt{{
+		stderr: strings.Repeat("#1 progress\n", 32*1024) + "ERROR: failed to build: OCI exporter is not supported for the docker driver.\n",
+		err:    errors.New("exit status 1"),
+	}}}
+	_, err := (buildxExporter{runner: runner}).ExportOCI(t.Context(), agentImage{}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "OCI-export-capable --builder") || !strings.Contains(err.Error(), "earlier diagnostics truncated") {
+		t.Fatalf("error=%v, want truncated diagnostics and OCI builder guidance", err)
+	}
+	if len(runner.builds) != 1 {
+		t.Fatalf("build attempts=%d, want 1", len(runner.builds))
+	}
+}
+
+func TestBuildxPreservesProgressWriteErrorsAfterLargeDiagnostics(t *testing.T) {
+	progressErr := errors.New("progress device closed")
+	for _, tc := range []struct {
+		name   string
+		writer io.Writer
+		want   error
+	}{
+		{name: "failure", writer: progressErrorWriter{err: progressErr}, want: progressErr},
+		{name: "short write", writer: shortProgressWriter{}, want: io.ErrShortWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &sequenceBuildxRunner{attempts: []buildxAttempt{{
+				stderr: strings.Repeat("#1 progress\n", 32*1024) + unsupportedDriver,
+				err:    errors.New("exit status 1"),
+			}}}
+			_, err := (buildxExporter{runner: runner, verbose: true, progress: tc.writer}).ExportOCI(t.Context(), agentImage{}, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), "write Docker buildx progress") || !errors.Is(err, tc.want) {
+				t.Fatalf("error=%v, want progress write error %v", err, tc.want)
+			}
+			if len(runner.builds) != 1 {
+				t.Fatalf("build attempts=%d, want 1", len(runner.builds))
+			}
+		})
+	}
+}
+
+type progressErrorWriter struct{ err error }
+
+func (w progressErrorWriter) Write([]byte) (int, error) { return 0, w.err }
+
+type shortProgressWriter struct{}
+
+func (shortProgressWriter) Write(p []byte) (int, error) { return len(p) / 2, nil }
 
 type failingArchiveWriter struct{}
 
