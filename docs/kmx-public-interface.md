@@ -171,8 +171,9 @@ if err != nil {
 		if recoverErr != nil {
 			return recoverErr
 		}
-
-		fmt.Printf("complete: %t\n", progress.Complete)
+		if !progress.Complete {
+			return fmt.Errorf("environment setup recovery is incomplete")
+		}
 		return nil
 	}
 	return err
