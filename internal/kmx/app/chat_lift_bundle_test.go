@@ -61,7 +61,9 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 		t.Fatal(err)
 	}
 	first, rest, _ := strings.Cut(keys, "\r")
+	inputDone := make(chan struct{})
 	go func() {
+		defer close(inputDone)
 		defer writer.Close()
 		_, _ = writer.WriteString(first + "\r")
 		if rest != "" {
@@ -70,6 +72,9 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 			select {
 			case <-output.nextPane:
 			case <-paneDeadline.C:
+				if t.Context().Err() != nil {
+					return
+				}
 				t.Error("lift fixture: next pane did not take input ownership")
 				_, _ = writer.WriteString("\x03")
 				return
@@ -78,12 +83,25 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 			}
 			if strings.HasSuffix(rest, "\r\r") {
 				_, _ = writer.WriteString(strings.TrimSuffix(rest, "\r"))
-				for start := time.Now(); time.Since(start) < 15*time.Second; time.Sleep(time.Millisecond) {
+				for start := time.Now(); time.Since(start) < 15*time.Second; {
+					select {
+					case <-t.Context().Done():
+						return
+					case <-time.After(time.Millisecond):
+					}
 					if entries, err := os.ReadDir(filepath.Join(opt.BundleDir, "receipts")); err == nil && len(entries) > 0 {
-						time.Sleep(500 * time.Millisecond) // let the completion event reach the deployment pane
+						// Let the completion event reach the deployment pane.
+						select {
+						case <-t.Context().Done():
+							return
+						case <-time.After(500 * time.Millisecond):
+						}
 						_, _ = writer.WriteString("\r")
 						return
 					}
+				}
+				if t.Context().Err() != nil {
+					return
 				}
 				t.Error("lift fixture: deployment did not write its receipt")
 				_, _ = writer.WriteString("\x03")
@@ -92,7 +110,11 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 			}
 		}
 	}()
-	t.Cleanup(func() { _ = input.Close(); _ = writer.Close() })
+	t.Cleanup(func() {
+		_ = input.Close()
+		_ = writer.Close()
+		<-inputDone
+	})
 	a.Stdin = input
 	a.Cfg.KubeContext = "kind-source"
 	a.Out = output
