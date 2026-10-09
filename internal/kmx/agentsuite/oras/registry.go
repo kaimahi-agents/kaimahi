@@ -114,7 +114,7 @@ func newRegistryRepository(
 	if anonymous {
 		// Do not open Docker configuration or use auth machinery: even an
 		// anonymous bearer challenge could produce an Authorization header.
-		repository.Client = &httpClient
+		repository.Client = &anonymousRegistryClient{Client: &httpClient}
 		return repository, parsed.Reference, nil
 	}
 	if store == nil {
@@ -128,6 +128,19 @@ func newRegistryRepository(
 	client.Credential = credentials.Credential(store)
 	repository.Client = &client
 	return repository, parsed.Reference, nil
+}
+
+type anonymousRegistryClient struct {
+	*http.Client
+}
+
+func (c *anonymousRegistryClient) Do(req *http.Request) (*http.Response, error) {
+	resp, err := c.Client.Do(req)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		return nil, errors.New("registry requires authentication; refusing authentication over plain HTTP to a non-loopback host; use HTTPS")
+	}
+	return resp, err
 }
 
 // registryTransport guards each outgoing request, including redirects and
@@ -151,12 +164,7 @@ func (t *registryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	resp, err := base.RoundTrip(req)
-	if err == nil && t.anonymous && resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-		return nil, fmt.Errorf("registry requires authentication; refusing authentication over plain HTTP to a non-loopback host; use HTTPS")
-	}
-	return resp, err
+	return base.RoundTrip(req)
 }
 
 func isLoopbackHost(host string) bool {

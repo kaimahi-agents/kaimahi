@@ -31,8 +31,8 @@ func routeRegistryClient(t *testing.T, client interface {
 		copyClient := *c.Client
 		c.Client = &copyClient
 		httpClient = c.Client
-	case *http.Client:
-		httpClient = c
+	case *anonymousRegistryClient:
+		httpClient = c.Client
 	default:
 		t.Fatalf("unsupported registry client %T", client)
 	}
@@ -52,6 +52,68 @@ func routeRegistryClient(t *testing.T, client interface {
 		t.Fatalf("missing credential boundary transport: %T", httpClient.Transport)
 	}
 	guarded.base = transport
+}
+
+type responseRecordingTransport struct {
+	base     http.RoundTripper
+	response *http.Response
+}
+
+func (t *responseRecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	t.response = resp
+	return resp, err
+}
+
+func TestAnonymousRegistryUnauthorizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, "authentication required")
+	}))
+	defer server.Close()
+	for _, layer := range []string{"transport", "Do"} {
+		t.Run(layer, func(t *testing.T) {
+			repository, _, err := newRegistryRepository("remote.example/team:v1", true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			routeRegistryClient(t, repository.Client, server)
+			// Capture the real response beneath the guard to check body ownership.
+			httpClient := repository.Client.(*anonymousRegistryClient).Client
+			guard := httpClient.Transport.(*registryTransport)
+			recorder := &responseRecordingTransport{base: guard.base}
+			guard.base = recorder
+			req, err := http.NewRequest(http.MethodGet, "http://remote.example/v2/", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if layer == "transport" {
+				resp, err := guard.RoundTrip(req)
+				if err != nil {
+					t.Fatalf("RoundTrip converted HTTP status to error: %v", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusUnauthorized {
+					t.Fatalf("status = %d, want 401", resp.StatusCode)
+				}
+				body, err := io.ReadAll(resp.Body)
+				if err != nil || string(body) != "authentication required" {
+					t.Fatalf("response body = %q, %v, want open body", body, err)
+				}
+				return
+			}
+			resp, err := repository.Client.Do(req)
+			if resp != nil || err == nil || !strings.Contains(err.Error(), "registry requires authentication; refusing authentication over plain HTTP to a non-loopback host; use HTTPS") {
+				t.Fatalf("Do = %v, %v, want authentication refusal", resp, err)
+			}
+			if recorder.response == nil {
+				t.Fatal("no HTTP response received")
+			}
+			if _, err := io.ReadAll(recorder.response.Body); err == nil {
+				t.Fatal("refused response body was not closed")
+			}
+		})
+	}
 }
 
 func TestRemotePlainHTTPNeverAuthenticates(t *testing.T) {
