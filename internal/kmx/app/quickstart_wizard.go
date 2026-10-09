@@ -1461,6 +1461,10 @@ func (a *App) runQuickstartOrkaTaskProfile(parent context.Context, agent, namesp
 	defer stop()
 	unhook := context.AfterFunc(session.ctx, stop)
 	defer unhook()
+	phase("Checking result access")
+	if err := session.probeBeforeCreate(ctx, namespace, orkaObjectName(doc), "no Task created; earlier setup may remain"); err != nil {
+		return "", err
+	}
 	if profile != nil {
 		profile.session = time.Since(started)
 	}

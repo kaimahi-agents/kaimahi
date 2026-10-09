@@ -341,13 +341,17 @@ func orkaResultError(envelope map[string]json.RawMessage) (int, string, bool) {
 }
 
 func (s *orkaResultSession) probe(ctx context.Context, namespace, name string) error {
+	return s.probeBeforeCreate(ctx, namespace, name, "No resources created")
+}
+
+func (s *orkaResultSession) probeBeforeCreate(ctx context.Context, namespace, name, failureScope string) error {
 	status, envelope, err := s.get(ctx, namespace, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", failureScope, err)
 	}
 	code, message, valid := orkaResultError(envelope)
 	if status != http.StatusNotFound || !valid || code != 404 || message != "task not found" {
-		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. No resources created", status)
+		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope)
 	}
 	return nil
 }

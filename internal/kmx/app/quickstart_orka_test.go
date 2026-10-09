@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -239,6 +240,92 @@ func TestQuickstartRefusesABlankOrkaAnswer(t *testing.T) {
 	}
 }
 
+// Removing the shared pre-create probe must fail these cases even when a
+// session is reused and earlier quickstart setup has already succeeded.
+func TestQuickstartAndNativeChatCheckResultAccessBeforeTaskCreation(t *testing.T) {
+	for _, path := range []string{"quickstart", "native-chat"} {
+		for _, tc := range []struct {
+			name, contentType, body, want string
+			status                        int
+		}{
+			{"denied", "application/json", `{"error":{"code":403,"message":"denied"}}`, "preflight refused (HTTP 403)", http.StatusForbidden},
+			{"html", "text/html", `<html>not a result API</html>`, "non-JSON content", http.StatusOK},
+			{"invalid-json", "application/json", `{bad`, "malformed JSON", http.StatusNotFound},
+			{"invalid-envelope", "application/json", `{"error":{"code":404,"message":"result not found"}}`, "preflight refused (HTTP 404)", http.StatusNotFound},
+			{"happy", "application/json", `{"error":{"code":404,"message":"task not found"}}`, "", http.StatusNotFound},
+		} {
+			t.Run(path+"/"+tc.name, func(t *testing.T) {
+				a, opt, out, _, dir := orkaCreateFixture(t, "lift-reuse")
+				a.Cfg.Model = "qwen2.5:3b"
+				if err := a.stepQuickstartAgent(); err != nil {
+					t.Fatal(err)
+				}
+				orkaResultServer(t, &opt, func(w http.ResponseWriter, r *http.Request) {
+					name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/"), "/result")
+					if r.URL.Query().Get("namespace") != OrkaNamespace || r.Header.Get("Authorization") != "Bearer "+orkaTestToken() {
+						t.Errorf("wrong result request: %s", r.URL)
+					}
+					if _, err := os.Stat(filepath.Join(dir, name+"-tasks.core.orka.ai.json")); err == nil {
+						w.Header().Set("Content-Type", "application/json")
+						fmt.Fprint(w, `{"result":"Orka says hello."}`)
+						return
+					}
+					w.Header().Set("Content-Type", tc.contentType)
+					w.WriteHeader(tc.status)
+					fmt.Fprint(w, tc.body)
+				})
+				a.quickstartResultPort = opt.ResultPort
+				var err error
+				if path == "quickstart" {
+					var answer string
+					answer, err = a.quickstartAnswer("Say hello")
+					if err == nil && answer != "Orka says hello." {
+						t.Errorf("answer=%q", answer)
+					}
+				} else {
+					ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
+					defer cancel()
+					session, openErr := a.openOrkaResultSession(ctx, opt)
+					if openErr != nil {
+						t.Fatal(openErr)
+					}
+					defer session.close()
+					backend := &orkaChatBackend{app: a, agent: QuickstartAgent, namespace: OrkaNamespace, resultSession: session}
+					err = backend.Send(ctx, "Say hello", newChatRenderer(out))
+					if err == nil && !strings.Contains(out.String(), "Orka says hello.") {
+						t.Errorf("missing answer: %s", out)
+					}
+				}
+				creates := 0
+				for _, call := range orkaCalls(t, dir) {
+					if call.Document != nil && call.Document["kind"] == "Task" && slices.Contains(call.Args, "create") && !slices.Contains(call.Args, "--dry-run=server") {
+						creates++
+					}
+				}
+				wantCreates := 0
+				if tc.want == "" {
+					wantCreates = 1
+				}
+				if creates != wantCreates {
+					t.Errorf("Task creates=%d, want %d", creates, wantCreates)
+				}
+				if tc.want == "" {
+					if err != nil {
+						t.Fatal(err)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "no Task created; earlier setup may remain") {
+					t.Fatalf("wrong refusal: %v", err)
+				}
+				if strings.Contains(err.Error(), "No resources created") {
+					t.Fatalf("refusal incorrectly promises no earlier setup: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func newQuickstartConfig() *config.Config {
 	return &config.Config{KindCluster: "test", KubeContext: "kind-test", ContainerEngine: "docker", Model: "qwen2.5:3b"}
 }
@@ -252,8 +339,14 @@ func quickstartOrkaFixture(t *testing.T, result ...string) (*App, string) {
 		body = result[0]
 	}
 	a, _, _, _, dir := orkaCreateFixture(t, "lift-reuse")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/"), "/result")
+		if _, err := os.Stat(filepath.Join(dir, name+"-tasks.core.orka.ai.json")); os.IsNotExist(err) {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
+			return
+		}
 		fmt.Fprint(w, body)
 	}))
 	t.Cleanup(server.Close)
