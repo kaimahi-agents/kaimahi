@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -139,6 +140,18 @@ func TestReconcileKubectlHelper(t *testing.T) {
 				fmt.Printf(`{"kind":"Namespace","metadata":{"name":%q,"uid":"namespace-uid"}}`, name)
 				os.Exit(0)
 			case "providers.core.orka.ai":
+				if name == "inference" {
+					if delay := os.Getenv("KMX_LIFT_PROVIDER_READ_DELAY"); delay != "" {
+						pause, err := time.ParseDuration(delay)
+						if err != nil {
+							fail()
+						}
+						time.Sleep(pause)
+						if err := os.WriteFile(filepath.Join(dir, "provider-read-delayed"), nil, 0600); err != nil {
+							fail()
+						}
+					}
+				}
 				if name == "inference" || name == "sample" && os.Getenv("KMX_LIFT_SELECTED_SAME") == "1" {
 					if os.Getenv("KMX_LIFT_MISSING") == "provider" {
 						os.Exit(0)

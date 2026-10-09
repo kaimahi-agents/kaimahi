@@ -61,24 +61,30 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 		t.Fatal(err)
 	}
 	first, rest, _ := strings.Cut(keys, "\r")
+	// This wait includes subprocess preparation, not just picker rendering. Use
+	// the existing test budget, reserving time to report failure and close pipes.
+	// A direct test-binary run with no package deadline still needs a finite cap.
+	deadline, bounded := t.Deadline()
+	if bounded {
+		deadline = deadline.Add(-time.Second)
+	} else {
+		deadline = time.Now().Add(time.Minute)
+	}
+	paneCtx, cancelPane := context.WithDeadline(t.Context(), deadline)
 	inputDone := make(chan struct{})
 	go func() {
 		defer close(inputDone)
 		defer writer.Close()
 		_, _ = writer.WriteString(first + "\r")
 		if rest != "" {
-			paneDeadline := time.NewTimer(3 * time.Second)
-			defer paneDeadline.Stop()
 			select {
 			case <-output.nextPane:
-			case <-paneDeadline.C:
+			case <-paneCtx.Done():
 				if t.Context().Err() != nil {
 					return
 				}
-				t.Error("lift fixture: next pane did not take input ownership")
+				t.Errorf("lift fixture: next pane did not take input ownership: %v", paneCtx.Err())
 				_, _ = writer.WriteString("\x03")
-				return
-			case <-t.Context().Done():
 				return
 			}
 			if strings.HasSuffix(rest, "\r\r") {
@@ -111,6 +117,7 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 		}
 	}()
 	t.Cleanup(func() {
+		cancelPane()
 		_ = input.Close()
 		_ = writer.Close()
 		<-inputDone
@@ -150,6 +157,25 @@ func TestInteractiveBundleLiftPlanCancelIsReadOnly(t *testing.T) {
 	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
 	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
 		t.Fatal(err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+	for _, want := range []string{"Lift destination:", "Provider/sample: created", "Agent/sample: created", "Plan only:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("review missing %q: %s", want, out.String())
+		}
+	}
+}
+
+// A valid read-only plan may take longer than a small picker-only watchdog,
+// especially when the executable boundary is race-instrumented.
+func TestInteractiveBundleLiftPlanCancelAllowsSlowPreparation(t *testing.T) {
+	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
+	t.Setenv("KMX_LIFT_PROVIDER_READ_DELAY", "4s")
+	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "provider-read-delayed")); err != nil {
+		t.Fatalf("slow preparation was not exercised: %v", err)
 	}
 	assertNoLiftWrites(t, dir, opt.BundleDir)
 	for _, want := range []string{"Lift destination:", "Provider/sample: created", "Agent/sample: created", "Plan only:"} {
