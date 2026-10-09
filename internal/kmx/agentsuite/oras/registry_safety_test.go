@@ -421,8 +421,8 @@ func TestRegistryPushValidatesBeforePreflight(t *testing.T) {
 	}))
 	defer server.Close()
 	_, err := PushRegistry(context.Background(), t.TempDir(), strings.TrimPrefix(server.URL, "http://")+"/team:v1", true, false)
-	if err == nil {
-		t.Fatal("invalid suite pushed")
+	if err == nil || !strings.Contains(err.Error(), "validate packed AgentSuite") || !strings.Contains(err.Error(), "required file agentsuite.json is missing") {
+		t.Fatalf("invalid suite error = %v, want missing suite manifest validation failure", err)
 	}
 	if requests.Load() != 0 {
 		t.Errorf("invalid suite caused %d registry requests", requests.Load())
