@@ -152,7 +152,7 @@ Add probes to the shard owning their state lineage, or arrange independent setup
 Every cluster step needs the docs-only guard; the aggregator uses `always()` and
 must depend on every shard. An unneeded failing shard would not gate a merge.
 
-`e2e-eval-loop` is configured as a required clusterless, secret-free evaluation
+`e2e-eval-loop` is a required clusterless, secret-free evaluation
 boundary on non-docs-only changes. It runs digest-pinned AIKit Qwen3.5-2B on
 CPU and builds `agentsessionsd` at the module revision pinned by KMX. Through
 that sessions endpoint, `kmx agent evaluate` runs the tiny public bundle in
@@ -166,9 +166,8 @@ The uploaded artifacts are only the payload-free evaluation receipt and verify
 report, not the private session evidence or logs. Successful logs omit prompts
 and answers; failure diagnostics may print the public toy failing answer and
 tails of the daemon/model logs. Hygiene self-tests the evidence gates and
-failure diagnostics with `scripts/test_eval_loop.py`. This is the configured
-boundary, not a claim that hosted CI trials have already passed. It proves no
-lift gate, host implementation attestation, cluster integration or hosted-model
+failure diagnostics with `scripts/test_eval_loop.py`. This check proves no lift
+gate, host implementation attestation, cluster integration or hosted-model
 provider behavior.
 
 `e2e-orka-runtime` is the Orka boundary and runs on every pull request. It brings
