@@ -35,6 +35,7 @@ python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
+python3 scripts/test_check_mutations.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
@@ -56,6 +57,19 @@ The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
 meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
+
+The mutation harness checks 40 representative mutants across ten checkers,
+not every failure mode. This bounded set keeps verification practical but
+intentionally drops some unique mutation coverage; checker self-tests and
+ordinary tree checks still run. Checkers run in parallel with a worker count
+that defaults to the CPU count (or one if unavailable). Set
+`KMX_MUTATION_JOBS` or pass `--jobs N` to limit it; `--jobs` takes precedence.
+Keep the checkout unchanged while the harness runs.
+
+On pull requests, CI runs the mutation harness when `scripts/` changes or
+change classification is uncertain. It runs the harness in full on main pushes
+and in the nightly hygiene job. Its inexpensive runner/routing tests and other
+hygiene checks run regardless of that mutation gate.
 
 Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
 `plane/` is the retained model seam's. The root includes the first-class Orka

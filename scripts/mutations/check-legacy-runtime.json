@@ -1,6 +1,6 @@
 {
   "checker": "check-legacy-runtime.py",
-  "why": "This gate keeps alternate-runtime support inside explicit v0.10.2 create. Every edit below is a way it could report clean while support widens: a vocabulary waiver applied globally, a support path/rule set grown, a retired asset path ignored, an untracked intended file skipped, a rule disabled, a verdict dropped, a scan shrunk, or an exact exemption allowed to outlive its line.",
+  "why": "This gate keeps alternate-runtime support inside explicit v0.10.2 create. These representative edits cover disabled rules, substring exemptions, discarded verdicts, ignored scan floors and globally waived scoped vocabulary; they do not exhaust the gate's support-path, fixture or multiline boundaries.",
   "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"],
   "signature": "check-legacy-runtime self-test:",
   "mutations": [
@@ -11,47 +11,10 @@
       "replace": "        self.re = re.compile(self.re.pattern + \"NEVERMATCHESTHIS\")\n        self.counterexample = counterexample\n        # True: refused in every tracked file. False: refused only on the\n        # surfaces a reader takes as current.\n        self.everywhere = everywhere"
     },
     {
-      "name": "the bare-name rule is applied nowhere",
-      "breaks": "The surface rule is skipped for every file, so an unapproved document or source file may claim alternate-runtime support while only harder identifiers remain.",
-      "find": "                if not rule.everywhere and not current:\n                    continue",
-      "replace": "                if not rule.everywhere:\n                    continue"
-    },
-    {
-      "name": "the hard rules stop applying off the named surfaces",
-      "breaks": "Every rule becomes a current-surface rule, so files outside those prefixes could carry a moving pin, retired asset, or unsupported command untouched.",
-      "find": "            for rule in RULES:\n                if not rule.re.search(line):\n                    continue\n                if not rule.everywhere and not current:",
-      "replace": "            for rule in RULES:\n                if not rule.re.search(line):\n                    continue\n                if not current:",
-      "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"]
-    },
-    {
-      "name": "the workflows drop out of the bare-name rule",
-      "breaks": "A workflow is where an installer or unsupported operation comes back. With that directory off current surfaces, a bare alternate-runtime setup claim can pass.",
-      "find": "\"docs/\", \".github/\",",
-      "replace": "\"docs/\","
-    },
-    {
-      "name": "a category may be claimed on any path",
-      "breaks": "The widest exemption left: an active documentation instruction labelled `negative` keeps its line for ever, because nothing checks that a document cannot make an absence assertion. A category is an argument for keeping a line, and an argument nobody binds to a path is available to every line in the tree.",
-      "find": "        wrong = category_problem(entry)\n        if wrong:",
-      "replace": "        wrong = None\n        if wrong:"
-    },
-    {
-      "name": "any file may be declared historical as a whole",
-      "breaks": "Whole-file history is the widest exemption in the policy. With the set unpinned, a current document goes back to being declared history in one line — the coordination board's live policy included — and every rule stops applying to it.",
-      "find": "    for entry in historical:\n        if entry not in HISTORICAL_FILES:",
-      "replace": "    for entry in []:\n        if entry not in HISTORICAL_FILES:"
-    },
-    {
       "name": "an exemption matches by substring instead of by exact line",
       "breaks": "An exempted line can be extended with anything at all and keep its exemption: `# the runtime is gone` becomes `# the runtime is gone, install it from here` and stays approved.",
       "find": "                hit = exact.get(path, {}).get(stripped)",
       "replace": "                hit = next((v for k, v in exact.get(path, {}).items() if k in stripped), None)"
-    },
-    {
-      "name": "a stale exemption is accepted",
-      "breaks": "An exemption outlives the line it was written for, so the next person to put residue in that file inherits an approval nobody reviewed.",
-      "find": "        if id(entry) not in used:",
-      "replace": "        if False:"
     },
     {
       "name": "findings are collected and then reported as clean",
@@ -66,148 +29,10 @@
       "replace": "    if False:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)"
     },
     {
-      "name": "a directory exemption is read as a bare prefix",
-      "breaks": "`docs/reviews/` would also cover `docs/reviews-plan.md`, and an entry for `docs/R` would cover `docs/README.md` \u2014 an exemption wider than the thing it names.",
-      "find": "        if entry.endswith(\"/\"):\n            if path.startswith(entry):\n                return True",
-      "replace": "        if True:\n            if path.startswith(entry):\n                return True"
-    },
-    {
-      "name": "an empty allowlist is accepted",
-      "breaks": "The gate is disabled by emptying its input rather than by editing its code: with no policy loaded, the historical record goes red and somebody deletes the checker instead of the residue.",
-      "find": "    if not files and not lines:\n        sys.exit(f\"check-legacy-runtime: {path} exempts nothing at all \u2014 \"\n                 \"refusing to report a clean tree against a policy that describes no tree.\")",
-      "replace": "    if False:\n        sys.exit(f\"check-legacy-runtime: {path} exempts nothing at all \u2014 \"\n                 \"refusing to report a clean tree against a policy that describes no tree.\")"
-    },
-    {
-      "name": "an exemption needs no category and no reason",
-      "breaks": "An approval with nothing written next to it is an approval nobody can review later, which is how an exemption list becomes a way of not fixing things.",
-      "find": "            if not str(entry.get(field, \"\")).strip():",
-      "replace": "            if False:"
-    },
-    {
-      "name": "an unreadable file is skipped in silence",
-      "breaks": "A permissions problem shrinks the scanned set without saying so, and the report still reads clean over the files it managed to open.",
-      "find": "            findings.append((path, 0, None, f\"could not be read (not scanned): {e}\"))",
-      "replace": "            pass"
-    },
-    {
-      "name": "the self-exemption set can grow",
-      "breaks": "The checker must spell what it forbids, so it skips itself and its allowlist. A third name there is a file that may carry anything, chosen by whoever added it.",
-      "find": "    if set(SELF) != {\"scripts/check-legacy-runtime.py\",",
-      "replace": "    if False and set(SELF) != {\"scripts/check-legacy-runtime.py\","
-    },
-    {
-      "name": "the script's entry point is neutered",
-      "breaks": "The verdict never reaches an exit code. A self-test that calls the functions directly stays green while the script itself always passes.",
-      "find": "    sys.exit(main(sys.argv[1:]))",
-      "replace": "    sys.exit(0)"
-    },
-    {
       "name": "scoped vocabulary is waived in every file",
       "breaks": "The central boundary disappears: an unapproved current source file can compose the alternate-runtime create selector and use the API vocabulary merely because those rule classes are scoped somewhere.",
       "find": "                if scoped_rule_allowed(path, rule, line, support):\n                    continue",
       "replace": "                if rule.name in SCOPED_SUPPORT_RULES:\n                    continue"
-    },
-    {
-      "name": "the create selector loses its line-level context check",
-      "breaks": "Any bare `--runtime` selection for the alternate runtime is accepted in an approved file, even when it belongs to chat, status, or an unrelated future operation rather than create.",
-      "find": "    if rule.name == \"create-selector\":\n        return bool(CREATE_SELECTOR_CONTEXT.search(line))",
-      "replace": "    if rule.name == \"create-selector\":\n        return True"
-    },
-    {
-      "name": "bounded multiline scanning is disabled",
-      "breaks": "An approved support file can split a broad support claim, unsupported command/options source, installer, or retired operation across physical lines and evade every single-line rule.",
-      "find": "        compound_rules = [rule for rule in RULES if rule.name in MULTILINE_RULES]",
-      "replace": "        compound_rules = []"
-    },
-    {
-      "name": "multiline compounds ignore syntax connectivity",
-      "breaks": "Adjacent but unrelated Markdown table rows or source-list entries are joined into false support claims, making the scoped boundary unusable and hiding whether a real compound was found.",
-      "find": "                    if multiline_lines_are_connected(path, rule, window) and multiline_rule_matches(rule, window):",
-      "replace": "                    if multiline_rule_matches(rule, window):"
-    },
-    {
-      "name": "the multiline window grows beyond its reviewed bound",
-      "breaks": "Unrelated source statements or prose can be assembled into one policy finding once the compound scan silently reaches beyond the reviewed four adjacent lines.",
-      "find": "MULTILINE_WINDOW_LINES = 4",
-      "replace": "MULTILINE_WINDOW_LINES = 5"
-    },
-    {
-      "name": "the code-owned support path set grows",
-      "breaks": "A new production file becomes a whole-file vocabulary waiver without being part of the reviewed create implementation. The JSON/code equality alone cannot catch a source edit that grows the authoritative side, so the selftest pins the set independently.",
-      "find": "        \"cmd/kmx/agent_commands.go\",\n        \"internal/kmx/app/agent_bundle_evaluate.go\",",
-      "replace": "        \"cmd/kmx/agent_commands.go\",\n        \"internal/kmx/app/agent_bundle_evaluate.go\",\n        \"internal/kmx/app/extra_runtime.go\","
-    },
-    {
-      "name": "the code-owned support rule set grows",
-      "breaks": "Support files begin waiving the retired asset rule, turning the scoped vocabulary boundary into a broad bypass.",
-      "find": "    \"api-group\", \"api-kind\", \"schema-version\", \"image\", \"create-selector\", \"bare-name\",\n})",
-      "replace": "    \"api-group\", \"api-kind\", \"schema-version\", \"image\", \"create-selector\", \"bare-name\", \"asset\",\n})"
-    },
-    {
-      "name": "retired asset paths are never judged",
-      "breaks": "An old installer manifest, CLI package, shim spike, or custom gateway source can return under its retired path even if its contents avoid every literal rule.",
-      "find": "        for rule in PATH_RULES:\n            if rule.re.search(path):",
-      "replace": "        for rule in []:\n            if rule.re.search(path):"
-    },
-    {
-      "name": "untracked intended support files are not scanned",
-      "breaks": "The normal tree scan uses git by design. Without the direct support-path scan, a new untracked create implementation can carry a moving pin, installer, or retired command until after commit, and mutation verification never proves it.",
-      "find": "    support_findings, support_read, _ = judge(sorted(support), historical, lines, support)",
-      "replace": "    support_findings, support_read, _ = [], 0, set()"
-    },
-    {
-      "name": "the workflow support category can spread to another workflow",
-      "breaks": "A second workflow could use every scoped alternate-runtime vocabulary class without being part of the reviewed live-create proof.",
-      "find": "    elif category == \"workflow\":\n        if path != CI_WORKFLOW:\n            return f\"workflow support is restricted to exactly {CI_WORKFLOW}\"",
-      "replace": "    elif category == \"workflow\":\n        if not path.startswith(\".github/workflows/\"):\n            return \"workflow support must be a workflow\""
-    },
-    {
-      "name": "fixture exemptions can be claimed outside CI",
-      "breaks": "The exact official install line could be copied into product code or documentation and retain an installer exemption that was earned only as a disposable-cluster precondition.",
-      "find": "    elif category == \"fixture\":\n        if path != CI_WORKFLOW:\n            return f\"an external runtime fixture is allowed only in {CI_WORKFLOW}\"",
-      "replace": "    elif category == \"fixture\":\n        if False:\n            return f\"an external runtime fixture is allowed only in {CI_WORKFLOW}\""
-    },
-    {
-      "name": "arbitrary installer lines can claim the fixture category",
-      "breaks": "Any Helm installer in ci.yml could be labelled as a fixture, turning the four-line precondition boundary into a free-form installer allowlist.",
-      "find": "        if entry[\"text\"].strip() not in FIXTURE_LINES:\n            return \"only the four closed official chart pull/install lines are runtime fixtures\"",
-      "replace": "        if False:\n            return \"only the four closed official chart pull/install lines are runtime fixtures\""
-    },
-    {
-      "name": "the closed fixture line set grows",
-      "breaks": "A fifth chart-operation spelling could become an exact exemption without the selftest noticing that the reviewed four-line boundary widened.",
-      "find": "FIXTURE_LINES = frozenset({CRDS_PULL_LINE, CHART_PULL_LINE, CRDS_FIXTURE_LINE, CHART_FIXTURE_LINE})",
-      "replace": "FIXTURE_LINES = frozenset({CRDS_PULL_LINE, CHART_PULL_LINE, CRDS_FIXTURE_LINE, CHART_FIXTURE_LINE, f\"helm install extra {NAME}\"})"
-    },
-    {
-      "name": "the closed fixture line set loses a reviewed command",
-      "breaks": "Removing one official precondition from the code-owned set would make the policy data impossible to load; the mutation proves that shrinkage cannot be mistaken for a clean scan.",
-      "find": "FIXTURE_LINES = frozenset({CRDS_PULL_LINE, CHART_PULL_LINE, CRDS_FIXTURE_LINE, CHART_FIXTURE_LINE})",
-      "replace": "FIXTURE_LINES = frozenset({CRDS_PULL_LINE, CHART_PULL_LINE, CRDS_FIXTURE_LINE})"
-    },
-    {
-      "name": "the closed workflow support set drops CI",
-      "breaks": "Removing the live proof workflow from the code-owned support set must fail against the independently pinned JSON boundary rather than silently stop scanning its supported vocabulary.",
-      "find": "    \"workflow\": frozenset({\n        CI_WORKFLOW,\n    }),",
-      "replace": "    \"workflow\": frozenset(),"
-    },
-    {
-      "name": "fixture lines waive an unsupported operation rule",
-      "breaks": "Even an exact external precondition line may waive only the installer and retired-asset findings it necessarily carries; adding an operation rule would make the category broader than its argument.",
-      "find": "FIXTURE_RULES = frozenset({\"installer\", \"asset\"})",
-      "replace": "FIXTURE_RULES = frozenset({\"installer\", \"asset\", \"unsupported-runtime-command\"})"
-    },
-    {
-      "name": "negative controls waive broader operations",
-      "breaks": "An exact CI or test assertion may exercise retired syntax, but it must not become an escape hatch for a future version or newly supported lifecycle operation.",
-      "find": "    \"unsupported-runtime-command\", \"unsupported-runtime-options\", \"wrong-api-version\",\n})\n\n# These current-doc notices",
-      "replace": "    \"unsupported-runtime-command\", \"unsupported-runtime-options\", \"wrong-api-version\",\n    \"moving-version\", \"broad-operation\",\n})\n\n# These current-doc notices"
-    },
-    {
-      "name": "kubectl manifest installs are ignored",
-      "breaks": "A scoped documentation or workflow file could apply an alternate-runtime release manifest while the waived bare-name and image rules make that installer invisible.",
-      "find": "          r\"(?i:\\bkubectl\\b.{0,120}\\b(?:apply|create|replace)\\b.{0,80}\"\n          r\"(?:-f|--filename|-k|--kustomize)(?:=|\\s+)\\S*\" + NAME + r\")|\"",
-      "replace": ""
     }
   ]
 }

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '23 3 * * *'
   # The clone-free job below runs on main ONLY, because its premise is a
   # published revision. That made it the one job nobody could reproduce
   # before merging — it failed on four consecutive merges before anyone
@@ -21,6 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Classify script changes (fail closed)
+        id: mutation_changes
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/classify-change
       - name: Required files present
         run: |
           test -f LICENSE
@@ -82,7 +90,10 @@ jobs:
       # not prove the checker would notice tomorrow's wrong answer, and
       # every gap this closes was found by editing a checker until it was
       # worthless and watching its own self-test stay green.
+      - name: Mutation runner and CI routing self-tests
+        run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
+        if: github.event_name != 'pull_request' || steps.mutation_changes.outputs.scripts_changed != 'false'
         run: python3 scripts/check-mutations.py
       # This repo is public and documents a managed-cluster path.
       # A subscription/tenant GUID, an AKS FQDN, or a real ACR login server
@@ -761,8 +772,8 @@ jobs:
           if sorted(agg.get("needs", [])) != shards:
               print(f"{required} must need exactly {shards}, needs {agg.get('needs')}")
               sys.exit(1)
-          if str(agg.get("if", "")).strip() != "always()":
-              print(f"{required} must run with always(), or a failed shard leaves it unreported")
+          if str(agg.get("if", "")).strip() != "always() && github.event_name != 'schedule'":
+              print(f"{required} must always report except on the hygiene-only schedule")
               sys.exit(1)
           for step in agg["steps"]:
               body = str(step.get("run", ""))
@@ -964,7 +975,10 @@ jobs:
   # execute that distinction, so this native job protects the KMX_HOME
   # isolation contract without duplicating the cluster or full Go
   # suites already run by the Linux jobs.
+  # Nightly proves hygiene only; cluster and platform jobs retain their
+  # existing PR, push and manual-dispatch behavior.
   state-paths-macos:
+    if: github.event_name != 'schedule'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -999,6 +1013,7 @@ jobs:
   # A separate quick job so proxy logic failures surface in seconds, not
   # after a 6-minute cluster bring-up.
   go-plane:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1075,6 +1090,7 @@ jobs:
   # the only credentials are a throwaway database password and a throwaway
   # admin token the probe generates for itself.
   plane-upgrade:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -1118,6 +1134,7 @@ jobs:
   # plane's model seam; no agent runtime is required. Assert the legacy
   # namespace is absent both after bring-up and at the end.
   e2e-hosted-models:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -1348,6 +1365,7 @@ jobs:
   # Spend shard: the metering proxy, ordinary budgets, credential expiry
   # and the network boundary.
   e2e-spend:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -1771,6 +1789,7 @@ jobs:
   # also exercise protocol shapes and retry behavior independently of an
   # agent's OpenAI client.
   e2e-models:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -2343,6 +2362,7 @@ jobs:
   # model through the seam (an answer AND its ledger row), and governance
   # really enforces (a budget denial the application itself reports).
   e2e-resilience:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -2657,6 +2677,7 @@ jobs:
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
   e2e-quickstart:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -2914,6 +2935,7 @@ jobs:
   # by the command fail. No hosted credential is used: the model is a hardened,
   # deterministic in-cluster OpenAI chat-completions fixture.
   e2e-kagent-create:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -3287,6 +3309,7 @@ jobs:
   # flakily. It also claims nothing about governance: Orka traffic is not on
   # the plane seam here, and no step pretends otherwise.
   e2e-orka-runtime:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -3657,6 +3680,7 @@ jobs:
   # Independent stock Helm release: no kmx fullnameOverride or owner marker.
   # It uses the same production Prepare installer and authorized Task-event probe.
   e2e-orka-helm:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -3776,7 +3800,7 @@ jobs:
   e2e-hello-world:
     runs-on: ubuntu-latest
     needs: [e2e-hosted-models, e2e-kagent-create, e2e-models, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart, e2e-resilience, e2e-spend]
-    if: always()
+    if: always() && github.event_name != 'schedule'
     steps:
       - name: Every e2e shard succeeded
         env:

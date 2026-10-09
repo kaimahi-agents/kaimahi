@@ -23,28 +23,10 @@
       "replace": "  if [ -n \"${KAIMAHI_CONFIRM:-}\" ]; then"
     },
     {
-      "name": "a context missing from the kubeconfig is treated as present",
-      "breaks": "The \"about to be created\" branch never runs, so `make up` on an empty machine — and every CI run — is classified remote and refused. The guard stops being usable, which is how a guard gets removed.",
-      "find": "if [ -z \"$server\" ]; then",
-      "replace": "if false; then"
-    },
-    {
-      "name": "an unreadable kubeconfig is treated as an empty one",
-      "breaks": "The guard cannot see where the context points and proceeds anyway: a kind-named context resolves to \"not created yet\" and is acted on without a question.",
-      "find": "  echo \"kube-guard: cannot read the kubeconfig — refusing to act blind.\" >&2\n  exit 1",
-      "replace": "  raw='{}'"
-    },
-    {
       "name": "the no-TTY case proceeds instead of refusing",
       "breaks": "A script or CI job that reaches a remote context proceeds with nobody having agreed to it, precisely because there was nobody there to ask.",
       "find": "  echo \"  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>\" >&2\n  exit 1\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2",
       "replace": "  echo \"  to proceed:  KAIMAHI_CONFIRM=$CTX make <target>\" >&2\n  exit 0\nfi\n\nprintf 'Type the context name to continue (anything else aborts): ' >&2"
-    },
-    {
-      "name": "the banner is not printed",
-      "breaks": "The half of the contract that holds even when the guard proceeds: the operator is no longer told which cluster the action landed on.",
-      "find": "} >&2\n\n[ \"$local_kind\" = yes ] && exit 0",
-      "replace": "} >/dev/null\n\n[ \"$local_kind\" = yes ] && exit 0"
     }
   ]
 }

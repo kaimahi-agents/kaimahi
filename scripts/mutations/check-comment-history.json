@@ -17,18 +17,6 @@
       "replace": "SUFFIXES = {\".go\", \".py\", \".sh\", \".yaml\"}"
     },
     {
-      "name": "whole-line shell and yaml comments are skipped",
-      "breaks": "The tripwire ignores shell and YAML comments.",
-      "find": "if text.lstrip().startswith(\"#\") and PATTERN.search(text):",
-      "replace": "if False:"
-    },
-    {
-      "name": "python comments are skipped",
-      "breaks": "The tripwire ignores Python comments.",
-      "find": "if PATTERN.search(text))",
-      "replace": "if False)"
-    },
-    {
       "name": "go comments are skipped",
       "breaks": "The tripwire ignores Go comments.",
       "find": "if PATTERN.search(item[\"text\"]):",

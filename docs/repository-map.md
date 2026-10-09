@@ -39,7 +39,7 @@ checks.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
-| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 45 (checkers, release packaging, probes, CI fixtures, mutation specs) |
+| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 46 (checkers, release packaging, probes, CI fixtures, mutation specs) |
 | `docs/` | 50 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -247,9 +247,9 @@ manifests, and the nine model presets. All were objects of the legacy runtime
 applied by the retired installer; nothing left in kmx reads or applies one. Plane and
 observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 53 tracked files, three different jobs
+## `scripts/` — 54 tracked files, three different jobs
 
-**Reference coverage:** 43 of the 53 are named by something outside themselves,
+**Reference coverage:** 44 of the 54 are named by something outside themselves,
 and the ten `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -259,7 +259,7 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 1 | `plane-pods.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers, self-tests and release packaging | 20 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 21 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
 | **Scaffolding** — CI fixtures | 7 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
@@ -268,7 +268,9 @@ caller evidence. Textual references are not necessarily invocations.
 Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 `kube-guard.sh` is counted once as embedded, and is one of the ten checkers
 the mutation harness breaks on purpose. Model fixtures are synthetic test
-systems, not providers deployed for users.
+systems, not providers deployed for users. `scripts/test_check_mutations.py`
+checks the mutation runner and is invoked by CONTRIBUTING's local verification
+commands and CI's hygiene job.
 
 `scripts/ci/owner-model-client.{sh,py}` are the owner-managed workload the
 `e2e-resilience` and `e2e-spend` shards migrate with `kmx migrate`. The Python half is a
@@ -357,7 +359,7 @@ and the separately located historical architecture SVG.
 
 ## Existing layout
 
-Eight tracked files under `scripts/` contain the literal `k8s/`. Embedded scripts
+Seven tracked files under `scripts/` contain the literal `k8s/`. Embedded scripts
 remain at the paths named by `embed.go`; the separate plane module is fetched
 at the CLI revision. Removed workflow/ERP directories are not kept as empty
 packages or placeholder manifests. Model migration, secret custody, accounting

@@ -28,10 +28,16 @@ regex.
 The rule this file applies to itself: a checker with no declared mutations
 is not proven, and an empty mutation file is a failure, not a pass.
 
-Run:  python3 scripts/check-mutations.py [checker.py ...]
+Run:  python3 scripts/check-mutations.py [--jobs N] [checker.py ...]
+
+Checkers run concurrently, each with its baseline before its mutations.
+Output remains in declared order. --jobs overrides KMX_MUTATION_JOBS;
+otherwise the worker count is os.cpu_count() (or one if unavailable).
+Keep the checkout unchanged while this runs: mirrors share read-only inputs.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -39,6 +45,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -87,7 +94,9 @@ def mirror(mutated_name: str, mutated_text: str) -> pathlib.Path:
         (tmp / entry.name).symlink_to(entry)
     (tmp / "scripts").mkdir()
     for entry in SCRIPTS.iterdir():
-        (tmp / "scripts" / entry.name).symlink_to(entry)
+        # Import-based verifiers must not read a sibling mutant's bytecode.
+        if entry.name != "__pycache__":
+            (tmp / "scripts" / entry.name).symlink_to(entry)
     target = tmp / "scripts" / mutated_name
     target.unlink()
     target.write_text(mutated_text)
@@ -111,24 +120,25 @@ def apply(text: str, find: str, replace: str) -> str:
 
 def run(cmd, cwd) -> subprocess.CompletedProcess:
     env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     # A checker must not be steered by whatever the developer running this
     # happens to have exported.
     for leak in ("KAIMAHI_CONFIRM", "KUBE_CTX", "KUBE_NS", "KMX_TEST_ARGS"):
         env.pop(leak, None)
-    return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
+    return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600, check=False)
 
 
-def prove(spec_path: pathlib.Path) -> list[str]:
-    """Every mutation in one file. Returns the failures, in words."""
+def prove(spec_path: pathlib.Path) -> tuple[list[str], list[str]]:
+    """Every mutation in one file. Return failures and ordered success lines."""
     spec = json.loads(spec_path.read_text())
     checker = spec["checker"]
     source = (SCRIPTS / checker).read_text()
     verify = spec["verify"]
-    failures = []
+    failures, messages = [], []
 
     mutations = spec.get("mutations", [])
     if not mutations:
-        return [f"{spec_path.name}: declares no mutations, so it proves nothing about {checker}"]
+        return [f"{spec_path.name}: declares no mutations, so it proves nothing about {checker}"], messages
 
     # The line the checker prints when it has actually finished its work.
     # A mutant "passes" only if it exits zero AND says this, because a
@@ -151,12 +161,16 @@ def prove(spec_path: pathlib.Path) -> list[str]:
                 failures.append(f"{checker}: `{' '.join(command)}` fails on the UNMUTATED checker "
                                 f"(exit {got.returncode}), so no mutation using it proves anything\n"
                                 + indent(got.stdout + got.stderr))
-                return failures
+                return failures, messages
             if signature not in got.stdout + got.stderr:
                 failures.append(f"{checker}: `{' '.join(command)}` never printed {signature!r} on the "
                                 "unmutated checker, so that string cannot tell a real run from one "
                                 "that did nothing")
-                return failures
+                return failures, messages
+        except subprocess.TimeoutExpired:
+            return [f"{checker}: `{' '.join(command)}` timed out on the UNMUTATED checker"], messages
+        except OSError as e:
+            return [f"{checker}: `{' '.join(command)}` could not run on the UNMUTATED checker: {e}"], messages
         finally:
             shutil.rmtree(clean, ignore_errors=True)
 
@@ -169,6 +183,12 @@ def prove(spec_path: pathlib.Path) -> list[str]:
         tmp = mirror(checker, text)
         try:
             got = run(m.get("verify", verify), tmp)
+        except subprocess.TimeoutExpired:
+            failures.append(f"{checker} [{m['name']}]: verification timed out — not proof the mutation was noticed")
+            continue
+        except OSError as e:
+            failures.append(f"{checker} [{m['name']}]: verification could not run: {e}")
+            continue
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         ran = signature in got.stdout + got.stderr
@@ -177,8 +197,8 @@ def prove(spec_path: pathlib.Path) -> list[str]:
                             f"    {m.get('breaks', 'no description')}\n" + indent(got.stdout + got.stderr))
         else:
             how = f"exit {got.returncode}" if got.returncode else "it never ran"
-            print(f"ok   {checker} [{m['name']}] — noticed ({how})")
-    return failures
+            messages.append(f"ok   {checker} [{m['name']}] — noticed ({how})")
+    return failures, messages
 
 
 def dedupe(commands: list[list[str]]) -> list[list[str]]:
@@ -196,7 +216,24 @@ def indent(text: str) -> str:
     return "".join("    | " + line + "\n" for line in text.strip().splitlines()[-12:])
 
 
+def positive_jobs(value: str) -> int:
+    try:
+        jobs = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("worker count must be a positive integer") from None
+    if jobs < 1:
+        raise argparse.ArgumentTypeError("worker count must be a positive integer")
+    return jobs
+
+
 def main(argv) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--jobs", type=positive_jobs,
+                        default=os.environ.get("KMX_MUTATION_JOBS", os.cpu_count() or 1),
+                        help="parallel checkers (default: KMX_MUTATION_JOBS or CPU count)")
+    parser.add_argument("checkers", nargs="*")
+    args = parser.parse_args(argv)
+
     if not MUTATIONS.is_dir():
         print(f"check-mutations: {MUTATIONS} does not exist — no checker is proven.", file=sys.stderr)
         return 1
@@ -214,14 +251,20 @@ def main(argv) -> int:
         failures.append(f"{name}: is a checker with no scripts/mutations/ file. "
                         "A checker nobody has tried to break is not known to work.")
 
-    if argv:
-        specs = [p for p in specs if json.loads(p.read_text())["checker"] in argv]
+    if args.checkers:
+        specs = [p for p in specs if json.loads(p.read_text())["checker"] in args.checkers]
         if not specs:
-            print(f"check-mutations: no mutation file for {argv}", file=sys.stderr)
+            print(f"check-mutations: no mutation file for {args.checkers}", file=sys.stderr)
             return 1
 
-    for spec in specs:
-        failures.extend(prove(spec))
+    # Whole-checker tasks preserve baseline/override ordering. Each verifier
+    # uses private fixtures and no ports or git-index writes; only Go's
+    # concurrency-safe build/module caches are shared. map yields in spec order.
+    with ThreadPoolExecutor(max_workers=min(args.jobs, len(specs))) as pool:
+        for failed, messages in pool.map(prove, specs):
+            failures.extend(failed)
+            for message in messages:
+                print(message)
 
     if failures:
         print("\ncheck-mutations: a checker did not notice being broken", file=sys.stderr)
