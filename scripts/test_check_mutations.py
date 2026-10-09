@@ -228,7 +228,7 @@ class ClassificationTests(unittest.TestCase):
         self.base = self.commit()
 
     def git(self, *args):
-        return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+        return subprocess.check_output(["git", *args], cwd=self.root, text=True, timeout=10).strip()
 
     def change(self, path, text):
         target = self.root / path
