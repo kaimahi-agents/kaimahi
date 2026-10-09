@@ -314,7 +314,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "source")
 	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
 	reference := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
-	first, err := PushRegistry(context.Background(), source, reference, true, false)
+	first, err := PushRegistry(context.Background(), source, reference, true, false, PushOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 		t.Fatal("new tag caused no mutations")
 	}
 	mutations.Store(0)
-	second, err := PushRegistry(context.Background(), source, reference, true, false)
+	second, err := PushRegistry(context.Background(), source, reference, true, false, PushOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 	}
 	defer os.RemoveAll(packedRoot)
 	mutations.Store(0)
-	_, err = PushRegistry(context.Background(), source, reference, true, false)
+	_, err = PushRegistry(context.Background(), source, reference, true, false, PushOptions{})
 	if err == nil || !strings.Contains(err.Error(), first.Descriptor.Digest.String()) || !strings.Contains(err.Error(), packed.Descriptor.Digest.String()) {
 		t.Errorf("different-digest push error = %v, want both digests", err)
 	}
@@ -356,7 +356,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 	if current != first.Descriptor.Digest.String() {
 		t.Errorf("tag moved to %s after refusal", current)
 	}
-	forced, err := PushRegistry(context.Background(), source, reference, true, true)
+	forced, err := PushRegistry(context.Background(), source, reference, true, true, PushOptions{})
 	if err != nil {
 		t.Fatalf("forced overwrite: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 		t.Fatalf("force did not move tag: %s", current)
 	}
 	mutations.Store(0)
-	if _, err := PushRegistry(context.Background(), source, reference, true, true); err != nil {
+	if _, err := PushRegistry(context.Background(), source, reference, true, true, PushOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if mutations.Load() != 0 {
@@ -399,7 +399,7 @@ func TestRegistryPushExistenceFailure(t *testing.T) {
 	defer server.Close()
 	for _, force := range []bool{false, true} {
 		tagChecks.Store(0)
-		_, err := PushRegistry(context.Background(), source, strings.TrimPrefix(server.URL, "http://")+"/team:v1", true, force)
+		_, err := PushRegistry(context.Background(), source, strings.TrimPrefix(server.URL, "http://")+"/team:v1", true, force, PushOptions{})
 		if err == nil || !strings.Contains(err.Error(), "check existing AgentSuite registry tag") || !strings.Contains(err.Error(), "403") {
 			t.Errorf("existence failure (force=%t) = %v, want forbidden preflight", force, err)
 		}
@@ -420,7 +420,7 @@ func TestRegistryPushValidatesBeforePreflight(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
-	_, err := PushRegistry(context.Background(), t.TempDir(), strings.TrimPrefix(server.URL, "http://")+"/team:v1", true, false)
+	_, err := PushRegistry(context.Background(), t.TempDir(), strings.TrimPrefix(server.URL, "http://")+"/team:v1", true, false, PushOptions{})
 	if err == nil || !strings.Contains(err.Error(), "validate packed AgentSuite") || !strings.Contains(err.Error(), "required file agentsuite.json is missing") {
 		t.Fatalf("invalid suite error = %v, want missing suite manifest validation failure", err)
 	}

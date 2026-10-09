@@ -101,6 +101,9 @@ func TestSuiteRegistryPullPrintsPinForTagsOnly(t *testing.T) {
 			if !strings.Contains(out.String(), "("+digest.String()+")") {
 				t.Fatalf("missing resolved digest: %s", out.String())
 			}
+			if !strings.Contains(out.String(), "Provenance: none\n") || diagnostics.Len() != 0 {
+				t.Fatalf("pull without referrers should report none quietly: out=%s diagnostics=%s", out.String(), diagnostics.String())
+			}
 			pinLine := "Pin this AgentSuite: " + repository + "@" + digest.String() + "\n"
 			if test.wantPin && !strings.Contains(out.String(), pinLine) {
 				t.Errorf("missing repository digest pin %q: %s", pinLine, out.String())

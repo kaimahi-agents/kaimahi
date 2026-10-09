@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	oraslib "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
@@ -26,6 +27,7 @@ func PushRegistry(
 	reference string,
 	plainHTTP bool,
 	force bool,
+	options PushOptions,
 ) (PushResult, error) {
 	parsed, err := registry.ParseReference(reference)
 	if err != nil {
@@ -51,20 +53,67 @@ func PushRegistry(
 	}
 	// This preflight is not atomic with the subsequent tag update.
 	existing, err := repository.Resolve(ctx, targetReference)
+	alreadyTagged := false
 	if err == nil {
-		if existing.Digest == packed.Descriptor.Digest {
-			return result, nil
-		}
-		if !force {
+		alreadyTagged = existing.Digest == packed.Descriptor.Digest
+		if !alreadyTagged && !force {
 			return PushResult{}, fmt.Errorf("AgentSuite registry tag %q already points to %s; refusing to replace it with %s without --force", reference, existing.Digest, packed.Descriptor.Digest)
 		}
 	} else if !errors.Is(err, errdef.ErrNotFound) {
 		return PushResult{}, fmt.Errorf("check existing AgentSuite registry tag %q: %w", reference, err)
 	}
-	if _, err := NewPusher(repository).Push(ctx, packedStore, packed.Descriptor, targetReference); err != nil {
-		return PushResult{}, err
+	var artifact *provenanceArtifact
+	if options.Provenance != nil {
+		built, err := buildProvenance(packed.Descriptor, packed.Report.Name, *options.Provenance)
+		if err != nil {
+			return PushResult{}, err
+		}
+		artifact = &built
+	}
+	if alreadyTagged {
+		// Write nothing if pull already sees kmx provenance.
+		if artifact != nil {
+			if found, _, err := provenanceFor(ctx, repository, packed.Descriptor); err == nil && len(found) > 0 {
+				result.Provenance = &found[0]
+				return result, nil
+			}
+			if err := attachOrWarn(ctx, repository, *artifact, options.Provenance.Require, &result); err != nil {
+				return PushResult{}, err
+			}
+		}
+		return result, nil
+	}
+	// Tag last, so a required provenance failure leaves the tag alone.
+	if err := oraslib.CopyGraph(ctx, packedStore, repository, packed.Descriptor, oraslib.DefaultCopyGraphOptions); err != nil {
+		return PushResult{}, fmt.Errorf("push AgentSuite %q: %w", reference, err)
+	}
+	if artifact != nil {
+		if err := attachOrWarn(ctx, repository, *artifact, options.Provenance.Require, &result); err != nil {
+			return PushResult{}, err
+		}
+	}
+	if err := repository.Tag(ctx, packed.Descriptor, targetReference); err != nil {
+		return PushResult{}, fmt.Errorf("tag AgentSuite %q: %w", reference, err)
 	}
 	return result, nil
+}
+
+func attachOrWarn(
+	ctx context.Context,
+	dst agentsuite.Storage,
+	artifact provenanceArtifact,
+	require bool,
+	result *PushResult,
+) error {
+	if err := pushProvenance(ctx, dst, artifact); err != nil {
+		if require {
+			return fmt.Errorf("%w; the tag was not changed", err)
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("AgentSuite provenance was not attached: %v", err))
+		return nil
+	}
+	result.Provenance = &artifact.summary
+	return nil
 }
 
 // PullRegistry pulls and extracts an AgentSuite from an OCI registry.
@@ -107,6 +156,9 @@ func newRegistryRepository(
 		return nil, "", fmt.Errorf("create AgentSuite registry target: %w", err)
 	}
 	repository.PlainHTTP = plainHTTP
+	repository.ReferrerListMaxPages = 4
+	// Deleting old referrer indexes fails on registries without DELETE.
+	repository.SkipReferrersGC = true
 	anonymous := plainHTTP && !isLoopbackHost((&url.URL{Host: parsed.Registry}).Hostname())
 	client := *auth.DefaultClient
 	httpClient := *client.Client
