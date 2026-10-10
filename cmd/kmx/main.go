@@ -1,5 +1,5 @@
-// Command kmx is the CLI entry point for Kaimahi's developer and governance
-// workflows. Cobra owns syntax and help; internal/kmx/app owns all operations.
+// Command kmx is the CLI entry point for Kaimahi's developer workflows.
+// Cobra owns syntax and help; internal/kmx/app owns all operations.
 package main
 
 import (

@@ -16,7 +16,7 @@ kmx <noun> <verb> [object] [flags]
 ```
 
 - **Noun first, then verb.** The noun is the resource or domain the command
-  acts on (`agent`, `task`, `credential`, `suite`, `orka`). The verb is the
+  acts on (`agent`, `task`, `suite`, `orka`). The verb is the
   action, taken from the vocabulary in section 2. Example: `kmx agent create`.
 - **Singular nouns.** Use `agent list`, not `agents`. A plural may exist only
   as a hidden alias.
@@ -39,7 +39,6 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `show` | Read one resource and what it depends on, from live state. | `kmx agent show <name>` |
 | `status` | Report readiness, health or drift. | `kmx orka status`, `kmx agent status <bundle-dir>` |
 | `create` | Make a new resource on a cluster. | `kmx agent create` |
-| `add` | Register a configuration entry. | `kmx models add <name>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once and return the result. | `kmx agent run` |
@@ -48,9 +47,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx agent lift <bundle-dir>` |
 | `retire` | Remove the workload resources a bundle owns. | `kmx agent retire <bundle-dir>` |
-| `issue` / `renew` | Mint credential material, or extend its expiry. | `kmx credential issue <name>` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
-| `watch` | Stream new events until interrupted. | `kmx watch` |
 
 Keep these distinctions:
 
@@ -183,13 +180,5 @@ ship; remove a row when its rename lands.
 |---|---|---|
 | `ctx [context]` | Abbreviation; one command both reads and writes. | `context show`, `context use <context>` |
 | `up`, `down` | Bare verbs that only act on the local environment. | `local up`, `local down` |
-| `plane` | A noun that acts. | `plane deploy` |
-| `credentials` | A plural noun used as a list. | `plane credential list` |
-| `credential issue`, `credential renew` | Plane operation outside the plane group. | `plane credential issue`, `plane credential renew` |
-| `budget [credential]` | A noun that acts; no flags clears both caps. | `plane budget set`, `plane budget clear` |
-| `models add`, `models credential copilot` | Plural noun; "credential" means a different thing than `credential`. | `plane upstream add`, `plane upstream login copilot` |
-| `ledger`, `flow`, `watch` | Three commands over one data source. | `plane ledger show`, `plane activity list`, `plane activity watch` |
-| `backup`, `restore`, `metrics` | Plane-only operations at the top level. | `plane backup`, `plane restore`, `plane metrics` |
-| `migrate <deployment>` | Plane operation at the top level. | `plane migrate <deployment>` |
 | `lift` (top level) | Deprecated alias of `aks up` that reuses the agent verb. | Undecided; retained for now. |
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |

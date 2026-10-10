@@ -24,7 +24,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
-- AKS setup no longer deploys the model plane, captures its credentials or creates its scrape/dashboard resources. The `boundary`, `credential` and `plane` phases are removed; agents use owner-configured Orka Providers directly. `up` and quickstart no longer advertise plane setup. Standalone plane commands remain separate for now.
+- Plane CLI commands and model-overlay/credential administration are removed, including workload migration, ledger, budgets, flow/watch, backup/restore and metrics. Root status now reports Orka only; native agent, Provider, model discovery, Copilot and Foundry paths remain. Legacy module/assets and stored history are not deleted by this command removal.
+
+- AKS setup no longer deploys the model plane, captures its credentials or creates its scrape/dashboard resources. The `boundary`, `credential` and `plane` phases are removed; agents use owner-configured Orka Providers directly. `up` and quickstart no longer advertise plane setup.
 
 - `kmx suite push` now refuses to move an existing registry tag to a different digest unless `--force` is supplied; same-digest pushes are no-ops. Registry push/pull never send credentials over non-loopback plain HTTP, including token endpoints and redirects; use HTTPS for authenticated remote registries. Push prints the digest, and tag pulls print a digest-pinning hint. The tag guard is a preflight check, not atomic against concurrent pushers; local-layout behavior is unchanged.
 
@@ -571,7 +573,7 @@ sections, not the intermediate instruction.
   repoint a kagent Agent with `kmx govern` and produce every ledger row through
   `kmx agent chat`. It now runs the same supported path `e2e-resilience` does:
   component bring-up, the pinned Orka, an ungoverned `owner-ci` Deployment in
-  its own namespace, the plane, [`kmx migrate`](docs/migrate.md), and a patch
+  its own namespace, the plane, [`kmx migrate`](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md), and a patch
   the **owner** applies. It installs no kagent and fails closed — after
   bring-up and again at the end — if that namespace ever appears. This removes
   the last PR-time live `kmx govern` check while the command still ships;
@@ -603,7 +605,7 @@ sections, not the intermediate instruction.
   The `e2e-resilience` shard used to install the legacy runtime, repoint a
   kagent Agent at the seam with `kmx govern`, and produce every ledger row
   through `kmx agent chat`. It now proves the path
-  [`kmx migrate`](docs/migrate.md) actually supports: a Deployment its own
+  [`kmx migrate`](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md) actually supports: a Deployment its own
   owner runs (`owner-ci`, in its own namespace, created before the plane
   exists), repointed by the patch `kmx migrate` writes and the **owner**
   applies. The shard installs no kagent and fails closed — after bring-up and
@@ -775,7 +777,7 @@ sections, not the intermediate instruction.
   coordinator loop and a header an application configured by environment
   variables cannot send; `orka-coordinator` does not, so what that default
   costs can be read off the ledger instead of argued about. See
-  [docs/migrate.md](docs/migrate.md).
+  [docs/migrate.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md).
 
 - **The model seam accepts the Responses API on an endpoint that serves
   chat completions.** An upstream may now declare `client_path` — the one
@@ -809,7 +811,7 @@ sections, not the intermediate instruction.
   `unmetered` — the one case that cannot be refused is a stream already
   flushed, which is relayed, logged at ERROR and ledgered `unmetered` all
   the same. Migration `00012`
-  ([docs/spend.md](docs/spend.md#protocols-and-missing-usage)).
+  ([docs/spend.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/spend.md#protocols-and-missing-usage)).
 
 - **`kmx models add` — onboard your own model endpoint.** The model seam
   had no onboarding path at all: the only route edited
@@ -830,8 +832,8 @@ sections, not the intermediate instruction.
   assume — **the model seam has no allowlist**, so a new upstream is
   reachable by every credential the plane has issued, bounded only by
   their budgets. Admin contract 2
-  ([docs/kmx.md](docs/kmx.md#kmx-models-add),
-  [docs/spend.md](docs/spend.md#adding-a-model-upstream)).
+  ([docs/kmx.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/kmx.md#kmx-models-add),
+  [docs/spend.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/spend.md#adding-a-model-upstream)).
 
 - **The audit row says who called.** Nothing in a governed row
   distinguished an agent the plane deployed from a shell script holding
@@ -850,7 +852,7 @@ sections, not the intermediate instruction.
   vocabulary are unchanged. Migration `00011`; rows written before it
   say `legacy`, which means *no record of who called* and is a different
   word from `none`, *the caller offered no name*
-  ([docs/identity.md](docs/identity.md#who-called)).
+  ([docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md#who-called)).
 
 - **The known imprecision in `acted for` is now written down where a
   reader of the trail meets it.** For a client the plane did not deploy,
@@ -859,7 +861,7 @@ sections, not the intermediate instruction.
   accepted rather than fixed, on the grounds that no supported
   configuration reaches it: kagent and the inbound bridge are the only
   doors. It is bounded and reversible, and
-  [docs/identity.md](docs/identity.md#correlation-is-a-window-not-caller-identity)
+  [docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md#correlation-is-a-window-not-caller-identity)
   says plainly that if a foreign runtime becomes supported the position
   is void.
 - **The plane's two data seams serve TLS.** The model seam (8080) carries the
@@ -900,7 +902,7 @@ sections, not the intermediate instruction.
   one before its verdict on the tree is trusted.
 
 - **`kmx migrate` measured on AKS, with the application deployed BEFORE
-  Orka.** [docs/migrate.md](docs/migrate.md) §9 is the same migration on a
+  Orka.** [docs/migrate.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md) §9 is the same migration on a
   managed cluster — `Standard_D8s_v5`, Cilium, Kubernetes 1.35.7 — against
   the same Orka `v0.1.3` and the same application, exercising four phases of
   `kmx lift` on the way, with wall clock per step, the ledger's rows, the
@@ -1262,7 +1264,7 @@ sections, not the intermediate instruction.
   or on both; `kmx workflow show` and `kmx workflow run` describe the same
   run for the same `--set`, and a guard on a parameter that carries a default
   is refused rather than silently always-on. See
-  [docs/workflows.md](docs/workflows.md).
+  [docs/workflows.md](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/workflows.md).
 - **The release agent** — the first thing in this repository that is not a
   demonstration. One command reads what merged since the last release,
   drafts the notes, and proposes the release branch and the builds. Cutting
@@ -1280,7 +1282,7 @@ sections, not the intermediate instruction.
   call, but the transfer runs on the operator's machine under their own
   credentials, which is weaker than the rest of the path and is written
   down rather than glossed. See
-  [docs/release-agent.md](docs/release-agent.md).
+  [docs/release-agent.md](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/release-agent.md).
 
 - **`kmx lift`** — the same agent you have been running locally, on AKS, in
   one command. It creates the cluster (or acts on one you already have with
@@ -1561,7 +1563,7 @@ sections, not the intermediate instruction.
 
 Install matching CLI and plane revisions, and back up the plane before rollout.
 For installations with the old gateway/tool or inbound integrations, first
-follow the [gateway retirement review](docs/operations.md#upgrading-after-gateway-retirement):
+follow the [gateway retirement review](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/operations.md#upgrading-after-gateway-retirement):
 stop or replace owner-managed tool integrations and review their configuration,
 network access and Secrets. The retired tool listener has no supported
 reapplication command; `kmx migrate` handles model traffic only. Do not expect
@@ -1579,7 +1581,7 @@ the latest published tag. Verify every plane replica runs the new build before
 declaring retirement effective: old replicas can still consume stored grants,
 and rollback to an approval-capable build can reactivate historical grants.
 Existing credentials and ledger rows survive, but the retired APIs do not.
-See [the plane retirement upgrade procedure](docs/operations.md#upgrading-after-approval-retirement).
+See [the plane retirement upgrade procedure](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/operations.md#upgrading-after-approval-retirement).
 
 Scripts using `kmx up --step kagent|agent|tools-agent`, `kmx govern`, `kmx use`
 or `kmx agent edit` must move to the supported Orka and model-seam commands:
@@ -1617,7 +1619,7 @@ commit hash — plus the last capability to land before the tag was cut.
   proxy, the MCP gateway and the inbound door, failing closed and audited.
   `make credentials` shows what is expiring; `kmx credential renew` moves the
   date without touching the token, so custody is unchanged
-  ([docs/identity.md](docs/identity.md)).
+  ([docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md)).
 - **Tagged releases, built by CI from the tag.** `kmx` binaries for
   linux/amd64, linux/arm64, darwin/amd64 and darwin/arm64, with a
   `checksums.txt` published beside them. The job refuses to publish a build
@@ -1633,7 +1635,7 @@ commit hash — plus the last capability to land before the tag was cut.
   depend entirely on VCS stamping surviving the build; the tag is now the
   first source it reads, and the release refuses to publish unless the
   plane module's matching `plane/vX.Y.Z` tag exists at the same commit.
-- **A documented upgrade path** ([docs/releases.md](docs/releases.md)),
+- **A documented upgrade path** ([docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md)),
   including what happens when a migration fails halfway (the plane does not
   start), and a CI job that upgrades a plane across a real schema gap with
   live data in it and proves the data survives.
@@ -1642,7 +1644,7 @@ commit hash — plus the last capability to land before the tag was cut.
 
 - From an untagged `go install …@<sha>` build: install `@latest` and run
   `kmx version`. There is no state in `kmx` itself to migrate.
-- For the **plane**, see [docs/releases.md](docs/releases.md#upgrading-the-plane).
+- For the **plane**, see [docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md#upgrading-the-plane).
   Migrations are additive and run at startup under a lock. Two behaviours are
   worth knowing before you upgrade, and both follow the same rule — an
   upgrade never silently widens or voids what an operator already had:
@@ -1658,7 +1660,7 @@ commit hash — plus the last capability to land before the tag was cut.
 - **No container image is published.** `kmx plane` still builds the plane's
   image locally from the Go module proxy at kmx's own revision, so Go remains
   a prerequisite for the governed half even if you installed a binary. The
-  reasoning is in [docs/releases.md](docs/releases.md#why-no-published-image-yet).
+  reasoning is in [docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md#why-no-published-image-yet).
 - **No package-manager namespace is claimed** — no Homebrew tap, no npm, no
   crates, no PyPI. The name is provisional and no trademark opinion has been
   obtained; claiming namespaces would raise the cost of a rename that may

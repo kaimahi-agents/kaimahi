@@ -79,10 +79,6 @@ type App struct {
 	// machine.
 	provisioned []toolchain.Tool
 
-	// copilotEnv replaces GitHub's endpoints, cache and poll delay in tests.
-	// Nil in production; no command-line or environment input can set it.
-	copilotEnv *copilotEnvironment
-
 	// guarded records that the context guard has already run in this
 	// process, so a multi-step command asks at most once — the same
 	// once-per-invocation behaviour make gives the `guard` prerequisite.
@@ -165,10 +161,8 @@ func (a *App) kubectlQuiet(args ...string) bool {
 // as opposed to "the cluster could not be reached" or "you may not read it".
 //
 // The distinction is what lets a read be TOLERANT without becoming blind. A
-// fresh cluster legitimately has no plane, no namespace and no Secret yet,
-// but an unreachable API server or an RBAC denial must NEVER be read as
-// "absent" — that is how a second certificate authority gets minted under a
-// plane whose workloads trust the first.
+// fresh cluster legitimately has no namespace or Secret yet, but an
+// unreachable API server or an RBAC denial must never be read as "absent".
 func isNotFound(err error) bool {
 	if err == nil {
 		return false
@@ -177,11 +171,8 @@ func isNotFound(err error) bool {
 	return strings.Contains(message, "NotFound") || strings.Contains(message, `" not found`)
 }
 
-// Capture and Command make App an admin.Kube: the admin plumbing reaches the
-// cluster through the SAME kubectl every other read and write here uses,
-// carrying the same explicit --context. It cannot be aimed anywhere else.
-func (a *App) Capture(args ...string) (string, error) { return a.kubectlCapture(args...) }
-
+// Command prepares a subprocess using the same explicit kubectl context and
+// Runner environment as the other cluster reads and writes.
 func (a *App) Command(args ...string) *exec.Cmd {
 	prepared := a.Run.Command("kubectl", a.kubectl(args...)...)
 	if a.orkaForwardContext == nil {

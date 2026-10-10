@@ -94,7 +94,7 @@ func upFixture(t *testing.T) (*App, *bytes.Buffer, string) {
 	a := &App{
 		Cfg: &config.Config{KindCluster: "test", KubeContext: "kind-test",
 			ContextSource: config.SourceKubeCtx, ContainerEngine: "docker",
-			Model: "qwen2.5:3b", Credential: "hello-world"},
+			Model: "qwen2.5:3b"},
 		Run: &run.Runner{Stdout: out, Stderr: errOut}, Out: out, Err: errOut,
 		guarded: true, orkaInstaller: server.URL, orkaInstallerDigest: digestOf(installer),
 	}

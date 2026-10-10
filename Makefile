@@ -1,6 +1,6 @@
 # Checkout-only operator helpers around kmx. The default only builds.
 # Cluster-mutating recipes depend on guard; netpol-verify guards its own
-# effective kubectl context. Registry image builds touch no cluster.
+# effective kubectl context.
 TARGET ?= kind
 .DEFAULT_GOAL := build
 CONTAINER_ENGINE ?= docker
@@ -8,7 +8,6 @@ KIND_CLUSTER ?= kaimahi-p1
 AKS_CLUSTER ?= kaimahi
 MODEL ?= qwen2.5:3b
 KMX ?= bin/kmx
-CRED ?= hello-world
 
 # Relink for every embedded asset: the binary also runs outside a clone.
 KMX_SOURCES := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2>/dev/null)
@@ -25,18 +24,6 @@ export KMX_CONTAINER_ENGINE := $(CONTAINER_ENGINE)
 export KMX_MODEL := $(MODEL)
 export KMX_CONFIRM := $(KAIMAHI_CONFIRM)
 export KMX_CHAT_PORT := $(CHAT_PORT)
-export KMX_ADMIN_PORT := $(ADMIN_PORT)
-export KMX_OPS_PORT := $(OPS_PORT)
-export KMX_CRED := $(CRED)
-KMX_ENV = KIND_CLUSTER="$$KMX_KIND_CLUSTER" KUBE_CTX="$$KMX_KUBE_CTX" \
-	CONTAINER_ENGINE="$$KMX_CONTAINER_ENGINE" \
-	MODEL="$$KMX_MODEL" $(if $(filter command line,$(origin CHAT_PORT)),CHAT_PORT="$$KMX_CHAT_PORT",) \
-	ADMIN_PORT="$$KMX_ADMIN_PORT" OPS_PORT="$$KMX_OPS_PORT" \
-	CRED="$$KMX_CRED" KAIMAHI_CONFIRM="$$KMX_CONFIRM"
-
-PLANE_IMAGE_REPO ?= kaimahi-proxy
-PLANE_IMAGE_TAG ?= p15
-PLANE_VERSION ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 
 ifeq ($(TARGET),kind)
 KUBE_CTX ?= kind-$(KIND_CLUSTER)
@@ -49,9 +36,9 @@ $(error unknown TARGET '$(TARGET)' — expected 'kind' or 'aks')
 endif
 export KMX_KUBE_CTX := $(KUBE_CTX)
 KUBECTL := kubectl --context $(KUBE_CTX)
-GUARD_NS ?= kaimahi, ollama, orka-system (common, not exhaustive; see action for other namespaces)
+GUARD_NS ?= ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
-.PHONY: build test lint docs-check guard plane-image aks-creds \
+.PHONY: build test lint docs-check guard aks-creds \
 	netpol-verify egress-copilot egress-copilot-off egress-hosted egress-hosted-off
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
@@ -86,18 +73,6 @@ $(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
 guard:
 	@KUBE_CTX='$(KUBE_CTX)' KUBE_NS='$(GUARD_NS)' \
 		bash scripts/kube-guard.sh '$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL)) [TARGET=$(TARGET)]'
-
-ifeq ($(TARGET),kind)
-plane-image: $(KMX)
-	@$(KMX_ENV) $(KMX) plane --step image --source .
-else
-# Build in the operator's private registry; no public image publication.
-plane-image:
-	@test -n "$(ACR_NAME)" || \
-		{ echo 'ACR_NAME is required for TARGET=aks (see docs/aks.md)' >&2; exit 1; }
-	az acr build --registry $(ACR_NAME) --build-arg VERSION=$(PLANE_VERSION) \
-		--image $(PLANE_IMAGE_REPO):$(PLANE_IMAGE_TAG) plane/
-endif
 
 ## aks-creds: refresh an existing cluster's kubeconfig entry
 aks-creds:

@@ -10,7 +10,6 @@ lifecycle commands. Pin `@v0.4.1` for a repeatable build; `@main` is the moving
 development option. Orka's own installation and upgrade limits are separate:
 see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
 historical Kaimahi v0.2.0 release reported Orka v0.1.3.
-The plane-upgrade sections below apply only to the retained legacy plane.
 
 The official Homebrew namespace is limited to the public
 `kaimahi-agents/homebrew-tap` repository and its `kmx` formula. No trademark is
@@ -40,16 +39,8 @@ There is no 1.0 promise and no support window yet. What there is: CI refuses
 to publish a tag whose version has no section in the changelog, and refuses
 to publish a binary that does not report its own tag.
 
-Two tags are pushed for each version, at the same commit:
-
-```
-v0.4.1          the repository, and the kmx binary
-plane/v0.4.1    the plane, which is a separate Go module under plane/
-```
-
-Both are needed. `kmx plane` installs the plane through the Go module proxy at
-kmx's own version, and Go resolves a nested module's version from a
-`plane/`-prefixed tag. The release job refuses to publish without it.
+Releases use the root `vX.Y.Z` tag for the repository and CLI. The dormant
+nested module is not an installed KMX capability and needs no paired release tag.
 
 ## Install
 
@@ -64,8 +55,7 @@ formula. It selects the matching one of the four release binaries for the
 current OS and architecture, then verifies that asset's published SHA-256. The
 formula checksum detects a changed or truncated download;
 like `install.sh`, it is not an independent signature because both originate in
-the same release. Docker or Podman remains required for local kind workflows,
-and `kmx plane` still needs Go.
+the same release. Docker or Podman remains required for local kind workflows.
 
 Upgrade the stable formula with:
 
@@ -140,10 +130,8 @@ installer and pinned toolchain support. Windows is served through WSL, which
 is `linux/amd64`; a native
 `windows/amd64` build would be an untested claim rather than a platform.
 
-**Go is still a prerequisite for the plane.** `kmx up`, `kmx agent`,
-`kmx status` and the operator verbs work from a downloaded binary alone.
-`kmx plane` builds the plane's image on your machine and uses `go install` to
-do it — see [below](#why-no-published-image-yet).
+A downloaded CLI needs no Go toolchain for native setup and agent workflows;
+it still requires the external tools described in [getting started](getting-started.md#prerequisites).
 
 ### What did I install?
 
@@ -153,7 +141,6 @@ kmx v0.4.1 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.2.0
   model    qwen2.5:3b
-  plane    kaimahi-proxy:p15, built from v0.4.1
 ```
 
 The first line is the binary's own identity and it names its source, because
@@ -188,9 +175,9 @@ Orka v0.2.0 Helm chart using Helm on PATH or a pinned/checksum-verified toolchai
 binary. `kmx up` reuses a matching kmx-owned Orka release, but refuses an
 existing v0.1.3 manifest installation or foreign release rather than upgrading
 it. For local kind replacement, export needed data before `kmx down` (which
-deletes the whole cluster: Tasks, Secrets, PVC-backed data, model data and the
-plane ledger), then run `kmx up` for a fresh installation. On AKS, plan a
-fresh installation after backing up Orka resources, volumes/PVCs and Secrets,
+deletes the whole cluster: Tasks, Secrets, PVC-backed data, model data and any
+historical database still present), then run `kmx up` for a fresh installation.
+On AKS, plan a fresh installation after backing up Orka resources, volumes/PVCs and Secrets,
 including any existing agent-execution snapshot key. Back up the new chart's
 `orka-api-agent-execution-snapshot` key with its controller volume and Orka
 resources without printing its value. Do not use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
@@ -198,169 +185,6 @@ See [safe kind and AKS replacement boundaries](orka.md#limits-stated).
 KMX still does not install or upgrade Kagent. Its explicit exact-v0.10.2 create
 path targets an installation the operator already owns; the old chart and broad
 runtime surface are not restored.
-
-## Upgrading the plane
-
-The retained model plane stores its ledger, budgets and reservations in Postgres,
-alongside historical requests, grants and audit data. This is not Orka's storage
-or upgrade contract. Upgrading the legacy plane is
-`kmx plane` again with the newer kmx, **after** the
-[retirement review](operations.md#upgrading-after-approval-retirement):
-
-```bash
-kmx backup plane-before-upgrade.sql   # take one; it is one command
-kmx plane                             # builds and rolls out the newer plane
-kmx ledger                            # the rows are still there
-```
-
-What happens under that:
-
-- The new proxy runs the migrations at startup, under a Postgres advisory
-  lock, so a rollout of N replicas is its own migration step and the replicas
-  do not race each other.
-- Migrations are additive. Every column added since the first schema has a
-  default, which
-  is what lets a backup taken before an upgrade restore after one.
-- A rollout is a Kubernetes rolling update: a new pod does not take traffic
-  until it is ready, and it is not ready until its migrations have applied.
-  **Old replicas can still consume grants during that overlap.** Declare
-  retirement effective only when every replica reports the new build, not
-  when one new pod is Ready.
-
-CI's `plane-upgrade` job
-([scripts/plane-upgrade-probe.sh](../scripts/plane-upgrade-probe.sh)) installs
-a plane several migrations old from the module proxy, seeds it through its admin
-API with a credential, budget, bounded budget grant and priced ledger row, then
-starts the current plane on the same database. The retirement check requires
-that state survive unchanged while old grants cannot admit over-cap model calls.
-Historical requests/grants/audits are SQL/backup data, not served through the
-removed APIs or used as authority. All twelve SQL migrations remain unchanged;
-no pending-request normalization, grant exhaustion or expiry rewriting occurs.
-
-## When kmx and the plane are different versions
-
-Installing kmx changes no running plane. Admin commands read
-`GET /admin/version`, once per command, before their operation. The reported
-**admin contract** marks API revisions; it is not release-version ordering or
-compatibility negotiation.
-
-Contract **5** removes the remaining custom request/approval/grant APIs and
-approval audit; contract 4 removed the gateway/tool-policy APIs and contract 3
-removed inbound interfaces. Lower-bound checks remain useful for surviving
-operations: model-overlay validation still requires contract 2, not 5. They
-cannot prove that every route used by an older CLI exists on a newer plane.
-
-A newer plane can pass an older CLI's numeric check while its removed endpoints
-return errors. Upgrading one side alone therefore does not establish a working
-operator path. Use matched CLI and plane revisions.
-
-### The promise the contract rests on
-
-The original grow-only promise no longer applies across governance retirement.
-**Upgrade kmx and the plane together.** Older binaries may still print their
-compiled-in grow-only reassurance. Their custom approval/tool commands and
-multi-trail flow/watch calls fail against this plane. The current CLI reads
-**only the model ledger** in flow/watch, and warns that a newer contract is not a
-compatibility guarantee. See the [retirement upgrade procedure](operations.md#upgrading-after-approval-retirement)
-for rolling-update/rollback risks and retained data; earlier gateway/inbound
-cleanup still covers rejected configuration, stale resources and owner references.
-
-Two consequences worth stating:
-
-- A plane that answers `/admin/version` but reports a contract no release ever
-  served is a **fault in the plane**, not a version gap, and kmx says so rather
-  than sending you to reinstall over something an upgrade cannot fix.
-- A plane between `v0.1.0` and the release that added `/admin/version` is
-  treated as contract 0 even where it could in fact serve more. Those are
-  unreleased revisions, the misjudgement is conservative, and the fix is one
-  `kmx plane`.
-
-**Proven, not asserted.** The same `plane-upgrade` job drives the current kmx
-against the genuinely old plane it already has running, and asserts the version
-gap is named rather than reported as a 404 — and, at the other end, that a plane
-built from the checkout reports a usable contract.
-
-### One behaviour change worth knowing: historical grants
-
-All custom grants, including budget grants and tool grants predating argument
-binding in migration `00008`, are **inactive on this build**. Their digests,
-summaries, expiry and use counts remain unchanged. Historical pending requests
-are not normalized or deniable through the retired API; SQL/backups preserve the
-history without a new archive interface. Ordinary monthly caps, reservations,
-accounting and credential lifecycle remain. Cap denials no longer file requests
-or advise approval; recovery is an operator's deliberate budget change or the
-UTC month reset.
-
-**Rolling back to an approval-capable binary can reactivate stored grants.**
-An old replica still serving during rollout can consume them too. Preserve the
-database, but do not mistake preserved history for a revocation enforced by old
-code. Check every replica's build before declaring retirement effective.
-
-### And one more: credentials that already exist keep working
-
-Migration `00010` gave credentials an expiry. Credentials that predate it
-carry a NULL one and are **not** expired by the upgrade — expiring a running
-estate at migration time would be an outage, not a control. The class can only
-shrink: every credential issued afterwards has a deadline, and
-`kaimahi_credentials_without_expiry` is the gauge whose job is to trend to
-zero. Renew or re-issue at your own pace ([identity.md](identity.md)).
-
-Credential compatibility preserves the model seam; it does not restore retired
-tool authority. Retirement does not drop stored audit data or revoke credentials
-used by surviving model routes. Review obsolete tool-only Secrets and external
-revocation separately rather than resetting the database.
-
-### When a migration fails halfway
-
-**The plane does not start.** That is the designed answer, and it is what you
-should expect to see:
-
-- goose applies each migration in its own transaction, so a migration that
-  fails is rolled back whole. Migrations before it stay applied; the schema
-  version stops at the last one that succeeded.
-- The proxy retries startup for 90 seconds and then exits non-zero
-  (`database startup failed` in its log). Under Kubernetes the pod
-  crash-loops.
-- Because the new pod never becomes ready, the rolling update does not retire
-  the old replicas: **the previous version keeps serving** while you work out
-  what happened.
-- Nothing is half-served. The plane refuses traffic on a schema it could not
-  migrate rather than guessing which columns exist.
-
-To recover: fix the conflict, or restore the backup you took
-(`kmx restore plane-before-upgrade.sql`) and roll back to the previous
-version, explicitly reviewing the grant-reactivation risk above. CI proves this
-path too — the same probe seeds a second database, makes a migration impossible,
-and asserts the plane never serves, exits non-zero, and leaves the rows and the
-schema version untouched.
-
-## Why no published image yet
-
-`kmx plane` builds the proxy image locally: it `go install`s the plane from
-the module proxy at kmx's own version and packages the resulting static binary
-onto a distroless base. No container image is published for this release, on
-purpose:
-
-- **The provenance is already better than a tag.** The Go module proxy and the
-  checksum database stand behind that fetch. An unsigned image tag in a
-  registry would be a weaker claim wearing a stronger costume.
-- **kind's side-load stays honest.** The local path loads the image into the
-  kind node and `k8s/plane/proxy.yaml` pins `imagePullPolicy: Never`, so a
-  locally built tag can never silently fall back to pulling a squattable
-  public name (see [scripts/plane-deploy.sh](../scripts/plane-deploy.sh)).
-  Publishing an image is exactly the change that would put pressure on that
-  pin.
-- **A registry namespace is a namespace.** No trademark opinion has been
-  obtained; claiming a distribution namespace remains a separate decision.
-
-The cost, stated plainly: Go remains a prerequisite for `kmx plane` even if
-you installed a downloaded binary. Registry-backed clusters (AKS) already have
-their own road — the operator builds the image into their own registry
-([aks.md](aks.md)) — and that is unchanged.
-
-This is a decision for this release, not a principle. The case for publishing
-gets stronger the moment someone needs the plane on a machine with no Go
-toolchain.
 
 ## Cutting a release
 
@@ -373,20 +197,19 @@ than the first.
    **Breaking** with what to do about it; anything that changes an operator's
    day goes under **Upgrading**.
 2. Merge that to `main`. Releases are cut from `main`.
-3. Tag both modules at the same commit and push:
+3. Tag the root CLI release and push:
 
    ```bash
-   git tag v0.4.1 && git tag plane/v0.4.1
-   git push --atomic origin v0.4.1 plane/v0.4.1
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
 4. Watch the `release` workflow. It builds through
    [GoReleaser](../.goreleaser.yaml), checks that exact artifact set, then
    publishes those same files together as one GitHub release. It refuses to
-   publish if: the version is not semantic, `plane/vX.Y.Z` is missing or
-   points somewhere else, the changelog has no section, the built binary does
-   not report the tag, or the checksums do not verify. The release also carries
-   `kmx.rb`, GoReleaser's rendered formula for those exact checksums
+   publish if: the version is not semantic, the changelog has no section,
+   the built binary does not report the tag, or the checksums do not verify. The
+   release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums
    (`brews.skip_upload: true` keeps it from being pushed to the tap on its own
    — that stays a human's job, next). A failed asset upload can leave a GitHub
    draft; inspect and remove that incomplete draft before rerunning the tag

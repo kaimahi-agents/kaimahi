@@ -9,8 +9,8 @@ corrections, tests, and small capability changes. Start with the organization
 Orka remains the first-class/default platform; Kaimahi is tooling to help people
 get agents onto it. Check Orka, Kubernetes and existing integrations first. In
 the pull request, explain why configuration, integration or an upstream
-contribution cannot provide the requested behavior. The migration bridge should
-shrink as upstream capabilities cover it.
+contribution cannot provide the requested behavior. Runtimes and harnesses own
+execution, enforcement and model access; KMX should not duplicate them.
 
 Kagent support is intentionally bounded to explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
@@ -71,12 +71,13 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
-`plane/` is the retained model seam's. The root includes the first-class Orka
-paths and the narrowly scoped Kagent v0.10.2 create adapter. Gateway/tool
-governance and custom approval/grant runtime are retired; ordinary model
-caps/accounting remain. Historical SQL migrations, stored data, and legacy AKS
-teardown records are not cleanup targets.
+Two Go modules remain in the tree: the root CLI (`cmd/kmx`, `internal/kmx`)
+and the dormant legacy `plane/` module. The root includes the first-class Orka
+paths and the narrowly scoped Kagent v0.10.2 create adapter. Plane commands and
+administration are removed from KMX. The nested module, build helpers, embedded
+assets and supporting scripts/fixtures await separate cleanup; retaining them
+is not an installed capability. Historical SQL migrations, stored data, and
+legacy AKS teardown records are not cleanup targets.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name to avoid changing another developer's cluster. See

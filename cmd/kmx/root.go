@@ -14,7 +14,6 @@ import (
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/planebuild"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
@@ -62,9 +61,7 @@ func (s *commandState) application() (*app.App, error) {
 }
 
 // operationApplication adds invocation identity to a configured App. Keep it
-// separate from application(): help and completion need no operation, while
-// the credential issue path deliberately validates its destination before it
-// loads configuration and therefore cannot use appRun directly.
+// separate from application(): help and completion need no operation.
 func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error) {
 	a, err := s.application()
 	if err != nil {
@@ -74,7 +71,6 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 	// command would not repeat the mutation they are asking to confirm.
 	if cmd.Name() != "chat" && cmd.Name() != "console" && len(s.argv) > 0 {
 		parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
-			"CRED=" + quoteShell(a.Cfg.Credential),
 			"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
 		for _, arg := range s.argv {
 			parts = append(parts, quoteShell(arg))
@@ -101,9 +97,10 @@ func execute(argv []string, deps dependencies) error {
 
 func newRootCommand(state *commandState) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "kmx",
-		Short:         "Create and run governed agents on Kubernetes",
-		Args:          cobra.NoArgs,
+		Use:   "kmx",
+		Short: "Create and run agents on Kubernetes",
+		// Leave Args unset so Cobra rejects unknown roots before parsing their
+		// flags or honoring --help. Bare root still runs the help handler.
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
@@ -125,17 +122,9 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newCtxCommand(state),
 		newQuickstartCommand(state), newUpCommand(state), newLiftCommand(state), newAKSCommand(state),
-		newPlaneCommand(state), newCredentialsCommand(state), newCredentialCommand(state),
-		newLedgerCommand(state), newFlowCommand(state),
-		newWatchCommand(state),
-		newConsoleCommand(state),
-		newBudgetCommand(state), newModelsCommand(state), newMigrateCommand(state),
-		newOrkaCommand(state),
-		newBackupCommand(state), newRestoreCommand(state),
-		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
+		newConsoleCommand(state), newOrkaCommand(state),
+		newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newTargetsCommand(state),
-		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
-		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)
 	return root
@@ -189,12 +178,8 @@ func usageArgs(min, max int, usage string) cobra.PositionalArgs {
 func newVersionCommand(state *commandState) *cobra.Command {
 	return &cobra.Command{Use: "version", Short: "Show this build and the component versions it targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		info, ok := state.deps.buildInfo()
-		revision := "unknown (kmx plane needs --source <checkout>)"
-		if rev, err := planebuild.Revision(info, ok); err == nil {
-			revision = rev
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "kmx %s\n  kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md\n  orka     %s\n  model    %s\n  plane    %s, built from %s\n",
-			version.Resolve(info, ok), app.OrkaVersion, config.DefaultModel, app.PlaneImage, revision)
+		fmt.Fprintf(cmd.OutOrStdout(), "kmx %s\n  kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md\n  orka     %s\n  model    %s\n",
+			version.Resolve(info, ok), app.OrkaVersion, config.DefaultModel)
 		return nil
 	}}
 }
@@ -215,11 +200,4 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 		}
 	}
 	return cmd
-}
-
-func parseOptionalCredential(args []string, fallback string) string {
-	if len(args) == 1 {
-		return args[0]
-	}
-	return fallback
 }

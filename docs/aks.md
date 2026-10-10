@@ -143,7 +143,7 @@ invocation.
 as `--step agents` is refused and names the phases that exist.
 
 The former `boundary`, `credential` and `plane` phases are not accepted.
-Standalone model-plane commands remain separate from the agent setup lifecycle.
+Plane administration commands are also removed from KMX.
 
 ### The credential handoff
 
@@ -189,10 +189,10 @@ node pools; workload network policies remain the owner's responsibility.
 
 Use native `kmx aks up` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
-[Makefile](../Makefile) retains model credential helpers and probes such as
-`make netpol-verify`. For those helpers, set `TARGET=aks`,
-`KUBE_CTX=<cluster>` and confirmation explicitly; do not infer the target from
-kubectl's current-context. Read the model ledger and metrics through native kmx.
+[Makefile](../Makefile) retains repository helpers, including Azure credential
+refresh. Set `KUBE_CTX=<cluster>` and confirmation explicitly where applicable;
+do not infer the target from kubectl's current-context. Legacy plane probes and
+assets still in the checkout are dormant, not supported native workflows.
 
 Lift carries its provisioning scripts. It needs no plane image, manifest,
 certificate or database to install Orka.
@@ -256,29 +256,23 @@ another recorded monitoring group. Check those too, along with the node resource
 group, registry and kubeconfig. Deleting one named group is not a subscription
 billing audit. Use current Azure prices; historical run estimates are not quotes.
 
-## Retired public edge and concurrent checks
+## Historical resources and concurrent checks
 
-The gateway/MCP listener, public inbound edge, tool/workflow commands and
-Slack/ERP/AP fixtures are removed. The plane retains **model 8080, admin 9091
-and ops 9092**. Existing installations need the
-[explicit retirement steps](operations.md#upgrading-after-approval-retirement):
-review rejected tool overlays, old Services/network allowances, credentials and
-owner-managed application references. **Applying the new manifests does not
-prune them or safely repoint tools.** For older inbound installations also disable
-external webhooks/Slack subscriptions before releasing their DNS name and remove
-obsolete owned edge resources. This is not automatic cloud deletion, credential
-revocation or database cleanup.
+Removing CLI commands does not delete existing cloud or Kubernetes resources,
+revoke credentials or erase stored history. Owners must review old Services,
+network allowances, Secrets, application references and external subscriptions
+separately. Disable obsolete webhooks/Slack subscriptions before releasing their
+DNS name, and remove only resources whose ownership is established. KMX does
+not safely repoint old tools or provide a new plane upgrade/recovery interface.
 
-All custom approvals/grants and their APIs/CLI views are retired. Ordinary model
-caps/accounting remain; historical requests/grants/audits remain in SQL/backups.
-Upgrade CLI and plane together and verify every replica's new build: old replicas
-can still consume grants during rollout, and rollback can reactivate them. The
-gateway-backed fixtures are gone with the gateway.
+Historical SQL and database backups remain sensitive retained data. An older
+approval-capable process can still use stored grants; command removal is not
+revocation or proof that every old replica has stopped. Keep independently
+verified backups and the ownership records needed for teardown.
 
-Chat allocates a free loopback port by default. Fixed-port helpers need distinct
-`CHAT_PORT`, `ADMIN_PORT`, or `OPS_PORT` values when checking two clusters
-concurrently. Occupied chat ports fail rather than silently selecting another
-cluster's forward.
+Chat allocates a free loopback port by default. Explicit fixed `CHAT_PORT`
+values must be distinct when checking two clusters concurrently. Occupied chat
+ports fail rather than silently selecting another cluster's forward.
 
 ## What was verified, and what was not
 
@@ -286,23 +280,24 @@ Recorded single-node runs in September 2026 demonstrated private ACR builds,
 default-storage PVC binding, Copilot model rows and budget denial, MCP audit,
 Cilium enforcement, the now-retired opt-in Slack edge, and the AP fixture path.
 Those gateway/AP measurements are historical: their fixtures and CI scenarios
-are now retired, not current verification of the reduced model plane.
+are now retired, not current verification of native setup.
 
 The September 6 lift runs exercised created and BYO clusters, refused a missing
 engine and missing pull rights, and queried metrics/log data. Those runs used
 the older ConfigMap scrape implementation; do not treat them as evidence for
-later PodMonitor behavior. The September 10 [migration](migrate.md) run exercised
-selected infrastructure phases and observed PodMonitor target allocation.
+later PodMonitor behavior. The September 10
+[historical migration run](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md)
+exercised selected infrastructure phases and observed PodMonitor target allocation.
 
 Not established: current end-to-end cloud correctness on every PR, workbook
 panel rendering in a browser, Azure/Calico engine enforcement, multi-node
 scheduling, durability, upgrades or node replacement. Historical edge runs also
 did not establish certificate renewal; the edge is no longer shipped. The legacy
 default is ephemeral, with default node SSH and no claim of production hardening;
-the legacy agent namespaces remain outside the plane's default-deny boundary. Orka+Ollama was demonstrated in a separate migration, not
-provisioned by the full Copilot lift. The checkout ACR plane build currently
-omits the version build argument and can report `unknown`; inspect rather than
-infer the running revision.
+the legacy agent namespaces were outside the plane's default-deny boundary.
+Orka+Ollama was demonstrated in a separate historical migration, not provisioned
+by that full Copilot lift. These records do not establish the current native
+setup's cloud behavior.
 
 ## No Azure identifiers in shared evidence
 

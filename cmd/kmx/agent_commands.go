@@ -65,7 +65,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 Select explicitly the namespace the Orka controller watches. Provider type, model
 identifier such as local/qwen2.5:3b, and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
-or chart; use kmx migrate for an existing application's model seam.
+or chart.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
 For azure-openai, --base-url is the HTTPS Azure resource root (not /openai/v1),
 --azure-deployment is required and must equal --model: portable model.name names

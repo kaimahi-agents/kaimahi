@@ -2,17 +2,14 @@ package app
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/seamcert"
 )
 
 // statusFixture is a cluster that answers the Orka reads and records every
@@ -35,7 +32,7 @@ func statusFixture(t *testing.T, script string) (*App, *bytes.Buffer, string) {
 
 const orkaStatusScript = `case "$*" in
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
+*"get deploy -o json") printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"get crd"*) printf '%s' 'agents.core.orka.ai providers.core.orka.ai ';;
 *"get providers"*) printf '%s' 'local=true ';;
@@ -48,9 +45,19 @@ func TestStatusReportsTheOrkaRuntimeAndNotTheLegacyOne(t *testing.T) {
 	if err := a.Status(); err != nil {
 		t.Fatal(err)
 	}
-	asked, _ := os.ReadFile(calls)
-	if strings.Contains(string(asked), "kagent") || strings.Contains(string(asked), "modelconfigs") {
-		t.Errorf("status still reads the legacy runtime:\n%s", asked)
+	asked, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"kagent", "modelconfigs", "-n kaimahi", "get secret"} {
+		if strings.Contains(string(asked), forbidden) {
+			t.Errorf("status made a non-native read %q:\n%s", forbidden, asked)
+		}
+	}
+	for _, forbidden := range []string{"plane", "kmx migrate", "seam"} {
+		if strings.Contains(out.String(), forbidden) {
+			t.Errorf("native status advertises %q: %s", forbidden, out.String())
+		}
 	}
 	for _, want := range []string{"version running", "deployments", "providers"} {
 		if !strings.Contains(out.String(), want) {
@@ -59,25 +66,36 @@ func TestStatusReportsTheOrkaRuntimeAndNotTheLegacyOne(t *testing.T) {
 	}
 }
 
-// The Orka portion must remain the same reading; status also reports the
-// independently deployed plane and certificate, which Orka status does not.
+// Status must produce exactly the native Orka report, with no plane suffix
+// or extra CA, Deployment, pod or Secret reads.
 func TestStatusIncludesOrkaStatusWithoutReinterpretingIt(t *testing.T) {
-	a, out, _ := statusFixture(t, orkaStatusScript)
+	a, out, statusCalls := statusFixture(t, orkaStatusScript)
 	if err := a.Status(); err != nil {
 		t.Fatal(err)
 	}
 	viaStatus := out.String()
-	b, other, _ := statusFixture(t, orkaStatusScript)
+	b, other, orkaCalls := statusFixture(t, orkaStatusScript)
 	if err := b.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(viaStatus, other.String()) {
-		t.Fatalf("status changed the Orka reading:\n%s\n---\n%s", viaStatus, other)
+	if viaStatus != other.String() {
+		t.Errorf("status changed the Orka reading:\n%s\n---\n%s", viaStatus, other)
+	}
+	asked, err := os.ReadFile(statusCalls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegated, err := os.ReadFile(orkaCalls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(asked) != string(delegated) {
+		t.Errorf("status added cluster reads:\n%s\n---\n%s", asked, delegated)
 	}
 }
 
-// The Orka portion of status uses the same preflight even when Orka is absent.
-// The additional plane reads are independent and must not change that answer.
+// Status preserves native preflight, report and error behavior even when the
+// cluster cannot be read.
 func TestStatusDelegatesEvenWhenTheClusterCannotBeRead(t *testing.T) {
 	const noCluster = `case "$*" in
 *"config view"*) printf '%s' '{"current-context":"other","contexts":[{"name":"other","context":{"cluster":"other"}}],"clusters":[{"name":"other","cluster":{"server":"https://example.test"}}]}';;
@@ -93,28 +111,43 @@ esac`
 	if fmt.Sprint(statusErr) != fmt.Sprint(orkaErr) {
 		t.Fatalf("the two status commands disagree about an unreadable cluster:\n%v\n---\n%v", statusErr, orkaErr)
 	}
-	if !strings.HasPrefix(out.String(), other.String()) {
+	if out.String() != other.String() {
 		t.Fatalf("status changed the Orka report for an absent runtime:\n%s\n---\n%s", out, other)
 	}
-	// The Orka reads remain the prefix of the calls; plane reads follow.
-	asked, _ := os.ReadFile(viaStatusCalls)
-	delegated, _ := os.ReadFile(orkaCalls)
-	if !strings.HasPrefix(string(asked), string(delegated)) {
+	// Status must make only the native Orka reads.
+	asked, err := os.ReadFile(viaStatusCalls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegated, err := os.ReadFile(orkaCalls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(asked) != string(delegated) {
 		t.Fatalf("status changed Orka's cluster reads:\n%s\n---\n%s", asked, delegated)
 	}
 }
 
-// Structured status output is refused rather than emptied: migrate targets
-// are owner-managed workloads without a discovery index. A document built from
-// only the targets kmx has seen would imply a complete inventory; consumers
-// must receive a refusal instead of an empty JSON object.
+// Structured status output is refused rather than emptied. Validation must
+// not touch a cluster or advertise commands that no longer exist.
 func TestStatusRefusesStructuredOutputRatherThanInventingIt(t *testing.T) {
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
-			a, _, _ := statusFixture(t, orkaStatusScript)
+			a, out, calls := statusFixture(t, orkaStatusScript)
 			err := a.StatusWithOptions(StatusOptions{Output: format})
 			if err == nil {
 				t.Fatalf("%s output was accepted", format)
+			}
+			if out.Len() != 0 {
+				t.Errorf("format refusal wrote output: %s", out.String())
+			}
+			if _, err := os.Stat(calls); !os.IsNotExist(err) {
+				t.Errorf("format refusal touched kubectl: %v", err)
+			}
+			for _, forbidden := range []string{"kmx migrate", "kmx plane", "seam"} {
+				if strings.Contains(err.Error(), forbidden) {
+					t.Errorf("format refusal advertises %q: %v", forbidden, err)
+				}
 			}
 			for _, want := range []string{format, "table"} {
 				if !strings.Contains(err.Error(), want) {
@@ -126,9 +159,51 @@ func TestStatusRefusesStructuredOutputRatherThanInventingIt(t *testing.T) {
 }
 
 func TestStatusOutputValidation(t *testing.T) {
-	a, _, _ := statusFixture(t, orkaStatusScript)
-	if err := a.StatusWithOptions(StatusOptions{Output: "toml"}); err == nil {
-		t.Fatal("unsupported status output was accepted")
+	a, out, calls := statusFixture(t, orkaStatusScript)
+	err := a.StatusWithOptions(StatusOptions{Output: "toml"})
+	if err == nil || !strings.Contains(err.Error(), `status output "toml" is not supported`) {
+		t.Fatalf("unsupported status output refusal = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("format refusal wrote output: %s", out.String())
+	}
+	if _, err := os.Stat(calls); !os.IsNotExist(err) {
+		t.Errorf("format refusal touched kubectl: %v", err)
+	}
+}
+
+func TestStatusPreservesNativePreflightAndReadErrors(t *testing.T) {
+	for _, tc := range []struct{ name, script, want string }{
+		{"preflight", "exit 7", "kubectl was found"},
+		{"unreachable", `case "$*" in *"get deploy"*) echo 'Unable to connect to the server: connection refused' >&2; exit 1;; esac`, "cannot read Orka: the cluster did not answer"},
+		{"forbidden", `case "$*" in *"get deploy"*) echo 'Error from server (Forbidden)' >&2; exit 1;; esac`, "access forbidden"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, out, statusCalls := statusFixture(t, tc.script)
+			statusErr := a.Status()
+			b, other, orkaCalls := statusFixture(t, tc.script)
+			orkaErr := b.OrkaStatus()
+			if statusErr == nil || !strings.Contains(statusErr.Error(), tc.want) {
+				t.Fatalf("native status error = %v, want %q", statusErr, tc.want)
+			}
+			// Preflight errors include the fixture's executable path.
+			statusText := strings.ReplaceAll(statusErr.Error(), filepath.Dir(statusCalls), "<fixture>")
+			orkaText := strings.ReplaceAll(fmt.Sprint(orkaErr), filepath.Dir(orkaCalls), "<fixture>")
+			if statusText != orkaText || out.String() != other.String() {
+				t.Errorf("status changed native failure: %v / %v; output %q / %q", statusErr, orkaErr, out.String(), other.String())
+			}
+			asked, err := os.ReadFile(statusCalls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			delegated, err := os.ReadFile(orkaCalls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(asked) != string(delegated) {
+				t.Errorf("status changed failed native reads:\n%s\n---\n%s", asked, delegated)
+			}
+		})
 	}
 }
 
@@ -144,109 +219,6 @@ func TestStatusDefaultsToTheTable(t *testing.T) {
 	}
 	if out.String() != bare.String() {
 		t.Fatalf("table and the default differ:\n%s\n---\n%s", out, bare)
-	}
-}
-
-// Regression: the plane is a separate, surviving workload. Count only its
-// pods, not Postgres or any Orka pods; surface renewal before expiry.
-func TestStatusReportsProxyPodsAndExpiringSeamCertificate(t *testing.T) {
-	now := time.Now().UTC()
-	ca, err := seamcert.MintAuthority(now.Add(-380 * 24 * time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	serving, err := ca.Sign(seamcert.SeamNames(), now.Add(-380*24*time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("KMX_TEST_CERT", base64.StdEncoding.EncodeToString(serving.CertPEM))
-	script := `case "$*" in
-*"get deploy kaimahi-proxy"*) printf '%s' '{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":2},"status":{"readyReplicas":1}}';;
-*"get pods -l app=kaimahi-proxy"*) printf '%s' '{"items":[{"metadata":{"name":"proxy-a"},"status":{"conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"restartCount":2}]}},{"metadata":{"name":"proxy-b"},"status":{"conditions":[{"type":"Ready","status":"False"}],"containerStatuses":[{"restartCount":1}]}}]}';;
-*"get secret kaimahi-plane-seam-tls"*) printf '%s' "$KMX_TEST_CERT";;
-*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
-*"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
-*"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-esac`
-	a, out, calls := statusFixture(t, script)
-	if err := a.Status(); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"deployments", "kaimahi-proxy", "1/2 pods ready", "3 restarts", "certificate", "expires in", "kmx plane --step certificate"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("missing %q from status:\n%s", want, out)
-		}
-	}
-	asked, err := os.ReadFile(calls)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"--context kind-test -n kaimahi get deploy kaimahi-proxy -o json --request-timeout=15s",
-		"--context kind-test -n kaimahi get pods -l app=kaimahi-proxy -o json --request-timeout=15s",
-		"--context kind-test -n kaimahi get secret kaimahi-plane-seam-tls -o jsonpath={.data.tls\\.crt} --request-timeout=15s",
-	} {
-		if !strings.Contains(string(asked), want) {
-			t.Errorf("missing pinned and bounded read %q:\n%s", want, asked)
-		}
-	}
-}
-
-func TestStatusDistinguishesAbsentPlaneFromUnreadablePlane(t *testing.T) {
-	for _, tc := range []struct{ name, response, want string }{
-		{"absent", `echo 'Error from server (NotFound): deployments.apps "kaimahi-proxy" not found' >&2; exit 1`, "not installed"},
-		{"unreadable", `echo 'Error from server (Forbidden): deployments.apps "kaimahi-proxy" is forbidden' >&2; exit 1`, "unknown"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			script := `case "$*" in
-*"get deploy kaimahi-proxy"*) ` + tc.response + `;;
-*"get secret kaimahi-plane-seam-tls"*) echo 'Error from server (NotFound): secrets "kaimahi-plane-seam-tls" not found' >&2; exit 1;;
-*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
-*"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
-*"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-esac`
-			a, out, _ := statusFixture(t, script)
-			if err := a.Status(); err != nil {
-				t.Fatal(err)
-			}
-			var planeLine string
-			for _, line := range strings.Split(out.String(), "\n") {
-				if strings.HasPrefix(line, "  plane:") {
-					planeLine = line
-					break
-				}
-			}
-			if !strings.Contains(planeLine, tc.want) {
-				t.Fatalf("plane line should say %q, got %q:\n%s", tc.want, planeLine, out)
-			}
-			if !strings.Contains(out.String(), "  certificate:") {
-				t.Fatalf("missing certificate report:\n%s", out)
-			}
-		})
-	}
-}
-
-func TestStatusReportsScaledZeroPlaneAsNotServing(t *testing.T) {
-	script := `case "$*" in
-*"get deploy kaimahi-proxy"*) printf '%s' '{"metadata":{"name":"kaimahi-proxy"},"spec":{"replicas":0},"status":{"readyReplicas":0}}';;
-*"get pods -l app=kaimahi-proxy"*) printf '%s' '{"items":[]}';;
-*"get deploy -o json"*) printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
-*"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
-*"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-esac`
-	a, out, _ := statusFixture(t, script)
-	if err := a.Status(); err != nil {
-		t.Fatal(err)
-	}
-	var planeLine string
-	for _, line := range strings.Split(out.String(), "\n") {
-		if strings.HasPrefix(line, "  plane:") {
-			planeLine = line
-			break
-		}
-	}
-	if !strings.Contains(planeLine, "scaled to 0") || !strings.Contains(planeLine, "not serving") || strings.Contains(planeLine, "0/0 replicas ready") {
-		t.Fatalf("scaled-zero plane must say it is not serving, not report ready replicas: %q\n%s", planeLine, out)
 	}
 }
 

@@ -1,9 +1,9 @@
 # CLI presentation contracts
 
-Static TTY hierarchy, responsive status/agent/admin reports, and chat
-presentation are implemented. This reference describes the existing CLI,
-including legacy commands; it does not decide the Orka authoring surface or
-claim complete CLI coverage or a new live-cluster verification run.
+Static TTY hierarchy, responsive status/agent reports, and chat
+presentation are implemented. This reference describes the existing CLI; it
+does not decide the Orka authoring surface or claim complete CLI coverage or a
+new live-cluster verification run.
 
 ## Goal
 
@@ -25,14 +25,12 @@ requested data:         stdout
 
 Much of `kmx`'s readable output is also an interface consumed by the project:
 
-- CI checks status governance lines and retained model-ledger reports;
 - release jobs parse `kmx version` exactly;
-- quickstart JSON, status JSON/YAML, manifests, completion, metrics, and raw
-  chat output are machine formats.
+- quickstart JSON, agent list/status JSON, manifests, completion and Task answers
+  are machine formats.
 
-Styling and richer layouts are destination-specific. Existing redirected admin
-columns, truncation, empty cases, and exact numbers remain compatibility formats;
-changing those formats needs a caller migration. Incorrect safety claims are not
+Styling and richer layouts are destination-specific. Existing redirected
+formats must remain intentional interfaces. Incorrect safety claims are not
 frozen by this rule: the audit exceptions below apply in plain and rich modes.
 
 ## Output compatibility matrix
@@ -40,22 +38,18 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | Surface | Default human format | Machine/raw format | Compatibility rule |
 |---|---|---|---|
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
-| `status` | grouped sections, fields and tables | `-o json\|yaml` | Raw tool inventory remains; the retired managed-tool governance fields are removed. Plain table remains the redirected format. |
+| root `status` / `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. Bundle-aware `agent status` separately supports JSON. |
 | `agent list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
 | `agent create` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
-| `models add` | validation/progress on stderr | `--out -` YAML | Model overlay/policy bundle remains exact and ANSI-free. |
-| `metrics` | none on stdout beyond metrics | Prometheus text | Exposition is permanently raw; replica evidence stays on stderr. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
 | agent chat | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
-| ledger, credentials, flow | rich reports/fields on a TTY | fixed-width redirected text, no structured mode yet | Surviving reports retain redirected columns; flow now reads only the model ledger. Custom approval/grant/audit reports are removed. |
 | version | fixed prose | release parser input | Keep exact plain format; only TTY token styling is safe. |
-| backup | result line plus SQL file | SQL artifact | Dump bytes are permanently raw and mode 0600. |
 | lift record | none | JSON recovery state | Permanently raw internal artifact. |
 
 Structured selection belongs to each command. There is no global output hook:
-the command branches to JSON, YAML, manifest, metrics, completion, or raw chat
+the command branches to JSON, YAML, manifest, completion, or Task answer
 before constructing a human renderer.
 
 ## Foundation
@@ -107,7 +101,7 @@ where the operator must stop and decide:
 
 - a remote-context confirmation;
 - a native runtime decision awaiting explicit consent;
-- a destructive restore or teardown summary.
+- a destructive teardown summary.
 
 Keep these blocks compact and left-aligned. The command a user copies must stay
 plain inside the block, and the non-TTY path must keep today's line-oriented
@@ -148,16 +142,10 @@ squeezed or horizontally stretched grid.
 
 ### Styled tables — implemented for modeled reports
 
-Status, agent list, ledger, credentials and flow use titled, counted reports
-with explicit state and numeric column roles. Custom approval/grant/audit
-reports, tool allowlists and managed-tool status counts are removed.
-Narrow tables become labeled records; rich admin views retain full model names
-and flow identifiers where the plain format historically truncates them.
-Numbers are not abbreviated. State styling never guesses from an identifier's
-spelling.
-
-These TTY views do not require migrating redirected consumers: the plain table
-remains their compatibility format. Structured admin output is still not built.
+Status and agent list use titled reports with explicit state and numeric column
+roles. Narrow tables become labeled records. Numbers are not abbreviated; state
+styling never guesses from an identifier's spelling. The plain table remains the
+redirected compatibility format. Structured modes belong to each command.
 
 ### Patterns rejected for this CLI
 
@@ -235,7 +223,7 @@ centralized on stderr. Only those tokens gain semantic color and weight. Their
 spaces, brackets, names, elapsed times, newlines, and native subprocess output
 stay unchanged. Buffer-based tests continue to assert the exact old transcript.
 
-This improves `quickstart`, `up`, `plane`, `agent create`, and `lift` together.
+This improves `quickstart`, `up`, `agent create`, and `lift` together.
 
 ### 2. Safety prompts and guided input — guard implemented
 
@@ -253,11 +241,9 @@ Guard vocabulary is safety behavior and remains asserted without ANSI.
 
 Semantic styles now cover selected stderr messages:
 
-- warnings, governance notes and next actions in agent creation, quickstart
-  and plane.
+- warnings, runtime boundaries and next actions in agent creation and quickstart.
 
-Less common surviving operator journeys remain candidates. Tool credential
-capture and workflow presentation are retired with those commands.
+Less common surviving operator journeys remain candidates.
 
 Do not mechanically style every `notef` call. Many include multiline native
 output, errors, or commands that users copy.
@@ -270,50 +256,27 @@ table geometry; managed-tool governance fields are explicitly retired. Unknown
 conditions and readiness verdicts are corrected in both human modes, as detailed
 below.
 
-### 5. Workflow views — retired
-
-The blueprint runner and its commands are removed. Their former presentation
-contract is [historical source at `10c561d`](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/cli-ux-plan.md),
-not a structured-output feature to finish.
-
-### 6. Admin reports — implemented with plain compatibility
-
-Surviving reports preserve safety fields, exact totals, credential expiry and
-flow's timeline-not-trace warning. Flow/watch read only the model ledger, not
-historical approvals. Redirected reports retain the fixed-width formatter.
-JSON/YAML admin modes and migration away from scraped columns remain future work,
-not prerequisites for the implemented TTY-only layouts.
-
 ## Audit fixes and limits
 
 These are safety-semantic and format fixes, not merely color changes:
 
-- Status preserves `unknown` conditions and does not report ready when required
-  governance is unavailable, required credentials are missing/unreadable, an installed
-  plane has zero or insufficient ready replicas, or Ollama could not be read.
-  A supported direct route alone is not a fault. An obsolete gateway URL must
-  not be reported as healthy direct routing; raw runtime tool inventory remains.
-- Flow counts model refusals from `cost_source: denied`, not numeric HTTP status;
-  an upstream HTTP error alone is not a plane refusal. The corrected summary
-  total is intentional in redirected text too.
+- Runtime status distinguishes unreadable from absent, and the running controller
+  version from the compiled pin. Provider readiness is separate from Deployment
+  readiness; neither proves a completed Task.
 - Quickstart requires a completed task with a readable answer before marking its
   question phase done. `governed: false` retains the unchanged JSON key set and
   means this invocation did not enable governance, not that the cluster has none.
-  Quickstart/up/plane no longer claim existing routing is absent on a rerun.
+  Quickstart/up do not claim existing routing is absent on a rerun.
 - Quickstart no longer discovers, installs, or reconciles the legacy Helm
   release. It reconciles the pinned Orka runtime, then reuses only an exact
   match of its fixed Provider and Agent; a differing live spec is refused
-  rather than overwritten. Every run creates a fresh Task. No setup path uses
-  Helm any more: the legacy chart install was its only caller and is removed.
+  rather than overwritten. Every run creates a fresh Task. Orka setup uses the
+  verified v0.2.0 Helm chart; retiring the legacy chart did not remove Helm.
 - Guard and recovery commands preserve the relevant target, options, and shell
   argument boundaries. Kind creation/image loading refuses mismatched cluster
-  and context names. Credential bounds and incompatible Secret/preset wiring are
-  rejected before issuance. Custom requests, approvals, grants and approval-audit
-  commands/APIs are removed; historical rows remain unchanged in SQL/backups.
-- Backup uses an exclusive unique 0600 temporary file and warns before replacing
-  an existing destination. Restore attempts replica recovery on failures and
-  reports recovery errors; an initially stopped plane stays stopped. Lift
-  confirms before any deletion, retains records for incomplete cleanup, and
+  and context names. Native Provider Secret references are validated without
+  printing their values.
+- Lift confirms before any deletion, retains records for incomplete cleanup, and
   scopes telemetry, ownership, and billing claims to what was actually checked.
 - Chat keeps received session IDs on stream failures and clears retry history
   after a validated resume. Native HITL refuses malformed, incomplete, duplicate,
@@ -330,7 +293,7 @@ These are safety-semantic and format fixes, not merely color changes:
   and groups commands on capable terminals.
 
 Still unimplemented: a comprehensive presentation pass over uncommon surviving
-operator paths, structured admin formats, side-by-side status panels, and
+operator paths, side-by-side status panels, and
 positive per-call governance receipts in chat. Existing chat route labels attest startup configuration, not enforcement
 receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
 evidence of a new live kind/AKS deployment or every terminal/platform combination.

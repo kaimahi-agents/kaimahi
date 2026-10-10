@@ -138,10 +138,7 @@ func TestLiftPriorMonitoringStateIsRecordedWithoutPlaneReads(t *testing.T) {
 // somewhere else. `objectExists` did exactly that — it took `args ...string`
 // and spread them, so the verb was the CALLER'S business and no reader of
 // either end could see whether one had been supplied. Rule one cannot judge
-// such a call, which is precisely the problem with it. One pass-through
-// survives, App.Capture in app.go, named explicitly rather than
-// pattern-matched: it exists to satisfy the admin.Kube interface, whose
-// callers live in another package.
+// such a call, which is precisely the problem with it.
 func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 	verbs := map[string]bool{
 		"get": true, "apply": true, "create": true, "delete": true, "describe": true,
@@ -222,7 +219,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		}
 	}
 
-	for path, file := range files {
+	for _, file := range files {
 		{
 			enclosing := ""
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -241,9 +238,6 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 				switch sel.Sel.Name {
 				case "kubectlCapture", "kubectlRun", "kubectlQuiet":
 					if call.Ellipsis.IsValid() {
-						if enclosing == "Capture" && filepath.Base(path) == "app.go" {
-							return true // the admin.Kube adapter; see above
-						}
 						t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
 							"nothing here can tell whether it names a verb — pass the parts as "+
 							"named arguments and build the command line at this end",
@@ -272,8 +266,8 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		}
 	}
 	// A scan that matches no call passes every assertion in the loop it never
-	// enters. This package makes dozens.
-	if checked < 40 {
+	// enters. Native runtime and cloud orchestration make at least 25.
+	if checked < 25 {
 		t.Fatalf("only %d kubectl calls were examined in this package — the scan is not seeing them, "+
 			"so it is passing vacuously", checked)
 	}

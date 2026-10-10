@@ -10,10 +10,6 @@ package app
 // chart bytes are Orka's own release asset, refused unless they hash to
 // the pinned digest. Kaimahi builds
 // nothing here and owns none of it.
-//
-// The governance seam is a separate decision and stays one: `kmx migrate`
-// puts an application's model traffic through the plane on the way to Orka.
-// Installing Orka governs nothing by itself, and this command says so.
 
 import (
 	"context"
@@ -46,18 +42,15 @@ const (
 	// OrkaPathNamespaces is the guard banner's namespace list for the
 	// supported Orka path: the model server and the Orka runtime, which are
 	// the only two namespaces `kmx quickstart`, the wizard and a bare
-	// `kmx up` write to. config.GuardNamespaces is the wider list used by
-	// commands whose target namespaces vary or include the plane — a banner
-	// naming a namespace this path never touches would describe somebody
-	// else's command.
+	// `kmx up` write to. Other commands can write to caller-selected namespaces;
+	// naming a namespace this path never touches would describe another command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
 	// Legacy v0.1.3 readiness also requires its separate wrapper Deployment.
 	orkaWrapper = "orka-agent-harness-wrapper"
 
 	// orkaProviderKind is Orka's own LLM-backend object. A Provider named
-	// <p> is what makes a model called `<p>/<model>` resolvable, which is
-	// the contract `kmx migrate --model` is checked against.
+	// <p> is what makes a model called `<p>/<model>` resolvable.
 	orkaProviderKind = "providers.core.orka.ai"
 
 	// orkaModelNamespace is where `kmx up` puts the keyless model server
@@ -229,13 +222,6 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	a.complete("Orka "+OrkaVersion+" is running", started)
-	a.notef("\nNOTE  Installing Orka governs nothing by itself. An application's model\n" +
-		"      traffic reaches it directly until it is put on the seam:")
-	if opt.Provider != "-" {
-		a.notef("  kmx migrate <deployment> --namespace <ns> --model %s/%s", opt.Provider, opt.Model)
-	} else {
-		a.notef("  kmx migrate <deployment> --namespace <ns> --model <provider>/<model>")
-	}
 	a.notef("  kmx orka status       # what is installed, and what it can resolve")
 	return nil
 }
@@ -674,7 +660,5 @@ func (a *App) OrkaStatus() error {
 		fmt.Fprintf(a.Out, "%-22s %s\n", "providers", strings.TrimSpace(providers))
 	}
 
-	fmt.Fprintf(a.Out, "\n%s\n", "Governed = whether an application's model traffic goes through the plane.")
-	fmt.Fprintf(a.Out, "%s\n", "Installing Orka does not do that; `kmx migrate` does, one workload at a time.")
 	return nil
 }

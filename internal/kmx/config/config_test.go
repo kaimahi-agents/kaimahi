@@ -9,6 +9,55 @@ import (
 	"testing"
 )
 
+// Old plane environment and cache files must neither influence native config
+// nor be cleaned up as a side effect of loading it.
+func TestNativeConfigAndCacheIgnoreOldPlaneSettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	t.Setenv("KIND_CLUSTER", "native")
+	t.Setenv("KUBE_CTX", "kind-native")
+	t.Setenv("CONTAINER_ENGINE", "podman")
+	t.Setenv("MODEL", "qwen3:8b")
+	t.Setenv("CHAT_PORT", "auto")
+	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT"} {
+		t.Setenv(name, "")
+	}
+	before, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache != filepath.Join(home, "bin") {
+		t.Fatalf("native cache=%q", cache)
+	}
+	old := filepath.Join(home, "plane-bin", "retained-local-file")
+	if err := os.MkdirAll(filepath.Dir(old), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("operator-owned"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT"} {
+		t.Setenv(name, "not/a-valid-port-or-credential; $(bad)")
+	}
+	after, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("old plane environment changed native config:\n%+v\n%+v", before, after)
+	}
+	if got, err := CacheDir(); err != nil || got != cache {
+		t.Errorf("native cache changed: %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(old); err != nil || string(got) != "operator-owned" {
+		t.Errorf("loading config changed old cache: %q, %v", got, err)
+	}
+}
+
 func TestProductDefaultsAreUsable(t *testing.T) {
 	for name, value := range map[string]string{
 		"kind cluster": DefaultKindCluster,
@@ -234,11 +283,11 @@ func TestBothEnginesClearInheritedKindProviderBeforeSelecting(t *testing.T) {
 	}
 }
 
-// These three fixed namespaces are common, but not exhaustive: migrate and
-// credential issue can also write to a caller-selected workload namespace.
+// These fixed namespaces are common, but not exhaustive: native agent
+// creation can also write to a caller-selected workload namespace.
 // The generic banner must say so instead of advertising a complete list.
 func TestGuardNamespacesAreTheSupportedOnes(t *testing.T) {
-	const want = "kaimahi, ollama, orka-system"
+	const want = "ollama, orka-system"
 	if GuardNamespaces != want {
 		t.Fatalf("GuardNamespaces = %q, want %q", GuardNamespaces, want)
 	}

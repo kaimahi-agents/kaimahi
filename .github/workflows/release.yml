@@ -37,9 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The plane-tag check below needs the tags, and the build needs
-          # clean VCS stamping — a shallow checkout gives both as long as
-          # tags come with it.
+          # GoReleaser needs tags and clean VCS stamping.
           fetch-depth: 0
           persist-credentials: false
 
@@ -84,34 +82,6 @@ jobs:
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "synthetic=$synthetic" >> "$GITHUB_OUTPUT"
           echo "building $version (dry_run=$dry_run, prerelease=$prerelease, synthetic=$synthetic)"
-
-      # The plane is a SEPARATE Go module (plane/), and Go resolves a nested
-      # module's version from a `plane/`-prefixed tag. A kmx installed with
-      # `go install …/cmd/kmx@v0.1.0` fetches the plane at v0.1.0 — which
-      # resolves to the tag `plane/v0.1.0`. Without that tag, `kmx plane`
-      # fails for every user of this release and there is no way to fix it
-      # after the fact except a new version. Refuse to publish first.
-      - name: The plane's module tag exists, at this same commit
-        if: steps.what.outputs.dry_run == 'false'
-        env:
-          VERSION: ${{ steps.what.outputs.version }}
-        run: |
-          set -euo pipefail
-          plane_tag="plane/$VERSION"
-          if ! git rev-parse -q --verify "refs/tags/$plane_tag" >/dev/null; then
-            echo "missing tag '$plane_tag'." >&2
-            echo "  \`kmx plane\` on this release would run: go install .../plane/cmd/kaimahi-proxy@$VERSION" >&2
-            echo "  which Go resolves through that tag. Tag the same commit and push it:" >&2
-            echo "    git tag $plane_tag $VERSION && git push origin $plane_tag" >&2
-            exit 1
-          fi
-          want=$(git rev-parse "$VERSION^{commit}")
-          got=$(git rev-parse "$plane_tag^{commit}")
-          if [ "$want" != "$got" ]; then
-            echo "'$plane_tag' points at $got but '$VERSION' points at $want — the binary and the plane would be different code" >&2
-            exit 1
-          fi
-          echo "$plane_tag -> $got, same commit as $VERSION"
 
       - uses: actions/setup-go@v5
         with:
@@ -233,11 +203,6 @@ jobs:
           bin=$(echo dist/kmx_linux_amd64_*/kmx)
           "$bin" version | tee "$RUNNER_TEMP/reported.txt"
           test "$(head -1 "$RUNNER_TEMP/reported.txt")" = "kmx $VERSION (release build)"
-          # And the plane it would deploy is this same version. rc.1 shipped
-          # a binary that reported its tag and then could not name a plane
-          # revision at all; one assertion on the first line would not have
-          # caught it.
-          grep -q "built from $VERSION\$" "$RUNNER_TEMP/reported.txt"
           # Provenance, from the artifact itself.
           go version -m "$bin" | tee "$RUNNER_TEMP/buildinfo.txt"
           grep -q "vcs.revision=$GITHUB_SHA" "$RUNNER_TEMP/buildinfo.txt"

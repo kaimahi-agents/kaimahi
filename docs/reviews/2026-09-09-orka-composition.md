@@ -1,7 +1,7 @@
 # Orka and Kaimahi: how these two become one better thing
 
 > **Reading this report now (2026-09-10):** retain its version-qualified
-> measurements because they inform the current [migration boundary](../migrate.md),
+> measurements because they inform the current [migration boundary](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md),
 > not as a platform roadmap or an instruction to remove code. Orka is the
 > platform; migrated applications keep owner-managed Deployments, and the
 > bridge governs model traffic. `orka.harness.v2` is out. Native-only versus
@@ -9,13 +9,13 @@
 > below has not been independently reconfirmed against current upstream; do not
 > present argument-bound approval as uniquely Kaimahi's. The OTLP candidate is
 > closed: Orka ships OTLP with GenAI conventions. Upstream filings and their
-> current states are in [COORDINATION.md](../COORDINATION.md).
+> current states are in [COORDINATION.md](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/COORDINATION.md).
 >
 > **Gateway retirement:** the tool gateway, argument-bound approval execution
 > and workflow/demo code discussed below are now removed. These are historical
 > findings, not current capabilities or instructions. The
 > [pre-retirement snapshot at `10c561d`](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/reviews/2026-09-09-orka-composition.md)
-> preserves their original context; use [migration](../migrate.md) for the
+> preserves their original context; use [migration](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md) for the
 > surviving model boundary.
 
 **Subject:** [`orka-agents/orka`](https://github.com/orka-agents/orka) —

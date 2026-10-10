@@ -100,8 +100,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	// `kubectl wait` would land in front of the JSON and the caller would
 	// get "Expecting value: line 1 column 1". Under --output json those go
 	// to stderr with everything else humans read, leaving stdout carrying
-	// exactly one document. `kmx metrics` already draws this line for the
-	// same reason.
+	// exactly one document.
 	if asJSON {
 		a.Run.Stdout = a.Err
 	}

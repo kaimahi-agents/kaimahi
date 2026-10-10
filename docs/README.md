@@ -13,15 +13,14 @@ or comparing implementations.
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](agentsuite-spec.md) |
-| Route an existing application's model traffic through Orka | [Migration](migrate.md) |
+| Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
+| Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
+| Lift, inspect, run, evaluate, verify or retire a portable bundle | [Bundle lifecycle](agent-lift.md) |
+| Lift from chat or console | [Interactive lift](interactive-lift.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |
-| Diagnose installation, routing, or existing runtime problems | [FAQ](FAQ.md) |
-
-Installing Orka is not migration. A migrated application's Deployment stays
-under its owner's management; the supported migration governs **model
-traffic**, not all activity by the application.
+| Diagnose installation, inference, or runtime problems | [FAQ](FAQ.md) |
 
 Native Orka authoring remains the default and the recommendation in
 [orka.md](orka.md). The explicit Kagent v0.10.2 create adapter is a direct,
@@ -31,44 +30,10 @@ adapter should ever become a general cross-runtime authoring or lifecycle
 surface remains open and unsupported. Existing retired commands/manifests and
 the removed conversion spike are not evidence of one.
 
-## References for legacy code still present
-
-These documents distinguish the surviving model seam
-from retirement pointers. They are not Orka documentation or a platform roadmap.
-The plane has three listeners (model 8080, admin 9091, ops 9092); the MCP gateway,
-workflows, connector fixtures and all custom approvals/grants are removed.
-Ordinary model caps, accounting and reservations remain; `flow`/`watch` read only
-the model ledger. Historical requests/grants/audits remain in SQL/backups, not
-through the removed APIs. Existing installations need the
-[retirement upgrade steps](operations.md#upgrading-after-approval-retirement),
-including the all-replica build check and rollback warning.
-All twelve SQL migrations and stored data are retained.
-
-| Area | Reference |
-|---|---|
-| Retired model presets and credential wiring | [Models](models.md) |
-| Plane model proxy, metering and budget limits | [Spend](spend.md) |
-| Retired gateway and tool onboarding | [Foreign runtime](foreign-runtime.md) |
-| Retired custom approvals/grants and preserved history | [Approvals](approvals.md) |
-| Attribution and expiring credentials | [Identity](identity.md) |
-| Plane NetworkPolicy and residual exposure | [Egress](egress.md) |
-| Hosted model dialing and credential custody | [Hosted upstreams](hosted-upstreams.md) |
-| Plane operations, database recovery and metrics | [Operations](operations.md) |
-| Retired blueprint runner | [Workflows](workflows.md) |
-| Retired webhook bridge and public-edge cleanup | [Inbound](inbound.md) |
-| Retired Slack posting fixture | [Slack](slack.md) |
-| Retired release driver | [Release agent](release-agent.md) |
-| Retired gateway scenarios and current demo pointers | [Demo](demo.md), [accounts payable](ap-demo.md) |
-
-The [legacy plane diagram](assets/architecture.svg), with
-[Mermaid source](assets/architecture.mmd), is a **historical pre-retirement**
-view, including the removed gateway and inbound paths. It is not the current
-listener inventory, Orka architecture or the project's future shape.
-
 ## Maintainer references
 
 - [Development](development.md): source boundaries, verification and operational traps.
-- [Repository map](repository-map.md): where the retained files belong.
+- [Repository map](repository-map.md): where the retained files belong, including dormant legacy scaffolding.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
@@ -85,9 +50,8 @@ listener inventory, Orka architecture or the project's future shape.
   and Copilot measurements and optimization priorities.
 - [Local Foundry inference](local-foundry-inference.md): interactive host inference
   with Azure login, and the separate native Orka integration proposal.
-
 - [Orka composition](reviews/2026-09-09-orka-composition.md): version-qualified
-  findings that informed migration; not a current ownership or authoring ruling.
+  historical findings; not a current ownership or authoring ruling.
 - [Substrate evaluation boundary](reviews/2026-09-10-substrate-evaluation.md):
   scoped research, not a platform substitution decision.
 

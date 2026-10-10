@@ -11,21 +11,15 @@ justify the gap in the PR. Prefer configuration, integration or an
 upstream contribution to a parallel implementation. Success includes a
 path that no longer needs this repository.
 
-The current migration seam is a bridge. Its authentication, metering and
-protocol adaptations are implementation facts, not reasons to preserve
-Kaimahi as a separate platform. `orka.harness.v2` is out. Orka already
-ships OTLP with GenAI conventions; do not plan an exporter as an unmet
-upstream need.
+Runtimes and harnesses own execution, enforcement and model access. KMX should
+not recreate a model proxy or governance platform. `orka.harness.v2` is out.
+Orka already ships OTLP with GenAI conventions; do not plan an exporter as an
+unmet upstream need.
 
 ## Leave reviewable artifacts and ownership with the user
 
 Generated YAML should remain readable, diffable and usable with the
 underlying tools. Do not conceal ownership inside an entry point.
-
-For migration, the application owner keeps its Deployment and decides
-whether to apply the printed patch. Governing model traffic does not mean
-adopting the workload, creating an Orka Agent from it, or governing its
-other traffic. See [migrate.md](migrate.md).
 
 Authoring defaults to native Orka. [orka.md](orka.md) records that recommendation,
 while `kmx agent create --runtime kagent <name>` provides one deliberately
@@ -48,11 +42,10 @@ whether resources are accepted, not whether the resulting pods work.
 ## Keep credentials out of artifacts
 
 Generated files contain Secret references, not values. Never add a token
-flag, print a credential, or tell a user to commit one. The existing
-model credential paths remain separate from scaffolding; tool capture is
-retired. Input, expiry and custody limits are in [identity.md](identity.md),
-[models.md](models.md) and [hosted-upstreams.md](hosted-upstreams.md).
-A capture exception is not permission to accept arbitrary secrets in YAML.
+flag, print a credential, or tell a user to commit one. Native Provider Secret
+provisioning remains separate from scaffolding; host Copilot authentication is
+managed by the installed Copilot CLI. See [models.md](models.md) and
+[copilot-inference.md](copilot-inference.md) for the native inference boundaries.
 
 ## One implementation and honest evidence
 

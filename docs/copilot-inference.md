@@ -1,7 +1,8 @@
 # Copilot inference and tools
 
-Quickstart always waits for discovery and requires an explicit inference choice,
-including reruns and cases with only one option. No source is auto-selected.
+Interactive quickstart always waits for discovery and requires an explicit
+inference choice, including reruns and cases with only one option. No source is
+auto-selected.
 The legacy `--inference` flag does not bypass the picker.
 
 Discovery checks local runtimes, Copilot installation, CLI `auth.getStatus`, and

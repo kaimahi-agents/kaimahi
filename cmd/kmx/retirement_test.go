@@ -31,13 +31,6 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"govern"}, "kmx migrate"},
-		{[]string{"govern", "hello-world"}, "kmx migrate"},
-		{[]string{"govern", "hello-world", "--model", "governed-ollama"}, "kmx migrate"},
-		{[]string{"--context", "kind-stale", "govern"}, "kmx migrate"},
-		{[]string{"use"}, "kmx models add"},
-		{[]string{"use", "ollama"}, "kmx models add"},
-		{[]string{"use", "ollama", "--agent", "hello-world"}, "kmx models add"},
 		{[]string{"agent", "edit", "hello-world"}, "kmx agent edit is retired; use kubectl"},
 		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "kmx agent edit is retired; use kubectl"},
 	} {
@@ -56,7 +49,7 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	root := newRootCommand(&commandState{deps: deps})
-	for _, path := range [][]string{{"govern"}, {"use"}, {"agent", "edit"}} {
+	for _, path := range [][]string{{"agent", "edit"}} {
 		cmd, _, err := root.Find(path)
 		if err != nil || !cmd.Hidden {
 			t.Errorf("retired command %v must exist but be hidden: %v", path, err)
@@ -69,8 +62,6 @@ func TestRetiredCommandHelpShowsMigrationBeforeConfiguration(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"govern", "--help"}, "kmx govern is retired; use kmx migrate"},
-		{[]string{"use", "-h"}, "kmx use is retired; use kmx models add"},
 		{[]string{"agent", "edit", "--help"}, "kmx agent edit is retired; use kubectl --context"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {

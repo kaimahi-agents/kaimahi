@@ -16,7 +16,6 @@ ORDER = [
     ("journey heading", r"^## Create, Prove, Lift$"),
     ("Quickstart heading", r"^## Quickstart$"),
     ("runtime contract heading", r"^## Runtime Contract$"),
-    ("migration heading", r"^## Migrate Model Traffic$"),
     ("Status heading", r"^## Status$"),
     ("documentation heading", r"^## Documentation$"),
     ("Development heading", r"^## Development$"),
