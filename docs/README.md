@@ -50,10 +50,6 @@ the removed conversion spike are not evidence of one.
   and Copilot measurements and optimization priorities.
 - [Local Foundry inference](local-foundry-inference.md): interactive host inference
   with Azure login, and the separate native Orka integration proposal.
-- [Orka composition](reviews/2026-09-09-orka-composition.md): version-qualified
-  historical findings; not a current ownership or authoring ruling.
-- [Substrate evaluation boundary](reviews/2026-09-10-substrate-evaluation.md):
-  scoped research, not a platform substitution decision.
 
 Superseded lane prompts, old platform proposals and retired review snapshots
 are not maintained as public documentation. Git retains their history.
