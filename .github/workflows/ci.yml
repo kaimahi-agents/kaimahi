@@ -227,11 +227,11 @@ jobs:
                   print(f"release decision mismatch for {env_add}: got {got}, want {expected}")
                   sys.exit(1)
           for name, job in wf["jobs"].items():
-              extra = set(job.get("permissions", {})) - {"contents"}
-              if extra:
-                  print(f"release job {name} asks for more than contents: {sorted(extra)}")
+              allowed = {"contents": "write", "id-token": "write"} if name == "release" else {"contents": "read"}
+              if job.get("permissions", {}) != allowed:
+                  print(f"release job {name} permissions must be {allowed}, got {job.get('permissions', {})}")
                   sys.exit(1)
-          print("release workflow: dry-run matrix, no repository secrets, contents-only permissions, changelog ready")
+          print("release workflow: dry-run matrix, no repository secrets, job-scoped publishing and OIDC permissions, changelog ready")
           EOF
       # The context guard is pure policy — every branch of it decides
       # whether to touch somebody's cluster — but the e2e job below can only
